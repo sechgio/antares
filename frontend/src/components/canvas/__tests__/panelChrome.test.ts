@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampLeftPanelWidth,
+  LEFT_PANEL_WIDTH_DEFAULT,
+  LEFT_PANEL_WIDTH_MAX,
+  LEFT_PANEL_WIDTH_MIN,
   nextBothPanelsOpen,
   readBoolLS,
+  readLeftPanelWidth,
   readToolbarPosition,
   writeBoolLS,
+  writeLeftPanelWidth,
   writeToolbarPosition,
 } from '../ops/panelChrome';
 
@@ -39,6 +45,24 @@ describe('panelChrome', () => {
 
     localStorage.setItem(key, 'invalid');
     expect(readToolbarPosition(key, 'bottom')).toBe('bottom');
+    localStorage.removeItem(key);
+  });
+
+  it('clampLeftPanelWidth stays within local UI bounds without touching the document', () => {
+    expect(clampLeftPanelWidth(LEFT_PANEL_WIDTH_DEFAULT)).toBe(LEFT_PANEL_WIDTH_DEFAULT);
+    expect(clampLeftPanelWidth(80)).toBe(LEFT_PANEL_WIDTH_MIN);
+    expect(clampLeftPanelWidth(900)).toBe(LEFT_PANEL_WIDTH_MAX);
+    expect(clampLeftPanelWidth(Number.NaN)).toBe(LEFT_PANEL_WIDTH_DEFAULT);
+  });
+
+  it('readLeftPanelWidth / writeLeftPanelWidth round-trip from localStorage', () => {
+    const key = 'antares.canvas.test.leftPanelWidth';
+    localStorage.removeItem(key);
+    expect(readLeftPanelWidth(key)).toBe(LEFT_PANEL_WIDTH_DEFAULT);
+    writeLeftPanelWidth(key, 312);
+    expect(readLeftPanelWidth(key)).toBe(312);
+    writeLeftPanelWidth(key, 40);
+    expect(readLeftPanelWidth(key)).toBe(LEFT_PANEL_WIDTH_MIN);
     localStorage.removeItem(key);
   });
 });

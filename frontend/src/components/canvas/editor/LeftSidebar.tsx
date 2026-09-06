@@ -1,4 +1,15 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -27,10 +38,31 @@ import {
   Unlock,
   Ungroup,
   PanelLeftClose,
+  Search,
+  Component,
+  Frame,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { ancestorIds, buildLayerTree, flattenLayerTree, isLayerContainer } from '../ops/layerTree';
+import {
+  ancestorIds,
+  buildLayerTree,
+  expandAncestorsForSelection,
+  flattenLayerTree,
+  isLayerContainer,
+  reconcileExpandedContainers,
+} from '../ops/layerTree';
+import {
+  LAYER_ROW_H,
+  LAYER_VIRTUALIZE_AT,
+  clampLayerScrollTop,
+  layerVirtualWindow,
+  nextLayerRowIndex,
+  scrollTopToRevealIndex,
+} from '../ops/layerListWindow';
+import { clampLeftPanelWidth } from '../ops/panelChrome';
+import { createGestureRaf } from '../ops/gestureRaf';
 import type { CanvasDocumentSummary, CanvasLayer } from '../types';
+import { getThumbnailUrl } from '../utils/imageBlobStore';
 import { VisibilityIcon } from './VisibilityIcon';
 import PageContextMenu, { type PageContextMenuState } from './PageContextMenu';
 import CanvasSelect from './CanvasSelect';
@@ -68,6 +100,8 @@ interface LeftSidebarProps {
   onHidePanel?: () => void;
   hidePanelDisabled?: boolean;
   docsSyncing?: boolean;
+  width?: number;
+  onWidthChange?: (width: number) => void;
 }
 
 type CapasDropPosition = 'before' | 'after' | 'inside';
@@ -87,8 +121,6 @@ function capasDropPosition(
   return y < rowHeight / 2 ? 'before' : 'after';
 }
 
-import { getThumbnailUrl } from '../utils/imageBlobStore';
-
 function layerIcon(type: CanvasLayer['type'], value?: string) {
   if (type === 'image' && value) {
     const thumb = getThumbnailUrl(value);
@@ -101,6 +133,8 @@ function layerIcon(type: CanvasLayer['type'], value?: string) {
   if (type === 'table') return <Table2 className="h-3 w-3" />;
   if (type === 'grid') return <Grid3X3 className="h-3 w-3" />;
   if (type === 'group') return <Group className="h-3 w-3" />;
+  if (type === 'component') return <Component className="h-3 w-3" />;
+  if (type === 'frame') return <Frame className="h-3 w-3" />;
   if (type === 'checkbox') return <CheckSquare className="h-3 w-3" />;
   if (type === 'signature') return <PenLine className="h-3 w-3" />;
   if (type === 'line') return <Slash className="h-3 w-3" />;
@@ -170,6 +204,8 @@ const LayerRow = memo(function LayerRow({
         data-selected={selected}
         data-dimmed={hidden}
         data-locked={locked}
+        data-container={isLayerContainer(layer)}
+        data-component={layer.type === 'component'}
         data-drop={dropPosition ?? undefined}
         draggable={!locked && !renaming}
         onDragStart={(e) => {
@@ -223,6 +259,7 @@ const LayerRow = memo(function LayerRow({
             type="button"
             className="canvas-list-chevron"
             aria-label={expanded ? 'Colapsar' : 'Expandir'}
+            aria-expanded={expanded}
             draggable={false}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => onToggleExpanded(layer.id)}
@@ -259,6 +296,8 @@ const LayerRow = memo(function LayerRow({
             role="button"
             tabIndex={0}
             className="canvas-list-label"
+            aria-pressed={selected}
+            title={layer.name}
             onClick={(e) => onSelect(layer.id, e.shiftKey || e.ctrlKey || e.metaKey)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -281,6 +320,8 @@ const LayerRow = memo(function LayerRow({
             type="button"
             className="canvas-list-action"
             aria-label={locked ? 'Desbloquear' : 'Bloquear'}
+            aria-pressed={locked}
+            title={locked ? 'Desbloquear capa' : 'Bloquear capa'}
             draggable={false}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => onToggleLocked(layer.id, !locked)}
@@ -291,6 +332,8 @@ const LayerRow = memo(function LayerRow({
             type="button"
             className="canvas-list-action"
             aria-label="Visibilidad"
+            aria-pressed={!hidden}
+            title={hidden ? 'Mostrar capa' : 'Ocultar capa'}
             draggable={false}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => onToggleVisible(layer.id, hidden)}
@@ -332,8 +375,11 @@ export default memo(function LeftSidebar({
   onHidePanel,
   hidePanelDisabled = false,
   docsSyncing = false,
+  width = 248,
+  onWidthChange,
 }: LeftSidebarProps) {
   const tree = useMemo(() => buildLayerTree(layers), [layers]);
+  const layersById = useMemo(() => new Map(layers.map((layer) => [layer.id, layer])), [layers]);
   const containerIds = useMemo(
     () => layers.filter((l) => isLayerContainer(l)).map((l) => l.id),
     [layers],
@@ -342,19 +388,25 @@ export default memo(function LeftSidebar({
   const canGroupSelected = useMemo(() => {
     let n = 0;
     for (const id of selectedIds) {
-      const layer = layers.find((l) => l.id === id);
+      const layer = layersById.get(id);
       if (layer && !layer.locked && layer.type !== 'frame') n += 1;
       if (n >= 2) return true;
     }
     return false;
-  }, [layers, selectedIds]);
+  }, [layersById, selectedIds]);
   const canUngroupSelected = useMemo(() => {
     if (selectedIds.length !== 1) return false;
-    const layer = layers.find((l) => l.id === selectedIds[0]);
+    const layer = layersById.get(selectedIds[0]!);
     return Boolean(layer && (layer.type === 'group' || layer.type === 'component') && !layer.locked);
-  }, [layers, selectedIds]);
+  }, [layersById, selectedIds]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(containerIds));
+  const knownContainerIdsRef = useRef<Set<string>>(new Set(containerIds));
+  const documentIdRef = useRef(documentId);
+  const pendingRevealIdRef = useRef<string | null>(null);
+  const lastRevealedKeyRef = useRef('');
   const [layerQuery, setLayerQuery] = useState('');
+  const [layerScrollTop, setLayerScrollTop] = useState(0);
+  const [layerListHeight, setLayerListHeight] = useState(400);
   const [pageMenu, setPageMenu] = useState<PageContextMenuState | null>(null);
   const [renamingIndex, setRenamingIndex] = useState<number | null>(null);
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
@@ -363,6 +415,7 @@ export default memo(function LeftSidebar({
     id: string;
     position: CapasDropPosition;
   } | null>(null);
+  const [resizing, setResizing] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const layerRenameRef = useRef<HTMLInputElement>(null);
   const layerListRef = useRef<HTMLUListElement>(null);
@@ -379,41 +432,36 @@ export default memo(function LeftSidebar({
   }, [docs, documentId, documentName]);
 
   useEffect(() => {
+    if (documentIdRef.current !== documentId) {
+      documentIdRef.current = documentId;
+      knownContainerIdsRef.current = new Set();
+      setExpandedIds(new Set());
+      setLayerQuery('');
+      setLayerScrollTop(0);
+      if (layerListRef.current) layerListRef.current.scrollTop = 0;
+    }
     setExpandedIds((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const id of containerIds) {
-        if (!next.has(id)) {
-          next.add(id);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [containerIds]);
-
-  useEffect(() => {
-    const id = selectedIds[0];
-    if (!id) return;
-    const ancestors = ancestorIds(layersRef.current, id);
-    if (ancestors.length) {
-      setExpandedIds((prev) => {
-        const next = new Set(prev);
-        let changed = false;
-        for (const aid of ancestors) {
-          if (!next.has(aid)) {
-            next.add(aid);
-            changed = true;
+      const { expanded, known } = reconcileExpandedContainers(
+        prev,
+        knownContainerIdsRef.current,
+        containerIds,
+      );
+      knownContainerIdsRef.current = known;
+      if (expanded.size === prev.size) {
+        let same = true;
+        for (const id of expanded) {
+          if (!prev.has(id)) {
+            same = false;
+            break;
           }
         }
-        return changed ? next : prev;
-      });
-    }
-    requestAnimationFrame(() => {
-      const el = layerListRef.current?.querySelector(`[data-layer-id="${id}"]`);
-      el?.scrollIntoView({ block: 'nearest' });
+        if (same) return prev;
+      }
+      return expanded;
     });
-  }, [selectedIds]);
+  }, [containerIds, documentId]);
+
+
 
   useEffect(() => {
     if (renamingIndex === null) return;
@@ -452,6 +500,34 @@ export default memo(function LeftSidebar({
       return next;
     });
   }, []);
+
+  const onResizePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!onWidthChange || hidePanelDisabled || !open) return;
+      event.preventDefault();
+      const handle = event.currentTarget;
+      const originX = event.clientX;
+      const originW = width;
+      handle.setPointerCapture(event.pointerId);
+      setResizing(true);
+      const raf = createGestureRaf((next: number) => onWidthChange(next));
+      const onMove = (ev: PointerEvent) => {
+        raf.schedule(clampLeftPanelWidth(originW + (ev.clientX - originX)));
+      };
+      const onUp = () => {
+        raf.flush();
+        setResizing(false);
+        handle.releasePointerCapture(event.pointerId);
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+      };
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+    },
+    [hidePanelDisabled, onWidthChange, open, width],
+  );
 
   const startLayerRename = useCallback((id: string, name: string) => {
     setRenameDraft(name);
@@ -500,19 +576,13 @@ export default memo(function LeftSidebar({
     const flat = flattenLayerTree(tree, expandAll);
     const matchIds = new Set(flat.filter((r) => matches(r.layer)).map((r) => r.layer.id));
     const keep = new Set(matchIds);
-    const byId = new Map(layers.map((l) => [l.id, l]));
     for (const id of matchIds) {
-      for (const aid of ancestorIds(byId, id)) keep.add(aid);
+      for (const aid of ancestorIds(layersById, id)) keep.add(aid);
     }
     return flat.filter((r) => keep.has(r.layer.id));
-  }, [tree, expandedIds, layerQuery, containerIds, layers]);
+  }, [tree, expandedIds, layerQuery, containerIds, layersById]);
   const pageLabel = (i: number) => pages?.[i]?.name ?? `Página ${i + 1}`;
 
-  const LAYER_ROW_H = 28;
-  const LAYER_OVERSCAN = 8;
-  const LAYER_VIRTUALIZE_AT = 80;
-  const [layerScrollTop, setLayerScrollTop] = useState(0);
-  const [layerListHeight, setLayerListHeight] = useState(400);
   useEffect(() => {
     const el = layerListRef.current;
     if (!el) return;
@@ -526,35 +596,95 @@ export default memo(function LeftSidebar({
   const virtualizeLayers = rows.length >= LAYER_VIRTUALIZE_AT;
   const layerWindow = useMemo(() => {
     if (!virtualizeLayers) {
-      return { start: 0, end: rows.length, padTop: 0, padBottom: 0 };
+      const scrollTop = clampLayerScrollTop(layerScrollTop, rows.length, layerListHeight);
+      return { start: 0, end: rows.length, padTop: 0, padBottom: 0, scrollTop };
     }
-    const visible = Math.ceil(layerListHeight / LAYER_ROW_H) + LAYER_OVERSCAN * 2;
-    const start = Math.max(0, Math.floor(layerScrollTop / LAYER_ROW_H) - LAYER_OVERSCAN);
-    const end = Math.min(rows.length, start + visible);
-    return {
-      start,
-      end,
-      padTop: start * LAYER_ROW_H,
-      padBottom: Math.max(0, (rows.length - end) * LAYER_ROW_H),
-    };
+    return layerVirtualWindow({
+      rowCount: rows.length,
+      scrollTop: layerScrollTop,
+      listHeight: layerListHeight,
+    });
   }, [virtualizeLayers, rows.length, layerListHeight, layerScrollTop]);
   const visibleRows = virtualizeLayers ? rows.slice(layerWindow.start, layerWindow.end) : rows;
+
+  useLayoutEffect(() => {
+    const el = layerListRef.current;
+    if (!el) return;
+    if (el.scrollTop !== layerWindow.scrollTop) el.scrollTop = layerWindow.scrollTop;
+    if (layerWindow.scrollTop !== layerScrollTop) setLayerScrollTop(layerWindow.scrollTop);
+  }, [layerWindow.scrollTop, layerScrollTop, rows.length]);
+
+  useLayoutEffect(() => {
+    const id = selectedIds[selectedIds.length - 1];
+    const selectionKey = selectedIds.join('\0');
+    if (!id) {
+      pendingRevealIdRef.current = null;
+      lastRevealedKeyRef.current = '';
+      return;
+    }
+    if (selectionKey === lastRevealedKeyRef.current && !pendingRevealIdRef.current) return;
+
+    const nextExpanded = expandAncestorsForSelection(expandedIds, layersRef.current, selectedIds);
+    if (nextExpanded !== expandedIds) {
+      pendingRevealIdRef.current = id;
+      setExpandedIds(nextExpanded);
+      return;
+    }
+
+    const index = rows.findIndex((row) => row.layer.id === id);
+    if (index < 0) {
+      pendingRevealIdRef.current = id;
+      return;
+    }
+
+    const el = layerListRef.current;
+    const listHeight = (el?.clientHeight && el.clientHeight > 0 ? el.clientHeight : layerListHeight);
+    const current = el?.scrollTop ?? layerScrollTop;
+    const nextScroll = scrollTopToRevealIndex(index, LAYER_ROW_H, listHeight, current);
+    pendingRevealIdRef.current = null;
+    lastRevealedKeyRef.current = selectionKey;
+    if (el && el.scrollTop !== nextScroll) el.scrollTop = nextScroll;
+    if (nextScroll !== layerScrollTop) setLayerScrollTop(nextScroll);
+  }, [selectedIds, rows, expandedIds, layerListHeight, layerScrollTop]);
+
+  const onLayerListKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const currentId = selectedIds[selectedIds.length - 1];
+    const currentIndex = currentId ? rows.findIndex((row) => row.layer.id === currentId) : -1;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const nextIndex = nextLayerRowIndex(currentIndex, rows.length, event.key === 'ArrowDown' ? 1 : -1);
+      const next = rows[nextIndex];
+      if (next && next.layer.id !== currentId) onSelect(next.layer.id, event.shiftKey);
+      return;
+    }
+    if (!currentId) return;
+    const current = rows[currentIndex];
+    if (!current?.hasChildren) return;
+    if (event.key === 'ArrowRight' && !expandedIds.has(currentId)) toggleExpanded(currentId);
+    if (event.key === 'ArrowLeft' && expandedIds.has(currentId)) toggleExpanded(currentId);
+  };
 
   return (
     <aside
       className={
         open
-          ? 'canvas-panel canvas-panel-chrome canvas-panel-chrome--left flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r'
+          ? 'canvas-panel canvas-panel-chrome canvas-panel-chrome--left flex h-full shrink-0 flex-col overflow-hidden border-r'
           : 'canvas-panel canvas-panel-chrome canvas-panel-chrome--left flex h-full w-0 min-w-0 shrink-0 flex-col overflow-hidden border-r-0'
       }
+      style={open ? { width } : undefined}
       data-open={open ? 'true' : 'false'}
+      data-resizing={resizing ? 'true' : undefined}
       data-testid="canvas-left-panel"
       aria-hidden={!open}
       inert={!open ? true : undefined}
     >
-      <div className="border-b px-2 py-2" style={{ borderColor: 'var(--cv-border)' }}>
-        <div className="canvas-section-title mb-1.5 flex items-center justify-between px-1">
-          <span>Archivos</span>
+      <div className="canvas-left-files canvas-section">
+        <div className="canvas-section-header canvas-sidebar-heading">
+          <span className="canvas-section-title">Archivos</span>
           <div className="flex gap-0.5">
             <WithHoverTooltip label="Nuevo" placement="bottom" variant="dark">
               <button type="button" className="canvas-icon-btn !h-6 !w-6" onClick={onNew} aria-label="Nuevo">
@@ -592,19 +722,22 @@ export default memo(function LeftSidebar({
             value={documentId}
             onChange={(val) => onOpenDoc(val)}
             aria-label="Archivo abierto"
-            className={docsSyncing ? 'animate-pulse' : undefined}
-            options={fileOptions.map((d) => ({ value: d.id, label: d.name }))}
+            className={`canvas-document-picker${docsSyncing ? ' animate-pulse' : ''}`}
+            options={fileOptions.map((d) => ({
+              value: d.id,
+              label: d.name,
+              icon: <FileText className="h-3.5 w-3.5 text-[var(--cv-text-muted)]" aria-hidden="true" />,
+            }))}
           />
         </div>
       </div>
 
-      <div className="border-b px-3 py-2" style={{ borderColor: 'var(--cv-border)' }}>
-        <div className="canvas-section-title flex items-center justify-between">
-          <span className="flex items-center gap-1.5">
-            <FileText className="h-3 w-3" />
+      <div className="canvas-left-pages canvas-section">
+        <div className="canvas-section-header canvas-sidebar-heading">
+          <span className="canvas-section-title">
             Páginas
           </span>
-          <span className="canvas-section-count ml-auto mr-1" data-testid="canvas-pages-count" aria-label={`${pageCount} páginas`}>
+          <span className="canvas-section-count" data-testid="canvas-pages-count" aria-label={`${pageCount} páginas`}>
             {pageCount}
           </span>
           <div className="flex gap-0.5">
@@ -626,7 +759,7 @@ export default memo(function LeftSidebar({
             </WithHoverTooltip>
           </div>
         </div>
-        <div className="mt-1 space-y-0.5">
+        <div className="canvas-page-list">
           {Array.from({ length: pageCount }, (_, i) => (
             renamingIndex === i ? (
               <input
@@ -658,13 +791,14 @@ export default memo(function LeftSidebar({
                   onPageChange(i);
                   setPageMenu({ x: e.clientX, y: e.clientY, pageIndex: i });
                 }}
-                className="w-full rounded-md px-2 py-1.5 text-left text-[12px]"
-                style={{
-                  background: pageIndex === i ? 'var(--cv-active)' : 'transparent',
-                  color: 'var(--cv-text)',
-                }}
+                className="canvas-page-row"
+                aria-current={pageIndex === i ? 'page' : undefined}
+                aria-label={`${pageLabel(i)} A4`}
+                title={`${pageLabel(i)} · A4`}
               >
-                {pageLabel(i)} · A4
+                <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate">{pageLabel(i)}</span>
+                <span className="canvas-page-format">A4</span>
               </button>
             )
           ))}
@@ -691,10 +825,9 @@ export default memo(function LeftSidebar({
         )}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="canvas-section-title flex items-center gap-1.5 px-3 pt-3">
-          <Layers className="h-3 w-3" />
-          <span className="min-w-0 flex-1">Capas</span>
+      <div className="canvas-left-layers flex min-h-0 flex-1 flex-col">
+        <div className="canvas-section-header canvas-layers-header">
+          <span className="canvas-section-title min-w-0">Capas</span>
           <span className="canvas-section-count" data-testid="canvas-layers-count" aria-label={`${rows.length} capas`}>
             {rows.length}
           </span>
@@ -721,11 +854,12 @@ export default memo(function LeftSidebar({
             </button>
           </WithHoverTooltip>
         </div>
-        <div className="px-2 pb-1.5 pt-1">
+        <div className="canvas-layer-search">
+          <Search className="h-3.5 w-3.5" aria-hidden="true" />
           <input
             type="search"
-            className="canvas-input !py-1.5 text-[11px]"
-            placeholder="Buscar por nombre o tipo…"
+            className="canvas-input"
+            placeholder="Buscar capas…"
             value={layerQuery}
             aria-label="Buscar capas"
             onChange={(e) => setLayerQuery(e.target.value)}
@@ -733,12 +867,17 @@ export default memo(function LeftSidebar({
         </div>
         <ul
           ref={layerListRef}
-          className="flex-1 overflow-y-auto px-1 pb-3"
-          onScroll={
-            virtualizeLayers
-              ? (e) => setLayerScrollTop((e.currentTarget as HTMLUListElement).scrollTop)
-              : undefined
-          }
+          className="min-h-0 flex-1 overflow-y-auto px-1 pb-3"
+          data-testid="canvas-layer-list"
+          data-window-start={layerWindow.start}
+          data-window-end={layerWindow.end}
+          tabIndex={0}
+          aria-label="Capas"
+          onKeyDown={onLayerListKeyDown}
+          onScroll={(e) => {
+            const next = (e.currentTarget as HTMLUListElement).scrollTop;
+            setLayerScrollTop((prev) => (prev === next ? prev : next));
+          }}
         >
           {layerWindow.padTop > 0 && (
             <li aria-hidden style={{ height: layerWindow.padTop, listStyle: 'none' }} />
@@ -790,6 +929,19 @@ export default memo(function LeftSidebar({
           )}
         </ul>
       </div>
+      {open && onWidthChange ? (
+        <div
+          className="canvas-panel-resizer"
+          data-testid="canvas-left-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Ancho del panel izquierdo"
+          aria-valuemin={200}
+          aria-valuemax={420}
+          aria-valuenow={width}
+          onPointerDown={onResizePointerDown}
+        />
+      ) : null}
     </aside>
   );
 });

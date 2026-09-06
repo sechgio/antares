@@ -6,7 +6,9 @@ import {
   fieldDesignLabel,
   fitTextHeightMm,
   growTextLayerToContent,
+  isButtonLikeKeyboardTarget,
   isEditableKeyboardTarget,
+  isLayerListKeyboardTarget,
   isTypeToEditKey,
   justifyContentForTextAlign,
 } from '../ops/inlineEdit';
@@ -83,6 +85,27 @@ describe('isEditableKeyboardTarget', () => {
       false,
     );
     expect(isEditableKeyboardTarget(null)).toBe(false);
+  });
+});
+
+describe('canvas chrome keyboard targets', () => {
+  it('detects the layer list so arrow keys can navigate rows instead of nudging', () => {
+    const list = document.createElement('ul');
+    list.setAttribute('data-testid', 'canvas-layer-list');
+    const row = document.createElement('button');
+    list.appendChild(row);
+    expect(isLayerListKeyboardTarget(list)).toBe(true);
+    expect(isLayerListKeyboardTarget(row)).toBe(true);
+    expect(isLayerListKeyboardTarget(document.createElement('div'))).toBe(false);
+  });
+
+  it('detects buttons so Space activates them instead of switching to the hand tool', () => {
+    const button = document.createElement('button');
+    const roleButton = document.createElement('div');
+    roleButton.setAttribute('role', 'button');
+    expect(isButtonLikeKeyboardTarget(button)).toBe(true);
+    expect(isButtonLikeKeyboardTarget(roleButton)).toBe(true);
+    expect(isButtonLikeKeyboardTarget(document.createElement('div'))).toBe(false);
   });
 });
 

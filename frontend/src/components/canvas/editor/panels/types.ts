@@ -28,7 +28,6 @@ export interface SectionProps {
   logoSideConflict?: boolean;
   zOrder: ZOrderCallbacks;
   onInstantiateComponent?: () => void;
-  shape: boolean;
   isLine: boolean;
   showRadius: boolean;
   hasFill: boolean;

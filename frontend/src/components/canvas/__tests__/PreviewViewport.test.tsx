@@ -8,16 +8,16 @@ describe('PreviewViewport', () => {
       <PreviewViewport html="<html><body>ok</body></html>" widthPx={200} heightPx={280} />,
     );
     expect(screen.getByTestId('generate-preview-viewport')).toBeTruthy();
-    expect(screen.getByText('85%')).toBeTruthy();
+    expect(screen.getByText('100%')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Acercar'));
-    expect(screen.getByText('95%')).toBeTruthy();
+    expect(screen.getByText('110%')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Alejar'));
-    expect(screen.getByText('85%')).toBeTruthy();
+    expect(screen.getByText('100%')).toBeTruthy();
 
     const stage = container.querySelector('[data-testid="generate-preview-stage"]') as HTMLElement;
     expect(stage.style.transform).not.toContain('scale(');
     expect(stage.style.willChange || '').toBe('');
-    expect(String((stage.style as CSSStyleDeclaration & { zoom?: string }).zoom)).toBe('0.85');
+    expect(String((stage.style as CSSStyleDeclaration & { zoom?: string }).zoom)).toBe('1');
   });
 
   it('keeps translate pan in screen space when zoomed (pan / zoom compensates CSS zoom)', () => {
@@ -33,7 +33,7 @@ describe('PreviewViewport', () => {
     });
     const stage = container.querySelector('[data-testid="generate-preview-stage"]') as HTMLElement;
     const zoom = Number((stage.style as CSSStyleDeclaration & { zoom?: string }).zoom);
-    expect(zoom).toBeCloseTo(0.95, 5);
+    expect(zoom).toBeCloseTo(1.1, 5);
     expect(stage.style.transform).toMatch(/translate\(/);
     expect(stage.style.transform).not.toMatch(/scale\(/);
   });
@@ -87,7 +87,7 @@ describe('PreviewViewport', () => {
     );
     expect(screen.getByTestId('preview-scale').textContent).toBe('1');
     const stage = container.querySelector('[data-testid="generate-preview-stage"]') as HTMLElement;
-    expect(String((stage.style as CSSStyleDeclaration & { zoom?: string }).zoom)).toBe('0.85');
+    expect(String((stage.style as CSSStyleDeclaration & { zoom?: string }).zoom)).toBe('1');
     expect(stage.style.width).toBe('200px');
     expect(stage.style.height).toBe('280px');
   });

@@ -90,7 +90,7 @@ export function placeRectCssVars(
   };
 }
 
-export const PLACE_TOOLS = new Set([
+const PLACE_TOOLS = new Set([
   'rect',
   'ellipse',
   'line',

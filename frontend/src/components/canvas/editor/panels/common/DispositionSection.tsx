@@ -13,7 +13,6 @@ import {
   type ResizeAnchor,
 } from '../../../ops/resizeConstraints';
 import InlineNumField from '../../InlineNumField';
-import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
 export default function DispositionSection({
@@ -24,10 +23,8 @@ export default function DispositionSection({
   onCommitLive,
 }: SectionProps) {
   return (
-    <div className="canvas-section">
-      <SectionHeader title="Disposición" />
-      <span className="canvas-sublabel">Dimensiones</span>
-      <div className="flex items-center gap-1">
+    <>
+      <div className="flex min-w-0 items-center gap-1.5">
         <InlineNumField
           prefix="W"
           value={parseMm(layer.cssVars['--width'], 10)}
@@ -56,7 +53,7 @@ export default function DispositionSection({
         >
           <button
             type="button"
-            className="canvas-icon-btn !h-7 !w-7 shrink-0"
+            className="canvas-icon-btn shrink-0"
             data-active={isAspectLocked(layer.cssVars)}
             aria-label="Proporciones"
             onClick={() => setVar('--aspect-locked', isAspectLocked(layer.cssVars) ? '0' : '1')}
@@ -68,9 +65,12 @@ export default function DispositionSection({
             )}
           </button>
         </WithHoverTooltip>
+      </div>
+      <div className="canvas-resize-anchor-row">
+        <span className="canvas-sublabel">Anclaje</span>
         <WithHoverTooltip label="Anclaje de redimensión" placement="bottom" variant="dark">
           <div
-            className="ml-0.5 grid shrink-0 grid-cols-3 gap-px"
+            className="canvas-resize-anchor"
             role="radiogroup"
             aria-label="Anclaje de redimensión"
           >
@@ -83,23 +83,15 @@ export default function DispositionSection({
                   role="radio"
                   aria-checked={active}
                   aria-label={`Anclar ${anchor}`}
-                  className="flex h-3 w-3 items-center justify-center rounded-[2px] border"
-                  style={{
-                    borderColor: active ? 'var(--cv-accent)' : 'var(--cv-border)',
-                    background: active ? 'var(--cv-accent)' : 'transparent',
-                  }}
+                  data-active={active}
+                  className="canvas-resize-anchor-cell"
                   onClick={() => setVar('--resize-anchor', anchor)}
-                >
-                  <span
-                    className="h-1 w-1 rounded-full"
-                    style={{ background: active ? '#fff' : 'var(--cv-text-muted)' }}
-                  />
-                </button>
+                />
               );
             })}
           </div>
         </WithHoverTooltip>
       </div>
-    </div>
+    </>
   );
 }

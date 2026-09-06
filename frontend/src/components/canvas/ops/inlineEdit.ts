@@ -33,12 +33,35 @@ export function justifyContentForTextAlign(
   return 'flex-start';
 }
 
+function asHtmlElement(el: EventTarget | null): HTMLElement | null {
+  if (!el || typeof el !== 'object') return null;
+  return el as HTMLElement;
+}
+
 export function isEditableKeyboardTarget(el: EventTarget | null): boolean {
-  if (!el || typeof el !== 'object') return false;
-  const node = el as unknown as Pick<HTMLElement, 'tagName' | 'isContentEditable'>;
+  const node = asHtmlElement(el);
+  if (!node) return false;
   const tag = node.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
   return Boolean(node.isContentEditable);
+}
+
+export function isLayerListKeyboardTarget(el: EventTarget | null): boolean {
+  const node = asHtmlElement(el);
+  if (!node) return false;
+  if (typeof node.closest === 'function') {
+    return Boolean(node.closest('[data-testid="canvas-layer-list"]'));
+  }
+  return node.getAttribute?.('data-testid') === 'canvas-layer-list';
+}
+
+export function isButtonLikeKeyboardTarget(el: EventTarget | null): boolean {
+  const node = asHtmlElement(el);
+  if (!node) return false;
+  const tag = node.tagName;
+  if (tag === 'BUTTON' || tag === 'SUMMARY' || tag === 'A') return true;
+  const role = typeof node.getAttribute === 'function' ? node.getAttribute('role') : null;
+  return role === 'button' || role === 'menuitem' || role === 'tab' || role === 'option' || role === 'switch';
 }
 
 export function isTypeToEditKey(

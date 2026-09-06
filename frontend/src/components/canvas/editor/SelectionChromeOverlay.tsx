@@ -126,7 +126,7 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
           top: y,
           width: w,
           height: h,
-          outline: '1px solid var(--cv-accent)',
+          outline: `${screenChromePx(1, zoom)}px solid var(--cv-accent)`,
           pointerEvents: 'none',
           zIndex: 30,
           boxSizing: 'border-box',
@@ -134,6 +134,8 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
       />
       <MeasurementBadge
         testId="canvas-size-badge"
+        zoom={zoom}
+        accent
         label={formatSizeMm(bbox.w, bbox.h)}
         style={{
           position: 'absolute',
@@ -228,6 +230,7 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
           {radiusDragLabel ? (
             <MeasurementBadge
               testId="canvas-radius-badge"
+              zoom={zoom}
               label={radiusDragLabel}
               accent
               style={{

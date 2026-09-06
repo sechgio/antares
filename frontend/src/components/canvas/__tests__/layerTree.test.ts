@@ -11,8 +11,10 @@ import {
 } from '../ops/layerOps';
 import {
   buildLayerTree,
+  expandAncestorsForSelection,
   expandWithDescendants,
   flattenLayerTree,
+  reconcileExpandedContainers,
 } from '../ops/layerTree';
 import { setActivePageLayers } from '../ops/pages';
 import { moveSelection } from '../ops/selectionTransform';
@@ -54,6 +56,36 @@ describe('layerTree', () => {
     const group = createLayer('group', { id: 'g1' });
     const a = createLayer('text', { id: 'a', parentId: 'g1' });
     expect(expandWithDescendants([group, a], ['g1']).sort()).toEqual(['a', 'g1']);
+  });
+
+  it('reconcileExpandedContainers expands only newly seen containers', () => {
+    const first = reconcileExpandedContainers(new Set(), new Set(), ['g1', 'g2']);
+    expect([...first.expanded].sort()).toEqual(['g1', 'g2']);
+    expect([...first.known].sort()).toEqual(['g1', 'g2']);
+
+    const collapsed = new Set<string>(['g1']);
+    const next = reconcileExpandedContainers(collapsed, first.known, ['g1', 'g2', 'g3']);
+    expect(next.expanded.has('g1')).toBe(true);
+    expect(next.expanded.has('g2')).toBe(false);
+    expect(next.expanded.has('g3')).toBe(true);
+    expect(next.known.has('g2')).toBe(true);
+  });
+
+  it('reconcileExpandedContainers drops containers that left the tree', () => {
+    const prev = reconcileExpandedContainers(new Set(), new Set(), ['g1', 'g2']);
+    const next = reconcileExpandedContainers(prev.expanded, prev.known, ['g2']);
+    expect([...next.expanded]).toEqual(['g2']);
+    expect([...next.known]).toEqual(['g2']);
+  });
+
+  it('expandAncestorsForSelection opens ancestors without expanding the rest of the tree', () => {
+    const outer = createLayer('group', { id: 'outer' });
+    const inner = createLayer('group', { id: 'inner', parentId: 'outer' });
+    const child = createLayer('text', { id: 'c', parentId: 'inner' });
+    const other = createLayer('group', { id: 'other' });
+    const expanded = expandAncestorsForSelection(new Set(), [outer, inner, child, other], ['c']);
+    expect([...expanded].sort()).toEqual(['inner', 'outer']);
+    expect(expanded.has('other')).toBe(false);
   });
 
   it('moveSelection moves group descendants', () => {

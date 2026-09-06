@@ -330,9 +330,11 @@ describe('RightPanel shape inspector', () => {
     const onChange = vi.fn();
     render(<RightPanel layer={layer} onChange={onChange} {...panelProps} pageColors={['#D9D9D9']} />);
 
-    expect(screen.getByText('Rectángulo')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Diseño' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Nombre de capa')).toHaveValue('Rectangle');
     expect(screen.getAllByText('Posición').length).toBeGreaterThan(0);
-    expect(screen.getByText('Disposición')).toBeTruthy();
+    expect(screen.getByLabelText('W')).toBeTruthy();
+    expect(screen.getByLabelText('H')).toBeTruthy();
     expect(screen.getByText('Apariencia')).toBeTruthy();
     expect(screen.getByText('Relleno')).toBeTruthy();
     expect(screen.getByText('Trazo')).toBeTruthy();
@@ -354,7 +356,8 @@ describe('RightPanel shape inspector', () => {
     expect(screen.getByTestId('canvas-inspector-group-layer')).toHaveAttribute('data-open', 'true');
     expect(screen.getByTestId('canvas-inspector-group-transform')).toHaveTextContent('Posición');
     expect(screen.getByTestId('canvas-inspector-group-content')).toBeInTheDocument();
-    expect(screen.getByText('Estilo visual')).toBeInTheDocument();
+    expect(screen.getByText('Apariencia')).toBeInTheDocument();
+    expect(screen.getByText('Relleno')).toBeInTheDocument();
 
     const advanced = screen.getByTestId('canvas-inspector-group-advanced');
     expect(advanced).toHaveAttribute('data-open', 'false');
@@ -365,11 +368,35 @@ describe('RightPanel shape inspector', () => {
   it('multi-select shows bulk panel only', () => {
     const layer = createLayer('rect');
     render(<RightPanel layer={layer} onChange={vi.fn()} {...panelProps} selectedCount={3} />);
-    expect(screen.getByText('3 seleccionados')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Diseño' })).toBeTruthy();
+    expect(screen.getByText('3 capas')).toBeTruthy();
     expect(screen.getByTestId('canvas-inspector-context')).toHaveTextContent('3 capas seleccionadas');
     expect(screen.queryByTestId('canvas-inspector-priority-hint')).toBeNull();
     expect(screen.queryByText('Relleno')).toBeNull();
     expect(screen.getByLabelText('Adelante')).toBeTruthy();
+  });
+
+  it('commits multi-select origin nudge on blur as one live gesture', () => {
+    const onNudgeSelection = vi.fn();
+    const onCommitLive = vi.fn();
+    render(
+      <RightPanel
+        layer={createLayer('rect')}
+        onChange={vi.fn()}
+        {...panelProps}
+        selectedCount={2}
+        selectionOrigin={{ x: 10, y: 4 }}
+        onNudgeSelection={onNudgeSelection}
+        onCommitLive={onCommitLive}
+      />,
+    );
+    const x = screen.getByLabelText('X');
+    fireEvent.focus(x);
+    fireEvent.change(x, { target: { value: '18' } });
+    expect(onNudgeSelection).toHaveBeenCalledWith(8, 0);
+    expect(onCommitLive).not.toHaveBeenCalled();
+    fireEvent.blur(x);
+    expect(onCommitLive).toHaveBeenCalledTimes(1);
   });
 
   it('explains why distribution is unavailable for two selected layers', () => {
@@ -435,7 +462,7 @@ describe('RightPanel shape inspector', () => {
   it('shows empty properties panel when nothing is selected', () => {
     render(<RightPanel layer={null} selectedCount={0} onChange={vi.fn()} {...panelProps} />);
     expect(screen.queryByText(/Selecciona una capa/i)).toBeNull();
-    expect(screen.getByText('Propiedades')).toBeTruthy();
+    expect(screen.getByText('Diseño')).toBeTruthy();
     expect(screen.getByTestId('canvas-zoom-slot')).toBeTruthy();
   });
 

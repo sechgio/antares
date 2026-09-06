@@ -296,9 +296,9 @@ function LayerNode({
 
   if (selected || editing || pathEditing) {
     if (paint.outline) {
-      style.boxShadow = [paint.boxShadow, '0 0 0 1px var(--cv-accent)'].filter(Boolean).join(',');
+      style.boxShadow = [paint.boxShadow, '0 0 0 calc(1px / var(--cv-camera-zoom, 1)) var(--cv-accent)'].filter(Boolean).join(',');
     } else {
-      style.outline = '1px solid var(--cv-accent)';
+      style.outline = 'calc(1px / var(--cv-camera-zoom, 1)) solid var(--cv-accent)';
     }
   }
 

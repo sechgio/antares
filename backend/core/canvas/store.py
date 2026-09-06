@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import re
@@ -136,6 +137,7 @@ class CanvasStore:
         self._index_stems: set[str] | None = None
         self._inner_id_index: dict[str, Path] = {}
         self._listing_cache: list[dict[str, str]] = []
+        self._history_digests: dict[str, str] = {}
         self._recover_pending_spills()
 
     def _safe_stem(self, doc_id: str) -> str:
@@ -313,15 +315,13 @@ class CanvasStore:
                 norm_future.append(item)
             payload = {"past": norm_past, "future": norm_future}
             encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            if path.exists():
-                try:
-                    if path.read_text(encoding="utf-8") == encoded:
-                        return True
-                except OSError:
-                    pass
+            digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+            if self._history_digests.get(str(doc_id)) == digest:
+                return True
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(encoded, encoding="utf-8")
             tmp.replace(path)
+            self._history_digests[str(doc_id)] = digest
             return True
 
     def save(self, document: dict[str, Any], *, touch: bool = True) -> dict[str, Any]:  # allowlist: dict[str, Any]
@@ -353,6 +353,7 @@ class CanvasStore:
             with contextlib.suppress(OSError):
                 if hist_path.exists():
                     hist_path.unlink()
+            self._history_digests.pop(str(doc_id), None)
             if not path.exists():
                 return False
             path.unlink()

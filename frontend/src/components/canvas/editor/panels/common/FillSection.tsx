@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react';
 import PaintRow from '../../PaintRow';
 import InlineNumField from '../../InlineNumField';
-import { SectionHeader } from '../shared';
+import { PropRow, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 import CanvasSelect from '../../CanvasSelect';
 
@@ -34,7 +34,7 @@ export default function FillSection({
         </button>
       </SectionHeader>
       {hasFill ? (
-        <div className="space-y-3">
+        <div className="canvas-inspector-stack">
           <PaintRow
             color={layer.cssVars['--background-color'] || '#FFFFFF'}
             opacity={Number(layer.cssVars['--fill-opacity'] ?? 100)}
@@ -57,8 +57,7 @@ export default function FillSection({
               })
             }
           />
-          <label className="block">
-            <span className="canvas-sublabel">Tipo</span>
+          <PropRow label="Tipo">
             <CanvasSelect
               className="w-full"
               value={layer.cssVars['--fill-type'] || 'solid'}
@@ -80,7 +79,7 @@ export default function FillSection({
                 { value: 'radial', label: 'Radial' },
               ]}
             />
-          </label>
+          </PropRow>
           {(layer.cssVars['--fill-type'] === 'linear' ||
             layer.cssVars['--fill-type'] === 'radial') && (
             <>

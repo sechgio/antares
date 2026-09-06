@@ -1,29 +1,49 @@
 import { FlipHorizontal2, FlipVertical2, RotateCcw } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { mm, parseMm } from '../../../types';
-import { parseScale, toggleFlip } from '../../../ops/layerStyle';
+import { mm } from '../../../types';
+import { cornerRadiusPx, parseScale, toggleFlip } from '../../../ops/layerStyle';
+import { applyCssVarToLayerIds, mixedNumeric, mixedNumericMm } from '../../../ops/mixedSelection';
 import InlineNumField from '../../InlineNumField';
-import { ALIGN_ITEMS, SectionHeader } from '../shared';
+import { ALIGN_ITEMS } from '../shared';
 import type { SectionProps } from '../types';
 
 export default function PositionSection({
   layer,
+  layers = [],
+  selectedIds = [],
   setVarLive,
   setVars,
   onChange,
+  onReplaceLayers,
   onCommitLive,
   onAlign,
+  showRadius,
+  emitLive,
 }: SectionProps) {
+  const selectedLayers = selectedIds.length
+    ? layers.filter((item) => selectedIds.includes(item.id))
+    : [layer];
+  const x = mixedNumericMm(selectedLayers, '--translate-x');
+  const y = mixedNumericMm(selectedLayers, '--translate-y');
+  const rotation = mixedNumeric(selectedLayers, '--rotate', 0);
+
+  const applyVar = (key: string, value: string) => {
+    if (selectedIds.length > 1 && onReplaceLayers) {
+      onReplaceLayers(applyCssVarToLayerIds(layers, selectedIds, key, value));
+      onCommitLive?.();
+      return;
+    }
+    setVarLive(key, value);
+  };
+
   return (
-    <div className="canvas-section">
-      <SectionHeader title="Posición" />
-      <span className="canvas-sublabel">Alineación</span>
-      <div className="mb-3 flex flex-wrap gap-1">
+    <>
+      <div className="canvas-alignment-tools" role="group" aria-label="Alinear capa">
         {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
           <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
             <button
               type="button"
-              className="canvas-icon-btn !h-7 !w-7"
+              className="canvas-icon-btn"
               aria-label={label}
               onClick={() => onAlign(align)}
             >
@@ -32,37 +52,59 @@ export default function PositionSection({
           </WithHoverTooltip>
         ))}
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-1.5">
         <InlineNumField
           prefix="X"
-          value={parseMm(layer.cssVars['--translate-x'])}
-          onChange={(n) => setVarLive('--translate-x', mm(n))}
-          onCommit={onCommitLive}
+          value={x.mixed ? 0 : x.value}
+          mixed={x.mixed}
+          onChange={(n) => applyVar('--translate-x', mm(n))}
+          onCommit={x.mixed ? undefined : onCommitLive}
           step={0.1}
           suffix="mm"
         />
         <InlineNumField
           prefix="Y"
-          value={parseMm(layer.cssVars['--translate-y'])}
-          onChange={(n) => setVarLive('--translate-y', mm(n))}
-          onCommit={onCommitLive}
+          value={y.mixed ? 0 : y.value}
+          mixed={y.mixed}
+          onChange={(n) => applyVar('--translate-y', mm(n))}
+          onCommit={y.mixed ? undefined : onCommitLive}
           step={0.1}
           suffix="mm"
         />
       </div>
-      <div className="mt-3 flex items-center gap-1">
+      <div className="flex min-w-0 gap-1.5">
         <InlineNumField
           prefix=""
-          value={parseFloat(layer.cssVars['--rotate'] || '0') || 0}
-          onChange={(n) => setVarLive('--rotate', `${n}deg`)}
-          onCommit={onCommitLive}
+          value={rotation.mixed ? 0 : rotation.value}
+          mixed={rotation.mixed}
+          onChange={(n) => applyVar('--rotate', `${n}deg`)}
+          onCommit={rotation.mixed ? undefined : onCommitLive}
           suffix="°"
           title="Rotación"
         />
+        {showRadius && (
+          <InlineNumField
+            prefix=""
+            value={cornerRadiusPx(layer.cssVars, 'tl')}
+            onChange={(n) => {
+              const v = `${Math.max(0, n)}px`;
+              const next = { ...layer.cssVars, '--border-radius': v };
+              delete next['--radius-tl'];
+              delete next['--radius-tr'];
+              delete next['--radius-br'];
+              delete next['--radius-bl'];
+              emitLive({ ...layer, cssVars: next });
+            }}
+            onCommit={onCommitLive}
+            title="Radio uniforme"
+          />
+        )}
+      </div>
+      <div className="canvas-z-order canvas-z-order--compact">
         <WithHoverTooltip label="Voltear horizontal" placement="bottom" variant="dark">
           <button
             type="button"
-            className="canvas-icon-btn !h-7 !w-7"
+            className="canvas-icon-btn"
             data-active={parseScale(layer.cssVars['--scale-x']) === -1}
             aria-label="Voltear horizontal"
             onClick={() => onChange(toggleFlip(layer, 'x'))}
@@ -73,7 +115,7 @@ export default function PositionSection({
         <WithHoverTooltip label="Voltear vertical" placement="bottom" variant="dark">
           <button
             type="button"
-            className="canvas-icon-btn !h-7 !w-7"
+            className="canvas-icon-btn"
             data-active={parseScale(layer.cssVars['--scale-y']) === -1}
             aria-label="Voltear vertical"
             onClick={() => onChange(toggleFlip(layer, 'y'))}
@@ -84,7 +126,7 @@ export default function PositionSection({
         <WithHoverTooltip label="Restablecer rotación" placement="bottom" variant="dark">
           <button
             type="button"
-            className="canvas-icon-btn !h-7 !w-7"
+            className="canvas-icon-btn"
             aria-label="Restablecer rotación"
             onClick={() => setVars({ '--rotate': '0deg', '--scale-x': '1', '--scale-y': '1' })}
           >
@@ -92,6 +134,6 @@ export default function PositionSection({
           </button>
         </WithHoverTooltip>
       </div>
-    </div>
+    </>
   );
 }

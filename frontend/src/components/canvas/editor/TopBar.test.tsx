@@ -25,4 +25,41 @@ describe('TopBar PDF import', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Importar PDF' }));
     expect(onImportPdf).toHaveBeenCalledOnce();
   });
+
+  it('shows real save state without putting it in the document', () => {
+    const { rerender } = render(
+      <TopBar
+        name="Documento"
+        mode="design"
+        canUndo={false}
+        canRedo={false}
+        status={null}
+        dirty={false}
+        onNameChange={vi.fn()}
+        onMode={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onSave={vi.fn()}
+        onDuplicate={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('canvas-save-state')).toHaveTextContent('Guardado');
+    rerender(
+      <TopBar
+        name="Documento"
+        mode="design"
+        canUndo={false}
+        canRedo={false}
+        status={null}
+        dirty
+        onNameChange={vi.fn()}
+        onMode={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onSave={vi.fn()}
+        onDuplicate={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('canvas-save-state')).toHaveTextContent('Sin guardar');
+  });
 });

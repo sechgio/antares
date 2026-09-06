@@ -820,6 +820,19 @@ def test_canvas_history_store_roundtrip(tmp_path: Path) -> None:
     assert loaded["future"][0]["name"] == "Future"
 
 
+def test_canvas_history_save_skips_unchanged_payload(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Doc Skip")
+    doc_id = created["id"]
+    past_doc = create_empty_document(name="Past")
+    past_doc["id"] = doc_id
+    store.save_history(doc_id, [past_doc], [])
+    path = store._history_path_for(doc_id)
+    first_mtime = path.stat().st_mtime_ns
+    store.save_history(doc_id, [past_doc], [])
+    assert path.stat().st_mtime_ns == first_mtime
+
+
 def test_canvas_history_max_history_capping(tmp_path: Path) -> None:
     store = CanvasStore(tmp_path)
     created = store.create(name="Doc Cap")

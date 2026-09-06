@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { cloneDocument, cloneDocumentBaseline } from '../ops/document';
-import { ancestorIds, expandWithDescendants } from '../ops/layerTree';
+import { ancestorIds, buildLayerTree, expandWithDescendants, flattenLayerTree } from '../ops/layerTree';
+import { layerVirtualWindow } from '../ops/layerListWindow';
 import { setActivePageLayers } from '../ops/pages';
 import { patchLayersById, replaceLayerById } from '../ops/patchLayers';
 import { moveSelection, rotateSelection } from '../ops/selectionTransform';
@@ -51,6 +52,33 @@ describe('canvas perf hot path', () => {
     }
     const expanded = expandWithDescendants(layers, ['n0']);
     expect(expanded.length).toBe(80);
+  });
+
+  it('flattenLayerTree of 100 and 1000 mixed layers stays under budget', () => {
+    const makeTreeLayers = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        createLayer(i % 7 === 0 ? 'group' : i % 11 === 0 ? 'text' : 'rect', {
+          id: `n${i}`,
+          parentId: i > 0 && i % 7 !== 0 ? `n${Math.floor(i / 7) * 7}` : undefined,
+        }),
+      );
+    const run = (n: number) => {
+      const layers = makeTreeLayers(n);
+      const tree = buildLayerTree(layers);
+      const expanded = new Set(layers.filter((l) => l.type === 'group').map((l) => l.id));
+      const t0 = performance.now();
+      const rows = flattenLayerTree(tree, expanded);
+      const window = layerVirtualWindow({ rowCount: rows.length, scrollTop: 2400, listHeight: 400 });
+      const elapsed = performance.now() - t0;
+      return { rows, window, elapsed };
+    };
+    const small = run(100);
+    const large = run(1000);
+    expect(small.rows.length).toBeGreaterThan(20);
+    expect(large.rows.length).toBeGreaterThan(200);
+    expect(large.window.end).toBeGreaterThan(large.window.start);
+    expect(small.elapsed).toBeLessThan(40);
+    expect(large.elapsed).toBeLessThan(120);
   });
 
   it('60 move frames on 200 layers stay under budget', () => {

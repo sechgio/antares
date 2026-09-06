@@ -1,6 +1,7 @@
 import { memo, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import type { CanvasGuide } from '../types';
 import { MM_TO_PX } from '../ops/drawHelpers';
+import { screenChromePx } from '../ops/textTypography';
 import { clampGuidePos, createGuide, formatGapMm, isGuideRemovalPoint } from '../ops/guides';
 import { createGestureRaf } from '../ops/gestureRaf';
 import { createPointerGestureSession } from '../ops/pointerGestureSession';
@@ -24,12 +25,14 @@ export function MeasurementBadge({
   testId = 'canvas-measurement-badge',
   danger = false,
   accent = false,
+  zoom = 1,
 }: {
   label: string;
   style?: CSSProperties;
   testId?: string;
   danger?: boolean;
   accent?: boolean;
+  zoom?: number;
 }) {
   const bg = danger ? 'var(--cv-danger)' : accent ? 'var(--cv-accent)' : 'var(--cv-accent-2)';
   return (
@@ -38,9 +41,10 @@ export function MeasurementBadge({
       style={{
         background: bg,
         color: '#fff',
-        fontSize: 11,
-        padding: '1px 6px',
-        borderRadius: 999,
+        fontSize: screenChromePx(11, zoom),
+        padding: `${screenChromePx(2, zoom)}px ${screenChromePx(6, zoom)}px`,
+        borderRadius: screenChromePx(4, zoom),
+        fontVariantNumeric: 'tabular-nums',
         whiteSpace: 'nowrap',
         pointerEvents: 'none',
         lineHeight: 1.4,

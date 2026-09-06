@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
-  ChevronDown,
+  ChevronRight,
   Lock,
   PanelRightClose,
   Trash2,
@@ -15,7 +15,6 @@ import { EyeSlash, VisibilityIcon } from './VisibilityIcon';
 import {
   applyLineStrokeWeight,
   clampStrokeWeight,
-  isShapeLayer,
   layerPanelTitle,
   lineStrokeWidthPx,
   rememberStrokeWeight,
@@ -26,7 +25,7 @@ import { exportSelectionPng } from '../ops/exportPng';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import TemplatesSection from './TemplatesSection';
 import StylesSection from './StylesSection';
-import { ALIGN_ITEMS, BulkOpacityField, ZOrderButtons } from './panels/shared';
+import { ALIGN_ITEMS, BulkOpacityField, SectionHeader, ZOrderButtons } from './panels/shared';
 import PositionSection from './panels/common/PositionSection';
 import DispositionSection from './panels/common/DispositionSection';
 import AppearanceSection from './panels/common/AppearanceSection';
@@ -34,7 +33,6 @@ import FillSection from './panels/common/FillSection';
 import StrokeSection from './panels/common/StrokeSection';
 import EffectsSection from './panels/common/EffectsSection';
 import ExportSection from './panels/common/ExportSection';
-import ShapeSection from './panels/tails/ShapeSection';
 import { TAIL_SECTIONS, LAYOUT_SECTIONS } from './panels/registry';
 import type { SectionProps, ZOrderCallbacks } from './panels/types';
 import CanvasSelect from './CanvasSelect';
@@ -105,16 +103,17 @@ function InspectorGroup({
     >
       <summary
         className="canvas-inspector-group-summary"
+        title={description}
         onClick={(event) => {
           event.preventDefault();
           setIsOpen((current) => !current);
         }}
       >
+        <ChevronRight className="canvas-inspector-group-chevron" aria-hidden="true" />
         <span className="canvas-inspector-group-heading">
           <span className="canvas-inspector-group-title">{title}</span>
           <span className="canvas-inspector-group-description">{description}</span>
         </span>
-        <ChevronDown className="canvas-inspector-group-chevron" aria-hidden="true" />
       </summary>
       <div className="canvas-inspector-group-content">{children}</div>
     </details>
@@ -221,7 +220,6 @@ export default memo(function RightPanel({
   };
 
   const hasSelection = Boolean(layer && !(layer.type === 'frame' && layer.locked));
-  const shape = layer ? isShapeLayer(layer) : false;
   const isLine = layer?.type === 'line';
   const showRadius = layer ? !clipPathForLayerType(layer.type) && layer.type !== 'line' : false;
   const hasFill = Boolean(
@@ -284,7 +282,6 @@ export default memo(function RightPanel({
     onInstantiateComponent,
     logoSideConflict,
     zOrder,
-    shape,
     isLine: Boolean(isLine),
     showRadius,
     hasFill,
@@ -311,52 +308,31 @@ export default memo(function RightPanel({
       inert={!open ? true : undefined}
     >
       <div
-        className="canvas-right-panel-header relative z-20 flex items-center gap-2 border-b px-4 py-2"
+        className="canvas-right-panel-header relative z-20 flex items-center border-b"
         style={{ borderColor: 'var(--cv-border)' }}
       >
-        <div className="canvas-right-panel-tabs flex min-w-0 flex-1 items-center gap-1">
+        <div className="canvas-right-panel-tabs min-w-0 flex-1">
           <button
             type="button"
             onClick={() => setActiveTab('properties')}
-            className={`canvas-right-panel-tab min-w-0 flex-1 px-2 py-1 text-xs font-semibold rounded transition-colors ${
-              activeTab === 'properties'
-                ? 'bg-[var(--cv-bg-hover)] text-[var(--cv-text)]'
-                : 'text-[var(--cv-text-muted)] hover:text-[var(--cv-text)]'
-            }`}
-            title={
-              selectedCount > 1
-                ? `${selectedCount} seleccionados`
-                : hasSelection && layer
-                  ? layerPanelTitle(layer)
-                  : 'Propiedades'
-            }
+            aria-pressed={activeTab === 'properties'}
+            className="canvas-right-panel-tab"
           >
-            <span className="block truncate">
-              {selectedCount > 1
-                ? `${selectedCount} seleccionados`
-                : hasSelection && layer
-                  ? layerPanelTitle(layer)
-                  : 'Propiedades'}
-            </span>
+            Diseño
           </button>
           {documentId && (
             <button
               type="button"
               onClick={() => setActiveTab('versions')}
-              className={`canvas-right-panel-tab shrink-0 px-2 py-1 text-xs font-semibold rounded transition-colors ${
-                activeTab === 'versions'
-                  ? 'bg-[var(--cv-bg-hover)] text-[var(--cv-text)]'
-                  : 'text-[var(--cv-text-muted)] hover:text-[var(--cv-text)]'
-              }`}
+              aria-pressed={activeTab === 'versions'}
+              className="canvas-right-panel-tab"
             >
               Versiones
             </button>
           )}
-          <div
-            ref={zoomSlotRef}
-            className="relative shrink-0"
-            data-testid="canvas-zoom-slot"
-          />
+        </div>
+        <div className="flex shrink-0 items-center">
+          <div ref={zoomSlotRef} className="relative shrink-0" data-testid="canvas-zoom-slot" />
           {onHidePanel && (
             <WithHoverTooltip label="Ocultar panel derecho" placement="bottom" variant="dark">
               <button
@@ -372,50 +348,79 @@ export default memo(function RightPanel({
             </WithHoverTooltip>
           )}
         </div>
-        {activeTab === 'properties' && hasSelection && layer && selectedCount === 1 && (
-          <div className="canvas-right-panel-actions flex shrink-0 items-center gap-0.5">
-            <WithHoverTooltip
-              label={layer.visible !== false ? 'Ocultar' : 'Mostrar'}
-              placement="bottom"
-              variant="dark"
-            >
-              <button
-                type="button"
-                className="canvas-icon-btn !h-7 !w-7"
-                aria-label="Visible"
-                onClick={() => onChange({ ...layer, visible: layer.visible === false })}
-              >
-                <VisibilityIcon visible={layer.visible !== false} className="h-3.5 w-3.5" />
-              </button>
-            </WithHoverTooltip>
-            <WithHoverTooltip
-              label={layer.locked ? 'Desbloquear' : 'Bloquear'}
-              placement="bottom"
-              variant="dark"
-            >
-              <button
-                type="button"
-                className="canvas-icon-btn !h-7 !w-7"
-                aria-label="Bloquear"
-                onClick={() => onChange({ ...layer, locked: !layer.locked })}
-              >
-                {layer.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-              </button>
-            </WithHoverTooltip>
-          </div>
-        )}
       </div>
 
       {activeTab === 'properties' && (selectedCount > 1 || (hasSelection && layer)) && (
-        <div className="canvas-inspector-context" data-testid="canvas-inspector-context">
-          <span className="canvas-inspector-context-label">
-            {selectedCount > 1 ? 'Edición múltiple' : 'Edición de capa'}
-          </span>
-          <span className="canvas-inspector-context-detail" title={selectedCount > 1 ? `${selectedCount} capas seleccionadas` : undefined}>
-            {selectedCount > 1
-              ? `${selectedCount} capas seleccionadas`
-              : `Capa seleccionada: ${layer ? layerPanelTitle(layer) : 'Capa'}`}
-          </span>
+        <div className="canvas-inspector-identity">
+          <div className="canvas-inspector-context" data-testid="canvas-inspector-context">
+            <span className="sr-only">
+              {selectedCount > 1 ? 'Edición múltiple' : 'Edición de capa'}
+            </span>
+            <span className="sr-only" title={selectedCount > 1 ? `${selectedCount} capas seleccionadas` : undefined}>
+              {selectedCount > 1
+                ? `${selectedCount} capas seleccionadas`
+                : `Capa seleccionada: ${layer ? layerPanelTitle(layer) : 'Capa'}`}
+            </span>
+            {selectedCount > 1 ? (
+              <span className="canvas-inspector-identity-name">{selectedCount} capas</span>
+            ) : (
+              <input
+                className="canvas-inspector-identity-input"
+                value={layer?.name ?? ''}
+                aria-label="Nombre de capa"
+                onChange={(e) => mapLive((current) => ({ ...current, name: e.target.value }))}
+                onBlur={() => onCommitLive?.()}
+              />
+            )}
+            {hasSelection && layer && selectedCount === 1 && (
+              <div className="canvas-right-panel-actions shrink-0">
+                <WithHoverTooltip
+                  label={layer.visible !== false ? 'Ocultar' : 'Mostrar'}
+                  placement="bottom"
+                  variant="dark"
+                >
+                  <button
+                    type="button"
+                    className="canvas-icon-btn"
+                    aria-label="Visible"
+                    onClick={() => onChange({ ...layer, visible: layer.visible === false })}
+                  >
+                    <VisibilityIcon visible={layer.visible !== false} className="h-3.5 w-3.5" />
+                  </button>
+                </WithHoverTooltip>
+                <WithHoverTooltip
+                  label={layer.locked ? 'Desbloquear' : 'Bloquear'}
+                  placement="bottom"
+                  variant="dark"
+                >
+                  <button
+                    type="button"
+                    className="canvas-icon-btn"
+                    aria-label="Bloquear"
+                    onClick={() => onChange({ ...layer, locked: !layer.locked })}
+                  >
+                    {layer.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                  </button>
+                </WithHoverTooltip>
+              </div>
+            )}
+          </div>
+          {hasSelection && layer && selectedCount === 1 && (
+            <div
+              className="canvas-inspector-layer-tools"
+              data-testid="canvas-inspector-group-layer"
+              data-open="true"
+            >
+              <div className="canvas-z-order">
+                <ZOrderButtons
+                  onBringFront={onBringFront}
+                  onBringForward={onBringForward}
+                  onSendBackward={onSendBackward}
+                  onSendBack={onSendBack}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -424,7 +429,7 @@ export default memo(function RightPanel({
       ) : (
         <>
           {selectedCount === 0 && onApplyPreset && (
-            <div className="border-b px-4 py-3" style={{ borderColor: 'var(--cv-border)' }}>
+            <div className="border-b px-3 py-3" style={{ borderColor: 'var(--cv-border)' }}>
               <TemplatesSection
                 onApplyPreset={onApplyPreset}
                 onNewFromPreset={onNewFromPreset}
@@ -434,20 +439,17 @@ export default memo(function RightPanel({
           )}
 
       {selectedCount > 1 && (
-        <>
-          <InspectorGroup
-            title="Transformación"
-            description="Alinear y distribuir"
-            testId="canvas-inspector-group-transform"
-          >
-            <div className="canvas-section">
-              <div className="canvas-section-title">Alinear ({selectedCount})</div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="canvas-section" data-testid="canvas-inspector-group-transform">
+            <SectionHeader title="Posición" />
+            <div className="canvas-inspector-stack">
               {selectionOrigin && onNudgeSelection && (
-                <div className="mb-2 flex gap-2">
+                <div className="flex gap-1.5">
                   <InlineNumField
                     prefix="X"
                     value={selectionOrigin.x}
                     onChange={(n) => onNudgeSelection(n - selectionOrigin.x, 0)}
+                    onCommit={onCommitLive}
                     step={0.1}
                     suffix="mm"
                   />
@@ -455,12 +457,13 @@ export default memo(function RightPanel({
                     prefix="Y"
                     value={selectionOrigin.y}
                     onChange={(n) => onNudgeSelection(0, n - selectionOrigin.y)}
+                    onCommit={onCommitLive}
                     step={0.1}
                     suffix="mm"
                   />
                 </div>
               )}
-              <div className="flex flex-wrap gap-1">
+              <div className="canvas-alignment-tools" role="group" aria-label="Alinear selección">
                 {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
                   <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
                     <button
@@ -474,14 +477,13 @@ export default memo(function RightPanel({
                   </WithHoverTooltip>
                 ))}
               </div>
-              <div className="mt-3">
-                <span className="canvas-sublabel">Distribución Equitativa</span>
+              <div>
                 {selectedCount < 3 && (
                   <p className="canvas-distribution-hint" data-testid="canvas-distribution-hint">
                     Selecciona al menos 3 objetos para distribuirlos.
                   </p>
                 )}
-                <div className="flex gap-1">
+                <div className="canvas-z-order canvas-z-order--compact">
                   <WithHoverTooltip
                     label={
                       selectedCount >= 3
@@ -525,14 +527,11 @@ export default memo(function RightPanel({
                 </div>
               </div>
             </div>
-          </InspectorGroup>
-          <InspectorGroup
-            title="Capa"
-            description="Orden, visibilidad y opacidad"
-            testId="canvas-inspector-group-layer"
-          >
-            <div className="canvas-section">
-              <div className="mt-0 flex gap-1">
+          </div>
+          <div className="canvas-section" data-testid="canvas-inspector-group-layer" data-open="true">
+            <SectionHeader title="Capa" />
+            <div className="canvas-inspector-stack">
+              <div className="canvas-selection-actions">
                 <ZOrderButtons
                   onBringFront={onBringFront}
                   onBringForward={onBringForward}
@@ -571,7 +570,7 @@ export default memo(function RightPanel({
                 selectionKey={selectedIds.join(',')}
               />
             </div>
-          </InspectorGroup>
+          </div>
           <InspectorGroup
             title="Avanzado"
             description="Exportar selección"
@@ -579,7 +578,7 @@ export default memo(function RightPanel({
             defaultOpen={false}
           >
             <div className="canvas-section">
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 <CanvasSelect
                   value={String(exportScale)}
                   onChange={(val) => setExportScale(Number(val))}
@@ -607,93 +606,50 @@ export default memo(function RightPanel({
               </div>
             </div>
           </InspectorGroup>
-        </>
+        </div>
       )}
 
       {hasSelection && layer && selectedCount === 1 && (
         <div ref={inspectorScrollRef} className="min-h-0 flex-1 overflow-y-auto">
-          <InspectorGroup
-            title="Capa"
-            description="Nombre y orden"
-            testId="canvas-inspector-group-layer"
-          >
-            {shape ? (
-              <ShapeSection {...sectionProps} />
-            ) : (
-              <div className="canvas-section">
-                <label className="block">
-                  <span className="canvas-label">Nombre</span>
-                  <input
-                    className="canvas-input mb-2"
-                    value={layer.name}
-                    onChange={(e) => emitLive({ ...layer, name: e.target.value })}
-                    onBlur={() => onCommitLive?.()}
-                  />
-                </label>
-                <div className="flex gap-1">
-                  <ZOrderButtons
-                    onBringFront={onBringFront}
-                    onBringForward={onBringForward}
-                    onSendBackward={onSendBackward}
-                    onSendBack={onSendBack}
-                  />
-                </div>
-              </div>
-            )}
-          </InspectorGroup>
-
-          <InspectorGroup
-            title="Transformación"
-            description="Posición, tamaño y orientación"
-            testId="canvas-inspector-group-transform"
-          >
-            <PositionSection {...sectionProps} />
-            <DispositionSection {...sectionProps} />
-          </InspectorGroup>
+          <div className="canvas-section" data-testid="canvas-inspector-group-transform">
+            <SectionHeader title="Posición" />
+            <div className="canvas-inspector-stack">
+              <PositionSection {...sectionProps} />
+              <DispositionSection {...sectionProps} />
+            </div>
+          </div>
 
           {tailSections.length > 0 && (
-            <InspectorGroup
-              title="Contenido"
-              description="Propiedades específicas de la capa"
-              testId="canvas-inspector-group-content"
-            >
+            <div data-testid="canvas-inspector-group-content">
               {tailSections.map((s, i) => (
                 <s.Component key={`tail-${i}`} {...sectionProps} />
               ))}
-            </InspectorGroup>
+            </div>
           )}
 
           {layoutSections.length > 0 && (
-            <InspectorGroup
-              title="Estructura"
-              description="Auto-layout, restricciones y componentes"
-              testId="canvas-inspector-group-structure"
-            >
+            <div data-testid="canvas-inspector-group-structure">
               {layoutSections.map((s, i) => (
                 <s.Component key={`layout-${i}`} {...sectionProps} />
               ))}
-            </InspectorGroup>
+            </div>
           )}
 
-          <InspectorGroup
-            title="Estilo visual"
-            description="Opacidad, relleno, trazo y efectos"
-            testId="canvas-inspector-group-appearance"
-          >
+          <div data-testid="canvas-inspector-group-appearance">
             <AppearanceSection {...sectionProps} />
             <FillSection {...sectionProps} />
             <StrokeSection {...sectionProps} />
             <EffectsSection {...sectionProps} />
-          </InspectorGroup>
+          </div>
+
+          <ExportSection {...sectionProps} />
 
           <InspectorGroup
             title="Avanzado"
-            description="Exportación, estilos y eliminación"
+            description="Estilos y eliminación"
             testId="canvas-inspector-group-advanced"
             defaultOpen={false}
           >
-            <ExportSection {...sectionProps} />
-
             {onCreateStyle &&
               onApplyStyle &&
               onDetachStyle &&
@@ -711,10 +667,10 @@ export default memo(function RightPanel({
                 />
               )}
 
-            <div className="px-4 py-4">
+            <div className="px-3 py-3">
               <button
                 type="button"
-                className="canvas-danger-btn flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-[12px] transition-colors"
+                className="canvas-danger-btn flex w-full items-center justify-center gap-2 rounded-md px-3 py-1.5 text-[11px] transition-colors"
                 onClick={() => onDelete(layer.id)}
               >
                 <Trash2 className="h-3.5 w-3.5" />

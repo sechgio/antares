@@ -7,7 +7,8 @@ import type {
   FrameConstraint,
   LayerAutoLayout,
 } from '../../../types';
-import { NumField, SectionHeader } from '../shared';
+import InlineNumField from '../../InlineNumField';
+import { PropRow, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
 const DIRECTION_OPTS: { value: AutoLayoutDirection; label: string }[] = [
@@ -78,78 +79,80 @@ export default function AutoLayoutSection({
   return (
     <div className="canvas-section" data-testid="canvas-auto-layout-section">
       <SectionHeader title="Auto-layout" />
-      <label className="mb-2 flex items-center gap-2 text-[12px]" style={{ color: 'var(--cv-text)' }}>
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => writeLayout(e.target.checked ? defaultAutoLayout() : undefined)}
-        />
-        Apilar hijos
-      </label>
-      {enabled && layout && (
-        <>
-          <div className="mb-2">
-            <span className="canvas-sublabel">Dirección</span>
-            <CanvasSelect
-              aria-label="Dirección auto-layout"
-              value={layout.direction}
-              onChange={(val) =>
-                writeLayout(patchAutoLayout(layout, { direction: val as AutoLayoutDirection }))
-              }
-              options={DIRECTION_OPTS}
+      <div className="canvas-inspector-stack">
+        <div className="canvas-check-list">
+          <label className="inline-flex items-center gap-2 select-none text-[11px]" style={{ color: 'var(--cv-text)' }}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => writeLayout(e.target.checked ? defaultAutoLayout() : undefined)}
             />
-          </div>
-          <div className="mb-2 flex gap-2">
-            <NumField
-              label="Gap"
-              value={layout.gapMm}
-              onChange={(n) => patchLive({ gapMm: Math.max(0, n) })}
-              onCommit={onCommitLive}
-              suffix="mm"
-            />
-            <NumField
-              label="Pad"
-              value={layout.padMm}
-              onChange={(n) => patchLive({ padMm: Math.max(0, n) })}
-              onCommit={onCommitLive}
-              suffix="mm"
-            />
-          </div>
-          <div className="mb-2">
-            <span className="canvas-sublabel">Alineación principal</span>
-            <CanvasSelect
-              aria-label="Alineación principal"
-              value={layout.alignMain}
-              onChange={(val) =>
-                writeLayout(patchAutoLayout(layout, { alignMain: val as AutoLayoutAlign }))
-              }
-              options={ALIGN_MAIN_OPTS}
-            />
-          </div>
-          <div className="mb-2">
-            <span className="canvas-sublabel">Alineación cruzada</span>
-            <CanvasSelect
-              aria-label="Alineación cruzada"
-              value={layout.alignCross}
-              onChange={(val) =>
-                writeLayout(patchAutoLayout(layout, { alignCross: val as AutoLayoutAlign }))
-              }
-              options={ALIGN_OPTS}
-            />
-          </div>
-          <div>
-            <span className="canvas-sublabel">Tamaño</span>
-            <CanvasSelect
-              aria-label="Tamaño auto-layout"
-              value={layout.sizing}
-              onChange={(val) =>
-                writeLayout(patchAutoLayout(layout, { sizing: val as AutoLayoutSizing }))
-              }
-              options={SIZING_OPTS}
-            />
-          </div>
-        </>
-      )}
+            Apilar hijos
+          </label>
+        </div>
+        {enabled && layout && (
+          <>
+            <PropRow label="Dirección">
+              <CanvasSelect
+                aria-label="Dirección auto-layout"
+                value={layout.direction}
+                onChange={(val) =>
+                  writeLayout(patchAutoLayout(layout, { direction: val as AutoLayoutDirection }))
+                }
+                options={DIRECTION_OPTS}
+              />
+            </PropRow>
+            <div className="flex gap-1.5">
+              <InlineNumField
+                prefix="Gap"
+                value={layout.gapMm}
+                title="Gap"
+                onChange={(n) => patchLive({ gapMm: Math.max(0, n) })}
+                onCommit={onCommitLive}
+                suffix="mm"
+              />
+              <InlineNumField
+                prefix="Pad"
+                value={layout.padMm}
+                title="Pad"
+                onChange={(n) => patchLive({ padMm: Math.max(0, n) })}
+                onCommit={onCommitLive}
+                suffix="mm"
+              />
+            </div>
+            <PropRow label="Principal">
+              <CanvasSelect
+                aria-label="Alineación principal"
+                value={layout.alignMain}
+                onChange={(val) =>
+                  writeLayout(patchAutoLayout(layout, { alignMain: val as AutoLayoutAlign }))
+                }
+                options={ALIGN_MAIN_OPTS}
+              />
+            </PropRow>
+            <PropRow label="Cruzada">
+              <CanvasSelect
+                aria-label="Alineación cruzada"
+                value={layout.alignCross}
+                onChange={(val) =>
+                  writeLayout(patchAutoLayout(layout, { alignCross: val as AutoLayoutAlign }))
+                }
+                options={ALIGN_OPTS}
+              />
+            </PropRow>
+            <PropRow label="Tamaño">
+              <CanvasSelect
+                aria-label="Tamaño auto-layout"
+                value={layout.sizing}
+                onChange={(val) =>
+                  writeLayout(patchAutoLayout(layout, { sizing: val as AutoLayoutSizing }))
+                }
+                options={SIZING_OPTS}
+              />
+            </PropRow>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -163,23 +166,23 @@ export function ConstraintsSection({ layer, layers, setMeta }: SectionProps) {
   return (
     <div className="canvas-section" data-testid="canvas-constraints-section">
       <SectionHeader title="Constraints" />
-      <div className="mb-2">
-        <span className="canvas-sublabel">Horizontal</span>
-        <CanvasSelect
-          aria-label="Constraint horizontal"
-          value={layer.meta?.constraintH ?? 'start'}
-          onChange={(val) => setMeta({ constraintH: val as FrameConstraint })}
-          options={CONSTRAINT_OPTS}
-        />
-      </div>
-      <div>
-        <span className="canvas-sublabel">Vertical</span>
-        <CanvasSelect
-          aria-label="Constraint vertical"
-          value={layer.meta?.constraintV ?? 'start'}
-          onChange={(val) => setMeta({ constraintV: val as FrameConstraint })}
-          options={CONSTRAINT_OPTS}
-        />
+      <div className="canvas-inspector-stack">
+        <PropRow label="Horizontal">
+          <CanvasSelect
+            aria-label="Constraint horizontal"
+            value={layer.meta?.constraintH ?? 'start'}
+            onChange={(val) => setMeta({ constraintH: val as FrameConstraint })}
+            options={CONSTRAINT_OPTS}
+          />
+        </PropRow>
+        <PropRow label="Vertical">
+          <CanvasSelect
+            aria-label="Constraint vertical"
+            value={layer.meta?.constraintV ?? 'start'}
+            onChange={(val) => setMeta({ constraintV: val as FrameConstraint })}
+            options={CONSTRAINT_OPTS}
+          />
+        </PropRow>
       </div>
     </div>
   );

@@ -36,7 +36,7 @@ import {
   placeRectCssVars,
   scaleCssLength,
 } from '../ops/drawHelpers';
-import { clampZoom, fitZoomForViewport, MAX_ZOOM, MIN_ZOOM, nextZoomPreset, pinchViewport, wheelPanDelta, zoomAtCursor } from '../ops/viewportNav';
+import { applyWheelToViewport, clampZoom, fitZoomForViewport, MAX_ZOOM, MIN_ZOOM, nextZoomPreset, pinchViewport, wheelPanDelta, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
 import { filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { applyAnchoredResize, parseResizeAnchor, resizeLayerAnchored, RESIZE_ANCHORS } from '../ops/resizeConstraints';
 import { clipPathForLayerType, isShapeTool, isSquareConstrainTool } from '../ops/shapePaths';
@@ -1460,6 +1460,17 @@ describe('canvas editor P1 helpers', () => {
     expect(CANVAS_SHORTCUTS.some((s) => s.action.toLowerCase().includes('campo'))).toBe(true);
   });
 
+  it('only advertises the modifier combinations handled by CanvasView', () => {
+    const keys = CANVAS_SHORTCUTS.map((shortcut) => shortcut.keys);
+    expect(keys).toContain('Ctrl+Z · Ctrl+Shift+Z · Ctrl+Y');
+    expect(keys).toContain('Ctrl+G · Ctrl+Shift+G');
+    expect(keys).toContain('Ctrl+] · Ctrl+[');
+    expect(keys).toContain('Ctrl++ · Ctrl+-');
+    expect(keys).toContain('Ctrl+C · Ctrl+V');
+    expect(keys).not.toContain('Ctrl+G / ⇧G');
+    expect(keys).not.toContain('Ctrl+Z / ⇧Z / Y');
+  });
+
   it('locks layers so duplicate skips them', () => {
     const a = createLayer('text', { id: 'a', name: 'A' });
     const b = createLayer('rect', { id: 'b', name: 'B' });
@@ -1492,6 +1503,36 @@ describe('viewportNav wide zoom range', () => {
     expect(wheelPanDelta(0, 120, false)).toEqual({ x: 0, y: 120 });
     expect(wheelPanDelta(0, 120, true)).toEqual({ x: 120, y: 0 });
     expect(wheelPanDelta(30, 120, true)).toEqual({ x: 30, y: 120 });
+  });
+
+  it('applyWheelToViewport pans with the accumulated delta and keeps zoom', () => {
+    const next = applyWheelToViewport(
+      { zoom: 1.2, pan: { x: 10, y: 20 } },
+      { kind: 'pan', deltaX: 4, deltaY: 6, shiftKey: false, clientX: 0, clientY: 0 },
+      { x: 0, y: 0 },
+    );
+    expect(next.zoom).toBe(1.2);
+    expect(next.pan).toEqual({ x: 6, y: 14 });
+  });
+
+  it('applyWheelToViewport zooms at the cursor and clamps to the zoom range', () => {
+    const cursor = { x: 40, y: -10 };
+    const start = { zoom: 1, pan: { x: 8, y: 4 } };
+    const factor = wheelZoomFactor(80, true);
+    const expected = zoomAtCursor(start.zoom, start.pan, cursor, start.zoom * factor);
+    const next = applyWheelToViewport(
+      start,
+      { kind: 'zoom', deltaX: 0, deltaY: 80, shiftKey: false, clientX: 0, clientY: 0 },
+      cursor,
+    );
+    expect(next).toEqual(expected);
+
+    const minned = applyWheelToViewport(
+      { zoom: MIN_ZOOM, pan: { x: 0, y: 0 } },
+      { kind: 'zoom', deltaX: 0, deltaY: 8000, shiftKey: false, clientX: 0, clientY: 0 },
+      cursor,
+    );
+    expect(minned.zoom).toBe(MIN_ZOOM);
   });
 
   it('pinchViewport scales and tracks the fingers midpoint', () => {

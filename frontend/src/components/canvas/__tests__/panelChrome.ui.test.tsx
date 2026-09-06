@@ -68,6 +68,11 @@ describe('TopBar UI lock', () => {
     expect(container.querySelector('.canvas-topbar-trailing')).toBeTruthy();
   });
 
+  it('shows save state in the trailing actions', () => {
+    render(<TopBar {...baseProps} dirty />);
+    expect(screen.getByTestId('canvas-save-state')).toHaveTextContent('Sin guardar');
+  });
+
   it('renders sync conflict slot beside the UI lock tools', () => {
     render(
       <TopBar
@@ -119,6 +124,22 @@ describe('RightPanel hide control', () => {
 });
 
 describe('DesignStage right chrome layout', () => {
+  it('keeps selection actions outside the tabs and connected to the selected layer', () => {
+    const layer = createLayer('rect', { name: 'Rectángulo de prueba' });
+    const onChange = vi.fn();
+    render(<RightPanel {...rightPanelBase} layer={layer} onChange={onChange} documentId="doc-1" />);
+
+    expect(screen.getByRole('button', { name: 'Diseño' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Versiones' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByLabelText('Nombre de capa')).toHaveValue('Rectángulo de prueba');
+    const visible = screen.getByRole('button', { name: 'Visible' });
+    expect(screen.getByTestId('canvas-inspector-context')).toContainElement(visible);
+    fireEvent.click(visible);
+    expect(onChange).toHaveBeenCalledWith({ ...layer, visible: false });
+    fireEvent.click(screen.getByRole('button', { name: 'Bloquear' }));
+    expect(onChange).toHaveBeenCalledWith({ ...layer, locked: true });
+  });
+
   it('places zoom selector on the left and show right panel button on the right', () => {
     const document = createEmptyDocument('Test');
     render(

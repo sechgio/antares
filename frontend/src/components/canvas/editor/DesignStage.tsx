@@ -13,6 +13,7 @@ import ZoomMenu from './ZoomMenu';
 
 export type ViewportNavApi = {
   getZoom: () => number;
+  getPan: () => { x: number; y: number };
   setZoom: (zoom: number | ((prev: number) => number)) => void;
   setPan: (pan: { x: number; y: number }) => void;
   zoomToFit: () => void;
@@ -105,7 +106,7 @@ export default function DesignStage({
   gestureAbortToken = 0,
   children,
 }: DesignStageProps) {
-  const { zoom, pan, setZoom, setPan, animateTo, startInertia } = useSmoothViewport(0.85);
+  const { zoom, pan, setZoom, setPan, animateTo, startInertia, cancelInertia } = useSmoothViewport(1);
 
   const animateZoomTo = useCallback((z: number) => animateTo({ zoom: z, pan }), [animateTo, pan]);
 
@@ -148,13 +149,14 @@ export default function DesignStage({
     navRef,
     () => ({
       getZoom: () => zoom,
+      getPan: () => pan,
       setZoom,
       setPan,
       zoomToFit,
       zoomToSelection,
       animateTo,
     }),
-    [zoom, setZoom, setPan, zoomToFit, zoomToSelection, animateTo],
+    [zoom, pan, setZoom, setPan, zoomToFit, zoomToSelection, animateTo],
   );
 
   return (
@@ -191,6 +193,7 @@ export default function DesignStage({
         showRulers={showRulers}
         snapToGrid={snapToGrid}
         onStartInertia={startInertia}
+        onCancelInertia={cancelInertia}
         gestureAbortToken={gestureAbortToken}
       />
       {showLeftReopen && onShowLeftPanel ? (

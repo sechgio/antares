@@ -8,7 +8,7 @@ import {
   type ViewportState,
 } from '../ops/viewportNav';
 
-export function useSmoothViewport(initialZoom = 0.85) {
+export function useSmoothViewport(initialZoom = 1) {
   const [zoom, setZoomRaw] = useState(initialZoom);
   const [pan, setPanRaw] = useState({ x: 0, y: 0 });
 
@@ -36,20 +36,22 @@ export function useSmoothViewport(initialZoom = 0.85) {
   const setZoom = useCallback(
     (z: number | ((prev: number) => number)) => {
       cancelAnim();
+      cancelInertia();
       setZoomRaw((prev) => {
         const next = typeof z === 'function' ? z(prev) : z;
         return clampZoom(next);
       });
     },
-    [cancelAnim],
+    [cancelAnim, cancelInertia],
   );
 
   const setPan = useCallback(
     (p: { x: number; y: number }) => {
+      cancelAnim();
       cancelInertia();
       setPanRaw(p);
     },
-    [cancelInertia],
+    [cancelAnim, cancelInertia],
   );
 
   const animateTo = useCallback(
@@ -89,8 +91,11 @@ export function useSmoothViewport(initialZoom = 0.85) {
       cancelInertia();
       cancelAnim();
       let vel = velocity;
-      const tick = () => {
-        const result = inertiaStep(panRef.current, vel);
+      let last = performance.now();
+      const tick = (now: number) => {
+        const dt = now - last;
+        last = now;
+        const result = inertiaStep(panRef.current, vel, dt);
         if (!result) {
           inertiaRef.current = null;
           return;

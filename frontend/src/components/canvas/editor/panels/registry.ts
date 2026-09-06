@@ -1,5 +1,3 @@
-import type { CanvasLayer } from '../../types';
-import { isShapeLayer } from '../../ops/layerStyle';
 import type { PanelSection } from './types';
 import TextSection from './tails/TextSection';
 import FieldSection from './tails/FieldSection';
@@ -43,7 +41,3 @@ export const TAIL_SECTIONS: PanelSection[] = [
   { test: (l) => l.type === 'signature', Component: SignatureSection },
   { test: (l) => l.type === 'table', Component: TableSection },
 ];
-
-export function isShapeTail(layer: CanvasLayer): boolean {
-  return isShapeLayer(layer);
-}

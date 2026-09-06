@@ -5,10 +5,9 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 interface PreviewButtonProps {
   active: boolean;
   onToggle: () => void;
-  compact?: boolean;
 }
 
-export default function PreviewButton({ active, onToggle, compact = false }: PreviewButtonProps) {
+export default function PreviewButton({ active, onToggle }: PreviewButtonProps) {
   const [hovered, setHovered] = useState(false);
   const showPause = active || hovered;
 
@@ -22,11 +21,7 @@ export default function PreviewButton({ active, onToggle, compact = false }: Pre
         onClick={onToggle}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        className={
-          compact
-            ? 'canvas-btn-primary canvas-btn-primary--icon canvas-preview-btn'
-            : 'canvas-btn-primary canvas-preview-btn'
-        }
+        className="canvas-btn-primary canvas-preview-btn"
       >
         <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           <span
@@ -46,7 +41,7 @@ export default function PreviewButton({ active, onToggle, compact = false }: Pre
             <Pause className="h-3.5 w-3.5" />
           </span>
         </span>
-        {!compact ? 'Vista previa' : null}
+        Vista previa
       </button>
     </WithHoverTooltip>
   );
