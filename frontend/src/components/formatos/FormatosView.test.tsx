@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import FormatosView, { safeBase64ToBytes } from './FormatosView';
+import FormatosView from './FormatosView';
+import { safeBase64ToBytes } from './base64';
 import { DialogProvider } from '../../hooks/useDialog';
 import { ToastProvider } from '../../hooks/useToast';
 import { invalidateApiCache } from '../../api';

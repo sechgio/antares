@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import Button from './ui/Button';
+import { SegmentedControl } from './ui/SegmentedControl';
 import ThemedSelect from './ui/ThemedSelect';
 import { api } from '../api';
 import { useToast } from '../hooks/useToast';
@@ -65,29 +66,6 @@ async function resolvePreviewImageSrc(data: {
 }
 
 type OutputMode = 'individual' | 'consolidado';
-
-const SegmentedControl: React.FC<{
-  options: { value: string; label: React.ReactNode }[];
-  value: string;
-  onChange: (v: string) => void;
-}> = ({ options, value, onChange }) => (
-  <div className="flex rounded-lg bg-[var(--bg-input)] p-0.5 gap-0.5">
-    {options.map((opt) => (
-      <button
-        key={opt.value}
-        type="button"
-        onClick={() => onChange(opt.value)}
-        className={`flex-1 flex items-center justify-center gap-1.5 text-[11px] font-medium py-1.5 px-2 rounded-md transition-all duration-200 ${
-          value === opt.value
-            ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm ring-1 ring-[var(--border-subtle)]'
-            : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-        }`}
-      >
-        {opt.label}
-      </button>
-    ))}
-  </div>
-);
 
 type TextFieldStyle = {
   fontSize: number;

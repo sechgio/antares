@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import {
   CheckCircle, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, ChevronDown,
   FileSpreadsheet, Image as ImageIcon, FileCode, Settings,
@@ -150,46 +151,6 @@ function Step({ number, title, icon, children, disabled, badge, defaultOpen = tr
       >
         <div className="px-2 pb-2 pt-0.5">{children}</div>
       </div>
-    </div>
-  );
-}
-
-interface SegmentedOption<T extends string> {
-  value: T;
-  label: string;
-}
-
-function SegmentedControl<T extends string>({
-  value,
-  onChange,
-  options,
-  'aria-label': ariaLabel,
-}: {
-  value: T;
-  onChange: (next: T) => void;
-  options: SegmentedOption<T>[];
-  'aria-label'?: string;
-}) {
-  return (
-    <div role="group" aria-label={ariaLabel} className="flex gap-0.5 rounded-md bg-[var(--bg-input)] p-0.5">
-      {options.map((option) => {
-        const active = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={active}
-            className={`flex-1 rounded px-2 py-1.5 text-[10px] font-medium transition-all duration-150 ${
-              active
-                ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm ring-1 ring-[var(--border-medium)]'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
     </div>
   );
 }

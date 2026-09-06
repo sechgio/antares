@@ -51,4 +51,19 @@ describe('stageFileForIpc', () => {
     expect(abort).toHaveBeenCalledOnce();
     expect(abort).toHaveBeenCalledWith('staged_failed');
   });
+
+  it('reuses a completed staging session for the same File when asked', async () => {
+    const create = vi.fn(async () => ({ token: 'staged_reuse' }));
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      fileStagedCreate: create,
+      fileStagedAppend: vi.fn(async () => ({})),
+      fileStagedComplete: vi.fn(async () => ({ file_token: 'read_reuse' })),
+    };
+    const file = new File([new Uint8Array([1, 2, 3])], 'reuse.xlsx');
+    await expect(stageFileForIpc(file, { reuse: true })).resolves.toBe('read_reuse');
+    await expect(stageFileForIpc(file, { reuse: true })).resolves.toBe('read_reuse');
+    expect(create).toHaveBeenCalledTimes(1);
+    await expect(stageFileForIpc(file)).resolves.toBe('read_reuse');
+    expect(create).toHaveBeenCalledTimes(2);
+  });
 });

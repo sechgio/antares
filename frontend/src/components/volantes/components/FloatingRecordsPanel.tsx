@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback, useEffect } from "react";
 import type { FlyerRecord, LayoutMode } from "../types";
 import { WithHoverTooltip } from "@/components/ui/HoverTooltip";
+import { useFloatingPanel } from "../hooks/useFloatingPanel";
 
 interface FloatingRecordsPanelProps {
   records: FlyerRecord[];
@@ -15,26 +15,6 @@ interface FloatingRecordsPanelProps {
   onClose: () => void;
 }
 
-interface Position {
-  x: number;
-  y: number;
-}
-
-function getDefaultPosition(): Position {
-  const panelWidth = 320;
-  const fabRight = 24;
-  const fabWidth = 52;
-  const gap = 16;
-
-  const x = window.innerWidth - fabRight - fabWidth - gap - panelWidth;
-  const y = Math.max(20, (window.innerHeight - 450) / 2);
-
-  return {
-    x: Math.max(10, x),
-    y: Math.max(10, y),
-  };
-}
-
 export default function FloatingRecordsPanel({
   records,
   selectedRecordId,
@@ -47,11 +27,21 @@ export default function FloatingRecordsPanel({
   isOpen,
   onClose,
 }: FloatingRecordsPanelProps) {
-  const [position, setPosition] = useState<Position>(() => getDefaultPosition());
-  const [isDragging, setIsDragging] = useState(false);
-  const [isPinned, setIsPinned] = useState(false);
-  const [dragOffset, setDragOffset] = useState<Position>({ x: 0, y: 0 });
-  const panelRef = useRef<HTMLDivElement>(null);
+  const {
+    panelRef,
+    position,
+    isDragging,
+    isPinned,
+    handleMouseDown,
+    handlePinToggle,
+    handleResetPosition,
+  } = useFloatingPanel({
+    isOpen,
+    panelWidth: 320,
+    storageKeyPosition: "vgen-records-panel-position",
+    storageKeyPinned: "vgen-records-panel-pinned",
+    ignoreSelector: "button, input, .vgen-record-item, .vgen-search",
+  });
 
   const filteredRecords = filterText.trim()
     ? records.filter((r) => {
@@ -63,99 +53,6 @@ export default function FloatingRecordsPanel({
         );
       })
     : records;
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const savedPosition = localStorage.getItem("vgen-records-panel-position");
-    if (savedPosition) {
-      try {
-        const parsed = JSON.parse(savedPosition);
-        setPosition(parsed);
-      } catch {
-        setPosition(getDefaultPosition());
-      }
-    } else {
-      setPosition(getDefaultPosition());
-    }
-
-    const savedPinned = localStorage.getItem("vgen-records-panel-pinned");
-    if (savedPinned === "true") {
-      setIsPinned(true);
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen && isPinned) {
-      localStorage.setItem("vgen-records-panel-position", JSON.stringify(position));
-      localStorage.setItem("vgen-records-panel-pinned", "true");
-    }
-  }, [position, isPinned, isOpen]);
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if ((e.target as HTMLElement).closest("button, input, .vgen-record-item, .vgen-search")) return;
-
-      e.preventDefault();
-      setIsDragging(true);
-      const rect = panelRef.current?.getBoundingClientRect();
-      if (rect) {
-        setDragOffset({
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        });
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const newX = e.clientX - dragOffset.x;
-      const newY = e.clientY - dragOffset.y;
-
-      const maxX = window.innerWidth - 340;
-      const maxY = window.innerHeight - 100;
-
-      setPosition({
-        x: Math.max(0, Math.min(newX, maxX)),
-        y: Math.max(0, Math.min(newY, maxY)),
-      });
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDragging, dragOffset]);
-
-  const handlePinToggle = () => {
-    setIsPinned((prev) => {
-      const newPinned = !prev;
-      if (newPinned) {
-        localStorage.setItem("vgen-records-panel-position", JSON.stringify(position));
-        localStorage.setItem("vgen-records-panel-pinned", "true");
-      } else {
-        localStorage.removeItem("vgen-records-panel-position");
-        localStorage.removeItem("vgen-records-panel-pinned");
-      }
-      return newPinned;
-    });
-  };
-
-  const handleResetPosition = () => {
-    setPosition(getDefaultPosition());
-    localStorage.removeItem("vgen-records-panel-position");
-  };
 
   if (!isOpen) return null;
 

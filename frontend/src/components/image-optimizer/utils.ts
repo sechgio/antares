@@ -178,20 +178,8 @@ export function getCropRectangle(
   };
 }
 
-export function hasCropOperation(settings: BatchSettings): boolean {
+function hasCropOperation(settings: BatchSettings): boolean {
   return settings.operations.cropEnabled && settings.crop.aspectRatio !== 'original';
-}
-
-export function hasFormatConversion(settings: BatchSettings): boolean {
-  return settings.operations.formatEnabled && settings.format.outputFormat !== 'original';
-}
-
-export function hasResizeOperation(settings: BatchSettings): boolean {
-  return settings.operations.resizeEnabled;
-}
-
-export function hasCompressionOperation(settings: BatchSettings): boolean {
-  return settings.operations.compressionEnabled;
 }
 
 export function resolveSettingsForItem(baseSettings: BatchSettings, item: ImageItem): BatchSettings {

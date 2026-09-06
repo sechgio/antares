@@ -4,7 +4,7 @@ import HeaderForm from './HeaderForm';
 import { REPORT_TYPES } from '../constants';
 
 describe('HeaderForm in reportes-campo', () => {
-    const config = REPORT_TYPES[0]; // panel-fotografico
+    const config = REPORT_TYPES.find((t) => t.id === 'panel-fotografico')!;
 
     it('renders custom DatePicker for Fecha de Trabajo and triggers onFieldChange', () => {
         const onFieldChange = vi.fn();
