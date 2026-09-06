@@ -1,18 +1,47 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { HoverTooltip, WithHoverTooltip } from './HoverTooltip';
+import { computeTooltipPosition, HoverTooltip, WithHoverTooltip } from './HoverTooltip';
+
+describe('computeTooltipPosition', () => {
+  const viewport = { width: 1000, height: 800 };
+
+  it('clamps a bottom tooltip so the full label stays inside the viewport', () => {
+    const trigger = { top: 8, right: 992, bottom: 40, left: 960, width: 32, height: 32 };
+    const tip = { width: 180, height: 28 };
+    const pos = computeTooltipPosition(trigger, tip, 'bottom', viewport);
+
+    expect(pos.left).toBe(812);
+    expect(pos.left + tip.width).toBeLessThanOrEqual(viewport.width - 8);
+    expect(pos.top).toBe(48);
+    expect(pos.placement).toBe('bottom');
+  });
+
+  it('flips from bottom to top when there is no space below', () => {
+    const trigger = { top: 760, right: 200, bottom: 792, left: 160, width: 40, height: 32 };
+    const pos = computeTooltipPosition(trigger, { width: 120, height: 40 }, 'bottom', viewport);
+    expect(pos.placement).toBe('top');
+    expect(pos.top).toBe(712);
+  });
+
+  it('flips from right to left when there is no space on the right', () => {
+    const trigger = { top: 40, right: 990, bottom: 72, left: 958, width: 32, height: 32 };
+    const pos = computeTooltipPosition(trigger, { width: 160, height: 28 }, 'right', viewport);
+    expect(pos.placement).toBe('left');
+    expect(pos.left + 160).toBeLessThanOrEqual(trigger.left);
+  });
+});
 
 describe('HoverTooltip', () => {
-  it('supports top and left placements', () => {
-    const { rerender } = render(
-      <HoverTooltip label="Top tip" groupHoverClass="group-hover:opacity-100" placement="top" />,
+  it('portals a fixed tooltip that is not clipped by the trigger', () => {
+    render(
+      <div className="group relative">
+        <HoverTooltip label="Top tip" placement="top" />
+      </div>,
     );
-    expect(screen.getByRole('tooltip')).toHaveClass('bottom-full');
-
-    rerender(
-      <HoverTooltip label="Left tip" groupHoverClass="group-hover:opacity-100" placement="left" />,
-    );
-    expect(screen.getByRole('tooltip')).toHaveClass('right-full');
+    const tip = screen.getByRole('tooltip');
+    expect(tip).toHaveClass('fixed');
+    expect(tip).toHaveTextContent('Top tip');
+    expect(document.body.contains(tip)).toBe(true);
   });
 });
 
@@ -37,6 +66,7 @@ describe('WithHoverTooltip', () => {
     expect(tip).toHaveTextContent('Renombrar');
     expect(tip).toHaveClass('fixed');
     expect(tip.className).toMatch(/z-\[11000\]/);
+    expect(tip.style.transform).not.toMatch(/translateX\(-50%\)/);
     expect(document.body.contains(tip)).toBe(true);
 
     fireEvent.mouseLeave(button.parentElement!);
@@ -87,5 +117,20 @@ describe('WithHoverTooltip', () => {
     expect(tip.className).toMatch(/bg-\[#1e1e1e\]/);
     expect(tip).toHaveClass('fixed');
     expect(tip).not.toHaveClass('relative');
+  });
+
+  it('keeps the full label when the trigger sits against the right edge', () => {
+    render(
+      <div style={{ position: 'absolute', right: 0 }}>
+        <WithHoverTooltip label="Actualizar vista previa" placement="bottom">
+          <button type="button" aria-label="Actualizar vista previa">
+            Refresh
+          </button>
+        </WithHoverTooltip>
+      </div>,
+    );
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Actualizar vista previa' }).parentElement!);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Actualizar vista previa');
   });
 });

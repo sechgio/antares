@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n';
 import AppearanceView from './AppearanceView';
 import { ToastProvider } from '../../hooks/useToast';
+import ToastContainer from '../ui/Toast';
 import { invalidateApiCache } from '../../api';
 
 beforeEach(() => {
@@ -45,6 +46,7 @@ function renderAppearance() {
   return render(
     <ToastProvider>
       <AppearanceView />
+      <ToastContainer />
     </ToastProvider>,
   );
 }
@@ -392,6 +394,27 @@ describe('AppearanceView', () => {
       expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#22D3EE');
       expect(document.documentElement.style.getPropertyValue('--accent-primary-hover')).toBe('#67E8F9');
     });
+  });
+
+  it('shows a translated saved alert instead of the i18n key', async () => {
+    window.electronAPI = {
+      invoke: async (method: string, params?: Record<string, unknown>) => {
+        if (method === 'theme_get') return baseTheme;
+        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+        if (method === 'theme_save') return { ...baseTheme, ...params };
+        return {};
+      },
+      onNotify: () => () => {},
+      onUpdateAvailable: () => () => {},
+      onUpdateDownloaded: () => () => {},
+    };
+
+    renderAppearance();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Guardar' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Tema guardado');
+    expect(screen.queryByText('appearance.savedAlert')).not.toBeInTheDocument();
   });
 
   it('falls back to DEFAULT_THEME when IPC fetch fails and there is no cache', async () => {

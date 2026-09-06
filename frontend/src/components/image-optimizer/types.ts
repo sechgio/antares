@@ -119,12 +119,6 @@ export interface ImageStats {
   savedPercentage: number;
 }
 
-export interface Toast {
-  id: string;
-  message: string;
-  type: 'info' | 'success' | 'error';
-}
-
 export interface PresetDefinition {
   id: PresetId;
   label: string;

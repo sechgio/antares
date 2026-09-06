@@ -6,7 +6,8 @@ import CropEditor from './CropEditor';
 import PreviewWorkspace from './PreviewWorkspace';
 import QueuePanel from './QueuePanel';
 import SettingsPanel from './SettingsPanel';
-import { glassToolbarClass, PillPreset, ToastContainer } from './ui';
+import { glassToolbarClass, PillPreset } from './ui';
+import { useToast } from '../../hooks/useToast';
 import { createImageItem, processImageItem } from './pipeline';
 import {
   mapWithConcurrencyLimit,
@@ -15,12 +16,11 @@ import {
   throwIfAborted,
 } from './concurrency';
 import { DEFAULT_BATCH_SETTINGS, IMAGE_OPTIMIZER_PRESETS, cloneSettings } from './presets';
-import { BatchSettings, CropOffset, ImageItem, PresetId, Toast } from './types';
+import { BatchSettings, CropOffset, ImageItem, PresetId } from './types';
 import {
   arrayBufferToBase64,
   buildExportNameMap,
   buildZipFilename,
-  generateId,
   getCropRectangle,
   getDownloadableItems,
   getEligibleItems,
@@ -42,6 +42,7 @@ import { api } from '../../api';
 
 export default function ImageOptimizer() {
   const { t } = useTranslation();
+  const { addToast: pushToast } = useToast();
   const [items, setItems] = useState<ImageItem[]>([]);
   const [settings, setSettings] = useState<BatchSettings>(DEFAULT_BATCH_SETTINGS);
   const [activePresetId, setActivePresetId] = useState<PresetId | null>(null);
@@ -49,7 +50,6 @@ export default function ImageOptimizer() {
   const [previewTab, setPreviewTab] = useState<'original' | 'crop' | 'result' | 'compare'>('original');
   const [isDragActive, setIsDragActive] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [toasts, setToasts] = useState<Toast[]>([]);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [processingMessage, setProcessingMessage] = useState('');
   const [cropEditorItemId, setCropEditorItemId] = useState<string | null>(null);
@@ -133,19 +133,9 @@ export default function ImageOptimizer() {
     }
   }, [activeItemId, items]);
 
-  const addToast = useCallback((message: string, type: Toast['type'] = 'info', duration = 3500) => {
-    const id = generateId();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    if (duration > 0) {
-      window.setTimeout(() => {
-        setToasts((prev) => prev.filter((toast) => toast.id !== id));
-      }, duration);
-    }
-  }, []);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((toast) => toast.id !== id));
-  }, []);
+  const addToast = useCallback((message: string, type: 'info' | 'success' | 'error' = 'info', duration = 3500) => {
+    pushToast({ message, type, duration });
+  }, [pushToast]);
 
   const commitItems = useCallback((updater: ImageItem[] | ((prev: ImageItem[]) => ImageItem[])) => {
     setItems((prev) => {
@@ -703,7 +693,6 @@ export default function ImageOptimizer() {
       onDragOver={handleDrag}
       onDrop={handleDrop}
     >
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
       <input
         ref={fileInputRef}
         type="file"

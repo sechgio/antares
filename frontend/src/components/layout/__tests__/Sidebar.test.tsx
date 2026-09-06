@@ -132,7 +132,9 @@ describe('Sidebar', () => {
     const convertTooltip = screen
       .getAllByRole('tooltip')
       .find((node) => node.textContent === 'Conversión');
-    expect(convertTooltip).toHaveClass('left-full', 'top-1/2', '-translate-y-1/2');
+    expect(convertTooltip).toBeTruthy();
+    expect(convertTooltip).toHaveClass('fixed');
+    expect(document.body.contains(convertTooltip as HTMLElement)).toBe(true);
   });
 
   it('keeps navigation rows on a uniform rhythm', () => {

@@ -35,10 +35,10 @@ export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEsp
             >
               <Settings size={14} strokeWidth={1.8} className="transition-transform duration-300 group-hover:rotate-45" />
             </button>
-            <HoverTooltip label="Configuración" placement="bottom" groupHoverClass="group-hover:opacity-100" />
+            <HoverTooltip label="Configuración" placement="bottom" />
           </div>
         )}
-        <div className="group relative flex h-full">
+        <div className="relative flex h-full">
           <button
             type="button"
             aria-label="Minimizar"
@@ -47,9 +47,9 @@ export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEsp
           >
             <Minus size={14} strokeWidth={1.8} />
           </button>
-          <HoverTooltip label="Minimizar" placement="bottom" groupHoverClass="group-hover:opacity-100" />
+          <HoverTooltip label="Minimizar" placement="bottom" />
         </div>
-        <div className="group relative flex h-full">
+        <div className="relative flex h-full">
           <button
             type="button"
             aria-label="Maximizar"
@@ -58,9 +58,9 @@ export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEsp
           >
             <Square size={11} strokeWidth={1.8} />
           </button>
-          <HoverTooltip label="Maximizar" placement="bottom" groupHoverClass="group-hover:opacity-100" />
+          <HoverTooltip label="Maximizar" placement="bottom" />
         </div>
-        <div className="group relative flex h-full">
+        <div className="relative flex h-full">
           <button
             type="button"
             aria-label="Cerrar"
@@ -69,7 +69,7 @@ export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEsp
           >
             <X size={15} strokeWidth={1.8} />
           </button>
-          <HoverTooltip label="Cerrar" placement="bottom" groupHoverClass="group-hover:opacity-100" />
+          <HoverTooltip label="Cerrar" placement="bottom" />
         </div>
       </div>
     </div>

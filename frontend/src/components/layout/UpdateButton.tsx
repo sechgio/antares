@@ -112,7 +112,7 @@ export default function UpdateButton() {
     title;
 
   return (
-    <div className="group relative flex h-full">
+    <div className="relative flex h-full">
       <button
         type="button"
         onClick={handleClick}
@@ -128,7 +128,7 @@ export default function UpdateButton() {
           {(update.status === 'idle' || update.status === 'up-to-date') && <Download size={14} strokeWidth={1.8} />}
         </span>
       </button>
-      <HoverTooltip label={title} placement="bottom" groupHoverClass="group-hover:opacity-100" />
+      <HoverTooltip label={title} placement="bottom" />
 
       {update.status === 'downloading' && (
         <div className="absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2">

@@ -138,7 +138,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
       style={{ width: expanded ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED }}
     >
       <div className="flex h-11 shrink-0 items-center gap-1.5 px-1.5">
-        <div className="group/toggle relative shrink-0">
+        <div className="relative shrink-0">
           <button
             type="button"
             data-testid="sidebar-toggle"
@@ -149,7 +149,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
           >
             <PanelLeft className="size-4" strokeWidth={1.75} />
           </button>
-          <HoverTooltip label={expanded ? 'Hide Sidebar' : 'Show Sidebar'} groupHoverClass="group-hover/toggle:opacity-100" />
+          <HoverTooltip label={expanded ? 'Hide Sidebar' : 'Show Sidebar'} />
         </div>
         <div
           className={cn(
@@ -180,7 +180,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
               const isActive = activeTab === tabId;
               const Icon = ICONS[tabId];
               return (
-                <div key={tabId} className={cn('relative', !expanded && 'group/nav-item flex size-8 items-center')}>
+                <div key={tabId} className={cn('relative', !expanded && 'flex size-8 items-center')}>
                   <button
                     type="button"
                     onClick={() => onTabChange(tabId)}
@@ -216,7 +216,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
                     </span>
                   </button>
                   {!expanded && (
-                    <HoverTooltip label={tab.label} groupHoverClass="group-hover/nav-item:opacity-100" />
+                    <HoverTooltip label={tab.label} />
                   )}
                 </div>
               );
@@ -229,7 +229,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
 
       {user && (
         <div className="shrink-0 px-1.5 py-1.5">
-          <div className={cn('relative', !expanded && 'group/signout flex size-8 items-start')}>
+          <div className={cn('relative', !expanded && 'flex size-8 items-start')}>
             <button
               type="button"
               data-testid="sidebar-signout-button"
@@ -255,7 +255,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
               </span>
             </button>
             {!expanded && (
-              <HoverTooltip label={t('auth.signOut')} groupHoverClass="group-hover/signout:opacity-100" />
+              <HoverTooltip label={t('auth.signOut')} />
             )}
           </div>
         </div>
