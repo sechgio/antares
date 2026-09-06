@@ -1,0 +1,35 @@
+name: Setup CI
+description: Node from .node-version, Python 3.10, locked uv, npm ci (root + frontend)
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: '3.10'
+        cache: pip
+        cache-dependency-path: uv.lock
+
+    - name: Setup Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: '.node-version'
+        cache: npm
+        cache-dependency-path: |
+          package-lock.json
+          frontend/package-lock.json
+
+    - name: Install uv
+      shell: bash
+      run: python -m pip install uv==0.11.19
+
+    - name: Sync Python dependencies
+      shell: bash
+      run: uv sync --locked --extra dev
+
+    - name: Install Node dependencies
+      shell: bash
+      run: |
+        npm ci
+        npm ci --prefix frontend
