@@ -5,14 +5,16 @@ const REPO_OWNER = 'sechgio';
 const REPO_NAME = 'antares';
 const BASE_BRANCH = 'main';
 const ROOT = path.resolve(__dirname, '..', '..');
+const QUALITY_GATE_TIMEOUT_MS = 900000;
 
 function sh(command, opts = {}) {
+  const { silent: _, ...execOpts } = opts;
   const result = execSync(command, {
     cwd: ROOT,
     encoding: 'utf8',
     stdio: 'pipe',
     maxBuffer: 50 * 1024 * 1024,
-    ...opts,
+    ...execOpts,
   });
   return (result || '').toString().trim();
 }
@@ -76,11 +78,83 @@ function detectRepo() {
   }
 }
 
+function requireGhAuth() {
+  const ghStatus = trySh('gh auth status 2>&1');
+  if (!ghStatus) {
+    throw new Error('GitHub CLI (gh) no está autenticado. Corre: gh auth login');
+  }
+}
+
+function requireOriginRepo() {
+  const remoteUrl = trySh('git remote get-url origin');
+  if (!remoteUrl || !remoteUrl.includes(`${REPO_OWNER}/${REPO_NAME}`)) {
+    throw new Error(
+      `Remote origin debe apuntar a ${REPO_OWNER}/${REPO_NAME}, actual: ${remoteUrl || '(sin remote)'}`,
+    );
+  }
+}
+
+function currentBranch() {
+  return sh('git rev-parse --abbrev-ref HEAD');
+}
+
+function workingTreeDirty() {
+  return Boolean(sh('git status --porcelain'));
+}
+
+function findOpenPrNumber(branch) {
+  const json = trySh(
+    `gh pr list --head "${branch}" --base "${BASE_BRANCH}" --state open --json number --jq ".[0].number" 2>&1`,
+  );
+  if (!json || json.includes('error') || json === 'null') return null;
+  const num = Number(json);
+  return Number.isFinite(num) ? num : null;
+}
+
+function mergePr(prNumber) {
+  sh(`gh pr merge ${prNumber} --merge --delete-branch`);
+  console.log(`    PR #${prNumber} mergeado a ${BASE_BRANCH}.`);
+}
+
+function sleepMs(ms) {
+  const duration = Number(ms);
+  if (!Number.isFinite(duration) || duration <= 0) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, duration);
+}
+
+function runQualityCommand(command, label, options = {}) {
+  try {
+    return execSync(command, {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      maxBuffer: 50 * 1024 * 1024,
+      ...options,
+    }).trim();
+  } catch (error) {
+    const output = [error.stdout, error.stderr]
+      .filter(Boolean)
+      .map((value) => value.toString())
+      .join('\n')
+      .trim();
+    const status = Number.isInteger(error.status) ? error.status : 1;
+    const failure = new Error(`${label} falló (exit ${status}):\n${output.slice(0, 800)}`);
+    failure.code = status;
+    throw failure;
+  }
+}
+
+function runQualityGate() {
+  console.log('');
+  runQualityCommand('npm run ci 2>&1', 'Quality gate (npm run ci)', { timeout: QUALITY_GATE_TIMEOUT_MS });
+}
+
 module.exports = {
   REPO_OWNER,
   REPO_NAME,
   BASE_BRANCH,
   ROOT,
+  QUALITY_GATE_TIMEOUT_MS,
   sh,
   trySh,
   shDetailed,
@@ -88,4 +162,13 @@ module.exports = {
   skip,
   die,
   detectRepo,
+  requireGhAuth,
+  requireOriginRepo,
+  currentBranch,
+  workingTreeDirty,
+  findOpenPrNumber,
+  mergePr,
+  sleepMs,
+  runQualityCommand,
+  runQualityGate,
 };

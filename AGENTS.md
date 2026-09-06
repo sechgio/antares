@@ -102,14 +102,15 @@ Variables del cliente cloud, cuando sean necesarias para una tarea, se configura
 - `npm run build:frontend` — ejecuta typecheck y build Vite.
 - `npm run build:backend` — empaqueta PyInstaller; el flujo soportado es Windows y valida recursos bundled.
 - `npm run build:win` — construye backend/frontend y el instalador Windows con electron-builder.
-- `npm test` — ejecuta sincronización de versión/workflows, tests Python, integraciones Node/Electron y `frontend` `test:all`; pytest excluye la marca `slow` por defecto.
+- `npm test` — `scripts/run-test-suites.js`: contratos Node, pytest (sin marca `slow`), integraciones Electron y `frontend` `test:all`.
 - `npm run test:frontend` — Vitest frontend; `npm run test:stress` — `tests/test_stress_conversion.py` con la marca `slow`.
 - `npm run lint:python` / `npm run lint:fix` — Ruff sobre backend, tests y scripts.
 - `npm run typecheck:backend` — mypy; `npm run typecheck:frontend` — `tsc --noEmit`.
 - `npm run check:any` — guard contra nuevas anotaciones `dict[str, Any]` en backend; una excepción debe ser explícita y justificada según el script.
+- `npm run check:ratchet` — trinquete de `# type: ignore`, `any` en frontend y archivos grandes contra `.quality-baseline.json`.
 - `npm run check:budgets` — valida budgets de chunks y modulepreload; puede construir frontend si faltan artefactos.
 - `npm run audit:python` / `npm run audit:node` — pip-audit y npm audit con severidad alta.
-- `npm run ci` — quality gate completo: lint, typecheck, guard `Any`, audits, budgets y `npm test`.
+- `npm run ci` — quality gate completo: lint, typecheck, guard `Any`, trinquete, audits, budgets y `npm test`.
 - `npm run bump:patch|minor|major` — actualiza versión siguiendo los scripts del repo; revisa `CHANGELOG.md` antes de release.
 
 ## Estilo y reglas de implementación

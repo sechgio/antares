@@ -41,6 +41,8 @@ vi.mock('./pipeline', () => ({
 
 import ImageOptimizer from './index';
 import { ImageItem } from './types';
+import { ToastProvider } from '../../hooks/useToast';
+import ToastContainer from '../ui/Toast';
 
 class ResizeObserverStub {
   observe() {}
@@ -72,8 +74,17 @@ function makeDownloadableItem(id: string, originalName: string): ImageItem {
   };
 }
 
+function renderOptimizer() {
+  return render(
+    <ToastProvider>
+      <ImageOptimizer />
+      <ToastContainer />
+    </ToastProvider>,
+  );
+}
+
 async function mountAndAddFiles(items: ImageItem[]): Promise<void> {
-  render(<ImageOptimizer />);
+  renderOptimizer();
 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: /Solo renombrar/i }));
@@ -131,7 +142,7 @@ describe('ImageOptimizer download menu', () => {
       return processing;
     });
 
-    const { unmount } = render(<ImageOptimizer />);
+    const { unmount } = renderOptimizer();
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['pixel-data'], 'foto.jpg', { type: 'image/jpeg' });
     Object.defineProperty(input, 'files', {

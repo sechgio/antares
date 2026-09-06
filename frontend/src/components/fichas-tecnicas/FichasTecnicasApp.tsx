@@ -438,9 +438,9 @@ export default function FichasTecnicasApp() {
       </nav>
 
       <div
-        className="tr-workspace"
+        className={`tr-workspace${focusMode ? ' is-focus' : ''}`}
         data-mobile-tab={mobileTab}
-        style={focusMode ? { gridTemplateColumns: '0px 1fr 0px' } : undefined}
+        data-focus-mode={focusMode ? 'on' : 'off'}
       >
         {!focusMode && (
           <DatabasePanel fichas={fichas} selectedId={selectedId} onSelect={(id) => void selectFicha(id)} />
@@ -462,22 +462,24 @@ export default function FichasTecnicasApp() {
 
       {focusMode && (
         <>
-          <WithHoverTooltip label="Anterior (modo focus)" placement="bottom">
+          <WithHoverTooltip label="Anterior" placement="bottom">
             <button
               type="button"
               className="fixed left-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
               disabled={currentIndex <= 0 || busy}
               onClick={() => goRelative(-1)}
+              aria-label="Anterior"
             >
               <ChevronLeft size={28} />
             </button>
           </WithHoverTooltip>
-          <WithHoverTooltip label="Siguiente (modo focus)" placement="bottom">
+          <WithHoverTooltip label="Siguiente" placement="bottom">
             <button
               type="button"
               className="fixed right-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
               disabled={currentIndex < 0 || currentIndex >= fichas.length - 1 || busy}
               onClick={() => goRelative(1)}
+              aria-label="Siguiente"
             >
               <ChevronRight size={28} />
             </button>

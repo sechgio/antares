@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Check, CheckCircle, ChevronDown, Info, X } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import '../../i18n';
-import { ImageItem, Toast } from './types';
+import { ImageItem } from './types';
 import { formatBytes } from './utils';
 
 export const glassPanelClass =
@@ -188,36 +188,6 @@ export function ThemeSelect({
         document.body,
       )}
     </>
-  );
-}
-
-export function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; removeToast: (id: string) => void }) {
-  return (
-    <div className="fixed right-4 top-20 z-50 flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-1.5">
-      {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          className={`flex items-center gap-2 rounded-xl border px-3 py-2 backdrop-blur-xl ${toast.type === 'error'
-            ? 'border-[var(--accent-red)]/25 bg-[var(--accent-red)]/10 text-[var(--accent-red)]'
-            : toast.type === 'success'
-              ? 'border-[var(--accent-green)]/25 bg-[var(--accent-green)]/10 text-[var(--accent-green)]'
-              : 'border-[var(--border-medium)]/50 bg-[var(--bg-elevated)]/95 text-[var(--text-primary)]'
-            }`}
-        >
-          {toast.type === 'error' && <AlertCircle size={14} className="shrink-0" />}
-          {toast.type === 'success' && <CheckCircle size={14} className="shrink-0" />}
-          {toast.type === 'info' && <Info size={14} className="shrink-0" />}
-          <span className="flex-1 text-[12px] leading-snug">{toast.message}</span>
-          <button
-            type="button"
-            onClick={() => removeToast(toast.id)}
-            className={`flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] ${pressable}`}
-          >
-            <X size={13} />
-          </button>
-        </div>
-      ))}
-    </div>
   );
 }
 

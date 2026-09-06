@@ -14,6 +14,10 @@ const CONTRACT_TESTS = [
   'test-push-loop.js',
   'test-pr-fix-loop.js',
   'test-release-loop.js',
+  'test-branch-protection.js',
+  'test-quality-ratchet.js',
+  'test-review-policy.js',
+  'test-admin-create-user-contract.js',
 ];
 
 const allNodeTests = fs

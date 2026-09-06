@@ -85,7 +85,7 @@ export default function HistoryView() {
         return nextRuns;
       });
     } catch {
-      if (id === reqId.current) addToast({ message: t('history.errors.load') || 'Error al cargar el historial', type: 'error' });
+      if (id === reqId.current) addToast({ message: t('history.errors.load', { defaultValue: 'Error al cargar el historial' }), type: 'error' });
     } finally {
       if (id === reqId.current) setLoadingRuns(false);
     }

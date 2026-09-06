@@ -1,16 +1,16 @@
 {
-  "updatedAt": "2026-08-29",
+  "updatedAt": "2026-09-06",
   "metrics": {
     "typeIgnore": {
-      "value": 27,
+      "value": 15,
       "direction": "max"
     },
     "anyInFrontend": {
-      "value": null,
+      "value": 49,
       "direction": "max"
     },
     "largeFiles": {
-      "value": null,
+      "value": 66,
       "direction": "max"
     }
   }

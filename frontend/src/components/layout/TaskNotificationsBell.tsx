@@ -97,7 +97,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
 
   return (
     <>
-      <div className="group relative flex h-full">
+      <div className="relative flex h-full">
         <button
           ref={triggerRef}
           type="button"
@@ -120,7 +120,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
           )}
         </button>
         {!open && (
-          <HoverTooltip label={tooltipLabel} placement="bottom" groupHoverClass="group-hover:opacity-100" />
+          <HoverTooltip label={tooltipLabel} placement="bottom" />
         )}
       </div>
 

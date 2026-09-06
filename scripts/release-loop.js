@@ -13,28 +13,23 @@ const {
   step,
   skip,
   die,
+  requireGhAuth,
+  requireOriginRepo,
+  currentBranch,
+  workingTreeDirty,
+  runQualityGate,
 } = require('./lib/loop-utils');
 
 function validateEnvironment({ refreshRemote = true } = {}) {
-  const ghStatus = trySh('gh auth status 2>&1', { silent: true });
-  if (!ghStatus) {
-    throw new Error('GitHub CLI (gh) no está autenticado. Corre: gh auth login');
-  }
+  requireGhAuth();
+  requireOriginRepo();
 
-  const remoteUrl = trySh('git remote get-url origin', { silent: true });
-  if (!remoteUrl || !remoteUrl.includes(`${REPO_OWNER}/${REPO_NAME}`)) {
-    throw new Error(
-      `Remote origin debe apuntar a ${REPO_OWNER}/${REPO_NAME}, actual: ${remoteUrl || '(sin remote)'}`
-    );
-  }
-
-  const branch = sh('git rev-parse --abbrev-ref HEAD', { silent: true });
+  const branch = currentBranch();
   if (branch !== 'main') {
     throw new Error(`Debes estar en main (actual: ${branch}). Los releases solo desde main.`);
   }
 
-  const status = sh('git status --porcelain', { silent: true });
-  if (status) {
+  if (workingTreeDirty()) {
     throw new Error('El working tree no está limpio. Commit o stash tus cambios primero.');
   }
 
@@ -128,11 +123,6 @@ function validateChangelog(version) {
       `  Debe incluir al menos una de: ### Added, ### Changed, ### Fixed, etc.`
     );
   }
-}
-
-function runQualityGate() {
-  console.log('');
-  sh('npm run ci 2>&1', { silent: true });
 }
 
 function runBuild() {

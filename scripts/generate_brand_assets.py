@@ -250,29 +250,6 @@ def cleanup_old_assets():
             p.unlink()
             print(f"      Removed assets/{name}")
 
-    obsolete_scripts = [
-        PROJECT / "scripts" / "icon-tools" / "replace_icons.py",
-        PROJECT / "scripts" / "icon-tools" / "normalize_icons.py",
-        PROJECT / "scripts" / "icon-tools" / "build_app_icon.py",
-        PROJECT / "scripts" / "icon-tools" / "update_logos.py",
-        PROJECT / "scripts" / "icon-tools" / "update_logos_indiv.py",
-        PROJECT / "scripts" / "icon-tools" / "append_css.py",
-    ]
-    for p in obsolete_scripts:
-        if p.exists():
-            p.unlink()
-            print(f"      Removed {p.name}")
-
-    readme = PROJECT / "scripts" / "icon-tools" / "README.md"
-    if readme.exists():
-        readme.unlink()
-        print("      Removed icon-tools/README.md")
-
-    icon_tools_dir = PROJECT / "scripts" / "icon-tools"
-    if icon_tools_dir.exists() and not any(icon_tools_dir.iterdir()):
-        icon_tools_dir.rmdir()
-        print("      Removed empty scripts/icon-tools/")
-
 
 def main():
     print("=" * 60)

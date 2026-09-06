@@ -5,11 +5,14 @@ import {
   LINEA_ROWS,
   VALVULA_LABELS,
   VALVULA_ROWS,
+  createEmptyInforme,
   sumDiameterColumns,
   sumOperNoOp,
   type InformeV2,
   type PhotoAsset,
 } from './types';
+
+const EMPTY_INFORME = createEmptyInforme();
 
 interface Props {
   report: InformeV2 | null;
@@ -24,23 +27,24 @@ function cell(value: number | string | undefined) {
 }
 
 export default function PreviewPanel({ report, logoLeft, logoRight, photos }: Props) {
-  const valvulas = report?.valvulas;
-  const linea = report?.linea;
+  const data = report ?? EMPTY_INFORME;
+  const valvulas = data.valvulas;
+  const linea = data.linea;
 
   const valvTotals = useMemo(
-    () => (valvulas ? sumDiameterColumns(valvulas, VALVULA_ROWS) : {}),
+    () => sumDiameterColumns(valvulas, VALVULA_ROWS),
     [valvulas],
   );
   const valvOps = useMemo(
-    () => (valvulas ? sumOperNoOp(valvulas, VALVULA_ROWS) : { oper: 0, noOp: 0 }),
+    () => sumOperNoOp(valvulas, VALVULA_ROWS),
     [valvulas],
   );
   const linTotals = useMemo(
-    () => (linea ? sumDiameterColumns(linea, LINEA_ROWS) : {}),
+    () => sumDiameterColumns(linea, LINEA_ROWS),
     [linea],
   );
   const linOps = useMemo(
-    () => (linea ? sumOperNoOp(linea, LINEA_ROWS) : { oper: 0, noOp: 0 }),
+    () => sumOperNoOp(linea, LINEA_ROWS),
     [linea],
   );
   const slots = useMemo(() => {
@@ -49,17 +53,9 @@ export default function PreviewPanel({ report, logoLeft, logoRight, photos }: Pr
     return s;
   }, [photos]);
 
-  if (!report) {
-    return (
-      <section className="tr-preview-wrap">
-        <div className="tr-empty tr-empty-large">Selecciona un informe para previsualizar</div>
-      </section>
-    );
-  }
-
   return (
     <section className="tr-preview-wrap">
-      <article className="iv2-paper" data-testid="iv2-preview">
+      <article className="iv2-paper" data-testid="iv2-preview" data-template={report ? undefined : 'true'}>
         <header className="iv2-header">
           <div className="iv2-logo">{logoLeft ? <img src={logoLeft} alt="Logo izquierdo" /> : null}</div>
           <div className="iv2-title">
@@ -70,21 +66,21 @@ export default function PreviewPanel({ report, logoLeft, logoRight, photos }: Pr
         </header>
 
         <div className="iv2-info">
-          <div><strong>ESTACION:</strong> {report.header.estacion}</div>
-          <div><strong>DISTRITO:</strong> {report.header.distrito}</div>
-          <div><strong>TIPO:</strong> {report.header.tipo}</div>
-          <div><strong>FECHA DE EJECUCION:</strong> {report.header.fecha_ejecucion}</div>
-          <div><strong>VOLUMEN:</strong> {report.header.volumen ? `${report.header.volumen} m³` : ''}</div>
-          <div><strong>SUMINISTRO:</strong> {report.header.suministro}</div>
-          <div><strong>UBICACIÓN:</strong> {report.header.ubicacion}</div>
-          <div><strong>SGIO:</strong> {report.header.sgio}</div>
+          <div><strong>ESTACION:</strong> {data.header.estacion}</div>
+          <div><strong>DISTRITO:</strong> {data.header.distrito}</div>
+          <div><strong>TIPO:</strong> {data.header.tipo}</div>
+          <div><strong>FECHA DE EJECUCION:</strong> {data.header.fecha_ejecucion}</div>
+          <div><strong>VOLUMEN:</strong> {data.header.volumen ? `${data.header.volumen} m³` : ''}</div>
+          <div><strong>SUMINISTRO:</strong> {data.header.suministro}</div>
+          <div><strong>UBICACIÓN:</strong> {data.header.ubicacion}</div>
+          <div><strong>SGIO:</strong> {data.header.sgio}</div>
         </div>
 
         <DiameterTable
           cornerLabel="VÁLVULAS"
           rows={VALVULA_ROWS}
           labels={VALVULA_LABELS}
-          table={report.valvulas}
+          table={data.valvulas}
           totals={valvTotals}
           oper={valvOps.oper}
           noOp={valvOps.noOp}
@@ -95,7 +91,7 @@ export default function PreviewPanel({ report, logoLeft, logoRight, photos }: Pr
           cornerLabel="LÍNEA"
           rows={LINEA_ROWS}
           labels={LINEA_LABELS}
-          table={report.linea}
+          table={data.linea}
           totals={linTotals}
           oper={linOps.oper}
           noOp={linOps.noOp}
@@ -117,30 +113,30 @@ export default function PreviewPanel({ report, logoLeft, logoRight, photos }: Pr
             <tr>
               <td className="iv2-row-label">LARGO</td>
               <td>M</td>
-              <td>{report.medidas.largo}</td>
+              <td>{data.medidas.largo}</td>
               <td className="iv2-row-label">ALTURA DE REBOSE</td>
               <td>M</td>
-              <td>{report.medidas.altura_rebose}</td>
+              <td>{data.medidas.altura_rebose}</td>
             </tr>
             <tr>
               <td className="iv2-row-label">ANCHO</td>
               <td>M</td>
-              <td>{report.medidas.ancho}</td>
+              <td>{data.medidas.ancho}</td>
               <td className="iv2-row-label">ALTURA TOTAL</td>
               <td>M</td>
-              <td>{report.medidas.altura_total}</td>
+              <td>{data.medidas.altura_total}</td>
             </tr>
             <tr>
               <td className="iv2-row-label">DIAMETRO</td>
               <td>M</td>
-              <td>{report.medidas.diametro}</td>
+              <td>{data.medidas.diametro}</td>
               <td className="iv2-row-label">TIRANTE DE LIMPIEZA</td>
               <td>M</td>
-              <td>{report.medidas.tirante_limpieza}</td>
+              <td>{data.medidas.tirante_limpieza}</td>
             </tr>
             <tr>
               <td colSpan={6} className="iv2-medidas-obs">
-                <strong>OBSERVACION:</strong> {report.medidas.observacion}
+                <strong>OBSERVACION:</strong> {data.medidas.observacion}
               </td>
             </tr>
           </tbody>

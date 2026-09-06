@@ -219,38 +219,46 @@ export default function AppearanceView() {
   };
 
   const save = async () => {
-    const payload = buildThemePayload();
-    const savedTheme = await api.saveTheme(payload);
-    setTheme(savedTheme);
-    applyThemeToCSS(savedTheme, mode, accent);
-    if (language !== i18n.language) {
-      i18n.changeLanguage(language);
+    try {
+      const payload = buildThemePayload();
+      const savedTheme = await api.saveTheme(payload);
+      setTheme(savedTheme);
+      applyThemeToCSS(savedTheme, mode, accent);
+      if (language !== i18n.language) {
+        await i18n.changeLanguage(language);
+      }
+      addToast({ message: t('appearance.savedAlert', { defaultValue: 'Tema guardado' }), type: 'success' });
+    } catch {
+      addToast({ message: t('appearance.saveError', { defaultValue: 'No se pudo guardar el tema' }), type: 'error' });
     }
-    addToast({ message: t('appearance.savedAlert') || 'Tema guardado', type: 'success' });
   };
 
   const reset = async () => {
-    const resetTheme = await api.resetTheme();
-    const nextMode = (resetTheme?.mode as ThemeMode) || 'dark';
-    const nextAccent = accentKeyForTheme(resetTheme);
-    const nextLanguage = resetTheme?.language || 'es';
+    try {
+      const resetTheme = await api.resetTheme();
+      const nextMode = (resetTheme?.mode as ThemeMode) || 'dark';
+      const nextAccent = accentKeyForTheme(resetTheme);
+      const nextLanguage = resetTheme?.language || 'es';
 
-    setTheme(resetTheme);
-    setMode(nextMode);
-    setAccent(nextAccent);
-    setLanguage(nextLanguage);
-    setPointerCursors(toStoredBool(resetTheme.pointer_cursors));
-    setSidebarTranslucent(toStoredBool(resetTheme.sidebar_translucent));
-    setContrast(Number(resetTheme.contrast || 60));
-    setDensity(normalizeThemeDensity(resetTheme.density));
-    setInterfaceFontSize(Number(resetTheme.interface_font_size || 13));
-    setCodeFontSize(Number(resetTheme.code_font_size || 12));
-    applyThemeToCSS(resetTheme, nextMode, nextAccent);
+      setTheme(resetTheme);
+      setMode(nextMode);
+      setAccent(nextAccent);
+      setLanguage(nextLanguage);
+      setPointerCursors(toStoredBool(resetTheme.pointer_cursors));
+      setSidebarTranslucent(toStoredBool(resetTheme.sidebar_translucent));
+      setContrast(Number(resetTheme.contrast || 60));
+      setDensity(normalizeThemeDensity(resetTheme.density));
+      setInterfaceFontSize(Number(resetTheme.interface_font_size || 13));
+      setCodeFontSize(Number(resetTheme.code_font_size || 12));
+      applyThemeToCSS(resetTheme, nextMode, nextAccent);
 
-    if (nextLanguage !== i18n.language) {
-      i18n.changeLanguage(nextLanguage);
+      if (nextLanguage !== i18n.language) {
+        await i18n.changeLanguage(nextLanguage);
+      }
+      addToast({ message: t('appearance.resetAlert', { defaultValue: 'Tema restaurado' }), type: 'success' });
+    } catch {
+      addToast({ message: t('appearance.resetError', { defaultValue: 'No se pudo restaurar el tema' }), type: 'error' });
     }
-    addToast({ message: t('appearance.resetAlert') || 'Tema restaurado', type: 'success' });
   };
 
   const applyPreset = async (name: string) => {
@@ -271,7 +279,13 @@ export default function AppearanceView() {
     setInterfaceFontSize(Number(presetTheme.interface_font_size || interfaceFontSize));
     setCodeFontSize(Number(presetTheme.code_font_size || codeFontSize));
     applyThemeToCSS(presetTheme, nextMode, nextAccent);
-    addToast({ message: `Estilo "${displayPresetName(name)}" aplicado`, type: 'success' });
+    addToast({
+      message: t('appearance.presetApplied', {
+        name: displayPresetName(name),
+        defaultValue: 'Estilo "{{name}}" aplicado',
+      }),
+      type: 'success',
+    });
   };
 
   const applyImportedTheme = (importedTheme: ThemeConfig) => {
@@ -309,9 +323,9 @@ export default function AppearanceView() {
         throw new Error('Invalid theme');
       }
       applyImportedTheme(imported);
-      addToast({ message: 'Tema importado', type: 'success' });
+      addToast({ message: t('appearance.imported', { defaultValue: 'Tema importado' }), type: 'success' });
     } catch {
-      addToast({ message: 'No se pudo importar el tema', type: 'error' });
+      addToast({ message: t('appearance.importError', { defaultValue: 'No se pudo importar el tema' }), type: 'error' });
     } finally {
       if (importInputRef.current) importInputRef.current.value = '';
     }
@@ -320,16 +334,16 @@ export default function AppearanceView() {
   const copyTheme = async () => {
     try {
       await navigator.clipboard?.writeText(JSON.stringify(buildThemePayload(), null, 2));
-      addToast({ message: 'Tema copiado', type: 'success' });
+      addToast({ message: t('appearance.copied', { defaultValue: 'Tema copiado' }), type: 'success' });
     } catch {
-      addToast({ message: 'No se pudo copiar el tema', type: 'error' });
+      addToast({ message: t('appearance.copyError', { defaultValue: 'No se pudo copiar el tema' }), type: 'error' });
     }
   };
 
   if (!theme || !visibleTheme) {
     return (
       <div className="flex h-full items-center justify-center text-[var(--text-muted)] animate-fade-in">
-        {t('appearance.loading') || 'Cargando...'}
+        {t('appearance.loading', { defaultValue: 'Cargando...' })}
       </div>
     );
   }

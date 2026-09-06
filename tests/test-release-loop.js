@@ -24,18 +24,18 @@ function run() {
   assert(fs.existsSync(scriptPath), 'scripts/release-loop.js exists');
 
   const content = fs.readFileSync(scriptPath, 'utf8');
-  const qualityGateStart = content.indexOf('function runQualityGate()');
-  const buildStart = content.indexOf('function runBuild()');
-  const qualityGate = content.slice(qualityGateStart, buildStart);
+  const loopUtils = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'loop-utils.js'), 'utf8');
 
-  assert(qualityGate.includes("sh('npm run ci 2>&1'"), 'quality gate delegates to the fail-closed CI command');
+  assert(content.includes('runQualityGate'), 'quality gate delegates to the shared fail-closed helper');
+  assert(loopUtils.includes("runQualityCommand('npm run ci 2>&1'"), 'shared quality gate runs npm run ci');
   assert(
-    !qualityGate.includes("trySh('npm run lint:python") &&
-      !qualityGate.includes("trySh('npm run typecheck:backend") &&
-      !qualityGate.includes("trySh('npm run typecheck:frontend"),
+    !content.includes("trySh('npm run lint:python") &&
+      !content.includes("trySh('npm run typecheck:backend") &&
+      !content.includes("trySh('npm run typecheck:frontend"),
     'quality gate does not swallow mandatory command failures'
   );
-  assert(!qualityGate.includes("trySh('npm run ci"), 'quality gate cannot fail open');
+  assert(!content.includes("trySh('npm run ci"), 'quality gate cannot fail open');
+  assert(!loopUtils.includes("trySh('npm run ci"), 'shared quality gate cannot fail open');
 
   assert(
     content.includes('const remoteTag = sh('),

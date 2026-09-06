@@ -97,23 +97,11 @@ function countLargeFiles(files) {
 
 function measure(rootDir = ROOT) {
   const files = collectSourceFiles(rootDir);
-  let typeIgnore = 0;
-  let anyInFrontend = 0;
-  let largeFiles = 0;
-  for (const file of files) {
-    const lines = readText(file).split('\n');
-    if (lines.length > LARGE_FILE_LINES) largeFiles++;
-    if (isBackendPython(file)) {
-      for (const line of lines) {
-        if (TYPE_IGNORE_RE.test(line)) typeIgnore++;
-      }
-    } else if (isFrontendTs(file)) {
-      for (const line of lines) {
-        if (ANY_RE.test(line)) anyInFrontend++;
-      }
-    }
-  }
-  return { typeIgnore, anyInFrontend, largeFiles };
+  return {
+    typeIgnore: countTypeIgnore(files),
+    anyInFrontend: countAny(files),
+    largeFiles: countLargeFiles(files),
+  };
 }
 
 function compare(metric, current, baseline) {

@@ -1,15 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const { ROOT } = require('./lib/loop-utils');
+const { assertInsideProject } = require('./lib/fs-safe');
 
-const projectRoot = path.resolve(__dirname, '..');
-const outputDir = path.join(projectRoot, 'dist-electron');
-
-function assertInsideProject(targetPath) {
-  const relative = path.relative(projectRoot, targetPath);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error(`Refusing to clean path outside project: ${targetPath}`);
-  }
-}
+const outputDir = path.join(ROOT, 'dist-electron');
 
 assertInsideProject(outputDir);
 

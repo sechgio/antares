@@ -27,7 +27,9 @@ function run() {
   assert(content.includes('PR-first'), 'script documents PR-first workflow');
   assert(content.includes('ensureFeatureBranch'), 'script has branch guard logic');
   assert(content.includes("'pr', 'create'") || content.includes('gh pr create'), 'script creates PRs via gh');
-  assert(content.includes('function runQualityCommand'), 'quality gate tracks command exit codes');
+  assert(content.includes('runQualityCommand'), 'quality gate tracks command exit codes');
+  const loopUtils = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'loop-utils.js'), 'utf8');
+  assert(loopUtils.includes('function runQualityCommand'), 'shared quality helper inspects command exit codes');
   assert(!content.includes('const tcBackend = trySh'), 'backend typecheck does not use output-only validation');
 
   const hookPath = path.join(ROOT, '.githooks', 'pre-push');

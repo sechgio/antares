@@ -1,25 +1,16 @@
-const fs = require('fs');
 const path = require('path');
-
-const projectRoot = path.resolve(__dirname, '..');
+const { ROOT } = require('./lib/loop-utils');
+const { removeInsideProject } = require('./lib/fs-safe');
 
 const targets = [
-  path.join(projectRoot, 'dist-electron', 'win-unpacked'),
-  path.join(projectRoot, 'dist'),
-  path.join(projectRoot, 'frontend', 'dist'),
-  path.join(projectRoot, 'backend', 'build'),
-  path.join(projectRoot, 'backend', 'dist'),
+  path.join(ROOT, 'dist-electron', 'win-unpacked'),
+  path.join(ROOT, 'dist'),
+  path.join(ROOT, 'frontend', 'dist'),
+  path.join(ROOT, 'backend', 'build'),
+  path.join(ROOT, 'backend', 'dist'),
 ];
 
-function assertInsideProject(targetPath) {
-  const relative = path.relative(projectRoot, targetPath);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error(`Refusing to clean path outside project: ${targetPath}`);
-  }
-}
-
 for (const target of targets) {
-  assertInsideProject(target);
-  fs.rmSync(target, { recursive: true, force: true });
+  removeInsideProject(target);
   console.log(`[clean-after-package] Removed ${target}`);
 }
