@@ -1,12 +1,12 @@
-export const MAX_LOGO_BYTES = 5 * 1024 * 1024;
-export const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
-
-export const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-export const ACCEPTED_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
-
-export const MSG_LOGO_TOO_LARGE = 'El logo supera el tamaño máximo de 5 MB';
-export const MSG_LOGO_INVALID = 'Archivo de logo inválido';
-export const MSG_IMAGE_TOO_LARGE = (name: string) => `La imagen ${name} excede el tamaño máximo de 15 MB`;
+export {
+  ACCEPTED_IMAGE_EXTENSIONS,
+  ACCEPTED_IMAGE_TYPES,
+  MAX_IMAGE_BYTES,
+  MAX_LOGO_BYTES,
+  MSG_IMAGE_TOO_LARGE,
+  MSG_LOGO_INVALID,
+  MSG_LOGO_TOO_LARGE,
+} from '@/utils/imageUploadLimits';
 export const MSG_ONLY_XLSX = 'Solo se admiten archivos .xlsx';
 export const MSG_CUADRANTE_REQUIRED = 'El campo Cuadrante Afectado es obligatorio';
 export const MSG_NO_PANELS = 'No hay paneles para exportar';

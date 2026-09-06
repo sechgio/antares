@@ -1,3 +1,4 @@
+import { Download } from 'lucide-react';
 import { exportLayerPng } from '../../../ops/exportPng';
 import { layerPanelTitle } from '../../../ops/layerStyle';
 import { SectionHeader } from '../shared';
@@ -12,10 +13,11 @@ export default function ExportSection({
   exporting,
   setExporting,
 }: SectionProps) {
+  const fileName = layer.name || layerPanelTitle(layer);
   return (
     <div className="canvas-section">
       <SectionHeader title="Exportar" />
-      <div className="flex gap-2">
+      <div className="canvas-export-row">
         <CanvasSelect
           value={String(exportScale)}
           onChange={(val) => setExportScale(Number(val))}
@@ -25,27 +27,20 @@ export default function ExportSection({
             { value: '2', label: '2x' },
           ]}
         />
-        <CanvasSelect
-          value="png"
-          onChange={() => {}}
-          disabled
-          aria-label="Formato"
-          options={[{ value: 'png', label: 'PNG' }]}
-        />
+        <span className="canvas-export-format">PNG</span>
+        <button
+          type="button"
+          className="canvas-export-btn"
+          disabled={exporting}
+          aria-label={`Exportar ${fileName}`}
+          onClick={() => {
+            setExporting(true);
+            void exportLayerPng(layer.id, fileName, exportScale).finally(() => setExporting(false));
+          }}
+        >
+          <Download className="h-3.5 w-3.5" />
+        </button>
       </div>
-      <button
-        type="button"
-        className="canvas-export-btn"
-        disabled={exporting}
-        onClick={() => {
-          setExporting(true);
-          void exportLayerPng(layer.id, layer.name || layerPanelTitle(layer), exportScale).finally(
-            () => setExporting(false),
-          );
-        }}
-      >
-        Exportar {layer.name || layerPanelTitle(layer)}
-      </button>
     </div>
   );
 }

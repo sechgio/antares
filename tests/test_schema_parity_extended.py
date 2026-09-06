@@ -1,5 +1,3 @@
-"""Keep backend report contracts aligned with their frontend counterparts."""
-
 from __future__ import annotations
 
 import pathlib
@@ -37,7 +35,6 @@ def _read_backend_keys(typeddict: type) -> set[str]:
 
 
 def test_ficha_schema_parity() -> None:
-    """Ficha Técnica frontend and backend should share their core fields."""
     frontend = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "fichas-tecnicas" / "types.ts"
     backend = pathlib.Path(__file__).resolve().parent.parent / "backend" / "core" / "fichas_tecnicas" / "types.py"
     assert frontend.exists() and backend.exists()
@@ -49,7 +46,6 @@ def test_ficha_schema_parity() -> None:
 
 
 def test_informe_schema_parity() -> None:
-    """Informe V2 frontend and backend should expose the same core fields."""
     frontend = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "informes-v2" / "types.ts"
     backend = pathlib.Path(__file__).resolve().parent.parent / "backend" / "core" / "informes_v2" / "types.py"
     assert frontend.exists() and backend.exists()
@@ -72,7 +68,6 @@ def test_informe_schema_parity() -> None:
 
 
 def test_technical_report_schema_parity() -> None:
-    """Technical report frontend and backend should expose matching fields."""
     frontend = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "technical-reports" / "types.ts"
     backend = pathlib.Path(__file__).resolve().parent.parent / "backend" / "core" / "technical_reports" / "types.py"
     assert frontend.exists(), f"frontend types missing: {frontend}"
@@ -101,7 +96,6 @@ def test_technical_report_schema_parity() -> None:
 
 
 def test_api_jsonvalue_type_exists() -> None:
-    """The frontend IPC layer should use a JSON-compatible parameter type."""
     api_path = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "api.ts"
     text = api_path.read_text(encoding="utf-8")
     assert "Record<string, unknown>" in text or "JsonValue" in text

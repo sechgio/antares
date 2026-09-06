@@ -9,13 +9,17 @@ import {
 import { hydrateDocumentImages, hydrateHistorySteps } from '../utils/imageBlobStore';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 
+function bootLog(level: 'debug' | 'warn', ...args: unknown[]) {
+  // eslint-disable-next-line no-console
+  console[level](...args);
+}
+
 function perfMark(label: string) {
   if (import.meta.env.MODE !== 'development') return;
   if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
     performance.mark(label);
   }
-  // eslint-disable-next-line no-console
-  console.debug(`[canvas-boot] ${label}`, `${performance.now().toFixed(1)}ms`);
+  bootLog('debug', `[canvas-boot] ${label}`, `${performance.now().toFixed(1)}ms`);
 }
 
 interface UseCanvasBootstrapOptions {
@@ -87,8 +91,8 @@ export function useCanvasBootstrap({
                     }
                   }
                   perfMark('history');
-                } catch {
-
+                } catch (err) {
+                  bootLog('warn', '[canvas-boot] no se pudo restaurar el historial', err);
                 } finally {
                   if (restoreGenerationRef.current === restoreGeneration) {
                     historyReadyRef.current = true;
@@ -113,8 +117,8 @@ export function useCanvasBootstrap({
             perfMark('replace');
           }
         }
-      } catch {
-
+      } catch (err) {
+        bootLog('warn', '[canvas-boot] bootstrap falló; se crea un documento vacío', err);
         if (!cancelled) {
           try {
             const created = await api.canvasCreate('Sin título');
@@ -128,7 +132,8 @@ export function useCanvasBootstrap({
               queueCanvasCloudPush(doc);
               perfMark('replace');
             }
-          } catch {
+          } catch (createErr) {
+            bootLog('warn', '[canvas-boot] no se pudo crear el documento de respaldo', createErr);
             if (!cancelled) {
               setDocs([]);
               perfMark('replace');

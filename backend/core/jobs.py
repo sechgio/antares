@@ -299,9 +299,6 @@ class JobManager:
                 del self._jobs[jid]
             return len(to_remove)
 
-    def get_default_job(self) -> Job | None:
-        return self.get_job(DEFAULT_JOB_ID)
-
 
 _job_manager: JobManager | None = None
 _job_manager_lock = threading.Lock()

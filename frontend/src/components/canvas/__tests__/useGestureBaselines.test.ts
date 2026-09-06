@@ -48,4 +48,34 @@ describe('useGestureBaselines setPageLayersLive', () => {
 
     expect(result.current.history.document.layers[0]?.cssVars['--translate-x']).toBe('40mm');
   });
+
+  it('onPanelChangeLayersLive keeps one undo entry until commit', () => {
+    const base = createEmptyDocument('Test');
+    const layer = createLayer('rect', { pageIndex: 0, id: 'r1' });
+    layer.cssVars['--translate-x'] = '10mm';
+    base.layers.push(layer);
+
+    const { result } = renderHook(() => {
+      const history = useCanvasHistory(base);
+      const gesture = useGestureBaselines({ history, pageIndex: 0 });
+      return { history, gesture };
+    });
+
+    const moved = [
+      {
+        ...layer,
+        cssVars: { ...layer.cssVars, '--translate-x': '18mm' },
+      },
+    ];
+    act(() => {
+      result.current.gesture.onPanelChangeLayersLive(moved);
+    });
+    expect(result.current.history.document.layers[0]?.cssVars['--translate-x']).toBe('18mm');
+    expect(result.current.history.canUndo).toBe(false);
+
+    act(() => {
+      result.current.gesture.onPanelCommitLive();
+    });
+    expect(result.current.history.canUndo).toBe(true);
+  });
 });

@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import sys
 import threading
-from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from backend.core.json_store import JsonDocumentStore, backup_corrupt_file
+from backend.core.json_store import JsonDocumentStore
 from backend.core.technical_reports.models import TechnicalReport, create_empty_report, next_technical_report_number
 from backend.utils.paths import resource_path, user_data_path
 
 DEFAULT_DB_PATH = user_data_path("technical_reports.json") if getattr(sys, "frozen", False) else resource_path("data/technical_reports.json")
-
-_backup_corrupt_file = backup_corrupt_file
 
 _db_instance: TechnicalReportsDB | None = None
 _db_instance_lock = threading.Lock()
@@ -28,48 +25,19 @@ def get_reports_db(db_path: str | Path | None = None) -> TechnicalReportsDB:
 
 
 class TechnicalReportsDB(JsonDocumentStore):
+    not_found_template = "Informe no encontrado: {id}"
+
     def __init__(self, db_path: str | Path | None = None) -> None:
         path = Path(db_path) if db_path is not None else Path(DEFAULT_DB_PATH)
         super().__init__(path, TechnicalReport.normalize)
 
-    def get(self, report_id: str) -> dict[str, Any] | None:
-        with self._lock:
-            item = self._items.get(str(report_id))
-            return deepcopy(TechnicalReport.normalize(item)) if item else None
-
     def create(self, report: dict[str, Any]) -> dict[str, Any]:
-        with self._lock:
-            normalized = TechnicalReport.normalize(report)
-            self._items[normalized["id"]] = normalized
-            self._save()
-            return deepcopy(normalized)
+        return self.insert(report)
 
     def create_empty(self) -> dict[str, Any]:
         with self._lock:
             next_id = next_technical_report_number(list(self._items.values()))
-            report = create_empty_report(next_id)
-            self._items[report["id"]] = report
-            self._save()
-            return deepcopy(report)
-
-    def update(self, report_id: str, report: dict[str, Any]) -> dict[str, Any]:
-        with self._lock:
-            if str(report_id) not in self._items:
-                msg = f"Informe no encontrado: {report_id}"
-                raise KeyError(msg)
-            payload = dict(report)
-            payload["id"] = str(report_id)
-            normalized = TechnicalReport.normalize(payload)
-            self._items[str(report_id)] = normalized
-            self._save()
-            return deepcopy(normalized)
-
-    def replace_all(self, reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        with self._lock:
-            imported = [TechnicalReport.normalize(report) for report in reports]
-            self._items = {report["id"]: report for report in imported}
-            self._save()
-            return [deepcopy(report) for report in imported]
+            return self._commit(create_empty_report(next_id))
 
     def get_unique_cs(self) -> list[str]:
         with self._lock:

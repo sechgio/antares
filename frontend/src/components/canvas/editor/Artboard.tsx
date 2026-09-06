@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   memo,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { CanvasDocument, CanvasGuide, CanvasLayer, CanvasTool } from '../types';
@@ -57,10 +58,10 @@ import {
 } from '../ops/guides';
 import { duplicateLayers } from '../ops/layerOps';
 import { expandWithDescendants } from '../ops/layerTree';
-import { wheelPanDelta, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
+import { applyWheelBurst } from '../ops/viewportNav';
 import { CULLING_MARGIN_MM, filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { compositionHiddenLayerIds } from '../ops/booleanOps';
-import { createGestureRaf } from '../ops/gestureRaf';
+import { createGestureRaf, createWheelGestureRaf } from '../ops/gestureRaf';
 import {
   abortActivePointerGestureSession,
   createPointerGestureSession,
@@ -127,6 +128,7 @@ interface ArtboardProps {
   snapToGrid?: boolean;
   gridSizeMm?: number;
   onStartInertia?: (velocity: { vx: number; vy: number }) => void;
+  onCancelInertia?: () => void;
   gestureAbortToken?: number;
 }
 
@@ -174,7 +176,6 @@ const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
 }) {
   if (!guides.length) return null;
   const strokeW = screenChromePx(1, zoom);
-  const dash = `${screenChromePx(4, zoom)} ${screenChromePx(3, zoom)}`;
   return (
     <svg
       style={{
@@ -199,7 +200,6 @@ const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
             y2="100%"
             stroke="var(--cv-accent-2)"
             strokeWidth={strokeW}
-            strokeDasharray={dash}
           />
         ) : (
           <line
@@ -211,7 +211,6 @@ const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
             y2={mmToScreenPx(g.pos, 1)}
             stroke="var(--cv-accent-2)"
             strokeWidth={strokeW}
-            strokeDasharray={dash}
           />
         ),
       )}
@@ -252,6 +251,7 @@ function Artboard({
   snapToGrid = false,
   gridSizeMm = DEFAULT_GRID_MM,
   onStartInertia,
+  onCancelInertia,
   gestureAbortToken = 0,
 }: ArtboardProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -298,7 +298,6 @@ function Artboard({
   const [gestureLayers, setGestureLayers] = useState<CanvasLayer[] | null>(null);
   const [gestureActive, setGestureActive] = useState(false);
   const [gestureBbox, setGestureBbox] = useState<RectMm | null>(null);
-  const didFit = useRef(false);
   const gestureDirtyRef = useRef(false);
   const gestureLayersRef = useRef<CanvasLayer[] | null>(null);
   const imperativeMoveIdsRef = useRef<string[] | null>(null);
@@ -448,6 +447,7 @@ function Artboard({
   usePinchZoom(viewportRef, navRef, {
     activeRef: pinchGestureRef,
     onStart: () => {
+      onCancelInertia?.();
       abortActivePointerGestureSession();
       setMarquee(null);
       setDraft(null);
@@ -568,23 +568,6 @@ function Artboard({
     onCancelGuideCreateRef.current?.(id);
   }, []);
 
-  useEffect(() => {
-    if (didFit.current || !onZoom || !viewportRef.current) return;
-    const ro = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry || didFit.current) return;
-      const { width, height } = entry.contentRect;
-      if (width < 40 || height < 40) return;
-      const pad = 48;
-      const fit = Math.min((width - pad) / A4_WIDTH_PX, (height - pad) / A4_HEIGHT_PX, 1);
-      onZoom(Math.max(0.35, Math.round(fit * 100) / 100));
-      onPan({ x: 0, y: 0 });
-      didFit.current = true;
-    });
-    ro.observe(viewportRef.current);
-    return () => ro.disconnect();
-  }, [onZoom, onPan]);
-
   useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -637,24 +620,15 @@ function Artboard({
       rectDirty = true;
     });
     ro.observe(el);
-    const raf = createGestureRaf((e: WheelEvent) => {
+    const raf = createWheelGestureRaf((segments) => {
       const { zoom: z, pan: p, onZoom: setZ, onPan: setP } = navRef.current;
       if (rectDirty) refreshViewportRect();
-      const cursor = {
-        x: e.clientX - viewportRect.left - viewportRect.width / 2,
-        y: e.clientY - viewportRect.top - viewportRect.height / 2,
-      };
-
-      if (e.ctrlKey || e.metaKey) {
-        const factor = wheelZoomFactor(e.deltaY, true);
-        const next = zoomAtCursor(z, p, cursor, z * factor);
-        setZ?.(next.zoom);
-        setP(next.pan);
-        return;
-      }
-
-      const d = wheelPanDelta(e.deltaX, e.deltaY, e.shiftKey);
-      setP({ x: p.x - d.x, y: p.y - d.y });
+      const next = applyWheelBurst({ zoom: z, pan: p }, segments, (segment) => ({
+        x: segment.clientX - viewportRect.left - viewportRect.width / 2,
+        y: segment.clientY - viewportRect.top - viewportRect.height / 2,
+      }));
+      if (next.zoom !== z) setZ?.(next.zoom);
+      if (next.pan.x !== p.x || next.pan.y !== p.y) setP(next.pan);
     });
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -672,6 +646,7 @@ function Artboard({
   const startPanDrag = (e: ReactPointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    onCancelInertia?.();
     setPanning(true);
     const startX = e.clientX;
     const startY = e.clientY;
@@ -903,6 +878,7 @@ function Artboard({
     (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => {
       if (e.button === 1) return;
       if (e.button !== 0) return;
+      onCancelInertia?.();
       if (editingLayerIdRef.current) {
         if (id === editingLayerIdRef.current) return;
         onCommitEditRef.current?.();
@@ -943,12 +919,13 @@ function Artboard({
         originSelectedIds: ids,
       });
     },
-    [beginSelectionMove],
+    [beginSelectionMove, onCancelInertia],
   );
 
   const startResize = (e: ReactPointerEvent<HTMLDivElement>, corner: HandlePos) => {
     e.stopPropagation();
     e.preventDefault();
+    onCancelInertia?.();
     if (!editableSelected.length) return;
     const originLayers = layersRef.current;
     const snapshot = cloneLayers(
@@ -1381,6 +1358,7 @@ function Artboard({
     if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
+    onCancelInertia?.();
     if (!frameRef.current) return;
     const original = g.posMm;
     let lastPos = g.posMm;
@@ -1428,6 +1406,7 @@ function Artboard({
       startPanDrag(e);
       return;
     }
+    onCancelInertia?.();
     if (e.button !== 0) return;
     if (canPanTool) {
       startPanDrag(e);
@@ -1458,6 +1437,7 @@ function Artboard({
       data-canvas-tool={tool}
       data-canvas-panning={panning ? '1' : undefined}
       style={{ cursor, touchAction: 'none' }}
+      onPointerDownCapture={() => onCancelInertia?.()}
       onPointerDown={onCanvasPointerDown}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -1493,6 +1473,7 @@ function Artboard({
           ref={frameRef}
           data-testid="canvas-artboard"
           style={{
+            '--cv-camera-zoom': zoom,
             position: 'relative',
             width: designW,
             height: designH,
@@ -1504,7 +1485,7 @@ function Artboard({
             boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
             cursor: canPanTool || panning ? cursor : placing ? 'crosshair' : 'default',
             letterSpacing: 'normal',
-          }}
+          } as CSSProperties}
           onPointerDown={(e) => {
             if (e.button === 1 || canPanTool) {
               startPanDrag(e);
@@ -1541,9 +1522,10 @@ function Artboard({
                 top: `${pageMarginMm}mm`,
                 right: `${pageMarginMm}mm`,
                 bottom: `${pageMarginMm}mm`,
-                border: '1px dashed rgba(255, 87, 34, 0.45)',
+                border: `${screenChromePx(1, zoom)}px dashed var(--cv-accent-2)`,
+                opacity: 0.65,
                 pointerEvents: 'none',
-                zIndex: 1,
+                zIndex: 29,
                 boxSizing: 'border-box',
               }}
             />
@@ -1713,13 +1695,14 @@ function Artboard({
                   top: mmToScreenPx(Math.min(d.y1, d.y2), 1),
                   width: Math.max(1, mmToScreenPx(Math.abs(d.x2 - d.x1), 1)),
                   height: Math.max(1, mmToScreenPx(Math.abs(d.y2 - d.y1), 1)),
-                  borderTop: d.axis === 'x' ? '1px solid var(--cv-accent-2)' : undefined,
-                  borderLeft: d.axis === 'y' ? '1px solid var(--cv-accent-2)' : undefined,
+                  borderTop: d.axis === 'x' ? `${screenChromePx(1, zoom)}px solid var(--cv-accent-2)` : undefined,
+                  borderLeft: d.axis === 'y' ? `${screenChromePx(1, zoom)}px solid var(--cv-accent-2)` : undefined,
                   boxSizing: 'border-box',
                 }}
               />
               <MeasurementBadge
                 testId="canvas-distance-value"
+                zoom={zoom}
                 label={formatGapMm(d.valueMm)}
                 style={{
                   position: 'absolute',
@@ -1740,7 +1723,7 @@ function Artboard({
                 top: mmToScreenPx(marquee.y, 1),
                 width: Math.max(mmToScreenPx(marquee.w, 1), 1),
                 height: Math.max(mmToScreenPx(marquee.h, 1), 1),
-                border: '1px solid var(--cv-accent)',
+                border: `${screenChromePx(1, zoom)}px solid var(--cv-accent)`,
                 background: 'color-mix(in srgb, var(--cv-accent) 8%, transparent)',
                 pointerEvents: 'none',
                 zIndex: 50,

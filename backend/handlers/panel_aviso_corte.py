@@ -10,6 +10,7 @@ from backend.core.panel_aviso_corte import build_panels, parse_excel_bytes, rend
 from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, MatchRule
 from backend.core.panel_aviso_corte.serialization import deserialize_panel
 from backend.handlers.common import validate_params, with_locale
+from backend.utils.image_data import decode_b64_payload
 
 
 @with_locale
@@ -20,8 +21,8 @@ def panel_aviso_corte_parse_excel(params: dict[str, Any]) -> dict[str, Any]:
         msg = "xlsx_b64 es requerido"
         raise ValueError(msg)
     try:
-        content = base64.b64decode(xlsx_b64, validate=True)
-    except Exception as exc:
+        content = decode_b64_payload(xlsx_b64)
+    except ValueError as exc:
         msg = f"xlsx_b64 no es base64 válido: {exc}"
         raise ValueError(msg) from exc
     source = parse_excel_bytes(content, params.get("filename", "datos.xlsx"))

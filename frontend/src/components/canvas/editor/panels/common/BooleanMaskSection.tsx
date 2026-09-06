@@ -1,16 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ComponentType } from 'react';
+import { Ban, CircleDot, Combine, SquareMinus } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import CanvasSelect from '../../CanvasSelect';
 import { applyBooleanCompose, composeBoolean, type BooleanOpKind } from '../../../ops/booleanOps';
 import { isShapeLayer } from '../../../ops/layerStyle';
 import type { CanvasLayer } from '../../../types';
-import { SectionHeader } from '../shared';
+import { PropRow, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
-const OP_OPTS: { value: BooleanOpKind; label: string }[] = [
-  { value: 'union', label: 'Unión' },
-  { value: 'subtract', label: 'Restar' },
-  { value: 'intersect', label: 'Intersección' },
-  { value: 'exclude', label: 'Excluir' },
+const OP_OPTS: { value: BooleanOpKind; label: string; icon: ComponentType<{ className?: string }> }[] = [
+  { value: 'union', label: 'Unión', icon: Combine },
+  { value: 'subtract', label: 'Restar', icon: SquareMinus },
+  { value: 'intersect', label: 'Intersección', icon: CircleDot },
+  { value: 'exclude', label: 'Excluir', icon: Ban },
 ];
 
 function clearMetaKey(layer: CanvasLayer, key: 'maskLayerId' | 'ops'): CanvasLayer {
@@ -82,110 +84,93 @@ export default function BooleanMaskSection({
     setMeta({ ops: nextOps });
   };
 
+  const canCombine = selectedOthers.length > 0 || Boolean(combineTargetId);
+
+  const applyOp = (op: BooleanOpKind) => {
+    setCombineOp(op);
+    if (selectedOthers.length > 0) {
+      combineWith(selectedOthers, op);
+      return;
+    }
+    const other = layers.find((item) => item.id === combineTargetId);
+    if (!other) return;
+    combineWith([other], op);
+    setCombineTargetId('');
+  };
+
   return (
     <div className="canvas-section" data-testid="canvas-boolean-mask-section">
-      <SectionHeader title="Máscara / Booleana" />
-      <p className="canvas-sublabel mb-2">
-        Composición CSS (recorte/combinación visual). No es un solver geométrico exacto.
-      </p>
+      <SectionHeader title="Booleana" />
+      <div className="canvas-inspector-stack">
+        <PropRow label="Máscara">
+          <CanvasSelect
+            aria-label="Capa máscara"
+            value={maskId}
+            onChange={(val) => applyMask(val)}
+            options={[
+              { value: '', label: 'Ninguna' },
+              ...maskCandidates.map((item) => ({
+                value: item.id,
+                label: item.name || item.type,
+              })),
+            ]}
+          />
+        </PropRow>
 
-      <div className="mb-2">
-        <span className="canvas-sublabel">Usar como máscara</span>
-        <CanvasSelect
-          aria-label="Capa máscara"
-          value={maskId}
-          onChange={(val) => applyMask(val)}
-          options={[
-            { value: '', label: 'Ninguna' },
-            ...maskCandidates.map((l) => ({
-              value: l.id,
-              label: l.name || l.type,
-            })),
-          ]}
-        />
-      </div>
-
-      {!isBoolean && (
-        <div className="mb-2">
-          <span className="canvas-sublabel">Combinar con</span>
-          {selectedOthers.length > 0 ? (
-            <button
-              type="button"
-              className="canvas-btn mb-2 w-full rounded-md px-3 py-2 text-[12px]"
-              onClick={() => combineWith(selectedOthers, combineOp)}
-            >
-              Combinar selección ({selectedOthers.length})
-            </button>
-          ) : null}
-          <div className="mb-1 flex gap-1">
-            <div className="min-w-0 flex-1">
-              <CanvasSelect
-                aria-label="Capa a combinar"
-                value={combineTargetId}
-                onChange={setCombineTargetId}
-                options={[
-                  { value: '', label: 'Elegir capa…' },
-                  ...maskCandidates.map((l) => ({
-                    value: l.id,
-                    label: l.name || l.type,
-                  })),
-                ]}
-              />
-            </div>
-            <div className="w-[110px] shrink-0">
-              <CanvasSelect
-                aria-label="Operación booleana"
-                value={combineOp}
-                onChange={(val) => setCombineOp(val as BooleanOpKind)}
-                options={OP_OPTS}
-              />
-            </div>
-          </div>
-          <button
-            type="button"
-            className="canvas-btn w-full rounded-md px-3 py-2 text-[12px]"
-            disabled={!combineTargetId}
-            onClick={() => {
-              const other = layers.find((l) => l.id === combineTargetId);
-              if (!other) return;
-              combineWith([other], combineOp);
-              setCombineTargetId('');
-            }}
-          >
-            Combinar
-          </button>
-        </div>
-      )}
-
-      {isBoolean && ops.length > 0 && (
-        <div className="mb-1">
-          <span className="canvas-sublabel">Operandos</span>
-          <ul className="mt-1 space-y-1">
-            {ops.map((entry, index) => {
-              const src = layers.find((l) => l.id === entry.layerId);
-              return (
-                <li key={`${entry.layerId}-${index}`} className="flex items-center gap-1">
-                  <span
-                    className="min-w-0 flex-1 truncate text-[11px]"
-                    style={{ color: 'var(--cv-text)' }}
-                    title={entry.layerId}
+        {!isBoolean && (
+          <>
+            <PropRow label="Con">
+              {selectedOthers.length > 0 ? (
+                <span className="canvas-boolean-count">{selectedOthers.length} capas</span>
+              ) : (
+                <CanvasSelect
+                  aria-label="Capa a combinar"
+                  value={combineTargetId}
+                  onChange={setCombineTargetId}
+                  options={[
+                    { value: '', label: 'Elegir…' },
+                    ...maskCandidates.map((item) => ({
+                      value: item.id,
+                      label: item.name || item.type,
+                    })),
+                  ]}
+                />
+              )}
+            </PropRow>
+            <div className="canvas-boolean-ops" role="group" aria-label="Operación booleana">
+              {OP_OPTS.map(({ value, label, icon: Icon }) => (
+                <WithHoverTooltip key={value} label={label} placement="bottom" variant="dark">
+                  <button
+                    type="button"
+                    className="canvas-icon-btn"
+                    aria-label={label}
+                    data-active={combineOp === value}
+                    disabled={!canCombine}
+                    onClick={() => applyOp(value)}
                   >
-                    {src?.name || entry.layerId.slice(0, 8)}
-                  </span>
-                  <div className="w-[110px] shrink-0">
-                    <CanvasSelect
-                      aria-label={`Operación ${index + 1}`}
-                      value={entry.op}
-                      onChange={(val) => setOpAt(index, val as BooleanOpKind)}
-                      options={OP_OPTS}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+                    <Icon className="h-3.5 w-3.5" />
+                  </button>
+                </WithHoverTooltip>
+              ))}
+            </div>
+          </>
+        )}
+
+        {isBoolean &&
+          ops.map((entry, index) => {
+            const src = layers.find((item) => item.id === entry.layerId);
+            return (
+              <PropRow key={`${entry.layerId}-${index}`} label={src?.name || 'Capa'}>
+                <CanvasSelect
+                  aria-label={`Operación ${index + 1}`}
+                  value={entry.op}
+                  onChange={(val) => setOpAt(index, val as BooleanOpKind)}
+                  options={OP_OPTS.map(({ value, label }) => ({ value, label }))}
+                />
+              </PropRow>
+            );
+          })}
+      </div>
     </div>
   );
 }

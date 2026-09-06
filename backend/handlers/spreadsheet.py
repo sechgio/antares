@@ -312,7 +312,10 @@ def _parse_xls(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
         rows: list[list[Any]] = []
         for r in range(sh.nrows):
             vals = _trim_row(
-                [_serialize_cell(sh.cell_value(r, c)) if sh.cell_value(r, c) != "" else None for c in range(sh.ncols)],
+                [
+                    _serialize_cell(value) if (value := sh.cell_value(r, c)) != "" else None
+                    for c in range(sh.ncols)
+                ],
             )
             if vals is None:
                 continue

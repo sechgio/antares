@@ -131,38 +131,40 @@ function TopBar({
             <Redo2 className="h-3.5 w-3.5" />
           </button>
         </WithHoverTooltip>
-        <WithHoverTooltip label="Duplicar" placement="bottom" variant="dark">
-          <button type="button" className="canvas-icon-btn" onClick={onDuplicate} aria-label="Duplicar documento">
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-        </WithHoverTooltip>
-        {onImportPdf ? (
-          <WithHoverTooltip label="Importar PDF" placement="bottom" variant="dark">
-            <button
-              type="button"
-              className="canvas-icon-btn"
-              onClick={onImportPdf}
-              disabled={importDisabled}
-              aria-label="Importar PDF"
-            >
-              <Upload className="h-3.5 w-3.5" />
+        <div className="canvas-topbar-secondary">
+          <WithHoverTooltip label="Duplicar" placement="bottom" variant="dark">
+            <button type="button" className="canvas-icon-btn" onClick={onDuplicate} aria-label="Duplicar documento">
+              <Copy className="h-3.5 w-3.5" />
             </button>
           </WithHoverTooltip>
-        ) : null}
-        {mode === 'design' && onToggleShortcuts && (
-          <WithHoverTooltip label="Atajos" shortcut="?" placement="bottom" variant="dark">
-            <button
-              type="button"
-              className="canvas-icon-btn"
-              data-active={showShortcuts}
-              onClick={onToggleShortcuts}
-              aria-label="Atajos"
-              aria-pressed={showShortcuts}
-            >
-              <Keyboard className="h-3.5 w-3.5" />
-            </button>
-          </WithHoverTooltip>
-        )}
+          {onImportPdf ? (
+            <WithHoverTooltip label="Importar PDF" placement="bottom" variant="dark">
+              <button
+                type="button"
+                className="canvas-icon-btn"
+                onClick={onImportPdf}
+                disabled={importDisabled}
+                aria-label="Importar PDF"
+              >
+                <Upload className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
+          ) : null}
+          {mode === 'design' && onToggleShortcuts && (
+            <WithHoverTooltip label="Atajos" shortcut="?" placement="bottom" variant="dark">
+              <button
+                type="button"
+                className="canvas-icon-btn"
+                data-active={showShortcuts}
+                onClick={onToggleShortcuts}
+                aria-label="Atajos"
+                aria-pressed={showShortcuts}
+              >
+                <Keyboard className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
+          )}
+        </div>
         {mode === 'design' && onToggleUiLock && (
           <>
             <TopBarDivider />
@@ -193,7 +195,7 @@ function TopBar({
         ) : null}
       </div>
 
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+      <div className="canvas-topbar-mode absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <CanvasSegmented
           value={mode}
           onChange={onMode}
@@ -212,6 +214,9 @@ function TopBar({
             : 'canvas-topbar-trailing'
         }
       >
+        <span className="canvas-save-state" data-dirty={dirty} data-testid="canvas-save-state">
+          {dirty ? 'Sin guardar' : 'Guardado'}
+        </span>
         <StatusPill status={status} />
 
         {mode === 'design' && onTogglePreview && (

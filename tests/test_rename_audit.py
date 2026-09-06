@@ -44,6 +44,14 @@ def _setup_fields(monkeypatch, tmp_path, fields):
     save_fields(fields)
 
 
+def _patch_catalog_lookup(monkeypatch, buscar_fn):
+    monkeypatch.setattr("backend.core.database.buscar_por_columna", buscar_fn)
+    monkeypatch.setattr(
+        "backend.core.database.contar_por_columna",
+        lambda codes, col: len(buscar_fn(codes, col)),
+    )
+
+
 def _make_job(tmp_path, files, **extra):
     src = tmp_path / "in"
     dst = tmp_path / "out"
@@ -86,8 +94,8 @@ def test_rename_fails_when_keycolumn_doesnt_contain_file_codes(monkeypatch, tmp_
     monkeypatch.setattr(conversion, "_notify_complete", lambda *a, **k: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **k: None)
 
-    monkeypatch.setattr(
-        "backend.core.database.buscar_por_columna",
+    _patch_catalog_lookup(
+        monkeypatch,
         lambda codes, col: {} if col == "nis" else {"69841274": {"nis": "ABC", "sgio": "454654001"}},
     )
 
@@ -120,8 +128,8 @@ def test_rename_works_when_keycolumn_matches_file_codes(monkeypatch, tmp_path):
     monkeypatch.setattr(conversion, "_notify_complete", lambda *a, **k: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **k: None)
 
-    monkeypatch.setattr(
-        "backend.core.database.buscar_por_columna",
+    _patch_catalog_lookup(
+        monkeypatch,
         lambda codes, col: {"69841274": {"nis": "ABC", "sgio": "454654001"}} if col == "sgio" else {},
     )
 
@@ -147,8 +155,8 @@ def test_preview_also_fails_with_wrong_keycolumn(monkeypatch, tmp_path):
     f = tmp_path / "69841274_001.jpg"
     f.write_text("x")
 
-    monkeypatch.setattr(
-        "backend.core.database.buscar_por_columna",
+    _patch_catalog_lookup(
+        monkeypatch,
         lambda codes, col: {} if col == "nis" else {"69841274": {"nis": "ABC", "sgio": "454654001"}},
     )
 
@@ -174,8 +182,8 @@ def test_preview_works_with_correct_keycolumn(monkeypatch, tmp_path):
     f = tmp_path / "69841274_001.jpg"
     f.write_text("x")
 
-    monkeypatch.setattr(
-        "backend.core.database.buscar_por_columna",
+    _patch_catalog_lookup(
+        monkeypatch,
         lambda codes, col: {"69841274": {"nis": "ABC", "sgio": "454654001"}} if col == "sgio" else {},
     )
 
@@ -211,7 +219,7 @@ def test_auto_detect_keycolumn_finds_best_match(monkeypatch, tmp_path):
                 result[val] = rec
         return result
 
-    monkeypatch.setattr("backend.core.database.buscar_por_columna", mock_buscar)
+    _patch_catalog_lookup(monkeypatch, mock_buscar)
 
     file_codes = ["69841274", "69841275"]
 
@@ -244,7 +252,7 @@ def test_fix_preview_auto_detects_correct_keycolumn(monkeypatch, tmp_path):
             return {"69841274": {"nis": "ABC", "sgio": "454654001"}}
         return {}
 
-    monkeypatch.setattr("backend.core.database.buscar_por_columna", mock_buscar)
+    _patch_catalog_lookup(monkeypatch, mock_buscar)
 
     result = conversion.preview({
         "files": [str(f)],
@@ -284,7 +292,7 @@ def test_fix_process_auto_detects_correct_keycolumn(monkeypatch, tmp_path):
             return {"69841274": {"nis": "ABC", "sgio": "454654001"}}
         return {}
 
-    monkeypatch.setattr("backend.core.database.buscar_por_columna", mock_buscar)
+    _patch_catalog_lookup(monkeypatch, mock_buscar)
 
     job, _src, _dst, _real_files = _make_job(
         tmp_path, ["69841274_001.jpg"],
@@ -324,7 +332,7 @@ def test_fix_process_auto_detects_when_keycolumn_empty(monkeypatch, tmp_path):
             return {"69841274": {"nis": "ABC", "sgio": "454654001"}}
         return {}
 
-    monkeypatch.setattr("backend.core.database.buscar_por_columna", mock_buscar)
+    _patch_catalog_lookup(monkeypatch, mock_buscar)
 
     monkeypatch.setattr(
         "backend.core.database.buscar_lote_por_codigos",
@@ -367,7 +375,7 @@ def test_preview_empty_key_uses_lote_process_semantics(monkeypatch, tmp_path):
     f2.write_text("x")
     file_paths = [str(f1), str(f2)]
 
-    monkeypatch.setattr("backend.core.database.buscar_por_columna", _mock_nis_sgio_buscar)
+    _patch_catalog_lookup(monkeypatch, _mock_nis_sgio_buscar)
     monkeypatch.setattr(
         "backend.core.database.buscar_lote_por_codigos",
         lambda codes: {
@@ -409,7 +417,7 @@ def test_preview_default_key_column_exposes_detect_fields(monkeypatch, tmp_path)
     f.write_text("x")
     file_paths = [str(f)]
 
-    monkeypatch.setattr("backend.core.database.buscar_por_columna", _mock_nis_sgio_buscar)
+    _patch_catalog_lookup(monkeypatch, _mock_nis_sgio_buscar)
 
     preview = conversion.preview({
         "files": file_paths,

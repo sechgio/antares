@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -13,55 +13,6 @@ import {
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { clampOpacity, normalizeHex } from '../../ops/layerStyle';
-
-export function NumField({
-  label,
-  value,
-  onChange,
-  onCommit,
-  suffix,
-}: {
-  label: string;
-  value: number;
-  onChange: (n: number) => void;
-  onCommit?: () => void;
-  suffix?: string;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const display = Number.isFinite(value) ? String(Math.round(value * 10) / 10) : '0';
-  return (
-    <label className="flex min-w-0 flex-1 flex-col gap-0.5">
-      <span className="canvas-label !mb-0">{label}</span>
-      <div className="relative">
-        <input
-          type="number"
-          step={0.5}
-          className="canvas-input pr-6"
-          value={draft ?? display}
-          onFocus={() => setDraft(display)}
-          onChange={(e) => {
-            const raw = e.target.value;
-            setDraft(raw);
-            const n = Number(raw);
-            if (raw !== '' && Number.isFinite(n)) onChange(n);
-          }}
-          onBlur={() => {
-            setDraft(null);
-            onCommit?.();
-          }}
-        />
-        {suffix && (
-          <span
-            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px]"
-            style={{ color: 'var(--cv-text-muted)' }}
-          >
-            {suffix}
-          </span>
-        )}
-      </div>
-    </label>
-  );
-}
 
 export function HexField({
   color,
@@ -113,30 +64,28 @@ export function BulkOpacityField({
   }, [selectionKey]);
   const shown = draft ?? display;
   return (
-    <label className="mt-2 flex min-w-0 flex-col gap-0.5">
-      <span className="canvas-label !mb-0">Opacidad</span>
-      <input
-        type="number"
-        min={0}
-        max={100}
-        className="canvas-input"
-        value={shown}
-        placeholder={value === null ? '—' : undefined}
-        aria-label="Opacidad múltiple"
-        onFocus={() => setDraft(display)}
-        onChange={(e) => {
-          const raw = e.target.value;
-          setDraft(raw);
-        }}
-        onBlur={(e) => {
-          setDraft(null);
-          const n = clampOpacity(Number(e.target.value) || 0);
-          onCommit(n);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-        }}
-      />
+    <label className="canvas-prop-row mt-1">
+      <span className="canvas-prop-row-label">Opacidad</span>
+      <span className="canvas-prop-row-control">
+        <input
+          type="number"
+          min={0}
+          max={100}
+          className="canvas-input"
+          value={shown}
+          placeholder={value === null ? '—' : undefined}
+          aria-label="Opacidad múltiple"
+          onFocus={() => setDraft(display)}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={(e) => {
+            setDraft(null);
+            onCommit(clampOpacity(Number(e.target.value) || 0));
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+        />
+      </span>
     </label>
   );
 }
@@ -183,12 +132,27 @@ export function SectionHeader({
   children,
 }: {
   title: string;
-  children?: import('react').ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <div className="canvas-section-header">
       <div className="canvas-section-title">{title}</div>
       {children ? <div className="canvas-section-header-actions">{children}</div> : null}
+    </div>
+  );
+}
+
+export function PropRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="canvas-prop-row">
+      <span className="canvas-prop-row-label">{label}</span>
+      <div className="canvas-prop-row-control">{children}</div>
     </div>
   );
 }
@@ -200,4 +164,22 @@ export const ALIGN_ITEMS = [
   { align: 'top' as const, icon: AlignStartHorizontal, label: 'Arriba' },
   { align: 'middle' as const, icon: AlignCenterHorizontal, label: 'Medio' },
   { align: 'bottom' as const, icon: AlignEndHorizontal, label: 'Abajo' },
+];
+
+export const IMAGE_FIT_OPTIONS = [
+  { value: 'cover', label: 'Cubrir' },
+  { value: 'contain', label: 'Contener' },
+  { value: 'fill', label: 'Estirar' },
+];
+
+export const IMAGE_POSITION_OPTIONS = [
+  { value: '50% 50%', label: 'Centro' },
+  { value: '0% 0%', label: 'Arriba izq.' },
+  { value: '50% 0%', label: 'Arriba' },
+  { value: '100% 0%', label: 'Arriba der.' },
+  { value: '0% 50%', label: 'Izquierda' },
+  { value: '100% 50%', label: 'Derecha' },
+  { value: '0% 100%', label: 'Abajo izq.' },
+  { value: '50% 100%', label: 'Abajo' },
+  { value: '100% 100%', label: 'Abajo der.' },
 ];

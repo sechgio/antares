@@ -1,5 +1,5 @@
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 
 const REPO_OWNER = 'sechgio';
 const REPO_NAME = 'antares';
@@ -10,7 +10,7 @@ function sh(command, opts = {}) {
   const result = execSync(command, {
     cwd: ROOT,
     encoding: 'utf8',
-    stdio: opts.silent ? 'pipe' : 'pipe',
+    stdio: 'pipe',
     maxBuffer: 50 * 1024 * 1024,
     ...opts,
   });
@@ -62,6 +62,20 @@ function die(message, code = 1) {
   process.exit(code);
 }
 
+function detectRepo() {
+  try {
+    const url = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    }).trim();
+    const match = url.match(/[:/]([^/:]+)\/([^/]+?)(?:\.git)?$/);
+    return match ? `${match[1]}/${match[2]}` : null;
+  } catch {
+    return null;
+  }
+}
+
 module.exports = {
   REPO_OWNER,
   REPO_NAME,
@@ -73,4 +87,5 @@ module.exports = {
   step,
   skip,
   die,
+  detectRepo,
 };

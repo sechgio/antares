@@ -21,11 +21,6 @@ if TYPE_CHECKING:
 
 class RenamerEngine:
 
-    @staticmethod
-    def campos_disponibles() -> set[str]:
-        fields = get_field_names()
-        return {f"{{{f}}}" for f in fields} | {"{seq}", "{ext}", "{sep}"}
-
     def __init__(
         self,
         patron: str | None = None,

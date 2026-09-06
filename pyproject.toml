@@ -1,4 +1,3 @@
-# pyproject.toml
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -56,11 +55,8 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/main.py" = ["E402"]
-# B023: in _run_batch_conversion the closure _submit_one captures task_queue /
-# in_flight / futures, which are reassigned inside the for-chunk loop and the
-# closure is always invoked in the same iteration (never stored/deferred), so the
-# late-binding capture is correct. ruff's B023 trips because they look like loop
-# variables but are not the loop iterator (chunk_start).
+# B023: _submit_one captura task_queue/in_flight/futures, reasignados en el loop
+# de chunks. Se llama en la misma iteración; no es late-binding del iterador.
 "backend/handlers/conversion.py" = ["B023"]
 
 [tool.mypy]

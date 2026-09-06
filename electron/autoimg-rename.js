@@ -54,15 +54,6 @@ function buildNisMetaMap(rows) {
   return map;
 }
 
-function buildNisToSgioMap(rows) {
-  const meta = buildNisMetaMap(rows);
-  const map = new Map();
-  for (const [nis, { sgio }] of meta) {
-    if (sgio) map.set(nis, sgio);
-  }
-  return map;
-}
-
 function _fileMeta(file) {
   if (!file) return null;
   if (typeof file === 'string') return { id: '', name: file, slot: null };
@@ -237,7 +228,6 @@ module.exports = {
   normalizeDestino,
   buildSgioFilename,
   buildNisMetaMap,
-  buildNisToSgioMap,
   buildRenameJobs,
   uniqueDestinos,
   extensionOf,

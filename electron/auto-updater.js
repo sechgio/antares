@@ -173,7 +173,9 @@ function setupAutoUpdater(isDev) {
 
   _periodicCheckTimer = setInterval(() => {
     if (_updateInProgress) return;
-    updater.checkForUpdates().catch(() => {});
+    updater.checkForUpdates().catch((err) => {
+      console.warn('[auto-updater] periodic checkForUpdates falló:', err && err.message ? err.message : err);
+    });
   }, 6 * 60 * 60 * 1000);
 
   ipcMain.handle('auto-update-check', async (event) => {

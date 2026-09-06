@@ -905,7 +905,7 @@ export default function GanttView({
         }
 
         .espacios-gantt .gantt-bar {
-          /* Hard clip: no title, tooltip residue, or child text can paint on the card */
+          /* font-size 0. El texto hijo no se pinta encima de la barra. */
           font-size: 0;
           line-height: 0;
           overflow: hidden;

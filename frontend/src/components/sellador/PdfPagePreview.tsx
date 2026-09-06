@@ -138,7 +138,7 @@ export default function PdfPagePreview({
       }
 
       if (pdfFile && !pdfBase64) {
-        const fileToken = await stageFileForIpc(pdfFile);
+        const fileToken = await stageFileForIpc(pdfFile, { reuse: true });
         if (!fileToken) {
           throw new Error('No se pudo preparar el PDF para la vista previa.');
         }

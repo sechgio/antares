@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { FlyerRecord, LayoutMode } from "../types";
 import { WithHoverTooltip } from "@/components/ui/HoverTooltip";
+import { useFloatingPanel } from "../hooks/useFloatingPanel";
 
 interface FloatingSizePanelProps {
   selectedRecord: FlyerRecord | null;
@@ -8,11 +9,6 @@ interface FloatingSizePanelProps {
   onUpdateRecord: (patch: Partial<Omit<FlyerRecord, "id">>) => void;
   isOpen: boolean;
   onClose: () => void;
-}
-
-interface Position {
-  x: number;
-  y: number;
 }
 
 const SIZE_FIELDS_2UP: Array<{
@@ -41,21 +37,6 @@ const SIZE_FIELDS_3UP: Array<{
   { key: "zonesFontSize3up", label: "Contenido zonas" },
 ];
 
-function getDefaultPosition(): Position {
-  const panelWidth = 300;
-  const fabRight = 24;
-  const fabWidth = 52;
-  const gap = 16;
-
-  const x = window.innerWidth - fabRight - fabWidth - gap - panelWidth;
-  const y = Math.max(20, (window.innerHeight - 450) / 2);
-
-  return {
-    x: Math.max(10, x),
-    y: Math.max(10, y),
-  };
-}
-
 export default function FloatingSizePanel({
   selectedRecord,
   layoutMode,
@@ -63,109 +44,26 @@ export default function FloatingSizePanel({
   isOpen,
   onClose,
 }: FloatingSizePanelProps) {
-  const [position, setPosition] = useState<Position>(() => getDefaultPosition());
-  const [isDragging, setIsDragging] = useState(false);
-  const [isPinned, setIsPinned] = useState(false);
-  const [dragOffset, setDragOffset] = useState<Position>({ x: 0, y: 0 });
   const [activeTab, setActiveTab] = useState<LayoutMode>(layoutMode);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const {
+    panelRef,
+    position,
+    isDragging,
+    isPinned,
+    handleMouseDown,
+    handlePinToggle,
+    handleResetPosition,
+  } = useFloatingPanel({
+    isOpen,
+    panelWidth: 300,
+    storageKeyPosition: "vgen-floating-panel-position",
+    storageKeyPinned: "vgen-floating-panel-pinned",
+    ignoreSelector: "button, input, .vgen-range-item",
+  });
 
   useEffect(() => {
     setActiveTab(layoutMode);
   }, [layoutMode]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const savedPosition = localStorage.getItem("vgen-floating-panel-position");
-    if (savedPosition) {
-      try {
-        const parsed = JSON.parse(savedPosition);
-        setPosition(parsed);
-      } catch {
-        setPosition(getDefaultPosition());
-      }
-    } else {
-      setPosition(getDefaultPosition());
-    }
-
-    const savedPinned = localStorage.getItem("vgen-floating-panel-pinned");
-    if (savedPinned === "true") {
-      setIsPinned(true);
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen && isPinned) {
-      localStorage.setItem("vgen-floating-panel-position", JSON.stringify(position));
-      localStorage.setItem("vgen-floating-panel-pinned", "true");
-    }
-  }, [position, isPinned, isOpen]);
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if ((e.target as HTMLElement).closest("button, input, .vgen-range-item")) return;
-
-      e.preventDefault();
-      setIsDragging(true);
-      const rect = panelRef.current?.getBoundingClientRect();
-      if (rect) {
-        setDragOffset({
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        });
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const newX = e.clientX - dragOffset.x;
-      const newY = e.clientY - dragOffset.y;
-
-      const maxX = window.innerWidth - 320;
-      const maxY = window.innerHeight - 100;
-
-      setPosition({
-        x: Math.max(0, Math.min(newX, maxX)),
-        y: Math.max(0, Math.min(newY, maxY)),
-      });
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDragging, dragOffset]);
-
-  const handlePinToggle = () => {
-    setIsPinned((prev) => {
-      const newPinned = !prev;
-      if (newPinned) {
-        localStorage.setItem("vgen-floating-panel-position", JSON.stringify(position));
-        localStorage.setItem("vgen-floating-panel-pinned", "true");
-      } else {
-        localStorage.removeItem("vgen-floating-panel-position");
-        localStorage.removeItem("vgen-floating-panel-pinned");
-      }
-      return newPinned;
-    });
-  };
-
-  const handleResetPosition = () => {
-    setPosition(getDefaultPosition());
-    localStorage.removeItem("vgen-floating-panel-position");
-  };
 
   const renderSlider = (
     label: string,

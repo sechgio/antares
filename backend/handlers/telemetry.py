@@ -56,9 +56,7 @@ def telemetry(params: dict[str, Any]) -> dict[str, bool]:
     msg = (
         f"rum metric={name} value={value:.4f} rating={rating} id={metric_id} nav={nav_type}"
     )
-    # Evento estructurado con nombre: dimensiones en campos agregables
-    # (allowlist validado en el sink por observability._rum_safe_field),
-    # message solo como respaldo humano. Sin URL/PII por contrato.
+    # Allowlist en _rum_safe_field. Sin URL ni PII.
     log_event(
         logger,
         logging.INFO,

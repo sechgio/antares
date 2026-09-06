@@ -633,9 +633,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       throw new Error('canvas asset ref required');
     }
     const buf = await getCanvasAsset(ref);
-    // Evitar la copia intermedia de buf.buffer.slice (medida: ~48ms + pico 3x por
-    // asset de 64MB) cuando el Buffer ya es contiguo y dueño exclusivo de su
-    // ArrayBuffer: structured clone del IPC copia una sola vez el arreglo completo.
+    // slice() medía ~48ms + pico 3x en 64MB. Si el Buffer es contiguo, el clone de IPC copia una vez.
     const chunk =
       buf.byteOffset === 0 && buf.byteLength === buf.buffer.byteLength
         ? buf.buffer

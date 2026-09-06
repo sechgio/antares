@@ -22,14 +22,21 @@ describe('lerpViewport / inertiaStep', () => {
   });
 
   it('inertiaStep applies friction and stops below the velocity floor', () => {
-    const step = inertiaStep({ x: 10, y: 20 }, { vx: 10, vy: -8 });
+    const step = inertiaStep({ x: 10, y: 20 }, { vx: 10, vy: -8 }, 1000 / 60);
     expect(step).not.toBeNull();
     expect(step!.velocity.vx).toBeCloseTo(10 * PAN_FRICTION, 5);
     expect(step!.velocity.vy).toBeCloseTo(-8 * PAN_FRICTION, 5);
     expect(step!.pan.x).toBeCloseTo(10 + 10 * PAN_FRICTION, 5);
     expect(step!.pan.y).toBeCloseTo(20 - 8 * PAN_FRICTION, 5);
 
-    expect(inertiaStep({ x: 0, y: 0 }, { vx: PAN_MIN_VELOCITY / 2, vy: 0 })).toBeNull();
+    expect(inertiaStep({ x: 0, y: 0 }, { vx: PAN_MIN_VELOCITY / 2, vy: 0 }, 1000 / 60)).toBeNull();
+  });
+
+  it('inertiaStep displacement and decay scale with elapsed time, not frame count', () => {
+    const frame = inertiaStep({ x: 0, y: 0 }, { vx: 20, vy: 0 }, 1000 / 60)!;
+    const double = inertiaStep({ x: 0, y: 0 }, { vx: 20, vy: 0 }, 2000 / 60)!;
+    expect(double.pan.x).toBeGreaterThan(frame.pan.x);
+    expect(Math.abs(double.velocity.vx)).toBeLessThan(Math.abs(frame.velocity.vx));
   });
 });
 
@@ -115,6 +122,47 @@ describe('useSmoothViewport', () => {
       result.current.setPan({ x: 5, y: 5 });
     });
     expect(result.current.pan).toEqual({ x: 5, y: 5 });
+    expect(frames.size).toBe(0);
+  });
+
+  it('setPan cancels an in-flight animateTo so manual pan is not overwritten', () => {
+    const { result } = renderHook(() => useSmoothViewport(1));
+    act(() => {
+      result.current.animateTo({ zoom: 2, pan: { x: 80, y: 0 } }, 200);
+    });
+    expect(frames.size).toBe(1);
+    act(() => {
+      result.current.setPan({ x: 3, y: 4 });
+    });
+    expect(result.current.pan).toEqual({ x: 3, y: 4 });
+    expect(result.current.zoom).toBe(1);
+    expect(frames.size).toBe(0);
+    act(() => tick(200));
+    expect(result.current.pan).toEqual({ x: 3, y: 4 });
+    expect(result.current.zoom).toBe(1);
+  });
+
+  it('setZoom cancels running inertia', () => {
+    const { result } = renderHook(() => useSmoothViewport(1));
+    act(() => {
+      result.current.startInertia({ vx: 24, vy: 0 });
+    });
+    expect(frames.size).toBe(1);
+    act(() => {
+      result.current.setZoom(1.5);
+    });
+    expect(result.current.zoom).toBe(1.5);
+    expect(frames.size).toBe(0);
+  });
+
+  it('unmount cancels leftover animation frames', () => {
+    const { result, unmount } = renderHook(() => useSmoothViewport(1));
+    act(() => {
+      result.current.animateTo({ zoom: 2, pan: { x: 10, y: 0 } }, 400);
+      result.current.startInertia({ vx: 12, vy: 0 });
+    });
+    expect(frames.size).toBeGreaterThan(0);
+    unmount();
     expect(frames.size).toBe(0);
   });
 });

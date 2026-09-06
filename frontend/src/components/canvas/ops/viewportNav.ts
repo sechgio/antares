@@ -96,6 +96,58 @@ export function wheelPanDelta(
   return { x: deltaX, y: deltaY };
 }
 
+export const WHEEL_LINE_PX = 16;
+export const WHEEL_PAGE_PX = 400;
+
+export function normalizeWheelDelta(delta: number, deltaMode = 0): number {
+  if (deltaMode === 1) return delta * WHEEL_LINE_PX;
+  if (deltaMode === 2) return delta * WHEEL_PAGE_PX;
+  return delta;
+}
+
+export type WheelKind = 'pan' | 'zoom';
+
+export interface CoalescedWheel {
+  kind: WheelKind;
+  deltaX: number;
+  deltaY: number;
+  shiftKey: boolean;
+  clientX: number;
+  clientY: number;
+}
+
+export function wheelGestureKind(ctrlKey: boolean, metaKey: boolean): WheelKind {
+  return ctrlKey || metaKey ? 'zoom' : 'pan';
+}
+
+export function applyWheelToViewport(
+  state: ViewportState,
+  wheel: CoalescedWheel,
+  cursorOffset: { x: number; y: number },
+): ViewportState {
+  if (wheel.kind === 'zoom') {
+    const factor = wheelZoomFactor(wheel.deltaY, true);
+    return zoomAtCursor(state.zoom, state.pan, cursorOffset, state.zoom * factor);
+  }
+  const d = wheelPanDelta(wheel.deltaX, wheel.deltaY, wheel.shiftKey);
+  return {
+    zoom: state.zoom,
+    pan: { x: state.pan.x - d.x, y: state.pan.y - d.y },
+  };
+}
+
+export function applyWheelBurst(
+  state: ViewportState,
+  segments: CoalescedWheel[],
+  cursorFor: (segment: CoalescedWheel) => { x: number; y: number },
+): ViewportState {
+  let next = state;
+  for (const segment of segments) {
+    next = applyWheelToViewport(next, segment, cursorFor(segment));
+  }
+  return next;
+}
+
 export function pinchViewport(
   start: ViewportState,
   startMid: { x: number; y: number },
@@ -144,16 +196,21 @@ export type Velocity = { vx: number; vy: number };
 
 export const PAN_FRICTION = 0.92;
 export const PAN_MIN_VELOCITY = 0.5;
+export const INERTIA_FRAME_MS = 1000 / 60;
 
 export function inertiaStep(
   pan: { x: number; y: number },
   velocity: Velocity,
+  dtMs: number = INERTIA_FRAME_MS,
 ): { pan: { x: number; y: number }; velocity: Velocity } | null {
-  const vx = velocity.vx * PAN_FRICTION;
-  const vy = velocity.vy * PAN_FRICTION;
+  const t = Math.max(0, Math.min(dtMs, 64)) / INERTIA_FRAME_MS;
+  if (t === 0) return { pan, velocity };
+  const decay = Math.pow(PAN_FRICTION, t);
+  const vx = velocity.vx * decay;
+  const vy = velocity.vy * decay;
   if (Math.abs(vx) < PAN_MIN_VELOCITY && Math.abs(vy) < PAN_MIN_VELOCITY) return null;
   return {
-    pan: { x: pan.x + vx, y: pan.y + vy },
+    pan: { x: pan.x + vx * t, y: pan.y + vy * t },
     velocity: { vx, vy },
   };
 }

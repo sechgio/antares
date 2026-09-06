@@ -797,8 +797,7 @@ function _spawn(isDev) {
     console.log(`[backend-spawner] Python backend exited (code=${code}, signal=${signal})`);
     const wasReady = _state === STATE.READY;
     const isCleanShutdown = !!_isShuttingDown;
-    // Un cierre ordenado del backend (quit de la app) no es un fallo:
-    // se registra como INFO/cancelled para no contaminar señales de crash.
+    // Quit ordenado: INFO/cancelled, no crash.
     appendLogEvent(isCleanShutdown ? 'INFO' : (wasReady ? 'WARN' : 'INFO'), 'backend.exited', {
       component: 'backend',
       pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,

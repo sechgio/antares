@@ -29,7 +29,7 @@ export interface PreviewViewportHandle {
   print: () => void;
 }
 
-const DEFAULT_ZOOM = 0.85;
+const DEFAULT_ZOOM = 1;
 const ZOOM_STEP = 0.1;
 
 const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(

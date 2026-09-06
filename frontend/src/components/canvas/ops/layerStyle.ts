@@ -276,10 +276,13 @@ export function resolveFilter(vars: LayerCssVars): string | undefined {
   return `blur(${blur}px)`;
 }
 
-export function parseImageZoom(vars: LayerCssVars): number {
-  const n = Number.parseFloat(vars['--image-zoom'] || '1');
+export function clampImageZoom(n: number): number {
   if (!Number.isFinite(n)) return 1;
   return Math.min(3, Math.max(1, Math.round(n * 100) / 100));
+}
+
+export function parseImageZoom(vars: LayerCssVars): number {
+  return clampImageZoom(Number.parseFloat(vars['--image-zoom'] || '1'));
 }
 
 export function imageContentInlineStyle(vars: LayerCssVars): string {

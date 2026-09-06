@@ -14,7 +14,6 @@ import MappingColorField from './MappingColorField';
 import { mappingColorCss, mappingFontNameToCss, mappingFontWeight } from './mappingCoords';
 import { safeBase64ToBytes } from './base64';
 import { ensurePdfJs } from '../../lib/pdfjs';
-export { safeBase64ToBytes };
 
 const MAX_PREVIEW_PAGES = 30;
 const PREVIEW_DEBOUNCE_MS = 400;

@@ -284,11 +284,7 @@ function _enforceLogBudget() {
   }
 }
 
-// El barrido del directorio completo (readdirSync + statSync por archivo) por cada
-// evento medía ~0.27ms adicionales en ráfagas de stderr/IPC y congelaba el event
-// loop del main process. Se amortiza: un barrido cada N eventos mantiene el budget
-// como saneamiento periódico mientras la escritura y la rotación por archivo
-// (por tamaño en _selectLogPath) siguen siendo por evento.
+// Barrer el dir en cada evento: ~0.27ms y congela el loop.
 const _BUDGET_ENFORCE_INTERVAL = 200;
 let _budgetEnforceCounter = 0;
 

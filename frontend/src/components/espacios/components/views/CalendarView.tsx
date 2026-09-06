@@ -360,7 +360,6 @@ export default function CalendarView({
           inset: 0;
         }
 
-        /* ── Toolbar ── */
         .espacios-calendar .fc .fc-toolbar {
           align-items: center;
           display: flex;
@@ -442,7 +441,6 @@ export default function CalendarView({
           padding-right: 0.4rem;
         }
 
-        /* ── Shared grid shell ── */
         .espacios-calendar .fc .fc-scrollgrid {
           border: none;
           height: 100%;
@@ -479,7 +477,6 @@ export default function CalendarView({
           text-transform: lowercase;
         }
 
-        /* Week headers: "domingo" + "5 jul." like reference */
         .espacios-calendar .fc-week-head {
           align-items: flex-start;
           display: flex;
@@ -515,9 +512,6 @@ export default function CalendarView({
           border-color: color-mix(in srgb, var(--border-subtle) 90%, transparent);
         }
 
-        /* ════════════════════════════════════════
-           MONTH VIEW — equal day boxes
-           ════════════════════════════════════════ */
         .espacios-calendar .fc-dayGridMonth-view .fc-scrollgrid-section-header > th,
         .espacios-calendar .fc-dayGridMonth-view .fc-scrollgrid-section-body > td {
           height: 100%;
@@ -552,7 +546,7 @@ export default function CalendarView({
           width: 100% !important;
         }
 
-        /* Month has no time-axis column: 7 equal day columns */
+        /* Mes: sin columna de horas. */
         .espacios-calendar .fc-dayGridMonth-view .fc-col-header-cell {
           width: calc(100% / 7) !important;
         }
@@ -694,11 +688,7 @@ export default function CalendarView({
           flex-shrink: 0;
         }
 
-        /* ════════════════════════════════════════
-           WEEK VIEW — equal columns, aligned borders
-           ════════════════════════════════════════ */
         .espacios-calendar .fc-timeGridWeek-view {
-          /* Fixed axis width so day cols share the rest equally */
           --fc-week-axis-w: 3.75rem;
         }
 
@@ -707,11 +697,7 @@ export default function CalendarView({
           width: 100%;
         }
 
-        /*
-         * Critical: never force day cols to 100%/7 — that ignores the axis column
-         * and misaligns header vs all-day vs time slots.
-         * Use fixed tables + fixed axis; day columns share remaining width equally.
-         */
+        /* 100%/7 ignora la columna del eje y desalinea header, all-day y slots. */
         .espacios-calendar .fc-timeGridWeek-view .fc-scrollgrid-sync-table,
         .espacios-calendar .fc-timeGridWeek-view .fc-col-header,
         .espacios-calendar .fc-timeGridWeek-view .fc-daygrid-body > table,
@@ -724,7 +710,7 @@ export default function CalendarView({
           width: 100% !important;
         }
 
-        /* Axis (hours / "Todo el día") — same width in every section */
+        /* El eje tiene que medir lo mismo en header, all-day y slots. */
         .espacios-calendar .fc-timeGridWeek-view .fc-timegrid-axis,
         .espacios-calendar .fc-timeGridWeek-view th.fc-timegrid-axis,
         .espacios-calendar .fc-timeGridWeek-view td.fc-timegrid-axis,
@@ -737,7 +723,6 @@ export default function CalendarView({
           width: var(--fc-week-axis-w) !important;
         }
 
-        /* Day columns: equal share of (100% − axis). Do NOT set 100%/7 of full table. */
         .espacios-calendar .fc-timeGridWeek-view .fc-col-header-cell:not(.fc-timegrid-axis),
         .espacios-calendar .fc-timeGridWeek-view .fc-daygrid-day,
         .espacios-calendar .fc-timeGridWeek-view .fc-timegrid-col {
@@ -749,7 +734,6 @@ export default function CalendarView({
           width: auto !important;
         }
 
-        /* Vertical borders: same on header, all-day and slots */
         .espacios-calendar .fc-timeGridWeek-view .fc-scrollgrid th,
         .espacios-calendar .fc-timeGridWeek-view .fc-scrollgrid td {
           border-color: color-mix(in srgb, var(--border-subtle) 90%, transparent);
@@ -763,7 +747,7 @@ export default function CalendarView({
           border-left-width: 0;
         }
 
-        /* All-day row: natural height, not stretched */
+        /* FullCalendar estira all-day si no tiene height auto. */
         .espacios-calendar .fc-timeGridWeek-view .fc-daygrid-body {
           height: auto !important;
           width: 100% !important;
@@ -789,11 +773,7 @@ export default function CalendarView({
           margin-bottom: 2px;
         }
 
-        /*
-         * Scroll: only the time-slot body scrolls vertically.
-         * Header + all-day stay locked so their column lines stay aligned.
-         * scrollbar-gutter reserves space so body width matches header.
-         */
+        /* Solo el cuerpo de horas hace scroll. scrollbar-gutter evita desalineación. */
         .espacios-calendar .fc-timeGridWeek-view .fc-scroller {
           scrollbar-gutter: stable;
         }
@@ -868,7 +848,6 @@ export default function CalendarView({
           border-bottom-color: transparent;
         }
 
-        /* All-day label column text */
         .espacios-calendar .fc-timeGridWeek-view .fc-timegrid-axis-cushion {
           max-width: var(--fc-week-axis-w);
           padding: 0.25rem 0.3rem;
@@ -880,7 +859,6 @@ export default function CalendarView({
           display: none;
         }
 
-        /* ── Task chips (month + week all-day) ── */
         .espacios-calendar .fc .fc-daygrid-event {
           background: transparent !important;
           border: none !important;
@@ -903,7 +881,6 @@ export default function CalendarView({
           padding: 0;
         }
 
-        /* Week: solid bars like the reference */
         .espacios-calendar .fc-timeGridWeek-view .fc-daygrid-event {
           border: 1px solid transparent !important;
           border-radius: 3px;

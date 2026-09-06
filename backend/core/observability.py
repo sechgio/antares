@@ -25,8 +25,7 @@ _SAFE_TOKEN_RE = re.compile(r"[^a-zA-Z0-9_.:-]")
 _LEVEL_NAMES = {"DEBUG", "INFO", "WARN", "ERROR", "FATAL"}
 _OUTCOMES = {"success", "partial", "degraded", "failed", "timeout", "cancelled", "rejected"}
 
-# RUM web-vitals: allowlist de dimensiones y validación en el sink
-# (ver backend/handlers/telemetry.py para el contrato del payload).
+# Allowlist RUM (CLS/INP/LCP). Ver telemetry.py.
 _RUM_METRIC_NAMES = frozenset({"CLS", "INP", "LCP"})
 _RUM_RATINGS = frozenset({"good", "needs-improvement", "poor", "unknown"})
 _RUM_NAV_TYPES = frozenset(
@@ -176,7 +175,6 @@ def _rum_safe_field(key: str, value: Any) -> tuple[bool, Any]:
         if not text or len(text) > _RUM_ID_MAX_LENGTH or not _RUM_ID_PATTERN.fullmatch(text):
             return True, "-"
         return True, text
-    # rum_navigation_type
     text = str(value or "").strip().lower()
     return (True, text) if text in _RUM_NAV_TYPES else (False, None)
 

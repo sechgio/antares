@@ -1,0 +1,17 @@
+{
+  "updatedAt": "2026-08-29",
+  "metrics": {
+    "typeIgnore": {
+      "value": 27,
+      "direction": "max"
+    },
+    "anyInFrontend": {
+      "value": null,
+      "direction": "max"
+    },
+    "largeFiles": {
+      "value": null,
+      "direction": "max"
+    }
+  }
+}

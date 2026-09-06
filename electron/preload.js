@@ -58,10 +58,6 @@ function resolveIsPackaged() {
 
 const isDev = process.env?.NODE_ENV !== 'production' && !resolveIsPackaged();
 
-if (isDev) {
-  console.debug('[preload] Preload script executing...');
-}
-
 try {
   contextBridge.exposeInMainWorld('electronAPI', {
     invoke: (method, params = {}) => {
@@ -126,9 +122,6 @@ try {
     canvasAssetPut: (chunk) => ipcRenderer.invoke('ipc-call', 'canvas_asset_put', { chunk }),
     canvasAssetGet: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_get', { ref }),
   });
-  if (isDev) {
-    console.debug('[preload] electronAPI exposed successfully');
-  }
 } catch (err) {
   if (isDev) {
     console.error('[preload] Failed to expose electronAPI:', err);

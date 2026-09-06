@@ -31,7 +31,7 @@ describe('Canvas Theme Alignment', () => {
   it('keeps topbar and side panels on the same appearance surface', () => {
     expect(canvasCss).toMatch(/\.canvas-topbar\s*\{[^}]*background:\s*var\(--cv-panel\)/);
     expect(canvasCss).toMatch(/\.canvas-panel\s*\{[^}]*background:\s*var\(--cv-panel\)/);
-    expect(canvasCss).toMatch(/\.canvas-topbar-trailing--panel\s*\{[^}]*width:\s*272px/);
+    expect(canvasCss).toMatch(/\.canvas-topbar-trailing--panel\s*\{[^}]*width:\s*var\(--cv-right-panel-width, 272px\)/);
   });
 
   it('preserves white paper sheet background on the artboard', () => {

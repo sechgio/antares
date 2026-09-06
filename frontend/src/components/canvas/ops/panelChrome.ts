@@ -5,7 +5,12 @@ export const PANEL_CHROME_KEYS = {
   right: 'antares.canvas.rightPanelOpen',
   lock: 'antares.canvas.uiLocked',
   toolbar: 'antares.canvas.toolbarPosition',
+  leftWidth: 'antares.canvas.leftPanelWidth',
 } as const;
+
+export const LEFT_PANEL_WIDTH_MIN = 200;
+export const LEFT_PANEL_WIDTH_MAX = 420;
+export const LEFT_PANEL_WIDTH_DEFAULT = 248;
 
 export function readBoolLS(key: string, fallback: boolean): boolean {
   try {
@@ -45,4 +50,26 @@ export function writeToolbarPosition(key: string, value: CanvasToolbarPosition):
 
 export function nextBothPanelsOpen(leftOpen: boolean, rightOpen: boolean): boolean {
   return !(leftOpen || rightOpen);
+}
+
+export function clampLeftPanelWidth(width: number): number {
+  if (!Number.isFinite(width)) return LEFT_PANEL_WIDTH_DEFAULT;
+  return Math.min(LEFT_PANEL_WIDTH_MAX, Math.max(LEFT_PANEL_WIDTH_MIN, Math.round(width)));
+}
+
+export function readLeftPanelWidth(key: string, fallback = LEFT_PANEL_WIDTH_DEFAULT): number {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return clampLeftPanelWidth(fallback);
+    return clampLeftPanelWidth(Number(raw));
+  } catch {
+    return clampLeftPanelWidth(fallback);
+  }
+}
+
+export function writeLeftPanelWidth(key: string, width: number): void {
+  try {
+    localStorage.setItem(key, String(clampLeftPanelWidth(width)));
+  } catch {
+  }
 }

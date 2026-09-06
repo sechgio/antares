@@ -103,18 +103,6 @@ const lookupWithIndex = (index: MappingLookupIndex, fileName: string): string | 
 export const lookupMappingValue = (mapping: Record<string, string>, fileName: string): string | undefined =>
   lookupWithIndex(buildMappingLookupIndex(mapping), fileName);
 
-export const resolveMappedOutputName = (mapping: Record<string, string>, fileName: string): string | null => {
-  const index = buildMappingLookupIndex(mapping);
-  const raw = lookupWithIndex(index, fileName);
-  if (!raw) return null;
-  const name = fileNameFromPath(fileName);
-  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
-  let output = sanitizeOutputStem(raw);
-  if (!output) return null;
-  if (ext && !output.toLowerCase().endsWith(ext)) output += ext;
-  return output;
-};
-
 const mappingIdMatchesFile = (idKey: string, fileName: string) => {
   const keyLower = idKey.toLowerCase();
   const stemKey = idKey.includes('.') ? idKey.slice(0, idKey.lastIndexOf('.')).toLowerCase() : idKey.toLowerCase();

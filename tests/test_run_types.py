@@ -91,7 +91,7 @@ class TestRegistryPayload:
 
 class TestHistoryConstants:
     def test_history_all_run_types_matches_registry(self) -> None:
-        from backend.core.history import ALL_RUN_TYPES as history_types
+        from backend.core.run_types import ALL_RUN_TYPES as history_types
 
         assert set(history_types) == set(RUN_TYPE_REGISTRY.keys())
         assert "sellador" in history_types

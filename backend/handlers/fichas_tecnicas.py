@@ -89,7 +89,7 @@ def fichas_tecnicas_import_file(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(msg)
     content = decode_b64_payload(content_b64)
     imported_rows = import_fichas_from_bytes(filename, content)
-    imported, deleted_count = _db().replace_all(imported_rows)
+    imported, deleted_count = _db().replace_all_counted(imported_rows)
     return {
         "success": True,
         "message": f"{len(imported)} fichas importadas",

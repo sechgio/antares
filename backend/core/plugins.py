@@ -21,8 +21,6 @@ _BLOCKED_ATTRS = {"__class__", "__bases__", "__subclasses__", "__mro__", "__glob
 
 _ALLOWED_DUNDERS = {"__name__", "__doc__", "__module__", "__file__", "__qualname__", "__init__"}
 
-_PLUGIN_ALLOWED_ATTRS = {"register", "add_format", "__name__", "__doc__", "__module__", "__file__"}
-
 
 def _is_dangerous_dunder(identifier: str) -> bool:
     return (

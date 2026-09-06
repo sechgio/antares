@@ -66,12 +66,11 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
         )
         raise InvalidExcelError(_ERR_INVALID_EXTENSION)
 
+    # openpyxl arrastra numpy (~1,600 archivos, 10.4s el 2026-09-04).
     try:
         import openpyxl
         from openpyxl.utils.exceptions import InvalidFileException
     except ImportError as err:  # pragma: no cover - openpyxl es dependencia declarada
-        # lazy: openpyxl→numpy arrastran ~1,600 archivos en frío (stall 10.4s medido
-        # 2026-09-04 bajo presión de RAM); no se paga en el import del módulo.
         logger.exception("parse_excel_bytes: openpyxl no disponible: %s", err)
         msg = f"{_ERR_READ_PREFIX}: {err}"
         raise InvalidExcelError(msg) from err

@@ -1,11 +1,4 @@
-/**
- * Node.js & Electron Main IPC Transport Throughput & Backpressure Benchmark.
- *
- * Measures:
- * 1. Stdio pipe throughput (MB/s) and backpressure drain triggers (_writeStdinWithBackpressure).
- * 2. V8 line framing & JSON deserialization performance.
- * 3. Admission control rejection latency at 128 total / 32 per-method concurrency limits.
- */
+/** Bench del transporte IPC: stdio, framing JSON, límites 128/32. */
 
 const { spawn } = require('child_process');
 const path = require('path');
@@ -108,10 +101,8 @@ async function runThroughputAndBackpressureBenchmark() {
   await runner.waitReady();
   console.log('Backend spawned and ready.');
 
-  // Warmup
   await runner.rpc('version');
 
-  // Test 1: Rapid burst of 100 small messages
   const burstCount = 100;
   const burstStart = process.hrtime();
   const burstPromises = [];
@@ -126,7 +117,6 @@ async function runThroughputAndBackpressureBenchmark() {
     `  100 concurrent RPCs completed in ${totalBurstMs.toFixed(2)} ms (${throughputRps.toFixed(1)} req/sec, avg latency=${avgBurstLatency.toFixed(2)} ms)`
   );
 
-  // Test 2: Large stream payload backpressure test
   const payloadSizes = [
     { label: '1 KB', bytes: 1024 },
     { label: '100 KB', bytes: 100 * 1024 },

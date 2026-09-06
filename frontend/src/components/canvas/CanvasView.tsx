@@ -107,11 +107,20 @@ import {
   PANEL_CHROME_KEYS,
   readToolbarPosition,
   readBoolLS,
+  readLeftPanelWidth,
   type CanvasToolbarPosition,
   writeToolbarPosition,
   writeBoolLS,
+  writeLeftPanelWidth,
 } from './ops/panelChrome';
-import { canFocusFieldBinding, canInlineEditLayer, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
+import {
+  canFocusFieldBinding,
+  canInlineEditLayer,
+  isButtonLikeKeyboardTarget,
+  isEditableKeyboardTarget,
+  isLayerListKeyboardTarget,
+  isTypeToEditKey,
+} from './ops/inlineEdit';
 import { matchHistoryShortcut } from './ops/historyShortcuts';
 import {
   createClipboardCopyCoordinator,
@@ -179,6 +188,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const [rightZoomSlot, setRightZoomSlot] = useState<HTMLDivElement | null>(null);
   const [stageZoomSlot, setStageZoomSlot] = useState<HTMLDivElement | null>(null);
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => readBoolLS(PANEL_CHROME_KEYS.left, true));
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() => readLeftPanelWidth(PANEL_CHROME_KEYS.leftWidth));
   const [rightPanelOpen, setRightPanelOpen] = useState(() => readBoolLS(PANEL_CHROME_KEYS.right, true));
   const [uiLocked, setUiLocked] = useState(() => readBoolLS(PANEL_CHROME_KEYS.lock, false));
   const [toolbarPosition, setToolbarPosition] = useState<CanvasToolbarPosition>(() =>
@@ -239,6 +249,9 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   useEffect(() => {
     writeToolbarPosition(PANEL_CHROME_KEYS.toolbar, toolbarPosition);
   }, [toolbarPosition]);
+  useEffect(() => {
+    writeLeftPanelWidth(PANEL_CHROME_KEYS.leftWidth, leftPanelWidth);
+  }, [leftPanelWidth]);
 
   useEffect(
     () => () => {
@@ -318,6 +331,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     commitPageLayersGesture,
     cancelPageLayersGesture,
     onPanelChangeLive,
+    onPanelChangeLayersLive,
     onPanelCommitLive,
   } = useGestureBaselines({ history, pageIndex });
 
@@ -938,23 +952,24 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         setTool('image');
       }
 
-      if (e.code === 'Space' && !e.repeat) {
+      if (e.code === 'Space' && !e.repeat && !isButtonLikeKeyboardTarget(e.target)) {
         e.preventDefault();
         if (toolBeforeSpaceRef.current == null) toolBeforeSpaceRef.current = tool;
         setTool('hand');
       }
 
+      const nav = viewportNavRef.current;
       if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
         e.preventDefault();
-        viewportNavRef.current?.setZoom((z) => nextZoomPreset(z, 'in'));
+        if (nav) nav.animateTo({ zoom: nextZoomPreset(nav.getZoom(), 'in'), pan: nav.getPan() });
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '-') {
         e.preventDefault();
-        viewportNavRef.current?.setZoom((z) => nextZoomPreset(z, 'out'));
+        if (nav) nav.animateTo({ zoom: nextZoomPreset(nav.getZoom(), 'out'), pan: nav.getPan() });
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault();
-        viewportNavRef.current?.setZoom(1);
+        if (nav) nav.animateTo({ zoom: 1, pan: nav.getPan() });
       }
       if (e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'Digit1') {
         e.preventDefault();
@@ -991,6 +1006,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       }
 
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (e.defaultPrevented || isLayerListKeyboardTarget(e.target)) return;
         if (!editableIds.length) return;
         e.preventDefault();
         sealPanelAndAbortGesture();
@@ -1622,7 +1638,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       onChange={(event) => void pdfImport.onPdfFileChange(event)}
       aria-label="Archivo PDF"
     />
-    <div className="canvas-app relative flex h-full min-h-0 flex-col">
+    <div
+      className="canvas-app relative flex h-full min-h-0 flex-col"
+      style={{ ['--cv-left-panel-width' as string]: `${leftPanelWidth}px` }}
+    >
       <TopBar
         name={history.document.name}
         mode={mode}
@@ -1669,6 +1688,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           <LeftSidebar
             open={leftPanelOpen}
+            width={leftPanelWidth}
+            onWidthChange={uiLocked ? undefined : setLeftPanelWidth}
             onHidePanel={toggleLeftPanel}
             hidePanelDisabled={uiLocked}
             documentName={history.document.name}
@@ -1985,8 +2006,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             }}
             onNudgeSelection={(dx, dy) => {
               if (!dx && !dy) return;
-              if (panelBaselineRef.current) onPanelCommitLive();
-              setAllLayers(nudgeLayers(history.document.layers, editableSelectedIds, dx, dy));
+              onPanelChangeLayersLive(nudgeLayers(history.document.layers, editableSelectedIds, dx, dy));
             }}
             selectionOrigin={selectionOrigin}
             onBulkVisible={(visible) => {

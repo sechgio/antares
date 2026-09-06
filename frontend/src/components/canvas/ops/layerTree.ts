@@ -84,6 +84,36 @@ export function buildLayerTree(layers: CanvasLayer[]): LayerTreeNode[] {
   return build(undefined);
 }
 
+export function reconcileExpandedContainers(
+  prevExpanded: ReadonlySet<string>,
+  prevKnown: ReadonlySet<string>,
+  containerIds: readonly string[],
+): { expanded: Set<string>; known: Set<string> } {
+  const known = new Set<string>();
+  const expanded = new Set<string>();
+  for (const id of containerIds) {
+    known.add(id);
+    if (!prevKnown.has(id) || prevExpanded.has(id)) expanded.add(id);
+  }
+  return { expanded, known };
+}
+
+export function expandAncestorsForSelection(
+  expanded: ReadonlySet<string>,
+  layers: CanvasLayer[] | Map<string, CanvasLayer>,
+  selectedIds: readonly string[],
+): Set<string> {
+  let next: Set<string> | null = null;
+  for (const id of selectedIds) {
+    for (const ancestorId of ancestorIds(layers, id)) {
+      if ((next ?? expanded).has(ancestorId)) continue;
+      if (!next) next = new Set(expanded);
+      next.add(ancestorId);
+    }
+  }
+  return next ?? (expanded instanceof Set ? expanded : new Set(expanded));
+}
+
 export function flattenLayerTree(nodes: LayerTreeNode[], expandedIds: Set<string>): FlatLayerRow[] {
   const rows: FlatLayerRow[] = [];
   const walk = (list: LayerTreeNode[], depth: number) => {

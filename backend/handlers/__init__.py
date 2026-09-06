@@ -6,16 +6,13 @@ import logging
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from backend.core.import_guard import serialized_import
 from backend.handlers.common import (
     process_state,
     reset_state,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 

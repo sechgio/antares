@@ -18,7 +18,11 @@ export function hasFileStagingBridge(): boolean {
   return getStagedApi() !== null;
 }
 
-export async function stageFileForIpc(file: File): Promise<string | null> {
+const REUSE_TTL_MS = 25 * 60 * 1000;
+type ReuseEntry = { promise: Promise<string | null>; at: number };
+const reuseByFile = new WeakMap<File, ReuseEntry>();
+
+async function stageFileForIpcUncached(file: File): Promise<string | null> {
   const api = getStagedApi();
   if (!api) return null;
 
@@ -40,5 +44,29 @@ export async function stageFileForIpc(file: File): Promise<string | null> {
       } catch {}
     }
     throw error;
+  }
+}
+
+export async function stageFileForIpc(file: File, options?: { reuse?: boolean }): Promise<string | null> {
+  if (options?.reuse) {
+    const hit = reuseByFile.get(file);
+    if (hit && Date.now() - hit.at < REUSE_TTL_MS) return hit.promise;
+  }
+  const pending = stageFileForIpcUncached(file);
+  if (options?.reuse) {
+    reuseByFile.set(file, { promise: pending, at: Date.now() });
+    pending.catch(() => {
+      const current = reuseByFile.get(file);
+      if (current?.promise === pending) reuseByFile.delete(file);
+    });
+  }
+  return pending;
+}
+
+export function cleanupStagedToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  const api = (window as unknown as { electronAPI?: { cleanupFileToken?: (value: string) => Promise<unknown> } }).electronAPI;
+  if (typeof api?.cleanupFileToken === 'function') {
+    void api.cleanupFileToken(token);
   }
 }

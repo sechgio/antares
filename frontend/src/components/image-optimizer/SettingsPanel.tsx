@@ -61,6 +61,7 @@ export default function SettingsPanel({
           <label className="block space-y-1">
             <span className={fieldLabel}>{t('optimizer.fields.direction')}</span>
             <SegmentedControl
+              className="inline-flex w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] p-0.5"
               value={settings.crop.cropOrigin}
               options={[
                 { value: 'top', label: t('optimizer.fields.topToBottom') },

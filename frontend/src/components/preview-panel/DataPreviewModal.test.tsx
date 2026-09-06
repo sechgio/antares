@@ -72,9 +72,6 @@ describe('DataPreviewModal', () => {
     );
     const elapsed = performance.now() - start;
 
-    // eslint-disable-next-line no-console
-    console.log(`DataPreviewModal 2000x100 render: ${elapsed.toFixed(1)}ms`);
-
     expect(elapsed).toBeLessThan(500);
 
     expect(container.querySelector('[role="dialog"]')).toBeInTheDocument();

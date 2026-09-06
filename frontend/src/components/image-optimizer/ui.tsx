@@ -233,33 +233,7 @@ export function ProgressBar({ current, total }: { current: number; total: number
   );
 }
 
-export function SegmentedControl<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: Array<{ value: T; label: string }>;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="inline-flex w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] p-0.5">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onChange(option.value)}
-          className={`h-7 flex-1 rounded-md px-2 text-[10px] font-medium transition-[color,background-color,transform] duration-100 ${pressable} ${value === option.value
-            ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-sm'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+export { SegmentedControl } from '@/components/ui/SegmentedControl';
 
 export function BeforeAfterSlider({ before, after, alt }: { before: string; after: string; alt: string }) {
   const { t } = useTranslation();

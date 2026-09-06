@@ -1,14 +1,3 @@
-"""IPC transport benchmarks for Milestone M2.
-
-Empirically measures:
-1. JSON-RPC 2.0 stdio roundtrip latency across payload sizes (1 KB, 10 KB, 100 KB, 1 MB, 10 MB, 50 MB) + Phase breakdown
-2. Phase decomposition: parse_ms, scheduler_wait_ms, handler_ms, serialize_write_ms
-3. Stdio transport throughput (MB/s) & backpressure drain behavior
-4. Scheduler lane concurrency isolation (sync/canvas/light during 100% heavy lane saturation)
-5. Large payload mitigations: Content-addressed asset store (canvasAssetPut) vs inline base64 data URLs
-6. Memory pressure backpressure response & disk spill at <1 GiB RAM threshold
-"""
-
 from __future__ import annotations
 
 import base64
@@ -152,7 +141,6 @@ class IPCSubprocess:
 
 
 def benchmark_payload_scaling_and_phases(tmp_dir: Path) -> dict[str, Any]:
-    """Measure roundtrip latency, throughput, and direct Python JSON parse/serialize phases."""
     print("--- 1. Benchmarking Payload Size Scaling & Request Lifecycle Phase Breakdown ---")
     sizes = [
         ("1 KB", 1024),
@@ -169,16 +157,13 @@ def benchmark_payload_scaling_and_phases(tmp_dir: Path) -> dict[str, Any]:
         ready_ms = ipc.wait_ready()
         print(f"Backend ready in {ready_ms:.1f} ms")
 
-        # Warmup
         ipc.rpc("version", {})
 
         for label, size in sizes:
-            # Build representative payload
             dummy_data = "A" * (size - 100)
             req_dict = {"jsonrpc": "2.0", "id": 1, "method": "version", "params": {"data": dummy_data}}
             req_str = json.dumps(req_dict, ensure_ascii=False)
 
-            # Direct Phase Profiling: Python JSON parse & serialization micro-benchmarks
             parse_times = []
             for _ in range(10):
                 t0 = time.perf_counter()
@@ -194,7 +179,6 @@ def benchmark_payload_scaling_and_phases(tmp_dir: Path) -> dict[str, Any]:
                 serialize_times.append((time.perf_counter() - t0) * 1000.0)
             avg_serialize_ms = nearest_rank_percentile(serialize_times, 0.5)
 
-            # Measure full stdio RPC roundtrip
             samples = 15 if size <= 1024 * 1024 else 5
             latencies = []
             for _ in range(samples):
@@ -207,7 +191,7 @@ def benchmark_payload_scaling_and_phases(tmp_dir: Path) -> dict[str, Any]:
             max_ms = max(latencies)
             throughput = (size / (1024 * 1024)) / (p50 / 1000.0) if p50 > 0 else 0
 
-            # Handler time for 'version' is ~0.02ms; scheduler wait on sync lane is 0.00ms
+            # version ~0.02ms. El wait del lane sync da ~0ms.
             scheduler_wait_ms = 0.00
             handler_ms = 0.02
             transport_overhead_ms = max(0.0, p50 - (avg_parse_ms + scheduler_wait_ms + handler_ms + avg_serialize_ms))
@@ -239,23 +223,19 @@ def benchmark_payload_scaling_and_phases(tmp_dir: Path) -> dict[str, Any]:
 
 
 def benchmark_scheduler_isolation(tmp_dir: Path) -> dict[str, Any]:
-    """Benchmark concurrency isolation between lanes under heavy lane saturation."""
     print("--- 2. Benchmarking Scheduler Lane Concurrency Isolation ---")
     ipc = IPCSubprocess(tmp_dir / "profile_scheduler", telemetry=False)
     try:
         ipc.wait_ready()
 
-        # Setup base canvas doc
         _, resp = ipc.rpc("canvas_create", {"name": "Isolation Test"})
         doc = resp.get("result", {}).get("document", {})
         doc_id = doc.get("id")
 
-        # Baseline latencies when idle
         baseline_sync = [ipc.rpc("version", {})[0] for _ in range(25)]
         baseline_canvas = [ipc.rpc("canvas_get", {"id": doc_id})[0] for _ in range(25)]
         baseline_light = [ipc.rpc("formats", {})[0] for _ in range(25)]
 
-        # Saturation burst on HEAVY lane
         heavy_threads = []
         heavy_done = threading.Event()
 
@@ -264,16 +244,14 @@ def benchmark_scheduler_isolation(tmp_dir: Path) -> dict[str, Any]:
                 with contextlib.suppress(Exception):
                     ipc.rpc("canvas_export_cmyk_pdf", {"document": doc}, timeout=20.0)
 
-        # Spawn 8 heavy workers to saturate the heavy pool (heavy_workers cap is 2-8)
+        # El pool heavy admite 2-8 workers. 8 lo satura.
         for _ in range(8):
             t = threading.Thread(target=heavy_worker, daemon=True)
             heavy_threads.append(t)
             t.start()
 
-        # Let the heavy workers saturate
         time.sleep(0.4)
 
-        # Measure sync, canvas, light under heavy saturation
         saturated_sync = [ipc.rpc("version", {})[0] for _ in range(30)]
         saturated_canvas = [ipc.rpc("canvas_get", {"id": doc_id})[0] for _ in range(30)]
         saturated_light = [ipc.rpc("formats", {})[0] for _ in range(30)]
@@ -322,13 +300,11 @@ def benchmark_scheduler_isolation(tmp_dir: Path) -> dict[str, Any]:
 
 
 def benchmark_asset_store_vs_inline_base64(tmp_dir: Path) -> dict[str, Any]:
-    """Compare content-addressed asset store vs inline base64 with real large payloads."""
     print("--- 3. Benchmarking Content-Addressed Asset Store vs Inline Base64 ---")
     ipc = IPCSubprocess(tmp_dir / "profile_assets", telemetry=False)
     try:
         ipc.wait_ready()
 
-        # Generate non-compressible high-entropy images of exact target sizes
         asset_targets = [
             ("500 KB", 500 * 1024),
             ("2 MB", 2 * 1024 * 1024),
@@ -345,7 +321,6 @@ def benchmark_asset_store_vs_inline_base64(tmp_dir: Path) -> dict[str, Any]:
             actual_bytes = len(raw_bytes)
             b64_str = f"data:image/png;base64,{base64.b64encode(raw_bytes).decode('ascii')}"
 
-            # Content addressed asset store setup
             asset_hash = hashlib.sha256(raw_bytes).hexdigest()
             asset_ref = f"canvas-asset:{asset_hash}"
             (assets_dir / asset_hash).write_bytes(raw_bytes)
@@ -385,11 +360,9 @@ def benchmark_asset_store_vs_inline_base64(tmp_dir: Path) -> dict[str, Any]:
             inline_json_size = len(json.dumps(doc_inline))
             asset_json_size = len(json.dumps(doc_asset))
 
-            # Benchmark canvas_save
             inline_save_lats = [ipc.rpc("canvas_save", {"document": doc_inline})[0] for _ in range(5)]
             asset_save_lats = [ipc.rpc("canvas_save", {"document": doc_asset})[0] for _ in range(5)]
 
-            # Benchmark canvas_get
             inline_get_lats = [ipc.rpc("canvas_get", {"id": doc_inline["id"]})[0] for _ in range(5)]
             asset_get_lats = [ipc.rpc("canvas_get", {"id": doc_asset["id"]})[0] for _ in range(5)]
 
@@ -417,10 +390,9 @@ def benchmark_asset_store_vs_inline_base64(tmp_dir: Path) -> dict[str, Any]:
 
 
 def benchmark_memory_pressure_spill(tmp_dir: Path) -> dict[str, Any]:
-    """Benchmark memory pressure (<1 GiB RAM) rejection, backpressure and disk spill recovery."""
     print("--- 4. Benchmarking Memory Pressure Response & Disk Spilling ---")
 
-    # 1. Spawn with ANTARES_MEMORY_PRESSURE_FORCE=1 to simulate <1GiB RAM condition
+    # ANTARES_MEMORY_PRESSURE_FORCE simula <1 GiB.
     ipc_pressure = IPCSubprocess(
         tmp_dir / "profile_mem_pressure",
         telemetry=False,
@@ -437,7 +409,6 @@ def benchmark_memory_pressure_spill(tmp_dir: Path) -> dict[str, Any]:
             "layers": [{"id": "l1", "type": "rect", "name": "R1", "pageIndex": 0, "x": 0, "y": 0, "width": 50, "height": 50, "rotation": 0, "opacity": 1, "visible": True, "locked": False}],
         }
 
-        # Attempt canvas_save under simulated memory pressure
         _, resp = ipc_pressure.rpc("canvas_save", {"document": doc})
 
         error = resp.get("error", {})
@@ -460,7 +431,6 @@ def benchmark_memory_pressure_spill(tmp_dir: Path) -> dict[str, Any]:
 
         ipc_pressure.close()
 
-        # 2. Spawn process with memory pressure disabled (simulating RAM normalized after recovery)
         ipc_normal = IPCSubprocess(
             tmp_dir / "profile_mem_pressure",
             telemetry=False,

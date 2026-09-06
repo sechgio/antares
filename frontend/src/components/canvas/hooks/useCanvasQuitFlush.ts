@@ -81,9 +81,7 @@ export function useCanvasQuitFlush({
           }
         }
       }
-      // El flush fallido antes era silencioso: el doc podía perderse sin rastro
-      // al cerrar. El ack se mantiene igual (no cuelga el cierre); esto solo
-      // deja evidencia en el JSONL vía renderer-event.
+      // El ack no espera el flush. Si falla, queda el JSONL.
       reportFrontendEvent({
         event: 'canvas.quit_flush',
         level: flushFailed ? 'ERROR' : 'INFO',

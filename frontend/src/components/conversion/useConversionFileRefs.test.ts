@@ -38,6 +38,8 @@ describe('useConversionFileRefs', () => {
     expect(result.current.fileRefsReady).toBe(true);
     await expect(result.current.resolveFileRefs(['foto.jpg', 'otro.jpg']))
       .resolves.toEqual(['antares-read_staged-foto.jpg', 'antares-read_dialog']);
+    await expect(result.current.resolveFileRefs(['foto.jpg', 'otro.jpg']))
+      .resolves.toEqual(['antares-read_staged-foto.jpg', 'antares-read_dialog']);
     expect(create).toHaveBeenCalledTimes(1);
     expect(complete).toHaveBeenCalledWith('staged-foto.jpg');
   });

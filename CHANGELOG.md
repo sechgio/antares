@@ -13,6 +13,9 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - **Rendimiento Canvas**: PDF.js se carga de forma diferida y Canvas indexa las capas por página; la apertura inicial no incorpora el vendor pesado.
+- **Canvas / inspector**: paneles al estilo Figma, valores mixed en selección múltiple, lista de capas virtualizada y chrome de selección.
+- **UI**: `SegmentedControl` compartido entre Ubicaciones y el resto de vistas; paneles flotantes de volantes extraídos a un hook.
+- **Sellador / preview**: el raster se codifica con JPEG (PIL q85) en lugar del PNG de MuPDF. El floor de 220 DPI no cambia; Formatos sigue en PNG. A4 con contenido (n=16): p50 187,5 → 58,8 ms (-68,6%); p95 217,1 → 64,1 ms (-70,5%). IPC `sellador_render_page` (n=20): p50 35,7 → 14,0 ms; p95 45,9 → 15,7 ms. `inspect_pdf_path` mide con PyMuPDF.
 
 ## [0.11.10] — 2026-08-22
 
