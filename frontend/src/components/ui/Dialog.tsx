@@ -68,8 +68,6 @@ export default function Dialog() {
           backgroundColor: 'var(--bg-base)',
           color: 'var(--text-primary)',
           border: '1px solid color-mix(in srgb, var(--accent-primary) 32%, var(--border-subtle))',
-          boxShadow:
-            '0 0 0 1px color-mix(in srgb, var(--accent-primary) 18%, transparent), 0 24px 64px color-mix(in srgb, var(--bg-base) 70%, transparent)',
         }}
         role="alertdialog"
         aria-modal="true"

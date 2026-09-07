@@ -52,6 +52,15 @@ const THEMED_UI_FILES = [
   'components/ui/Toggle.tsx',
 ];
 
+const MODAL_SURFACE_FILES = [
+  'components/ui/CommandPalette.tsx',
+  'components/espacios/components/ModalShell.tsx',
+  'components/settings/SettingsModal.tsx',
+  'components/formatos/FormatosView.tsx',
+  'components/preview-panel/PreviewPanelView.tsx',
+  'components/preview-panel/DataPreviewModal.tsx',
+];
+
 describe('global appearance coverage', () => {
   it('keeps database and conversion chrome on appearance tokens instead of fixed shell colors', () => {
     const files = [
@@ -112,5 +121,13 @@ describe('global appearance coverage', () => {
     expect(dialog).toMatch(/--accent-primary/);
     expect(dialog).toMatch(/backgroundColor: 'var\(--bg-base\)'/);
     expect(dialog).not.toMatch(/shadow-elevated/);
+  });
+
+  it('does not paint broad outer halos on modal surfaces', () => {
+    for (const file of MODAL_SURFACE_FILES) {
+      expect(readSource(file), file).not.toMatch(/boxShadow:/);
+    }
+
+    expect(readSource('components/preview-panel/DataPreviewModal.tsx')).not.toMatch(/\bshadow-2xl\b/);
   });
 });

@@ -8,10 +8,14 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Canvas / cloud**: tope de 16 MiB por documento, cuota de almacenamiento en la base y retención de versiones (50 por documento / 90 días).
 - **Canvas / PDF**: importación de PDFs externos como capas editables cuando su semántica es reconocible (texto, rectángulos, elipses, líneas, imágenes y checkboxes), con preflight, progreso, cancelación, límites de rendimiento e informe de contenido omitido.
 - **Canvas / PDF round-trip**: manifiesto semántico embebido en exportaciones RGB y CMYK para reconstruir páginas, capas, estilos y referencias `canvas-asset:` cuando los assets locales están disponibles.
 
 ### Changed
+- **Persistencia**: fichas técnicas, informes v2 y reportes técnicos guardan en el directorio de datos de usuario también en desarrollo, no en `data/` empaquetado.
+- **Reportes de campo**: acciones de panel en grid, con estado de exportables y foco visible.
+- **UI / diálogos**: se quita el halo extra de Dialog, Settings, paleta de comandos y modales equivalentes.
 - **Rendimiento Canvas**: PDF.js se carga de forma diferida y Canvas indexa las capas por página; la apertura inicial no incorpora el vendor pesado.
 - **Canvas / inspector**: paneles al estilo Figma, valores mixed en selección múltiple, lista de capas virtualizada y chrome de selección.
 - **UI**: `SegmentedControl` compartido entre Ubicaciones y el resto de vistas; paneles flotantes de volantes extraídos a un hook.
@@ -21,6 +25,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Sellador / preview**: el raster se codifica con JPEG (PIL q85) en lugar del PNG de MuPDF. El floor de 220 DPI no cambia; Formatos sigue en PNG. A4 con contenido (n=16): p50 187,5 → 58,8 ms (-68,6%); p95 217,1 → 64,1 ms (-70,5%). IPC `sellador_render_page` (n=20): p50 35,7 → 14,0 ms; p95 45,9 → 15,7 ms. `inspect_pdf_path` mide con PyMuPDF.
 
 ### Fixed
+- **Canvas / sync**: si falta `canvas_append_document_version`, el push falla a la vista en vez de insertar a ciegas.
+- **Catálogo SQLite**: espera 30 s en `busy_timeout` ante un lock corto.
 - **Tooltips**: portal `fixed`, clamp al viewport y flip de placement para que el label no se corte en el borde de la ventana.
 - **Apariencia**: los avisos de guardado/error usan traducciones, no la key i18n.
 - **Fichas técnicas**: el modo focus deja el preview a columna completa (clase `is-focus`), sin `grid-template-columns: 0px`.

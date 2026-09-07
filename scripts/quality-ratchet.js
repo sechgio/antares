@@ -19,7 +19,7 @@ const SKIP_DIRS = new Set([
   'data', 'coverage', 'release', 'build', 'scratch', 'agent-tools',
   '.mypy_cache', '.ruff_cache', '.pytest_cache', '__pycache__',
   '.workbuddy-ai', '.worktrees', 'worktrees', '.superpowers',
-  'assets', 'formatos',
+  '.github', 'assets', 'formatos',
 ]);
 
 const SOURCE_EXT = new Set(['.py', '.js', '.ts', '.tsx']);

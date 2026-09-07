@@ -592,14 +592,10 @@ export default function DataPreviewModal({
     >
       <div
         ref={modalRef}
-        className={`w-full flex flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] shadow-2xl transition-all duration-200 animate-scale-in ${
+        className={`w-full flex flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] transition-all duration-200 animate-scale-in ${
           isFullScreen ? 'h-[96vh] max-w-[98vw]' : 'h-[90vh] max-h-[940px] max-w-[1500px]'
         }`}
         tabIndex={-1}
-        style={{
-          boxShadow:
-            '0 24px 60px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px color-mix(in srgb, var(--border-medium) 60%, transparent)',
-        }}
       >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/80 px-5 py-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -673,10 +669,7 @@ export default function DataPreviewModal({
 
               {showColumnDropdown && (
                 <div
-                  className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-base)] p-3 shadow-2xl animate-fade-in"
-                  style={{
-                    boxShadow: '0 16px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px color-mix(in srgb, var(--border-medium) 80%, transparent)',
-                  }}
+                  className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-base)] p-3 animate-fade-in"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
                     <span className="text-[12px] font-semibold text-[var(--text-primary)]">Columnas ({visibleHeaders.length}/{headers.length})</span>

@@ -1,5 +1,7 @@
 import base64
 
+import pytest
+
 from backend.handlers import HANDLERS
 
 
@@ -43,6 +45,20 @@ def test_create_list_update_delete_clear(monkeypatch, tmp_path) -> None:
     HANDLERS["informes_v2_create"]({})
     cleared = HANDLERS["informes_v2_clear"]({})
     assert cleared["deleted_count"] == 1
+    assert cleared["message"] == "Se eliminaron 1 informes"
+
+
+def test_crud_errors_preserve_public_messages(monkeypatch, tmp_path) -> None:
+    _reset_db(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="Informe no encontrado: missing"):
+        HANDLERS["informes_v2_get"]({"id": "missing"})
+    with pytest.raises(ValueError, match="Informe no encontrado: missing"):
+        HANDLERS["informes_v2_update"]({"id": "missing", "report": {}})
+    with pytest.raises(ValueError, match="Informe no encontrado: missing"):
+        HANDLERS["informes_v2_delete"]({"id": "missing"})
+    with pytest.raises(ValueError, match="id y report son requeridos"):
+        HANDLERS["informes_v2_update"]({"id": "missing"})
 
 
 def test_import_file_and_download_template(monkeypatch, tmp_path) -> None:

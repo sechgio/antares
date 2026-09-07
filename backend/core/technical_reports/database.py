@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import sys
 import threading
 from pathlib import Path
 from typing import Any
 
 from backend.core.json_store import JsonDocumentStore
 from backend.core.technical_reports.models import TechnicalReport, create_empty_report, next_technical_report_number
-from backend.utils.paths import resource_path, user_data_path
+from backend.utils.paths import user_data_path
 
-DEFAULT_DB_PATH = user_data_path("technical_reports.json") if getattr(sys, "frozen", False) else resource_path("data/technical_reports.json")
+DEFAULT_DB_PATH = user_data_path("technical_reports.json")
 
 _db_instance: TechnicalReportsDB | None = None
 _db_instance_lock = threading.Lock()

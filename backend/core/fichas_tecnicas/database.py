@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -12,13 +11,9 @@ from backend.core.fichas_tecnicas.models import (
     next_ficha_number,
 )
 from backend.core.json_store import JsonDocumentStore
-from backend.utils.paths import resource_path, user_data_path
+from backend.utils.paths import user_data_path
 
-DEFAULT_DB_PATH = (
-    user_data_path("fichas_tecnicas.json")
-    if getattr(sys, "frozen", False)
-    else resource_path("data/fichas_tecnicas.json")
-)
+DEFAULT_DB_PATH = user_data_path("fichas_tecnicas.json")
 
 _db_instance: FichasTecnicasDB | None = None
 _db_instance_lock = threading.Lock()

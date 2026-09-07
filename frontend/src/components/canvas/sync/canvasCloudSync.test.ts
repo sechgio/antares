@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { CanvasDocument } from '../types';
 import {
   isNewer,
+  MAX_CLOUD_CANVAS_DOCUMENT_BYTES,
   pullCanvasDocument,
   pushCanvasDocument,
   queueCanvasCloudDelete,
@@ -917,14 +918,15 @@ describe('pushCanvasDocument', () => {
     expect(options).toEqual({ onConflict: 'id' });
   });
 
-  it('skips upsert when remote is newer', async () => {
+  it('fails closed when remote is newer but version preservation is unavailable', async () => {
     const doc = makeDoc({
       id: 'doc-1',
       updatedAt: '2026-07-22T12:00:00Z',
     });
     enqueue({ updated_at: '2026-07-22T13:00:00Z', deleted_at: null });
-    const ok = await pushCanvasDocument(doc);
-    expect(ok).toBe(false);
+
+    await expect(pushCanvasDocument(doc)).rejects.toThrow(/preservar el cambio local/);
+    expect(supabaseMock.chainable.insert).not.toHaveBeenCalled();
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
@@ -990,21 +992,24 @@ describe('pushCanvasDocument', () => {
     window.electronAPI = prevApi;
   });
 
-  it('preserves local version on skip when remote is newer', async () => {
+  it('rejects an oversized cloud payload before calling Supabase', async () => {
+    const doc = makeDoc({
+      id: 'doc-large',
+      name: 'x'.repeat(MAX_CLOUD_CANVAS_DOCUMENT_BYTES),
+    });
+
+    await expect(pushCanvasDocument(doc)).rejects.toThrow(/16 MiB/);
+    expect(supabaseMock.rpc).not.toHaveBeenCalled();
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the version-preservation RPC is unavailable', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T10:00:00Z' });
     enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null, created_by: 'user-other' });
-    enqueue(null);
 
-    const ok = await pushCanvasDocument(doc);
+    await expect(pushCanvasDocument(doc)).rejects.toThrow(/preservar el cambio local/);
 
-    expect(ok).toBe(false);
-    const insert = supabaseMock.chainable.insert as ReturnType<typeof vi.fn>;
-    expect(insert).toHaveBeenCalledWith({
-      document_id: 'doc-1',
-      document: doc,
-      created_by: 'user-1',
-      created_at: '2026-07-22T10:00:00Z',
-    });
+    expect(supabaseMock.chainable.insert).not.toHaveBeenCalled();
   });
 
   it('uses atomic RPC canvas_push_document_lww when available and returns true on success', async () => {

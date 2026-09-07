@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from backend.handlers.ubicaciones import _redact_url_for_log
+from backend.core.ubicaciones.client import _redact_url_for_log
 
 
 def test_redact_url_strips_key_query_param() -> None:

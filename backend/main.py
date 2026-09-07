@@ -389,7 +389,7 @@ def main() -> None:
                         _submit_handler(handler, msg.params, msg.id, msg.method)
                 elif HANDLERS.is_known(msg.method):
                     if msg.method in SYNC_METHODS:
-                        sync_handler = HANDLERS.get_loaded(msg.method)
+                        sync_handler = HANDLERS.get(msg.method)
                         if sync_handler is not None:
                             ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="sync")
                             _dispatch(sync_handler, msg.params, msg.id, msg.method)
