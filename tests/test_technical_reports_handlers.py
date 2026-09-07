@@ -1,5 +1,7 @@
 import base64
 
+import pytest
+
 from backend.handlers import HANDLERS
 
 
@@ -7,8 +9,25 @@ def test_technical_reports_handlers_are_registered(monkeypatch, tmp_path) -> Non
     from backend.core.technical_reports import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
+    db_module._db_instance = None
     assert "technical_reports_list" in HANDLERS
     assert "technical_reports_import_file" in HANDLERS
+
+
+def test_crud_errors_preserve_public_messages(monkeypatch, tmp_path) -> None:
+    from backend.core.technical_reports import database as db_module
+
+    monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
+    db_module._db_instance = None
+
+    with pytest.raises(ValueError, match="Informe no encontrado: missing"):
+        HANDLERS["technical_reports_get"]({"id": "missing"})
+    with pytest.raises(ValueError, match="Informe no encontrado: missing"):
+        HANDLERS["technical_reports_update"]({"id": "missing", "report": {}})
+    with pytest.raises(ValueError, match="Informe no encontrado: missing"):
+        HANDLERS["technical_reports_delete"]({"id": "missing"})
+    with pytest.raises(ValueError, match="id y report son requeridos"):
+        HANDLERS["technical_reports_update"]({"id": "missing"})
 
 
 def test_import_file_handler_imports_csv(monkeypatch, tmp_path) -> None:

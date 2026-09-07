@@ -5,8 +5,10 @@ from typing import cast
 import pytest
 from PIL import Image
 
-from backend.handlers import ubicaciones as ub
-from backend.handlers.ubicaciones import (
+from backend.core.ubicaciones import client as u_client
+from backend.core.ubicaciones import composer as u_composer
+from backend.core.ubicaciones.cache import _map_cache_key
+from backend.core.ubicaciones.composer import (
     _BG_RGB,
     _PIN_TIP_RATIO,
     _REF_LAYOUT,
@@ -14,7 +16,6 @@ from backend.handlers.ubicaciones import (
     _crop_footer_bar,
     _dimensions_for,
     _is_gutter_pixel,
-    _map_cache_key,
     _map_capture_size,
     _normalize_map_screenshot,
     _output_pdf_filename,
@@ -168,8 +169,8 @@ def test_pin_tip_constants_match_colored_tip_in_asset() -> None:
     ]
     tip_x = (min(tip_xs) + max(tip_xs)) / 2
 
-    assert tip_y / pin.height == pytest.approx(ub._PIN_TIP_RATIO, abs=1 / pin.height)
-    assert tip_x / pin.width == pytest.approx(ub._PIN_TIP_X_RATIO, abs=1 / pin.width)
+    assert tip_y / pin.height == pytest.approx(u_composer._PIN_TIP_RATIO, abs=1 / pin.height)
+    assert tip_x / pin.width == pytest.approx(u_composer._PIN_TIP_X_RATIO, abs=1 / pin.width)
 
 
 @pytest.mark.parametrize("formato", ["vertical", "horizontal"])
@@ -271,11 +272,11 @@ def test_map_cache_key_differs_by_resolution() -> None:
 def test_export_fetch_has_wider_geo_footprint_than_preview(formato: str) -> None:
     preview_capture = _map_capture_size(formato, preview=True)
     export_capture = _map_capture_size(formato, preview=False)
-    preview_fetch = ub._cap_fetch_size(*preview_capture)
-    export_fetch = ub._cap_fetch_size(*export_capture)
+    preview_fetch = u_client._cap_fetch_size(*preview_capture)
+    export_fetch = u_client._cap_fetch_size(*export_capture)
 
     assert preview_fetch == preview_capture
-    assert max(export_fetch) == ub._MAP_FETCH_MAX_DIM
+    assert max(export_fetch) == u_client._MAP_FETCH_MAX_DIM
     assert export_fetch[0] > preview_fetch[0]
     assert export_fetch[1] > preview_fetch[1]
 

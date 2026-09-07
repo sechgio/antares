@@ -359,10 +359,6 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)' }} onClick={onClose}>
             <div
               className="w-[min(380px,calc(100vw-2rem))] space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-6"
-              style={{
-                boxShadow:
-                  '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
-              }}
               onClick={e => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between">

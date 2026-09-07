@@ -17,6 +17,14 @@ export { isNewer, shouldPushCanvasRow };
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
 export const CLOUD_SYNC_TIMEOUT_MS = 30_000;
+export const MAX_CLOUD_CANVAS_DOCUMENT_BYTES = 16 * 1024 * 1024;
+
+function assertCloudCanvasDocumentSize(doc: CanvasDocument): void {
+  const bytes = new TextEncoder().encode(JSON.stringify(doc)).byteLength;
+  if (bytes > MAX_CLOUD_CANVAS_DOCUMENT_BYTES) {
+    throw new Error('El documento Canvas excede el límite de 16 MiB para sincronización');
+  }
+}
 
 export async function withTimeout<T>(
   promise: PromiseLike<T>,
@@ -111,6 +119,7 @@ export async function pushCanvasDocumentResult(
 
   const { embedCanvasAssetsAsDataUrls, countCanvasAssetRefs } = await import('../utils/imageBlobStore');
   doc = await embedCanvasAssetsAsDataUrls(doc, { strict: true });
+  assertCloudCanvasDocumentSize(doc);
   if (countCanvasAssetRefs(doc) > 0) {
     throw new Error('No se puede sincronizar: quedan imágenes canvas-asset: sin resolver');
   }
@@ -166,18 +175,9 @@ export async function pushCanvasDocumentResult(
       );
     } catch (err) {
       if (!isMissingRpcError(err)) throw err;
-      try {
-        await withTimeout(
-          supabase.from('canvas_document_versions').insert({
-            document_id: doc.id,
-            document: doc,
-            created_by: uid,
-            created_at: updatedAt,
-          }),
-          CLOUD_SYNC_TIMEOUT_MS,
-          'canvas-push-skip-preserve-fallback',
-        );
-      } catch {}
+      throw new Error(
+        'No se puede preservar el cambio local: canvas_append_document_version no está disponible',
+      );
     }
     return pushResult(doc, false, updatedAt, uid);
   }

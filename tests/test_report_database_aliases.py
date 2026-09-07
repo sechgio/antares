@@ -1,3 +1,4 @@
+from backend.core.fichas_tecnicas.database import FichasTecnicasDB
 from backend.core.informes_v2.database import InformesV2DB
 from backend.core.informes_v2.models import create_empty_report as create_informe
 from backend.core.technical_reports.database import TechnicalReportsDB
@@ -44,3 +45,23 @@ def test_technical_replace_all_result_is_detached(tmp_path) -> None:
     replaced[0]["header"]["cs"] = "MUTATED"
 
     assert db.get("RPT-0001")["header"]["cs"] == ""
+
+
+def test_technical_get_preserves_read_normalization(tmp_path) -> None:
+    db = TechnicalReportsDB(tmp_path / "technical.json")
+    db.create(create_technical(1))
+
+    listed = db.get_all()
+    listed[0]["header"]["volumen"] = "not-a-number"
+
+    assert db.get("RPT-0001")["header"]["volumen"] == 0
+
+
+def test_ficha_get_preserves_stored_nested_values(tmp_path) -> None:
+    db = FichasTecnicasDB(tmp_path / "fichas.json")
+    created = db.create()
+
+    listed = db.get_all()
+    listed[0]["servicio"]["desinfeccion"] = "SI"
+
+    assert db.get(created["id"])["servicio"]["desinfeccion"] is True

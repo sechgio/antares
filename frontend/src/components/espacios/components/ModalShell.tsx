@@ -61,10 +61,6 @@ export default function ModalShell({
         ref={dialogRef}
         className={`w-full ${maxWidth} animate-scale-in rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)]`}
         tabIndex={-1}
-        style={{
-          boxShadow:
-            '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
-        }}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

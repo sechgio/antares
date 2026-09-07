@@ -1,5 +1,7 @@
 import base64
 
+import pytest
+
 from backend.handlers import HANDLERS
 
 
@@ -39,7 +41,24 @@ def test_create_list_update_delete_clear(monkeypatch, tmp_path) -> None:
     HANDLERS["fichas_tecnicas_create"]({})
     cleared = HANDLERS["fichas_tecnicas_clear"]({})
     assert cleared["deleted_count"] == 1
+    assert cleared["message"] == "Se eliminaron 1 fichas"
     assert HANDLERS["fichas_tecnicas_list"]({})["total"] == 0
+
+
+def test_crud_errors_preserve_public_messages(monkeypatch, tmp_path) -> None:
+    from backend.core.fichas_tecnicas import database as db_module
+
+    monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "fichas_tecnicas.json")
+    db_module._db_instance = None
+
+    with pytest.raises(ValueError, match="Ficha no encontrada: missing"):
+        HANDLERS["fichas_tecnicas_get"]({"id": "missing"})
+    with pytest.raises(ValueError, match="Ficha no encontrada: missing"):
+        HANDLERS["fichas_tecnicas_update"]({"id": "missing", "ficha": {}})
+    with pytest.raises(ValueError, match="Ficha no encontrada: missing"):
+        HANDLERS["fichas_tecnicas_delete"]({"id": "missing"})
+    with pytest.raises(ValueError, match="id y ficha son requeridos"):
+        HANDLERS["fichas_tecnicas_update"]({"id": "missing"})
 
 
 def test_import_file_handler_imports_csv(monkeypatch, tmp_path) -> None:

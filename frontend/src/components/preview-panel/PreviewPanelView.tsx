@@ -1144,10 +1144,6 @@ export default function PreviewPanelView() {
               }}
               onKeyDown={handleCustomColumnKeyDown}
               className="bg-[var(--bg-base)] border border-[var(--border-subtle)] rounded-xl p-5 w-full max-w-md mx-4"
-              style={{
-                boxShadow:
-                  '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
-              }}
             >
               <h3 id="preview-column-modal-title" className="text-[var(--text-primary)] font-semibold text-sm mb-4 flex items-center gap-2">
                 <span>+</span> Agregar Columna Personalizada

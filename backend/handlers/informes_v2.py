@@ -3,7 +3,16 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from backend.handlers.common import with_locale
+from backend.handlers.common import (
+    clear_store,
+    create_report_from_params,
+    delete_item_or_raise,
+    get_item_id,
+    get_item_or_raise,
+    require_update_payload,
+    update_item_or_raise,
+    with_locale,
+)
 from backend.utils.image_data import decode_b64_payload
 
 
@@ -51,45 +60,32 @@ def informes_v2_list(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def informes_v2_get(params: dict[str, Any]) -> dict[str, Any]:
-    report_id = str(params.get("id") or "")
-    report = _db().get(report_id)
-    if report is None:
-        msg = f"Informe no encontrado: {report_id}"
-        raise ValueError(msg)
-    return {"report": report}
+    report_id = get_item_id(params)
+    return {"report": get_item_or_raise(_db(), report_id, "Informe no encontrado")}
 
 
 @with_locale
 def informes_v2_create(params: dict[str, Any]) -> dict[str, Any]:
-    db = _db()
-    report = params.get("report")
-    created = db.create(report) if isinstance(report, dict) else db.create_empty()
+    created = create_report_from_params(_db(), params, "report")
     return {"success": True, "report": created}
 
 
 @with_locale
 def informes_v2_update(params: dict[str, Any]) -> dict[str, Any]:
-    report_id = str(params.get("id") or "")
-    report = params.get("report")
-    if not report_id or not isinstance(report, dict):
-        msg = "id y report son requeridos"
-        raise ValueError(msg)
-    return {"success": True, "report": _db().update(report_id, report)}
+    report_id, report = require_update_payload(params, "report")
+    return {"success": True, "report": update_item_or_raise(_db(), report_id, report)}
 
 
 @with_locale
 def informes_v2_delete(params: dict[str, Any]) -> dict[str, Any]:
-    report_id = str(params.get("id") or "")
-    if not _db().delete(report_id):
-        msg = f"Informe no encontrado: {report_id}"
-        raise ValueError(msg)
+    report_id = get_item_id(params)
+    delete_item_or_raise(_db(), report_id, "Informe no encontrado")
     return {"success": True, "deleted_id": report_id}
 
 
 @with_locale
 def informes_v2_clear(params: dict[str, Any]) -> dict[str, Any]:
-    count = _db().clear_all()
-    return {"success": True, "deleted_count": count, "message": f"Se eliminaron {count} informes"}
+    return clear_store(_db(), "informes")
 
 
 @with_locale

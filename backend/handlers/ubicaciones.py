@@ -1,1190 +1,85 @@
-import base64
+from __future__ import annotations
+
 import contextlib
-import errno
-import hashlib
 import json
 import logging
-import math
 import os
-import re
 import tempfile
-import threading
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
-from collections import OrderedDict
-from concurrent.futures import Future, ThreadPoolExecutor
-from io import BytesIO
+import urllib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-
+from backend.core.ubicaciones import cache as _ubic_cache
+from backend.core.ubicaciones import client as _ubic_client
+from backend.core.ubicaciones import composer as _ubic_composer
+from backend.core.ubicaciones import consolidator as _ubic_consolidator
+from backend.core.ubicaciones.cache import (
+    _cache_lock,
+    _compose_and_cache_preview,
+    _composed_preview_key,
+    _get_cached_map_screenshot,
+    _load_excel_data,
+    _manual_preview_ctx,
+    _map_cache_key,
+    _map_screenshot_cache,
+    _map_screenshot_working_cache,
+    _preview_composed_cache,
+    _spawn_prefetch,
+    _sync_excel_context,
+)
+from backend.core.ubicaciones.client import (
+    _MAX_MAP_ZOOM,
+    _MAX_RENDER_WORKERS,
+    _MIN_MAP_ZOOM,
+    _coerce_coord,
+    _is_na,
+)
+from backend.core.ubicaciones.composer import (
+    _extract_row_data,
+    _unique_pdf_filename,
+    generar_imagen_ubicacion,
+)
+from backend.core.ubicaciones.consolidator import (
+    _save_consolidated_writer,
+    append_page_to_writer,
+    close_consolidated_writer,
+    create_consolidated_writer,
+)
 from backend.handlers.common import with_locale
-from backend.utils.paths import resource_path, user_data_path
-from backend.utils.validators import sanitizar_nombre
-from backend.version import __version__ as _antares_version
 
 logger = logging.getLogger(__name__)
 
 
-_REF_LAYOUT: dict[str, dict[str, int | float]] = {
-    "vertical": {
-        "out_w": 2480,
-        "out_h": 3508,
-        "footer_h": 122,
-        "preview_w": 600,
-        "y_start": 120,
-        "line_spacing": 180,
-        "line_gap": 0.7,
-        "pin_scale": 0.15,
-        "font_large": 120,
-        "font_medium": 60,
-        "stroke_large": 12,
-        "stroke_medium": 8,
-        "border": 4,
-    },
-    "horizontal": {
-        "out_w": 3508,
-        "out_h": 2480,
-        "footer_h": 135,
-        "preview_w": 850,
-        "y_start": 180,
-        "line_spacing": 260,
-        "line_gap": 0.7,
-        "pin_scale": 0.12,
-        "font_large": 120,
-        "font_medium": 60,
-        "stroke_large": 12,
-        "stroke_medium": 8,
-        "border": 4,
-    },
-}
-_PIN_TIP_X_RATIO = 0.4846
-_PIN_TIP_RATIO = 0.7432
-_MAP_OVERLAY_ALPHA = 120
-_BG_RGB = (246, 246, 246)
-
-_font_cache: OrderedDict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.ImageFont] = OrderedDict()
-_footer_cache: OrderedDict[tuple[int, int, int], Image.Image | None] = OrderedDict()
-_MAX_FONT_CACHE = 32
-_MAX_FOOTER_CACHE = 8
-_excel_cache: OrderedDict[str, tuple[tuple[int, int, int], Any, tuple[Any, ...], int]] = OrderedDict()
-_MAX_EXCEL_CACHE = 8
-_MAX_EXCEL_CACHE_BYTES = 64 * 1024 * 1024
-_excel_cache_bytes = 0
-_map_screenshot_store: OrderedDict[tuple[Any, ...], bytes] = OrderedDict()
-_map_screenshot_validated: set[tuple[Any, ...]] = set()
-_map_screenshot_negative_at: OrderedDict[tuple[Any, ...], float] = OrderedDict()
-_map_screenshot_inflight: dict[tuple[Any, ...], Future[bytes]] = {}
-_preview_composed_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
-_preview_excel_ctx: tuple[str, tuple[int, int, int]] | None = None
-_cache_lock = threading.Lock()
-_MAX_MAP_CACHE = 20
-_MAP_NEGATIVE_TTL_SECONDS = 30.0
-_MAX_COMPOSED_CACHE = 16
-
-
-def _clear_ubicaciones_caches() -> None:
-    global _preview_excel_ctx, _excel_cache_bytes
-    with _cache_lock:
-        _map_screenshot_store.clear()
-        _map_screenshot_validated.clear()
-        _map_screenshot_negative_at.clear()
-        _preview_composed_cache.clear()
-        _excel_cache.clear()
-        _excel_cache_bytes = 0
-        _font_cache.clear()
-        _footer_cache.clear()
-        _preview_excel_ctx = None
-
-
-class _MapScreenshotCacheView:
-
-    def __init__(self, *, validated_only: bool) -> None:
-        self._validated_only = validated_only
-
-    def clear(self) -> None:
-        with _cache_lock:
-            _map_screenshot_store.clear()
-            _map_screenshot_validated.clear()
-            _map_screenshot_negative_at.clear()
-
-    def get(self, key: tuple[Any, ...], default: bytes | None = None) -> bytes | None:
-        with _cache_lock:
-            if key not in _map_screenshot_store:
-                return default
-            if self._validated_only and key not in _map_screenshot_validated:
-                return default
-            _map_screenshot_store.move_to_end(key)
-            return _map_screenshot_store[key]
-
-    def __setitem__(self, key: tuple[Any, ...], value: bytes) -> None:
-        with _cache_lock:
-            _map_screenshot_store[key] = value
-            _map_screenshot_store.move_to_end(key)
-            if self._validated_only:
-                _map_screenshot_validated.add(key)
-                _map_screenshot_negative_at.pop(key, None)
-            while len(_map_screenshot_store) > _MAX_MAP_CACHE:
-                old_key, _ = _map_screenshot_store.popitem(last=False)
-                _map_screenshot_validated.discard(old_key)
-                _map_screenshot_negative_at.pop(old_key, None)
-
-    def __contains__(self, key: object) -> bool:
-        if not isinstance(key, tuple):
-            return False
-        with _cache_lock:
-            return key in _map_screenshot_store and (
-                not self._validated_only or key in _map_screenshot_validated
-            )
-
-    def __len__(self) -> int:
-        with _cache_lock:
-            if self._validated_only:
-                return sum(1 for k in _map_screenshot_store if k in _map_screenshot_validated)
-            return len(_map_screenshot_store)
-
-
-_map_screenshot_cache = _MapScreenshotCacheView(validated_only=True)
-_map_screenshot_working_cache = _MapScreenshotCacheView(validated_only=False)
-_MAX_RENDER_WORKERS = 4
-_COORD_PRECISION = 5
-_MAP_CAPTURE_VERSION = 5
-_FOOTER_LAYOUT_VERSION = 2
-
-_MAP_ZOOM = 18
-_MIN_MAP_ZOOM = 0
-_MAX_MAP_ZOOM = 22
-_MAP_PROVIDER_DEFAULT = "osm"
-_MAX_CONSOLIDATED_PAGE_BYTES = 64 * 1024 * 1024
-_MAP_FETCH_MAX_DIM = 1024
-_OSM_TILE_SIZE = 256
-_XYZ_PROVIDERS = {
-    "osm": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    "mapbox": "https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}?access_token={key}",
-    "maptiler": "https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}",
-    "stadia": "https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key={key}",
-    "geoapify": "https://maps.geoapify.com/v1/tile/osm-carto/{z}/{x}/{y}.png?apiKey={key}",
-    "thunderforest": "https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey={key}"
-}
-_GOOGLE_STATIC_URL = "https://maps.googleapis.com/maps/api/staticmap"
-_HTTP_USER_AGENT = f"Antares/{_antares_version} (ubicaciones static map; +https://github.com/sechgio/antares)"
-_HTTP_TIMEOUT = 12
-
-
-def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
-    h = hex_str.lstrip("#")
-    if len(h) == 3:
-        h = h[0] * 2 + h[1] * 2 + h[2] * 2
-    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-
-
-def _colorize_pin(pin_rgba: Image.Image, target_rgb: tuple[int, int, int]) -> Image.Image:
-    _r, _g, _b, a = pin_rgba.split()
-    gray = pin_rgba.convert("L")
-    colored = ImageOps.colorize(gray, black=(0, 0, 0), mid=target_rgb, white=(255, 255, 255))
-    colored = colored.convert("RGBA")
-    colored.putalpha(a)
-    return colored
-
-
-def _get_font(bold: bool, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    key = ("arialbd" if bold else "arial", size)
-    with _cache_lock:
-        cached = _font_cache.get(key)
-        if cached is not None:
-            _font_cache.move_to_end(key)
-            return cached
-    try:
-        font: ImageFont.FreeTypeFont | ImageFont.ImageFont = ImageFont.truetype(f"{key[0]}.ttf", size)
-    except Exception:
-        try:
-            font = ImageFont.truetype("arial.ttf", size)
-        except Exception:
-            font = ImageFont.load_default()
-    with _cache_lock:
-        _font_cache[key] = font
-        _font_cache.move_to_end(key)
-        _trim_cache(_font_cache, _MAX_FONT_CACHE)
-    return font
-
-
-def _crop_footer_bar(img: Image.Image) -> Image.Image:
-    rgb = img.convert("RGB")
-    w, h = rgb.size
-    step = max(1, w // 30)
-    last_black = 0
-    for y in range(h):
-        total = 0.0
-        count = 0
-        for x in range(0, w, step):
-            total += sum(cast(tuple[int, ...], rgb.getpixel((x, y))))
-            count += 1
-        if count and (total / count) < 120:
-            last_black = y
-    bar_h = max(1, last_black + 1)
-    return rgb.crop((0, 0, w, bar_h))
-
-
-def _measure_footer_band_height(jpg_path: str) -> int:
-    with Image.open(jpg_path) as opened:
-        img = opened.convert("RGB")
-    w, h = img.size
-    black_rows: list[int] = []
-    step = max(1, w // 30)
-    for y in range(h):
-        total = sum(sum(cast(tuple[int, ...], img.getpixel((x, y)))) for x in range(0, w, step))
-        if (total / (w // step + 1)) < 100:
-            black_rows.append(y)
-    if not black_rows:
-        return 0
-    groups: list[tuple[int, int]] = []
-    start = black_rows[0]
-    prev = black_rows[0]
-    for y in black_rows[1:]:
-        if y == prev + 1:
-            prev = y
-        else:
-            groups.append((start, prev))
-            start = prev = y
-    groups.append((start, prev))
-    best_start, best_end = max(groups, key=lambda band: band[1] - band[0])
-    return best_end - best_start + 1
-
-
-def _get_footer_image(width: int, height: int) -> Image.Image | None:
-    key = (_FOOTER_LAYOUT_VERSION, width, height)
-    with _cache_lock:
-        if key in _footer_cache:
-            _footer_cache.move_to_end(key)
-            return _footer_cache[key]
-    footer: Image.Image | None = None
-    assets_dir = resource_path("assets/ubicaciones")
-    logo_path = os.path.join(assets_dir, "logo_footer.png")
-    if not os.path.exists(logo_path):
-        logo_path = os.path.join(assets_dir, "footer_horizontal.png")
-    if os.path.exists(logo_path):
-        with Image.open(logo_path) as opened:
-            src = opened.convert("RGBA")
-        bar_h = _crop_footer_bar(src.convert("RGB")).height
-        logo = src.crop((0, 0, src.width, bar_h))
-        scale = width / logo.width
-        new_w = width
-        new_h = max(1, round(logo.height * scale))
-        if new_h > height:
-            scale = height / logo.height
-            new_h = height
-            new_w = max(1, round(logo.width * scale))
-        logo_resized = logo.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        footer = Image.new("RGB", (width, height), (0, 0, 0))
-        x = (width - new_w) // 2
-        y = (height - new_h) // 2
-        footer.paste(logo_resized, (x, y), logo_resized)
-    with _cache_lock:
-        _footer_cache[key] = footer
-        _footer_cache.move_to_end(key)
-        _trim_cache(_footer_cache, _MAX_FOOTER_CACHE)
-    return footer
-
-
-def _map_opts_fingerprint(map_opts: dict[str, Any] | None) -> tuple[Any, ...]:
-    provider = _resolve_provider(map_opts)
-    zoom = int(map_opts["zoom"]) if map_opts and map_opts.get("zoom") is not None else _MAP_ZOOM
-    api_key = _resolve_api_key(map_opts) or ""
-    key_fp = "" if provider == "osm" or not api_key else hashlib.sha256(api_key.encode()).hexdigest()[:12]
-    return (provider, zoom, key_fp)
-
-
-def _composed_preview_key(
-    excel_ctx: Any,
-    row_index: int,
-    formato: str,
-    styles_hash: str,
-    map_opts: dict[str, Any] | None,
-) -> tuple[Any, ...]:
-    return (
-        _FOOTER_LAYOUT_VERSION,
-        _MAP_CAPTURE_VERSION,
-        excel_ctx,
-        row_index,
-        formato,
-        styles_hash,
-        _map_opts_fingerprint(map_opts),
-    )
-
-
-def _map_cache_key(
-    lat: float,
-    lon: float,
-    formato: str,
-    *,
-    preview: bool,
-    map_opts: dict[str, Any] | None = None,
-) -> tuple[Any, ...]:
-    cap_w, cap_h = _map_capture_size(formato, preview=preview)
-    return (_MAP_CAPTURE_VERSION, *_coord_key(lat, lon), formato, cap_w, cap_h, *_map_opts_fingerprint(map_opts))
-
-
-def _screenshot_has_map_tiles(screenshot_bytes: bytes) -> bool:
-    with Image.open(BytesIO(screenshot_bytes)) as opened:
-        img = opened.convert("RGB")
-    w, h = img.size
-    light_gray = 0
-    chroma = 0
-    samples = 24
-    for i in range(samples):
-        x = max(0, min(w - 1, (w * (i + 1)) // (samples + 1)))
-        y = max(0, min(h - 1, (h * (i + 1)) // (samples + 1)))
-        r, g, b = cast(tuple[int, int, int], img.getpixel((x, y)))
-        spread = max(r, g, b) - min(r, g, b)
-        lum = r + g + b
-        if spread < 14 and lum > 620:
-            light_gray += 1
-        if spread > 18 and 180 < lum < 650:
-            chroma += 1
-    return light_gray < samples * 0.55 and chroma >= 2
-
-
-def _is_gutter_pixel(r: int, g: int, b: int) -> bool:
-    spread = max(r, g, b) - min(r, g, b)
-    return r > 225 and g > 232 and b > 228 and spread < 40
-
-
-def _column_is_gutter(img: Image.Image, x: int) -> bool:
-    _w, h = img.size
-    step = max(1, h // 80)
-    return all(_is_gutter_pixel(*cast(tuple[int, int, int], img.getpixel((x, y)))) for y in range(0, h, step))
-
-
-def _row_is_gutter(img: Image.Image, y: int) -> bool:
-    w, _h = img.size
-    step = max(1, w // 80)
-    return all(_is_gutter_pixel(*cast(tuple[int, int, int], img.getpixel((x, y)))) for x in range(0, w, step))
-
-
-def _trim_map_gutters(img: Image.Image) -> Image.Image:
-    w, h = img.size
-    left = 0
-    while left < w - 20 and _column_is_gutter(img, left):
-        left += 1
-    right = w - 1
-    while right > left + 20 and _column_is_gutter(img, right):
-        right -= 1
-    top = 0
-    while top < h - 20 and _row_is_gutter(img, top):
-        top += 1
-    bottom = h - 1
-    while bottom > top + 20 and _row_is_gutter(img, bottom):
-        bottom -= 1
-    return img.crop((left, top, right + 1, bottom + 1))
-
-
-def _center_crop_to_aspect(img: Image.Image, width: int, height: int) -> Image.Image:
-    target_aspect = width / height
-    w, h = img.size
-    src_aspect = w / h
-    if src_aspect > target_aspect:
-        new_w = max(1, int(h * target_aspect))
-        left = (w - new_w) // 2
-        return img.crop((left, 0, left + new_w, h))
-    if src_aspect < target_aspect:
-        new_h = max(1, int(w / target_aspect))
-        top = (h - new_h) // 2
-        return img.crop((0, top, w, top + new_h))
-    return img
-
-
-def _normalize_map_screenshot(screenshot_bytes: bytes, width: int, height: int) -> bytes:
-    with Image.open(BytesIO(screenshot_bytes)) as opened:
-        img = opened.convert("RGB")
-    if img.size != (width, height):
-        img = _center_crop_to_aspect(img, width, height)
-    img = _trim_map_gutters(img)
-    if img.size != (width, height):
-        img = img.resize((width, height), Image.Resampling.LANCZOS)
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def _resolve_provider(map_opts: dict[str, Any] | None) -> str:
-    if map_opts and map_opts.get("provider"):
-        return str(map_opts["provider"]).lower()
-    return os.environ.get("ANTARES_MAP_PROVIDER", _MAP_PROVIDER_DEFAULT).lower()
-
-
-def _resolve_api_key(map_opts: dict[str, Any] | None) -> str | None:
-    if map_opts:
-        if map_opts.get("api_key"):
-            return str(map_opts["api_key"])
-        if map_opts.get("google_maps_key"):
-            return str(map_opts["google_maps_key"])
-    return os.environ.get("ANTARES_MAPS_API_KEY") or os.environ.get("ANTARES_GOOGLE_MAPS_KEY") or None
-
-
-def _cap_fetch_size(width: int, height: int) -> tuple[int, int]:
-    longest = max(width, height)
-    if longest <= _MAP_FETCH_MAX_DIM:
-        return max(1, width), max(1, height)
-    scale = _MAP_FETCH_MAX_DIM / longest
-    return max(1, round(width * scale)), max(1, round(height * scale))
-
-
-def _redact_url_for_log(url: str) -> str:
-    try:
-        parsed = urllib.parse.urlparse(url)
-        if not parsed.query:
-            return url
-        pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-        redacted: list[tuple[str, str]] = []
-        sensitive = {"key", "access_token", "api_key", "token", "apikey"}
-        for name, value in pairs:
-            if name.lower() in sensitive:
-                redacted.append((name, "***"))
-            else:
-                redacted.append((name, value))
-        return urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(redacted)))
-    except Exception:
-        return "<url redacted>"
-
-
-def _http_get(
-    url: str,
-    headers: dict[str, str],
-    timeout: int = _HTTP_TIMEOUT,
-    deadline: float | None = None,
-) -> bytes | None:
-    _TRANSIENT_CODES = frozenset((408, 429, 500, 502, 503, 504))
-    start = time.monotonic() if deadline is not None else None
-    while True:
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return cast(bytes, resp.read())
-        except urllib.error.HTTPError as exc:
-            is_transient = exc.code in _TRANSIENT_CODES
-            if not is_transient or deadline is None:
-                logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
-                return None
-            retry_after = 0.0
-            try:
-                if exc.headers is not None:
-                    raw = exc.headers.get("Retry-After")
-                    if raw is not None:
-                        retry_after = float(str(raw).strip())
-                        if not math.isfinite(retry_after) or retry_after < 0:
-                            retry_after = 0.0
-            except Exception:
-                retry_after = 0.0
-            last_exc: Exception = exc
-        except (urllib.error.URLError, OSError, TimeoutError) as exc:
-            if deadline is None:
-                logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
-                return None
-            last_exc = exc
-            retry_after = 0.0
-        except Exception as exc:
-            logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
-            return None
-        assert start is not None and deadline is not None
-        elapsed = time.monotonic() - start
-        remaining = deadline - elapsed
-        if remaining <= 0:
-            logger.debug("HTTP GET deadline exceeded for %s: %s", _redact_url_for_log(url), last_exc)
-            return None
-        sleep_for = retry_after if retry_after > 0 else 0.0
-        if sleep_for > remaining:
-            sleep_for = remaining
-        time.sleep(sleep_for)
-
-
-def _fallback_map_bytes(width: int, height: int) -> bytes:
-    img = Image.new("RGB", (max(1, width), max(1, height)), (215, 215, 215))
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def _lonlat_to_webmercator_pixel(lon: float, lat: float, zoom: int) -> tuple[float, float]:
-    n = 2 ** zoom
-    x = (lon + 180.0) / 360.0 * n * _OSM_TILE_SIZE
-    lat_rad = math.radians(lat)
-    y = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n * _OSM_TILE_SIZE
-    return x, y
-
-
-def _fetch_xyz_tiles_map(lat: float, lon: float, width: int, height: int, zoom: int, url_template: str, api_key: str = "") -> Image.Image:
-    cx, cy = _lonlat_to_webmercator_pixel(lon, lat, zoom)
-    left = cx - width / 2
-    top = cy - height / 2
-    n = 2 ** zoom
-    tile_x0 = int(left // _OSM_TILE_SIZE)
-    tile_y0 = int(top // _OSM_TILE_SIZE)
-    tile_x1 = int((left + width) // _OSM_TILE_SIZE)
-    tile_y1 = int((top + height) // _OSM_TILE_SIZE)
-    cols = tile_x1 - tile_x0 + 1
-    rows = tile_y1 - tile_y0 + 1
-    canvas = Image.new("RGB", (cols * _OSM_TILE_SIZE, rows * _OSM_TILE_SIZE), (218, 218, 218))
-    headers = {"User-Agent": _HTTP_USER_AGENT}
-
-    tile_jobs: list[tuple[int, int, str]] = []
-    for ty in range(tile_y0, tile_y1 + 1):
-        if ty < 0 or ty >= n:
-            continue
-        for tx in range(tile_x0, tile_x1 + 1):
-            tx_mod = tx % n
-            url = url_template.format(z=zoom, x=tx_mod, y=ty, key=urllib.parse.quote(api_key or ""))
-            tile_jobs.append((tx - tile_x0, ty - tile_y0, url))
-
-    def _download_tile(job: tuple[int, int, str]) -> tuple[int, int, Image.Image | None]:
-        col, row, url = job
-        tile_bytes = _http_get(url, headers)
-        if not tile_bytes:
-            return col, row, None
-        try:
-            with Image.open(BytesIO(tile_bytes)) as tile:
-                decoded = tile.convert("RGB")
-            return col, row, decoded
-        except Exception:
-            logger.debug("Tile decode failed for %s", _redact_url_for_log(url), exc_info=True)
-            return col, row, None
-
-    max_workers = min(_MAX_RENDER_WORKERS, max(len(tile_jobs), 1))
-    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="map-tile") as ex:
-        for col, row, tile in ex.map(_download_tile, tile_jobs):
-            if tile is not None:
-                canvas.paste(tile, (col * _OSM_TILE_SIZE, row * _OSM_TILE_SIZE))
-
-    offset_x = round(left - tile_x0 * _OSM_TILE_SIZE)
-    offset_y = round(top - tile_y0 * _OSM_TILE_SIZE)
-    return canvas.crop((offset_x, offset_y, offset_x + width, offset_y + height))
-
-
-def _google_static_map_size(width: int, height: int) -> tuple[int, int]:
-    width = max(1, int(width))
-    height = max(1, int(height))
-    longest = max(width, height)
-    if longest <= 640:
-        return width, height
-    scale = 640 / longest
-    return max(1, round(width * scale)), max(1, round(height * scale))
-
-
-def _fetch_google_static_map(lat: float, lon: float, width: int, height: int, zoom: int, key: str) -> Image.Image:
-    req_w, req_h = _google_static_map_size(width, height)
-    params = (
-        f"?center={lat},{lon}&zoom={zoom}&size={req_w}x{req_h}&scale=2"
-        f"&maptype=roadmap&format=png&key={urllib.parse.quote(key)}"
-    )
-    url = _GOOGLE_STATIC_URL + params
-    data = _http_get(url, {"User-Agent": _HTTP_USER_AGENT})
-    if not data:
-        return Image.new("RGB", (width, height), (215, 215, 215))
-    try:
-        with Image.open(BytesIO(data)) as opened:
-            return opened.convert("RGB")
-    except Exception:
-        logger.debug("Google Static Maps decode failed", exc_info=True)
-        return Image.new("RGB", (width, height), (215, 215, 215))
-
-
-def fetch_static_map(
-    lat: float,
-    lon: float,
-    width: int,
-    height: int,
-    zoom: int = _MAP_ZOOM,
-    *,
-    provider: str = _MAP_PROVIDER_DEFAULT,
-    api_key: str | None = None,
-) -> bytes:
-    fetch_w, fetch_h = _cap_fetch_size(width, height)
-    try:
-        if provider == "google":
-            if not api_key:
-                logger.warning("Google Static Maps seleccionado pero falta llave API; usando fallback.")
-                return _fallback_map_bytes(fetch_w, fetch_h)
-            img = _fetch_google_static_map(lat, lon, fetch_w, fetch_h, zoom, api_key)
-        else:
-            url_template = _XYZ_PROVIDERS.get(provider)
-            if not url_template:
-                logger.warning("Proveedor desconocido %s; haciendo fallback a OSM.", provider)
-                url_template = _XYZ_PROVIDERS["osm"]
-
-            if provider != "osm" and not api_key:
-                logger.warning("Proveedor %s requiere una llave API pero no se proporcionó. La petición de mapa probablemente fallará.", provider)
-
-            img = _fetch_xyz_tiles_map(lat, lon, fetch_w, fetch_h, zoom, url_template, api_key or "")
-        img = img.resize((fetch_w, fetch_h), Image.Resampling.LANCZOS) if img.size != (fetch_w, fetch_h) else img
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        return buf.getvalue()
-    except Exception:
-        logger.exception("fetch_static_map falló para %s,%s; usando placeholder", lat, lon)
-        return _fallback_map_bytes(fetch_w, fetch_h)
-
-
-def _is_na(value: Any) -> bool:
-    if value is None:
-        return True
-    try:
-        return bool(math.isnan(float(value)))
-    except (TypeError, ValueError):
-        return False
-
-
-def _excel_cache_key(excel_path: str) -> str:
-    return os.path.normcase(os.path.abspath(excel_path))
-
-
-def _excel_file_signature(excel_path: str) -> tuple[int, int, int]:
-    stat = os.stat(excel_path)
-    return (int(stat.st_mtime_ns), int(stat.st_size), int(stat.st_ctime_ns))
-
-
-def _estimate_excel_cache_bytes(df: Any) -> int:
-    try:
-        return max(1, int(df.memory_usage(index=True, deep=True).sum()))
-    except (AttributeError, TypeError, ValueError):
-        return max(1, int(getattr(df, "nbytes", 0) or 0))
-
-
-def _trim_excel_cache() -> None:
-    global _excel_cache_bytes
-    while len(_excel_cache) > _MAX_EXCEL_CACHE or _excel_cache_bytes > _MAX_EXCEL_CACHE_BYTES:
-        _key, entry = _excel_cache.popitem(last=False)
-        _excel_cache_bytes = max(0, _excel_cache_bytes - entry[3])
-
-
-def _load_excel_data(excel_path: str) -> tuple[Any, tuple[Any, ...]]:
-    cache_key = _excel_cache_key(excel_path)
-    signature = _excel_file_signature(excel_path)
-    with _cache_lock:
-        cached = _excel_cache.get(cache_key)
-        if cached and cached[0] == signature:
-            _excel_cache.move_to_end(cache_key)
-            return cached[1], cached[2]
-    import pandas as pd
-
-    df = pd.read_excel(excel_path, engine="openpyxl")
-    cols = _parse_excel_columns(df)
-    entry_bytes = _estimate_excel_cache_bytes(df)
-    with _cache_lock:
-        global _excel_cache_bytes
-        previous = _excel_cache.pop(cache_key, None)
-        if previous is not None:
-            _excel_cache_bytes = max(0, _excel_cache_bytes - previous[3])
-        if entry_bytes <= _MAX_EXCEL_CACHE_BYTES:
-            _excel_cache[cache_key] = (signature, df, cols, entry_bytes)
-            _excel_cache.move_to_end(cache_key)
-            _excel_cache_bytes += entry_bytes
-            _trim_excel_cache()
-    return df, cols
-
-
-def _coord_key(lat: float, lon: float) -> tuple[float, float]:
-    return (round(lat, _COORD_PRECISION), round(lon, _COORD_PRECISION))
-
-
-def _dimensions_for(formato: str, *, preview: bool = False) -> tuple[int, int, int]:
-    spec = _REF_LAYOUT[formato]
-    out_w = int(spec["out_w"])
-    out_h = int(spec["out_h"])
-    footer_h = int(spec["footer_h"])
-    if not preview:
-        return out_w, out_h, footer_h
-    scale = int(spec["preview_w"]) / out_w
-    prev_w = round(out_w * scale)
-    prev_h = round(out_h * scale)
-    map_h = round((out_h - footer_h) * scale)
-    prev_footer = max(1, prev_h - map_h)
-    return prev_w, prev_h, prev_footer
-
-
-def _map_capture_size(formato: str, *, preview: bool = False) -> tuple[int, int]:
-    out_w, out_h, footer_h = _dimensions_for(formato, preview=preview)
-    return out_w, out_h - footer_h
-
-
-def _sync_excel_context(excel_path: str) -> tuple[str, tuple[int, int, int]]:
-    global _preview_excel_ctx
-    ctx = (_excel_cache_key(excel_path), _excel_file_signature(excel_path))
-    if _preview_excel_ctx != ctx:
-        with _cache_lock:
-            _preview_composed_cache.clear()
-        _preview_excel_ctx = ctx
-    return ctx
-
-
-def _manual_preview_ctx(datos: dict) -> tuple[Any, ...]:
-    lat = float(datos["lat"])
-    lon = float(datos["lon"])
-    return (
-        "manual",
-        *_coord_key(lat, lon),
-        str(datos.get("cod_componente", "")),
-        str(datos.get("direccion", "")),
-        str(datos.get("localidad", "")),
-        str(datos.get("distrito", "")),
-    )
-
-
-def _trim_cache(cache: dict, max_size: int) -> None:
-    while len(cache) > max_size:
-        if isinstance(cache, OrderedDict):
-            cache.popitem(last=False)
-        else:
-            del cache[next(iter(cache))]
-
-
-def _get_cached_map_screenshot(
-    lat: float,
-    lon: float,
-    formato: str,
-    *,
-    preview: bool = False,
-    map_opts: dict[str, Any] | None = None,
-) -> bytes:
-    key = _map_cache_key(lat, lon, formato, preview=preview, map_opts=map_opts)
-    with _cache_lock:
-        cached = _map_screenshot_store.get(key) if key in _map_screenshot_validated else None
-        if cached is not None:
-            _map_screenshot_store.move_to_end(key)
-            return cached
-
-        negative_at = _map_screenshot_negative_at.get(key)
-        if negative_at is not None:
-            if time.monotonic() - negative_at < _MAP_NEGATIVE_TTL_SECONDS:
-                negative = _map_screenshot_store.get(key)
-                if negative is not None:
-                    _map_screenshot_negative_at.move_to_end(key)
-                    _map_screenshot_store.move_to_end(key)
-                    return negative
-            _map_screenshot_negative_at.pop(key, None)
-
-        pending = _map_screenshot_inflight.get(key)
-        if pending is None:
-            pending = Future()
-            _map_screenshot_inflight[key] = pending
-            is_owner = True
-        else:
-            is_owner = False
-
-    if not is_owner:
-        return pending.result()
-
-    cap_w, cap_h = _map_capture_size(formato, preview=preview)
-    provider = _resolve_provider(map_opts)
-    try:
-        zoom = int(map_opts["zoom"]) if map_opts and map_opts.get("zoom") is not None else _MAP_ZOOM
-        screenshot = fetch_static_map(
-            lat, lon, cap_w, cap_h, zoom,
-            provider=provider, api_key=_resolve_api_key(map_opts),
-        )
-        _map_screenshot_working_cache[key] = screenshot
-        if _screenshot_has_map_tiles(screenshot):
-            _map_screenshot_cache[key] = screenshot
-        else:
-            with _cache_lock:
-                _map_screenshot_negative_at[key] = time.monotonic()
-                _map_screenshot_negative_at.move_to_end(key)
-                while len(_map_screenshot_negative_at) > _MAX_MAP_CACHE:
-                    _map_screenshot_negative_at.popitem(last=False)
-        pending.set_result(screenshot)
-        return screenshot
-    except BaseException as exc:
-        pending.set_exception(exc)
-        raise
-    finally:
-        with _cache_lock:
-            if _map_screenshot_inflight.get(key) is pending:
-                _map_screenshot_inflight.pop(key, None)
-
-
-_MAX_UBIC_PREVIEW_FILES = 200
-
-
-def _trim_ubicaciones_preview_files(cache_dir: Path) -> None:
-    try:
-        files = sorted(cache_dir.glob("*.jpg"), key=lambda p: p.stat().st_mtime)
-        excess = len(files) - _MAX_UBIC_PREVIEW_FILES
-        if excess <= 0:
-            return
-        for stale in files[:excess]:
-            with contextlib.suppress(OSError):
-                stale.unlink()
-    except OSError:
-        return
-
-
-def _encode_preview_data(
-    preview_img: Image.Image,
-    datos: dict,
-    *,
-    row_index: int,
-    total_filas: int,
-    formato: str,
-) -> dict[str, Any]:
-    buf = BytesIO()
-    preview_img.save(buf, format="JPEG", quality=88, optimize=True, subsampling=0)
-    raw = buf.getvalue()
-
-    cache_dir = Path(user_data_path("ubicaciones_preview_cache"))
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    digest = hashlib.sha1(raw).hexdigest()
-    out_path = cache_dir / f"{digest}.jpg"
-    if not out_path.is_file():
-        tmp_path = out_path.with_suffix(".jpg.tmp")
-        tmp_path.write_bytes(raw)
-        tmp_path.replace(out_path)
-        _trim_ubicaciones_preview_files(cache_dir)
-
-    resolved = out_path.resolve()
-    cod = str(datos.get("cod_componente", ""))
-    dir_str = str(datos.get("direccion", ""))
-    loc = str(datos.get("localidad", ""))
-    dist = str(datos.get("distrito", ""))
-    lat_val = float(datos.get("lat", 0.0))
-    lon_val = float(datos.get("lon", 0.0))
+def _export_legacy_ubicaciones_surface() -> None:
+    module_globals = globals()
+    module_globals.setdefault("urllib", urllib)
+    for submodule in (_ubic_cache, _ubic_client, _ubic_composer, _ubic_consolidator):
+        for name in submodule.__all__:
+            module_globals.setdefault(name, getattr(submodule, name))
+
+
+_export_legacy_ubicaciones_surface()
+
+
+def _map_opts_from_payload(payload: dict) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    zoom = payload.get("zoom")
+    if zoom is not None and (
+        isinstance(zoom, bool)
+        or not isinstance(zoom, int)
+        or not _MIN_MAP_ZOOM <= zoom <= _MAX_MAP_ZOOM
+    ):
+        raise ValueError(f"El zoom debe ser un entero entre {_MIN_MAP_ZOOM} y {_MAX_MAP_ZOOM}.")
     return {
-        "image": f"data:image/jpeg;base64,{base64.b64encode(raw).decode('ascii')}",
-        "image_path": str(resolved),
-        "cod_componente": cod,
-        "direccion": dir_str,
-        "localidad": loc,
-        "distrito": dist,
-        "datos": {
-            "cod_componente": cod,
-            "lat": lat_val,
-            "lon": lon_val,
-            "direccion": dir_str,
-            "localidad": loc,
-            "distrito": dist,
-        },
-        "total_filas": total_filas,
-        "row_index": row_index,
-        "formato": formato,
+        "provider": payload.get("provider"),
+        "zoom": zoom,
+        "api_key": payload.get("api_key"),
     }
 
-
-def _compose_and_cache_preview(
-    excel_ctx: tuple[str, tuple[int, int, int]],
-    row_index: int,
-    formato: str,
-    datos: dict,
-    screenshot_bytes: bytes,
-    total_filas: int,
-    custom_styles: dict | None = None,
-    map_opts: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    preview_img = _compose_ubicacion_image(datos, formato, screenshot_bytes, preview=True, custom_styles=custom_styles)
-    data = _encode_preview_data(
-        preview_img,
-        datos,
-        row_index=row_index,
-        total_filas=total_filas,
-        formato=formato,
-    )
-    styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
-    cache_key = _composed_preview_key(excel_ctx, row_index, formato, styles_hash, map_opts)
-    with _cache_lock:
-        _preview_composed_cache[cache_key] = data
-        _trim_cache(_preview_composed_cache, _MAX_COMPOSED_CACHE)
-    return data
-
-
-def _prefetch_alternate_formato(
-    excel_ctx: tuple[str, tuple[int, int, int]],
-    row_index: int,
-    formato: str,
-    datos: dict,
-    lat: float,
-    lon: float,
-    total_filas: int,
-    custom_styles: dict | None = None,
-    map_opts: dict | None = None,
-) -> None:
-    try:
-        alt = "horizontal" if formato == "vertical" else "vertical"
-        styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
-        cache_key = _composed_preview_key(excel_ctx, row_index, alt, styles_hash, map_opts)
-        with _cache_lock:
-            if cache_key in _preview_composed_cache:
-                return
-        map_bytes = _map_screenshot_cache.get(_map_cache_key(lat, lon, alt, preview=True, map_opts=map_opts))
-        if map_bytes is None:
-            return
-        _compose_and_cache_preview(
-            excel_ctx, row_index, alt, datos, map_bytes, total_filas,
-            custom_styles=custom_styles, map_opts=map_opts,
-        )
-    except Exception:
-        logger.debug("Prefetch orientación alterna falló", exc_info=True)
-
-
-_MAX_PREFETCH_THREADS = 2
-_prefetch_slots = threading.BoundedSemaphore(_MAX_PREFETCH_THREADS)
-
-
-def _spawn_prefetch(*args: Any, **kwargs: Any) -> None:
-    if not _prefetch_slots.acquire(blocking=False):
-        return
-
-    def _run() -> None:
-        try:
-            _prefetch_alternate_formato(*args, **kwargs)
-        finally:
-            _prefetch_slots.release()
-
-    threading.Thread(
-        target=_run,
-        daemon=True,
-        name="ubic-prefetch",
-    ).start()
-
-_pin_cache: Image.Image | None = None
-
-
-def _get_pin_rgba() -> Image.Image | None:
-    global _pin_cache
-    if _pin_cache is None:
-        pin_path = os.path.join(resource_path("assets/ubicaciones"), "pin.png")
-        if os.path.exists(pin_path):
-            with Image.open(pin_path) as opened:
-                _pin_cache = opened.convert("RGBA")
-    return _pin_cache
-
-
-def _compose_ubicacion_image(
-    datos: dict,
-    formato: str,
-    screenshot_bytes: bytes,
-    *,
-    preview: bool = False,
-    custom_styles: dict | None = None,
-) -> Image.Image:
-    spec = _REF_LAYOUT[formato]
-    out_w, out_h, footer_height = _dimensions_for(formato, preview=preview)
-    scale = out_w / int(spec["out_w"])
-
-    cs_texts = (custom_styles or {}).get("texts", {})
-    cs_pin = (custom_styles or {}).get("pin", {})
-    cs_map = (custom_styles or {}).get("map", {})
-    cs_layout = (custom_styles or {}).get("layout", {})
-
-    final_img = Image.new("RGB", (out_w, out_h), _BG_RGB)
-
-    map_height = out_h - footer_height
-    with Image.open(BytesIO(screenshot_bytes)) as opened:
-        mapa = opened.convert("RGBA")
-    resample = Image.Resampling.LANCZOS
-    target_map_size = (out_w, map_height)
-    if mapa.size != target_map_size:
-        mapa = mapa.resize(target_map_size, resample)
-
-    overlay_alpha = cs_map.get("overlayAlpha", _MAP_OVERLAY_ALPHA)
-    overlay_color = _hex_to_rgb(cs_map["overlayColor"]) if "overlayColor" in cs_map else _BG_RGB
-    overlay = Image.new("RGBA", (out_w, map_height), (*overlay_color, overlay_alpha))
-    mapa_con_overlay = Image.alpha_composite(mapa, overlay)
-    final_img.paste(mapa_con_overlay.convert("RGB"), (0, 0))
-
-    footer_img = _get_footer_image(out_w, footer_height)
-    draw = ImageDraw.Draw(final_img)
-    if footer_img is not None:
-        final_img.paste(footer_img, (0, out_h - footer_height))
-    else:
-        draw.rectangle([0, out_h - footer_height, out_w, out_h], fill=(0, 0, 0))
-
-    border_w = max(1, round(int(spec["border"]) * scale))
-    draw.rectangle([0, 0, out_w - 1, out_h - 1], outline=(0, 0, 0), width=border_w)
-
-    cod = str(datos.get("cod_componente", ""))
-    dir_str = str(datos.get("direccion", ""))
-    loc = str(datos.get("localidad", ""))
-    dist = str(datos.get("distrito", ""))
-
-    y_start = round(cs_layout.get("yStart", int(spec["y_start"])) * scale)
-    line_spacing = round(cs_layout.get("lineSpacing", int(spec["line_spacing"])) * scale)
-    line_gap = cs_layout.get("lineGap", float(spec["line_gap"]))
-
-    def _draw_field(field: str, text: str, default_size: int, y_pos: int, *, is_large: bool = False) -> None:
-        ts = cs_texts.get(field, {})
-        if not ts.get("visible", True):
-            return
-        font_size = max(8, round(ts.get("fontSize", default_size) * scale))
-        bold = ts.get("bold", True)
-        color = _hex_to_rgb(ts["color"]) if "color" in ts else (0, 0, 0)
-        offset_x = round(ts.get("offsetX", 0) * scale)
-        offset_y = round(ts.get("offsetY", 0) * scale)
-        stroke_key = "stroke_large" if is_large else "stroke_medium"
-        stroke_w = max(1, round(int(spec[stroke_key]) * scale))
-        font = _get_font(bold, font_size)
-        bbox = draw.textbbox((0, 0), text, font=font)
-        w_text = bbox[2] - bbox[0]
-        x = (out_w - w_text) // 2 + offset_x
-        y = y_pos + offset_y
-        if field == "direccion" and w_text > out_w * 0.8:
-            x = int(out_w * 0.1) + offset_x
-        draw.text((x, y), text, fill=color, font=font, stroke_width=stroke_w, stroke_fill=(255, 255, 255))
-
-    y_text = y_start
-    _draw_field("cod_componente", cod, int(spec["font_large"]), y_text, is_large=True)
-
-    y_text += line_spacing
-    _draw_field("direccion", dir_str, int(spec["font_medium"]), y_text)
-
-    y_text += round(line_spacing * line_gap)
-    _draw_field("localidad", loc, int(spec["font_medium"]), y_text)
-
-    y_text += round(line_spacing * line_gap)
-    _draw_field("distrito", dist, int(spec["font_medium"]), y_text)
-
-    if cs_pin.get("visible", True):
-        pin = _get_pin_rgba()
-        if pin is not None:
-            pin_scale_val = cs_pin.get("scale", float(spec["pin_scale"]))
-            new_pin_w = max(1, int(out_w * pin_scale_val))
-            new_pin_h = max(1, int(pin.height * (new_pin_w / pin.width)))
-            pin_resized = pin.resize((new_pin_w, new_pin_h), resample)
-            pin_color_hex = cs_pin.get("color")
-            if pin_color_hex:
-                pin_resized = _colorize_pin(pin_resized, _hex_to_rgb(pin_color_hex))
-            pin_offset_x = round(cs_pin.get("offsetX", 0) * scale)
-            pin_offset_y = round(cs_pin.get("offsetY", 0) * scale)
-            pin_x = round(out_w / 2 - new_pin_w * _PIN_TIP_X_RATIO) + pin_offset_x
-            pin_y = round(map_height / 2 - new_pin_h * _PIN_TIP_RATIO) + pin_offset_y
-            final_img.paste(pin_resized, (pin_x, pin_y), mask=pin_resized)
-
-    return final_img
-
-
-def render_ubicacion(
-    datos: dict,
-    formato: str,
-    *,
-    preview: bool = False,
-    map_opts: dict[str, Any] | None = None,
-    custom_styles: dict | None = None,
-) -> Image.Image:
-    lat = float(datos["lat"])
-    lon = float(datos["lon"])
-    screenshot_bytes = _get_cached_map_screenshot(lat, lon, formato, preview=preview, map_opts=map_opts)
-    return _compose_ubicacion_image(datos, formato, screenshot_bytes, preview=preview, custom_styles=custom_styles)
-
-
-def render_imagen_ubicacion(
-    datos: dict,
-    formato: str,
-    map_opts: dict[str, Any] | None = None,
-    custom_styles: dict | None = None,
-) -> Image.Image:
-    return render_ubicacion(datos, formato, preview=False, map_opts=map_opts, custom_styles=custom_styles)
-
-
-def generar_imagen_ubicacion(
-    datos: dict,
-    output_path: str,
-    formato: str,
-    map_opts: dict[str, Any] | None = None,
-    custom_styles: dict | None = None,
-) -> None:
-    final_img = render_imagen_ubicacion(datos, formato, map_opts=map_opts, custom_styles=custom_styles)
-    try:
-        rgb = final_img.convert("RGB")
-        try:
-            rgb.save(output_path, "PDF", resolution=300.0)
-        finally:
-            rgb.close()
-    finally:
-        final_img.close()
-
-
-def _output_pdf_filename(cod_componente: str) -> str:
-    safe_stem = sanitizar_nombre(str(cod_componente)) or "ubicacion"
-    return f"{safe_stem}.pdf"
-
-
-_COMBINED_COORD_URL_PATTERNS = (
-    re.compile(r"[@?](-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)"),
-    re.compile(r"[?&]q=(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)"),
-    re.compile(r"[?&]center=(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)"),
-)
-
-
-def _parse_combined_coord_value(val: Any) -> tuple[float | None, float | None]:
-    if _is_na(val):
-        return None, None
-    text = str(val).strip()
-    if not text:
-        return None, None
-    for pattern in _COMBINED_COORD_URL_PATTERNS:
-        match = pattern.search(text)
-        if match:
-            lat = _coerce_coord(match.group(1))
-            lon = _coerce_coord(match.group(2))
-            if lat is not None and lon is not None:
-                return lat, lon
-    parts = text.split(",")
-    if len(parts) < 2:
-        return None, None
-    return _coerce_coord(parts[0].strip()), _coerce_coord(parts[1].strip())
-
-
-def _unique_pdf_filename(cod_componente: str, used_stems: dict[str, int]) -> str:
-    stem = sanitizar_nombre(str(cod_componente)) or "ubicacion"
-    count = used_stems.get(stem, 0)
-    used_stems[stem] = count + 1
-    if count == 0:
-        return f"{stem}.pdf"
-    return f"{stem}_{count + 1}.pdf"
-
-
-def _coerce_coord(value: Any) -> float | None:
-    if _is_na(value):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _parse_excel_columns(df):
-    df.columns = [str(c).strip().lower() for c in df.columns]
-
-    col_cod = next((c for c in df.columns if 'cod' in c or 'componente' in c), None)
-    col_dir = next((c for c in df.columns if 'direcci' in c), None)
-    col_loc = next((c for c in df.columns if 'localidad' in c or 'urb' in c), None)
-    col_dist = next((c for c in df.columns if 'distrito' in c), None)
-    col_lat = next((c for c in df.columns if 'lat' in c), None)
-    col_lon = next((c for c in df.columns if 'lon' in c), None)
-
-    if not col_lat or not col_lon:
-        col_coord = next((c for c in df.columns if 'coord' in c or 'link' in c), None)
-        if col_coord:
-            parsed = df[col_coord].apply(_parse_combined_coord_value)
-            df["lat_tmp"] = parsed.apply(lambda pair: pair[0])
-            df["lon_tmp"] = parsed.apply(lambda pair: pair[1])
-            col_lat = 'lat_tmp'
-            col_lon = 'lon_tmp'
-        else:
-            return None, None, None, None, None, None
-
-    return col_cod, col_dir, col_loc, col_dist, col_lat, col_lon
-
-def _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon):
-    return {
-        'cod_componente': row[col_cod] if col_cod and not _is_na(row[col_cod]) else f"ID-{index+1}",
-        'direccion': row[col_dir] if col_dir and not _is_na(row[col_dir]) else "",
-        'localidad': row[col_loc] if col_loc and not _is_na(row[col_loc]) else "",
-        'distrito': row[col_dist] if col_dist and not _is_na(row[col_dist]) else "",
-        'lat': row[col_lat],
-        'lon': row[col_lon]
-    }
 
 @with_locale
-def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:
+def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dict[str, Any]
     excel_path = payload.get("excelPath")
     manual_data = payload.get("manualData")
     formato = payload.get("formato", "vertical")
@@ -1198,12 +93,12 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:
 
     if manual_data:
         datos = {
-            'cod_componente': str(manual_data.get('cod_componente', '')).strip(),
-            'direccion': str(manual_data.get('direccion', '')).strip(),
-            'localidad': str(manual_data.get('localidad', '')).strip(),
-            'distrito': str(manual_data.get('distrito', '')).strip(),
-            'lat': _coerce_coord(manual_data.get('lat')),
-            'lon': _coerce_coord(manual_data.get('lon')),
+            "cod_componente": str(manual_data.get("cod_componente", "")).strip(),
+            "direccion": str(manual_data.get("direccion", "")).strip(),
+            "localidad": str(manual_data.get("localidad", "")).strip(),
+            "distrito": str(manual_data.get("distrito", "")).strip(),
+            "lat": _coerce_coord(manual_data.get("lat")),
+            "lon": _coerce_coord(manual_data.get("lon")),
         }
         total_filas = 1
         row_index = 0
@@ -1249,112 +144,45 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:
         cached_map = _map_screenshot_cache.get(map_key) or _map_screenshot_working_cache.get(map_key)
         if cached_map is not None:
             data = _compose_and_cache_preview(
-                excel_ctx, row_index, formato, datos, cached_map, total_filas,
-                custom_styles=custom_styles, map_opts=map_opts,
+                excel_ctx,
+                row_index,
+                formato,
+                datos,
+                cached_map,
+                total_filas,
+                custom_styles=custom_styles,
+                map_opts=map_opts,
             )
             return data
 
     screenshot_bytes = _get_cached_map_screenshot(lat, lon, formato, preview=True, map_opts=map_opts)
     data = _compose_and_cache_preview(
-        excel_ctx, row_index, formato, datos, screenshot_bytes, total_filas,
-        custom_styles=custom_styles, map_opts=map_opts,
+        excel_ctx,
+        row_index,
+        formato,
+        datos,
+        screenshot_bytes,
+        total_filas,
+        custom_styles=custom_styles,
+        map_opts=map_opts,
     )
 
     _spawn_prefetch(
-        excel_ctx, row_index, formato, datos, lat, lon, total_filas,
-        custom_styles=custom_styles, map_opts=map_opts,
+        excel_ctx,
+        row_index,
+        formato,
+        datos,
+        lat,
+        lon,
+        total_filas,
+        custom_styles=custom_styles,
+        map_opts=map_opts,
     )
     return data
 
-_CONSOLIDATED_PDF_NAME = "ubicaciones_consolidado.pdf"
-
-
-def _map_opts_from_payload(payload: dict) -> dict[str, Any]:
-    zoom = payload.get("zoom")
-    if zoom is not None and (
-        isinstance(zoom, bool)
-        or not isinstance(zoom, int)
-        or not _MIN_MAP_ZOOM <= zoom <= _MAX_MAP_ZOOM
-    ):
-        raise ValueError(f"El zoom debe ser un entero entre {_MIN_MAP_ZOOM} y {_MAX_MAP_ZOOM}.")
-    return {
-        "provider": payload.get("provider"),
-        "zoom": zoom,
-        "api_key": payload.get("api_key"),
-    }
-
-
-def _consolidated_pdf_permission_error(path: str) -> PermissionError:
-    return PermissionError(
-        f"No se pudo guardar el PDF consolidado en '{path}'. "
-        "Cierra el archivo si está abierto en un visor PDF o en el Explorador de Windows e intenta de nuevo."
-    )
-
-
-def _is_destination_locked(err: OSError) -> bool:
-    if getattr(err, "errno", None) in (13, getattr(errno, "EACCES", 13)):
-        return True
-    winerror = getattr(err, "winerror", None)
-    return winerror in (32, 33)
-
-
-def _merge_consolidated_pdfs(page_paths: list[str], output_dir: str) -> str:
-    if not page_paths:
-        raise ValueError("No hay imágenes para guardar en el PDF consolidado.")
-    try:
-        from pypdf import PdfWriter
-
-        writer = PdfWriter()
-        for page_path in page_paths:
-            writer.append(page_path)
-        return _save_consolidated_writer(writer, output_dir)
-    finally:
-        for page_path in page_paths:
-            with contextlib.suppress(OSError):
-                os.remove(page_path)
-
-
-def _save_consolidated_writer(writer: Any, output_dir: str) -> str:
-    base_path = os.path.join(output_dir, _CONSOLIDATED_PDF_NAME)
-    tmp_path = base_path + ".antares-tmp"
-    try:
-        with open(tmp_path, "wb") as f:
-            writer.write(f)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.remove(tmp_path)
-        raise
-
-    return _write_consolidated_pdf(tmp_path, base_path)
-
-
-def _write_consolidated_pdf(tmp_path: str, base_path: str) -> str:
-    candidates = [base_path] + [
-        os.path.join(os.path.dirname(base_path), f"ubicaciones_consolidado_{n}.pdf")
-        for n in range(2, 51)
-    ]
-    last_err: OSError | None = None
-    for dest in candidates:
-        try:
-            os.replace(tmp_path, dest)
-            return dest
-        except OSError as err:
-            last_err = err
-            if not _is_destination_locked(err):
-                break
-
-    with contextlib.suppress(OSError):
-        os.remove(tmp_path)
-
-    if last_err is not None and _is_destination_locked(last_err):
-        raise _consolidated_pdf_permission_error(base_path) from last_err
-    if last_err is not None:
-        raise last_err
-    raise _consolidated_pdf_permission_error(base_path)
-
 
 @with_locale
-def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
+def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: dict[str, Any]
     excel_path = payload.get("excelPath")
     manual_data = payload.get("manualData")
     output_dir = payload.get("outputDir")
@@ -1372,12 +200,12 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
 
     if manual_data:
         datos = {
-            'cod_componente': str(manual_data.get('cod_componente', '')).strip(),
-            'direccion': str(manual_data.get('direccion', '')).strip(),
-            'localidad': str(manual_data.get('localidad', '')).strip(),
-            'distrito': str(manual_data.get('distrito', '')).strip(),
-            'lat': _coerce_coord(manual_data.get('lat')),
-            'lon': _coerce_coord(manual_data.get('lon')),
+            "cod_componente": str(manual_data.get("cod_componente", "")).strip(),
+            "direccion": str(manual_data.get("direccion", "")).strip(),
+            "localidad": str(manual_data.get("localidad", "")).strip(),
+            "distrito": str(manual_data.get("distrito", "")).strip(),
+            "lat": _coerce_coord(manual_data.get("lat")),
+            "lon": _coerce_coord(manual_data.get("lon")),
         }
         if not _is_na(datos["lat"]) and not _is_na(datos["lon"]):
             valid_rows.append(datos)
@@ -1412,9 +240,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
     consolidated_writer: Any | None = None
     consolidated_temp_dir: str | None = None
     if consolidado:
-        from pypdf import PdfWriter
-
-        consolidated_writer = PdfWriter()
+        consolidated_writer = create_consolidated_writer()
 
     def _render_one(d: dict) -> tuple[bool, str | None]:
         logger.info(f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}...")
@@ -1424,7 +250,9 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
                 if consolidated_temp_dir is None:
                     raise RuntimeError("No se pudo crear el directorio temporal del PDF consolidado.")
                 fd, tmp_name = tempfile.mkstemp(
-                    suffix=".pdf", prefix="antares_page_", dir=consolidated_temp_dir,
+                    suffix=".pdf",
+                    prefix="antares_page_",
+                    dir=consolidated_temp_dir,
                 )
                 os.close(fd)
                 try:
@@ -1458,11 +286,9 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
                         continue
                     if consolidado and page_path is not None:
                         try:
-                            if os.path.getsize(page_path) > _MAX_CONSOLIDATED_PAGE_BYTES:
-                                raise OSError("La página temporal excede el límite de 64 MiB.")
                             if consolidated_writer is None:
                                 raise RuntimeError("El escritor del PDF consolidado no está disponible.")
-                            consolidated_writer.append(page_path)
+                            append_page_to_writer(consolidated_writer, page_path)
                         except Exception:
                             logger.exception("Error agregando página al PDF consolidado; se omite")
                             fallidos += 1
@@ -1475,9 +301,13 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
                         generados += 1
 
     consolidated_path: str | None = None
-    if consolidado and generados and consolidated_writer is not None:
-        consolidated_path = _save_consolidated_writer(consolidated_writer, output_dir)
-        logger.info(f"PDF consolidado generado: {consolidated_path} ({generados} paginas)")
+    if consolidado and consolidated_writer is not None:
+        try:
+            if generados:
+                consolidated_path = _save_consolidated_writer(consolidated_writer, output_dir)
+                logger.info(f"PDF consolidado generado: {consolidated_path} ({generados} paginas)")
+        finally:
+            close_consolidated_writer(consolidated_writer)
 
     return {
         "generados": generados,
@@ -1487,7 +317,8 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
         "consolidatedPath": consolidated_path,
     }
 
-HANDLERS: dict[str, Any] = {
+
+HANDLERS: dict[str, Any] = {  # allowlist: dict[str, Any]
     "generar_ubicaciones": handle_generar_ubicaciones,
     "preview_ubicacion": handle_preview_ubicacion,
 }

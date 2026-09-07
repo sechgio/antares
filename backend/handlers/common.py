@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import wraps
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from backend.core.state import ProcessState
 from backend.utils.i18n import set_locale
@@ -16,6 +16,51 @@ def with_locale(fn: Callable[..., Any]) -> Callable[..., Any]:
         set_locale(params.get("locale", "es"))
         return fn(params)
     return wrapper
+
+
+def get_item_id(params: dict[str, Any]) -> str:
+    return str(params.get("id") or "")
+
+
+def require_update_payload(params: dict[str, Any], payload_key: str) -> tuple[str, dict[str, Any]]:
+    item_id = get_item_id(params)
+    payload = params.get(payload_key)
+    if not item_id or not isinstance(payload, dict):
+        msg = f"id y {payload_key} son requeridos"
+        raise ValueError(msg)
+    return item_id, payload
+
+
+def get_item_or_raise(store: Any, item_id: str, missing_message: str) -> dict[str, Any]:
+    item = store.get(item_id)
+    if item is None:
+        msg = f"{missing_message}: {item_id}"
+        raise ValueError(msg)
+    return cast(dict[str, Any], item)
+
+
+def delete_item_or_raise(store: Any, item_id: str, missing_message: str) -> None:
+    if not store.delete(item_id):
+        msg = f"{missing_message}: {item_id}"
+        raise ValueError(msg)
+
+
+def clear_store(store: Any, item_name: str) -> dict[str, Any]:
+    count = store.clear_all()
+    return {"success": True, "deleted_count": count, "message": f"Se eliminaron {count} {item_name}"}
+
+
+def create_report_from_params(store: Any, params: dict[str, Any], payload_key: str) -> dict[str, Any]:
+    payload = params.get(payload_key)
+    created = store.create(payload) if isinstance(payload, dict) else store.create_empty()
+    return cast(dict[str, Any], created)
+
+
+def update_item_or_raise(store: Any, item_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return cast(dict[str, Any], store.update(item_id, payload))
+    except KeyError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def parse_positive_int(value: Any, label: str, *, maximum: int | None = None) -> int:

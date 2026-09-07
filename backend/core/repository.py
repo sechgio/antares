@@ -95,6 +95,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute(f"PRAGMA temp_store={temp_store}")
     conn.execute("PRAGMA mmap_size=16777216")
     conn.execute("PRAGMA page_size=4096")
+    conn.execute("PRAGMA busy_timeout = 30000;")
     conn.row_factory = sqlite3.Row
 
 
@@ -112,7 +113,7 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
                 _db_read_conn = None
                 _db_read_conn_path = None
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            _db_conn = sqlite3.connect(current_path, check_same_thread=False, isolation_level=None)
+            _db_conn = sqlite3.connect(current_path, check_same_thread=False, isolation_level=None, timeout=30.0)
             _apply_pragmas(_db_conn)
             _db_conn_path = current_path
         return _db_conn
@@ -136,6 +137,7 @@ def get_read_connection(db_path: Path) -> sqlite3.Connection:
                     uri=True,
                     check_same_thread=False,
                     isolation_level=None,
+                    timeout=30.0,
                 )
                 _apply_pragmas(_db_read_conn)
                 _db_read_conn_path = current_path
@@ -146,6 +148,7 @@ def get_read_connection(db_path: Path) -> sqlite3.Connection:
                         current_path,
                         check_same_thread=False,
                         isolation_level=None,
+                        timeout=30.0,
                     )
                     _apply_pragmas(_db_read_conn)
                     _db_read_conn_path = current_path

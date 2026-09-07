@@ -25,3 +25,20 @@ def test_get_renormalizes_stale_satisfaccion(tmp_path) -> None:
     got = db.get(created["id"])
     assert got is not None
     assert got["satisfaccion"] == ""
+
+
+def test_ficha_crud_preserves_generated_ids_and_replace_count(tmp_path) -> None:
+    db = FichasTecnicasDB(tmp_path / "fichas_tecnicas.json")
+
+    first = db.create()
+    duplicate = db.create(dict(first))
+
+    assert first["id"] == "FT-00001"
+    assert duplicate["id"] == "FT-00002"
+    assert duplicate["last_modified"]
+
+    imported, deleted_count = db.replace_all_counted([{"id": "FT-00010", "cliente": "Importado"}])
+
+    assert deleted_count == 2
+    assert imported[0]["id"] == "FT-00010"
+    assert db.get("FT-00010")["cliente"] == "Importado"

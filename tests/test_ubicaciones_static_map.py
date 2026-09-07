@@ -13,6 +13,9 @@ import pytest
 from PIL import Image
 from pypdf import PdfReader
 
+from backend.core.ubicaciones import cache as u_cache
+from backend.core.ubicaciones import client as u_client
+from backend.core.ubicaciones import composer as u_composer
 from backend.handlers import ubicaciones as ub
 
 
@@ -92,7 +95,7 @@ def test_webmercator_center_round_trips_to_requested_coordinates(lat: float, lon
 def test_fetch_static_map_osm_returns_image(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTARES_MAP_PROVIDER", "osm")
     tile = _png_bytes((ub._OSM_TILE_SIZE, ub._OSM_TILE_SIZE), (60, 120, 160))
-    monkeypatch.setattr(ub, "_http_get", lambda url, headers, timeout=ub._HTTP_TIMEOUT: tile)
+    monkeypatch.setattr(u_client, "_http_get", lambda url, headers, timeout=ub._HTTP_TIMEOUT: tile)
 
     data = ub.fetch_static_map(-12.046, -77.042, 800, 600, zoom=18, provider="osm")
     img = Image.open(BytesIO(data))
@@ -121,14 +124,14 @@ def test_fetch_xyz_tiles_map_downloads_tiles_in_parallel(monkeypatch: pytest.Mon
         calls.append(url)
         return tile
 
-    monkeypatch.setattr(ub, "_http_get", fake_get)
+    monkeypatch.setattr(u_client, "_http_get", fake_get)
     img = ub._fetch_xyz_tiles_map(-12.046, -77.042, 850, 568, 18, ub._XYZ_PROVIDERS["osm"])
     assert img.size == (850, 568)
     assert len(calls) >= 2
 
 
 def test_fetch_static_map_fallback_on_http_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ub, "_http_get", lambda *a, **k: None)
+    monkeypatch.setattr(u_client, "_http_get", lambda *a, **k: None)
     data = ub.fetch_static_map(-12.0, -77.0, 800, 600, zoom=18, provider="osm")
     img = Image.open(BytesIO(data))
     fw, fh = ub._cap_fetch_size(800, 600)
@@ -152,8 +155,8 @@ def test_map_screenshot_fetch_is_single_flight(monkeypatch: pytest.MonkeyPatch) 
         assert release.wait(timeout=2), "single-flight owner did not finish"
         return screenshot
 
-    monkeypatch.setattr(ub, "fetch_static_map", fake_fetch)
-    monkeypatch.setattr(ub, "_screenshot_has_map_tiles", lambda _data: True)
+    monkeypatch.setattr(u_cache, "fetch_static_map", fake_fetch)
+    monkeypatch.setattr(u_cache, "_screenshot_has_map_tiles", lambda _data: True)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(ub._get_cached_map_screenshot, -12.0, -77.0, "vertical", preview=True)
@@ -177,13 +180,13 @@ def test_map_fallback_uses_short_negative_cache(monkeypatch: pytest.MonkeyPatch)
         calls += 1
         return fallback
 
-    monkeypatch.setattr(ub, "fetch_static_map", fake_fetch)
+    monkeypatch.setattr(u_cache, "fetch_static_map", fake_fetch)
     first = ub._get_cached_map_screenshot(-12.0, -77.0, "vertical", preview=True)
     second = ub._get_cached_map_screenshot(-12.0, -77.0, "vertical", preview=True)
     assert first == second == fallback
     assert calls == 1
 
-    monkeypatch.setattr(ub, "_MAP_NEGATIVE_TTL_SECONDS", 0.0)
+    monkeypatch.setattr(u_cache, "_MAP_NEGATIVE_TTL_SECONDS", 0.0)
     ub._get_cached_map_screenshot(-12.0, -77.0, "vertical", preview=True)
     assert calls == 2
     ub._clear_ubicaciones_caches()
@@ -201,7 +204,7 @@ def test_fetch_static_map_google_with_key(monkeypatch: pytest.MonkeyPatch) -> No
         called["url"] = url
         return _png_bytes((640, 640), (90, 140, 190))
 
-    monkeypatch.setattr(ub, "_http_get", fake_get)
+    monkeypatch.setattr(u_client, "_http_get", fake_get)
     data = ub.fetch_static_map(-12.0, -77.0, 800, 600, zoom=18, provider="google", api_key="TESTKEY")
     parsed = urllib.parse.urlparse(called["url"])
     query = urllib.parse.parse_qs(parsed.query)
@@ -224,7 +227,7 @@ def test_fetch_static_map_google_requests_proportional_viewport(monkeypatch: pyt
         called["url"] = url
         return _png_bytes((640, 640), (90, 140, 190))
 
-    monkeypatch.setattr(ub, "_http_get", fake_get)
+    monkeypatch.setattr(u_client, "_http_get", fake_get)
     ub.fetch_static_map(-12.0, -77.0, 749, 1024, zoom=18, provider="google", api_key="TESTKEY")
 
     query = urllib.parse.parse_qs(urllib.parse.urlparse(called["url"]).query)
@@ -235,7 +238,7 @@ def test_handle_generar_ubicaciones_skips_non_numeric_coords(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import openpyxl
 
-    monkeypatch.setattr(ub, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+    monkeypatch.setattr(u_cache, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
 
     xlsx = tmp_path / "coords.xlsx"
     wb = openpyxl.Workbook()
@@ -262,7 +265,7 @@ def test_handle_generar_ubicaciones_continues_after_row_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import openpyxl
 
-    monkeypatch.setattr(ub, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+    monkeypatch.setattr(u_cache, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
 
     xlsx = tmp_path / "coords.xlsx"
     wb = openpyxl.Workbook()
@@ -352,7 +355,7 @@ def test_excel_cache_does_not_retain_oversized_dataframes(tmp_path: Path, monkey
     ws.append(["Avenida con datos", -12.0, -77.0])
     wb.save(xlsx)
 
-    monkeypatch.setattr(ub, "_MAX_EXCEL_CACHE_BYTES", 1)
+    monkeypatch.setattr(u_cache, "_MAX_EXCEL_CACHE_BYTES", 1)
     ub._clear_ubicaciones_caches()
     ub._load_excel_data(str(xlsx))
 
@@ -388,7 +391,7 @@ def test_handle_generar_ubicaciones_rejects_all_invalid_rows(
 ) -> None:
     import openpyxl
 
-    monkeypatch.setattr(ub, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+    monkeypatch.setattr(u_cache, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
 
     xlsx = tmp_path / "invalid.xlsx"
     wb = openpyxl.Workbook()
@@ -421,7 +424,7 @@ def test_handle_generar_ubicaciones_unique_pdf_for_duplicate_cod(
 ) -> None:
     import openpyxl
 
-    monkeypatch.setattr(ub, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+    monkeypatch.setattr(u_cache, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
 
     xlsx = tmp_path / "dup.xlsx"
     wb = openpyxl.Workbook()
@@ -475,7 +478,7 @@ def test_handle_generar_ubicaciones_applies_custom_styles_and_map_opts(
         img = Image.new("RGB", (100, 100), (10, 20, 30))
         return img
 
-    monkeypatch.setattr(ub, "render_imagen_ubicacion", fake_render)
+    monkeypatch.setattr(u_composer, "render_imagen_ubicacion", fake_render)
 
     out_dir = tmp_path / "out"
     styles = {"map": {"overlayAlpha": 50, "overlayColor": "#AABBCC"}}
@@ -648,7 +651,7 @@ def test_consolidated_mode_closes_rendered_images(monkeypatch: pytest.MonkeyPatc
         })
         return df, ("cod", "direccion", None, "distrito", "latitud", "longitud")
 
-    monkeypatch.setattr(ub, "render_imagen_ubicacion", fake_render)
+    monkeypatch.setattr(u_composer, "render_imagen_ubicacion", fake_render)
     monkeypatch.setattr(ub, "_load_excel_data", fake_load_excel_data)
 
     ub.handle_generar_ubicaciones({
@@ -699,7 +702,7 @@ def test_consolidated_mode_failure_removes_temp_page_and_closes_images(
         })
         return df, ("cod", "direccion", None, "distrito", "latitud", "longitud")
 
-    monkeypatch.setattr(ub, "render_imagen_ubicacion", fake_render)
+    monkeypatch.setattr(u_composer, "render_imagen_ubicacion", fake_render)
     monkeypatch.setattr(ub, "_load_excel_data", fake_load_excel_data)
     monkeypatch.setattr(ub.tempfile, "mkstemp", fake_mkstemp)
     monkeypatch.setattr(Image.Image, "save", raising_save)
@@ -757,7 +760,7 @@ def test_xyz_providers_embed_api_key_in_tile_url(
         seen.append(url)
         return tile
 
-    monkeypatch.setattr(ub, "_http_get", fake_get)
+    monkeypatch.setattr(u_client, "_http_get", fake_get)
     ub.fetch_static_map(-12.046, -77.042, 400, 300, zoom=16, provider=provider, api_key="TEST-KEY-123")
     assert seen
     assert any(needle in url and "TEST-KEY-123" in url for url in seen)

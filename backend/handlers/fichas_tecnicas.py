@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.handlers.common import with_locale
+from backend.handlers.common import (
+    clear_store,
+    delete_item_or_raise,
+    get_item_id,
+    get_item_or_raise,
+    require_update_payload,
+    update_item_or_raise,
+    with_locale,
+)
 from backend.utils.image_data import decode_b64_payload
 
 
@@ -34,12 +42,8 @@ def fichas_tecnicas_list(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def fichas_tecnicas_get(params: dict[str, Any]) -> dict[str, Any]:
-    ficha_id = str(params.get("id") or "")
-    ficha = _db().get(ficha_id)
-    if ficha is None:
-        msg = f"Ficha no encontrada: {ficha_id}"
-        raise ValueError(msg)
-    return {"ficha": ficha}
+    ficha_id = get_item_id(params)
+    return {"ficha": get_item_or_raise(_db(), ficha_id, "Ficha no encontrada")}
 
 
 @with_locale
@@ -51,31 +55,20 @@ def fichas_tecnicas_create(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def fichas_tecnicas_update(params: dict[str, Any]) -> dict[str, Any]:
-    ficha_id = str(params.get("id") or "")
-    ficha = params.get("ficha")
-    if not ficha_id or not isinstance(ficha, dict):
-        msg = "id y ficha son requeridos"
-        raise ValueError(msg)
-    try:
-        updated = _db().update(ficha_id, ficha)
-    except KeyError as exc:
-        raise ValueError(str(exc)) from exc
-    return {"success": True, "ficha": updated}
+    ficha_id, ficha = require_update_payload(params, "ficha")
+    return {"success": True, "ficha": update_item_or_raise(_db(), ficha_id, ficha)}
 
 
 @with_locale
 def fichas_tecnicas_delete(params: dict[str, Any]) -> dict[str, Any]:
-    ficha_id = str(params.get("id") or "")
-    if not _db().delete(ficha_id):
-        msg = f"Ficha no encontrada: {ficha_id}"
-        raise ValueError(msg)
+    ficha_id = get_item_id(params)
+    delete_item_or_raise(_db(), ficha_id, "Ficha no encontrada")
     return {"success": True, "deleted_id": ficha_id}
 
 
 @with_locale
 def fichas_tecnicas_clear(params: dict[str, Any]) -> dict[str, Any]:
-    count = _db().clear_all()
-    return {"success": True, "deleted_count": count, "message": f"Se eliminaron {count} fichas"}
+    return clear_store(_db(), "fichas")
 
 
 @with_locale
