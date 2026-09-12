@@ -1320,7 +1320,7 @@ select.canvas-input option {
 }
 
 .canvas-topbar {
-  height: 40px;
+  height: 44px;
   background: var(--cv-panel);
   border-bottom: 1px solid var(--cv-border);
 }
@@ -1404,6 +1404,29 @@ select.canvas-input option {
   gap: 2px;
 }
 
+.canvas-topbar-tools .canvas-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--cv-radius-sm);
+  color: var(--cv-text-muted);
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.canvas-topbar-tools .canvas-icon-btn:hover:not(:disabled) {
+  background: var(--cv-hover);
+  color: var(--cv-text);
+}
+
+.canvas-topbar-tools .canvas-icon-btn:active:not(:disabled) {
+  background: var(--cv-border);
+  transform: scale(0.96);
+}
+
+.canvas-topbar-tools .canvas-icon-btn[data-active='true'] {
+  background: var(--cv-hover);
+  color: var(--cv-accent);
+}
+
 .canvas-topbar-secondary {
   display: inline-flex;
   align-items: center;
@@ -1411,15 +1434,34 @@ select.canvas-input option {
 }
 
 .canvas-save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 550;
   color: var(--cv-text-muted);
   letter-spacing: 0.01em;
+  padding-right: 2px;
 }
 
 .canvas-save-state[data-dirty='true'] {
   color: var(--cv-warn-text);
+}
+
+.canvas-topbar-trailing .canvas-btn-primary,
+.canvas-topbar-trailing .canvas-btn-ghost {
+  height: 24px;
+  gap: 5px;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.canvas-topbar-trailing .canvas-btn-primary svg,
+.canvas-topbar-trailing .canvas-btn-ghost svg {
+  width: 12px;
+  height: 12px;
 }
 
 .canvas-panel-resizer {
@@ -1718,10 +1760,11 @@ select.canvas-input option {
 
 .canvas-topbar-divider {
   width: 1px;
-  height: 16px;
+  height: 14px;
   flex-shrink: 0;
   align-self: center;
   background: var(--cv-border);
+  margin: 0 3px;
 }
 
 .canvas-brand-mark {
@@ -2319,11 +2362,14 @@ select.canvas-input option {
   position: relative;
   display: flex;
   width: 100%;
+  height: 28px;
+  min-height: 28px;
+  flex: 0 0 28px;
   align-items: center;
   gap: 2px;
   border-radius: var(--cv-radius-sm);
   padding: 2px 6px 2px 0;
-  min-height: 28px;
+  overflow: hidden;
   font-size: 12px;
   color: var(--cv-text);
   transition: background 0.1s ease;
@@ -2709,6 +2755,117 @@ select.canvas-input option {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
+}
+
+.canvas-context-subwrap {
+  position: relative;
+}
+
+.canvas-context-sub {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: -4px;
+  min-width: 180px;
+  max-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--cv-border-strong);
+  border-radius: 8px;
+  background: var(--cv-panel-elevated);
+  padding: 4px;
+  box-shadow: var(--cv-shadow-float);
+  z-index: 81;
+}
+
+.canvas-context-subwrap:hover > .canvas-context-sub,
+.canvas-context-subwrap:focus-within > .canvas-context-sub {
+  display: block;
+}
+
+.canvas-command-palette {
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  width: min(460px, calc(100% - 48px));
+  border: 1px solid var(--cv-border-strong);
+  border-radius: 12px;
+  background: var(--cv-panel-elevated);
+  box-shadow: var(--cv-shadow-float);
+  color: var(--cv-text);
+  overflow: hidden;
+  animation: canvas-context-menu-in 0.12s ease-out;
+}
+
+.canvas-command-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--cv-border);
+  color: var(--cv-text-muted);
+}
+
+.canvas-command-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--cv-text);
+  outline: none;
+}
+
+.canvas-command-list {
+  max-height: min(380px, 55vh);
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.canvas-command-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--cv-text);
+  cursor: pointer;
+}
+
+.canvas-command-item:hover:not(:disabled),
+.canvas-command-item[data-active='true'] {
+  background: var(--cv-hover);
+}
+
+.canvas-command-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.canvas-command-group {
+  font-size: 10px;
+  color: var(--cv-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.canvas-command-empty {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--cv-text-muted);
+  text-align: center;
+}
+
+.canvas-page-row[data-page-drop='true'] {
+  outline: 1px solid var(--cv-accent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--cv-accent) 12%, transparent);
 }
 
 .canvas-kbd {

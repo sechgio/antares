@@ -89,16 +89,31 @@ describe('subscribeDueNotifications', () => {
 
   it('invokes onChange when postgres_changes fires', () => {
     const onChange = vi.fn();
-    const handlers: Array<() => void> = [];
-    channel.on.mockImplementation(function (this: unknown, _event: string, _filter: unknown, cb: () => void) {
+    const handlers: Array<(payload: unknown) => void> = [];
+    channel.on.mockImplementation(function (this: unknown, _event: string, _filter: unknown, cb: (payload: unknown) => void) {
       handlers.push(cb);
       return this;
     });
 
     subscribeDueNotifications(onChange);
     expect(handlers).toHaveLength(2);
-    handlers[0]();
-    handlers[1]();
+    handlers[0]({ eventType: 'UPDATE', new: { id: 't1', due_date: '2026-07-09' }, old: {} });
+    handlers[1]({ eventType: 'UPDATE', new: { id: 'c1', name: 'En curso' }, old: {} });
     expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('forwards primary-key-only DELETE payloads to onChange', () => {
+    const onChange = vi.fn();
+    const handlers: Array<(payload: unknown) => void> = [];
+    channel.on.mockImplementation(function (this: unknown, _event: string, _filter: unknown, cb: (payload: unknown) => void) {
+      handlers.push(cb);
+      return this;
+    });
+
+    subscribeDueNotifications(onChange);
+    handlers[0]({ eventType: 'DELETE', new: {}, old: { id: 't1' } });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'DELETE', table: 'tareas' }),
+    );
   });
 });

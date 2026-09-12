@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -11,6 +12,7 @@ import time
 import traceback
 from datetime import date, datetime
 from datetime import time as dt_time
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +69,8 @@ class IPCMessage:
         self.method: str = raw.get("method", "")
         self.params: dict[str, Any] = raw.get("params", {})
 
+        if self.id is not None and (isinstance(self.id, bool) or not isinstance(self.id, (str, int))):
+            raise InvalidRequestError(f"Invalid request id: {self.id!r}")
         if not validate_method(self.method):
             raise InvalidRequestError(f"Invalid method name: {self.method}")
         if not validate_params(self.params):
@@ -116,7 +120,9 @@ def send_response(
     write_ok = False
     t0 = time.perf_counter()
     try:
-        payload_bytes = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+        payload_bytes = json.dumps(
+            payload, ensure_ascii=False, default=_json_default, allow_nan=False
+        ).encode("utf-8")
         if len(payload_bytes) > _MAX_PAYLOAD_SIZE:
             logger.error(
                 "Response payload too large: %d bytes (max: %d)",
@@ -136,6 +142,19 @@ def send_response(
         write_ok = True
     except Exception as exc:
         logger.error("Failed to write response to stdout: %s", exc)
+        try:
+            fallback = {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {
+                    "code": -32603,
+                    "message": f"Response serialization failed: {type(exc).__name__}",
+                    "category": "INTERNAL_ERROR",
+                },
+            }
+            _emit_stdout_line(json.dumps(fallback, ensure_ascii=False).encode("utf-8"))
+        except Exception:
+            logger.error("Failed to write fallback error response", exc_info=True)
     finally:
         if ipc_phase_telemetry.enabled():
             try:
@@ -162,7 +181,9 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
         "params": params,
     }
     try:
-        payload_bytes = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+        payload_bytes = json.dumps(
+            payload, ensure_ascii=False, default=_json_default, allow_nan=False
+        ).encode("utf-8")
         if len(payload_bytes) > _MAX_PAYLOAD_SIZE:
             logger.error(
                 "Notification payload too large: %d bytes (max: %d), dropping",
@@ -178,6 +199,12 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
 def _json_default(obj: Any) -> Any:
     if isinstance(obj, Path):
         return str(obj)
+    if isinstance(obj, (bytes, bytearray, memoryview)):
+        return base64.b64encode(bytes(obj)).decode("ascii")
+    if isinstance(obj, (set, frozenset)):
+        return sorted(obj, key=repr)
+    if isinstance(obj, Decimal):
+        return float(obj)
     if isinstance(obj, datetime):
         if obj.time() == dt_time(0, 0):
             return obj.date().isoformat()

@@ -5,9 +5,11 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -18,16 +20,54 @@ from backend.core.canvas.models import (
     utc_now_iso,
 )
 from backend.utils.paths import resource_path, user_data_path
+from backend.utils.validators import _WINDOWS_RESERVED_NAMES
 
 logger = logging.getLogger(__name__)
 
 _MAX_HISTORY_ENTRY_BYTES = 8 * 1024 * 1024
+MAX_CANVAS_DOCUMENT_BYTES = 16 * 1024 * 1024
+MAX_CANVAS_HISTORY_BYTES = 64 * 1024 * 1024
 _HISTORY_SPILL_SUFFIX = "_history.json"
+DOCUMENT_SPILL_PREFIX = "document__"
+HISTORY_SPILL_PREFIX = "history__"
+
+_INVALID_STEM_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+class CanvasDocumentTooLargeError(ValueError):
+    """A Canvas payload is valid JSON but exceeds the storage byte limit."""
+
+
+def encode_canvas_json(payload: object) -> bytes:
+    """Serialize a Canvas payload once, in the canonical on-disk form.
+
+    Serializing a multi-megabyte document costs tens of milliseconds, so every
+    caller that needs the size, the digest and the bytes must reuse a single
+    result instead of encoding the payload again per concern.
+    """
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def canvas_json_size_bytes(payload: object) -> int:
+    return len(encode_canvas_json(payload))
 
 
 def _history_entry_size_ok(item: dict[str, Any]) -> bool:  # allowlist: dict[str, Any]
-    encoded = json.dumps(item, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    return len(encoded) <= _MAX_HISTORY_ENTRY_BYTES
+    return canvas_json_size_bytes(item) <= _MAX_HISTORY_ENTRY_BYTES
+
+
+def _write_atomic(path: Path, encoded: bytes) -> None:
+    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(tmp, "wb") as f:
+            f.write(encoded)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(path)
+    except Exception:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        raise
 
 _store_instance: CanvasStore | None = None
 _store_lock = threading.Lock()
@@ -128,7 +168,9 @@ class CanvasStore:
         using_default = docs_dir is None
         self.docs_dir = Path(docs_dir) if docs_dir is not None else _default_docs_dir()
         self.history_dir = (self.docs_dir.parent / "history") if using_default else (self.docs_dir / "history")
-        self._lock = threading.RLock()
+        self._doc_locks: dict[str, threading.RLock] = {}
+        self._doc_locks_guard = threading.Lock()
+        self._index_lock = threading.RLock()
         self.docs_dir.mkdir(parents=True, exist_ok=True)
         self.history_dir.mkdir(parents=True, exist_ok=True)
         should_migrate = migrate_legacy if migrate_legacy is not None else using_default
@@ -142,9 +184,26 @@ class CanvasStore:
 
     def _safe_stem(self, doc_id: str) -> str:
         safe = Path(doc_id).name
-        if safe != doc_id or ".." in doc_id or "/" in doc_id or "\\" in doc_id:
+        stem = safe.split(".")[0].upper()
+        if (
+            safe != doc_id
+            or ".." in doc_id
+            or _INVALID_STEM_CHARS.search(doc_id)
+            or not doc_id
+            or doc_id != doc_id.rstrip(" .")
+            or stem in _WINDOWS_RESERVED_NAMES
+        ):
             raise ValueError(f"Invalid document id: {doc_id}")
         return safe
+
+    def _doc_lock(self, doc_id: str) -> threading.RLock:
+        stem = self._safe_stem(doc_id)
+        with self._doc_locks_guard:
+            lock = self._doc_locks.get(stem)
+            if lock is None:
+                lock = threading.RLock()
+                self._doc_locks[stem] = lock
+            return lock
 
     def _path_for(self, doc_id: str) -> Path:
         return self.docs_dir / f"{self._safe_stem(doc_id)}.json"
@@ -161,7 +220,7 @@ class CanvasStore:
             return False
 
     def _recover_document_spill(self, spill_path: Path) -> None:
-        doc_id = spill_path.stem
+        doc_id = spill_path.stem.removeprefix(DOCUMENT_SPILL_PREFIX)
         try:
             target = self._path_for(doc_id)
             if not self._spill_is_newer(spill_path, target):
@@ -179,7 +238,9 @@ class CanvasStore:
             logger.warning("Could not recover canvas document spill %s: %s", spill_path, exc)
 
     def _recover_history_spill(self, spill_path: Path) -> None:
-        doc_id = spill_path.name.removesuffix(_HISTORY_SPILL_SUFFIX)
+        doc_id = spill_path.name.removeprefix(HISTORY_SPILL_PREFIX).removesuffix(".json")
+        if doc_id == spill_path.stem:
+            doc_id = spill_path.name.removesuffix(_HISTORY_SPILL_SUFFIX)
         try:
             target = self._history_path_for(doc_id)
             if not self._spill_is_newer(spill_path, target):
@@ -207,7 +268,10 @@ class CanvasStore:
         if not spill_dir.is_dir():
             return
         for spill_path in sorted(spill_dir.glob("*.json")):
-            if spill_path.name.endswith(_HISTORY_SPILL_SUFFIX):
+            if spill_path.name.startswith(HISTORY_SPILL_PREFIX) or (
+                not spill_path.name.startswith(DOCUMENT_SPILL_PREFIX)
+                and spill_path.name.endswith(_HISTORY_SPILL_SUFFIX)
+            ):
                 self._recover_history_spill(spill_path)
             else:
                 self._recover_document_spill(spill_path)
@@ -230,26 +294,30 @@ class CanvasStore:
             self._listing_cache.append({"id": doc_id, "name": doc_name, "updatedAt": updated_at})
 
     def _find_path_by_inner_id(self, doc_id: str) -> Path | None:
-        self._rebuild_index_if_stale()
-        return self._inner_id_index.get(doc_id)
+        with self._index_lock:
+            self._rebuild_index_if_stale()
+            return self._inner_id_index.get(doc_id)
 
     def list_documents(self) -> list[dict[str, str]]:
-        with self._lock:
+        with self._index_lock:
             self._rebuild_index_if_stale()
             return list(self._listing_cache)
 
     def get(self, doc_id: str) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
-        with self._lock:
-            path = self._path_for(str(doc_id))
-            if not path.exists():
-                fallback = self._find_path_by_inner_id(str(doc_id))
-                if fallback is None:
-                    return None
-                path = fallback
+        path = self._path_for(str(doc_id))
+        if not path.exists():
+            fallback = self._find_path_by_inner_id(str(doc_id))
+            if fallback is None:
+                return None
+            path = fallback
+        with self._doc_lock(path.stem):
             try:
                 raw = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                 logger.warning("Could not read canvas document %s: %s", path, exc)
+                return None
+            if not isinstance(raw, dict):
+                logger.warning("Canvas document %s is not a JSON object; treating as unreadable", path)
                 return None
             doc = normalize_document(raw)
             if doc["id"] != path.stem:
@@ -261,8 +329,25 @@ class CanvasStore:
             return item
         return normalize_document(item)
 
+    def _select_history_entries(
+        self,
+        items: list[dict[str, Any]],  # allowlist: dict[str, Any]
+        max_history: int,
+        doc_id: str,
+    ) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
+        selected: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
+        for d in items[-max_history:]:
+            if not isinstance(d, dict):
+                continue
+            item = self._normalize_history_item(d)
+            if not _history_entry_size_ok(item):
+                logger.warning("Dropping oversized canvas history entry for %s", doc_id)
+                continue
+            selected.append(item)
+        return selected
+
     def get_history(self, doc_id: str) -> dict[str, list[dict[str, Any]]]:  # allowlist: dict[str, Any]
-        with self._lock:
+        with self._doc_lock(str(doc_id)):
             path = self._history_path_for(str(doc_id))
             if not path.exists():
                 return {"past": [], "future": []}
@@ -292,54 +377,51 @@ class CanvasStore:
         future: list[dict[str, Any]],  # allowlist: dict[str, Any]
         max_history: int = 30,
     ) -> bool:
-        with self._lock:
+        with self._doc_lock(str(doc_id)):
             path = self._history_path_for(str(doc_id))
             self.history_dir.mkdir(parents=True, exist_ok=True)
-            norm_past: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
-            for d in past[-max_history:]:
-                if not isinstance(d, dict):
-                    continue
-                item = self._normalize_history_item(d)
-                if not _history_entry_size_ok(item):
-                    logger.warning("Dropping oversized canvas history entry for %s", doc_id)
-                    continue
-                norm_past.append(item)
-            norm_future: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
-            for d in future[-max_history:]:
-                if not isinstance(d, dict):
-                    continue
-                item = self._normalize_history_item(d)
-                if not _history_entry_size_ok(item):
-                    logger.warning("Dropping oversized canvas history entry for %s", doc_id)
-                    continue
-                norm_future.append(item)
+            try:
+                norm_past = self._select_history_entries(past, max_history, str(doc_id))
+                norm_future = self._select_history_entries(future, max_history, str(doc_id))
+            except (TypeError, ValueError, UnicodeError) as exc:
+                raise ValueError("El historial Canvas contiene datos no serializables") from exc
             payload = {"past": norm_past, "future": norm_future}
-            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+            try:
+                encoded = encode_canvas_json(payload)
+            except (TypeError, ValueError, UnicodeError) as exc:
+                raise ValueError("El historial Canvas contiene datos no serializables") from exc
+            if len(encoded) > MAX_CANVAS_HISTORY_BYTES:
+                raise ValueError(
+                    f"El historial Canvas excede el límite agregado de almacenamiento ({MAX_CANVAS_HISTORY_BYTES} bytes)",
+                )
+            digest = hashlib.sha256(encoded).hexdigest()
             if self._history_digests.get(str(doc_id)) == digest:
                 return True
-            tmp = path.with_suffix(".json.tmp")
-            tmp.write_text(encoded, encoding="utf-8")
-            tmp.replace(path)
+            _write_atomic(path, encoded)
             self._history_digests[str(doc_id)] = digest
             return True
 
     def save(self, document: dict[str, Any], *, touch: bool = True) -> dict[str, Any]:  # allowlist: dict[str, Any]
-        with self._lock:
-            doc = normalize_document(document)
-            if touch:
-                doc["updatedAt"] = utc_now_iso()
+        doc = normalize_document(document)
+        if touch:
+            doc["updatedAt"] = utc_now_iso()
+        with self._doc_lock(doc["id"]):
             path = self._path_for(doc["id"])
             self.docs_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                encoded = encode_canvas_json(doc)
+            except (TypeError, ValueError, UnicodeError) as exc:
+                raise ValueError("El documento Canvas contiene datos no serializables") from exc
+            if len(encoded) > MAX_CANVAS_DOCUMENT_BYTES:
+                raise CanvasDocumentTooLargeError(
+                    f"El documento Canvas excede el límite de almacenamiento ({MAX_CANVAS_DOCUMENT_BYTES} bytes)",
+                )
             orphan = self._find_path_by_inner_id(doc["id"])
             if orphan is not None and orphan != path:
                 with contextlib.suppress(OSError):
                     orphan.unlink()
                 self._drop_index_entry(orphan.stem)
-            encoded = json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
-            tmp = path.with_suffix(".json.tmp")
-            tmp.write_text(encoded, encoding="utf-8")
-            tmp.replace(path)
+            _write_atomic(path, encoded)
             self._refresh_index_entry(doc, path)
             return doc
 
@@ -347,38 +429,60 @@ class CanvasStore:
         return self.save(create_empty_document(name=name))
 
     def delete(self, doc_id: str) -> bool:
-        with self._lock:
-            path = self._path_for(str(doc_id))
-            hist_path = self._history_path_for(str(doc_id))
+        with self._doc_lock(str(doc_id)):
+            safe_id = self._safe_stem(str(doc_id))
+            path = self.docs_dir / f"{safe_id}.json"
+            hist_path = self.history_dir / f"{safe_id}{_HISTORY_SPILL_SUFFIX}"
+            spill_dir = self.docs_dir.parent / "spill"
+            spill_paths = (
+                spill_dir / f"{safe_id}.json",
+                spill_dir / f"{safe_id}{_HISTORY_SPILL_SUFFIX}",
+                spill_dir / f"{DOCUMENT_SPILL_PREFIX}{safe_id}.json",
+                spill_dir / f"{HISTORY_SPILL_PREFIX}{safe_id}.json",
+            )
             with contextlib.suppress(OSError):
                 if hist_path.exists():
                     hist_path.unlink()
+            for spill_path in spill_paths:
+                with contextlib.suppress(OSError):
+                    spill_path.unlink()
             self._history_digests.pop(str(doc_id), None)
             if not path.exists():
+                self._evict_doc_lock(safe_id)
                 return False
             path.unlink()
             self._drop_index_entry(path.stem)
+            self._evict_doc_lock(safe_id)
             return True
 
+    def _evict_doc_lock(self, stem: str) -> None:
+        # Caller holds the doc lock. A thread already waiting on the same lock
+        # object still proceeds with it; removing the dict entry bounds the map
+        # to live documents while future callers get a fresh lock.
+        with self._doc_locks_guard:
+            self._doc_locks.pop(stem, None)
+
     def _refresh_index_entry(self, doc: dict[str, Any], path: Path) -> None:  # allowlist: dict[str, Any]
-        if self._index_stems is None:
-            return
-        stem = path.stem
-        inner_id = str(doc.get("id") or "")
-        self._inner_id_index = {k: v for k, v in self._inner_id_index.items() if v != path}
-        self._index_stems.add(stem)
-        if inner_id:
-            self._inner_id_index[inner_id] = path
-        entry = {"id": stem, "name": str(doc.get("name") or "Sin título"), "updatedAt": str(doc.get("updatedAt") or "")}
-        self._listing_cache = [item for item in self._listing_cache if item["id"] != stem]
-        self._listing_cache.append(entry)
+        with self._index_lock:
+            if self._index_stems is None:
+                return
+            stem = path.stem
+            inner_id = str(doc.get("id") or "")
+            self._inner_id_index = {k: v for k, v in self._inner_id_index.items() if v != path}
+            self._index_stems.add(stem)
+            if inner_id:
+                self._inner_id_index[inner_id] = path
+            entry = {"id": stem, "name": str(doc.get("name") or "Sin título"), "updatedAt": str(doc.get("updatedAt") or "")}
+            self._listing_cache = [item for item in self._listing_cache if item["id"] != stem]
+            self._listing_cache.append(entry)
 
     def _drop_index_entry(self, stem: str) -> None:
-        if self._index_stems is None:
-            return
-        self._index_stems.discard(stem)
-        self._inner_id_index = {k: v for k, v in self._inner_id_index.items() if v.stem != stem}
-        self._listing_cache = [item for item in self._listing_cache if item["id"] != stem]
+        with self._index_lock:
+            if self._index_stems is None:
+                return
+            self._index_stems.discard(stem)
+            self._inner_id_index = {k: v for k, v in self._inner_id_index.items() if v.stem != stem}
+            self._listing_cache = [item for item in self._listing_cache if item["id"] != stem]
 
     def duplicate(self, doc_id: str, *, name: str | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
         source = self.get(doc_id)

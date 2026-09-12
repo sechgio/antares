@@ -83,6 +83,7 @@ function createFileCapability({ filePath, mode, webContentsId, name, size }) {
     token,
     mode,
     path: resolved,
+    realPath: fs.realpathSync(resolved),
     name: name || path.basename(resolved),
     size: typeof size === 'number' ? size : stat.size,
     webContentsId: webContentsId ?? null,
@@ -104,7 +105,12 @@ function resolveCapability(token, expectedMode, webContentsId) {
     throw new Error('capability not bound to this window');
   }
   const real = fs.realpathSync(entry.path);
-  if (real !== entry.path) throw new Error('path symlink escape detected');
+  const matches = entry.realPath
+    ? real === entry.realPath
+    : process.platform === 'win32'
+      ? real.toLowerCase() === entry.path.toLowerCase()
+      : real === entry.path;
+  if (!matches) throw new Error('path symlink escape detected');
   return entry;
 }
 

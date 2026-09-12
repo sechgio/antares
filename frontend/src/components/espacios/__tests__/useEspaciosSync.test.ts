@@ -98,8 +98,18 @@ vi.mock('../api/espaciosApi', () => ({
   deleteTarea: vi.fn(),
 }));
 
+let realtimeChange:
+  | ((payload: {
+      eventType: string;
+      table: string;
+      new: Record<string, unknown> | null;
+      old: Record<string, unknown> | null;
+    }) => void)
+  | undefined;
+
 vi.mock('../api/realtime', () => ({
-  subscribeEspaciosSync: vi.fn((_e, _p, _onChange, onStatus) => {
+  subscribeEspaciosSync: vi.fn((_e, _p, onChange, onStatus) => {
+    realtimeChange = onChange;
     onStatus?.('live');
     return null;
   }),
@@ -429,5 +439,53 @@ describe('useEspaciosSync', () => {
 
     expect(result.current.tareas.some((t) => t.id === 'tarea-a')).toBe(false);
     expect(result.current.tareas).toEqual([tareaB]);
+  });
+
+  it('applies realtime DELETE events using the primary key carried in `old`', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+
+    act(() => {
+      realtimeChange?.({
+        eventType: 'DELETE',
+        table: 'tareas',
+        new: {},
+        old: { id: 'tarea-a' },
+      });
+    });
+
+    expect(result.current.tareas).toEqual([]);
+  });
+
+  it('drops the deleted espacio from a primary-key-only DELETE payload', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.espacios).toHaveLength(2));
+
+    act(() => {
+      realtimeChange?.({
+        eventType: 'DELETE',
+        table: 'espacios',
+        new: {},
+        old: { id: 'esp-b' },
+      });
+    });
+
+    expect(result.current.espacios).toEqual([espacioA]);
+  });
+
+  it('ignores a realtime DELETE event whose `old` row lacks an id', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+
+    act(() => {
+      realtimeChange?.({
+        eventType: 'DELETE',
+        table: 'tareas',
+        new: {},
+        old: {},
+      });
+    });
+
+    expect(result.current.tareas).toEqual([tareaA]);
   });
 });

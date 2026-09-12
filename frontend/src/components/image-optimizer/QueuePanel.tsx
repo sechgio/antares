@@ -35,7 +35,9 @@ const iconBtn =
   'flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] transition-[color,background-color,transform] duration-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] active:scale-[0.96] disabled:pointer-events-none disabled:opacity-25';
 
 const QUEUE_VIRTUALIZATION_THRESHOLD = 100;
-const QUEUE_ROW_HEIGHT = 48;
+const QUEUE_ITEM_HEIGHT = 40;
+const QUEUE_GAP = 4;
+const QUEUE_ROW_HEIGHT = QUEUE_ITEM_HEIGHT + QUEUE_GAP;
 const QUEUE_OVERSCAN = 6;
 
 function statusColor(item: ImageItem): string {
@@ -74,6 +76,7 @@ export default function QueuePanel({
   const [queueScrollTop, setQueueScrollTop] = useState(0);
   const [queueViewportHeight, setQueueViewportHeight] = useState(480);
   const queueScrollRef = useRef<HTMLDivElement>(null);
+  const queueScrollTopRef = useRef(0);
   const isVirtualized = items.length >= QUEUE_VIRTUALIZATION_THRESHOLD;
   const downloadNameMap = useMemo(
     () => buildExportNameMap(items, settings),
@@ -90,21 +93,26 @@ export default function QueuePanel({
 
     const updateViewport = () => {
       const rect = scrollElement.getBoundingClientRect();
-      setQueueViewportHeight(Math.max(1, rect.height || scrollElement.clientHeight || 480));
+      setQueueViewportHeight(Math.max(1, scrollElement.clientHeight || rect.height || 480));
     };
-    const handleScroll = () => setQueueScrollTop(scrollElement.scrollTop);
 
     updateViewport();
-    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    queueScrollTopRef.current = scrollElement.scrollTop;
+    setQueueScrollTop(queueScrollTopRef.current);
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateViewport) : null;
+    observer?.observe(scrollElement);
     window.addEventListener('resize', updateViewport);
     return () => {
-      scrollElement.removeEventListener('scroll', handleScroll);
+      observer?.disconnect();
       window.removeEventListener('resize', updateViewport);
     };
   }, [isVirtualized, items.length]);
 
   const startIndex = isVirtualized
-    ? Math.max(0, Math.floor(queueScrollTop / QUEUE_ROW_HEIGHT) - QUEUE_OVERSCAN)
+    ? Math.min(
+        Math.max(0, items.length - 1),
+        Math.max(0, Math.floor(queueScrollTop / QUEUE_ROW_HEIGHT) - QUEUE_OVERSCAN),
+      )
     : 0;
   const endIndex = isVirtualized
     ? Math.min(
@@ -112,7 +120,7 @@ export default function QueuePanel({
         startIndex + Math.ceil(queueViewportHeight / QUEUE_ROW_HEIGHT) + QUEUE_OVERSCAN * 2,
       )
     : items.length;
-  const visibleItems = items.slice(startIndex, endIndex);
+  const queueContentHeight = Math.max(0, items.length * QUEUE_ROW_HEIGHT - QUEUE_GAP);
 
   const handleDragStart = (event: DragEvent<HTMLDivElement>, id: string) => {
     setDraggedItemId(id);
@@ -143,6 +151,132 @@ export default function QueuePanel({
   const resetDragState = () => {
     setDraggedItemId(null);
     setDropTargetId(null);
+  };
+
+  const handleQueueScroll = () => {
+    const nextScrollTop = queueScrollRef.current?.scrollTop ?? 0;
+    queueScrollTopRef.current = nextScrollTop;
+    if (isVirtualized) setQueueScrollTop(nextScrollTop);
+  };
+
+  const renderQueueItem = (item: ImageItem, index: number) => {
+    const outputName = downloadNameMap.get(item.id) || item.originalName;
+    const isActive = item.id === activeItemId;
+    const isReady = !!getResolvedBlob(item);
+    const hasResult = item.status === 'completed' && !!item.resultSize;
+    const itemSettings = resolveSettingsForItem(settings, item);
+    const color = statusColor(item);
+
+    return (
+      <WithHoverTooltip
+        key={item.id}
+        label={t('optimizer.queue.dragHint')}
+        placement="bottom"
+        className="block w-full"
+        style={isVirtualized
+          ? {
+            height: QUEUE_ITEM_HEIGHT,
+            left: 0,
+            position: 'absolute',
+            right: 0,
+            top: index * QUEUE_ROW_HEIGHT,
+          }
+          : undefined}
+      >
+        <div
+          data-virtualized-queue-row="true"
+          data-virtualized-queue-row-index={isVirtualized ? index : undefined}
+          draggable
+          onDragStart={(e) => handleDragStart(e, item.id)}
+          onDragOver={(e) => handleDragOver(e, item.id)}
+          onDragLeave={() => setDropTargetId((current) => current === item.id ? null : current)}
+          onDrop={(e) => handleDrop(e, item.id)}
+          onDragEnd={resetDragState}
+          className={`group flex h-10 w-full flex-none cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 py-1.5 transition-[background-color,opacity] duration-100 ${
+            isActive
+              ? 'bg-[var(--bg-input)]'
+              : 'hover:bg-[var(--bg-input)]'
+          } ${dropTargetId === item.id ? 'bg-[var(--accent-primary)]/10' : ''} ${draggedItemId === item.id ? 'opacity-55' : item.excluded ? 'opacity-45' : ''}`}
+          onClick={() => onSetActiveItem(item.id)}
+        >
+          <GripVertical size={12} className="shrink-0 text-[var(--text-secondary)] opacity-35 transition-opacity group-hover:opacity-70" />
+
+          <input
+            type="checkbox"
+            checked={item.selected}
+            onChange={() => onToggleSelection(item.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="h-3 w-3 shrink-0 cursor-pointer rounded accent-[var(--accent-primary)]"
+          />
+
+          <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md bg-[var(--bg-surface)]">
+            {item.preview ? (
+              <img src={item.preview} alt={item.originalName} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <ImageIcon size={11} className="text-[var(--text-secondary)]" />
+              </div>
+            )}
+            {item.status === 'processing' && (
+              <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-base)]/55">
+                <Loader2 size={10} className="animate-spin text-[var(--text-primary)]" />
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <p className={`truncate text-[11px] font-medium leading-tight text-[var(--text-primary)] ${item.excluded ? 'line-through' : ''}`}>
+              {outputName}
+            </p>
+            <p className="mt-px truncate whitespace-nowrap font-mono text-[9px] tabular-nums leading-tight text-[var(--text-secondary)]">
+              {formatBytes(item.originalSize)}
+              {hasResult && item.resultSize != null && (
+                <span className="text-[var(--accent-green)]">{' → '}{formatBytes(item.resultSize)}</span>
+              )}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-px opacity-70 transition-opacity group-hover:opacity-100">
+            <WithHoverTooltip label={t('optimizer.queue.cropEditor')} placement="bottom">
+              <button
+                type="button"
+                aria-label={t('optimizer.queue.cropEditor')}
+                onClick={(e) => { e.stopPropagation(); onOpenCropEditor(item.id); }}
+                disabled={!itemSettings.operations.cropEnabled || itemSettings.crop.aspectRatio === 'original'}
+                className={iconBtn}
+              >
+                <Crop size={12} />
+              </button>
+            </WithHoverTooltip>
+            <WithHoverTooltip label={t('optimizer.preview.download')} placement="bottom">
+              <button
+                type="button"
+                aria-label={t('optimizer.preview.download')}
+                onClick={(e) => { e.stopPropagation(); onDownloadSingle(item); }}
+                disabled={!isReady}
+                className={iconBtn}
+              >
+                <FileDown size={12} />
+              </button>
+            </WithHoverTooltip>
+            <WithHoverTooltip label={t('optimizer.queue.remove')} placement="bottom">
+              <button
+                type="button"
+                aria-label={t('optimizer.queue.remove')}
+                onClick={(e) => { e.stopPropagation(); onRemoveItem(item.id); }}
+                className={`${iconBtn} hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)]`}
+              >
+                <Trash2 size={12} />
+              </button>
+            </WithHoverTooltip>
+            <span
+              className={`ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'processing' ? 'animate-pulse' : ''}`}
+              style={{ backgroundColor: color }}
+            />
+          </div>
+        </div>
+      </WithHoverTooltip>
+    );
   };
 
   return (
@@ -189,129 +323,21 @@ export default function QueuePanel({
       <div
         ref={queueScrollRef}
         data-virtualized-queue={isVirtualized ? 'true' : undefined}
-        onScroll={isVirtualized ? () => setQueueScrollTop(queueScrollRef.current?.scrollTop ?? 0) : undefined}
+        data-image-optimizer-queue-scroll="true"
+        onScroll={handleQueueScroll}
         className="custom-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 pb-1.5"
       >
         <div
-          className="flex w-full flex-1 flex-col gap-1"
-          style={isVirtualized ? { minHeight: items.length * QUEUE_ROW_HEIGHT } : undefined}
+          data-virtualized-queue-content={isVirtualized ? 'true' : undefined}
+          className={isVirtualized ? 'relative w-full' : 'flex w-full flex-1 flex-col gap-1'}
+          style={isVirtualized ? { height: queueContentHeight } : undefined}
         >
-          {isVirtualized && startIndex > 0 && (
-            <div aria-hidden="true" style={{ height: startIndex * QUEUE_ROW_HEIGHT, flexShrink: 0 }} />
-          )}
-
-          {visibleItems.map((item) => {
-            const outputName = downloadNameMap.get(item.id) || item.originalName;
-            const isActive = item.id === activeItemId;
-            const isReady = !!getResolvedBlob(item);
-            const hasResult = item.status === 'completed' && !!item.resultSize;
-            const itemSettings = resolveSettingsForItem(settings, item);
-            const color = statusColor(item);
-
-            return (
-              <WithHoverTooltip
-                key={item.id}
-                label={t('optimizer.queue.dragHint')}
-                placement="bottom"
-                className="block w-full"
-              >
-                <div
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, item.id)}
-                  onDragOver={(e) => handleDragOver(e, item.id)}
-                  onDragLeave={() => setDropTargetId((current) => current === item.id ? null : current)}
-                  onDrop={(e) => handleDrop(e, item.id)}
-                  onDragEnd={resetDragState}
-                  className={`group flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-[background-color,opacity] duration-100 ${
-                    isActive
-                      ? 'bg-[var(--bg-input)]'
-                      : 'hover:bg-[var(--bg-input)]'
-                  } ${dropTargetId === item.id ? 'bg-[var(--accent-primary)]/10' : ''} ${draggedItemId === item.id ? 'opacity-55' : item.excluded ? 'opacity-45' : ''}`}
-                  onClick={() => onSetActiveItem(item.id)}
-                >
-                  <GripVertical size={12} className="shrink-0 text-[var(--text-secondary)] opacity-35 transition-opacity group-hover:opacity-70" />
-
-                  <input
-                    type="checkbox"
-                    checked={item.selected}
-                    onChange={() => onToggleSelection(item.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="h-3 w-3 shrink-0 cursor-pointer rounded accent-[var(--accent-primary)]"
-                  />
-
-                  <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md bg-[var(--bg-surface)]">
-                    {item.preview ? (
-                      <img src={item.preview} alt={item.originalName} loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center">
-                        <ImageIcon size={11} className="text-[var(--text-secondary)]" />
-                      </div>
-                    )}
-                    {item.status === 'processing' && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-base)]/55">
-                        <Loader2 size={10} className="animate-spin text-[var(--text-primary)]" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className={`truncate text-[11px] font-medium leading-tight text-[var(--text-primary)] ${item.excluded ? 'line-through' : ''}`}>
-                      {outputName}
-                    </p>
-                    <p className="mt-px font-mono text-[9px] tabular-nums leading-tight text-[var(--text-secondary)]">
-                      {formatBytes(item.originalSize)}
-                      {hasResult && item.resultSize != null && (
-                        <span className="text-[var(--accent-green)]">{' → '}{formatBytes(item.resultSize)}</span>
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-px opacity-70 transition-opacity group-hover:opacity-100">
-                    <WithHoverTooltip label={t('optimizer.queue.cropEditor')} placement="bottom">
-                      <button
-                        type="button"
-                        aria-label={t('optimizer.queue.cropEditor')}
-                        onClick={(e) => { e.stopPropagation(); onOpenCropEditor(item.id); }}
-                        disabled={!itemSettings.operations.cropEnabled || itemSettings.crop.aspectRatio === 'original'}
-                        className={iconBtn}
-                      >
-                        <Crop size={12} />
-                      </button>
-                    </WithHoverTooltip>
-                    <WithHoverTooltip label={t('optimizer.preview.download')} placement="bottom">
-                      <button
-                        type="button"
-                        aria-label={t('optimizer.preview.download')}
-                        onClick={(e) => { e.stopPropagation(); onDownloadSingle(item); }}
-                        disabled={!isReady}
-                        className={iconBtn}
-                      >
-                        <FileDown size={12} />
-                      </button>
-                    </WithHoverTooltip>
-                    <WithHoverTooltip label={t('optimizer.queue.remove')} placement="bottom">
-                      <button
-                        type="button"
-                        aria-label={t('optimizer.queue.remove')}
-                        onClick={(e) => { e.stopPropagation(); onRemoveItem(item.id); }}
-                        className={`${iconBtn} hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)]`}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </WithHoverTooltip>
-                    <span
-                      className={`ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'processing' ? 'animate-pulse' : ''}`}
-                      style={{ backgroundColor: color }}
-                    />
-                  </div>
-                </div>
-              </WithHoverTooltip>
-            );
-          })}
-
-          {isVirtualized && endIndex < items.length && (
-            <div aria-hidden="true" style={{ height: (items.length - endIndex) * QUEUE_ROW_HEIGHT, flexShrink: 0 }} />
-          )}
+          {isVirtualized
+            ? Array.from({ length: endIndex - startIndex }, (_, offset) => {
+              const item = items[startIndex + offset];
+              return item ? renderQueueItem(item, startIndex + offset) : null;
+            })
+            : items.map((item, index) => renderQueueItem(item, index))}
 
           {items.length === 0 && (
             <div className="flex h-full min-h-[7rem] w-full flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border-medium)] text-center">

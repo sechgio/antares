@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { AlertCircle, Radio, Users, WifiOff, type LucideIcon } from 'lucide-react';
+import { AlertCircle, Radio, WifiOff, type LucideIcon } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasCollaborator, CanvasRealtimeStatus } from '../sync/canvasRealtime';
 
@@ -52,7 +52,7 @@ export default memo(function CanvasPresenceBadge({
   return (
     <WithHoverTooltip label={names ? `${label}: ${names}` : label} placement="bottom" variant="dark">
       <div
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 text-emerald-400 select-none transition-all duration-200 hover:bg-emerald-500/15"
+        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/[0.06] px-2 text-emerald-400/90 select-none transition-all duration-150 hover:bg-emerald-500/10 hover:text-emerald-400"
         aria-label={label}
         data-testid="canvas-presence-badge"
         data-status={status}
@@ -63,22 +63,21 @@ export default memo(function CanvasPresenceBadge({
             {collaborators.slice(0, 3).map((collaborator) => (
               <span
                 key={`${collaborator.presenceKey}-${collaborator.userId}`}
-                className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--cv-panel)] bg-[var(--cv-accent)] text-[9px] font-semibold text-white"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[var(--cv-panel)] bg-[var(--cv-accent)] text-[8px] font-semibold text-white"
               >
                 {initials(collaborator.displayName)}
               </span>
             ))}
             {collaborators.length > 3 ? (
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--cv-panel)] bg-[var(--cv-hover)] text-[9px] font-semibold text-[var(--cv-text-muted)]">
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[var(--cv-panel)] bg-[var(--cv-hover)] text-[8px] font-semibold text-[var(--cv-text-muted)]">
                 +{collaborators.length - 3}
               </span>
             ) : null}
           </span>
         ) : (
-          <Users className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
+          <Icon className={`h-3 w-3 shrink-0 ${iconClass}`} aria-hidden />
         )}
-        <Icon className={`h-3.5 w-3.5 ${iconClass}`} aria-hidden />
-        <span className="hidden text-[10px] font-medium sm:inline">{collaborators.length || compactLabel}</span>
+        <span className="text-[11px] font-medium">{collaborators.length || compactLabel}</span>
       </div>
     </WithHoverTooltip>
   );

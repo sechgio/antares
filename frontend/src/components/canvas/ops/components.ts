@@ -1,5 +1,7 @@
 import type { CanvasDocument, CanvasLayer, LayerCssVars } from '../types';
 import { mm, newId, parseMm } from '../types';
+import { expandWithDescendants } from './layerTree';
+import { masterBaseCssVars, resolveVariantPatch } from './variants';
 
 export const INSTANCE_OFFSET_MM = 5;
 
@@ -24,22 +26,6 @@ function variantsEqual(
   return true;
 }
 
-function variantPatch(
-  master: CanvasLayer,
-  variant: string | undefined,
-): Partial<LayerCssVars> {
-  if (!variant) return {};
-  const patch = master.meta?.variants?.[variant];
-  return patch && typeof patch === 'object' ? patch : {};
-}
-
-export function masterBaseCssVars(master: CanvasLayer, variant?: string): LayerCssVars {
-  return {
-    ...master.cssVars,
-    ...variantPatch(master, variant),
-  } as LayerCssVars;
-}
-
 export function createComponentFromLayer(layer: CanvasLayer, _doc: CanvasDocument): CanvasLayer {
   const { instanceOf: _instanceOf, overrideVars: _ov, variant: _v, ...restMeta } = layer.meta ?? {};
   return {
@@ -56,7 +42,7 @@ export function instantiateComponent(
   master: CanvasLayer,
   doc: CanvasDocument,
   overrideVars?: Partial<LayerCssVars>,
-  variant?: string,
+  variantOrOptions?: string | { variant?: string; variantProps?: Record<string, string> },
   options?: { offsetMm?: number },
 ): { instance: CanvasLayer; childLayers: CanvasLayer[] } {
   const masterId = master.meta?.componentId ?? master.id;
@@ -76,9 +62,16 @@ export function instantiateComponent(
     '--translate-y': mm(ty),
   };
 
+  const initialVariant =
+    typeof variantOrOptions === 'string' ? variantOrOptions : variantOrOptions?.variant;
+  const initialProps =
+    typeof variantOrOptions === 'object' ? variantOrOptions.variantProps : undefined;
+
+  const patch = resolveVariantPatch(master, initialVariant, initialProps).patch;
+
   const resolved = {
     ...master.cssVars,
-    ...variantPatch(master, variant),
+    ...patch,
     ...seededOverrides,
   } as LayerCssVars;
 
@@ -93,38 +86,20 @@ export function instantiateComponent(
       ...restMeta,
       instanceOf: masterId,
       overrideVars: seededOverrides,
-      ...(variant ? { variant } : {}),
+      ...(initialVariant ? { variant: initialVariant } : {}),
+      ...(initialProps ? { variantProps: initialProps } : {}),
     },
   };
 
-  const idMap = new Map<string, string>();
-  idMap.set(master.id, instanceId);
-
-  const masterDescendantIds = new Set<string>([master.id]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const layer of doc.layers) {
-      if (!layer.parentId || masterDescendantIds.has(layer.id)) continue;
-      if (!masterDescendantIds.has(layer.parentId)) continue;
-      masterDescendantIds.add(layer.id);
-      idMap.set(layer.id, newId());
-      grew = true;
-    }
-  }
-
-  const childLayers: CanvasLayer[] = [];
-  for (const layer of doc.layers) {
-    if (layer.id === master.id) continue;
-    if (!idMap.has(layer.id)) continue;
-    const newParent =
-      layer.parentId && idMap.has(layer.parentId) ? idMap.get(layer.parentId) : layer.parentId;
-    childLayers.push({
+  const descendantIds = expandWithDescendants(doc.layers, [master.id]);
+  const idMap = new Map(descendantIds.map((id) => [id, id === master.id ? instanceId : newId()]));
+  const childLayers = doc.layers
+    .filter((layer) => layer.id !== master.id && idMap.has(layer.id))
+    .map((layer): CanvasLayer => ({
       ...layer,
       id: idMap.get(layer.id)!,
-      parentId: newParent,
-    });
-  }
+      parentId: layer.parentId ? idMap.get(layer.parentId) ?? layer.parentId : undefined,
+    }));
 
   return { instance, childLayers };
 }
@@ -132,14 +107,16 @@ export function instantiateComponent(
 export function applyInstanceOverrides(
   instance: CanvasLayer,
   master: CanvasLayer | undefined,
+  data?: Record<string, unknown>,
 ): LayerCssVars {
   const overrides = instance.meta?.overrideVars ?? {};
   if (!master) {
     return { ...instance.cssVars, ...overrides } as LayerCssVars;
   }
+  const { patch } = resolveVariantPatch(master, instance, undefined, data);
   return {
     ...master.cssVars,
-    ...variantPatch(master, instance.meta?.variant),
+    ...patch,
     ...overrides,
   } as LayerCssVars;
 }
@@ -147,10 +124,11 @@ export function applyInstanceOverrides(
 export function bakeInstanceOverrides(
   instance: CanvasLayer,
   master: CanvasLayer | undefined,
+  data?: Record<string, unknown>,
 ): CanvasLayer {
   if (!instance.meta?.instanceOf) return instance;
   const base = master
-    ? masterBaseCssVars(master, instance.meta.variant)
+    ? masterBaseCssVars(master, instance, undefined, data)
     : ({} as LayerCssVars);
   const overrideVars: Partial<LayerCssVars> = {};
   for (const [key, value] of Object.entries(instance.cssVars)) {
@@ -159,7 +137,7 @@ export function bakeInstanceOverrides(
   }
   const prevOverrides = instance.meta.overrideVars ?? {};
   if (cssVarsEqual(prevOverrides, overrideVars)) {
-    const resolved = applyInstanceOverrides(instance, master);
+    const resolved = applyInstanceOverrides(instance, master, data);
     if (cssVarsEqual(instance.cssVars, resolved)) return instance;
     return { ...instance, cssVars: resolved };
   }
@@ -172,16 +150,16 @@ export function bakeInstanceOverrides(
   return {
     ...instance,
     meta,
-    cssVars: applyInstanceOverrides({ ...instance, meta }, master),
+    cssVars: applyInstanceOverrides({ ...instance, meta }, master, data),
   };
 }
 
-export function bakeAllInstances(doc: CanvasDocument): CanvasDocument {
+export function bakeAllInstances(doc: CanvasDocument, data?: Record<string, unknown>): CanvasDocument {
   let changed = false;
   const layers = doc.layers.map((layer) => {
     if (!layer.meta?.instanceOf) return layer;
     const master = findComponentMaster(doc.layers, layer.meta.instanceOf);
-    const next = bakeInstanceOverrides(layer, master);
+    const next = bakeInstanceOverrides(layer, master, data);
     if (next !== layer) changed = true;
     return next;
   });
@@ -192,11 +170,12 @@ export function syncComponentToInstances(
   doc: CanvasDocument,
   masterId: string,
   nextMaster: CanvasLayer,
+  data?: Record<string, unknown>,
 ): CanvasDocument {
   let changed = false;
   const layers = doc.layers.map((layer) => {
     if (layer.meta?.instanceOf !== masterId) return layer;
-    const nextCss = applyInstanceOverrides(layer, nextMaster);
+    const nextCss = applyInstanceOverrides(layer, nextMaster, data);
     if (cssVarsEqual(layer.cssVars, nextCss)) return layer;
     changed = true;
     return { ...layer, cssVars: nextCss };
@@ -208,6 +187,7 @@ export function syncComponentFromLayer(
   doc: CanvasDocument,
   prev: CanvasLayer | undefined,
   next: CanvasLayer,
+  data?: Record<string, unknown>,
 ): CanvasDocument {
   if (next.meta?.instanceOf) return doc;
   const masterId = next.meta?.componentId;
@@ -215,20 +195,51 @@ export function syncComponentFromLayer(
   if (prev && cssVarsEqual(prev.cssVars, next.cssVars) && variantsEqual(prev.meta?.variants, next.meta?.variants)) {
     return doc;
   }
-  return syncComponentToInstances(doc, masterId, next);
+  return syncComponentToInstances(doc, masterId, next, data);
 }
 
 export function syncChangedMasters(
   doc: CanvasDocument,
   baseline: CanvasDocument | undefined,
+  data?: Record<string, unknown>,
 ): CanvasDocument {
   let out = doc;
   for (const layer of doc.layers) {
     if (!layer.meta?.componentId || layer.meta.instanceOf) continue;
     const prev = baseline?.layers.find((l) => l.id === layer.id);
-    out = syncComponentFromLayer(out, prev, layer);
+    out = syncComponentFromLayer(out, prev, layer, data);
   }
   return out;
+}
+
+export function resetInstanceOverrides(
+  instance: CanvasLayer,
+  master: CanvasLayer | undefined,
+  data?: Record<string, unknown>,
+): CanvasLayer {
+  if (!instance.meta?.instanceOf) return instance;
+  const meta = { ...instance.meta, overrideVars: undefined };
+  return {
+    ...instance,
+    meta,
+    cssVars: applyInstanceOverrides({ ...instance, meta }, master, data),
+  };
+}
+
+export function detachInstance(instance: CanvasLayer): CanvasLayer {
+  if (!instance.meta?.instanceOf) return instance;
+  const meta = { ...instance.meta };
+  delete meta.instanceOf;
+  delete meta.overrideVars;
+  delete meta.variant;
+  delete meta.variantProps;
+  delete meta.variantBinding;
+  return {
+    ...instance,
+    type: 'group',
+    name: instance.name.replace(/ instancia$/, ''),
+    meta,
+  };
 }
 
 export function findComponentMaster(

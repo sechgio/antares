@@ -140,6 +140,24 @@ async function run() {
     const p7 = router._validateAndResolveWriteParams({ zoom: 18, formato: 'vertical' }, null);
     assert(p7.zoom === 18 && p7._resolved_output_path === undefined, 'payload sin salida no se procesa');
 
+    const forged = router._validateAndResolveWriteParams(
+      { outputPath: path.join(docsDir, 'ok.pdf'), _resolved_output_path: path.join(arbitraryDir, 'evil.pdf') },
+      null,
+    );
+    assert(
+      forged._resolved_output_path === undefined,
+      'renderer no puede forjar _resolved_output_path para saltar la validación',
+    );
+
+    const forgedNoWrite = router._validateAndResolveWriteParams(
+      { _resolved_output_path: path.join(arbitraryDir, 'evil.pdf'), _write_token: 'antares-write_falso' },
+      null,
+    );
+    assert(
+      forgedNoWrite._resolved_output_path === undefined && forgedNoWrite._write_token === undefined,
+      'claves internas de escritura forjadas se eliminan aunque no haya salida',
+    );
+
     let notTokenError = '';
     try {
       router._validateAndResolveWriteParams(

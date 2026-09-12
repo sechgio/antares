@@ -3,7 +3,9 @@ import InlineNumField from '../../InlineNumField';
 import {
   applyInstanceOverrides,
   createComponentFromLayer,
+  detachInstance,
   findComponentMaster,
+  resetInstanceOverrides,
 } from '../../../ops/components';
 import {
   createEmptyDocument,
@@ -76,6 +78,7 @@ export default function InstanceSection({
   layers = [],
   onChange,
   onInstantiateComponent,
+  onSelectLayer,
 }: SectionProps) {
   const isInstance = Boolean(layer.meta?.instanceOf);
   const isMaster = layer.type === 'component' && Boolean(layer.meta?.componentId) && !isInstance;
@@ -228,6 +231,34 @@ export default function InstanceSection({
             </label>
           );
         })}
+      </div>
+
+      <div className="mt-3 space-y-1.5">
+        {master && onSelectLayer && (
+          <button
+            type="button"
+            className="canvas-btn w-full rounded-md px-3 py-1.5 text-[12px]"
+            onClick={() => onSelectLayer(master.id)}
+          >
+            Ir al maestro
+          </button>
+        )}
+        {Object.keys(overrides).length > 0 && (
+          <button
+            type="button"
+            className="canvas-btn w-full rounded-md px-3 py-1.5 text-[12px]"
+            onClick={() => onChange(resetInstanceOverrides(layer, master))}
+          >
+            Restablecer overrides
+          </button>
+        )}
+        <button
+          type="button"
+          className="canvas-btn w-full rounded-md px-3 py-1.5 text-[12px]"
+          onClick={() => onChange(detachInstance(layer))}
+        >
+          Desvincular instancia
+        </button>
       </div>
     </div>
   );

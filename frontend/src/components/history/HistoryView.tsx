@@ -106,8 +106,7 @@ export default function HistoryView() {
     setSelectedIds(new Set());
 
     void loadPage(true);
-
-  }, [activeType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeType]);
 
 
 

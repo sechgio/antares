@@ -6,6 +6,7 @@ import { layerVirtualWindow } from '../ops/layerListWindow';
 import { setActivePageLayers } from '../ops/pages';
 import { patchLayersById, replaceLayerById } from '../ops/patchLayers';
 import { moveSelection, rotateSelection } from '../ops/selectionTransform';
+import { selectLayersByIds } from '../ops/mixedSelection';
 import type { CanvasDocument } from '../types';
 
 function makeLayers(n: number) {
@@ -33,6 +34,19 @@ describe('canvas perf hot path', () => {
     }
     expect(same).toBe(299);
     expect(next[0]).not.toBe(layers[0]);
+  });
+
+  it('selectLayersByIds handles large selections with set membership', () => {
+    const layers = makeLayers(10_000);
+    const selectedIds = Array.from({ length: 1_000 }, (_, index) => `l${index * 3}`);
+    const t0 = performance.now();
+    const selected = selectLayersByIds(layers, selectedIds);
+    const elapsed = performance.now() - t0;
+
+    expect(selected).toHaveLength(selectedIds.length);
+    expect(selected[0]?.id).toBe('l0');
+    expect(selected.at(-1)?.id).toBe('l2997');
+    expect(elapsed).toBeLessThan(50);
   });
 
   it('moveSelection zero delta returns same array ref', () => {
@@ -253,6 +267,52 @@ describe('canvas perf hot path', () => {
     expect(node.style.willChange).toBe('transform');
     clearLayerDomGestureStyles(root, [layer], ['r2']);
     expect(node.style.willChange).toBe('');
+  });
+
+  it('applyLayerDomGeometry guards width and height writes avoiding redundant assignments', async () => {
+    const { applyLayerDomGeometry, applyLayerDomTransforms } = await import('../ops/imperativeLayerDom');
+    const layer = createLayer('rect', {
+      id: 'r3',
+      cssVars: {
+        '--translate-x': '5mm',
+        '--translate-y': '5mm',
+        '--width': '20mm',
+        '--height': '10mm',
+      },
+    });
+    const root = document.createElement('div');
+    const node = document.createElement('div');
+    node.dataset.layerId = 'r3';
+    root.appendChild(node);
+
+    applyLayerDomGeometry(root, [layer], ['r3']);
+    const initialWidth = node.style.width;
+    const initialHeight = node.style.height;
+
+    let widthWrites = 0;
+    let heightWrites = 0;
+    Object.defineProperty(node.style, 'width', {
+      get: () => initialWidth,
+      set: () => {
+        widthWrites++;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node.style, 'height', {
+      get: () => initialHeight,
+      set: () => {
+        heightWrites++;
+      },
+      configurable: true,
+    });
+
+    applyLayerDomGeometry(root, [layer], ['r3']);
+    expect(widthWrites).toBe(0);
+    expect(heightWrites).toBe(0);
+
+    applyLayerDomTransforms(root, [layer], ['r3']);
+    expect(widthWrites).toBe(0);
+    expect(heightWrites).toBe(0);
   });
 
   it('layerNeedsDocumentLayers is false for plain rects (memo ignores displayLayers identity)', async () => {

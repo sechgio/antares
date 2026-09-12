@@ -5,6 +5,20 @@ export function estimateStringBytes(value: string): number {
   return value.length * 2;
 }
 
+export function createObjectIdentity<T extends object>(): (value: T) => number {
+  let nextIdentity = 1;
+  const identities = new WeakMap<T, number>();
+
+  return (value: T): number => {
+    const existing = identities.get(value);
+    if (existing !== undefined) return existing;
+    const identity = nextIdentity;
+    nextIdentity += 1;
+    identities.set(value, identity);
+    return identity;
+  };
+}
+
 export type LruMapOptions<V> = {
   maxEntries?: number;
   maxBytes?: number;

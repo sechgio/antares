@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
-import os
+import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
 from backend.core import canvas as _canvas_core
+from backend.core.canvas.store import (
+    DOCUMENT_SPILL_PREFIX,
+    HISTORY_SPILL_PREFIX,
+    MAX_CANVAS_DOCUMENT_BYTES,
+    MAX_CANVAS_HISTORY_BYTES,
+    CanvasDocumentTooLargeError,
+    encode_canvas_json,
+)
 from backend.core.exceptions import MemoryPressureError, NotFoundError, ValidationError
 from backend.core.scheduler import (
     MEMORY_PRESSURE_RETRY_AFTER_MS,
@@ -16,12 +24,23 @@ from backend.core.scheduler import (
     is_memory_pressure,
 )
 from backend.handlers.common import validate_params, with_locale
+from backend.utils.atomic_write import atomic_output_file
 from backend.utils.validators import sanitizar_nombre
 
 logger = logging.getLogger(__name__)
 
+_spill_replace_lock = threading.Lock()
+
 
 def _spill_file_path(doc_id: str, suffix: str = ".json") -> Path:
+    store = _canvas_core.get_canvas_store()
+    spill_dir = store.docs_dir.parent / "spill"
+    safe_id = Path(str(doc_id)).name or "unknown"
+    prefix = HISTORY_SPILL_PREFIX if suffix == "_history.json" else DOCUMENT_SPILL_PREFIX
+    return spill_dir / f"{prefix}{safe_id}.json"
+
+
+def _legacy_spill_file_path(doc_id: str, suffix: str = ".json") -> Path:
     store = _canvas_core.get_canvas_store()
     spill_dir = store.docs_dir.parent / "spill"
     safe_id = Path(str(doc_id)).name or "unknown"
@@ -31,13 +50,25 @@ def _spill_file_path(doc_id: str, suffix: str = ".json") -> Path:
 def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") -> str | None:
     tmp: Path | None = None
     try:
+        max_bytes = MAX_CANVAS_HISTORY_BYTES if suffix == "_history.json" else MAX_CANVAS_DOCUMENT_BYTES
+        encoded = encode_canvas_json(payload)
+        if len(encoded) > max_bytes:
+            logger.warning(
+                "canvas spill rejected above storage budget: doc_id=%s suffix=%s bytes=%s max=%s",
+                Path(str(doc_id)).name,
+                suffix,
+                len(encoded),
+                max_bytes,
+            )
+            return None
         final = _spill_file_path(doc_id, suffix)
         spill_dir = final.parent
         spill_dir.mkdir(parents=True, exist_ok=True)
-        tmp = final.with_name(f"{final.name}.tmp")
-        with tmp.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
-        tmp.replace(final)
+        tmp = final.with_name(f"{final.name}.{uuid.uuid4().hex}.tmp")
+        tmp.write_bytes(encoded)
+        # Windows cannot reliably replace the same path from concurrent callbacks.
+        with _spill_replace_lock:
+            tmp.replace(final)
         return str(final)
     except Exception as exc:
         if tmp is not None:
@@ -48,10 +79,11 @@ def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") 
 
 
 def _cleanup_spill(doc_id: str, suffix: str = ".json") -> None:
-    try:
-        _spill_file_path(doc_id, suffix).unlink(missing_ok=True)
-    except OSError as exc:
-        logger.warning("canvas spill cleanup failed for %s%s: %s", doc_id, suffix, exc)
+    for path in {_spill_file_path(doc_id, suffix), _legacy_spill_file_path(doc_id, suffix)}:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("canvas spill cleanup failed for %s%s: %s", doc_id, suffix, exc)
 
 
 def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, context: str = "canvas_save") -> None:
@@ -122,6 +154,14 @@ def canvas_list(params: dict[str, Any]) -> dict[str, Any]:
 
 
 @with_locale
+def canvas_bootstrap(params: dict[str, Any]) -> dict[str, Any]:
+    store = _canvas_core.get_canvas_store()
+    documents = store.list_documents()
+    document = store.get(str(documents[0]["id"])) if documents else None
+    return {"documents": documents, "document": document}
+
+
+@with_locale
 @validate_params("id")
 def canvas_get(params: dict[str, Any]) -> dict[str, Any]:
     doc_id = str(params["id"])
@@ -137,11 +177,18 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
     document = params["document"]
     if not isinstance(document, dict):
         raise ValidationError("document debe ser un objeto")
+    # CanvasStore validates the serialized document without encoding it twice.
     _check_memory_pressure_or_spill(document, context="canvas_save")
     touch = params.get("touch", True)
     if not isinstance(touch, bool):
         touch = True
-    saved = _canvas_core.get_canvas_store().save(document, touch=touch)
+    try:
+        saved = _canvas_core.get_canvas_store().save(document, touch=touch)
+    except ValueError as exc:
+        details = None
+        if isinstance(exc, CanvasDocumentTooLargeError):
+            details = {"limit_bytes": MAX_CANVAS_DOCUMENT_BYTES}
+        raise ValidationError(str(exc), details=details) from exc
     _cleanup_spill(str(document.get("id") or "unknown"))
     return {"document": saved}
 
@@ -225,21 +272,9 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
 
     if output_path:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
-        safe = sanitizar_nombre(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".pdf"):
-            safe += ".pdf"
-        out = Path(resolved).parent / safe
-        if out.is_symlink() or out.parent.is_symlink():
-            raise ValueError("symlink no permitido en ruta de salida")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        tmp = out.with_name(f"{out.stem}_{uuid.uuid4().hex[:8]}.tmp")
-        try:
-            tmp.write_bytes(pdf_bytes)
-            os.replace(tmp, out)
-        except Exception:
-            with contextlib.suppress(OSError):
-                tmp.unlink(missing_ok=True)
-            raise
+        with atomic_output_file(resolved, extension=".pdf", overwrite=True) as target:
+            target.tmp_path.write_bytes(pdf_bytes)
+        out = target.destination
         return {
             "filename": out.name,
             "saved_path": str(out),
@@ -280,13 +315,18 @@ def canvas_save_history(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(past, list) or not isinstance(future, list):
         msg = "past and future must be arrays"
         raise ValueError(msg)
+    # CanvasStore validates retained history without encoding it twice.
     _check_history_memory_pressure(doc_id, past, future)
-    _canvas_core.get_canvas_store().save_history(doc_id, past, future)
+    try:
+        _canvas_core.get_canvas_store().save_history(doc_id, past, future)
+    except ValueError as exc:
+        raise ValidationError(str(exc), details={"limit_bytes": MAX_CANVAS_HISTORY_BYTES}) from exc
     _cleanup_spill(doc_id, "_history.json")
     return {"success": True}
 
 HANDLERS = {
     "canvas_list": canvas_list,
+    "canvas_bootstrap": canvas_bootstrap,
     "canvas_get": canvas_get,
     "canvas_save": canvas_save,
     "canvas_create": canvas_create,
@@ -296,4 +336,3 @@ HANDLERS = {
     "canvas_get_history": canvas_get_history,
     "canvas_save_history": canvas_save_history,
 }
-

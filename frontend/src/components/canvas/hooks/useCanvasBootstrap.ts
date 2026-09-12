@@ -10,7 +10,6 @@ import { hydrateDocumentImages, hydrateHistorySteps } from '../utils/imageBlobSt
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 
 function bootLog(level: 'debug' | 'warn', ...args: unknown[]) {
-  // eslint-disable-next-line no-console
   console[level](...args);
 }
 
@@ -47,6 +46,8 @@ export function useCanvasBootstrap({
 }: UseCanvasBootstrapOptions) {
   useEffect(() => {
     let cancelled = false;
+    let syncIdleId: number | undefined;
+    let syncTimer: ReturnType<typeof setTimeout> | undefined;
     (async () => {
       setLoading(true);
 
@@ -57,27 +58,32 @@ export function useCanvasBootstrap({
         return restoreGeneration;
       };
       try {
-        const list = await api.canvasList();
+        const boot = await api.canvasBootstrap();
         if (cancelled) return;
         perfMark('list');
-        setDocs(list.documents);
-        if (list.documents.length > 0) {
-          const got = await api.canvasGet(list.documents[0].id);
+        setDocs(boot.documents);
+        if (boot.document) {
+          perfMark('get');
+          const doc = normalizeDocument(boot.document as CanvasDocument);
+          const histPromise = restoreHistory
+            ? api.canvasGetHistory(doc.id).catch((err) => {
+                bootLog('warn', '[canvas-boot] no se pudo leer el historial', err);
+                return null;
+              })
+            : null;
           if (!cancelled) {
-            perfMark('get');
-            const doc = normalizeDocument(got.document as CanvasDocument);
             const restoreGeneration = await replaceGuarded(doc);
             const replacementId = currentDocumentRef.current.id;
             const replacementRevision = currentRevisionRef.current;
             perfMark('replace');
-            if (restoreHistory) {
+            if (restoreHistory && histPromise) {
               void (async () => {
                 try {
-                  const hist = await api.canvasGetHistory(doc.id);
+                  const hist = await histPromise;
                   const isCurrentReplacement =
                     currentDocumentRef.current.id === replacementId &&
                     currentRevisionRef.current === replacementRevision;
-                  if (!cancelled && isCurrentReplacement && (hist.past?.length || hist.future?.length)) {
+                  if (!cancelled && isCurrentReplacement && hist && (hist.past?.length || hist.future?.length)) {
                     const [past, future] = await Promise.all([
                       hydrateHistorySteps(hist.past),
                       hydrateHistorySteps(hist.future),
@@ -113,7 +119,9 @@ export function useCanvasBootstrap({
               historyReadyRef.current = true;
             }
             setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
-            queueCanvasCloudPush(doc);
+            void Promise.resolve(queueCanvasCloudPush(doc)).catch((err) => {
+              bootLog('warn', '[canvas-boot] no se pudo sincronizar el documento nuevo', err);
+            });
             perfMark('replace');
           }
         }
@@ -129,7 +137,9 @@ export function useCanvasBootstrap({
                 historyReadyRef.current = true;
               }
               setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
-              queueCanvasCloudPush(doc);
+              void Promise.resolve(queueCanvasCloudPush(doc)).catch((err) => {
+                bootLog('warn', '[canvas-boot] no se pudo sincronizar el documento de respaldo', err);
+              });
               perfMark('replace');
             }
           } catch (createErr) {
@@ -145,12 +155,22 @@ export function useCanvasBootstrap({
         perfMark('ready');
       }
       if (!cancelled) {
-
-        void runCloudSync(true).finally(() => perfMark('sync'));
+        const kickoffSync = () => {
+          if (cancelled) return;
+          void runCloudSync(true).finally(() => perfMark('sync'));
+        };
+        const ric = window.requestIdleCallback?.bind(window);
+        if (ric) {
+          syncIdleId = ric(kickoffSync, { timeout: 2000 });
+        } else {
+          syncTimer = setTimeout(kickoffSync, 0);
+        }
       }
     })();
     return () => {
       cancelled = true;
+      if (syncIdleId !== undefined) window.cancelIdleCallback?.(syncIdleId);
+      if (syncTimer !== undefined) clearTimeout(syncTimer);
     };
 
   }, []);

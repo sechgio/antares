@@ -78,4 +78,29 @@ describe('buildSpatialIndex', () => {
     expect(idx.hitTest(5, 12)).toEqual(['rot']);
     expect(idx.query({ x: 0, y: 12, w: 10, h: 4 })).toEqual(['rot']);
   });
+
+  it('handles large collections (500 layers) querying sub-regions accurately in O(log N)', () => {
+    const layers = [];
+    for (let i = 0; i < 500; i++) {
+      const col = i % 20;
+      const row = Math.floor(i / 20);
+      layers.push(rectLayer(`L${i}`, col * 10, row * 10, 8, 8));
+    }
+    const idx = buildSpatialIndex(layers);
+
+    const hits = idx.query({ x: -1, y: -1, w: 19, h: 19 });
+    expect(hits.sort()).toEqual(['L0', 'L1', 'L20', 'L21'].sort());
+
+    expect(idx.hitTest(14, 14)).toEqual(['L21']);
+  });
+
+  it('hitTest correctly orders overlapping layers by z-order across different tree branches', () => {
+    const bottom = rectLayer('bottom', 50, 50, 30, 30);
+    const middle = rectLayer('middle', 55, 55, 20, 20);
+    const top = rectLayer('top', 60, 60, 10, 10);
+
+    const idx = buildSpatialIndex([bottom, middle, top]);
+    const hits = idx.hitTest(65, 65);
+    expect(hits).toEqual(['top', 'middle', 'bottom']);
+  });
 });

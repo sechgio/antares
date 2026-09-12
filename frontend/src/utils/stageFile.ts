@@ -1,5 +1,11 @@
 const STAGE_CHUNK_BYTES = 6 * 1024 * 1024;
 
+// Electron expires staged capabilities after 30 minutes.
+const SHARED_TOKEN_MAX_AGE_MS = 20 * 60 * 1000;
+
+// Consecutive render batches can reuse the upload for two minutes.
+const SHARED_TOKEN_IDLE_MS = 2 * 60 * 1000;
+
 type StagedElectronApi = {
   fileStagedCreate: (name: string, size: number) => Promise<{ token: string }>;
   fileStagedAppend: (token: string, chunk: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
@@ -18,11 +24,7 @@ export function hasFileStagingBridge(): boolean {
   return getStagedApi() !== null;
 }
 
-const REUSE_TTL_MS = 25 * 60 * 1000;
-type ReuseEntry = { promise: Promise<string | null>; at: number };
-const reuseByFile = new WeakMap<File, ReuseEntry>();
-
-async function stageFileForIpcUncached(file: File): Promise<string | null> {
+export async function stageFileForIpc(file: File): Promise<string | null> {
   const api = getStagedApi();
   if (!api) return null;
 
@@ -47,26 +49,102 @@ async function stageFileForIpcUncached(file: File): Promise<string | null> {
   }
 }
 
-export async function stageFileForIpc(file: File, options?: { reuse?: boolean }): Promise<string | null> {
-  if (options?.reuse) {
-    const hit = reuseByFile.get(file);
-    if (hit && Date.now() - hit.at < REUSE_TTL_MS) return hit.promise;
-  }
-  const pending = stageFileForIpcUncached(file);
-  if (options?.reuse) {
-    reuseByFile.set(file, { promise: pending, at: Date.now() });
-    pending.catch(() => {
-      const current = reuseByFile.get(file);
-      if (current?.promise === pending) reuseByFile.delete(file);
-    });
-  }
-  return pending;
-}
-
 export function cleanupStagedToken(token: string): void {
   if (typeof window === 'undefined') return;
   const api = (window as unknown as { electronAPI?: { cleanupFileToken?: (value: string) => Promise<unknown> } }).electronAPI;
   if (typeof api?.cleanupFileToken === 'function') {
     void api.cleanupFileToken(token);
   }
+}
+
+/** Handle over a staged copy. `release()` must be called exactly once. */
+export type StagedFileHandle = {
+  /** Read capability for the staged copy, or `null` when staging is unavailable. */
+  readonly token: string | null;
+  /** Drops this caller's reference; the staged copy is deleted once idle. */
+  release: () => void;
+};
+
+type SharedStagedEntry = {
+  promise: Promise<string | null>;
+  token: string | null;
+  refs: number;
+  stagedAt: number | null;
+  idleTimer: ReturnType<typeof setTimeout> | null;
+  disposed: boolean;
+};
+
+const sharedStagedByFile = new WeakMap<File, SharedStagedEntry>();
+
+function disposeEntry(file: File, entry: SharedStagedEntry): void {
+  if (entry.disposed) return;
+  entry.disposed = true;
+  if (entry.idleTimer !== null) {
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = null;
+  }
+  if (sharedStagedByFile.get(file) === entry) sharedStagedByFile.delete(file);
+  if (entry.token) cleanupStagedToken(entry.token);
+}
+
+/** Shares one staged capability per File. Release the handle in cleanup or `finally`. */
+export async function acquireStagedFile(file: File): Promise<StagedFileHandle> {
+  let entry: SharedStagedEntry | undefined = sharedStagedByFile.get(file);
+  if (entry?.disposed) entry = undefined;
+  if (
+    entry
+    && entry.stagedAt !== null
+    && Date.now() - entry.stagedAt > SHARED_TOKEN_MAX_AGE_MS
+  ) {
+    if (entry.refs === 0) {
+      disposeEntry(file, entry);
+    } else if (sharedStagedByFile.get(file) === entry) {
+      // Still referenced: leave the entry for its holders, but stop handing
+      // out a token past its absolute age.
+      sharedStagedByFile.delete(file);
+    }
+    entry = undefined;
+  }
+
+  if (!entry) {
+    entry = {
+      promise: stageFileForIpc(file),
+      token: null,
+      refs: 0,
+      stagedAt: null,
+      idleTimer: null,
+      disposed: false,
+    };
+    sharedStagedByFile.set(file, entry);
+  } else if (entry.idleTimer !== null) {
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = null;
+  }
+
+  entry.refs += 1;
+  const shared = entry;
+
+  try {
+    shared.token = await shared.promise;
+  } catch (error) {
+    shared.refs -= 1;
+    if (shared.refs <= 0) disposeEntry(file, shared);
+    throw error;
+  }
+  if (shared.stagedAt === null) shared.stagedAt = Date.now();
+
+  let released = false;
+  return {
+    token: shared.token,
+    release: () => {
+      if (released) return;
+      released = true;
+      shared.refs -= 1;
+      if (shared.refs > 0 || shared.disposed) return;
+      shared.idleTimer = setTimeout(() => {
+        shared.idleTimer = null;
+        disposeEntry(file, shared);
+      }, SHARED_TOKEN_IDLE_MS);
+    },
+  };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   collectDueNotifications,
   isDoneLikeStatus,
+  shouldRefreshForDueChange,
   urgencyFromDays,
 } from '../utils/dueNotifications';
 
@@ -85,5 +86,52 @@ describe('collectDueNotifications', () => {
       { today, soonDays: 3, doneKeys: new Set(['completada', 'done', 'closed']) },
     );
     expect(items.map((i) => i.id)).toEqual(['2']);
+  });
+});
+
+describe('shouldRefreshForDueChange', () => {
+  const notified = new Set(['t1']);
+
+  it('refreshes when the changed tarea carries a due date', () => {
+    expect(
+      shouldRefreshForDueChange(
+        { eventType: 'UPDATE', table: 'tareas', new: { id: 't9', due_date: '2026-07-09' }, old: {} },
+        notified,
+      ),
+    ).toBe(true);
+  });
+
+  it('refreshes when an already-shown task loses its due date or changes status', () => {
+    expect(
+      shouldRefreshForDueChange(
+        { eventType: 'UPDATE', table: 'tareas', new: { id: 't1', due_date: null, status: 'done' }, old: {} },
+        notified,
+      ),
+    ).toBe(true);
+  });
+
+  it('skips refreshes for due-less tasks the bell is not showing', () => {
+    expect(
+      shouldRefreshForDueChange(
+        { eventType: 'UPDATE', table: 'tareas', new: { id: 't9', due_date: null, title: 'x' }, old: {} },
+        notified,
+      ),
+    ).toBe(false);
+  });
+
+  it('always refreshes on deletes, board_columns writes, and unknown payloads', () => {
+    expect(
+      shouldRefreshForDueChange(
+        { eventType: 'DELETE', table: 'tareas', new: {}, old: { id: 't9' } },
+        notified,
+      ),
+    ).toBe(true);
+    expect(
+      shouldRefreshForDueChange(
+        { eventType: 'UPDATE', table: 'board_columns', new: { id: 'c1', is_done: false }, old: {} },
+        notified,
+      ),
+    ).toBe(true);
+    expect(shouldRefreshForDueChange(undefined, notified)).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import ReportListItem from '../report-workspace/ReportListItem';
 import type { TechnicalReportListItem } from './types';
 
 interface Props {
@@ -51,17 +52,16 @@ export default function DatabasePanel({ reports, selectedId, onSelect }: Props) 
 
       <div className="tr-list">
         {filtered.map((report) => (
-          <button
+          <ReportListItem
             key={report.id}
-            type="button"
-            className={`tr-list-item ${selectedId === report.id ? 'active' : ''}`}
-            onClick={() => onSelect(report.id)}
-          >
-            <span className="tr-list-code">#{report.metadata.informe_id}</span>
-            <span className="tr-list-main">{report.header.cs || 'Sin C.S.'}</span>
-            <span className="tr-list-sub">{report.header.codigo_infraestructura || report.id}</span>
-            <span className={`tr-status ${report.status}`}>{report.status === 'completed' ? 'Listo' : 'Borrador'}</span>
-          </button>
+            id={report.id}
+            informeId={report.metadata.informe_id}
+            main={report.header.cs || 'Sin C.S.'}
+            sub={report.header.codigo_infraestructura || report.id}
+            status={report.status}
+            selected={selectedId === report.id}
+            onSelect={onSelect}
+          />
         ))}
         {filtered.length === 0 && (
           <div className="tr-empty">No hay informes para mostrar</div>

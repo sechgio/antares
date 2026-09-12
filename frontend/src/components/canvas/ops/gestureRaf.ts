@@ -68,6 +68,12 @@ export function toCoalescedWheel(input: WheelGestureInput): CoalescedWheel {
 function canMergeWheel(prev: CoalescedWheel, next: CoalescedWheel): boolean {
   if (prev.kind !== next.kind) return false;
   if (prev.kind === 'pan' && prev.shiftKey !== next.shiftKey) return false;
+  if (
+    prev.kind === 'zoom'
+    && (prev.clientX !== next.clientX || prev.clientY !== next.clientY)
+  ) {
+    return false;
+  }
   return true;
 }
 

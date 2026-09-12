@@ -1,18 +1,15 @@
 import type { CanvasDocument, CanvasGuide } from '../types';
 import { newId } from '../types';
 import type { RectMm } from './selectionTransform';
+import {
+  boxesOverlapOnAxis,
+  MIN_GUIDE_GAP_MM,
+  measureSelectionGaps,
+  type DistanceLabel,
+} from './guideMeasurements';
 
-export type DistanceLabel = {
-  id: string;
-  axis: 'x' | 'y';
-  x: number;
-  y: number;
-  valueMm: number;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-};
+export { measureHoverGap, measureSelectionGaps } from './guideMeasurements';
+export type { DistanceLabel } from './guideMeasurements';
 
 export function createGuide(axis: 'x' | 'y', posMm: number, pageIndex = 0): CanvasGuide {
   return { id: newId(), axis, posMm, pageIndex };
@@ -40,6 +37,7 @@ export function removeGuide(doc: CanvasDocument, id: string): CanvasDocument {
 }
 
 export const GUIDE_REMOVE_SLACK_PX = 4;
+const GAP_MATCH_TOLERANCE_MM = 0.1;
 
 export function clampGuidePos(posMm: number, maxMm: number): number {
   return Math.max(0, Math.min(maxMm, posMm));
@@ -56,145 +54,6 @@ export function isGuideRemovalPoint(
   return clientY < viewportRect.top + rulerSize + GUIDE_REMOVE_SLACK_PX;
 }
 
-export function measureSelectionGaps(
-  selection: RectMm,
-  others: RectMm[],
-  page: { widthMm: number; heightMm: number },
-): DistanceLabel[] {
-  const labels: DistanceLabel[] = [];
-  const cx = selection.x + selection.w / 2;
-  const cy = selection.y + selection.h / 2;
-
-  const toLeft = selection.x;
-  const toRight = page.widthMm - (selection.x + selection.w);
-  const toTop = selection.y;
-  const toBottom = page.heightMm - (selection.y + selection.h);
-
-  if (toLeft > 0.05) {
-    labels.push({
-      id: 'page-left',
-      axis: 'x',
-      x: selection.x / 2,
-      y: cy,
-      valueMm: toLeft,
-      x1: 0,
-      y1: cy,
-      x2: selection.x,
-      y2: cy,
-    });
-  }
-  if (toRight > 0.05) {
-    labels.push({
-      id: 'page-right',
-      axis: 'x',
-      x: selection.x + selection.w + toRight / 2,
-      y: cy,
-      valueMm: toRight,
-      x1: selection.x + selection.w,
-      y1: cy,
-      x2: page.widthMm,
-      y2: cy,
-    });
-  }
-  if (toTop > 0.05) {
-    labels.push({
-      id: 'page-top',
-      axis: 'y',
-      x: cx,
-      y: selection.y / 2,
-      valueMm: toTop,
-      x1: cx,
-      y1: 0,
-      x2: cx,
-      y2: selection.y,
-    });
-  }
-  if (toBottom > 0.05) {
-    labels.push({
-      id: 'page-bottom',
-      axis: 'y',
-      x: cx,
-      y: selection.y + selection.h + toBottom / 2,
-      valueMm: toBottom,
-      x1: cx,
-      y1: selection.y + selection.h,
-      x2: cx,
-      y2: page.heightMm,
-    });
-  }
-
-  const horizBoxes = [
-    selection,
-    ...others.filter((o) => boxesOverlapOnAxis(selection.y, selection.y + selection.h, o.y, o.y + o.h)),
-  ].sort((a, b) => a.x - b.x);
-
-  for (let i = 0; i < horizBoxes.length - 1; i++) {
-    const a = horizBoxes[i];
-    const b = horizBoxes[i + 1];
-    const gap = b.x - (a.x + a.w);
-    if (gap > 0.05) {
-      const midY = (Math.max(a.y, b.y) + Math.min(a.y + a.h, b.y + b.h)) / 2;
-      const isSelPair = a === selection || b === selection;
-      labels.push({
-        id: isSelPair
-          ? a === selection
-            ? 'obj-right'
-            : 'obj-left'
-          : `obj-x-${Math.round(a.x)}-${Math.round(b.x)}`,
-        axis: 'x',
-        x: a.x + a.w + gap / 2,
-        y: midY,
-        valueMm: gap,
-        x1: a.x + a.w,
-        y1: midY,
-        x2: b.x,
-        y2: midY,
-      });
-    }
-  }
-
-  const vertBoxes = [
-    selection,
-    ...others.filter((o) => boxesOverlapOnAxis(selection.x, selection.x + selection.w, o.x, o.x + o.w)),
-  ].sort((a, b) => a.y - b.y);
-
-  for (let i = 0; i < vertBoxes.length - 1; i++) {
-    const a = vertBoxes[i];
-    const b = vertBoxes[i + 1];
-    const gap = b.y - (a.y + a.h);
-    if (gap > 0.05) {
-      const midX = (Math.max(a.x, b.x) + Math.min(a.x + a.w, b.x + b.w)) / 2;
-      const isSelPair = a === selection || b === selection;
-      labels.push({
-        id: isSelPair
-          ? a === selection
-            ? 'obj-bottom'
-            : 'obj-top'
-          : `obj-y-${Math.round(a.y)}-${Math.round(b.y)}`,
-        axis: 'y',
-        x: midX,
-        y: a.y + a.h + gap / 2,
-        valueMm: gap,
-        x1: midX,
-        y1: a.y + a.h,
-        x2: midX,
-        y2: b.y,
-      });
-    }
-  }
-
-  return labels;
-}
-
-function boxesOverlapOnAxis(
-  a0: number,
-  a1: number,
-  b0: number,
-  b1: number,
-): boolean {
-  return Math.max(a0, b0) < Math.min(a1, b1);
-}
-
 export function collectReferenceGaps(
   others: RectMm[],
   page: { widthMm: number; heightMm: number },
@@ -203,12 +62,12 @@ export function collectReferenceGaps(
   const ys = new Set<number>();
 
   for (const o of others) {
-    if (o.x > 0.05) xs.add(o.x);
+    if (o.x > MIN_GUIDE_GAP_MM) xs.add(o.x);
     const rightGap = page.widthMm - (o.x + o.w);
-    if (rightGap > 0.05) xs.add(rightGap);
-    if (o.y > 0.05) ys.add(o.y);
+    if (rightGap > MIN_GUIDE_GAP_MM) xs.add(rightGap);
+    if (o.y > MIN_GUIDE_GAP_MM) ys.add(o.y);
     const bottomGap = page.heightMm - (o.y + o.h);
-    if (bottomGap > 0.05) ys.add(bottomGap);
+    if (bottomGap > MIN_GUIDE_GAP_MM) ys.add(bottomGap);
   }
 
   for (let i = 0; i < others.length; i++) {
@@ -218,11 +77,11 @@ export function collectReferenceGaps(
       const b = others[j]!;
       if (boxesOverlapOnAxis(a.y, a.y + a.h, b.y, b.y + b.h)) {
         const gap = b.x - (a.x + a.w);
-        if (gap > 0.05) xs.add(gap);
+        if (gap > MIN_GUIDE_GAP_MM) xs.add(gap);
       }
       if (boxesOverlapOnAxis(a.x, a.x + a.w, b.x, b.x + b.w)) {
         const gap = b.y - (a.y + a.h);
-        if (gap > 0.05) ys.add(gap);
+        if (gap > MIN_GUIDE_GAP_MM) ys.add(gap);
       }
     }
   }
@@ -246,7 +105,7 @@ export function snapEqualGaps(
   const best: { x: Candidate | null; y: Candidate | null } = { x: null, y: null };
 
   const considerX = (currentGap: number, nextDx: number, label: DistanceLabel) => {
-    if (currentGap <= 0.05) return;
+    if (currentGap <= MIN_GUIDE_GAP_MM) return;
     for (const g of refs.x) {
       const dist = Math.abs(currentGap - g);
       if (dist <= thresholdMm && (!best.x || dist < best.x.dist)) {
@@ -273,7 +132,7 @@ export function snapEqualGaps(
   };
 
   const considerY = (currentGap: number, nextDy: number, label: DistanceLabel) => {
-    if (currentGap <= 0.05) return;
+    if (currentGap <= MIN_GUIDE_GAP_MM) return;
     for (const g of refs.y) {
       const dist = Math.abs(currentGap - g);
       if (dist <= thresholdMm && (!best.y || dist < best.y.dist)) {
@@ -423,7 +282,7 @@ export function snapEqualGaps(
     if (best.x) {
       const targetVal = best.x.label.valueMm;
       const matching = measured.filter(
-        (l) => l.axis === 'x' && Math.abs(l.valueMm - targetVal) < 0.1,
+        (l) => l.axis === 'x' && Math.abs(l.valueMm - targetVal) < GAP_MATCH_TOLERANCE_MM,
       );
       if (matching.length) {
         for (const m of matching) {
@@ -439,7 +298,7 @@ export function snapEqualGaps(
     if (best.y) {
       const targetVal = best.y.label.valueMm;
       const matching = measured.filter(
-        (l) => l.axis === 'y' && Math.abs(l.valueMm - targetVal) < 0.1,
+        (l) => l.axis === 'y' && Math.abs(l.valueMm - targetVal) < GAP_MATCH_TOLERANCE_MM,
       );
       if (matching.length) {
         for (const m of matching) {

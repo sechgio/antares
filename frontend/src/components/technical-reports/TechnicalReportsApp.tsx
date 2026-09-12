@@ -1,178 +1,40 @@
 import './technical-reports.css';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Database, Download, Eye, FilePlus2, Files, PenLine, RefreshCw, Trash2, Upload } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useDialog } from '../../hooks/useDialog';
+import { useCallback, useState } from 'react';
+import { useReportWorkspace } from '../../hooks/useReportWorkspace';
 import { useToast } from '../../hooks/useToast';
 import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
-import { downloadBase64Pdf, fileToBase64, fileToDataUrl, technicalReportsApi } from './api';
+import { downloadBase64Pdf, fileToDataUrl, technicalReportsApi } from './api';
 import { saveFeatureHistory } from '../../utils/history';
-import type { TechnicalReport, TechnicalReportListItem } from './types';
 
 export default function TechnicalReportsApp() {
   const { addToast } = useToast();
-  const dialog = useDialog();
-  const [reports, setReports] = useState<TechnicalReportListItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<TechnicalReport | null>(null);
-  const [dirtyCount, setDirtyCount] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const {
+    reports,
+    selectedId,
+    formData,
+    setFormData,
+    hasChanges,
+    busy,
+    setBusy,
+    mobileTab,
+    setMobileTab,
+    importInputRef,
+    patchForm,
+    markClean,
+    loadReports,
+    selectReport,
+    createReport,
+    saveReport,
+    deleteReport,
+    clearReports,
+    importFile,
+  } = useReportWorkspace(technicalReportsApi);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [logoRight, setLogoRight] = useState<string | null>(null);
-  const [mobileTab, setMobileTab] = useState<'db' | 'preview' | 'form'>('db');
-  const importInputRef = useRef<HTMLInputElement>(null);
-  const selectGenRef = useRef(0);
-
-  const hasChanges = dirtyCount > 0;
-
-  const patchForm = useCallback((report: TechnicalReport) => {
-    setFormData(report);
-    setDirtyCount((c) => c + 1);
-  }, []);
-
-  const markClean = useCallback(() => setDirtyCount(0), []);
-
-  const loadReports = useCallback(async () => {
-    setBusy(true);
-    try {
-      const result = await technicalReportsApi.list(true);
-      setReports(result.reports || []);
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudieron cargar los informes', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast]);
-
-  useEffect(() => {
-    void loadReports();
-  }, [loadReports]);
-
-  const selectReport = useCallback(async (id: string) => {
-    if (hasChanges) {
-      const proceed = await dialog.confirm({
-        title: 'Cambios sin guardar',
-        description: 'Se perderán los cambios del informe actual.',
-        confirmLabel: 'Continuar',
-        cancelLabel: 'Seguir editando',
-      });
-      if (!proceed) return;
-    }
-    const gen = ++selectGenRef.current;
-    setBusy(true);
-    try {
-      const report = await technicalReportsApi.get(id);
-      if (gen !== selectGenRef.current) return;
-      setSelectedId(id);
-      setFormData(report);
-      markClean();
-    } catch (error) {
-      if (gen !== selectGenRef.current) return;
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo abrir el informe', type: 'error' });
-    } finally {
-      if (gen === selectGenRef.current) setBusy(false);
-    }
-  }, [addToast, dialog, hasChanges, markClean]);
-
-  const createReport = useCallback(async () => {
-    setBusy(true);
-    try {
-      const report = await technicalReportsApi.create();
-      await loadReports();
-      setSelectedId(report.id);
-      setFormData(report);
-      markClean();
-      addToast({ message: 'Informe creado', type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo crear el informe', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, loadReports, markClean]);
-
-  const saveReport = useCallback(async () => {
-    if (!formData) return;
-    setBusy(true);
-    try {
-      const saved = await technicalReportsApi.update(formData.id, formData);
-      setFormData(saved);
-      markClean();
-      await loadReports();
-      addToast({ message: 'Informe guardado', type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo guardar', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, formData, loadReports, markClean]);
-
-  const deleteReport = useCallback(async () => {
-    if (!selectedId) return;
-    const confirmed = await dialog.confirm({
-      title: 'Eliminar informe',
-      description: `Se eliminará ${selectedId} de la base local.`,
-      confirmLabel: 'Eliminar',
-      cancelLabel: 'Cancelar',
-      type: 'destructive',
-    });
-    if (!confirmed) return;
-    setBusy(true);
-    try {
-      await technicalReportsApi.delete(selectedId);
-      setSelectedId(null);
-      setFormData(null);
-      markClean();
-      await loadReports();
-      addToast({ message: 'Informe eliminado', type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo eliminar', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, dialog, loadReports, markClean, selectedId]);
-
-  const clearReports = useCallback(async () => {
-    const confirmed = await dialog.confirm({
-      title: 'Eliminar todos los informes',
-      description: 'Esta acción reemplaza la base local con una lista vacía.',
-      confirmLabel: 'Eliminar todo',
-      cancelLabel: 'Cancelar',
-      type: 'destructive',
-    });
-    if (!confirmed) return;
-    setBusy(true);
-    try {
-      await technicalReportsApi.clear();
-      setReports([]);
-      setSelectedId(null);
-      setFormData(null);
-      markClean();
-      addToast({ message: 'Base de informes limpiada', type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo limpiar la base', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, dialog, markClean]);
-
-  const importFile = useCallback(async (file: File) => {
-    setBusy(true);
-    try {
-      const content = await fileToBase64(file);
-      const result = await technicalReportsApi.importFile(file.name, content);
-      setSelectedId(null);
-      setFormData(null);
-      markClean();
-      await loadReports();
-      addToast({ message: `${result.imported_count} informes importados`, type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo importar el archivo', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, loadReports, markClean]);
 
   const changeLogo = useCallback(async (side: 'left' | 'right', file: File | null) => {
     if (!file) {
@@ -221,7 +83,7 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight, markClean]);
+  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight, markClean, setBusy, setFormData]);
 
   const exportConsolidated = useCallback(async () => {
     if (reports.length === 0) return;
@@ -242,7 +104,7 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, logoLeft, logoRight, reports.length]);
+  }, [addToast, logoLeft, logoRight, reports.length, setBusy]);
 
   return (
     <div className="tr-app" data-surface="technical-reports">

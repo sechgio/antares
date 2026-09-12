@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { planMultiPageRender } from '../runtime/planning';
 import { createEmptyDocument, newId, type CanvasDocument } from '../types';
 import type { FillContext } from '../runtime/renderHtml';
+import { filterSelectionToPage } from '../ops/pages';
 
 function slot(pageIndex: number, index: number) {
   return {
@@ -64,5 +65,20 @@ describe('planMultiPageRender photo pagination', () => {
     };
     const plan = planMultiPageRender(doc, ctx(5));
     expect(plan).toHaveLength(3);
+  });
+
+  it('keeps only the selected layers on the destination page', () => {
+    const doc = createEmptyDocument('Selection');
+    const pageZeroLayer = { ...doc.layers[0]!, id: 'page-zero', pageIndex: 0 };
+    const pageOneLayer = { ...doc.layers[0]!, id: 'page-one', pageIndex: 1 };
+    const pageOneOtherLayer = { ...doc.layers[0]!, id: 'page-one-other', pageIndex: 1 };
+
+    expect(
+      filterSelectionToPage(
+        [pageZeroLayer, pageOneLayer, pageOneOtherLayer],
+        ['page-zero', 'page-one', 'missing', 'page-one-other'],
+        1,
+      ),
+    ).toEqual(['page-one', 'page-one-other']);
   });
 });

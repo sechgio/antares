@@ -7,13 +7,15 @@ from backend.handlers.common import (
     clear_store,
     create_report_from_params,
     delete_item_or_raise,
+    filter_by_optional_ids,
     get_item_id,
     get_item_or_raise,
+    require_b64_file_payload,
     require_update_payload,
+    resolve_payload_or_store,
     update_item_or_raise,
     with_locale,
 )
-from backend.utils.image_data import decode_b64_payload
 
 
 def _db():
@@ -92,17 +94,9 @@ def informes_v2_clear(params: dict[str, Any]) -> dict[str, Any]:
 def informes_v2_import_file(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.informes_v2.importer import import_reports_from_bytes
 
-    filename = str(params.get("filename") or "")
-    content_b64 = str(params.get("content_b64") or "")
-    if not filename or not content_b64:
-        msg = "filename y content_b64 son requeridos"
-        raise ValueError(msg)
-
-    content = decode_b64_payload(content_b64)
+    filename, content = require_b64_file_payload(params)
     reports = import_reports_from_bytes(filename, content)
-    db = _db()
-    deleted_count = len(db.get_all())
-    imported = db.replace_all(reports)
+    imported, deleted_count = _db().replace_all_counted(reports)
     return {
         "success": True,
         "message": f"{len(imported)} informes importados",
@@ -124,42 +118,34 @@ def informes_v2_download_template(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _resolve_report_for_render(params: dict[str, Any]) -> dict[str, Any]:
-    report_payload = params.get("report")
-    report_id = str(params.get("id") or "").strip()
-
-    if isinstance(report_payload, dict) and report_payload:
-        return report_payload
-
-    if report_id:
-        stored = _db().get(report_id)
-        if isinstance(stored, dict):
-            return stored
-
-    msg = "Informe no encontrado: envíe el report actual o un id válido"
-    raise ValueError(msg)
-
-
-def _parse_images(params: dict[str, Any]) -> list[dict[str, str]] | None:
-    images = params.get("images")
+def _parse_image_items(images: Any, *, allow_strings: bool = False) -> list[dict[str, str]]:
     if not isinstance(images, list):
-        return None
+        return []
     parsed: list[dict[str, str]] = []
     for item in images:
         if isinstance(item, dict):
             path = str(item.get("path") or item.get("src") or "")
             if path:
                 parsed.append({"path": path, "name": str(item.get("name") or "")})
-        elif isinstance(item, str) and item:
+        elif allow_strings and isinstance(item, str) and item:
             parsed.append({"path": item, "name": ""})
     return parsed
+
+
+def _parse_images(params: dict[str, Any]) -> list[dict[str, str]] | None:
+    images = params.get("images")
+    if not isinstance(images, list):
+        return None
+    return _parse_image_items(images, allow_strings=True)
 
 
 @with_locale
 def informes_v2_render_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.informes_v2.rendering import render_report_html
 
-    report = _resolve_report_for_render(params)
+    report = resolve_payload_or_store(
+        _db(), params, "report", "Informe no encontrado: envíe el report actual o un id válido"
+    )
     html = render_report_html(
         report,
         params.get("logo_left"),
@@ -173,14 +159,9 @@ def informes_v2_render_html(params: dict[str, Any]) -> dict[str, Any]:
 def informes_v2_render_consolidated_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.informes_v2.rendering import render_consolidated_html
 
-    reports = _db().get_all()
-    report_ids = params.get("report_ids")
-    if isinstance(report_ids, list) and report_ids:
-        allowed = {str(rid) for rid in report_ids}
-        reports = [r for r in reports if r["id"] in allowed]
-    if not reports:
-        msg = "No hay informes para exportar"
-        raise ValueError(msg)
+    reports = filter_by_optional_ids(
+        _db().get_all(), params.get("report_ids"), "No hay informes para exportar"
+    )
     reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
 
     images_by_id: dict[str, list[dict[str, str]]] = {}
@@ -188,11 +169,7 @@ def informes_v2_render_consolidated_html(params: dict[str, Any]) -> dict[str, An
     if isinstance(raw_map, dict):
         for key, value in raw_map.items():
             if isinstance(value, list):
-                images_by_id[str(key)] = [
-                    {"path": str(i.get("path") or i.get("src") or ""), "name": str(i.get("name") or "")}
-                    for i in value
-                    if isinstance(i, dict) and (i.get("path") or i.get("src"))
-                ]
+                images_by_id[str(key)] = _parse_image_items(value)
 
     html = render_consolidated_html(
         reports,

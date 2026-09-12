@@ -60,7 +60,10 @@ def _cache_put(digest: str, pdf: bytes) -> None:
 
 
 def write_pdf_sanitized(html_string: str) -> bytes:
-    from weasyprint import HTML
+    from backend.core.import_guard import serialized_import
+
+    with serialized_import():
+        from weasyprint import HTML
 
     cleaned = sanitize_html_for_pdf(html_string)
     digest = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()

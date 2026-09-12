@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import Future
 from pathlib import Path
@@ -116,14 +117,24 @@ def test_backend_boot_smoke_ready_and_lazy_deferred_methods(tmp_path: Path) -> N
         cwd=str(root),
         env=env,
     )
-    assert proc.stdin is not None and proc.stdout is not None
+    assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
+
+    stderr_lines: list[str] = []
+
+    def _drain_stderr() -> None:
+        assert proc.stderr is not None
+        for err_line in iter(proc.stderr.readline, b""):
+            stderr_lines.append(err_line.decode("utf-8", "replace"))
+
+    drainer = threading.Thread(target=_drain_stderr, daemon=True)
+    drainer.start()
 
     def _readline(timeout_s: float = 30.0) -> dict:
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             line = proc.stdout.readline()
             if not line:
-                err = (proc.stderr.read() or b"").decode("utf-8", "replace")[-1500:]
+                err = "".join(stderr_lines[-20:])
                 raise AssertionError(f"stdout EOF before message; stderr tail:\n{err}")
             return json.loads(line.decode("utf-8"))
         raise AssertionError("timeout waiting for backend line")

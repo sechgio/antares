@@ -24,6 +24,7 @@ vi.mock('../../../api', () => ({
   onNotify: vi.fn(() => () => {}),
   api: {
     canvasList: vi.fn(),
+    canvasBootstrap: vi.fn(),
     canvasGet: vi.fn(),
     canvasSave: vi.fn(async (doc: CanvasDocument) => ({ document: doc })),
     canvasCreate: vi.fn(),
@@ -80,7 +81,9 @@ vi.mock('../presets/loadPresets', () => ({
 }));
 
 vi.mock('../editor/DesignStage', () => ({
-  default: () => <div data-testid="mock-design-stage" />,
+  default: ({ children }: { children?: React.ReactNode }) => (
+    <div data-testid="mock-design-stage">{children}</div>
+  ),
 }));
 
 vi.mock('../editor/RightPanel', () => ({
@@ -115,6 +118,7 @@ import { api } from '../../../api';
 import CanvasView from '../CanvasView';
 import { useCanvasBootstrap } from '../hooks/useCanvasBootstrap';
 import { queueCanvasCloudPush } from '../sync/cloudQueue';
+import { loadCanvasPresets } from '../presets/loadPresets';
 
 function makeDoc(id: string, name = id): CanvasDocument {
   const doc = createEmptyDocument(name);
@@ -145,6 +149,13 @@ describe('CanvasView lifecycle', () => {
         { id: docB.id, name: docB.name, updatedAt: docB.updatedAt! },
       ],
     });
+    vi.mocked(api.canvasBootstrap).mockResolvedValue({
+      documents: [
+        { id: docA.id, name: docA.name, updatedAt: docA.updatedAt! },
+        { id: docB.id, name: docB.name, updatedAt: docB.updatedAt! },
+      ],
+      document: docA,
+    });
     vi.mocked(api.canvasGet).mockImplementation(async (id: string) => ({
       document: id === docB.id ? docB : docA,
     }));
@@ -167,7 +178,7 @@ describe('CanvasView lifecycle', () => {
       expect(screen.queryByTestId('mock-design-stage')).toBeTruthy();
     });
     await waitFor(() => {
-      expect(api.canvasList).toHaveBeenCalled();
+      expect(api.canvasBootstrap).toHaveBeenCalled();
     });
   }
 
@@ -259,6 +270,36 @@ describe('CanvasView lifecycle', () => {
     expect(screen.getByTestId('mock-design-stage')).toBeInTheDocument();
   });
 
+  it('clears selection from the previous page when navigating between pages', async () => {
+    const doc = makeDoc('doc-pages', 'Pages');
+    doc.pages = [
+      { id: 'page-0', name: 'Página 1' },
+      { id: 'page-1', name: 'Página 2' },
+    ];
+    const pageZeroLayer = createLayer('rect', { id: 'page-zero-layer', name: 'Capa página 1', pageIndex: 0 });
+    const pageOneLayer = createLayer('rect', { id: 'page-one-layer', name: 'Capa página 2', pageIndex: 1 });
+    doc.layers = [{ ...doc.layers[0]!, pageIndex: 0 }, pageZeroLayer, pageOneLayer];
+    vi.mocked(api.canvasBootstrap).mockResolvedValue({
+      documents: [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt! }],
+      document: doc,
+    });
+
+    render(<CanvasView active />);
+    await waitFor(() => expect(screen.getByText('Capa página 1')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Capa página 1'));
+    await waitFor(() => {
+      expect(document.querySelector('[data-layer-id="page-zero-layer"]')).toHaveAttribute('data-selected', 'true');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Página 2 A4' }));
+    await waitFor(() => expect(screen.getByText('Capa página 2')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Página 1 A4' }));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-layer-id="page-zero-layer"]')).toHaveAttribute('data-selected', 'false');
+    });
+  });
+
   it('save-on-switch: canvasSave(A) before canvasGet(B) when opening another doc', async () => {
     const callOrder: string[] = [];
     vi.mocked(api.canvasSave).mockImplementation(async (doc: CanvasDocument) => {
@@ -318,13 +359,60 @@ describe('CanvasView lifecycle', () => {
     expect(callOrder.indexOf('create')).toBeGreaterThan(callOrder.findIndex((c) => c.startsWith('save:')));
   });
 
+  it('opens the template picker from the Plantillas button between Nuevo and Eliminar', async () => {
+    await renderReady();
+
+    const nuevo = screen.getByLabelText('Nuevo');
+    const plantillas = screen.getByTestId('canvas-open-templates');
+    const eliminar = screen.getByLabelText('Eliminar documento');
+    expect(nuevo.compareDocumentPosition(plantillas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(plantillas.compareDocumentPosition(eliminar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(plantillas);
+    expect(await screen.findByRole('dialog', { name: 'Plantillas' })).toBeInTheDocument();
+  });
+
+  it('creates and saves a new document when a template is picked', async () => {
+    vi.mocked(loadCanvasPresets).mockResolvedValue([
+      {
+        id: 'tpl-test',
+        label: 'Plantilla X',
+        create: () => {
+          const doc = makeDoc('tpl-local', 'Plantilla X');
+          doc.layers.push(createLayer('rect', { id: 'tpl-rect', name: 'De plantilla', pageIndex: 0 }));
+          return doc;
+        },
+      },
+    ]);
+    vi.mocked(api.canvasCreate).mockResolvedValue({ document: makeDoc('doc-new', 'Sin título') });
+
+    await renderReady();
+    fireEvent.click(screen.getByTestId('canvas-open-templates'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Crear' }));
+
+    await waitFor(() => expect(api.canvasCreate).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText('Nombre del documento') as HTMLInputElement).value,
+      ).toBe('Plantilla X');
+    });
+    await waitFor(() => {
+      const pushed = vi
+        .mocked(queueCanvasCloudPush)
+        .mock.calls.map(([doc]) => doc)
+        .find((doc) => doc.name === 'Plantilla X');
+      expect(pushed?.layers.some((l) => l.id === 'tpl-rect')).toBe(true);
+    });
+    expect(screen.queryByRole('dialog', { name: 'Plantillas' })).toBeNull();
+  });
+
   it('waits for bootstrap history restoration before persisting it', async () => {
-    let resolveGet: (value: { document: CanvasDocument }) => void = () => {};
+    let resolveBoot: (value: { documents: unknown[]; document: CanvasDocument }) => void = () => {};
     let resolveHistory: (value: { past: CanvasDocument[]; future: CanvasDocument[] }) => void = () => {};
     const restoredPast = [{ ...docA, name: 'Restored undo state' }];
-    vi.mocked(api.canvasGet).mockImplementation(
+    vi.mocked(api.canvasBootstrap).mockImplementation(
       () => new Promise((resolve) => {
-        resolveGet = resolve;
+        resolveBoot = resolve;
       }),
     );
     vi.mocked(api.canvasGetHistory).mockImplementation(
@@ -335,12 +423,15 @@ describe('CanvasView lifecycle', () => {
 
     render(<CanvasView active />);
     await waitFor(() => {
-      expect(api.canvasGet).toHaveBeenCalledWith(docA.id);
+      expect(api.canvasBootstrap).toHaveBeenCalled();
     });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
     await act(async () => {
-      resolveGet({ document: docA });
+      resolveBoot({
+        documents: [{ id: docA.id, name: docA.name, updatedAt: docA.updatedAt! }],
+        document: docA,
+      });
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -430,10 +521,10 @@ describe('CanvasView lifecycle', () => {
       };
     });
 
-    vi.mocked(api.canvasList).mockResolvedValue({
+    vi.mocked(api.canvasBootstrap).mockResolvedValue({
       documents: [{ id: localDoc.id, name: localDoc.name, updatedAt: localDoc.updatedAt! }],
+      document: localDoc,
     });
-    vi.mocked(api.canvasGet).mockResolvedValue({ document: localDoc });
 
     await renderReady();
 
@@ -564,7 +655,7 @@ describe('CanvasView lifecycle', () => {
       </StrictMode>,
     );
     await waitFor(() => expect(screen.getByTestId('mock-design-stage')).toBeInTheDocument());
-    await waitFor(() => expect(api.canvasList).toHaveBeenCalled());
+    await waitFor(() => expect(api.canvasBootstrap).toHaveBeenCalled());
     vi.mocked(api.canvasSave).mockClear();
 
     vi.useFakeTimers();
@@ -721,7 +812,7 @@ describe('CanvasView lifecycle', () => {
       expect(screen.queryByTestId('mock-design-stage')).toBeTruthy();
     });
     await waitFor(() => {
-      expect(api.canvasList).toHaveBeenCalled();
+      expect(api.canvasBootstrap).toHaveBeenCalled();
     });
 
     vi.mocked(api.canvasSave).mockClear();
@@ -856,10 +947,10 @@ describe('CanvasView shortcuts (F2, Ctrl+Shift+L/H) y punto dirty', () => {
   async function renderReadyWithRect() {
     const doc = makeDoc('doc-kbd', 'Kbd');
     doc.layers.push(createLayer('rect', { id: 'r1', name: 'Caja' }));
-    vi.mocked(api.canvasList).mockResolvedValue({
+    vi.mocked(api.canvasBootstrap).mockResolvedValue({
       documents: [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt! }],
+      document: doc,
     });
-    vi.mocked(api.canvasGet).mockImplementation(async (id: string) => ({ document: doc }));
     render(<CanvasView active />);
     await waitFor(() => expect(screen.getByText('Caja')).toBeTruthy());
   }
@@ -896,5 +987,18 @@ describe('CanvasView shortcuts (F2, Ctrl+Shift+L/H) y punto dirty', () => {
     fireEvent.click(screen.getByText('Caja'));
     fireEvent.keyDown(window, { key: 'L', ctrlKey: true, shiftKey: true });
     await waitFor(() => expect(screen.queryByTestId('canvas-save-dirty')).toBeTruthy());
+  });
+
+  it('los atajos globales no alternan la paleta mientras está abierta', async () => {
+    await renderReadyWithRect();
+    fireEvent.keyDown(window, { code: 'KeyK', ctrlKey: true });
+    await waitFor(() => expect(screen.queryByTestId('canvas-command-palette')).toBeTruthy());
+
+    fireEvent.keyDown(window, { code: 'KeyP', ctrlKey: true });
+    expect(screen.queryByTestId('canvas-command-palette')).toBeTruthy();
+
+    const input = screen.getByLabelText(/Buscar acci/i);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('canvas-command-palette')).toBeNull());
   });
 });

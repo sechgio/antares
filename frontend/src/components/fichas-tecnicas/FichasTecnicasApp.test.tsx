@@ -67,4 +67,44 @@ describe('FichasTecnicasApp focus mode', () => {
     expect(screen.getByRole('button', { name: 'Anterior' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeInTheDocument();
   });
+
+  it('anchors focus navigation tooltips to the fixed arrow wrappers', async () => {
+    listMock.mockResolvedValue({
+      fichas: [
+        {
+          id: 'F-001',
+          os_numero: 'OS-001',
+          cliente: 'Cliente Uno',
+          direccion: 'Calle 1',
+          distrito: 'Lima',
+          fecha: '2026-01-01',
+          status: 'draft',
+        },
+        {
+          id: 'F-002',
+          os_numero: 'OS-002',
+          cliente: 'Cliente Dos',
+          direccion: 'Calle 2',
+          distrito: 'Lima',
+          fecha: '2026-01-02',
+          status: 'draft',
+        },
+      ],
+      total: 2,
+    });
+
+    renderApp();
+    await waitFor(() => expect(listMock).toHaveBeenCalled());
+
+    fireEvent.keyDown(window, { key: '.', ctrlKey: true });
+
+    const previous = screen.getByRole('button', { name: 'Anterior' });
+    const next = screen.getByRole('button', { name: 'Siguiente' });
+    expect(previous.parentElement).toHaveClass('fixed', 'left-3', 'top-1/2');
+    expect(next.parentElement).toHaveClass('fixed', 'right-3', 'top-1/2');
+    expect(previous.parentElement).toHaveStyle({ position: 'fixed' });
+    expect(next.parentElement).toHaveStyle({ position: 'fixed' });
+    expect(previous).not.toHaveClass('fixed');
+    expect(next).not.toHaveClass('fixed');
+  });
 });

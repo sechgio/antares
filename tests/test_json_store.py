@@ -23,7 +23,7 @@ def test_get_insert_update_replace_roundtrip(tmp_path) -> None:
     assert updated["id"] == "doc-1"
     assert db.get("doc-1")["title"] == "next"
 
-    replaced = db.replace_all([{"id": "doc-2", "title": "other"}])
+    replaced, _deleted = db.replace_all_counted([{"id": "doc-2", "title": "other"}])
     assert [item["id"] for item in replaced] == ["doc-2"]
     assert db.get("doc-1") is None
     assert db.get("doc-2")["title"] == "other"

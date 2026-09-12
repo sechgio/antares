@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+from typing import TypedDict
 
-InformeStatus = Literal["draft", "completed"]
-ReservoirType = Literal["ELEVADO", "ENTERRADO", "SEMIENTERRADO", "APOYADO", "CISTERNA"]
+from backend.core.report_types import ReportStatus, ReservoirType
+
+InformeStatus = ReportStatus
 
 
 class InformeDiameterRow(TypedDict):

@@ -15,7 +15,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_BLOCKED_IMPORTS = {"os", "sys", "subprocess", "ctypes", "socket", "urllib", "http", "ftplib", "shlex", "pathlib", "signal", "multiprocessing", "threading", "importlib", "builtins", "code", "codeop", "runpy", "pdb", "xmlrpc"}
+_BLOCKED_IMPORTS = {
+    "os", "sys", "subprocess", "ctypes", "socket", "urllib", "http", "ftplib",
+    "shlex", "pathlib", "signal", "multiprocessing", "threading", "importlib",
+    "builtins", "code", "codeop", "runpy", "pdb", "xmlrpc",
+    "pickle", "cPickle", "pickletools", "marshal", "shelve", "dbm", "copyreg",
+    "types", "gc", "inspect", "weakref", "operator", "io", "codecs", "shutil",
+    "tempfile", "glob", "fileinput", "linecache", "mmap", "sqlite3",
+    "zipimport", "pkgutil", "imp", "site",
+}
 _BLOCKED_NAMES = {"eval", "exec", "compile", "__import__", "open", "globals", "locals", "vars", "getattr", "setattr", "delattr", "type", "super", "__build_class__", "breakpoint", "memoryview", "input"}
 _BLOCKED_ATTRS = {"__class__", "__bases__", "__subclasses__", "__mro__", "__globals__", "__code__", "__func__", "__self__", "__dict__", "__weakref__", "__subclasshook__"}
 
@@ -101,8 +109,8 @@ def load_plugins_from_dir(plugins_dir: Path | None = None) -> None:
                 if expected is None or h != expected:
                     logger.warning("Plugin %s rechazado: no está en allowlist o hash no coincide", file_path.name)
                     continue
-            elif file_path.name != "example.py":
-                logger.warning("Plugin %s rechazado: sin allowlist.json no se cargan plugins (excepto example.py)", file_path.name)
+            else:
+                logger.warning("Plugin %s rechazado: sin allowlist.json no se cargan plugins", file_path.name)
                 continue
             if not _is_safe_plugin(source):
                 logger.warning("Plugin %s bloqueado por uso de APIs no permitidas", file_path.name)

@@ -53,6 +53,7 @@ describe('TitleBar', () => {
 
     const settings = screen.getByTestId('titlebar-settings-button');
     expect(settings).not.toHaveAttribute('title');
+    fireEvent.focus(settings);
     expect(screen.getByText('Configuración')).toBeInTheDocument();
   });
 
@@ -62,6 +63,7 @@ describe('TitleBar', () => {
     for (const name of ['Minimizar', 'Maximizar', 'Cerrar'] as const) {
       const button = screen.getByRole('button', { name });
       expect(button).not.toHaveAttribute('title');
+      fireEvent.focus(button);
       expect(screen.getByText(name)).toBeInTheDocument();
     }
   });

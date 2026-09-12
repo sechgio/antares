@@ -183,12 +183,16 @@ function AppContent() {
 
   useEffect(() => {
     if (import.meta.env.MODE === 'test') return;
+    const prefetch = () => {
+      prefetchSettingsModal();
+      prefetchCanvasView();
+    };
     const ric = window.requestIdleCallback?.bind(window);
     if (ric) {
-      const id = ric(() => prefetchSettingsModal(), { timeout: 2500 });
+      const id = ric(prefetch, { timeout: 2500 });
       return () => window.cancelIdleCallback?.(id);
     }
-    const t = window.setTimeout(prefetchSettingsModal, 1);
+    const t = window.setTimeout(prefetch, 1);
     return () => window.clearTimeout(t);
   }, []);
 

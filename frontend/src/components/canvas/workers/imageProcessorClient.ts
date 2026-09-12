@@ -8,6 +8,7 @@ type Pending = {
 let worker: Worker | null = null;
 let pending: Pending | null = null;
 let queue: Promise<void> = Promise.resolve();
+let workerGeneration = 0;
 
 function canUseWorker(): boolean {
   return typeof Worker !== 'undefined' && typeof createImageBitmap !== 'undefined';
@@ -17,18 +18,24 @@ function getWorker(): Worker | null {
   if (!canUseWorker()) return null;
   if (worker) return worker;
   try {
-    worker = new Worker(new URL('./imageProcessorWorker.ts', import.meta.url), { type: 'module' });
-    worker.onmessage = (event: MessageEvent<ImageProcessingResult[]>) => {
+    const createdWorker = new Worker(new URL('./imageProcessorWorker.ts', import.meta.url), { type: 'module' });
+    const createdGeneration = workerGeneration;
+    worker = createdWorker;
+    createdWorker.onmessage = (event: MessageEvent<ImageProcessingResult[]>) => {
+      if (worker !== createdWorker || workerGeneration !== createdGeneration) return;
       const wait = pending;
       pending = null;
       wait?.resolve(event.data);
     };
-    worker.onerror = (event) => {
+    createdWorker.onerror = (event) => {
+      if (worker !== createdWorker || workerGeneration !== createdGeneration) return;
       const wait = pending;
       pending = null;
+      worker = null;
+      workerGeneration += 1;
       wait?.reject(event.error ?? new Error(event.message || 'image worker error'));
     };
-    return worker;
+    return createdWorker;
   } catch {
     worker = null;
     return null;
@@ -37,20 +44,42 @@ function getWorker(): Worker | null {
 
 const WORKER_TIMEOUT_MS = 60_000;
 
-function runOnWorker(tasks: ImageProcessingTask[]): Promise<ImageProcessingResult[]> {
-  const w = getWorker();
-  if (!w) return Promise.reject(new Error('image worker unavailable'));
+export function disposeImageProcessorWorker(): void {
+  workerGeneration += 1;
+  const wait = pending;
+  pending = null;
+  wait?.reject(new Error('image worker disposed'));
+  try {
+    worker?.terminate();
+  } catch {
+  }
+  worker = null;
+  queue = Promise.resolve();
+}
 
-  const run = () =>
-    new Promise<ImageProcessingResult[]>((resolve, reject) => {
+function runOnWorker(tasks: ImageProcessingTask[]): Promise<ImageProcessingResult[]> {
+  const scheduledGeneration = workerGeneration;
+
+  const run = () => {
+    if (scheduledGeneration !== workerGeneration) {
+      return Promise.reject(new Error('image worker disposed'));
+    }
+    const w = getWorker();
+    if (!w) return Promise.reject(new Error('image worker unavailable'));
+    return new Promise<ImageProcessingResult[]>((resolve, reject) => {
       const timer = setTimeout(() => {
-        if (pending?.resolve === wrappedResolve) {
+        if (
+          pending?.resolve === wrappedResolve &&
+          worker === w &&
+          workerGeneration === scheduledGeneration
+        ) {
           pending = null;
           try {
-            worker?.terminate();
+            w.terminate();
           } catch {
           }
           worker = null;
+          workerGeneration += 1;
           reject(new Error('image worker timed out'));
         }
       }, WORKER_TIMEOUT_MS);
@@ -68,6 +97,7 @@ function runOnWorker(tasks: ImageProcessingTask[]): Promise<ImageProcessingResul
       pending = { resolve: wrappedResolve, reject: wrappedReject };
       w.postMessage(tasks);
     });
+  };
 
   const result = queue.then(run, run);
   queue = result.then(

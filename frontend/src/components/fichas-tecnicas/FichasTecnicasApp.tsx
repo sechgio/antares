@@ -462,10 +462,10 @@ export default function FichasTecnicasApp() {
 
       {focusMode && (
         <>
-          <WithHoverTooltip label="Anterior" placement="bottom">
+          <WithHoverTooltip label="Anterior" placement="bottom" className="fixed left-3 top-1/2 z-50 -translate-y-1/2" style={{ position: 'fixed' }}>
             <button
               type="button"
-              className="fixed left-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
+              className="rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
               disabled={currentIndex <= 0 || busy}
               onClick={() => goRelative(-1)}
               aria-label="Anterior"
@@ -473,10 +473,10 @@ export default function FichasTecnicasApp() {
               <ChevronLeft size={28} />
             </button>
           </WithHoverTooltip>
-          <WithHoverTooltip label="Siguiente" placement="bottom">
+          <WithHoverTooltip label="Siguiente" placement="bottom" className="fixed right-3 top-1/2 z-50 -translate-y-1/2" style={{ position: 'fixed' }}>
             <button
               type="button"
-              className="fixed right-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
+              className="rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
               disabled={currentIndex < 0 || currentIndex >= fichas.length - 1 || busy}
               onClick={() => goRelative(1)}
               aria-label="Siguiente"

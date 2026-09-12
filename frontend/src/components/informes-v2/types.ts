@@ -1,8 +1,8 @@
-export type ReportStatus = 'draft' | 'completed';
-export type ReservoirType = 'ELEVADO' | 'ENTERRADO' | 'SEMIENTERRADO' | 'APOYADO' | 'CISTERNA';
+import type { ReportStatus, ReservoirType } from '../../types/reports';
+
+export type { ReportStatus, ReservoirType } from '../../types/reports';
 
 export const DIAMETERS = ['2', '4', '6', '8', '10', '12', '14', '16'] as const;
-export type Diameter = (typeof DIAMETERS)[number];
 
 export const VALVULA_ROWS = ['conduccion', 'impulsion', 'aduccion', 'bypass', 'purga'] as const;
 export const LINEA_ROWS = ['aduccion', 'alimentacion', 'impulsion_rebombeo', 'rebose', 'purga'] as const;

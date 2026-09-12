@@ -81,3 +81,25 @@ export function collectDueNotifications(
 
   return items;
 }
+
+export interface DueRealtimePayload {
+  eventType: string;
+  table: string;
+  new: Record<string, unknown> | null;
+  old: Record<string, unknown> | null;
+}
+
+// Due-notification state only depends on tareas with a due date (or tasks the
+// bell is already showing). Other table writes cannot change the list, so the
+// global subscription can skip the refetch for them. Unknown shapes fail open.
+export function shouldRefreshForDueChange(
+  payload: DueRealtimePayload | null | undefined,
+  notifiedTaskIds: ReadonlySet<string>,
+): boolean {
+  if (!payload || payload.eventType === 'DELETE') return true;
+  if (payload.table !== 'tareas') return true;
+  const row = payload.new;
+  if (!row || typeof row !== 'object') return true;
+  if (row.due_date != null && row.due_date !== '') return true;
+  return typeof row.id === 'string' && notifiedTaskIds.has(row.id);
+}

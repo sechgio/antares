@@ -4,11 +4,9 @@ import {
   getRunType,
   safeJsonParse,
   type HistoryRunRow,
-  type RunTypeId,
 } from './runTypes';
 
 export type HistoryRun = HistoryRunRow;
-export type RunType = RunTypeId;
 
 interface RunListProps {
   runs: HistoryRun[];

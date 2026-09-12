@@ -7,8 +7,8 @@ class ResizeObserverMock {
   unobserve() {}
   disconnect() {}
 }
-// @ts-expect-error mock
-global.ResizeObserver = global.ResizeObserver || ResizeObserverMock;
+(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+  (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver || ResizeObserverMock;
 
 describe('DataPreviewModal', () => {
   beforeAll(() => {

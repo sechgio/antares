@@ -99,12 +99,7 @@ export default function ReportesCampoApp() {
         setCurrentPage(0);
     }, [selectPanel]);
 
-    const handleDragOver = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDraggingImages(true);
-    }, []);
-
-    const handleDragEnter = useCallback((e: React.DragEvent) => {
+    const handleDragActivate = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         setIsDraggingImages(true);
     }, []);
@@ -323,8 +318,8 @@ export default function ReportesCampoApp() {
                                     onClear={clearPhotos}
                                     totalPages={totalPages}
                                     isDragging={isDraggingImages}
-                                    onDragOver={handleDragOver}
-                                    onDragEnter={handleDragEnter}
+                                    onDragOver={handleDragActivate}
+                                    onDragEnter={handleDragActivate}
                                     onDragLeave={handleDragLeave}
                                     onDrop={handleDrop}
                                 />

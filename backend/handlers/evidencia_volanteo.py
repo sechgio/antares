@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-from pathlib import Path
 from typing import Any
 
 from backend.core.evidencia_volanteo import (
@@ -13,6 +12,7 @@ from backend.core.evidencia_volanteo import (
     render_pdf_html,
 )
 from backend.handlers.common import validate_params, with_locale
+from backend.utils.atomic_write import atomic_output_file
 
 
 @with_locale
@@ -40,25 +40,9 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
         docx_bytes, filename = render_docx(document, logos, images, image_paths)
         if output_path:
             resolved = params.get("_resolved_output_path") or output_path
-            from backend.utils.validators import sanitizar_nombre
-            safe = sanitizar_nombre(Path(resolved).name) or Path(resolved).name
-            if not safe.lower().endswith(".docx"):
-                safe += ".docx"
-            out = Path(resolved).parent / safe
-            if out.is_symlink() or out.parent.is_symlink():
-                raise ValueError("symlink no permitido en ruta de salida")
-            if params.get("_write_token") and Path(resolved) != out:
-                out = Path(resolved)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            if out.exists():
-                raise FileExistsError(f"El archivo ya existe: {out}")
-            real_parent = Path(str(out.parent.resolve()))
-            if real_parent != Path(str(Path(resolved).parent.resolve())) and out.parent.resolve() != Path(resolved).parent.resolve():
-                raise ValueError("ruta de salida fuera de la raíz autorizada")
-            tmp = out.with_suffix(out.suffix + ".tmp")
-            tmp.write_bytes(docx_bytes)
-            import os as _os
-            _os.replace(tmp, out)
+            with atomic_output_file(resolved, extension=".docx", write_token=params.get("_write_token")) as target:
+                target.tmp_path.write_bytes(docx_bytes)
+            out = target.destination
             return {
                 "pdf_base64": "",
                 "content_base64": "",
@@ -82,22 +66,9 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
         pdf_bytes, filename = render_pdf(document, logos, images, image_paths)
     if output_path:
         resolved = params.get("_resolved_output_path") or output_path
-        from backend.utils.validators import sanitizar_nombre as _sn
-        safe = _sn(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".pdf"):
-            safe += ".pdf"
-        out = Path(resolved).parent / safe
-        if out.is_symlink() or out.parent.is_symlink():
-            raise ValueError("symlink no permitido en ruta de salida")
-        if params.get("_write_token") and Path(resolved) != out:
-            out = Path(resolved)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        if out.exists():
-            raise FileExistsError(f"El archivo ya existe: {out}")
-        tmp = out.with_suffix(out.suffix + ".tmp")
-        tmp.write_bytes(pdf_bytes)
-        import os as _os2
-        _os2.replace(tmp, out)
+        with atomic_output_file(resolved, extension=".pdf", write_token=params.get("_write_token")) as target:
+            target.tmp_path.write_bytes(pdf_bytes)
+        out = target.destination
         return {
             "pdf_base64": "",
             "content_base64": "",

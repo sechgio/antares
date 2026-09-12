@@ -4,8 +4,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from backend.core.report_types import REPORT_STATUS_VALUES
+
 SATISFACCION_VALUES = {"muy_satisfecho", "satisfecho", "regular", "insatisfecho", ""}
-STATUS_VALUES = {"draft", "completed"}
+STATUS_VALUES = REPORT_STATUS_VALUES
 
 
 def ficha_id_from_number(value: int) -> str:

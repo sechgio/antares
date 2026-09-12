@@ -78,6 +78,17 @@ def _map_opts_from_payload(payload: dict) -> dict[str, Any]:  # allowlist: dict[
     }
 
 
+def _manual_datos(manual_data: dict) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    return {
+        "cod_componente": str(manual_data.get("cod_componente", "")).strip(),
+        "direccion": str(manual_data.get("direccion", "")).strip(),
+        "localidad": str(manual_data.get("localidad", "")).strip(),
+        "distrito": str(manual_data.get("distrito", "")).strip(),
+        "lat": _coerce_coord(manual_data.get("lat")),
+        "lon": _coerce_coord(manual_data.get("lon")),
+    }
+
+
 @with_locale
 def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dict[str, Any]
     excel_path = payload.get("excelPath")
@@ -92,14 +103,7 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dic
         raise ValueError("Falta la ruta del Excel o datos manuales.")
 
     if manual_data:
-        datos = {
-            "cod_componente": str(manual_data.get("cod_componente", "")).strip(),
-            "direccion": str(manual_data.get("direccion", "")).strip(),
-            "localidad": str(manual_data.get("localidad", "")).strip(),
-            "distrito": str(manual_data.get("distrito", "")).strip(),
-            "lat": _coerce_coord(manual_data.get("lat")),
-            "lon": _coerce_coord(manual_data.get("lon")),
-        }
+        datos = _manual_datos(manual_data)
         total_filas = 1
         row_index = 0
     else:
@@ -125,8 +129,6 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dic
     datos["lat"] = lat
     datos["lon"] = lon
 
-    lat = float(lat)
-    lon = float(lon)
     excel_ctx = _manual_preview_ctx(datos) if manual_data else excel_ctx
     styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
     composed_key = _composed_preview_key(excel_ctx, row_index, formato, styles_hash, map_opts)
@@ -199,14 +201,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
     valid_rows: list[dict] = []
 
     if manual_data:
-        datos = {
-            "cod_componente": str(manual_data.get("cod_componente", "")).strip(),
-            "direccion": str(manual_data.get("direccion", "")).strip(),
-            "localidad": str(manual_data.get("localidad", "")).strip(),
-            "distrito": str(manual_data.get("distrito", "")).strip(),
-            "lat": _coerce_coord(manual_data.get("lat")),
-            "lon": _coerce_coord(manual_data.get("lon")),
-        }
+        datos = _manual_datos(manual_data)
         if not _is_na(datos["lat"]) and not _is_na(datos["lon"]):
             valid_rows.append(datos)
     else:
@@ -246,25 +241,25 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
         logger.info(f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}...")
         t0 = time.perf_counter()
         try:
-            if consolidado:
-                if consolidated_temp_dir is None:
-                    raise RuntimeError("No se pudo crear el directorio temporal del PDF consolidado.")
-                fd, tmp_name = tempfile.mkstemp(
-                    suffix=".pdf",
-                    prefix="antares_page_",
-                    dir=consolidated_temp_dir,
-                )
-                os.close(fd)
-                try:
-                    generar_imagen_ubicacion(d, tmp_name, formato, map_opts=map_opts, custom_styles=custom_styles)
-                    return (True, tmp_name)
-                except Exception:
-                    with contextlib.suppress(OSError):
-                        os.remove(tmp_name)
-                    raise
-            out_path = os.path.join(output_dir, d["_out_filename"])
-            generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts, custom_styles=custom_styles)
-            return (True, None)
+            if not consolidado:
+                out_path = os.path.join(output_dir, d["_out_filename"])
+                generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts, custom_styles=custom_styles)
+                return (True, None)
+            if consolidated_temp_dir is None:
+                raise RuntimeError("No se pudo crear el directorio temporal del PDF consolidado.")
+            fd, tmp_name = tempfile.mkstemp(
+                suffix=".pdf",
+                prefix="antares_page_",
+                dir=consolidated_temp_dir,
+            )
+            os.close(fd)
+            try:
+                generar_imagen_ubicacion(d, tmp_name, formato, map_opts=map_opts, custom_styles=custom_styles)
+                return (True, tmp_name)
+            except Exception:
+                with contextlib.suppress(OSError):
+                    os.remove(tmp_name)
+                raise
         except Exception:
             logger.exception("Error renderizando ubicación %s; se omite", d["cod_componente"])
             return (False, None)
@@ -275,30 +270,32 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
                 time.perf_counter() - t0,
             )
 
-    with tempfile.TemporaryDirectory(prefix="antares-ubicaciones-") as managed_temp_dir:
-        consolidated_temp_dir = managed_temp_dir if consolidado else None
-        if valid_rows:
-            max_workers = min(_MAX_RENDER_WORKERS, len(valid_rows))
-            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
-                for ok, page_path in ex.map(_render_one, valid_rows):
-                    if not ok:
+    temp_ctx = (
+        tempfile.TemporaryDirectory(prefix="antares-ubicaciones-")
+        if consolidado
+        else contextlib.nullcontext()
+    )
+    with temp_ctx as managed_temp_dir:
+        consolidated_temp_dir = managed_temp_dir
+        max_workers = max(1, min(_MAX_RENDER_WORKERS, len(valid_rows)))
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
+            for ok, page_path in ex.map(_render_one, valid_rows):
+                if not ok:
+                    fallidos += 1
+                    continue
+                if consolidado and page_path is not None:
+                    try:
+                        append_page_to_writer(consolidated_writer, page_path)
+                    except Exception:
+                        logger.exception("Error agregando página al PDF consolidado; se omite")
                         fallidos += 1
-                        continue
-                    if consolidado and page_path is not None:
-                        try:
-                            if consolidated_writer is None:
-                                raise RuntimeError("El escritor del PDF consolidado no está disponible.")
-                            append_page_to_writer(consolidated_writer, page_path)
-                        except Exception:
-                            logger.exception("Error agregando página al PDF consolidado; se omite")
-                            fallidos += 1
-                        else:
-                            generados += 1
-                        finally:
-                            with contextlib.suppress(OSError):
-                                os.remove(page_path)
                     else:
                         generados += 1
+                    finally:
+                        with contextlib.suppress(OSError):
+                            os.remove(page_path)
+                else:
+                    generados += 1
 
     consolidated_path: str | None = None
     if consolidado and consolidated_writer is not None:

@@ -2,6 +2,16 @@ import { parseMm, type CanvasLayer } from '../types';
 
 export type MixedValue<T> = { mixed: true } | { mixed: false; value: T };
 
+export function selectLayersByIds(
+  layers: CanvasLayer[],
+  ids: readonly string[],
+  fallback?: CanvasLayer,
+): CanvasLayer[] {
+  if (ids.length === 0) return fallback ? [fallback] : [];
+  const idSet = new Set(ids);
+  return layers.filter((layer) => idSet.has(layer.id));
+}
+
 export function mixedCssVar(layers: CanvasLayer[], key: string): MixedValue<string> {
   if (layers.length === 0) return { mixed: false, value: '' };
   const first = layers[0]!.cssVars[key] ?? '';

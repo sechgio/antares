@@ -51,15 +51,6 @@ class TestJob:
         assert d["ok_count"] == 5
         assert d["err_count"] == 1
 
-    def test_to_dict_detail_includes_logs_and_params(self):
-        state = ProcessState()
-        state.logs.append({"message": "test", "tag": "info"})
-        job = Job(id="detail_job", job_type="conversion", state=state, params={"files": ["a.jpg"]})
-        d = job.to_dict_detail()
-        assert "logs" in d
-        assert len(d["logs"]) == 1
-        assert d["params"] == {"files": ["a.jpg"]}
-
     def test_process_status_omits_files_list(self):
         from backend.core.jobs import get_job_manager
         from backend.handlers.conversion import process_status
@@ -103,20 +94,6 @@ class TestJobManager:
         mgr = JobManager()
         assert mgr.get_job("nope") is None
 
-    def test_list_jobs_empty(self):
-        mgr = JobManager()
-        assert mgr.list_jobs() == []
-
-    def test_list_jobs_by_type(self):
-        mgr = JobManager()
-        j1 = Job(id="a", job_type="conversion")
-        j2 = Job(id="b", job_type="formato")
-        mgr._jobs["a"] = j1
-        mgr._jobs["b"] = j2
-        conv = mgr.list_jobs(job_type="conversion")
-        assert len(conv) == 1
-        assert conv[0].job_type == "conversion"
-
     def test_cleanup_preserves_default_job(self):
         mgr = JobManager()
         j = Job(id=DEFAULT_JOB_ID, job_type="conversion")
@@ -134,7 +111,7 @@ class TestJobManager:
             mgr._jobs[f"c{i}"] = j
         removed = mgr.cleanup_completed(max_remaining=2)
         assert removed == 3
-        assert len(mgr.list_jobs()) == 2
+        assert len(mgr._jobs) == 2
 
     def test_slim_completed_job_drops_files_list(self):
         files = [f"C:/tmp/{i}.jpg" for i in range(200)]
@@ -206,6 +183,17 @@ class TestJobManager:
         assert job.params.get("files") == []
         assert job.params.get("file_count") == 100
         assert job.result == {"ok_count": 100}
+
+    def test_release_out_paths_releases_empty_reservation_table_capacity(self):
+        mgr = JobManager()
+        baseline_size = mgr._reserved_out_paths.__sizeof__()
+        for index in range(10_000):
+            assert mgr.try_reserve_out_path("bulk", f"C:/out/{index}.jpg") is True
+
+        mgr.release_out_paths("bulk")
+
+        assert mgr._reserved_out_paths == {}
+        assert mgr._reserved_out_paths.__sizeof__() <= baseline_size
 
     def test_default_job_id_constant(self):
         assert DEFAULT_JOB_ID == "default"

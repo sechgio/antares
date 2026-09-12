@@ -5,13 +5,15 @@ from typing import Any
 from backend.handlers.common import (
     clear_store,
     delete_item_or_raise,
+    filter_by_optional_ids,
     get_item_id,
     get_item_or_raise,
+    require_b64_file_payload,
     require_update_payload,
+    resolve_payload_or_store,
     update_item_or_raise,
     with_locale,
 )
-from backend.utils.image_data import decode_b64_payload
 
 
 def _db():
@@ -75,12 +77,7 @@ def fichas_tecnicas_clear(params: dict[str, Any]) -> dict[str, Any]:
 def fichas_tecnicas_import_file(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.fichas_tecnicas.importer import import_fichas_from_bytes
 
-    filename = str(params.get("filename") or "")
-    content_b64 = str(params.get("content_b64") or "")
-    if not filename or not content_b64:
-        msg = "filename y content_b64 son requeridos"
-        raise ValueError(msg)
-    content = decode_b64_payload(content_b64)
+    filename, content = require_b64_file_payload(params)
     imported_rows = import_fichas_from_bytes(filename, content)
     imported, deleted_count = _db().replace_all_counted(imported_rows)
     return {
@@ -92,22 +89,6 @@ def fichas_tecnicas_import_file(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _resolve_ficha_for_render(params: dict[str, Any]) -> dict[str, Any]:
-    ficha_payload = params.get("ficha")
-    ficha_id = str(params.get("id") or "").strip()
-
-    if isinstance(ficha_payload, dict) and ficha_payload:
-        return ficha_payload
-
-    if ficha_id:
-        stored = _db().get(ficha_id)
-        if isinstance(stored, dict):
-            return stored
-
-    msg = "Ficha no encontrada: envíe la ficha actual o un id válido"
-    raise ValueError(msg)
-
-
 @with_locale
 def fichas_tecnicas_render_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.fichas_tecnicas.rendering import render_ficha_html, render_template_html
@@ -116,7 +97,9 @@ def fichas_tecnicas_render_html(params: dict[str, Any]) -> dict[str, Any]:
         html = render_template_html(params.get("logo_left"), params.get("logo_right"))
         return {"html": html, "filename": "plantilla_ficha_tecnica.pdf"}
 
-    ficha = _resolve_ficha_for_render(params)
+    ficha = resolve_payload_or_store(
+        _db(), params, "ficha", "Ficha no encontrada: envíe la ficha actual o un id válido"
+    )
     html = render_ficha_html(ficha, params.get("logo_left"), params.get("logo_right"))
     return {"html": html, "filename": f"ficha_tecnica_{ficha.get('id') or 'inline'}.pdf"}
 
@@ -125,14 +108,9 @@ def fichas_tecnicas_render_html(params: dict[str, Any]) -> dict[str, Any]:
 def fichas_tecnicas_render_consolidated_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.fichas_tecnicas.rendering import render_consolidated_html
 
-    fichas = _db().get_all()
-    ficha_ids = params.get("ficha_ids")
-    if isinstance(ficha_ids, list) and ficha_ids:
-        allowed = {str(fid) for fid in ficha_ids}
-        fichas = [f for f in fichas if f["id"] in allowed]
-    if not fichas:
-        msg = "No hay fichas para exportar"
-        raise ValueError(msg)
+    fichas = filter_by_optional_ids(
+        _db().get_all(), params.get("ficha_ids"), "No hay fichas para exportar"
+    )
     fichas.sort(key=lambda f: str(f.get("id", "")))
     html = render_consolidated_html(fichas, params.get("logo_left"), params.get("logo_right"))
     return {

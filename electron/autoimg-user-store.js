@@ -1,17 +1,9 @@
 const { readSecureJson, writeSecureJson, clearSecureJson, migratePlaintextJson } = require('./autoimg-secure-storage');
+const { validateClientId } = require('./autoimg-security');
 const { scopedFilename, scopedNamespace, getActiveUserKey } = require('./autoimg-user-scope');
 
 const OAUTH_CONFIG_FILE = 'autoimg-oauth-config.json';
 const OAUTH_CONFIG_NS = 'oauth';
-
-function _validateClientId(clientId) {
-  if (!clientId) return;
-  if (!clientId.endsWith('.apps.googleusercontent.com')) {
-    throw new Error(
-      'Client ID inválido. Debe ser de tipo "Aplicación de escritorio" en Google Cloud y terminar en .apps.googleusercontent.com',
-    );
-  }
-}
 
 function loadOAuthConfigFromDisk() {
   migratePlaintextJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, (raw) => (
@@ -29,7 +21,7 @@ function saveOAuthConfig(clientId, clientSecret) {
   const id = String(clientId || '').trim();
   const secret = String(clientSecret || '').trim();
   if (!id || id.length < 12) throw new Error('Client ID inválido');
-  _validateClientId(id);
+  validateClientId(id);
   if (!secret || secret.length < 8) throw new Error('Client Secret inválido');
   writeSecureJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, { client_id: id, client_secret: secret });
   return { success: true };

@@ -42,7 +42,12 @@ interface DesignStageProps {
   onEditValue: (id: string, value: string, contentHeightPx?: number, zoom?: number) => void;
   onFitTextHeight: (id: string, contentHeightPx: number, zoom: number) => void;
   onCommitEdit: () => void;
-  onContextMenu: (layerId: string | null, clientX: number, clientY: number) => void;
+  onContextMenu: (
+    layerId: string | null,
+    clientX: number,
+    clientY: number,
+    pointMm?: { x: number; y: number },
+  ) => void;
   onUpsertGuide?: (guide: CanvasGuide) => void;
   onCommitGuideCreate?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
@@ -61,6 +66,10 @@ interface DesignStageProps {
   onShowRightPanel?: () => void;
   reopenDisabled?: boolean;
   gestureAbortToken?: number;
+  enteredGroupId?: string | null;
+  onExitGroupEdit?: () => void;
+  eyedropperActive?: boolean;
+  onEyedropperPick?: (color: string) => void;
   children?: React.ReactNode;
 }
 
@@ -91,7 +100,7 @@ export default function DesignStage({
   onMoveGuide,
   onRemoveGuide,
   onCancelGuideCreate,
-  showRulers = true,
+  showRulers = false,
   onToggleRulers,
   snapToGrid = false,
   onToggleSnapToGrid,
@@ -104,11 +113,30 @@ export default function DesignStage({
   onShowRightPanel,
   reopenDisabled = false,
   gestureAbortToken = 0,
+  enteredGroupId = null,
+  onExitGroupEdit,
+  eyedropperActive = false,
+  onEyedropperPick,
   children,
 }: DesignStageProps) {
-  const { zoom, pan, setZoom, setPan, animateTo, startInertia, cancelInertia } = useSmoothViewport(1);
+  const { zoom, pan, setZoom, setPan, animateTo, startInertia, cancelInertia, getZoom, getPan, subscribe } =
+    useSmoothViewport(1);
 
-  const animateZoomTo = useCallback((z: number) => animateTo({ zoom: z, pan }), [animateTo, pan]);
+  const camera = useMemo(() => ({ subscribe, getZoom, getPan }), [subscribe, getZoom, getPan]);
+
+  const handleEditValue = useCallback(
+    (id: string, v: string, h?: number) => onEditValue(id, v, h, 1),
+    [onEditValue],
+  );
+  const handleFitTextHeight = useCallback(
+    (id: string, h: number) => onFitTextHeight(id, h, 1),
+    [onFitTextHeight],
+  );
+
+  const animateZoomTo = useCallback(
+    (z: number) => animateTo({ zoom: z, pan: getPan() }),
+    [animateTo, getPan],
+  );
 
   const artboardDocument = useMemo(
     () => ({ ...document, layers: pageLayers }),
@@ -148,25 +176,26 @@ export default function DesignStage({
   useImperativeHandle(
     navRef,
     () => ({
-      getZoom: () => zoom,
-      getPan: () => pan,
+      getZoom,
+      getPan,
       setZoom,
       setPan,
       zoomToFit,
       zoomToSelection,
       animateTo,
     }),
-    [zoom, pan, setZoom, setPan, zoomToFit, zoomToSelection, animateTo],
+    [getZoom, getPan, setZoom, setPan, zoomToFit, zoomToSelection, animateTo],
   );
 
   return (
-    <div className="relative h-full min-h-0 min-w-0 flex-1">
+    <div className="relative h-full min-h-0 min-w-0 flex-1 isolate">
       <Artboard
         document={artboardDocument}
         selectedIds={selectedIds}
         zoom={zoom}
         tool={tool}
         pan={pan}
+        camera={camera}
         pageIndex={pageIndex}
         editingLayerId={editingLayerId}
         editingSelectAll={editingSelectAll}
@@ -181,8 +210,8 @@ export default function DesignStage({
         onDrawLayer={onDrawLayer}
         onStartEdit={onStartEdit}
         onStartPathEdit={onStartPathEdit}
-        onEditValue={(id, v, h) => onEditValue(id, v, h, 1)}
-        onFitTextHeight={(id, h) => onFitTextHeight(id, h, 1)}
+        onEditValue={handleEditValue}
+        onFitTextHeight={handleFitTextHeight}
         onCommitEdit={onCommitEdit}
         onContextMenu={onContextMenu}
         onUpsertGuide={onUpsertGuide}
@@ -195,9 +224,16 @@ export default function DesignStage({
         onStartInertia={startInertia}
         onCancelInertia={cancelInertia}
         gestureAbortToken={gestureAbortToken}
+        enteredGroupId={enteredGroupId}
+        onExitGroupEdit={onExitGroupEdit}
+        eyedropperActive={eyedropperActive}
+        onEyedropperPick={onEyedropperPick}
       />
       {showLeftReopen && onShowLeftPanel ? (
-        <div className="pointer-events-auto absolute left-3 top-3 z-30">
+        <div
+          className="pointer-events-auto absolute left-3 top-3 z-30"
+          style={showRulers ? { top: 'calc(20px + 0.75rem)', left: 'calc(20px + 0.75rem)' } : undefined}
+        >
           <WithHoverTooltip label="Mostrar panel izquierdo" placement="bottom" variant="dark">
             <button
               type="button"
@@ -216,6 +252,7 @@ export default function DesignStage({
         <div
           className="pointer-events-auto absolute right-3 top-3 z-30 flex items-center gap-0.5"
           data-testid="canvas-stage-right-chrome"
+          style={showRulers ? { top: 'calc(20px + 0.75rem)' } : undefined}
         >
           {showZoomFallback ? (
             <div ref={zoomFallbackSlotRef} data-testid="canvas-zoom-slot-fallback" />

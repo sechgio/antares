@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import base64
-import os
-import tempfile
-from pathlib import Path
 from typing import Any
 
 from backend.core.panel_aviso_corte import build_panels, parse_excel_bytes, render_docx, render_pdf
 from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, MatchRule
 from backend.core.panel_aviso_corte.serialization import deserialize_panel
 from backend.handlers.common import validate_params, with_locale
+from backend.utils.atomic_write import atomic_output_file
 from backend.utils.image_data import decode_b64_payload
 
 
@@ -104,20 +102,9 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
         )
         if output_path:
             resolved = params.get("_resolved_output_path") or output_path
-            from backend.utils.validators import sanitizar_nombre as _sn2
-            safe = _sn2(Path(resolved).name) or Path(resolved).name
-            if not safe.lower().endswith(".docx"):
-                safe += ".docx"
-            out = Path(resolved).parent / safe
-            if out.is_symlink() or out.parent.is_symlink():
-                raise ValueError("symlink no permitido en ruta de salida")
-            out.parent.mkdir(parents=True, exist_ok=True)
-            if out.exists():
-                raise FileExistsError(f"El archivo ya existe: {out}")
-            tmp = out.with_suffix(out.suffix + ".tmp")
-            tmp.write_bytes(docx_bytes)
-            import os as _os3
-            _os3.replace(tmp, out)
+            with atomic_output_file(resolved, extension=".docx") as target:
+                target.tmp_path.write_bytes(docx_bytes)
+            out = target.destination
             return {
                 "pdf_base64": "",
                 "content_base64": "",
@@ -144,20 +131,9 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     )
     if output_path:
         resolved = params.get("_resolved_output_path") or output_path
-        from backend.utils.validators import sanitizar_nombre as _sn3
-        safe = _sn3(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".pdf"):
-            safe += ".pdf"
-        out = Path(resolved).parent / safe
-        if out.is_symlink() or out.parent.is_symlink():
-            raise ValueError("symlink no permitido en ruta de salida")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        if out.exists():
-            raise FileExistsError(f"El archivo ya existe: {out}")
-        tmp = out.with_suffix(out.suffix + ".tmp")
-        tmp.write_bytes(pdf_bytes)
-        import os as _os4
-        _os4.replace(tmp, out)
+        with atomic_output_file(resolved, extension=".pdf") as target:
+            target.tmp_path.write_bytes(pdf_bytes)
+        out = target.destination
         return {
             "pdf_base64": "",
             "content_base64": "",
@@ -185,67 +161,42 @@ def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
     resolved_path = str(params.get("_resolved_output_path") or raw_path).strip()
     if not resolved_path.lower().endswith(".xlsx"):
         resolved_path = f"{resolved_path}.xlsx"
-    from backend.utils.validators import sanitizar_nombre as _sn4
-    safe = _sn4(Path(resolved_path).name) or Path(resolved_path).name
-    if not safe.lower().endswith(".xlsx"):
-        safe += ".xlsx"
-    destination = Path(resolved_path).parent / safe
-    if Path(resolved_path) != destination and not params.get("_write_token"):
-        pass
-    if destination.is_symlink() or destination.parent.is_symlink():
-        raise ValueError("symlink no permitido en ruta de salida")
     overwrite = params.get("overwrite") is True
-    if destination.exists() and not overwrite:
-        msg = f"El archivo de destino ya existe: {destination}"
-        raise FileExistsError(msg)
-    destination.parent.mkdir(parents=True, exist_ok=True)
 
-    try:
-        import pandas as pd
-    except ImportError as exc:
-        msg = "pandas no está instalado."
-        raise ImportError(msg) from exc
+    with atomic_output_file(
+        resolved_path,
+        extension=".xlsx",
+        overwrite=overwrite,
+        exists_message="El archivo de destino ya existe: {path}",
+    ) as target:
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            msg = "pandas no está instalado."
+            raise ImportError(msg) from exc
 
-    columns = [
-        "ID",
-        "DIRECCION",
-        "FECHA DE CORTE",
-        "CUADRANTE AFECTADO",
-        "MOTIVO",
-    ]
-    df = pd.DataFrame(columns=columns)
+        columns = [
+            "ID",
+            "DIRECCION",
+            "FECHA DE CORTE",
+            "CUADRANTE AFECTADO",
+            "MOTIVO",
+        ]
+        df = pd.DataFrame(columns=columns)
 
-    data = [
-        ["1001", "Calle Las Flores 123, Urbanización Santa Rosa", "2024-05-15", "CUADRANTE A-12", "Mantenimiento Preventivo de Redes"],
-        ["1002", "Av. Principal 456, Sector 4", "2024-05-15", "CUADRANTE B-05", "Reparación de Tubería Matriz"],
-        ["1003", "Jr. Independencia 789", "2024-05-16", "CUADRANTE C-08", "Mejora de Presión en la Zona"],
-        ["1004", "Pasaje El Olivo 101", "2024-05-17", "CUADRANTE D-11", "Conexión de Nuevas Redes"],
-    ]
+        data = [
+            ["1001", "Calle Las Flores 123, Urbanización Santa Rosa", "2024-05-15", "CUADRANTE A-12", "Mantenimiento Preventivo de Redes"],
+            ["1002", "Av. Principal 456, Sector 4", "2024-05-15", "CUADRANTE B-05", "Reparación de Tubería Matriz"],
+            ["1003", "Jr. Independencia 789", "2024-05-16", "CUADRANTE C-08", "Mejora de Presión en la Zona"],
+            ["1004", "Pasaje El Olivo 101", "2024-05-17", "CUADRANTE D-11", "Conexión de Nuevas Redes"],
+        ]
 
-    for i, row in enumerate(data):
-        df.loc[i] = row
+        for i, row in enumerate(data):
+            df.loc[i] = row
 
-    if not overwrite:
-        with pd.ExcelWriter(destination, engine="openpyxl", mode="x") as writer:
-            df.to_excel(writer, index=False)
-        return {"path": str(destination)}
+        df.to_excel(target.tmp_path, index=False, engine="openpyxl")
 
-    temporary_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            dir=destination.parent,
-            prefix=f".{destination.stem}-",
-            suffix=destination.suffix,
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-        df.to_excel(temporary_path, index=False, engine="openpyxl")
-        os.replace(temporary_path, destination)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
-
-    return {"path": str(destination)}
+    return {"path": str(target.destination)}
 
 HANDLERS = {
     "panel_aviso_corte_parse_excel": panel_aviso_corte_parse_excel,

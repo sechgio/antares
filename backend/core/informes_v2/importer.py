@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import csv
-import io
 import re
-import unicodedata
 from datetime import date, datetime
 from typing import Any
-
-from openpyxl import load_workbook
 
 from backend.core.informes_v2.models import (
     DIAMETERS,
@@ -16,6 +11,13 @@ from backend.core.informes_v2.models import (
     InformeV2,
     create_empty_report,
     report_id_from_number,
+)
+from backend.core.tabular_report_import import (
+    import_reports,
+    normalize_tabular_header,
+    normalize_tabular_key,
+    parse_csv_rows,
+    parse_xlsx_rows,
 )
 from backend.utils.coercion import safe_int as _safe_int
 from backend.utils.coercion import safe_str as _safe_str
@@ -138,164 +140,35 @@ for field, aliases in MEDIDA_ALIASES.items():
 
 
 def normalize_header_value(value: str) -> str:
-    if not value:
-        return ""
-    text = str(value).strip().lower().replace("\ufeff", "")
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = re.sub(r"\b(de|del|la|el)\b", "", text)
-    return re.sub(r"[\s_\.:\-°/()\"']+", "", text)
+    return normalize_tabular_header(value, strip_quotes=True)
 
 
 def normalize_csv_key(value: str) -> str:
-    mapped = COLUMN_MAPPING.get(normalize_header_value(value))
-    if mapped:
-        return mapped
-    text = str(value or "").strip().lower().replace("\ufeff", "")
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = re.sub(r"[^a-z0-9]+", "_", text)
-    return text.strip("_")
+    return normalize_tabular_key(value, COLUMN_MAPPING, normalize_header_value)
 
 
 def import_reports_from_bytes(filename: str, content: bytes) -> list[dict[str, Any]]:
-    lower_name = filename.lower()
-    if lower_name.endswith(".csv"):
-        rows = parse_csv_file(content)
-    elif lower_name.endswith(".xlsx") or lower_name.endswith(".xls"):
-        rows = parse_xlsx_file(content)
-    else:
-        msg = "Formato no soportado. Use archivos .csv o .xlsx"
-        raise ValueError(msg)
-    if not rows:
-        msg = "El archivo esta vacio o no tiene datos validos"
-        raise ValueError(msg)
-
-    reports: list[dict[str, Any]] = []
-    used_numbers: set[int] = set()
-    next_report_number = 1
-
-    for row in rows:
-        explicit_number = _safe_int(row.get("informe_id"), 0)
-        if explicit_number > 0 and explicit_number not in used_numbers:
-            report_number = explicit_number
-        else:
-            while next_report_number in used_numbers:
-                next_report_number += 1
-            report_number = next_report_number
-
-        used_numbers.add(report_number)
-        next_report_number = max(next_report_number, report_number) + 1
-        reports.append(transform_flat_to_nested(row, report_number))
-
-    return reports
+    return import_reports(
+        filename,
+        content,
+        parse_csv=parse_csv_file,
+        parse_xlsx=parse_xlsx_file,
+        transform_row=transform_flat_to_nested,
+        to_int=_safe_int,
+    )
 
 
 def parse_csv_file(content: bytes) -> list[dict[str, Any]]:
-    text: str | None = None
-    for encoding in ("utf-8-sig", "utf-8", "latin-1", "cp1252", "iso-8859-1"):
-        try:
-            text = content.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-
-    if text is None:
-        msg = "No se pudo decodificar el archivo CSV"
-        raise ValueError(msg)
-
-    def _read_rows(delimiter: str) -> list[dict[str, Any]]:
-        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-        parsed_rows: list[dict[str, Any]] = []
-        for row in reader:
-            normalized = {normalize_csv_key(key): value for key, value in row.items() if key is not None}
-            if any(str(value or "").strip() for value in normalized.values()):
-                parsed_rows.append(normalized)
-        return parsed_rows
-
-    semicolon_rows = _read_rows(";")
-    comma_rows = _read_rows(",")
-    tab_rows = _read_rows("\t")
-
-    def _mapped_col_count(rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        return len([k for k in rows[0] if k and k in COLUMN_MAPPING.values()])
-
-    semi_cols = _mapped_col_count(semicolon_rows)
-    comma_cols = _mapped_col_count(comma_rows)
-    tab_cols = _mapped_col_count(tab_rows)
-    best_cols = max(semi_cols, comma_cols, tab_cols)
-    if best_cols >= 1:
-        if semi_cols == best_cols and semicolon_rows:
-            return semicolon_rows
-        if tab_cols == best_cols and tab_rows:
-            return tab_rows
-        if comma_rows:
-            return comma_rows
-    return semicolon_rows or comma_rows or tab_rows
+    return parse_csv_rows(content, column_mapping=COLUMN_MAPPING, normalize_key=normalize_csv_key)
 
 
 def parse_xlsx_file(content: bytes) -> list[dict[str, Any]]:
-    try:
-        workbook = load_workbook(io.BytesIO(content), data_only=True)
-    except Exception as err:
-        msg = f"Error al abrir el archivo Excel: {err}"
-        raise ValueError(msg) from err
-
-    sheets = workbook.worksheets
-    if not sheets:
-        return []
-
-    best_rows: list[dict[str, Any]] = []
-    best_sheet_score = -1
-
-    for worksheet in sheets:
-        rows_iter = list(worksheet.iter_rows(values_only=True))
-        if not rows_iter:
-            continue
-
-        header_idx = -1
-        best_score = -1
-        for idx, row_tuple in enumerate(rows_iter[:10]):
-            non_empty = [v for v in row_tuple if v is not None and str(v).strip() != ""]
-            if not non_empty:
-                continue
-            score = sum(1 for v in non_empty if normalize_header_value(str(v)) in COLUMN_MAPPING)
-            if score > best_score:
-                best_score = score
-                header_idx = idx
-
-        if header_idx == -1 or best_score <= 0:
-            for idx, row_tuple in enumerate(rows_iter[:10]):
-                if any(v is not None and str(v).strip() != "" for v in row_tuple):
-                    header_idx = idx
-                    break
-
-        if header_idx == -1:
-            continue
-
-        headers = rows_iter[header_idx]
-        keys = [normalize_csv_key(str(header or "")) for header in headers]
-        rows: list[dict[str, Any]] = []
-        consecutive_empty = 0
-        for values in rows_iter[header_idx + 1 :]:
-            row_dict: dict[str, Any] = {
-                keys[idx]: values[idx] for idx in range(min(len(keys), len(values))) if keys[idx]
-            }
-            if any(value is not None and str(value or "").strip() != "" for value in row_dict.values()):
-                rows.append(row_dict)
-                consecutive_empty = 0
-            else:
-                consecutive_empty += 1
-                if consecutive_empty >= 50:
-                    break
-
-        if rows and best_score > best_sheet_score:
-            best_sheet_score = best_score
-            best_rows = rows
-
-    return best_rows
+    return parse_xlsx_rows(
+        content,
+        column_mapping=COLUMN_MAPPING,
+        normalize_header=normalize_header_value,
+        normalize_key=normalize_csv_key,
+    )
 
 
 def transform_flat_to_nested(row: dict[str, Any], fallback_report_number: int = 1) -> dict[str, Any]:

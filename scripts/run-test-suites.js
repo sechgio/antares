@@ -35,6 +35,7 @@ function run(command, args, cwd = ROOT) {
     env: process.env,
     stdio: 'inherit',
     windowsHide: true,
+    shell: process.platform === 'win32' && String(command).toLowerCase().endsWith('.cmd'),
   });
   if (result.error) {
     console.error(`Failed to start ${command}: ${result.error.message}`);

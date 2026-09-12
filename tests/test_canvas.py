@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -36,6 +37,38 @@ def test_store_save_can_preserve_updated_at(tmp_path: Path) -> None:
     assert saved["name"] == "Renamed"
     listed = store.list_documents()
     assert listed[0]["updatedAt"] == "2020-01-01T00:00:00.000Z"
+
+
+def test_store_rejects_document_above_local_storage_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = CanvasStore(tmp_path)
+    monkeypatch.setattr(canvas_store_mod, "MAX_CANVAS_DOCUMENT_BYTES", 256, raising=False)
+    document = create_empty_document(name="x" * 512)
+
+    with pytest.raises(ValueError, match="límite de almacenamiento"):
+        store.save(document)
+
+    assert list(tmp_path.glob("*.json")) == []
+
+
+def test_store_rejects_history_above_aggregate_storage_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="History budget")
+    monkeypatch.setattr(canvas_store_mod, "_MAX_HISTORY_ENTRY_BYTES", 200)
+    monkeypatch.setattr(canvas_store_mod, "MAX_CANVAS_HISTORY_BYTES", 256, raising=False)
+    entry = {"type": "diff", "ops": [{"v": "x" * 100}]}
+
+    with pytest.raises(ValueError, match="límite agregado"):
+        store.save_history(created["id"], [entry, entry], [])
+
+    assert not store._history_path_for(created["id"]).exists()
+
+
+def test_canvas_storage_budget_constants_match_frontend_contract() -> None:
+    assert getattr(canvas_store_mod, "MAX_CANVAS_DOCUMENT_BYTES", None) == 16 * 1024 * 1024
+    assert getattr(canvas_store_mod, "MAX_CANVAS_HISTORY_BYTES", None) == 64 * 1024 * 1024
 
 
 def test_normalize_accepts_new_layer_types() -> None:
@@ -329,6 +362,76 @@ def test_normalize_meta_omits_invalid_auto_layout() -> None:
     assert bad["meta"]["key"] == "keep-me"
 
 
+def test_normalize_meta_rejects_non_finite_auto_layout_values_and_non_boolean_wrap() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "non-finite",
+            "type": "group",
+            "name": "Non-finite",
+            "value": "",
+            "pageIndex": 0,
+            "meta": {
+                "autoLayout": {
+                    "direction": "row",
+                    "gapMm": float("inf"),
+                    "padMm": 2,
+                    "alignMain": "center",
+                    "alignCross": "start",
+                    "sizing": "hug",
+                },
+            },
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "10mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+    raw["layers"].append(
+        {
+            "id": "invalid-options",
+            "type": "group",
+            "name": "Invalid options",
+            "value": "",
+            "pageIndex": 0,
+            "meta": {
+                "autoLayout": {
+                    "direction": "row",
+                    "gapMm": 1,
+                    "padMm": 2,
+                    "padTopMm": float("inf"),
+                    "wrap": "false",
+                    "crossGapMm": float("nan"),
+                    "alignMain": "center",
+                    "alignCross": "start",
+                    "sizing": "hug",
+                },
+            },
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "10mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+
+    doc = normalize_document(raw)
+    non_finite = next(layer for layer in doc["layers"] if layer["id"] == "non-finite")
+    invalid_options = next(layer for layer in doc["layers"] if layer["id"] == "invalid-options")
+    assert "meta" not in non_finite
+    assert invalid_options["meta"]["autoLayout"] == {
+        "direction": "row",
+        "gapMm": 1.0,
+        "padMm": 2.0,
+        "alignMain": "center",
+        "alignCross": "start",
+        "sizing": "hug",
+    }
+
+
 def test_normalize_preserves_guide_page_index() -> None:
     raw = create_empty_document()
     raw["guides"] = [
@@ -431,6 +534,67 @@ def test_store_crud_roundtrip(tmp_path: Path) -> None:
 
     assert store.delete(saved["id"]) is True
     assert store.get(saved["id"]) is None
+
+
+def test_store_uses_per_document_locks(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    assert store._doc_lock("doc-a") is store._doc_lock("doc-a")
+    assert store._doc_lock("doc-a") is not store._doc_lock("doc-b")
+
+
+def test_store_concurrent_saves_distinct_docs(tmp_path: Path) -> None:
+    import concurrent.futures
+
+    store = CanvasStore(tmp_path)
+    docs = [store.create(name=f"Doc {i}") for i in range(8)]
+    errors: list[BaseException] = []
+
+    def hammer(doc: dict[str, Any]) -> None:  # allowlist: dict[str, Any]
+        try:
+            for round_no in range(10):
+                doc["name"] = f"{doc['name']} r{round_no}"
+                store.save(doc)
+                store.get(doc["id"])
+                store.save_history(doc["id"], [doc], [])
+                store.get_history(doc["id"])
+        except BaseException as exc:
+            errors.append(exc)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(hammer, docs))
+
+    assert not errors
+    assert len(store.list_documents()) == 8
+    for doc in docs:
+        assert store.get(doc["id"]) is not None
+
+
+def test_store_delete_evicts_document_lock(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Lock evict")
+    doc_id = str(created["id"])
+    store._doc_lock(doc_id)
+    stem = store._safe_stem(doc_id)
+    assert stem in store._doc_locks
+
+    assert store.delete(doc_id) is True
+    assert stem not in store._doc_locks
+
+
+def test_store_delete_cleans_pending_spills(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Spill delete")
+    doc_id = str(created["id"])
+    spill_dir = tmp_path.parent / "spill"
+    spill_dir.mkdir(parents=True)
+    doc_spill = spill_dir / f"{doc_id}.json"
+    history_spill = spill_dir / f"{doc_id}_history.json"
+    doc_spill.write_text("{}", encoding="utf-8")
+    history_spill.write_text('{"past":[],"future":[]}', encoding="utf-8")
+
+    assert store.delete(doc_id) is True
+    assert not doc_spill.exists()
+    assert not history_spill.exists()
 
 
 def test_duplicate_document_new_ids() -> None:
@@ -617,6 +781,7 @@ def test_handlers_with_injected_store(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr("backend.core.canvas.get_canvas_store", _get_store)
 
     assert canvas_handlers.canvas_list({}) == {"documents": []}
+    assert canvas_handlers.canvas_bootstrap({}) == {"documents": [], "document": None}
     created = canvas_handlers.canvas_create({"name": "X"})
     assert created["document"]["name"] == "X"
     listed = canvas_handlers.canvas_list({})
@@ -624,6 +789,10 @@ def test_handlers_with_injected_store(tmp_path: Path, monkeypatch: pytest.Monkey
 
     got = canvas_handlers.canvas_get({"id": created["document"]["id"]})
     assert got["document"]["id"] == created["document"]["id"]
+
+    boot = canvas_handlers.canvas_bootstrap({})
+    assert boot["documents"][0]["id"] == created["document"]["id"]
+    assert boot["document"]["id"] == created["document"]["id"]
 
     dup = canvas_handlers.canvas_duplicate({"id": created["document"]["id"]})
     assert dup["document"]["id"] != created["document"]["id"]
@@ -1263,3 +1432,218 @@ def test_normalize_prunes_dangling_and_self_referencing_parent_id() -> None:
     assert "parentId" not in self_loop
 
 
+def test_normalize_preserves_autolayout_padding_and_meta_variants() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "frame-auto",
+            "type": "frame",
+            "name": "AutoLayout Frame",
+            "value": "",
+            "cssVars": {"--width": "50mm", "--height": "30mm", "--translate-x": "0mm", "--translate-y": "0mm"},
+            "meta": {
+                "autoLayout": {
+                    "direction": "row",
+                    "gapMm": 4.0,
+                    "padMm": 8.0,
+                    "padTopMm": 10.0,
+                    "padRightMm": 12.0,
+                    "padBottomMm": 6.0,
+                    "padLeftMm": 14.0,
+                    "alignMain": "center",
+                    "alignCross": "stretch",
+                    "sizing": "hug",
+                    "wrap": True,
+                    "crossGapMm": 5.5,
+                },
+                "layoutSizingMain": "fill",
+                "layoutSizingCross": "hug",
+                "variantProps": {"theme": "dark", "size": "lg"},
+                "variantBinding": {
+                    "fieldKey": "estado",
+                    "fallbackVariant": "normal",
+                    "mapping": {"A": "alta", "B": "baja"},
+                    "propBindings": {
+                        "tipo": {"fieldKey": "cat", "fallback": "def"},
+                    },
+                },
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    layer = next(lyr for lyr in doc["layers"] if lyr["id"] == "frame-auto")
+    meta = layer.get("meta") or {}
+    al = meta.get("autoLayout") or {}
+    assert al.get("padTopMm") == 10.0
+    assert al.get("padRightMm") == 12.0
+    assert al.get("padBottomMm") == 6.0
+    assert al.get("padLeftMm") == 14.0
+    assert al.get("wrap") is True
+    assert al.get("crossGapMm") == 5.5
+    assert meta.get("layoutSizingMain") == "fill"
+    assert meta.get("layoutSizingCross") == "hug"
+    assert meta.get("variantProps") == {"theme": "dark", "size": "lg"}
+    assert meta.get("variantBinding") == {
+        "fieldKey": "estado",
+        "fallbackVariant": "normal",
+        "mapping": {"A": "alta", "B": "baja"},
+        "propBindings": {
+            "tipo": {"fieldKey": "cat", "fallback": "def"},
+        },
+    }
+
+
+def _count_document_serializations(monkeypatch: pytest.MonkeyPatch, doc_id: str) -> list[int]:
+    """Count `json.dumps` calls that serialize the document carrying `doc_id`.
+
+    The payload reaches `json.dumps` as the normalized copy, so identity checks
+    do not work; matching on the document id does.
+    """
+    real_dumps = canvas_store_mod.json.dumps
+    calls: list[int] = []
+
+    def counting_dumps(obj: object, *args: object, **kwargs: object) -> str:
+        if isinstance(obj, dict) and obj.get("id") == doc_id:
+            calls.append(1)
+        return real_dumps(obj, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_store_mod.json, "dumps", counting_dumps)
+    return calls
+
+
+def test_store_save_serializes_the_document_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CanvasStore(tmp_path)
+    document = create_empty_document(name="Serialización única")
+    document["layers"].append({"id": "layer-big", "type": "text", "name": "Big", "value": "x" * 200_000})
+    doc_id = str(document["id"])
+    calls = _count_document_serializations(monkeypatch, doc_id)
+
+    store.save(document)
+
+    assert len(calls) == 1, f"the document must be serialized once, got {len(calls)}"
+    assert (tmp_path / f"{doc_id}.json").exists()
+
+
+def test_canvas_save_handler_serializes_the_document_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CanvasStore(tmp_path)
+    monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
+    monkeypatch.setattr(canvas_handlers, "is_memory_pressure", lambda: False)
+    document = create_empty_document(name="Handler single encode")
+    document["layers"].append({"id": "layer-big", "type": "text", "name": "Big", "value": "x" * 200_000})
+    doc_id = str(document["id"])
+    calls = _count_document_serializations(monkeypatch, doc_id)
+
+    result = canvas_handlers.canvas_save({"document": document})
+
+    assert result["document"]["id"] == doc_id
+    assert len(calls) == 1, f"canvas_save must serialize the document once, got {len(calls)}"
+
+
+def test_store_save_history_serializes_the_payload_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="History single encode")
+    doc_id = str(created["id"])
+    entry = {"type": "diff", "ops": [{"v": "y" * 50_000}]}
+
+    real_dumps = canvas_store_mod.json.dumps
+    calls: list[int] = []
+
+    def counting_dumps(obj: object, *args: object, **kwargs: object) -> str:
+        if isinstance(obj, dict) and set(obj) == {"past", "future"}:
+            calls.append(1)
+        return real_dumps(obj, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_store_mod.json, "dumps", counting_dumps)
+
+    store.save_history(doc_id, [entry], [entry])
+
+    assert len(calls) == 1, f"the history payload must be serialized once, got {len(calls)}"
+    assert store._history_path_for(doc_id).exists()
+
+
+def test_canvas_save_handler_serializes_history_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CanvasStore(tmp_path)
+    monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
+    monkeypatch.setattr(canvas_handlers, "is_memory_pressure", lambda: False)
+    created = store.create(name="History IPC single encode")
+    doc_id = str(created["id"])
+    entry = {"type": "diff", "ops": [{"v": "z" * 50_000}]}
+
+    real_dumps = canvas_store_mod.json.dumps
+    calls: list[int] = []
+
+    def counting_dumps(obj: object, *args: object, **kwargs: object) -> str:
+        if isinstance(obj, dict) and set(obj) == {"past", "future"}:
+            calls.append(1)
+        return real_dumps(obj, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_store_mod.json, "dumps", counting_dumps)
+
+    canvas_handlers.canvas_save_history({"id": doc_id, "past": [entry], "future": [entry]})
+
+    assert len(calls) == 1, f"canvas_save_history must serialize the payload once, got {len(calls)}"
+
+
+def test_canvas_save_reports_unencodable_documents_as_validation_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A payload that cannot be encoded must still surface as a ValidationError.
+
+    `CanvasStore.save` now owns the single serialization, so it has to translate
+    encoding failures itself instead of relying on the handler pre-check.
+    """
+    store = CanvasStore(tmp_path)
+    monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
+    monkeypatch.setattr(canvas_handlers, "is_memory_pressure", lambda: False)
+    document = create_empty_document(name="\ud800")
+
+    with pytest.raises(ValidationError, match="no serializables") as exc_info:
+        canvas_handlers.canvas_save({"document": document})
+
+    assert list(tmp_path.glob("*.json")) == []
+    # A serialization failure is not a size-limit failure: no limit_bytes detail.
+    assert "limit_bytes" not in exc_info.value.details
+
+
+def test_canvas_save_reports_limit_bytes_only_on_size_violations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CanvasStore(tmp_path)
+    monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
+    monkeypatch.setattr(canvas_handlers, "is_memory_pressure", lambda: False)
+    monkeypatch.setattr(canvas_store_mod, "MAX_CANVAS_DOCUMENT_BYTES", 64, raising=False)
+    monkeypatch.setattr(canvas_handlers, "MAX_CANVAS_DOCUMENT_BYTES", 64)
+
+    document = create_empty_document(name="x" * 512)
+    with pytest.raises(ValidationError, match="límite") as exc_info:
+        canvas_handlers.canvas_save({"document": document})
+    assert exc_info.value.details.get("limit_bytes") == 64
+
+
+def test_canvas_save_history_reports_unencodable_payloads_as_validation_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CanvasStore(tmp_path)
+    monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
+    monkeypatch.setattr(canvas_handlers, "is_memory_pressure", lambda: False)
+    created = store.create(name="History unencodable")
+
+    with pytest.raises(ValidationError, match="no serializables"):
+        canvas_handlers.canvas_save_history(
+            {"id": created["id"], "past": [{"type": "diff", "ops": [{"v": "\ud800"}]}], "future": []},
+        )

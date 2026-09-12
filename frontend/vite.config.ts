@@ -15,7 +15,7 @@ const sharedHtmlSanitizerPlugin = {
 
     const match = code.match(/module\.exports\s*=\s*\{([\s\S]*?)\}\s*;/)
     if (!match) {
-      return `${code}\nexport { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };\n`
+      return `${code}\nexport { sanitizeHtmlForPdf, sanitizeHtmlForPreview, sanitizeHtmlForCanvasPreview, CSP_META, PREVIEW_CSP_META, CANVAS_PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };\n`
     }
     const raw = match[1]
     const keys = raw
@@ -26,7 +26,7 @@ const sharedHtmlSanitizerPlugin = {
     if (keys.length === 0) {
       return code.replace(
         /module\.exports\s*=\s*\{[\s\S]*?\}\s*;/,
-        'export { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };',
+        'export { sanitizeHtmlForPdf, sanitizeHtmlForPreview, sanitizeHtmlForCanvasPreview, CSP_META, PREVIEW_CSP_META, CANVAS_PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };',
       )
     }
     return code.replace(
@@ -123,9 +123,8 @@ export default defineConfig(({ mode }) => ({
     assetsInlineLimit: 4096,
     modulePreload: {
       resolveDependencies(_filename, deps) {
-        return deps.filter(
-          (dep) => !dep.includes('vendor-supabase') && !dep.includes('vendor-framer'),
-        )
+        const forbidden = budgets.shellPreload?.forbiddenShell ?? []
+        return deps.filter((dep) => !forbidden.some((name) => dep.includes(name)))
       },
     },
   },

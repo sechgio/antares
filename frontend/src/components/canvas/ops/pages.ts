@@ -1,5 +1,6 @@
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { DOCUMENT_VERSION, mm, newId } from '../types';
+import { expandWithDescendants } from './layerTree';
 
 export function getPageCount(doc: CanvasDocument): number {
   if (doc.pages?.length) return doc.pages.length;
@@ -20,6 +21,19 @@ export function indexLayersByPage(layers: readonly CanvasLayer[]): Map<number, C
     else index.set(pageIndex, [layer]);
   }
   return index;
+}
+
+export function filterSelectionToPage(
+  layers: readonly CanvasLayer[],
+  selectedIds: readonly string[],
+  pageIndex: number,
+): string[] {
+  const pageLayerIds = new Set(
+    layers
+      .filter((layer) => (layer.pageIndex ?? 0) === pageIndex)
+      .map((layer) => layer.id),
+  );
+  return selectedIds.filter((id) => pageLayerIds.has(id));
 }
 
 export function addPage(doc: CanvasDocument): CanvasDocument {
@@ -127,6 +141,60 @@ export function duplicatePage(doc: CanvasDocument, pageIndex: number): CanvasDoc
   ];
 
   return { ...doc, version: DOCUMENT_VERSION, pages, layers, guides };
+}
+
+export function reorderPage(
+  doc: CanvasDocument,
+  fromIndex: number,
+  toIndex: number,
+): CanvasDocument {
+  const count = getPageCount(doc);
+  if (fromIndex === toIndex) return doc;
+  if (fromIndex < 0 || fromIndex >= count || toIndex < 0 || toIndex >= count) return doc;
+  const pages = ensurePages(doc);
+  const [moved] = pages.splice(fromIndex, 1);
+  pages.splice(toIndex, 0, moved!);
+
+  const order = Array.from({ length: count }, (_, i) => i);
+  const [movedIdx] = order.splice(fromIndex, 1);
+  order.splice(toIndex, 0, movedIdx!);
+  const newIndexOf = new Map<number, number>();
+  order.forEach((oldIdx, newIdx) => newIndexOf.set(oldIdx, newIdx));
+  const remap = (idx: number | undefined) => newIndexOf.get(idx ?? 0) ?? 0;
+
+  return {
+    ...doc,
+    version: DOCUMENT_VERSION,
+    pages,
+    layers: doc.layers.map((layer) =>
+      (layer.pageIndex ?? 0) === remap(layer.pageIndex)
+        ? layer
+        : { ...layer, pageIndex: remap(layer.pageIndex) },
+    ),
+    guides: (doc.guides ?? []).map((guide) =>
+      (guide.pageIndex ?? 0) === remap(guide.pageIndex)
+        ? guide
+        : { ...guide, pageIndex: remap(guide.pageIndex) },
+    ),
+  };
+}
+
+export function moveLayersToPage(
+  doc: CanvasDocument,
+  ids: readonly string[],
+  targetPageIndex: number,
+): CanvasDocument {
+  const count = getPageCount(doc);
+  if (!ids.length || targetPageIndex < 0 || targetPageIndex >= count) return doc;
+  const expanded = new Set(expandWithDescendants(doc.layers, [...ids]));
+  let changed = false;
+  const layers = doc.layers.map((layer) => {
+    if (!expanded.has(layer.id) || layer.type === 'frame') return layer;
+    if ((layer.pageIndex ?? 0) === targetPageIndex) return layer;
+    changed = true;
+    return { ...layer, pageIndex: targetPageIndex };
+  });
+  return changed ? { ...doc, version: DOCUMENT_VERSION, layers } : doc;
 }
 
 export function renamePage(doc: CanvasDocument, pageIndex: number, name: string): CanvasDocument {

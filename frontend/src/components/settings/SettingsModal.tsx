@@ -31,11 +31,38 @@ const SECTION_ICONS: Record<ConfigSectionId, LucideIcon> = {
   petdex: PawPrint,
 };
 
+const SECTION_LABEL_KEYS: Record<ConfigSectionId, string> = {
+  appearance: 'tab.appearance',
+  history: 'tab.history',
+  panel: 'tab.panel',
+  petdex: 'tab.petdex',
+};
+
+const SECTION_HINTS: Record<ConfigSectionId, string> = {
+  appearance: 'Personaliza el aspecto de la aplicación',
+  history: 'Revisa las ejecuciones anteriores',
+  panel: 'Gestiona usuarios y permisos',
+  petdex: 'Colecciona y activa mascotas animadas',
+};
+
+const SECTION_OVERFLOW: Record<ConfigSectionId, string> = {
+  appearance: 'h-full overflow-y-auto',
+  history: 'h-full overflow-hidden',
+  panel: 'h-full overflow-y-auto',
+  petdex: 'h-full overflow-y-auto',
+};
+
+const SECTION_VIEWS: Record<ConfigSectionId, React.LazyExoticComponent<React.ComponentType>> = {
+  appearance: AppearanceView,
+  history: HistoryView,
+  panel: PanelView,
+  petdex: PetdexView,
+};
+
 export default function SettingsModal({ isOpen, section, onSectionChange, onClose }: SettingsModalProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const overlayRef = useRef<HTMLDivElement>(null);
-  const sectionButtonsRef = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useFocusTrap(overlayRef, isOpen);
 
@@ -67,19 +94,10 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [isOpen, onClose, section, onSectionChange, visibleSectionDefs]);
 
-  useEffect(() => {
-  }, [isOpen, section]);
-
   const sections = useMemo(
     () => visibleSectionDefs.map((def) => ({
       ...def,
-      label: def.id === 'appearance'
-        ? t('tab.appearance')
-        : def.id === 'history'
-        ? t('tab.history')
-        : def.id === 'panel'
-        ? t('tab.panel')
-        : t('tab.petdex'),
+      label: t(SECTION_LABEL_KEYS[def.id]),
       icon: SECTION_ICONS[def.id],
     })),
     [t, visibleSectionDefs],
@@ -97,6 +115,8 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
   };
 
   if (!isOpen) return null;
+
+  const SectionView = SECTION_VIEWS[section];
 
   return (
     <div
@@ -130,7 +150,6 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
               return (
                 <button
                   key={def.id}
-                  ref={(el) => { sectionButtonsRef.current[def.id] = el; }}
                   type="button"
                   onClick={() => onSectionChange(def.id)}
                   aria-current={isActive ? 'page' : undefined}
@@ -168,22 +187,10 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
           <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-6">
             <div className="flex min-w-0 items-center gap-3">
               <h2 className="truncate text-[15px] font-semibold text-[var(--text-primary)]">
-                {section === 'appearance'
-                  ? t('tab.appearance')
-                  : section === 'history'
-                  ? t('tab.history')
-                  : section === 'panel'
-                  ? t('tab.panel')
-                  : t('tab.petdex')}
+                {t(SECTION_LABEL_KEYS[section])}
               </h2>
               <span className="hidden text-[11px] font-medium text-[var(--text-muted)] sm:inline">
-                {section === 'appearance'
-                  ? 'Personaliza el aspecto de la aplicación'
-                  : section === 'history'
-                  ? 'Revisa las ejecuciones anteriores'
-                  : section === 'panel'
-                  ? 'Gestiona usuarios y permisos'
-                  : 'Colecciona y activa mascotas animadas'}
+                {SECTION_HINTS[section]}
               </span>
             </div>
             <WithHoverTooltip label="Cerrar (Esc)" placement="bottom">
@@ -200,34 +207,11 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
           </header>
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
-            {section === 'appearance' && (
-              <div className="h-full overflow-y-auto">
-                <Suspense fallback={sectionFallback}>
-                  <AppearanceView />
-                </Suspense>
-              </div>
-            )}
-            {section === 'history' && (
-              <div className="h-full overflow-hidden">
-                <Suspense fallback={sectionFallback}>
-                  <HistoryView />
-                </Suspense>
-              </div>
-            )}
-            {section === 'panel' && (
-              <div className="h-full overflow-y-auto">
-                <Suspense fallback={sectionFallback}>
-                  <PanelView />
-                </Suspense>
-              </div>
-            )}
-            {section === 'petdex' && (
-              <div className="h-full overflow-y-auto">
-                <Suspense fallback={sectionFallback}>
-                  <PetdexView />
-                </Suspense>
-              </div>
-            )}
+            <div className={SECTION_OVERFLOW[section]}>
+              <Suspense fallback={sectionFallback}>
+                <SectionView />
+              </Suspense>
+            </div>
           </div>
         </div>
       </div>

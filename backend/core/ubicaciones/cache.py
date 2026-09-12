@@ -541,8 +541,6 @@ def _spawn_prefetch(*args: Any, **kwargs: Any) -> None:
     ).start()
 
 
-_compose_preview = _compose_and_cache_preview
-
 __all__ = [
     "_MAP_NEGATIVE_TTL_SECONDS",
     "_MAX_COMPOSED_CACHE",
@@ -557,7 +555,6 @@ __all__ = [
     "_cache_lock",
     "_clear_ubicaciones_caches",
     "_compose_and_cache_preview",
-    "_compose_preview",
     "_composed_preview_key",
     "_encode_preview_data",
     "_estimate_excel_cache_bytes",

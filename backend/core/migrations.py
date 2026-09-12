@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -45,14 +46,29 @@ class MigrationManager:
         self.ensure_table()
         if self.is_applied(migration.id):
             return False
-        for sql in migration.sql:
-            self._execute_idempotent(sql)
+        if self.conn.in_transaction:
+            for sql in migration.sql:
+                self._execute_idempotent(sql)
+            self._record(migration)
+            self.conn.commit()
+            return True
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            for sql in migration.sql:
+                self._execute_idempotent(sql)
+            self._record(migration)
+            self.conn.execute("COMMIT")
+        except Exception:
+            with contextlib.suppress(sqlite3.Error):
+                self.conn.execute("ROLLBACK")
+            raise
+        return True
+
+    def _record(self, migration: Migration) -> None:
         self.conn.execute(
             f"INSERT INTO {MIGRATIONS_TABLE} (id, description, applied_at) VALUES (?, ?, ?)",
             (migration.id, migration.description, datetime.now().isoformat()),
         )
-        self.conn.commit()
-        return True
 
     def apply_all(self, migrations: Iterable[Migration]) -> list[str]:
         applied_now: list[str] = []

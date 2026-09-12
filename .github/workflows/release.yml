@@ -103,7 +103,6 @@ jobs:
           restore-keys: |
             msys2-pango-${{ runner.os }}-
 
-      # PyInstaller y WEASYPRINT_DLL_DIRECTORIES necesitan estas DLLs.
       - name: Install Pango/GTK via MSYS2 (for WeasyPrint)
         run: |
           C:\msys64\usr\bin\bash -lc 'pacman -S mingw-w64-x86_64-pango --noconfirm --needed'

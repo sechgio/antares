@@ -16,6 +16,7 @@ import { collectGoogleFontFamilies, googleFontsHeadHtml } from '../ops/fontCatal
 import { buildLineSvgContent } from '../ops/lineSvg';
 import { ensureLinePath } from '../ops/pathGeometry';
 import { parseTableData } from '../ops/tableData';
+import { applyInstanceOverrides } from '../ops/components';
 
 export { cssVarsToStyleParts };
 
@@ -233,8 +234,31 @@ function resolveLayerContent(
   return { kind: 'empty', html: '' };
 }
 
-function prepareLayers(document: CanvasDocument): CanvasLayer[] {
-  return document.layers.filter((l) => l.visible !== false && l.type !== 'frame');
+export function resolveComponentVariantsForLayers(
+  layers: CanvasLayer[],
+  data?: Record<string, unknown>,
+): CanvasLayer[] {
+  const masters = new Map<string, CanvasLayer>();
+  for (const layer of layers) {
+    if (layer.meta?.componentId && !layer.meta.instanceOf) {
+      masters.set(layer.meta.componentId, layer);
+    } else if (layer.type === 'component' && !layer.meta?.instanceOf) {
+      masters.set(layer.id, layer);
+    }
+  }
+  return layers.map((layer) => {
+    if (!layer.meta?.instanceOf) return layer;
+    const master = masters.get(layer.meta.instanceOf);
+    if (!master) return layer;
+    return { ...layer, cssVars: applyInstanceOverrides(layer, master, data) };
+  });
+}
+
+function prepareLayers(document: CanvasDocument, ctx: FillContext): CanvasLayer[] {
+  const pageLayers = document.layers.filter((l) => l.type !== 'frame');
+  return resolveComponentVariantsForLayers(pageLayers, ctx.data).filter(
+    (layer) => layer.visible !== false,
+  );
 }
 
 export function renderCanvasHtml(
@@ -248,7 +272,7 @@ export function renderCanvasHtml(
   const u = (mmVal: number) => (forScreen ? `${Math.round(mmVal * MM_TO_PX)}px` : `${mmVal}mm`);
   const pageW = forScreen ? `${Math.round(widthMm * MM_TO_PX)}px` : `${widthMm}mm`;
   const pageH = forScreen ? `${Math.round(heightMm * MM_TO_PX)}px` : `${heightMm}mm`;
-  const contentLayers = prepareLayers(document);
+  const contentLayers = prepareLayers(document, ctx);
 
   const nodes = contentLayers
     .map((layer) => {

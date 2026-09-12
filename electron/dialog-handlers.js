@@ -23,7 +23,13 @@ const {
   abortStagedSession,
   cleanupStagedCapability,
 } = require('./file-capabilities');
-const { putCanvasAsset, getCanvasAsset, parseAssetRef, gcOrphanCanvasAssets } = require('./canvas-assets');
+const {
+  putCanvasAsset,
+  getCanvasAsset,
+  getCanvasAssetInfo,
+  parseAssetRef,
+  gcOrphanCanvasAssets,
+} = require('./canvas-assets');
 const { cleanupSpreadsheetSpillFile, sweepIpcTempDirs } = require('./ipc-temp-cleanup');
 const { embedCanvasManifest } = require('./canvas-pdf-manifest');
 
@@ -629,11 +635,11 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 
   if (method === 'canvas_asset_get') {
     const ref = params.ref || params.asset_id;
-    if (!ref || (!parseAssetRef(ref) && typeof ref !== 'string')) {
+    const assetId = parseAssetRef(ref) ?? ref;
+    if (typeof assetId !== 'string' || !/^[a-f0-9]{32,128}$/i.test(assetId)) {
       throw new Error('canvas asset ref required');
     }
     const buf = await getCanvasAsset(ref);
-    // slice() medía ~48ms + pico 3x en 64MB. Si el Buffer es contiguo, el clone de IPC copia una vez.
     const chunk =
       buf.byteOffset === 0 && buf.byteLength === buf.buffer.byteLength
         ? buf.buffer
@@ -646,6 +652,16 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
         bytes: buf.length,
       },
     };
+  }
+
+  if (method === 'canvas_asset_info') {
+    const ref = params.ref || params.asset_id;
+    const assetId = parseAssetRef(ref) ?? ref;
+    if (typeof assetId !== 'string' || !/^[a-f0-9]{32,128}$/i.test(assetId)) {
+      throw new Error('canvas asset ref required');
+    }
+    const res = await getCanvasAssetInfo(ref);
+    return { handled: true, result: res };
   }
 
   if (method === 'canvas_asset_gc') {

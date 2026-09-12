@@ -285,6 +285,7 @@ export const UbicacionesView: React.FC = () => {
   const [designTab, setDesignTab] = useState<'texts' | 'pin' | 'map'>('texts');
 
   const fetchIdRef = useRef(0);
+  const mountedRef = useRef(true);
   const excelFileRef = useRef<File | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stylePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -320,6 +321,14 @@ export const UbicacionesView: React.FC = () => {
       previewRowIndex,
     };
   }, [excelPath, inputMode, manualData, formato, outputDir, outputMode, customStyles, provider, zoom, apiKeys, previewRowIndex]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      fetchIdRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -389,6 +398,7 @@ export const UbicacionesView: React.FC = () => {
     if (Object.keys(dirty).length === 0) return;
     const timer = setTimeout(() => {
       api.ubicacionesKeysSet(dirty).then((resp) => {
+        if (!mountedRef.current) return;
         if (resp?.configured) setKeysConfigured(resp.configured);
         setApiKeys((prev) => {
           const next = { ...prev };
@@ -538,6 +548,7 @@ export const UbicacionesView: React.FC = () => {
       isFetchInFlightRef.current = true;
       fetchPreview(index, options).finally(() => {
         isFetchInFlightRef.current = false;
+        if (!mountedRef.current) return;
         if (hasPendingFetchRef.current) {
           hasPendingFetchRef.current = false;
           const nextIndex = pendingRowIndexRef.current ?? lastParamsRef.current.previewRowIndex;
@@ -633,7 +644,6 @@ export const UbicacionesView: React.FC = () => {
     ) {
       triggerPreviewFetch(0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadExcelFile = useCallback(

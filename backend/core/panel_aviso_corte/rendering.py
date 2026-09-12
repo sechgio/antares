@@ -12,11 +12,10 @@ from typing import TYPE_CHECKING, Any
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from backend.utils.image_data import (
+    build_image_uris,
     contain_fit_cm,
     data_uri_from_b64,
-    data_uri_from_bytes,
     valid_b64_image,
-    valid_image_bytes,
 )
 from backend.utils.pdf_html import write_pdf_sanitized
 
@@ -124,19 +123,7 @@ def render_pdf(
 
     logo_left, logo_right, logo_center = _prepare_logos(logos)
 
-    image_uris: dict[str, str] = {}
-    for filename, raw_path in (image_paths or {}).items():
-        path = Path(raw_path)
-        if path.is_file():
-            with contextlib.suppress(Exception):
-                content = path.read_bytes()
-                if valid_image_bytes(content):
-                    image_uris[filename] = data_uri_from_bytes(content)
-    for filename, b64 in images.items():
-        if filename in image_uris:
-            continue
-        if valid_b64_image(b64):
-            image_uris[filename] = data_uri_from_b64(b64)
+    image_uris = build_image_uris(images, image_paths)
 
     panels_data: list[dict[str, Any]] = []
     for panel in panels:

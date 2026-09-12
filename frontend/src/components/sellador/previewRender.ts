@@ -2,11 +2,12 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { api } from '../../api';
 import {
   createLruMap,
+  createObjectIdentity,
   estimateStringBytes,
   SELLADOR_PREVIEW_CACHE_MAX_BYTES,
 } from './lruMap';
 import { loadPdfDocument } from './pdfjs';
-import { stageFileForIpc } from '../../utils/stageFile';
+import { acquireStagedFile, type StagedFileHandle } from '../../utils/stageFile';
 import {
   MAX_PREVIEW_PIXEL_WIDTH,
   MIN_PREVIEW_PIXEL_WIDTH,
@@ -21,17 +22,7 @@ const otherPagesRenderCache = createLruMap<string, string>({
   maxBytes: SELLADOR_PREVIEW_CACHE_MAX_BYTES,
   sizeOf: estimateStringBytes,
 });
-let nextFileIdentity = 1;
-const fileIdentities = new WeakMap<File, number>();
-
-function fileCacheIdentity(file: File): number {
-  const existing = fileIdentities.get(file);
-  if (existing !== undefined) return existing;
-  const identity = nextFileIdentity;
-  nextFileIdentity += 1;
-  fileIdentities.set(file, identity);
-  return identity;
-}
+const fileCacheIdentity = createObjectIdentity<File>();
 
 function bucketContainerWidth(width: number): number {
   const clamped = Math.max(width, 320);
@@ -158,26 +149,6 @@ export async function renderPageWithStampFromPath(
   return canvas.toDataURL('image/png');
 }
 
-async function renderPageWithStampFromFile(
-  pdfFile: File,
-  pageNum: number,
-  containerW: number,
-  stampUrl: string | null,
-  stampRects: StampRect[],
-  pageSize: PdfPageSize,
-): Promise<string> {
-  const fileToken = await stageFileForIpc(pdfFile, { reuse: true });
-  if (!fileToken) throw new Error('No se pudo preparar el PDF para la vista previa.');
-  return renderPageWithStampFromPath(
-    fileToken,
-    pageNum,
-    containerW,
-    stampUrl,
-    stampRects,
-    pageSize,
-  );
-}
-
 export async function renderOtherPagesPreview(
   options: {
     pdfPath: string | null;
@@ -211,8 +182,9 @@ export async function renderOtherPagesPreview(
 
   const bucketedWidth = bucketContainerWidth(containerW);
   const previews: Array<{ pageNum: number; url: string; stampCount: number }> = [];
-  const pdf = pdfPath || !pdfBase64 ? null : await loadPdfDocument(pdfBase64);
   let lastReportedCount = 0;
+  let pdf: PDFDocumentProxy | null = null;
+  let pdfHandle: StagedFileHandle | null = null;
 
   const reportProgress = (force = false) => {
     if (isCancelled()) return;
@@ -225,6 +197,16 @@ export async function renderOtherPagesPreview(
   };
 
   try {
+    // Reuse one staged upload for every page in this batch.
+    if (!pdfPath && !pdfBase64 && pdfFile) {
+      pdfHandle = await acquireStagedFile(pdfFile);
+      if (!pdfHandle.token) {
+        throw new Error('No se pudo preparar el PDF para la vista previa.');
+      }
+    } else if (!pdfPath && pdfBase64) {
+      pdf = await loadPdfDocument(pdfBase64);
+    }
+
     for (let pageNum = 2; pageNum <= pageCount; pageNum += 1) {
       if (isCancelled()) break;
       const stampsOnPage = assignmentCounts.get(pageNum) ?? 0;
@@ -241,31 +223,35 @@ export async function renderOtherPagesPreview(
       );
       let url = otherPagesRenderCache.get(cacheKey);
       if (!url) {
-        url = pdfPath
-          ? await renderPageWithStampFromPath(
+        if (pdfPath) {
+          url = await renderPageWithStampFromPath(
             pdfPath,
             pageNum,
             bucketedWidth,
             stampUrl,
             stampRects,
             pageSize,
-          )
-          : !pdfBase64 && pdfFile
-            ? await renderPageWithStampFromFile(
-              pdfFile,
-              pageNum,
-              bucketedWidth,
-              stampUrl,
-              stampRects,
-              pageSize,
-            )
-          : await renderPageWithStampFromPdf(
-            pdf!,
+          );
+        } else if (pdfHandle?.token) {
+          url = await renderPageWithStampFromPath(
+            pdfHandle.token,
+            pageNum,
+            bucketedWidth,
+            stampUrl,
+            stampRects,
+            pageSize,
+          );
+        } else if (pdf) {
+          url = await renderPageWithStampFromPdf(
+            pdf,
             pageNum,
             bucketedWidth,
             stampUrl,
             stampRects,
           );
+        } else {
+          break;
+        }
         otherPagesRenderCache.set(cacheKey, url);
       }
       previews.push({ pageNum, url, stampCount: stampsOnPage });
@@ -281,5 +267,6 @@ export async function renderOtherPagesPreview(
       } catch {
       }
     }
+    pdfHandle?.release();
   }
 }

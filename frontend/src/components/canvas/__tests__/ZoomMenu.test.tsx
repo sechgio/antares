@@ -35,4 +35,17 @@ describe('ZoomMenu', () => {
     fireEvent.mouseDown(screen.getByRole('button', { name: 'outside' }));
     expect(screen.queryByTestId('canvas-zoom-menu')).toBeNull();
   });
+
+  it('defaults to showRulers=false showing "Mostrar reglas"', () => {
+    const onToggleRulers = vi.fn();
+    render(
+      <div className="canvas-app">
+        <ZoomMenu zoom={1} onZoom={vi.fn()} onZoomFit={vi.fn()} onToggleRulers={onToggleRulers} />
+      </div>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom' }));
+    expect(screen.getByText('Mostrar reglas')).toBeInTheDocument();
+    expect(screen.queryByText('Ocultar reglas')).toBeNull();
+  });
 });

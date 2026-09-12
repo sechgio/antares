@@ -59,6 +59,8 @@ export function selectRowsForPdfExport({
     if (!idValue) return [];
     return images.filter(img => matchesRecordId(img.name, idValue)).sort(naturalSortByName);
   };
+  const rowIdValue = (row: Record<string, unknown>, rowIndex: number): string =>
+    idColumn ? String(row[idColumn] ?? rowIndex + 1) : String(rowIndex + 1);
 
   if (exportScope === 'single') {
     const rowIndex = Number(selectedIndex);
@@ -67,7 +69,7 @@ export function selectRowsForPdfExport({
     return [{
       row,
       rowIndex,
-      idValue: idColumn ? String(row[idColumn] ?? rowIndex + 1) : String(rowIndex + 1),
+      idValue: rowIdValue(row, rowIndex),
       images: imagesForRow(row),
     }];
   }
@@ -78,7 +80,7 @@ export function selectRowsForPdfExport({
     return [{
       row,
       rowIndex,
-      idValue: idColumn ? String(row[idColumn] ?? rowIndex + 1) : String(rowIndex + 1),
+      idValue: rowIdValue(row, rowIndex),
       images: rowImages,
     }];
   });

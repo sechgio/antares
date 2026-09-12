@@ -188,6 +188,54 @@ def test_apply_sellador_respects_per_stamp_positions() -> None:
     assert len(PdfReader(BytesIO(result_bytes)).pages) == 2
 
 
+@pytest.mark.parametrize('rotation', [0, 90, 180, 270])
+def test_apply_sellador_uses_visible_cropbox_coordinates_for_rotated_pages(rotation: int) -> None:
+    fitz = pytest.importorskip('fitz')
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=600, height=800)
+    page.rotate(rotation)
+    page.cropbox.lower_left = (50, 100)
+    page.cropbox.upper_right = (550, 700)
+    pdf_buffer = BytesIO()
+    writer.write(pdf_buffer)
+
+    stamp_buffer = BytesIO()
+    Image.new('RGBA', (600, 500), (255, 0, 0, 255)).save(stamp_buffer, format='PNG')
+    result_bytes, _, _ = apply_sellador(
+        pdf_buffer.getvalue(),
+        stamp_buffer.getvalue(),
+        stamp_count=1,
+        x=0,
+        y=0,
+        width=60,
+        height=50,
+        seed=11,
+        stamp_placements=[{
+            'page_index': 0,
+            'x': 80,
+            'y': 70,
+            'width': 60,
+            'height': 50,
+        }],
+    )
+
+    with fitz.open(stream=result_bytes, filetype='pdf') as doc:
+        pixmap = doc[0].get_pixmap(dpi=72, alpha=False)
+        image = Image.frombytes('RGB', (pixmap.width, pixmap.height), pixmap.samples)
+        red_pixels = [
+            (x, y)
+            for y in range(image.height)
+            for x in range(image.width)
+            if (lambda pixel: pixel[0] > 200 and pixel[1] < 80 and pixel[2] < 80)(image.getpixel((x, y)))
+        ]
+
+    assert red_pixels
+    assert min(x for x, _ in red_pixels) == 80
+    assert max(x for x, _ in red_pixels) == 139
+    assert 69 <= min(y for _, y in red_pixels) <= 70
+    assert max(y for _, y in red_pixels) == 119
+
+
 def _stamp_xobject_dims(page: Any) -> tuple[int, int] | None:
     resources = page.get("/Resources") or {}
     xobjects = resources.get("/XObject") or {}

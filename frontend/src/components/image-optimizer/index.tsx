@@ -9,6 +9,7 @@ import SettingsPanel from './SettingsPanel';
 import { glassToolbarClass, PillPreset } from './ui';
 import { useToast } from '../../hooks/useToast';
 import { createImageItem, processImageItem } from './pipeline';
+import { disposeProcessWorkers } from './processWorkerClient';
 import {
   mapWithConcurrencyLimit,
   resolveImportConcurrency,
@@ -119,6 +120,7 @@ export default function ImageOptimizer() {
     return () => {
       processingAbortRef.current?.abort();
       processingAbortRef.current = null;
+      disposeProcessWorkers();
       itemsRef.current.forEach((item) => revokeItemUrls(item));
     };
   }, []);

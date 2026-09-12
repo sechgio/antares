@@ -54,6 +54,7 @@ describe('Sidebar', () => {
 
     const toggle = screen.getByTestId('sidebar-toggle');
     expect(toggle).not.toHaveAttribute('title');
+    fireEvent.focus(toggle);
     expect(screen.getByText('Hide Sidebar')).toBeInTheDocument();
     expect(screen.queryByText('Ctrl')).not.toBeInTheDocument();
   });
@@ -61,7 +62,9 @@ describe('Sidebar', () => {
   it('shows Show Sidebar after collapsing', () => {
     renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
 
-    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+    const toggle = screen.getByTestId('sidebar-toggle');
+    fireEvent.click(toggle);
+    fireEvent.focus(toggle);
 
     expect(screen.getByText('Show Sidebar')).toBeInTheDocument();
     expect(screen.queryByText('Hide Sidebar')).not.toBeInTheDocument();
@@ -102,20 +105,26 @@ describe('Sidebar', () => {
 
     const espacios = screen.getByRole('button', { name: 'Espacios' });
     expect(espacios).not.toHaveAttribute('title');
+    fireEvent.focus(espacios);
 
     const tooltips = screen.getAllByRole('tooltip');
     const espaciosTip = tooltips.find((node) => node.textContent === 'Espacios');
-    const informesTip = tooltips.find((node) => node.textContent === 'Informes técnicos');
 
     expect(espaciosTip).toBeTruthy();
-    expect(informesTip).toBeTruthy();
     expect(espaciosTip?.textContent).not.toContain('Ctrl');
-    expect(informesTip?.textContent).not.toContain('Ctrl');
+
+    fireEvent.blur(espacios);
+    const informes = screen.getByRole('button', { name: 'Informes técnicos' });
+    fireEvent.focus(informes);
+    const informesTip = screen.getByRole('tooltip');
+    expect(informesTip).toHaveTextContent('Informes técnicos');
+    expect(informesTip).not.toHaveTextContent('Ctrl');
   });
 
   it('does not render tool name tooltips when expanded', () => {
     renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
 
+    fireEvent.focus(screen.getByTestId('sidebar-toggle'));
     const tooltips = screen.getAllByRole('tooltip');
     expect(tooltips).toHaveLength(1);
     expect(tooltips[0]).toHaveTextContent('Hide Sidebar');
@@ -128,6 +137,7 @@ describe('Sidebar', () => {
 
     const convertButton = screen.getByRole('button', { name: 'Conversión' });
     expect(convertButton.parentElement).toHaveClass('flex', 'size-8', 'items-center');
+    fireEvent.focus(convertButton);
 
     const convertTooltip = screen
       .getAllByRole('tooltip')
@@ -214,7 +224,8 @@ describe('Sidebar', () => {
 
     const signOut = screen.getByTestId('sidebar-signout-button');
     expect(signOut).not.toHaveAttribute('title');
-    expect(screen.getAllByRole('tooltip').some((node) => node.textContent === 'Cerrar sesión')).toBe(true);
+    fireEvent.focus(signOut);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Cerrar sesión');
   });
 
   it('calls signOut from the bottom logout button', async () => {

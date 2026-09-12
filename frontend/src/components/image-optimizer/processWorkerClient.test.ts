@@ -3,6 +3,7 @@ import {
   MAX_PROCESS_WORKER_QUEUE,
   PROCESS_WORKER_TIMEOUT_MS,
   _resetProcessWorkersForTests,
+  disposeProcessWorkers,
   runProcessInWorker,
 } from './processWorkerClient';
 import { DEFAULT_BATCH_SETTINGS } from './presets';
@@ -47,6 +48,36 @@ class HangingWorker {
   }
 }
 
+class CompletingWorker {
+  static instances: CompletingWorker[] = [];
+
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onmessageerror: ((event: MessageEvent) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  terminated = false;
+
+  constructor() {
+    CompletingWorker.instances.push(this);
+  }
+
+  postMessage(request: { requestId: string }) {
+    queueMicrotask(() => this.onmessage?.({
+      data: {
+        requestId: request.requestId,
+        ok: true,
+        buffer: new ArrayBuffer(0),
+        mimeType: 'image/jpeg',
+        width: 1,
+        height: 1,
+      },
+    } as MessageEvent));
+  }
+
+  terminate() {
+    this.terminated = true;
+  }
+}
+
 function workerInput() {
   return {
     buffer: new Uint8Array([1, 2, 3]).buffer,
@@ -69,6 +100,7 @@ describe('process worker lifecycle', () => {
     _resetProcessWorkersForTests();
     FailingWorker.instances = [];
     HangingWorker.instances = [];
+    CompletingWorker.instances = [];
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -161,5 +193,41 @@ describe('process worker lifecycle', () => {
 
     [...activeControllers, ...queuedControllers].forEach((controller) => controller.abort());
     await Promise.allSettled([...active, ...queued]);
+  });
+
+  it('dispose drains queued and in-flight work without resurrecting the pool', async () => {
+    vi.stubGlobal('Worker', HangingWorker);
+    vi.stubGlobal('OffscreenCanvas', class {});
+    vi.stubGlobal('createImageBitmap', vi.fn());
+
+    const active = [runProcessInWorker(workerInput()), runProcessInWorker(workerInput())];
+    const queued = runProcessInWorker(workerInput());
+    [...active, queued].forEach((request) => request.catch(() => {}));
+    // Let the active requests finish `await acquireWorker` and register pending.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const workersBefore = HangingWorker.instances.length;
+
+    disposeProcessWorkers();
+
+    const results = await Promise.allSettled([...active, queued]);
+    expect(results.every((r) => r.status === 'rejected')).toBe(true);
+    expect(HangingWorker.instances.every((worker) => worker.terminated)).toBe(true);
+    expect(HangingWorker.instances).toHaveLength(workersBefore);
+  });
+
+  it('disposes idle workers and creates a fresh pool for later work', async () => {
+    vi.stubGlobal('Worker', CompletingWorker);
+    vi.stubGlobal('OffscreenCanvas', class {});
+    vi.stubGlobal('createImageBitmap', vi.fn());
+
+    await runProcessInWorker(workerInput());
+    const firstPool = [...CompletingWorker.instances];
+    expect(firstPool).toHaveLength(2);
+
+    disposeProcessWorkers();
+    expect(firstPool.every((worker) => worker.terminated)).toBe(true);
+
+    await runProcessInWorker(workerInput());
+    expect(CompletingWorker.instances).toHaveLength(4);
   });
 });

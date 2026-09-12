@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, Any
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from backend.utils.image_data import (
+    build_image_uris,
     contain_fit_cm,
     data_uri_from_b64,
-    data_uri_from_bytes,
     valid_b64_image,
     valid_image_bytes,
 )
@@ -176,26 +176,6 @@ def _serialize_pages(
     return pages_data
 
 
-def _build_image_uris(
-    images: dict[str, str],
-    image_paths: dict[str, str] | None,
-) -> dict[str, str]:
-    image_uris: dict[str, str] = {}
-    for filename, raw_path in (image_paths or {}).items():
-        path = Path(raw_path)
-        if path.is_file():
-            with contextlib.suppress(Exception):
-                content = path.read_bytes()
-                if valid_image_bytes(content):
-                    image_uris[filename] = data_uri_from_bytes(content)
-    for filename, b64 in images.items():
-        if filename in image_uris:
-            continue
-        if valid_b64_image(b64):
-            image_uris[filename] = data_uri_from_b64(b64)
-    return image_uris
-
-
 def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None]:
     left_raw = logos.get("left")
     right_raw = logos.get("right")
@@ -244,7 +224,7 @@ def render_pdf(
         raise RenderingError(msg) from exc
 
     logo_left, logo_right = _prepare_logos(logos)
-    image_uris = _build_image_uris(images, image_paths)
+    image_uris = build_image_uris(images, image_paths)
     pages_data = _serialize_pages(document, image_uris)
     filename = _default_filename("pdf")
 
@@ -371,9 +351,6 @@ def render_docx(
             '<w:right w:w="0" w:type="dxa"/>'
             '</w:tblCellMar>',
         ))
-
-    def fill_image_size_cm(content: bytes, max_w: float, max_h: float) -> tuple[float, float, tuple[int, int, int, int]]:
-        return max_w, max_h, (0, 0, 0, 0)
 
     doc = Document()
     section = doc.sections[0]

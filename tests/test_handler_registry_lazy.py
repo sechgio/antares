@@ -93,6 +93,27 @@ def test_unknown_method_does_not_eager_load_all_modules(monkeypatch: pytest.Monk
     assert imports == []
 
 
+def test_retired_methods_are_unknown_without_loading_handler_modules(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.handlers import HandlerRegistry
+
+    imports: list[str] = []
+    orig_import = importlib.import_module
+
+    def tracking_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+        if name.startswith("backend.handlers."):
+            imports.append(name)
+        return orig_import(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", tracking_import)
+
+    reg = HandlerRegistry()
+    retired = ("db_records", "db_detect_key_column", "image_optimizer_zip")
+
+    assert all(not reg.is_known(method) for method in retired)
+    assert all(reg.get(method) is None for method in retired)
+    assert imports == []
+
+
 def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.handlers import (
         _CORE_HANDLER_MODULES,

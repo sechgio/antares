@@ -52,12 +52,29 @@ function decryptPayloadAes(namespace, encoded) {
   return JSON.parse(decrypted.toString('utf8'));
 }
 
+let _fallbackWarned = false;
+
+function _warnFallbackOnce() {
+  if (_fallbackWarned) return;
+  _fallbackWarned = true;
+  const msg = 'safeStorage no disponible: secretos cifrados con clave derivada (no confidencial)';
+  try {
+    require('./app-log').appendLogEvent('WARN', 'secure_storage.fallback', { reason: 'safeStorage_unavailable' });
+  } catch {
+  }
+  try {
+    console.warn(`[secure-storage] ${msg}`);
+  } catch {
+  }
+}
+
 function encryptPayload(namespace, payload) {
   const json = JSON.stringify(payload);
   if (_safeStorageAvailable()) {
     const buf = safeStorage.encryptString(json);
     return { v: 2, data: Buffer.from(buf).toString('base64') };
   }
+  _warnFallbackOnce();
   return { v: 1, data: encryptPayloadAes(namespace, payload) };
 }
 

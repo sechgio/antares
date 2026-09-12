@@ -2,7 +2,11 @@ import { api } from '../../../api';
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { newId } from '../types';
 import { planMultiPageRender, renderMultiPageHtmlAsync } from '../runtime/planning';
-import { mergeCanvasHtmlDocuments, type FillContext } from '../runtime/renderHtml';
+import {
+  mergeCanvasHtmlDocuments,
+  resolveComponentVariantsForLayers,
+  type FillContext,
+} from '../runtime/renderHtml';
 
 function yieldToMain(): Promise<void> {
   return new Promise((resolve) => {
@@ -49,7 +53,8 @@ function expandCmykDocument(
     const plan = planMultiPageRender(document, ctx);
     for (const { pageDoc, pageCtx } of plan) {
       pages.push({ id: newId(), name: `Página ${pageIndex + 1}` });
-      for (const layer of pageDoc.layers) {
+      const variantLayers = resolveComponentVariantsForLayers(pageDoc.layers, pageCtx.data);
+      for (const layer of variantLayers) {
         layers.push({ ...layer, pageIndex });
       }
       paired.push(pageCtx);

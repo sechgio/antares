@@ -1,8 +1,6 @@
-import { clampImageZoom, parseImageZoom } from '../../../ops/layerStyle';
 import { CanvasCheckbox } from '../../CanvasControls';
-import CanvasSelect from '../../CanvasSelect';
 import InlineNumField from '../../InlineNumField';
-import { IMAGE_FIT_OPTIONS, IMAGE_POSITION_OPTIONS, PropRow, SectionHeader } from '../shared';
+import { ImageObjectControls, PropRow, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
 export default function ImageSlotSection({
@@ -26,32 +24,13 @@ export default function ImageSlotSection({
             onCommit={onCommitLive}
           />
         </PropRow>
-        <PropRow label="Ajuste">
-          <CanvasSelect
-            value={layer.cssVars['--object-fit'] || 'cover'}
-            aria-label="Ajuste de foto"
-            onChange={(val) => setVar('--object-fit', val)}
-            options={IMAGE_FIT_OPTIONS}
-          />
-        </PropRow>
-        <PropRow label="Zoom">
-          <InlineNumField
-            prefix="Z"
-            value={parseImageZoom(layer.cssVars)}
-            step={0.05}
-            title="Zoom de recorte"
-            onChange={(n) => setVarLive('--image-zoom', String(clampImageZoom(n)))}
-            onCommit={onCommitLive}
-          />
-        </PropRow>
-        <PropRow label="Posición">
-          <CanvasSelect
-            value={layer.cssVars['--object-position'] || '50% 50%'}
-            aria-label="Posición de foto"
-            onChange={(val) => setVar('--object-position', val)}
-            options={IMAGE_POSITION_OPTIONS}
-          />
-        </PropRow>
+        <ImageObjectControls
+          layer={layer}
+          setVar={setVar}
+          setVarLive={setVarLive}
+          onCommitLive={onCommitLive}
+          ariaPrefix="foto"
+        />
         <div className="canvas-check-list">
           <CanvasCheckbox
             checked={!!layer.meta?.showDate}

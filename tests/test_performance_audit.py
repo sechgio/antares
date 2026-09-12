@@ -89,39 +89,6 @@ def test_read_connection_is_readonly(tmp_path) -> None:
         close_connection()
 
 
-def test_preview_cache_is_bounded() -> None:
-    from backend.core.preview_cache import PreviewCache
-
-    cache = PreviewCache(max_size=10, ttl_seconds=300)
-    for i in range(20):
-        cache.set(f"key_{i}", {"data": i})
-
-    assert cache.get("key_0") is None, "Cache should have evicted key_0"
-    assert cache.get("key_19") is not None, "Cache should retain key_19"
-    assert cache.get("key_19")["data"] == 19
-
-
-def test_preview_cache_skips_data_uri_payloads() -> None:
-    from backend.core.preview_cache import PreviewCache
-
-    cache = PreviewCache(max_size=10, ttl_seconds=300)
-    cache.set("data", {"preview": "data:image/jpeg;base64," + ("A" * 1000)})
-    cache.set("path", {"preview": "file:///tmp/x.jpg", "preview_path": "/tmp/x.jpg"})
-    assert cache.get("data") is None
-    assert cache.get("path") is not None
-
-
-def test_preview_cache_respects_ttl() -> None:
-    from backend.core.preview_cache import PreviewCache
-
-    cache = PreviewCache(max_size=10, ttl_seconds=0)
-    cache.set("key", {"data": 1})
-    import time
-
-    time.sleep(0.01)
-    assert cache.get("key") is None, "Cache should have expired the entry"
-
-
 def test_scheduler_heavy_capacity_is_bounded() -> None:
     import threading
 
@@ -290,21 +257,6 @@ def test_connection_is_reused() -> None:
             close_connection()
 
 
-def test_convertir_a_preview_defaults_to_file_path(tmp_path) -> None:
-    from PIL import Image
-
-    from backend.core.converter import convertir_a_preview
-    from backend.core.preview_cache import get_preview_cache
-
-    get_preview_cache().clear()
-    origen = tmp_path / "p.png"
-    Image.new("RGB", (120, 80), color=(9, 9, 9)).save(origen)
-    result = convertir_a_preview(origen, "JPEG")
-    assert result["preview"].startswith("file:")
-    assert Path(result["preview_path"]).is_file()
-    assert "base64," not in result["preview"]
-
-
 def test_importar_excel_runs_analyze(tmp_path, monkeypatch) -> None:
     import inspect
 
@@ -362,13 +314,20 @@ def test_cold_imports_are_serialized_against_cextension_deadlock() -> None:
 
     from backend.core import database as db
     from backend.handlers import history as history_handlers
+    from backend.utils import pdf_html
 
     import_source = inspect.getsource(db.importar_excel)
     assert "serialized_import" in import_source
     assert "load_workbook" in import_source
     assert "import pandas" not in import_source
+    export_source = inspect.getsource(db.exportar_excel)
+    assert "serialized_import" in export_source
+    assert "import pandas" in export_source
     analyze_source = inspect.getsource(db.parse_id_rename_mapping_full)
     assert "serialized_import" in analyze_source
+    pdf_source = inspect.getsource(pdf_html.write_pdf_sanitized)
+    assert "serialized_import" in pdf_source
+    assert "from weasyprint import HTML" in pdf_source
 
     handler_source = inspect.getsource(history_handlers)
     assert "def _core_history" in handler_source
@@ -414,25 +373,6 @@ def test_cold_import_requests_wait_for_warm_critical(monkeypatch) -> None:
     main._dispatch(lambda _p: {"ok": True}, {}, "w3", "canvas_save")
     assert len(waited) == 1, "canvas_save must not wait for the warm"
     assert len(responses) == 3
-
-
-def test_convertir_a_preview_accelerates_jpeg_with_draft(tmp_path) -> None:
-    from PIL import Image
-
-    from backend.core.converter import convertir_a_preview
-
-    img_path = tmp_path / "large_photo.jpg"
-    img = Image.new("RGB", (2000, 1500), color=(120, 80, 200))
-    img.save(img_path, "JPEG")
-
-    result = convertir_a_preview(img_path, "PNG", as_data_uri=False)
-    assert result["width"] == "2000"
-    assert result["height"] == "1500"
-    assert Path(result["preview_path"]).exists()
-
-    with Image.open(result["preview_path"]) as preview_img:
-        assert max(preview_img.size) <= 400
-        assert preview_img.size == (400, 300)
 
 
 def test_conversion_task_queue_uses_deque() -> None:

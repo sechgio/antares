@@ -27,4 +27,23 @@ describe('mapWithConcurrencyLimit', () => {
     expect(result).toEqual([]);
     expect(calls).toBe(0);
   });
+
+  it('stops scheduling queued work after an abort signal', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+
+    await expect(
+      mapWithConcurrencyLimit(
+        [1, 2, 3],
+        1,
+        async (value) => {
+          calls += 1;
+          controller.abort();
+          return value;
+        },
+        { signal: controller.signal },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(calls).toBe(1);
+  });
 });

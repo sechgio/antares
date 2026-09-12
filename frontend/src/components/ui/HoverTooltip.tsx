@@ -39,11 +39,12 @@ const CARET_CLASS: Record<Placement, string> = {
     'pointer-events-none absolute right-full h-0 w-0 border-[5px] border-transparent border-r-[#1e1e1e]',
 };
 
+const TOOLTIP_SURFACE =
+  'pointer-events-none z-[11000] flex w-max max-w-[calc(100vw-16px)] items-center gap-2 rounded-[6px] bg-[#1e1e1e] px-2 py-[5px] text-[11px] font-semibold leading-none text-white shadow-[0_2px_10px_rgba(0,0,0,0.28)]';
+
 const SURFACE: Record<TooltipVariant, string> = {
-  default:
-    'pointer-events-none z-[11000] flex w-max max-w-[calc(100vw-16px)] items-center gap-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] shadow-sm',
-  dark:
-    'pointer-events-none z-[11000] flex w-max max-w-[calc(100vw-16px)] items-center gap-2 rounded-[6px] bg-[#1e1e1e] px-2 py-[5px] text-[11px] font-semibold leading-none text-white shadow-[0_2px_10px_rgba(0,0,0,0.28)]',
+  default: TOOLTIP_SURFACE,
+  dark: TOOLTIP_SURFACE,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -170,7 +171,7 @@ function useTooltipPosition(
 function TooltipBubble({
   label,
   shortcut,
-  variant,
+  variant = 'dark',
   placement,
   caretOffset,
   coords,
@@ -179,7 +180,7 @@ function TooltipBubble({
 }: {
   label: ReactNode;
   shortcut?: string;
-  variant: TooltipVariant;
+  variant?: TooltipVariant;
   placement: Placement;
   caretOffset: number;
   coords: CSSProperties | null;
@@ -205,11 +206,11 @@ function TooltipBubble({
     >
       <span className="min-w-0 break-words">{label}</span>
       {shortcut ? (
-        <span className={cn('shrink-0', variant === 'dark' ? 'font-normal text-white/55' : 'opacity-60')}>
+        <span className="shrink-0 font-normal text-white/55">
           {shortcut}
         </span>
       ) : null}
-      {variant === 'dark' ? <span aria-hidden className={CARET_CLASS[placement]} style={caretStyle} /> : null}
+      <span aria-hidden className={CARET_CLASS[placement]} style={caretStyle} />
     </div>
   );
 }
@@ -218,7 +219,7 @@ export function HoverTooltip({
   label,
   placement = 'right',
   shortcut,
-  variant = 'default',
+  variant = 'dark',
 }: {
   label: ReactNode;
   placement?: Placement;
@@ -230,7 +231,8 @@ export function HoverTooltip({
   const [open, setOpen] = useState(false);
   const getTrigger = useCallback(() => markerRef.current?.parentElement ?? null, []);
   const canShow = hasTooltipLabel(label);
-  const { coords, resolvedPlacement, caretOffset } = useTooltipPosition(canShow, placement, getTrigger, tipRef);
+  const active = open && canShow;
+  const { coords, resolvedPlacement, caretOffset } = useTooltipPosition(active, placement, getTrigger, tipRef);
 
   useLayoutEffect(() => {
     const parent = markerRef.current?.parentElement;
@@ -255,7 +257,7 @@ export function HoverTooltip({
   return (
     <>
       <span ref={markerRef} aria-hidden className="pointer-events-none absolute size-0" />
-      {canShow
+      {active
         ? createPortal(
             <TooltipBubble
               label={label}
@@ -278,7 +280,7 @@ export function WithHoverTooltip({
   label,
   shortcut,
   placement = 'bottom',
-  variant = 'default',
+  variant = 'dark',
   className,
   style,
   children,

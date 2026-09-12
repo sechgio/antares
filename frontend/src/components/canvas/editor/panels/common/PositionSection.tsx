@@ -1,8 +1,9 @@
+import { useMemo } from 'react';
 import { FlipHorizontal2, FlipVertical2, RotateCcw } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { mm } from '../../../types';
 import { cornerRadiusPx, parseScale, toggleFlip } from '../../../ops/layerStyle';
-import { applyCssVarToLayerIds, mixedNumeric, mixedNumericMm } from '../../../ops/mixedSelection';
+import { applyCssVarToLayerIds, mixedNumeric, mixedNumericMm, selectLayersByIds } from '../../../ops/mixedSelection';
 import InlineNumField from '../../InlineNumField';
 import { ALIGN_ITEMS } from '../shared';
 import type { SectionProps } from '../types';
@@ -17,12 +18,15 @@ export default function PositionSection({
   onReplaceLayers,
   onCommitLive,
   onAlign,
+  alignmentLabel = 'Alinear capa',
   showRadius,
   emitLive,
+  multiSelection = false,
 }: SectionProps) {
-  const selectedLayers = selectedIds.length
-    ? layers.filter((item) => selectedIds.includes(item.id))
-    : [layer];
+  const selectedLayers = useMemo(
+    () => selectLayersByIds(layers, selectedIds, layer),
+    [layer, layers, selectedIds],
+  );
   const x = mixedNumericMm(selectedLayers, '--translate-x');
   const y = mixedNumericMm(selectedLayers, '--translate-y');
   const rotation = mixedNumeric(selectedLayers, '--rotate', 0);
@@ -38,7 +42,7 @@ export default function PositionSection({
 
   return (
     <>
-      <div className="canvas-alignment-tools" role="group" aria-label="Alinear capa">
+      <div className="canvas-alignment-tools" role="group" aria-label={alignmentLabel}>
         {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
           <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
             <button
@@ -82,7 +86,7 @@ export default function PositionSection({
           suffix="°"
           title="Rotación"
         />
-        {showRadius && (
+        {!multiSelection && showRadius && (
           <InlineNumField
             prefix=""
             value={cornerRadiusPx(layer.cssVars, 'tl')}
@@ -100,40 +104,42 @@ export default function PositionSection({
           />
         )}
       </div>
-      <div className="canvas-z-order canvas-z-order--compact">
-        <WithHoverTooltip label="Voltear horizontal" placement="bottom" variant="dark">
-          <button
-            type="button"
-            className="canvas-icon-btn"
-            data-active={parseScale(layer.cssVars['--scale-x']) === -1}
-            aria-label="Voltear horizontal"
-            onClick={() => onChange(toggleFlip(layer, 'x'))}
-          >
-            <FlipHorizontal2 className="h-3.5 w-3.5" />
-          </button>
-        </WithHoverTooltip>
-        <WithHoverTooltip label="Voltear vertical" placement="bottom" variant="dark">
-          <button
-            type="button"
-            className="canvas-icon-btn"
-            data-active={parseScale(layer.cssVars['--scale-y']) === -1}
-            aria-label="Voltear vertical"
-            onClick={() => onChange(toggleFlip(layer, 'y'))}
-          >
-            <FlipVertical2 className="h-3.5 w-3.5" />
-          </button>
-        </WithHoverTooltip>
-        <WithHoverTooltip label="Restablecer rotación" placement="bottom" variant="dark">
-          <button
-            type="button"
-            className="canvas-icon-btn"
-            aria-label="Restablecer rotación"
-            onClick={() => setVars({ '--rotate': '0deg', '--scale-x': '1', '--scale-y': '1' })}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
-        </WithHoverTooltip>
-      </div>
+      {!multiSelection && (
+        <div className="canvas-z-order canvas-z-order--compact">
+          <WithHoverTooltip label="Voltear horizontal" placement="bottom" variant="dark">
+            <button
+              type="button"
+              className="canvas-icon-btn"
+              data-active={parseScale(layer.cssVars['--scale-x']) === -1}
+              aria-label="Voltear horizontal"
+              onClick={() => onChange(toggleFlip(layer, 'x'))}
+            >
+              <FlipHorizontal2 className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
+          <WithHoverTooltip label="Voltear vertical" placement="bottom" variant="dark">
+            <button
+              type="button"
+              className="canvas-icon-btn"
+              data-active={parseScale(layer.cssVars['--scale-y']) === -1}
+              aria-label="Voltear vertical"
+              onClick={() => onChange(toggleFlip(layer, 'y'))}
+            >
+              <FlipVertical2 className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
+          <WithHoverTooltip label="Restablecer rotación" placement="bottom" variant="dark">
+            <button
+              type="button"
+              className="canvas-icon-btn"
+              aria-label="Restablecer rotación"
+              onClick={() => setVars({ '--rotate': '0deg', '--scale-x': '1', '--scale-y': '1' })}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
+        </div>
+      )}
     </>
   );
 }

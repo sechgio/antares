@@ -1,6 +1,7 @@
 import { Check, ChevronDown } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useAnchoredPopover } from '../../../hooks/useAnchoredPopover';
 import type { BoardColumn, TareaStatus } from '../types';
 import {
   columnColor,
@@ -20,14 +21,6 @@ interface StatusPickerProps {
   className?: string;
 }
 
-interface MenuPosition {
-  top: number;
-  left: number;
-  minWidth: number;
-}
-
-const MENU_GAP = 6;
-
 export default function StatusPicker({
   value,
   onChange,
@@ -37,12 +30,16 @@ export default function StatusPicker({
   size = 'sm',
   className = '',
 }: StatusPickerProps) {
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<MenuPosition | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const finishedRef = useRef(false);
+  const {
+    isOpen: open,
+    position,
+    triggerRef,
+    popupRef: menuRef,
+    close,
+    toggle,
+  } = useAnchoredPopover({ estimatedHeight: 180, estimatedWidth: 168 });
 
   const columns = useMemo(
     () => (columnsProp && columnsProp.length > 0 ? columnsProp : fallbackBoardColumns('local')),
@@ -54,66 +51,15 @@ export default function StatusPicker({
   const soft = columnSoft(columns, value);
   const displayLabel = columnLabel(columns, value);
 
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    const menuHeight = menuRef.current?.offsetHeight ?? 180;
-    const menuWidth = Math.max(rect.width, 168);
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openUp = spaceBelow < menuHeight + MENU_GAP && rect.top > spaceBelow;
-
-    let left = rect.left;
-    left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
-
-    const top = openUp
-      ? Math.max(8, rect.top - menuHeight - MENU_GAP)
-      : Math.min(rect.bottom + MENU_GAP, window.innerHeight - menuHeight - 8);
-
-    setPosition({ top, left, minWidth: menuWidth });
-  }, []);
-
   useLayoutEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return;
-    }
-    finishedRef.current = false;
-    updatePosition();
-  }, [open, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (menuRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    const onLayout = () => updatePosition();
-
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-    };
-  }, [open, updatePosition]);
+    if (open) finishedRef.current = false;
+  }, [open]);
 
   const pick = (status: TareaStatus) => {
     if (finishedRef.current) return;
     finishedRef.current = true;
     onChange(status);
-    setOpen(false);
+    close();
   };
 
   const isSm = size === 'sm';
@@ -128,7 +74,7 @@ export default function StatusPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => !disabled && setOpen((v) => !v)}
+        onClick={() => !disabled && toggle()}
         className={`group inline-flex items-center gap-1.5 rounded-full border font-medium outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
           isSm ? 'px-2.5 py-1 text-[11px]' : 'px-3 py-1.5 text-sm'
         } focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]/35`}
@@ -162,7 +108,7 @@ export default function StatusPicker({
             className="fixed z-[200] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--bg-base)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-medium)_40%,transparent)]"
             style={
               position
-                ? { top: position.top, left: position.left, minWidth: position.minWidth }
+                ? { top: position.top, left: position.left, minWidth: position.width }
                 : { top: -9999, left: -9999, visibility: 'hidden' }
             }
             onMouseDown={(e) => e.stopPropagation()}

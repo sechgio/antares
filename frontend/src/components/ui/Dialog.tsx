@@ -1,7 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { AlertTriangle, Info, ShieldCheck } from 'lucide-react';
-import { useDialog } from '../../hooks/useDialog';
+import { AlertTriangle, Info, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { useDialog, type DialogOptions } from '../../hooks/useDialog';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+
+const DIALOG_ICONS: Record<NonNullable<DialogOptions['type']>, LucideIcon> = {
+  confirm: Info,
+  alert: ShieldCheck,
+  destructive: AlertTriangle,
+};
 
 export default function Dialog() {
   const { isOpen, options, closeDialog } = useDialog();
@@ -41,7 +47,7 @@ export default function Dialog() {
   };
 
   const isDestructive = type === 'destructive';
-  const Icon = isDestructive ? AlertTriangle : type === 'alert' ? ShieldCheck : Info;
+  const Icon = DIALOG_ICONS[type];
   const signal = isDestructive ? 'var(--accent-red)' : 'var(--accent-primary)';
   const signalHover = isDestructive ? 'var(--accent-red)' : 'var(--accent-primary-hover)';
   const confirmFg = isDestructive ? 'var(--text-on-danger, #fff)' : 'var(--text-on-accent)';

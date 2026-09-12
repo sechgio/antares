@@ -1,27 +1,12 @@
-export async function mapWithConcurrencyLimit<T, R>(
+import { mapWithConcurrencyLimit as mapWithSharedConcurrencyLimit } from '../../utils/mapWithConcurrencyLimit';
+
+export function mapWithConcurrencyLimit<T, R>(
   items: readonly T[],
   limit: number,
   fn: (item: T, index: number) => Promise<R>,
   signal?: AbortSignal,
 ): Promise<R[]> {
-  if (items.length === 0) return [];
-  const concurrency = Math.max(1, Math.min(limit, items.length));
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-
-  async function worker(): Promise<void> {
-    while (true) {
-      throwIfAborted(signal);
-      const index = nextIndex;
-      nextIndex += 1;
-      if (index >= items.length) return;
-      results[index] = await fn(items[index], index);
-    }
-  }
-
-  await Promise.all(Array.from({ length: concurrency }, () => worker()));
-  throwIfAborted(signal);
-  return results;
+  return mapWithSharedConcurrencyLimit(items, limit, fn, { signal, createAbortError });
 }
 
 export function throwIfAborted(signal?: AbortSignal): void {

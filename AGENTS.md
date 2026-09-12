@@ -67,8 +67,8 @@ Estas reglas describen el estado real del proyecto auditado. Para valores que ca
 
 Canvas es un editor A4 Figma-style local-first: el JSON local es la fuente inmediata de verdad y Supabase es un espejo best-effort.
 
-- Backend: `backend/core/canvas/` normaliza modelos y mantiene store atómico con locks, recovery e historial. `backend/handlers/canvas.py` expone nueve métodos: `canvas_list`, `canvas_get`, `canvas_save`, `canvas_create`, `canvas_delete`, `canvas_duplicate`, `canvas_export_cmyk_pdf`, `canvas_get_history` y `canvas_save_history`.
-- Electron añade `canvas_asset_put`, `canvas_asset_get` y `canvas_asset_gc` para assets binarios. Los documentos usan referencias `canvas-asset:`; no vuelvas a embutir blobs grandes en JSON salvo que el contrato lo exija.
+- Backend: `backend/core/canvas/` normaliza modelos y mantiene store atómico con locks, recovery e historial. `backend/handlers/canvas.py` expone diez métodos: `canvas_list`, `canvas_bootstrap`, `canvas_get`, `canvas_save`, `canvas_create`, `canvas_delete`, `canvas_duplicate`, `canvas_export_cmyk_pdf`, `canvas_get_history` y `canvas_save_history`.
+- Electron añade `canvas_asset_put`, `canvas_asset_get`, `canvas_asset_info` y `canvas_asset_gc` para assets binarios. Los documentos usan referencias `canvas-asset:`; no vuelvas a embutir blobs grandes en JSON salvo que el contrato lo exija.
 - El contrato compartido es `shared/canvas-schema.json`: `DOCUMENT_VERSION = 2`, página A4 de 210 × 297 y 22 tipos (`text`, `image`, `frame`, `component`, `field`, `logo`, `imageSlot`, `rect`, `grid`, `group`, `table`, `checkbox`, `signature`, `line`, `ellipse`, `arrow`, `polygon`, `star`, `diamond`, `hexagon`, `pentagon`, `boolean`). TypeScript y Python mantienen tipos espejo y normalizan en carga; frontend actualiza v1→v2, backend reestampa la versión y ambos acotan `pageIndex`.
 - `useCanvasHistory` distingue `setDocument` (edición discreta), `updateSilent` (preview vivo) y `commitFromBaseline` (una entrada por gesto). `gestureRaf` y `pointerGestureSession` coalescen drag/pointer events y abortan correctamente en undo, cancel o unmount. El historial RAM está limitado a 30 entradas y el historial por documento se persiste en disco.
 - El autosave ocurre por cambios y durante los cambios de documento, duplicado, borrado, pérdida de foco/unmount y cierre; no dependas únicamente de Ctrl+S.
@@ -95,7 +95,7 @@ npm ci --prefix frontend
 uv sync --locked --extra dev
 ```
 
-Variables del cliente cloud, cuando sean necesarias para una tarea, se configuran fuera del repositorio (`VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`).
+Variables del cliente cloud, cuando sean necesarias para una tarea, se configuran fuera del repositorio (`VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`). Opcionalmente, `ANTARES_SUPABASE_URL` (o `VITE_SUPABASE_URL` si está en el entorno del proceso principal) hace que la CSP de la ventana pínne `connect-src` al host `*.supabase.co` del proyecto en lugar del wildcard; sin ella se usa el wildcard.
 
 - `npm run dev` — inicia Vite en `:5173` y Electron.
 - `npm run preview:unpacked` — construye una distribución sin instalador y la ejecuta.
@@ -135,6 +135,7 @@ Variables del cliente cloud, cuando sean necesarias para una tarea, se configura
 
 - El flujo es PR-first: no hagas push directo a `main`. Trabaja en una feature branch (prefijo `codex/` por defecto salvo instrucción distinta), publica la rama y crea/actualiza un PR hacia `main`.
 - `npm run push:dry-run` inspecciona el flujo; `npm run push:ship` hace commit/push y crea o actualiza el PR; `npm run push:merge` además espera checks y solicita merge. En modo ship, proporciona el mensaje requerido por el script cuando haya cambios. Usa los flags y mensajes del script, no una secuencia manual que omita validaciones.
+- `npm run pr-fix` inspecciona los checks del PR de la rama actual (o `--pr <n>`) sin modificar nada; `npm run pr-fix:ship` aplica fixes acotados en iteraciones (`--max`, por defecto 5), commitea con `[skip-ci-fix]` y empuja; `npm run pr-fix:merge` además solicita el merge cuando el PR está aprobado, sin conflictos y con checks verdes.
 - El release loop real tiene 7 pasos: validar `gh`/remote/branch/árbol limpio y sincronización con `origin/main`; comprobar versión/tag/release; validar `CHANGELOG.md`; ejecutar `npm run ci`; opcionalmente construir local; crear tag anotado; empujar el tag. GitHub Actions construye y publica la release.
 - `npm run release:dry-run` valida sin crear ni empujar tag (puede hacer `fetch` para comprobar sincronización); `npm run release:ship` crea y empuja el tag; `npm run release:full` añade el build local. Los releases requieren branch `main`, worktree limpio, HEAD exactamente en `origin/main`, entrada de changelog con fecha/sección y tag no duplicado.
 - Antes de solicitar review, incluye propósito, issue/PR relacionado, evidencia de tests y screenshots si hay cambios de UI. No borres cambios ajenos para conseguir un árbol limpio: resuélvelo con la rama/PR adecuada.

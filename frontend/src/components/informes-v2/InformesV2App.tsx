@@ -2,14 +2,15 @@ import '../technical-reports/technical-reports.css';
 import './informes-v2.css';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Database, Download, Eye, FileDown, FilePlus2, Files, PenLine, RefreshCw, Trash2, Upload } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useReportWorkspace } from '../../hooks/useReportWorkspace';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import { saveFeatureHistory } from '../../utils/history';
 import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
-import { downloadBase64Blob, downloadBase64Pdf, fileToBase64, fileToDataUrl, informesV2Api } from './api';
+import { downloadBase64Blob, downloadBase64Pdf, fileToDataUrl, informesV2Api } from './api';
 import {
   askPdfSavePath,
   logoToPdfPath,
@@ -17,24 +18,36 @@ import {
   type LogoAsset,
 } from './exportPdf';
 import { matchPhotosForId } from './photoMatch';
-import type { InformeV2, InformeV2ListItem, PhotoAsset } from './types';
+import type { PhotoAsset } from './types';
 
 export default function InformesV2App() {
   const { addToast } = useToast();
   const dialog = useDialog();
-  const [reports, setReports] = useState<InformeV2ListItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<InformeV2 | null>(null);
-  const [dirtyCount, setDirtyCount] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const {
+    reports,
+    selectedId,
+    formData,
+    setFormData,
+    hasChanges,
+    busy,
+    setBusy,
+    mobileTab,
+    setMobileTab,
+    importInputRef,
+    patchForm,
+    markClean,
+    loadReports,
+    selectReport,
+    createReport,
+    saveReport,
+    deleteReport,
+    clearReports,
+    importFile,
+  } = useReportWorkspace(informesV2Api);
   const [logoLeft, setLogoLeft] = useState<LogoAsset | null>(null);
   const [logoRight, setLogoRight] = useState<LogoAsset | null>(null);
   const [photos, setPhotos] = useState<PhotoAsset[]>([]);
-  const [mobileTab, setMobileTab] = useState<'db' | 'preview' | 'form'>('db');
-  const importInputRef = useRef<HTMLInputElement>(null);
-  const selectGenRef = useRef(0);
 
-  const hasChanges = dirtyCount > 0;
   const logoLeftSrc = logoLeft?.src ?? null;
   const logoRightSrc = logoRight?.src ?? null;
 
@@ -42,153 +55,6 @@ export default function InformesV2App() {
     if (!formData) return [];
     return matchPhotosForId(photos, formData.header.photo_id);
   }, [formData, photos]);
-
-  const patchForm = useCallback((report: InformeV2) => {
-    setFormData(report);
-    setDirtyCount((c) => c + 1);
-  }, []);
-
-  const markClean = useCallback(() => setDirtyCount(0), []);
-
-  const loadReports = useCallback(async () => {
-    setBusy(true);
-    try {
-      const result = await informesV2Api.list(true);
-      setReports(result.reports || []);
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudieron cargar los informes', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast]);
-
-  useEffect(() => {
-    void loadReports();
-  }, [loadReports]);
-
-  const selectReport = useCallback(async (id: string) => {
-    if (hasChanges) {
-      const proceed = await dialog.confirm({
-        title: 'Cambios sin guardar',
-        description: 'Se perderán los cambios del informe actual.',
-        confirmLabel: 'Continuar',
-        cancelLabel: 'Seguir editando',
-      });
-      if (!proceed) return;
-    }
-    const gen = ++selectGenRef.current;
-    setBusy(true);
-    try {
-      const report = await informesV2Api.get(id);
-      if (gen !== selectGenRef.current) return;
-      setSelectedId(id);
-      setFormData(report);
-      markClean();
-    } catch (error) {
-      if (gen !== selectGenRef.current) return;
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo abrir el informe', type: 'error' });
-    } finally {
-      if (gen === selectGenRef.current) setBusy(false);
-    }
-  }, [addToast, dialog, hasChanges, markClean]);
-
-  const createReport = useCallback(async () => {
-    setBusy(true);
-    try {
-      const report = await informesV2Api.create();
-      await loadReports();
-      setSelectedId(report.id);
-      setFormData(report);
-      markClean();
-      addToast({ message: 'Informe creado', type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo crear el informe', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, loadReports, markClean]);
-
-  const saveReport = useCallback(async () => {
-    if (!formData) return;
-    setBusy(true);
-    try {
-      const saved = await informesV2Api.update(formData.id, formData);
-      setFormData(saved);
-      markClean();
-      await loadReports();
-      addToast({ message: 'Informe guardado', type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo guardar', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, formData, loadReports, markClean]);
-
-  const deleteReport = useCallback(async () => {
-    if (!selectedId) return;
-    const confirmed = await dialog.confirm({
-      title: 'Eliminar informe',
-      description: `Se eliminará ${selectedId} de la base local.`,
-      confirmLabel: 'Eliminar',
-      cancelLabel: 'Cancelar',
-      type: 'destructive',
-    });
-    if (!confirmed) return;
-    setBusy(true);
-    try {
-      await informesV2Api.delete(selectedId);
-      setSelectedId(null);
-      setFormData(null);
-      markClean();
-      await loadReports();
-      addToast({ message: 'Informe eliminado', type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo eliminar', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, dialog, loadReports, markClean, selectedId]);
-
-  const clearReports = useCallback(async () => {
-    const confirmed = await dialog.confirm({
-      title: 'Eliminar todos los informes',
-      description: 'Esta acción reemplaza la base local con una lista vacía.',
-      confirmLabel: 'Eliminar todo',
-      cancelLabel: 'Cancelar',
-      type: 'destructive',
-    });
-    if (!confirmed) return;
-    setBusy(true);
-    try {
-      await informesV2Api.clear();
-      setReports([]);
-      setSelectedId(null);
-      setFormData(null);
-      markClean();
-      addToast({ message: 'Base de informes limpiada', type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo limpiar la base', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, dialog, markClean]);
-
-  const importFile = useCallback(async (file: File) => {
-    setBusy(true);
-    try {
-      const content = await fileToBase64(file);
-      const result = await informesV2Api.importFile(file.name, content);
-      setSelectedId(null);
-      setFormData(null);
-      markClean();
-      await loadReports();
-      addToast({ message: `${result.imported_count} informes importados`, type: 'success' });
-    } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo importar el archivo', type: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, loadReports, markClean]);
 
   const downloadTemplate = useCallback(async () => {
     setBusy(true);
@@ -201,7 +67,7 @@ export default function InformesV2App() {
     } finally {
       setBusy(false);
     }
-  }, [addToast]);
+  }, [addToast, setBusy]);
 
   const changeLogo = useCallback(async (side: 'left' | 'right', file: File | null) => {
     if (!file) {
@@ -294,7 +160,7 @@ export default function InformesV2App() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight, markClean, photos]);
+  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight, markClean, photos, setBusy, setFormData]);
 
   const exportConsolidated = useCallback(async () => {
     if (reports.length === 0) return;
@@ -376,7 +242,7 @@ export default function InformesV2App() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, dialog, formData, hasChanges, logoLeft, logoRight, markClean, photos, reports]);
+  }, [addToast, dialog, formData, hasChanges, logoLeft, logoRight, markClean, photos, reports, setBusy, setFormData]);
 
   return (
     <div className="tr-app iv2-app">

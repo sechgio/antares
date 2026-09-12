@@ -71,6 +71,19 @@ describe('PreviewViewport', () => {
     expect(container.querySelector('iframe')).toBe(iframe);
   });
 
+  it('unmount during a pan drag removes the window listeners', () => {
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const { unmount } = render(
+      <PreviewViewport html="<html><body>x</body></html>" widthPx={200} heightPx={280} />,
+    );
+    const viewport = screen.getByTestId('generate-preview-viewport');
+    fireEvent.pointerDown(viewport, { button: 0, clientX: 10, clientY: 10 });
+    unmount();
+    expect(removeSpy.mock.calls.some(([type]) => type === 'pointermove')).toBe(true);
+    expect(removeSpy.mock.calls.some(([type]) => type === 'pointerup')).toBe(true);
+    removeSpy.mockRestore();
+  });
+
   it('iframe ignores pointer events so viewport can pan/zoom over the page', () => {
     const { container } = render(
       <PreviewViewport html="<html><body>ok</body></html>" widthPx={200} heightPx={280} />,

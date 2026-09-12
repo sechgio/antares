@@ -83,16 +83,6 @@ class Job:
         with self.state._lock:
             return self._snapshot_locked()
 
-    def to_dict_detail(self) -> dict[str, Any]:
-        with self.state._lock:
-            result = dict(self.result) if isinstance(self.result, dict) else self.result
-            return {
-                **self._snapshot_locked(),
-                "logs": [dict(log) for log in self.state.logs],
-                "params": self.params,
-                "result": result,
-            }
-
 
 class JobManager:
 
@@ -120,6 +110,8 @@ class JobManager:
             stale = [k for k, owner in self._reserved_out_paths.items() if owner == job_id]
             for key in stale:
                 del self._reserved_out_paths[key]
+            if not self._reserved_out_paths:
+                self._reserved_out_paths = {}
 
     def create_job(
         self,
@@ -248,13 +240,6 @@ class JobManager:
     def get_job(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)
-
-    def list_jobs(self, job_type: str | None = None) -> list[Job]:
-        with self._lock:
-            jobs = list(self._jobs.values())
-        if job_type:
-            jobs = [j for j in jobs if j.job_type == job_type]
-        return jobs
 
     def cancel_job(self, job_id: str) -> dict[str, Any]:
         with self._lock:

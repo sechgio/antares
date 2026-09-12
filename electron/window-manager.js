@@ -5,6 +5,20 @@ const { appendLogEvent } = require('./app-log');
 let mainWindow = null;
 let _isDev = false;
 
+function _resolvePinnedSupabaseHost() {
+  const raw = process.env.ANTARES_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  if (!raw) return null;
+  try {
+    const url = new URL(String(raw).trim());
+    const host = url.hostname;
+    if (url.protocol === 'https:' && /(^|\.)supabase\.co$/i.test(host)) {
+      return host;
+    }
+  } catch {
+  }
+  return null;
+}
+
 function buildAppMenu(menuIndex = 0) {
   const isPackaged = (() => {
     try {
@@ -44,7 +58,7 @@ function createWindow(isDev) {
   const isPackagedArg = `--app-is-packaged=${isDev ? '0' : '1'}`;
 
   mainWindow = new BrowserWindow({
-    width, height, show: true, frame: false,
+    width, height, show: false, frame: false,
     backgroundColor: '#0f172a',
     titleBarStyle: 'hidden', autoHideMenuBar: true, icon: iconPath,
     webPreferences: {
@@ -53,7 +67,13 @@ function createWindow(isDev) {
       additionalArguments: [allowedMethodsArg, isPackagedArg],
     },
   });
-  mainWindow.maximize();
+
+  const cspHardening = "; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+  const pinnedSupabaseHost = _resolvePinnedSupabaseHost();
+  const buildCsp = (policy) => {
+    const pinned = pinnedSupabaseHost ? policy.replace(/\*\.supabase\.co/g, pinnedSupabaseHost) : policy;
+    return pinned + cspHardening;
+  };
 
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -61,14 +81,30 @@ function createWindow(isDev) {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           isDev
-            ? "default-src 'self' http://localhost:5173; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev"
-            : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev"
+            ? buildCsp("default-src 'self' http://localhost:5173; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev")
+            : buildCsp("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev")
         ]
       }
     });
   });
 
   mainWindow.webContents.setBackgroundThrottling(false);
+
+  const htmlPath = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
+  let loadFailureRecoveryAttempts = 0;
+  const loadMainWindowContent = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return Promise.resolve();
+    return isDev
+      ? mainWindow.loadURL('http://localhost:5173')
+      : mainWindow.loadFile(htmlPath);
+  };
+  const showLoadFailurePage = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const html = '<!doctype html><meta charset="utf-8"><title>Antares</title>' +
+      '<style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:grid;place-items:center;height:100vh;margin:0;text-align:center}main{max-width:34rem;padding:2rem}h1{font-size:1.35rem}p{color:#94a3b8}</style>' +
+      '<main><h1>Antares no pudo cargar la aplicación</h1><p>Usa Ver → Recargar para reintentar.</p></main>';
+    void mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {});
+  };
 
   mainWindow.webContents.on('render-process-gone', (_event, details = {}) => {
     appendLogEvent('ERROR', 'renderer.lifecycle', {
@@ -92,7 +128,7 @@ function createWindow(isDev) {
       reason: 'responsive',
     });
   });
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
     appendLogEvent('ERROR', 'renderer.lifecycle', {
       component: 'renderer',
       outcome: 'failed',
@@ -100,6 +136,20 @@ function createWindow(isDev) {
       error_code: String(errorCode),
       message: errorDescription || 'renderer load failed',
     });
+    if (!isMainFrame || errorCode === -3 || !mainWindow || mainWindow.isDestroyed()) return;
+
+    mainWindow.show();
+    if (loadFailureRecoveryAttempts < 1) {
+      loadFailureRecoveryAttempts += 1;
+      setTimeout(() => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        void loadMainWindowContent().catch(() => {
+          showLoadFailurePage();
+        });
+      }, 250);
+    } else {
+      showLoadFailurePage();
+    }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -109,22 +159,45 @@ function createWindow(isDev) {
     return { action: 'deny' };
   });
 
+  const { pathToFileURL } = require('url');
+  const distFileUrlPrefix = pathToFileURL(path.dirname(htmlPath) + path.sep).toString();
+
   mainWindow.webContents.on('will-navigate', (event, url) => {
     const allowed = isDev
       ? (url.startsWith('http://localhost:5173') || url.startsWith('http://127.0.0.1:5173'))
-      : url.startsWith('file://');
+      : url.startsWith(distFileUrlPrefix);
     if (!allowed) event.preventDefault();
   });
 
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
-    if (!require('electron').app.isPackaged) {
-      mainWindow.webContents.openDevTools();
-    }
-  } else {
-    const htmlPath = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
-    mainWindow.loadFile(htmlPath);
+  mainWindow.webContents.on('did-finish-load', () => {
+    loadFailureRecoveryAttempts = 0;
+  });
+
+  // A load that neither finishes nor reports did-fail-load would leave the
+  // window hidden forever; reveal it (or the failure page) as a fallback.
+  const loadWatchdog = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
+    appendLogEvent('WARN', 'renderer.lifecycle', {
+      component: 'renderer',
+      outcome: 'degraded',
+      reason: 'ready_to_show_timeout',
+    });
+    mainWindow.show();
+    if (!mainWindow.webContents.isLoadingMainFrame()) showLoadFailurePage();
+  }, 20_000);
+
+  void loadMainWindowContent().catch(() => {
+    showLoadFailurePage();
+  });
+  if (isDev && !require('electron').app.isPackaged) {
+    mainWindow.webContents.openDevTools();
   }
+
+  mainWindow.once('ready-to-show', () => {
+    clearTimeout(loadWatchdog);
+    mainWindow.maximize();
+    mainWindow.show();
+  });
 
   mainWindow.on('closed', () => { mainWindow = null; });
 }

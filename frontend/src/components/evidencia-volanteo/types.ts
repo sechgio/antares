@@ -1,12 +1,7 @@
-export interface LocalImage {
-  file: File;
-  objectUrl: string;
-}
+import type { ImageAsset } from '../../types/imageAssets';
 
-export interface LogoAsset {
-  file: File;
-  objectUrl: string;
-}
+export type LocalImage = ImageAsset;
+export type LogoAsset = ImageAsset;
 
 export interface CuadranteRange {
   id: string;

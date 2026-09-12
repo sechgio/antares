@@ -1,4 +1,4 @@
-import { base64ToBytes } from './bytesToBase64';
+import { arrayBufferToBase64, base64ToBytes } from './bytesToBase64';
 import { stageFileForIpc } from './stageFile';
 
 export type PdfQuality = 'max' | 'high' | 'low';
@@ -48,14 +48,9 @@ function stageFileForPdf(file: File): Promise<string | null> {
 
 export function fileToDataUrl(file: File): Promise<string> {
   if (typeof FileReader === 'undefined' && typeof file.arrayBuffer === 'function') {
-    return file.arrayBuffer().then(bytes => {
-      let binary = '';
-      const chunkSize = 0x8000;
-      for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
-        binary += String.fromCharCode(...new Uint8Array(bytes, offset, Math.min(chunkSize, bytes.byteLength - offset)));
-      }
-      return `data:${file.type || 'application/octet-stream'};base64,${btoa(binary)}`;
-    });
+    return file.arrayBuffer().then(bytes =>
+      `data:${file.type || 'application/octet-stream'};base64,${arrayBufferToBase64(bytes)}`,
+    );
   }
 
   return new Promise((resolve, reject) => {

@@ -17,6 +17,7 @@ interface StampPlacementEditorProps {
   pdfBase64?: string | null;
   pdfPath?: string | null;
   pdfFile?: File | null;
+  sourceRevision?: number;
   stampUrl: string;
   positions: StampPosition[];
   activeIndex: number;
@@ -29,6 +30,7 @@ export default function StampPlacementEditor({
   pdfBase64,
   pdfPath,
   pdfFile,
+  sourceRevision = 0,
   stampUrl,
   positions,
   activeIndex,
@@ -215,6 +217,7 @@ export default function StampPlacementEditor({
         pdfBase64={pdfBase64}
         pdfPath={pdfPath}
         pdfFile={pdfFile}
+        sourceRevision={sourceRevision}
         width={previewWidth}
         overlay={(
           <>

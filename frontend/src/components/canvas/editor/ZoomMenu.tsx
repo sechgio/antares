@@ -45,7 +45,7 @@ export default function ZoomMenu({
   onZoom,
   onZoomFit,
   onZoomSelection,
-  showRulers = true,
+  showRulers = false,
   onToggleRulers,
   snapToGrid = false,
   onToggleSnapToGrid,
@@ -87,7 +87,6 @@ export default function ZoomMenu({
       inputRef.current?.select();
     }, 0);
     return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, updateMenuBox]);
 
   useEffect(() => {

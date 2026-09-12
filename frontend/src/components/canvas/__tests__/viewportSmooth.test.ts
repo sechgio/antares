@@ -70,6 +70,12 @@ describe('useSmoothViewport', () => {
     queued.forEach(([, cb]) => cb(now));
   };
 
+  it('defaults to zoom 1 (100%) and centered pan', () => {
+    const { result } = renderHook(() => useSmoothViewport());
+    expect(result.current.zoom).toBe(1);
+    expect(result.current.pan).toEqual({ x: 0, y: 0 });
+  });
+
   it('setZoom clamps instantly and cancels an in-flight animateTo', () => {
     const { result } = renderHook(() => useSmoothViewport(1));
     act(() => {
@@ -90,9 +96,10 @@ describe('useSmoothViewport', () => {
     });
     act(() => tick(0));
     act(() => tick(100));
-    expect(result.current.zoom).toBeGreaterThan(1);
-    expect(result.current.zoom).toBeLessThan(2);
-    expect(result.current.pan.x).toBeGreaterThan(0);
+    // Mid-flight frames live in the imperative channel; React state commits at the end.
+    expect(result.current.getZoom()).toBeGreaterThan(1);
+    expect(result.current.getZoom()).toBeLessThan(2);
+    expect(result.current.getPan().x).toBeGreaterThan(0);
     act(() => tick(200));
     expect(result.current.zoom).toBe(2);
     expect(result.current.pan.x).toBe(80);
@@ -152,6 +159,23 @@ describe('useSmoothViewport', () => {
       result.current.setZoom(1.5);
     });
     expect(result.current.zoom).toBe(1.5);
+    expect(frames.size).toBe(0);
+  });
+
+  it('cancelAnim commits the in-flight position immediately', () => {
+    const { result } = renderHook(() => useSmoothViewport(1));
+    act(() => {
+      result.current.animateTo({ zoom: 2, pan: { x: 80, y: 0 } }, 200);
+    });
+    act(() => tick(0));
+    act(() => tick(100));
+    const liveZoom = result.current.getZoom();
+    expect(liveZoom).toBeGreaterThan(1);
+    expect(result.current.zoom).not.toBe(liveZoom);
+    act(() => {
+      result.current.cancelAnim();
+    });
+    expect(result.current.zoom).toBe(liveZoom);
     expect(frames.size).toBe(0);
   });
 

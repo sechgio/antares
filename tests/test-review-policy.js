@@ -290,7 +290,6 @@ function testMetrics() {
 
   eq(byId.size.value, 210, 'tamaño mediano de PR');
   assert(byId.size.ok, 'el tamaño mediano cumple el objetivo');
-  // PR1 a 1 h, PR2 a 8 h, PR3 sin review. Mediana 4.5.
   eq(byId.firstReviewHours.value, 4.5, 'tiempo mediano hasta la primera revisión');
   assert(!byId.firstReviewHours.ok, 'una mediana de 4.5 h incumple el objetivo de 4 h');
   eq(byId.firstReviewHours.detail, '2 PRs con señal', 'excluye de la mediana los PRs sin revisión');

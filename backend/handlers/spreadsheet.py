@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.handlers.common import with_locale
+from backend.utils.atomic_write import atomic_output_file
 
 MAX_SPREADSHEET_BYTES = 100 * 1024 * 1024
 _INLINE_TEMP_PREFIX = "antares_inline_"
@@ -449,19 +450,9 @@ def spreadsheet_export_volantes_template(params: dict[str, Any]) -> dict[str, An
     df = pd.DataFrame(data, columns=columns)
 
     if resolved:
-        from pathlib import Path as _P
-
-        from backend.utils.validators import sanitizar_nombre as _sn
-        safe = _sn(_P(resolved).name) or _P(resolved).name
-        if not safe.lower().endswith(".xlsx"):
-            safe += ".xlsx"
-        dest = _P(resolved).parent / safe
-        if dest.is_symlink() or dest.parent.is_symlink():
-            raise ValueError("symlink no permitido en ruta de salida")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.exists() and not params.get("overwrite"):
-            raise FileExistsError(f"El archivo ya existe: {dest}")
-        df.to_excel(dest, index=False, engine="openpyxl")
+        with atomic_output_file(resolved, extension=".xlsx", overwrite=bool(params.get("overwrite"))) as target:
+            df.to_excel(target.tmp_path, index=False, engine="openpyxl")
+        dest = target.destination
         return {"path": str(dest), "filename": dest.name}
 
     buf = io.BytesIO()

@@ -378,16 +378,18 @@ export function distributeLayers(
   layers: CanvasLayer[],
   ids: string[],
   axis: 'horizontal' | 'vertical',
-  options?: { mode?: 'centers' | 'gaps' },
+  options?: { mode?: 'centers' | 'gaps'; sortBy?: 'center' | 'edge' },
 ): CanvasLayer[] {
   const idSet = new Set(ids);
   const targets = layers.filter((l) => idSet.has(l.id) && !isLocked(l) && l.type !== 'frame');
   if (targets.length < 3) return layers;
 
   const mode = options?.mode ?? 'gaps';
+  const sortBy = options?.sortBy ?? 'center';
   const sorted = [...targets].sort((a, b) => {
     const ba = layerBounds(a);
     const bb = layerBounds(b);
+    if (sortBy === 'edge') return axis === 'horizontal' ? ba.x - bb.x : ba.y - bb.y;
     return axis === 'horizontal' ? ba.cx - bb.cx : ba.cy - bb.cy;
   });
 
@@ -573,11 +575,22 @@ export function applyContainerLayoutPanelEffects(
   prev: CanvasLayer | undefined,
   layer: CanvasLayer,
 ): CanvasLayer[] {
+  let next = layers;
+  if (layer.parentId) {
+    const parent = layers.find((l) => l.id === layer.parentId);
+    if (parent && isAutoLayoutContainer(parent) && parent.meta?.autoLayout) {
+      const sizingChanged =
+        prev?.meta?.layoutSizingMain !== layer.meta?.layoutSizingMain ||
+        prev?.meta?.layoutSizingCross !== layer.meta?.layoutSizingCross;
+      if (sizingChanged) {
+        next = applyAutoLayoutIfNeeded(next, layer.parentId);
+      }
+    }
+  }
+
   const isContainer =
     layer.type === 'frame' || layer.type === 'group' || layer.type === 'component';
-  if (!isContainer) return layers;
-
-  let next = layers;
+  if (!isContainer) return next;
   if (prev) {
     const dx = parseMm(layer.cssVars['--translate-x']) - parseMm(prev.cssVars['--translate-x']);
     const dy = parseMm(layer.cssVars['--translate-y']) - parseMm(prev.cssVars['--translate-y']);

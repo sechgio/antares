@@ -2,8 +2,6 @@
 from backend.core.config_fields import (
     DEFAULT_FIELDS,
     get_field_names,
-    get_required_fields,
-    get_unique_fields,
     load_fields,
     save_fields,
 )
@@ -46,28 +44,6 @@ class TestConfigFields:
         )
         save_fields([{"name": "a", "type": "TEXT"}, {"name": "b", "type": "INTEGER"}])
         assert get_field_names() == ["a", "b"]
-
-    def test_get_required_fields(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: tmp_path / "fields_config.json",
-        )
-        save_fields([
-            {"name": "a", "type": "TEXT", "required": True},
-            {"name": "b", "type": "TEXT", "required": False},
-        ])
-        assert get_required_fields() == ["a"]
-
-    def test_get_unique_fields(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: tmp_path / "fields_config.json",
-        )
-        save_fields([
-            {"name": "a", "type": "TEXT", "unique": True},
-            {"name": "b", "type": "TEXT", "unique": False},
-        ])
-        assert get_unique_fields() == ["a"]
 
     def test_corrupt_json_retorna_defaults(self, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"

@@ -5,7 +5,7 @@ import {
 import { api } from '../../api';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useToast } from '../../hooks/useToast';
-import { stageFileForIpc } from '../../utils/stageFile';
+import { acquireStagedFile, type StagedFileHandle } from '../../utils/stageFile';
 import { saveFeatureHistory } from '../../utils/history';
 import PositionPanel from './PositionPanel';
 import StampPlacementEditor from './StampPlacementEditor';
@@ -217,36 +217,41 @@ export default function SelladorView() {
     }
 
     try {
-      let fileToken: string | null = null;
+      let inspectHandle: StagedFileHandle | null = null;
       try {
-        fileToken = await stageFileForIpc(file, { reuse: true });
+        inspectHandle = await acquireStagedFile(file);
       } catch (err) {
         console.warn('No se pudo preparar el PDF para IPC; se usa la ruta en memoria', err);
       }
-      if (fileToken) {
-        const info = await api.selladorInspectPdf({ pdf_path: fileToken });
-        await applyPdfMetadata(
-          file,
-          info.page_count,
-          { width: info.page_width, height: info.page_height },
-          null,
-          null,
-        );
-        return;
-      }
 
-      if (file.size > MAX_IN_MEMORY_BYTES) {
-        addToast({
-          message: 'PDF demasiado grande. Ábrelo con «Explorar» en la app de escritorio o arrástralo desde el disco.',
-          type: 'error',
-        });
-        return;
-      }
+      try {
+        if (inspectHandle?.token) {
+          const info = await api.selladorInspectPdf({ pdf_path: inspectHandle.token });
+          await applyPdfMetadata(
+            file,
+            info.page_count,
+            { width: info.page_width, height: info.page_height },
+            null,
+            null,
+          );
+          return;
+        }
 
-      const b64 = await fileToBase64(file);
-      const pdf = await loadPdfDocument(b64);
-      const size = await getPdfPageSize(b64);
-      await applyPdfMetadata(file, pdf.numPages, size, null, b64);
+        if (file.size > MAX_IN_MEMORY_BYTES) {
+          addToast({
+            message: 'PDF demasiado grande. Ábrelo con «Explorar» en la app de escritorio o arrástralo desde el disco.',
+            type: 'error',
+          });
+          return;
+        }
+
+        const b64 = await fileToBase64(file);
+        const pdf = await loadPdfDocument(b64);
+        const size = await getPdfPageSize(b64);
+        await applyPdfMetadata(file, pdf.numPages, size, null, b64);
+      } finally {
+        inspectHandle?.release();
+      }
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo leer el PDF.', type: 'error' });
     }
@@ -374,6 +379,8 @@ export default function SelladorView() {
   const handleApply = async () => {
     if (!canApply || !primaryRect || !pdfFile || !stampFile) return;
     setApplying(true);
+    let pdfHandle: StagedFileHandle | null = null;
+    let stampHandle: StagedFileHandle | null = null;
     try {
       const defaultName = `${stripPdfExtension(pdfFile.name)}_sellado.pdf`;
       const saveTarget = await api.dialogSave({
@@ -393,10 +400,12 @@ export default function SelladorView() {
       } else if (pdfBase64) {
         pdfSource = { pdf_b64: pdfBase64 };
       } else {
-        const stagedPdf = await stageFileForIpc(pdfFile, { reuse: true });
-        if (stagedPdf) {
-          pdfSource = { pdf_path: stagedPdf };
+        pdfHandle = await acquireStagedFile(pdfFile);
+        if (pdfHandle.token) {
+          pdfSource = { pdf_path: pdfHandle.token };
         } else {
+          pdfHandle.release();
+          pdfHandle = null;
           if (pdfFile.size > MAX_IN_MEMORY_BYTES) {
             throw new Error('PDF demasiado grande para procesarlo sin staging.');
           }
@@ -417,11 +426,13 @@ export default function SelladorView() {
         filename: defaultName,
         output_path: outputPath,
       };
-      const stagedStamp = await stageFileForIpc(stampFile, { reuse: true });
+      stampHandle = await acquireStagedFile(stampFile);
       let stampSource: { stamp_path: string } | { stamp_b64: string };
-      if (stagedStamp) {
-        stampSource = { stamp_path: stagedStamp };
+      if (stampHandle.token) {
+        stampSource = { stamp_path: stampHandle.token };
       } else {
+        stampHandle.release();
+        stampHandle = null;
         stampSource = { stamp_b64: await fileToBase64(stampFile) };
       }
       const res = await api.selladorApply({ ...applyBase, ...stampSource });
@@ -450,6 +461,8 @@ export default function SelladorView() {
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo sellar el PDF.', type: 'error' });
     } finally {
+      pdfHandle?.release();
+      stampHandle?.release();
       setApplying(false);
     }
   };
@@ -640,11 +653,12 @@ export default function SelladorView() {
           ) : (
             <div className="space-y-5">
               {stampPreviewUrl && primaryRect && pageSize && positions.length > 0 ? (
-                <StampPlacementEditor
-                  pdfBase64={pdfBase64}
-                  pdfPath={pdfPath}
-                  pdfFile={pdfFile}
-                  stampUrl={stampPreviewUrl}
+                  <StampPlacementEditor
+                    pdfBase64={pdfBase64}
+                    pdfPath={pdfPath}
+                    pdfFile={pdfFile}
+                    sourceRevision={pdfSourceRevision}
+                    stampUrl={stampPreviewUrl}
                   positions={positions}
                   activeIndex={activePositionIndex}
                   pageSize={pageSize}

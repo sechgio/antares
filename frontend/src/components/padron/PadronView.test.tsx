@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import PadronView, { getRenderableExportSheets, paginateLuriganchoItems } from './PadronView';
 import { MAX_PADRON_ITEMS, createInitialItems } from './data';
 
@@ -88,7 +88,41 @@ describe('padron folio controls', () => {
     const hastaInput = screen.getByLabelText('Hasta');
     fireEvent.change(hastaInput, { target: { value: '3' } });
 
-    expect(sheetFooters()[0]).toBe('Página 2 de 2');
+    expect(sheetFooters()).toEqual(['Página 2 de 3', 'Página 3 de 3']);
+    expect(screen.getAllByText('Página 2 de 3')).toHaveLength(2);
+  });
+
+  it('renders every sequential folio while printing a document longer than the preview window', () => {
+    render(<PadronView />);
+    fireEvent.change(screen.getByLabelText('Total ítems'), { target: { value: '108' } });
+    fireEvent.change(screen.getByLabelText('Item final'), { target: { value: '108' } });
+
+    expect(sheetFooters()).toEqual([
+      'Página 1 de 6',
+      'Página 2 de 6',
+      'Página 3 de 6',
+      'Página 4 de 6',
+      'Página 5 de 6',
+    ]);
+
+    let printedFooters: string[] = [];
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {
+      printedFooters = sheetFooters();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Imprimir/i }));
+
+    expect(printedFooters).toEqual([
+      'Página 1 de 6',
+      'Página 2 de 6',
+      'Página 3 de 6',
+      'Página 4 de 6',
+      'Página 5 de 6',
+      'Página 6 de 6',
+    ]);
+
+    expect(sheetFooters()).toHaveLength(5);
+    printSpy.mockRestore();
   });
 
   it('applies page number style in preview', () => {

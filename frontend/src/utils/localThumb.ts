@@ -2,12 +2,14 @@
 import { api } from '../api';
 
 const MAX_CACHE = 200;
+const MAX_CACHE_PAYLOAD_CHARS = 32 * 1024 * 1024;
 const MIN_CONCURRENCY = 4;
 const MAX_CONCURRENCY = 8;
 const DEFAULT_MAX_EDGE = 256;
 const FULL_IMAGE_CACHE_PREFIX = 'full\0';
 
 const cache = new Map<string, string>();
+let cachePayloadChars = 0;
 
 const inFlight = new Map<string, Promise<string | null>>();
 
@@ -41,12 +43,21 @@ function cacheGet(key: string): string | undefined {
 }
 
 function cacheSet(key: string, dataUrl: string): void {
-  if (cache.has(key)) cache.delete(key);
+  const payloadChars = dataUrl.length;
+  if (payloadChars > MAX_CACHE_PAYLOAD_CHARS) return;
+  const previous = cache.get(key);
+  if (previous !== undefined) {
+    cachePayloadChars -= previous.length;
+    cache.delete(key);
+  }
   cache.set(key, dataUrl);
-  while (cache.size > MAX_CACHE) {
+  cachePayloadChars += payloadChars;
+  while (cache.size > MAX_CACHE || cachePayloadChars > MAX_CACHE_PAYLOAD_CHARS) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
+    const evicted = cache.get(oldest);
     cache.delete(oldest);
+    if (evicted !== undefined) cachePayloadChars -= evicted.length;
   }
 }
 
@@ -66,7 +77,8 @@ function runLimited<T>(fn: () => Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const start = () => {
       active += 1;
-      fn()
+      Promise.resolve()
+        .then(fn)
         .then(resolve, reject)
         .finally(() => {
           active -= 1;
@@ -143,6 +155,7 @@ export async function getLocalImageDataUrl(filePath: string): Promise<string | n
 
 export function _resetLocalThumbForTests(): void {
   cache.clear();
+  cachePayloadChars = 0;
   inFlight.clear();
   waitQueue.length = 0;
   active = 0;

@@ -75,7 +75,7 @@ export function subscribeEspaciosSync(
 }
 
 export function subscribeDueNotifications(
-  onChange: () => void,
+  onChange: RealtimeHandler,
   onStatus?: (status: RealtimeStatus) => void,
 ): RealtimeChannel | null {
   if (!supabase) {
@@ -89,12 +89,12 @@ export function subscribeDueNotifications(
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'tareas' },
-      () => onChange(),
+      onTable('tareas', onChange),
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'board_columns' },
-      () => onChange(),
+      onTable('board_columns', onChange),
     );
 
   onStatus?.('connecting');

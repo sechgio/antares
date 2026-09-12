@@ -25,9 +25,12 @@ export interface SectionProps {
   setMetaLive: (patch: NonNullable<CanvasLayer['meta']>) => void;
   onCommitLive?: () => void;
   onAlign: (align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
+  alignmentLabel?: string;
+  multiSelection?: boolean;
   logoSideConflict?: boolean;
   zOrder: ZOrderCallbacks;
   onInstantiateComponent?: () => void;
+  onSelectLayer?: (id: string) => void;
   isLine: boolean;
   showRadius: boolean;
   hasFill: boolean;

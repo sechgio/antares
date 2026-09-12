@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
-import { useAnchoredPopover } from "../hooks/useAnchoredPopover";
+import { useAnchoredPopover } from "../../../hooks/useAnchoredPopover";
 import { isSameDate, parseIsoDateLocal, toIsoDateLocal } from "../../../utils/dates";
+import { buildMonthCalendar, formatDate } from "../../../utils/datePickerCalendar";
 
 interface DatePickerProps {
   value: string;
@@ -16,29 +17,6 @@ const MONTH_NAMES = [
   "Ene", "Feb", "Mar", "Abr", "May", "Jun",
   "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
 ];
-
-function formatDate(dateString: string): string {
-  if (!dateString) return "Seleccionar fecha";
-  const date = new Date(`${dateString}T00:00:00`);
-  return date.toLocaleDateString("es-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-function buildMonthDays(month: Date): Array<Date | null> {
-  const year = month.getFullYear();
-  const monthIndex = month.getMonth();
-  const firstDay = new Date(year, monthIndex, 1).getDay();
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-  const days: Array<Date | null> = [];
-  for (let i = 0; i < firstDay; i += 1) days.push(null);
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    days.push(new Date(year, monthIndex, day));
-  }
-  return days;
-}
 
 export default function DatePicker({
   value,
@@ -63,7 +41,7 @@ export default function DatePicker({
     if (isOpen) updatePosition();
   }, [isOpen, currentMonth, updatePosition]);
 
-  const days = buildMonthDays(currentMonth);
+  const days = buildMonthCalendar(currentMonth, false);
 
   const isToday = (date: Date) => isSameDate(date, new Date());
 
@@ -94,7 +72,9 @@ export default function DatePicker({
         aria-expanded={isOpen}
       >
         <Calendar className="vgen-date-picker-trigger-icon" size={13} />
-        <span className="vgen-date-picker-trigger-value">{formatDate(value)}</span>
+        <span className="vgen-date-picker-trigger-value">
+          {formatDate(value ? new Date(`${value}T00:00:00`) : null, "Seleccionar fecha")}
+        </span>
       </button>
 
       {isOpen &&
@@ -150,7 +130,7 @@ export default function DatePicker({
             </div>
 
             <div className="vgen-date-picker-days">
-              {days.map((date, index) => {
+              {days.map(({ date }, index) => {
                 if (!date) {
                   return (
                     <div

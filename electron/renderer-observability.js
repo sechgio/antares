@@ -18,7 +18,7 @@ const ALLOWED_EVENT_FIELDS = new Set([
   'count',
   'reason',
 ]);
-const ALLOWED_LEVELS = new Set(['DEBUG', 'INFO', 'WARN', 'ERROR']);
+const ALLOWED_LEVELS = new Set(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']);
 const ALLOWED_OUTCOMES = new Set([
   'success',
   'partial',

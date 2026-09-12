@@ -174,6 +174,10 @@ def _open_export_image(src: str, local_image_paths: dict[str, str]) -> Iterator[
     if not path or not os.path.exists(path):
         yield None
         return
+    if not _CANVAS_ASSET_RE.match(mapped) and path not in local_image_paths.values():
+        logger.debug("CMYK: refusing non-authorized image path %s", path)
+        yield None
+        return
     try:
         with Image.open(path) as pil_img:
             yield pil_img

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import sys
 import threading
 from pathlib import Path
 from typing import Any
 
 from backend.core.json_store import JsonDocumentStore
 from backend.core.technical_reports.models import TechnicalReport, create_empty_report, next_technical_report_number
-from backend.utils.paths import user_data_path
+from backend.utils.paths import resource_path, user_data_path
 
 DEFAULT_DB_PATH = user_data_path("technical_reports.json")
+_DEFAULT_USER_DATA_PATH = DEFAULT_DB_PATH
+_LEGACY_DB_PATH = resource_path("data/technical_reports.json")
 
 _db_instance: TechnicalReportsDB | None = None
 _db_instance_lock = threading.Lock()
@@ -28,7 +31,14 @@ class TechnicalReportsDB(JsonDocumentStore):
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         path = Path(db_path) if db_path is not None else Path(DEFAULT_DB_PATH)
-        super().__init__(path, TechnicalReport.normalize)
+        legacy_path = (
+            _LEGACY_DB_PATH
+            if db_path is None
+            and not getattr(sys, "frozen", False)
+            and path == Path(_DEFAULT_USER_DATA_PATH)
+            else None
+        )
+        super().__init__(path, TechnicalReport.normalize, legacy_path=legacy_path)
 
     def create(self, report: dict[str, Any]) -> dict[str, Any]:
         return self.insert(report)

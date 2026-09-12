@@ -6,6 +6,7 @@ import { addDaysToIsoDate, localTodayString } from '../utils/dates';
 import {
   collectDueNotifications,
   DUE_SOON_DAYS,
+  shouldRefreshForDueChange,
   type DueNotification,
 } from '../utils/dueNotifications';
 import { onDueNotificationsInvalidate } from '../utils/dueNotificationsBus';
@@ -19,6 +20,7 @@ export function useDueNotifications(enabled = true) {
   const [error, setError] = useState<string | null>(null);
   const inFlightRef = useRef(0);
   const debounceTimerRef = useRef<number | null>(null);
+  const notifiedIdsRef = useRef<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     if (!enabled || !supabase) {
@@ -34,7 +36,9 @@ export function useDueNotifications(enabled = true) {
       const horizon = addDaysToIsoDate(today, DUE_SOON_DAYS);
       const rows = await fetchDueSoonTareas(horizon);
       if (requestId !== inFlightRef.current) return;
-      setItems(collectDueNotifications(rows, { today, soonDays: DUE_SOON_DAYS }));
+      const nextItems = collectDueNotifications(rows, { today, soonDays: DUE_SOON_DAYS });
+      notifiedIdsRef.current = new Set(nextItems.map((item) => item.id));
+      setItems(nextItems);
       setError(null);
     } catch (err) {
       if (requestId !== inFlightRef.current) return;
@@ -63,7 +67,9 @@ export function useDueNotifications(enabled = true) {
 
     void refresh();
 
-    const channel = subscribeDueNotifications(scheduleRefresh);
+    const channel = subscribeDueNotifications((payload) => {
+      if (shouldRefreshForDueChange(payload, notifiedIdsRef.current)) scheduleRefresh();
+    });
     const unsubLocal = onDueNotificationsInvalidate(scheduleRefresh);
 
     const interval = window.setInterval(() => void refresh(), POLL_MS);

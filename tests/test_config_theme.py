@@ -4,7 +4,6 @@ from pathlib import Path
 import backend.core.config_theme as config_theme
 from backend.core.config_theme import (
     DEFAULT_THEME,
-    get_preset_names,
     load_preset,
     load_theme,
     reset_theme,
@@ -17,7 +16,7 @@ def test_default_theme_uses_neutral_professional_identity() -> None:
     assert DEFAULT_THEME["accent"] == "#3B82F6"
     assert DEFAULT_THEME["accent_light"] == "#93C5FD"
     assert DEFAULT_THEME["blue_hover"] == "#14B8A6"
-    assert "Slate Professional" in get_preset_names()
+    assert "Slate Professional" in config_theme.PRESETS
     assert load_preset("Slate Professional")["name"] == "Slate Professional"
 
 
@@ -78,13 +77,13 @@ def test_reset_theme_restores_defaults_on_disk(tmp_path, monkeypatch) -> None:
 
 def test_all_presets_define_required_theme_keys() -> None:
     required = set(DEFAULT_THEME)
-    for name in get_preset_names():
+    for name in config_theme.PRESETS:
         preset = load_preset(name)
         assert required.issubset(preset.keys()), name
 
 
 def test_preset_list_includes_varied_appearance_styles() -> None:
-    names = set(get_preset_names())
+    names = set(config_theme.PRESETS)
     assert {"Porcelain Light", "Graphite Focus", "Olive Operations", "Copper Night", "Midnight Ocean", "Forest Zen", "Royal Purple", "Arctic Frost"}.issubset(names)
 
 

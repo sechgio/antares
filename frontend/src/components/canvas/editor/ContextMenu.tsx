@@ -1,27 +1,36 @@
-import { Fragment, useEffect, useRef, type ComponentType } from 'react';
+import { Fragment, type ComponentType } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  Brush,
   ChevronUp,
   ChevronDown,
   ClipboardPaste,
   Copy,
+  CopyPlus,
+  FileOutput,
   Group,
   Layers,
   LayoutGrid,
   Lock,
+  MousePointer2,
+  Pipette,
   Pencil,
+  SquareStack,
   Trash2,
   Ungroup,
   Unlock,
 } from 'lucide-react';
 import { Eye, EyeSlash } from './VisibilityIcon';
+import { useContextMenuSurface } from '../hooks/useContextMenuSurface';
 
 export type CanvasContextAction =
   | 'edit'
   | 'copy'
   | 'paste'
   | 'pasteInPlace'
+  | 'copyProps'
+  | 'pasteProps'
   | 'duplicate'
   | 'toggleLock'
   | 'toggleVisible'
@@ -30,6 +39,12 @@ export type CanvasContextAction =
   | 'sendBack'
   | 'sendBackward'
   | 'selectChildren'
+  | 'selectParent'
+  | 'selectUnderCursor'
+  | 'selectSame'
+  | 'eyedropper'
+  | 'pasteToReplace'
+  | 'moveToPage'
   | 'group'
   | 'ungroup'
   | 'matchGridSlotSize'
@@ -47,12 +62,23 @@ export interface CanvasContextMenuState {
   canPaste: boolean;
   editKind?: 'text' | 'field' | null;
   canMatchGridSlotSize?: boolean;
+  hasParent?: boolean;
+  canPasteProps?: boolean;
+  underCursor?: Array<{ id: string; name: string }>;
+  pageTargets?: Array<{ index: number; label: string }>;
+  refIsText?: boolean;
 }
 
 interface ContextMenuProps {
   menu: CanvasContextMenuState;
-  onAction: (action: CanvasContextAction) => void;
+  onAction: (action: CanvasContextAction, arg?: number | string) => void;
   onClose: () => void;
+}
+
+interface MenuChild {
+  label: string;
+  arg: number | string;
+  disabled?: boolean;
 }
 
 interface MenuItem {
@@ -63,38 +89,11 @@ interface MenuItem {
   danger?: boolean;
   disabled?: boolean;
   sepBefore?: boolean;
+  children?: MenuChild[];
 }
 
 export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProps) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    const onPointer = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onPointer);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onPointer);
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const pad = 8;
-    const rect = el.getBoundingClientRect();
-    let left = menu.x;
-    let top = menu.y;
-    if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
-    if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
-    el.style.left = `${Math.max(pad, left)}px`;
-    el.style.top = `${Math.max(pad, top)}px`;
-  }, [menu.x, menu.y]);
+  const ref = useContextMenuSurface(menu.x, menu.y, onClose);
 
   const hasLayer = Boolean(menu.layerId);
   const items: MenuItem[] = [];
@@ -103,6 +102,23 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
   } else if (menu.editKind === 'field') {
     items.push({ id: 'edit', label: 'Editar campo', tip: 'Doble clic', icon: Pencil, disabled: menu.locked });
   }
+  if (menu.hasParent) {
+    items.push({
+      id: 'selectParent',
+      label: 'Seleccionar contenedor',
+      tip: 'Esc',
+      icon: Layers,
+      disabled: !hasLayer,
+    });
+  }
+  if (menu.underCursor && menu.underCursor.length > 1) {
+    items.push({
+      id: 'selectUnderCursor',
+      label: 'Seleccionar bajo el cursor',
+      icon: MousePointer2,
+      children: menu.underCursor.map((l) => ({ label: l.name, arg: l.id })),
+    });
+  }
   items.push(
     {
       id: 'copy',
@@ -110,7 +126,7 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       tip: 'Ctrl+C',
       icon: Copy,
       disabled: !hasLayer,
-      sepBefore: Boolean(menu.editKind),
+      sepBefore: Boolean(menu.editKind || menu.hasParent || menu.underCursor?.length),
     },
     { id: 'paste', label: 'Pegar', tip: 'Ctrl+V', icon: ClipboardPaste, disabled: !menu.canPaste },
     {
@@ -120,7 +136,47 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       icon: ClipboardPaste,
       disabled: !menu.canPaste,
     },
+    {
+      id: 'pasteToReplace',
+      label: 'Pegar para reemplazar',
+      tip: 'Ctrl+Shift+R',
+      icon: ClipboardPaste,
+      disabled: !hasLayer || menu.locked || !menu.canPaste,
+    },
     { id: 'duplicate', label: 'Duplicar', tip: 'Ctrl+D', icon: Copy, disabled: !hasLayer || menu.locked },
+    {
+      id: 'copyProps',
+      label: 'Copiar propiedades',
+      tip: 'Ctrl+Alt+C',
+      icon: Brush,
+      disabled: !hasLayer,
+      sepBefore: true,
+    },
+    {
+      id: 'pasteProps',
+      label: 'Pegar propiedades',
+      tip: 'Ctrl+Alt+V',
+      icon: CopyPlus,
+      disabled: !hasLayer || menu.locked || !menu.canPasteProps,
+    },
+    {
+      id: 'eyedropper',
+      label: 'Cuentagotas de color',
+      tip: 'Alt+C',
+      icon: Pipette,
+      disabled: !hasLayer,
+    },
+    {
+      id: 'selectSame',
+      label: 'Seleccionar similar',
+      icon: SquareStack,
+      disabled: !hasLayer,
+      children: [
+        { label: 'Mismo relleno', arg: 'fill' },
+        { label: 'Mismo borde', arg: 'stroke' },
+        { label: 'Misma fuente', arg: 'font', disabled: !menu.refIsText },
+      ],
+    },
     {
       id: 'toggleLock',
       label: menu.locked ? 'Desbloquear' : 'Bloquear',
@@ -164,6 +220,18 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
             icon: LayoutGrid,
             disabled: menu.locked,
             sepBefore: true,
+          },
+        ]
+      : []),
+    ...(menu.pageTargets?.length
+      ? [
+          {
+            id: 'moveToPage' as const,
+            label: 'Mover a página',
+            icon: FileOutput,
+            disabled: !hasLayer || menu.locked,
+            sepBefore: true,
+            children: menu.pageTargets.map((p) => ({ label: p.label, arg: p.index })),
           },
         ]
       : []),
@@ -215,22 +283,57 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       {items.map((item) => (
         <Fragment key={item.id}>
           {item.sepBefore ? <div className="canvas-context-sep" role="separator" /> : null}
-          <button
-            type="button"
-            role="menuitem"
-            className="canvas-context-item"
-            data-danger={item.danger || undefined}
-            disabled={item.disabled}
-            onClick={() => {
-              if (item.disabled) return;
-              onAction(item.id);
-              onClose();
-            }}
-          >
-            <item.icon className="h-3.5 w-3.5 shrink-0" />
-            <span className="min-w-0 flex-1 text-left">{item.label}</span>
-            {item.tip && <kbd className="canvas-kbd">{item.tip}</kbd>}
-          </button>
+          {item.children?.length ? (
+            <div className="canvas-context-subwrap" data-testid={`canvas-context-sub-${item.id}`}>
+              <button
+                type="button"
+                role="menuitem"
+                aria-haspopup="menu"
+                className="canvas-context-item"
+                disabled={item.disabled}
+                onClick={(e) => e.preventDefault()}
+              >
+                <item.icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 text-left">{item.label}</span>
+                <ChevronDown className="h-3 w-3 -rotate-90 opacity-70" aria-hidden />
+              </button>
+              <div className="canvas-context-sub" role="menu">
+                {item.children.map((child) => (
+                  <button
+                    key={`${item.id}:${String(child.arg)}`}
+                    type="button"
+                    role="menuitem"
+                    className="canvas-context-item"
+                    disabled={child.disabled}
+                    onClick={() => {
+                      if (child.disabled) return;
+                      onAction(item.id, child.arg);
+                      onClose();
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-left">{child.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              className="canvas-context-item"
+              data-danger={item.danger || undefined}
+              disabled={item.disabled}
+              onClick={() => {
+                if (item.disabled) return;
+                onAction(item.id);
+                onClose();
+              }}
+            >
+              <item.icon className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 text-left">{item.label}</span>
+              {item.tip && <kbd className="canvas-kbd">{item.tip}</kbd>}
+            </button>
+          )}
         </Fragment>
       ))}
     </div>

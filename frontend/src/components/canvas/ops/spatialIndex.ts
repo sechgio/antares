@@ -4,21 +4,97 @@ import { layerBounds } from './layerBounds';
 
 export type BBox = { x: number; y: number; w: number; h: number };
 
-type Cell = string[];
-
 export interface SpatialIndex {
   query(rect: BBox): string[];
   hitTest(x: number, y: number): string[];
 }
 
-const CELL_SIZE_MM = 20;
-
-function cellKey(cx: number, cy: number): string {
-  return `${cx},${cy}`;
+interface ItemNode {
+  id: string;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  zOrder: number;
 }
 
-function rectsOverlap(a: BBox, b: BBox): boolean {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+interface RTreeNode {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  children?: RTreeNode[];
+  item?: ItemNode;
+}
+
+const MAX_LEAF_ENTRIES = 8;
+
+function buildRTreeNode(items: ItemNode[]): RTreeNode | null {
+  if (items.length === 0) return null;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const it of items) {
+    if (it.minX < minX) minX = it.minX;
+    if (it.minY < minY) minY = it.minY;
+    if (it.maxX > maxX) maxX = it.maxX;
+    if (it.maxY > maxY) maxY = it.maxY;
+  }
+
+  if (items.length === 1) {
+    return {
+      minX,
+      minY,
+      maxX,
+      maxY,
+      item: items[0],
+    };
+  }
+
+  if (items.length <= MAX_LEAF_ENTRIES) {
+    return {
+      minX,
+      minY,
+      maxX,
+      maxY,
+      children: items.map((it) => ({
+        minX: it.minX,
+        minY: it.minY,
+        maxX: it.maxX,
+        maxY: it.maxY,
+        item: it,
+      })),
+    };
+  }
+
+  const extentX = maxX - minX;
+  const extentY = maxY - minY;
+
+  const sorted = [...items];
+  if (extentX > extentY) {
+    sorted.sort((a, b) => (a.minX + a.maxX) - (b.minX + b.maxX));
+  } else {
+    sorted.sort((a, b) => (a.minY + a.maxY) - (b.minY + b.maxY));
+  }
+
+  const mid = Math.floor(sorted.length / 2);
+  const left = buildRTreeNode(sorted.slice(0, mid));
+  const right = buildRTreeNode(sorted.slice(mid));
+
+  const children: RTreeNode[] = [];
+  if (left) children.push(left);
+  if (right) children.push(right);
+
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    children,
+  };
 }
 
 const spatialIndexCache = new WeakMap<CanvasLayer[], SpatialIndex>();
@@ -27,75 +103,86 @@ export function buildSpatialIndex(layers: CanvasLayer[]): SpatialIndex {
   const cached = spatialIndexCache.get(layers);
   if (cached) return cached;
 
-  const grid = new Map<string, Cell>();
-  const bboxes = new Map<string, BBox>();
-  const zOrder = new Map<string, number>();
+  const items: ItemNode[] = [];
 
   for (let i = 0; i < layers.length; i++) {
     const layer = layers[i]!;
     if (layer.type === 'frame' || layer.visible === false || layer.locked) continue;
     const box = layerBounds(layer);
-    bboxes.set(layer.id, { x: box.x, y: box.y, w: box.w, h: box.h });
-    zOrder.set(layer.id, i);
-
-    const minCx = Math.floor(box.x / CELL_SIZE_MM);
-    const minCy = Math.floor(box.y / CELL_SIZE_MM);
-    const maxCx = Math.floor((box.x + box.w) / CELL_SIZE_MM);
-    const maxCy = Math.floor((box.y + box.h) / CELL_SIZE_MM);
-
-    for (let cx = minCx; cx <= maxCx; cx++) {
-      for (let cy = minCy; cy <= maxCy; cy++) {
-        const key = cellKey(cx, cy);
-        let cell = grid.get(key);
-        if (!cell) {
-          cell = [];
-          grid.set(key, cell);
-        }
-        cell.push(layer.id);
-      }
-    }
+    items.push({
+      id: layer.id,
+      minX: box.x,
+      minY: box.y,
+      maxX: box.x + box.w,
+      maxY: box.y + box.h,
+      zOrder: i,
+    });
   }
 
+  const root = buildRTreeNode(items);
+
   function query(rect: BBox): string[] {
-    const minCx = Math.floor(rect.x / CELL_SIZE_MM);
-    const minCy = Math.floor(rect.y / CELL_SIZE_MM);
-    const maxCx = Math.floor((rect.x + rect.w) / CELL_SIZE_MM);
-    const maxCy = Math.floor((rect.y + rect.h) / CELL_SIZE_MM);
+    if (!root) return [];
+    const qMinX = rect.x;
+    const qMinY = rect.y;
+    const qMaxX = rect.x + rect.w;
+    const qMaxY = rect.y + rect.h;
 
+    const matched: ItemNode[] = [];
     const seen = new Set<string>();
-    const result: string[] = [];
 
-    for (let cx = minCx; cx <= maxCx; cx++) {
-      for (let cy = minCy; cy <= maxCy; cy++) {
-        const cell = grid.get(cellKey(cx, cy));
-        if (!cell) continue;
-        for (const id of cell) {
-          if (seen.has(id)) continue;
-          seen.add(id);
-          const box = bboxes.get(id);
-          if (box && rectsOverlap(box, rect)) {
-            result.push(id);
-          }
+    function traverse(node: RTreeNode): void {
+      if (node.minX >= qMaxX || node.maxX <= qMinX || node.minY >= qMaxY || node.maxY <= qMinY) {
+        return;
+      }
+
+      if (node.item) {
+        if (!seen.has(node.item.id)) {
+          seen.add(node.item.id);
+          matched.push(node.item);
+        }
+        return;
+      }
+
+      if (node.children) {
+        for (let i = 0; i < node.children.length; i++) {
+          traverse(node.children[i]!);
         }
       }
     }
-    return result;
+
+    traverse(root);
+    matched.sort((a, b) => a.zOrder - b.zOrder);
+    return matched.map((m) => m.id);
   }
 
   function hitTest(x: number, y: number): string[] {
-    const cx = Math.floor(x / CELL_SIZE_MM);
-    const cy = Math.floor(y / CELL_SIZE_MM);
-    const cell = grid.get(cellKey(cx, cy));
-    if (!cell) return [];
-    const hits: string[] = [];
-    for (const id of cell) {
-      const box = bboxes.get(id);
-      if (box && x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) {
-        hits.push(id);
+    if (!root) return [];
+
+    const hits: ItemNode[] = [];
+
+    function traverse(node: RTreeNode): void {
+      if (x < node.minX || x > node.maxX || y < node.minY || y > node.maxY) {
+        return;
+      }
+
+      if (node.item) {
+        if (x >= node.item.minX && x <= node.item.maxX && y >= node.item.minY && y <= node.item.maxY) {
+          hits.push(node.item);
+        }
+        return;
+      }
+
+      if (node.children) {
+        for (let i = 0; i < node.children.length; i++) {
+          traverse(node.children[i]!);
+        }
       }
     }
-    hits.sort((a, b) => (zOrder.get(b) ?? 0) - (zOrder.get(a) ?? 0));
-    return hits;
+
+    traverse(root);
+    hits.sort((a, b) => b.zOrder - a.zOrder);
+    return hits.map((h) => h.id);
   }
 
   const index = { query, hitTest };

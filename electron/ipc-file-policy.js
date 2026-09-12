@@ -267,6 +267,11 @@ async function cleanupStagedTokens(tokens, webContentsId = null) {
 
 function validateAndResolveWriteParams(params, win, method) {
   if (!params || typeof params !== 'object') return params;
+  if ('_resolved_output_path' in params || '_write_token' in params) {
+    params = { ...params };
+    delete params._resolved_output_path;
+    delete params._write_token;
+  }
   const legacyPathIsOutput = RAW_OUTPUT_PATH_METHODS.has(method) && typeof params.path === 'string';
   const needsWrite = 'output_path' in params
     || 'outputPath' in params
@@ -323,9 +328,8 @@ function validateAndResolveWriteParams(params, win, method) {
       if (!allowed && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
         throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
       }
-      const real = fs.realpathSync(dir);
-      if (real !== dir) throw new Error('symlink no permitido en ruta de salida');
-      if (fs.existsSync(resolved) && fs.realpathSync(resolved) !== resolved) {
+      const { hasSymlinkAncestor } = require('./path-allowlist');
+      if (hasSymlinkAncestor(resolved)) {
         throw new Error('symlink no permitido en ruta de salida');
       }
     } catch (e) {

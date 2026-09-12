@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import contextlib
 from io import BytesIO
+from pathlib import Path
 
 _IMAGE_MIME_TYPES = {
     "BMP": "image/bmp",
@@ -88,6 +89,24 @@ def valid_b64_image(b64_string: str) -> bool:
     except Exception:
         return False
     return valid_image_bytes(content)
+
+
+def build_image_uris(
+    images: dict[str, str],
+    image_paths: dict[str, str] | None,
+) -> dict[str, str]:
+    image_uris: dict[str, str] = {}
+    for filename, raw_path in (image_paths or {}).items():
+        path = Path(raw_path)
+        if path.is_file():
+            with contextlib.suppress(Exception):
+                content = path.read_bytes()
+                if valid_image_bytes(content):
+                    image_uris[filename] = data_uri_from_bytes(content)
+    for filename, b64_string in images.items():
+        if filename not in image_uris and valid_b64_image(b64_string):
+            image_uris[filename] = data_uri_from_b64(b64_string)
+    return image_uris
 
 
 def contain_fit_cm(content: bytes, max_width_cm: float, max_height_cm: float) -> tuple[float, float]:

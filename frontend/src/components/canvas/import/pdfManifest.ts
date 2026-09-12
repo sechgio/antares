@@ -8,6 +8,7 @@ import {
 import { resolvePdfImportLimits } from './pdfImportLimits';
 import type { PdfImportLimits } from './pdfImportLimits';
 import type { PdfCanvasFragment } from './pdfImportTypes';
+import { bytesToBase64 } from '../../../utils/bytesToBase64';
 
 const MANIFEST_SCHEMA = 'antares.canvas.pdf';
 const MANIFEST_VERSION = 1;
@@ -22,20 +23,6 @@ interface CanvasPdfManifest {
   version: typeof MANIFEST_VERSION;
   document: CanvasDocument;
   assets: Array<{ attachmentName: string; mimeType?: string; originalRef?: string }>;
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function decodeBase64(value: string): Uint8Array {
-  const binary = atob(value);
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -69,7 +56,7 @@ export async function serializeCanvasManifest(document: CanvasDocument): Promise
   if (bytes.byteLength > limits.maxManifestBytes) {
     throw new Error(`El manifiesto Canvas supera el límite de ${Math.round(limits.maxManifestBytes / 1024 / 1024)} MiB`);
   }
-  return encodeBase64(bytes);
+  return bytesToBase64(bytes);
 }
 
 function validLayer(value: unknown): value is CanvasLayer {
@@ -247,4 +234,4 @@ export function canvasManifestToFragment(document: CanvasDocument): PdfCanvasFra
   };
 }
 
-export { decodeBase64 };
+export { base64ToBytes as decodeBase64 } from '../../../utils/bytesToBase64';
