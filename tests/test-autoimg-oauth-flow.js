@@ -70,6 +70,7 @@ async function main() {
     const fakeStore = {
       loadTokens: () => ({}),
       saveTokens: () => events.push('saveTokens'),
+      saveTokensForUserKey: () => events.push('saveTokensForUserKey'),
       clearTokens: () => {},
       clearTokensLegacyPaths: () => events.push('clearTokensLegacyPaths'),
       loadOAuthConfigFromDisk: () => ({ clientId: '', clientSecret: '' }),
@@ -119,8 +120,8 @@ async function main() {
       const tokens = await svc.exchangeCode('code-B', redirect_uri);
       assert(tokens.access_token === 'AT-B', 'exchangeCode devuelve los tokens de la cuenta nueva');
       assert(
-        events.join(',') === 'setActiveUser:cuentaB@example.com,saveTokens,clearTokensLegacyPaths',
-        'identidad resuelta antes de persistir: un solo saveTokens en el scope de la cuenta B (no pisa cuenta A)',
+        events.join(',') === 'setActiveUser:cuentaB@example.com,saveTokensForUserKey,clearTokensLegacyPaths',
+        'identidad resuelta antes de persistir: un solo saveTokensForUserKey en el scope de la cuenta B (no pisa cuenta A)',
       );
 
       events.length = 0;

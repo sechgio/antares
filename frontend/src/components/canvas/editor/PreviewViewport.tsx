@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import { sanitizeHtmlForCanvasPreview } from '../../../../../shared/html-sanitizer.js';
 import { clampZoom, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
 
 type PreviewChild = ReactNode | ((scale: number) => ReactNode);
@@ -41,46 +42,87 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
     const [panning, setPanning] = useState(false);
     const navRef = useRef({ zoom, pan, setZoom, setPan });
     navRef.current = { zoom, pan, setZoom, setPan };
+    const dragCleanupRef = useRef<(() => void) | null>(null);
+
+    useEffect(
+      () => () => {
+        dragCleanupRef.current?.();
+        dragCleanupRef.current = null;
+      },
+      [],
+    );
 
     const useLayerPreview = children != null;
 
     useImperativeHandle(ref, () => ({
       print: () => {
-        iframeRef.current?.contentWindow?.print();
+        const win = iframeRef.current?.contentWindow;
+        if (!win) {
+          console.warn('[canvas-preview] print ignorado: el iframe de vista previa no está montado');
+          return;
+        }
+        win.print();
       },
     }));
 
     useEffect(() => {
       const iframe = iframeRef.current;
       if (!iframe || !html) return;
-      if (iframe.srcdoc !== html) iframe.srcdoc = html;
+      const safe = sanitizeHtmlForCanvasPreview(html);
+      if (iframe.srcdoc !== safe) iframe.srcdoc = safe;
     }, [html]);
 
     useEffect(() => {
       const el = viewportRef.current;
       if (!el) return;
+      let panDx = 0;
+      let panDy = 0;
+      let zoomDy = 0;
+      let lastEv: WheelEvent | null = null;
+      let frame = 0;
+      const apply = () => {
+        frame = 0;
+        const dx = panDx;
+        const dy = panDy;
+        const zd = zoomDy;
+        const e = lastEv;
+        panDx = 0;
+        panDy = 0;
+        zoomDy = 0;
+        lastEv = null;
+        const { zoom: z, pan: p, setZoom: setZ, setPan: setP } = navRef.current;
+        if (zd !== 0 && e) {
+          const rect = el.getBoundingClientRect();
+          const cursor = {
+            x: e.clientX - rect.left - rect.width / 2,
+            y: e.clientY - rect.top - rect.height / 2,
+          };
+          const next = zoomAtCursor(z, p, cursor, z * wheelZoomFactor(zd, true));
+          setZ(next.zoom);
+          setP({ x: next.pan.x - dx, y: next.pan.y - dy });
+          return;
+        }
+        if (dx !== 0 || dy !== 0) {
+          setP({ x: p.x - dx, y: p.y - dy });
+        }
+      };
       const onWheel = (e: WheelEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        const { zoom: z, pan: p, setZoom: setZ, setPan: setP } = navRef.current;
-        const rect = el.getBoundingClientRect();
-        const cursor = {
-          x: e.clientX - rect.left - rect.width / 2,
-          y: e.clientY - rect.top - rect.height / 2,
-        };
-
         if (e.ctrlKey || e.metaKey) {
-          const factor = wheelZoomFactor(e.deltaY, true);
-          const next = zoomAtCursor(z, p, cursor, z * factor);
-          setZ(next.zoom);
-          setP(next.pan);
-          return;
+          zoomDy += e.deltaY;
+        } else {
+          panDx += e.deltaX;
+          panDy += e.deltaY;
         }
-
-        setP({ x: p.x - e.deltaX, y: p.y - e.deltaY });
+        lastEv = e;
+        if (!frame) frame = requestAnimationFrame(apply);
       };
       el.addEventListener('wheel', onWheel, { passive: false });
-      return () => el.removeEventListener('wheel', onWheel);
+      return () => {
+        if (frame) cancelAnimationFrame(frame);
+        el.removeEventListener('wheel', onWheel);
+      };
     }, []);
 
     const startPan = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -90,11 +132,31 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
       const startY = e.clientY;
       const origin = { ...navRef.current.pan };
       setPanning(true);
+      let pendingMove: PointerEvent | null = null;
+      let moveFrame = 0;
+      const applyMove = () => {
+        moveFrame = 0;
+        const ev = pendingMove;
+        pendingMove = null;
+        if (ev) setPan({ x: origin.x + (ev.clientX - startX), y: origin.y + (ev.clientY - startY) });
+      };
       const onMove = (ev: PointerEvent) => {
-        setPan({ x: origin.x + (ev.clientX - startX), y: origin.y + (ev.clientY - startY) });
+        pendingMove = ev;
+        if (!moveFrame) moveFrame = requestAnimationFrame(applyMove);
       };
       const onUp = () => {
+        if (moveFrame) {
+          cancelAnimationFrame(moveFrame);
+          moveFrame = 0;
+        }
+        applyMove();
         setPanning(false);
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        dragCleanupRef.current = null;
+      };
+      dragCleanupRef.current = () => {
+        if (moveFrame) cancelAnimationFrame(moveFrame);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
       };
@@ -144,7 +206,7 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
                 <iframe
                   ref={iframeRef}
                   title="Canvas preview"
-                  sandbox="allow-same-origin allow-scripts"
+                  sandbox="allow-same-origin"
                   className="border-0 bg-white"
                   style={{
                     width: widthPx,
@@ -170,7 +232,7 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
           <iframe
             ref={iframeRef}
             title="Canvas print"
-            sandbox="allow-same-origin allow-scripts"
+            sandbox="allow-same-origin"
             aria-hidden
             tabIndex={-1}
             style={{ position: 'fixed', left: -99999, top: 0, width: 0, height: 0, border: 0 }}

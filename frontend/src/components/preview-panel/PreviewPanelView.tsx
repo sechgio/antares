@@ -241,12 +241,9 @@ export default function PreviewPanelView() {
   useEffect(() => {
     if (logoLeft) savePersistedLogo(LOGO_LEFT_KEY, logoLeft, 'logo-left');
     else clearPersistedLogo(LOGO_LEFT_KEY);
-  }, [logoLeft]);
-
-  useEffect(() => {
     if (logoRight) savePersistedLogo(LOGO_RIGHT_KEY, logoRight, 'logo-right');
     else clearPersistedLogo(LOGO_RIGHT_KEY);
-  }, [logoRight]);
+  }, [logoLeft, logoRight]);
 
   useEffect(() => {
     try { localStorage.setItem(CUSTOM_COLS_KEY, JSON.stringify(customColumns)); } catch {}

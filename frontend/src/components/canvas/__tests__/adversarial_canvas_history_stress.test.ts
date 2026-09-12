@@ -161,7 +161,6 @@ describe('Adversarial Stress Test: useCanvasHistory Memory Bounding & Diffing', 
       budgetEnforced: totalHistoryBytes <= MAX_HISTORY_BYTES,
     }));
 
-    // undoDiff + redoDiff duplican el payload. 64MB no cubre las 20 ediciones.
     expect(totalHistoryBytes).toBeLessThanOrEqual(MAX_HISTORY_BYTES);
     expect(past.length).toBeLessThan(20);
     expect(past.length).toBeGreaterThan(0);
@@ -305,7 +304,6 @@ describe('Adversarial Stress Test: useCanvasHistory Memory Bounding & Diffing', 
       ratio100Layers: (cloneBytes / diff100Bytes).toFixed(2),
     }));
 
-    // El diff no copia meta, campos ni payloads de imagen que no cambiaron.
     expect(diff1Bytes).toBeLessThan(diff50Bytes);
     expect(diff50Bytes).toBeLessThan(diff100Bytes);
     expect(diff100Bytes).toBeLessThan(cloneBytes);

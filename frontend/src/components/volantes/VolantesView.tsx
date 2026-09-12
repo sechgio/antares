@@ -204,6 +204,15 @@ export default function VolantesView() {
     null;
 
   useEffect(() => {
+    return () => {
+      for (const key of Object.keys(imageReaders)) {
+        try { imageReaders[key]?.abort(); } catch {}
+        imageReaders[key] = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!pendingExport) return;
     let cancelled = false;
 

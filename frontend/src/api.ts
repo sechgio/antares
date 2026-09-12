@@ -38,6 +38,7 @@ declare global {
       cleanupFileToken?: (token: string) => Promise<{ cleaned: boolean }>;
       canvasAssetPut?: (chunk: ArrayBuffer | Uint8Array) => Promise<{ asset_id: string; ref: string; bytes: number }>;
       canvasAssetGet?: (ref: string) => Promise<{ ref: string; chunk: ArrayBuffer; bytes: number }>;
+      canvasAssetInfo?: (ref: string) => Promise<{ ref: string; asset_id: string; bytes: number }>;
       canvasAssetGc?: () => Promise<{ collected: number; bytes_freed: number }>;
       reportRendererError?: (report: Record<string, unknown>) => Promise<unknown>;
       reportRendererEvent?: (event: string, fields?: Record<string, unknown>, level?: string) => void;
@@ -360,12 +361,6 @@ export interface PreviewBody {
 export interface FileDialogResult {
   paths: string[];
   file_tokens: string[];
-}
-
-export interface DbDetectKeyColumnResult {
-  key_column: string;
-  matches: number;
-  columns: Array<{ name: string; matches: number }>;
 }
 
 export interface PreviewResult {
@@ -745,6 +740,11 @@ export const api = {
 
   canvasList: () =>
     _invoke<{ documents: Array<{ id: string; name: string; updatedAt?: string }> }>('canvas_list'),
+  canvasBootstrap: () =>
+    _invoke<{
+      documents: Array<{ id: string; name: string; updatedAt?: string }>;
+      document: import('./components/canvas/types').CanvasDocument | null;
+    }>('canvas_bootstrap'),
   canvasGet: (id: string) => _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_get', { id }),
   canvasSave: (
     document: import('./components/canvas/types').CanvasDocument,

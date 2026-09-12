@@ -41,7 +41,60 @@ describe('ContextMenu', () => {
 
   it('keeps existing actions like Copiar and Eliminar', () => {
     render(<ContextMenu menu={baseMenu()} onAction={vi.fn()} onClose={vi.fn()} />);
-    expect(screen.getByRole('menuitem', { name: /Copiar/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /^CopiarCtrl\+C$/ })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /Eliminar/i })).toBeInTheDocument();
+  });
+
+  it('shows Seleccionar contenedor when the layer has a parent', () => {
+    const onAction = vi.fn();
+    render(
+      <ContextMenu menu={baseMenu({ hasParent: true })} onAction={onAction} onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('menuitem', { name: /Seleccionar contenedor/i }));
+    expect(onAction).toHaveBeenCalledWith('selectParent');
+  });
+
+  it('renders a page submenu and emits moveToPage with the index', () => {
+    const onAction = vi.fn();
+    render(
+      <ContextMenu
+        menu={baseMenu({
+          pageTargets: [
+            { index: 0, label: 'Portada' },
+            { index: 2, label: 'Anexos' },
+          ],
+        })}
+        onAction={onAction}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('menuitem', { name: /Mover a página/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Anexos' }));
+    expect(onAction).toHaveBeenCalledWith('moveToPage', 2);
+  });
+
+  it('renders layers under cursor submenu and emits selectUnderCursor with the id', () => {
+    const onAction = vi.fn();
+    render(
+      <ContextMenu
+        menu={baseMenu({
+          underCursor: [
+            { id: 'l1', name: 'Foto' },
+            { id: 'l2', name: 'Marco' },
+          ],
+        })}
+        onAction={onAction}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Marco' }));
+    expect(onAction).toHaveBeenCalledWith('selectUnderCursor', 'l2');
+  });
+
+  it('disables Pegar propiedades without a props clipboard', () => {
+    render(
+      <ContextMenu menu={baseMenu({ canPasteProps: false })} onAction={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.getByRole('menuitem', { name: /Pegar propiedades/i })).toBeDisabled();
   });
 });

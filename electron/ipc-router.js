@@ -116,13 +116,12 @@ const IDEMPOTENT_METHODS = new Set([
   'process_status',
   'db_columns',
   'db_fields',
-  'db_template',
   'db_parse_mapping',
   'db_validate_mapping',
   'theme_presets',
   'theme_preset',
-  'panel_aviso_corte_template',
   'canvas_list',
+  'canvas_bootstrap',
   'canvas_get',
   'canvas_get_history',
   'espacios_list',
@@ -413,7 +412,6 @@ function _logIpcTelemetry({
   const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
   const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
   const normalizedOutcome = outcome === 'ok' ? 'success' : outcome === 'error' ? 'failed' : outcome;
-  // Éxitos rápidos ~1% (p50/p95). Un error normal no se loguea.
   const baselineSample = normalizedOutcome === 'success'
     && ((elapsedMs ^ Math.imul(requestBytes + responseBytes, 2654435761)) >>> 0) % 100 === 0;
   if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && normalizedOutcome !== 'rejected' && !baselineSample) return;

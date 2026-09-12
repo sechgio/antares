@@ -37,6 +37,8 @@ _EVENT_FIELDS = {
     "attempt",
     "backend_pid",
     "bytes",
+    "count",
+    "dropped_events",
     "duration_ms",
     "error_code",
     "job_id",

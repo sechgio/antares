@@ -30,6 +30,7 @@ interface LayerNodeProps {
   selected: boolean;
   interactive: boolean;
   scale: number;
+  data?: Record<string, unknown>;
   editing?: boolean;
   editingSelectAll?: boolean;
   pathEditing?: boolean;
@@ -37,7 +38,7 @@ interface LayerNodeProps {
   offscreen?: boolean;
   panning?: boolean;
   onSelect: (id: string, additive?: boolean) => void;
-  onLayerPointerDown: (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => void;
+  onLayerPointerDown: (id: string, e: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
   onStartEdit?: (id: string) => void;
   onEditValue?: (id: string, value: string, contentHeightPx?: number) => void;
@@ -92,6 +93,7 @@ function LayerNode({
   selected,
   interactive,
   scale,
+  data,
   editing = false,
   editingSelectAll = true,
   pathEditing = false,
@@ -111,9 +113,9 @@ function LayerNode({
     if (!layerProp.meta?.instanceOf) return layerProp;
     return {
       ...layerProp,
-      cssVars: applyInstanceOverrides(layerProp, masterLayer ?? undefined),
+      cssVars: applyInstanceOverrides(layerProp, masterLayer ?? undefined, data),
     };
-  }, [layerProp, masterLayer]);
+  }, [layerProp, masterLayer, data]);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const paintCacheRef = useRef<{ key: string; paint: Record<string, string> } | null>(null);
   const onSelectRef = useRef(onSelect);
@@ -337,7 +339,7 @@ function LayerNode({
     if (e.button === 1) return;
     if (e.button !== 0) return;
     e.stopPropagation();
-    onLayerPointerDownRef.current(layer.id, e.shiftKey || e.ctrlKey || e.metaKey, e);
+    onLayerPointerDownRef.current(layer.id, e);
   };
 
   const isChromePlaceholder =
@@ -654,6 +656,7 @@ export function documentLayersRelevantEqual(
 export default memo(LayerNode, (prev, next) =>
   prev.layer === next.layer &&
   prev.masterLayer === next.masterLayer &&
+  prev.data === next.data &&
   documentLayersRelevantEqual(next.layer, prev.documentLayers, next.documentLayers) &&
   prev.selected === next.selected &&
   prev.interactive === next.interactive &&

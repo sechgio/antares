@@ -74,11 +74,10 @@ export default function FolioControls({
   const previewLast = folios[folios.length - 1] ?? effectiveEnd;
   const isDefault = isDefaultFolioConfig(config, totalPages);
   const summary = formatFolioSummary(config, totalPages);
-  const pagesForPreview = Math.max(totalPages, 1);
   const sampleLabel = formatPageNumberLabel(
     config.pageNumberStyle,
     previewFirst,
-    pagesForPreview,
+    effectiveEnd,
   );
 
   const handleStartChange = useCallback(

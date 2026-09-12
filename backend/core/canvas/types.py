@@ -35,6 +35,8 @@ AutoLayoutSizing = Literal["hug", "fixed"]
 FrameConstraint = Literal["start", "end", "center", "scale"]
 CanvasStyleKind = Literal["color", "text", "effect"]
 
+ChildLayoutSizing = Literal["fixed", "hug", "fill"]
+
 CssVars = dict[str, str]
 
 
@@ -56,13 +58,32 @@ class GridRule(TypedDict, total=False):
     rows: int
 
 
-class LayerAutoLayout(TypedDict):
+class VariantPropBinding(TypedDict, total=False):
+    fieldKey: str
+    mapping: dict[str, str]
+    fallback: str
+
+
+class VariantDataBinding(TypedDict, total=False):
+    fieldKey: str
+    mapping: dict[str, str]
+    fallbackVariant: str
+    propBindings: dict[str, VariantPropBinding]
+
+
+class LayerAutoLayout(TypedDict, total=False):
     direction: AutoLayoutDirection
     gapMm: float
     padMm: float
+    padTopMm: float
+    padRightMm: float
+    padBottomMm: float
+    padLeftMm: float
     alignMain: AutoLayoutAlign
     alignCross: AutoLayoutAlign
     sizing: AutoLayoutSizing
+    wrap: bool
+    crossGapMm: float
 
 
 class LayerMeta(TypedDict, total=False):
@@ -85,11 +106,15 @@ class LayerMeta(TypedDict, total=False):
     pageIndex: int
     path: LayerPath
     autoLayout: LayerAutoLayout
+    layoutSizingMain: ChildLayoutSizing
+    layoutSizingCross: ChildLayoutSizing
     constraintH: FrameConstraint
     constraintV: FrameConstraint
     instanceOf: str
     overrideVars: dict[str, str]
     variant: str
+    variantProps: dict[str, str]
+    variantBinding: VariantDataBinding
     componentId: str
     variants: dict[str, dict[str, str]]
     maskLayerId: str

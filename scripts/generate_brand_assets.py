@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import base64
 import io
-import struct
 from pathlib import Path
 
 import cairosvg
@@ -30,7 +29,6 @@ FONT_Y = int(MONOGRAM_CANVAS * 0.78)
 ICON_PNG_SIZE = 512
 ICO_SIZES = [256, 128, 96, 64, 48, 32, 24, 16]
 FAVICON_PNG_SIZES = [16, 32, 48, 57, 72, 96, 120, 128, 144, 152, 180, 192, 228]
-ICNS_SIZES = [16, 32, 64, 128, 256, 512, 1024]
 
 
 def img_to_b64(img: Image.Image) -> str:
@@ -72,7 +70,7 @@ def monogram_svg(bg: str, fg: str) -> str:
 
 
 def write_monogram_variants() -> Image.Image:
-    print("[1/6] Generando monogramas SVG vectoriales puros...")
+    print("[1/5] Generando monogramas SVG vectoriales puros...")
 
     svg_dark = monogram_svg(DARK_BG, RED)
     svg_light = monogram_svg(LIGHT_BG, RED)
@@ -90,7 +88,7 @@ def write_monogram_variants() -> Image.Image:
 
 
 def write_logo_svgs(light_img: Image.Image, dark_img: Image.Image):
-    print("[2/6] Generando logos horizontales SVG...")
+    print("[2/5] Generando logos horizontales SVG...")
 
     b64_light = img_to_b64(light_img)
     b64_dark = img_to_b64(dark_img)
@@ -138,7 +136,7 @@ def write_logo_svgs(light_img: Image.Image, dark_img: Image.Image):
 
 
 def write_monogram_rasters(master: Image.Image):
-    print("[3/6] Generando rasteres del monograma...")
+    print("[3/5] Generando rasteres del monograma...")
 
     icon_512 = master.resize((ICON_PNG_SIZE, ICON_PNG_SIZE), Image.Resampling.LANCZOS)
     icon_512.save(PUBLIC / "icon.png", format="PNG", optimize=True)
@@ -151,7 +149,7 @@ def write_monogram_rasters(master: Image.Image):
 
 
 def write_ico(master: Image.Image):
-    print("[4/6] Generando .ico multi-resolución...")
+    print("[4/5] Generando .ico multi-resolución...")
 
     ico_sizes = [(s, s) for s in ICO_SIZES]
     master.save(PUBLIC / "favicon.ico", format="ICO", sizes=ico_sizes)
@@ -159,48 +157,8 @@ def write_ico(master: Image.Image):
     print(f"      favicon.ico + assets/icon.ico ({', '.join(map(str, ICO_SIZES))})")
 
 
-def build_icns(png_map: dict[int, bytes], out_path: Path):
-    size_type = {
-        16: b'icp4',
-        32: b'icp5',
-        64: b'icp6',
-        128: b'ic07',
-        256: b'ic08',
-        512: b'ic09',
-        1024: b'ic10',
-    }
-    chunks = []
-    for size in sorted(png_map.keys()):
-        if size not in size_type:
-            continue
-        data = png_map[size]
-        length = 8 + len(data)
-        chunks.append(size_type[size] + struct.pack('>I', length) + data)
-
-    if not chunks:
-        raise RuntimeError("No valid ICNS chunks generated")
-
-    body = b''.join(chunks)
-    file_length = 4 + 4 + len(body)
-    header = b'icns' + struct.pack('>I', file_length)
-    out_path.write_bytes(header + body)
-
-
-def write_icns(master: Image.Image):
-    print("[5/6] Generando .icns para macOS...")
-    png_map = {}
-    for size in ICNS_SIZES:
-        img = master.resize((size, size), Image.Resampling.LANCZOS)
-        buf = io.BytesIO()
-        img.save(buf, format="PNG", optimize=True)
-        png_map[size] = buf.getvalue()
-
-    build_icns(png_map, ASSETS / "icon.icns")
-    print("      assets/icon.icns")
-
-
 def cleanup_old_assets():
-    print("[6/6] Limpiando assets antiguos...")
+    print("[5/5] Limpiando assets antiguos...")
 
     if ICONS_PNG.exists():
         for f in ICONS_PNG.glob("*.png"):

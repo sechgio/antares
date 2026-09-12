@@ -52,6 +52,7 @@ import {
   formatGapMm,
   guidesForPage,
   isGuideRemovalPoint,
+  measureHoverGap,
   measureSelectionGaps,
   snapEqualGaps,
   type DistanceLabel,
@@ -68,6 +69,7 @@ import {
 } from '../ops/pointerGestureSession';
 import {
   applyLayerDomGeometry,
+  applyLayerDomTransforms,
   clearLayerDomGestureStyles,
   setCanvasGestureActive,
 } from '../ops/imperativeLayerDom';
@@ -90,7 +92,14 @@ import CanvasRulers, { GuidePositionChip, MeasurementBadge, RULER_SIZE } from '.
 import LayerNode from './LayerNode';
 import PathHandlesOverlay from './PathHandlesOverlay';
 import { SelectionChromeOverlay } from './SelectionChromeOverlay';
+import { SmartSelectionOverlay } from './SmartSelectionOverlay';
 import { screenChromePx } from '../ops/textTypography';
+import {
+  detectSmartSequence,
+  resizeSmartGap,
+  tidySmartSequence,
+  type SmartSequence,
+} from '../ops/smartSelection';
 
 const GUIDE_HIT_PX = 10;
 const GUIDE_LINE_PX = 2;
@@ -112,7 +121,12 @@ interface ArtboardProps {
   onCommitGesture?: () => void;
   onZoom?: (zoom: number) => void;
   onDrawLayer?: (tool: CanvasTool, rect: DrawRect) => void;
-  onContextMenu?: (layerId: string | null, clientX: number, clientY: number) => void;
+  onContextMenu?: (
+    layerId: string | null,
+    clientX: number,
+    clientY: number,
+    pointMm?: { x: number; y: number },
+  ) => void;
   onStartEdit?: (id: string) => void;
   onEditValue?: (id: string, value: string, contentHeightPx?: number) => void;
   onFitTextHeight?: (id: string, contentHeightPx: number) => void;
@@ -130,6 +144,27 @@ interface ArtboardProps {
   onStartInertia?: (velocity: { vx: number; vy: number }) => void;
   onCancelInertia?: () => void;
   gestureAbortToken?: number;
+  enteredGroupId?: string | null;
+  onExitGroupEdit?: () => void;
+  eyedropperActive?: boolean;
+  onEyedropperPick?: (color: string) => void;
+  camera?: {
+    subscribe: (listener: (zoom: number, pan: { x: number; y: number }) => void) => () => void;
+    getZoom: () => number;
+    getPan: () => { x: number; y: number };
+  };
+}
+
+function sampleLayerColor(layer: CanvasLayer | undefined | null): string | null {
+  if (!layer) return null;
+  const v = layer.cssVars;
+  if (layer.type === 'text' || layer.type === 'field') {
+    if (v['--color']) return v['--color'];
+  }
+  if (v['--fill-visible'] !== '0' && v['--background-color']) return v['--background-color'];
+  if (v['--stroke-visible'] !== '0' && v['--border-color']) return v['--border-color'];
+  if (v['--color']) return v['--color'];
+  return null;
 }
 
 function escapeToAbort(getSession: () => { abort: () => void }): (ev: KeyboardEvent) => void {
@@ -247,15 +282,21 @@ function Artboard({
   onMoveGuide,
   onRemoveGuide,
   onCancelGuideCreate,
-  showRulers = true,
+  showRulers = false,
   snapToGrid = false,
   gridSizeMm = DEFAULT_GRID_MM,
   onStartInertia,
   onCancelInertia,
   gestureAbortToken = 0,
+  enteredGroupId = null,
+  onExitGroupEdit,
+  eyedropperActive = false,
+  onEyedropperPick,
+  camera,
 }: ArtboardProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+  const panLayerRef = useRef<HTMLDivElement>(null);
   const drawStart = useRef<{ xMm: number; yMm: number } | null>(null);
   const [draft, setDraft] = useState<DrawRect | null>(null);
   const [marquee, setMarquee] = useState<RectMm | null>(null);
@@ -266,6 +307,16 @@ function Artboard({
   const [distanceLabels, setDistanceLabels] = useState<DistanceLabel[]>([]);
   const distanceLabelsRef = useRef<DistanceLabel[]>([]);
   distanceLabelsRef.current = distanceLabels;
+  const [hoverLabels, setHoverLabels] = useState<DistanceLabel[]>([]);
+  const hoverLabelsRef = useRef<DistanceLabel[]>([]);
+  const enteredGroupIdRef = useRef<string | null>(enteredGroupId);
+  enteredGroupIdRef.current = enteredGroupId;
+  const eyedropperActiveRef = useRef(eyedropperActive);
+  eyedropperActiveRef.current = eyedropperActive;
+  const onEyedropperPickRef = useRef(onEyedropperPick);
+  onEyedropperPickRef.current = onEyedropperPick;
+  const onExitGroupEditRef = useRef(onExitGroupEdit);
+  onExitGroupEditRef.current = onExitGroupEdit;
 
   const setGuidesIfChanged = useCallback((next: SmartGuide[]) => {
     if (smartGuidesEqual(guidesRef.current, next)) return;
@@ -290,6 +341,25 @@ function Artboard({
     }
     distanceLabelsRef.current = next;
     setDistanceLabels(next);
+  }, []);
+
+  const setHoverLabelsIfChanged = useCallback((next: DistanceLabel[]) => {
+    const prev = hoverLabelsRef.current;
+    if (
+      prev.length === next.length &&
+      prev.every(
+        (p, i) =>
+          p.id === next[i]!.id &&
+          p.axis === next[i]!.axis &&
+          p.valueMm === next[i]!.valueMm &&
+          p.x === next[i]!.x &&
+          p.y === next[i]!.y,
+      )
+    ) {
+      return;
+    }
+    hoverLabelsRef.current = next;
+    setHoverLabels(next);
   }, []);
   const [panning, setPanning] = useState(false);
   const [cameraMoving, setCameraMoving] = useState(false);
@@ -444,6 +514,47 @@ function Artboard({
   const navRef = useRef({ zoom, pan, onZoom, onPan });
   navRef.current = { zoom, pan, onZoom, onPan };
 
+  const cameraMovingRef = useRef(false);
+  const cameraMovingTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!camera) return;
+    return camera.subscribe((z, p) => {
+      zoomRef.current = z;
+      navRef.current.zoom = z;
+      navRef.current.pan = p;
+      const panLayer = panLayerRef.current;
+      if (panLayer) {
+        panLayer.style.transform = `translate3d(calc(-50% + ${Math.round(p.x)}px), calc(-50% + ${Math.round(p.y)}px), 0)`;
+      }
+      const frame = frameRef.current;
+      if (frame) {
+        frame.style.transform = `scale(${z})`;
+        frame.style.setProperty('--cv-camera-zoom', String(z));
+      }
+      if (!cameraMovingRef.current) {
+        cameraMovingRef.current = true;
+        setCameraMoving(true);
+      }
+      if (cameraMovingTimerRef.current != null) {
+        window.clearTimeout(cameraMovingTimerRef.current);
+      }
+      cameraMovingTimerRef.current = window.setTimeout(() => {
+        cameraMovingTimerRef.current = null;
+        cameraMovingRef.current = false;
+        setCameraMoving(false);
+      }, 140);
+    });
+  }, [camera]);
+
+  useEffect(
+    () => () => {
+      if (cameraMovingTimerRef.current != null) {
+        window.clearTimeout(cameraMovingTimerRef.current);
+      }
+    },
+    [],
+  );
+
   usePinchZoom(viewportRef, navRef, {
     activeRef: pinchGestureRef,
     onStart: () => {
@@ -526,6 +637,31 @@ function Artboard({
   );
   const bbox = useMemo(() => selectionBounds(displayLayers, editableSelected), [displayLayers, editableSelected]);
   const chromeBbox = gestureBbox ?? bbox;
+  const smartSeq = useMemo(() => {
+    if (
+      !interactive ||
+      editingLayerId ||
+      pathEditingLayerId ||
+      marquee ||
+      draft ||
+      lassoPts ||
+      eyedropperActive ||
+      editableSelected.length < 2
+    ) {
+      return null;
+    }
+    return detectSmartSequence(displayLayers, editableSelected);
+  }, [
+    interactive,
+    editingLayerId,
+    pathEditingLayerId,
+    marquee,
+    draft,
+    lassoPts,
+    eyedropperActive,
+    editableSelected,
+    displayLayers,
+  ]);
   const [radiusDrag, setRadiusDrag] = useState<{
     label: string;
     corner: CornerId;
@@ -551,6 +687,72 @@ function Artboard({
   const handleSelect = useCallback((id: string, additive?: boolean) => {
     onSelectRef.current(id, additive);
   }, []);
+
+  const clientPointMm = useCallback((clientX: number, clientY: number) => {
+    const frame = frameRef.current;
+    if (!frame) return undefined;
+    const { xMm, yMm } = clientToMm(
+      clientX,
+      clientY,
+      frame.getBoundingClientRect(),
+      zoomRef.current,
+    );
+    return { x: xMm, y: yMm };
+  }, []);
+
+  const onFramePointerMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const idle =
+        e.altKey &&
+        interactive &&
+        !panning &&
+        !gestureActive &&
+        !gestureDirtyRef.current &&
+        !editingLayerId &&
+        !pathEditingLayerId &&
+        !marquee &&
+        !draft &&
+        !lassoPts;
+      if (!idle) {
+        if (hoverLabelsRef.current.length) setHoverLabelsIfChanged([]);
+        return;
+      }
+      const ids = selectedIdsRef.current;
+      const frame = frameRef.current;
+      const sel = ids.length ? selectionBounds(layersRef.current, ids) : null;
+      if (!sel || !frame) {
+        if (hoverLabelsRef.current.length) setHoverLabelsIfChanged([]);
+        return;
+      }
+      const cur = clientToMm(
+        e.clientX,
+        e.clientY,
+        frame.getBoundingClientRect(),
+        zoomRef.current,
+      );
+      const selSet = new Set(ids);
+      const hits = buildSpatialIndex(layersRef.current).hitTest(cur.xMm, cur.yMm);
+      const targetId = hits.find((hit) => !selSet.has(hit));
+      const targetLayer = targetId ? layersRef.current.find((l) => l.id === targetId) : null;
+      const rect = targetLayer ? layerBounds(targetLayer) : null;
+      setHoverLabelsIfChanged(measureHoverGap(sel, rect, pageSizeRef.current));
+    },
+    [
+      interactive,
+      panning,
+      gestureActive,
+      editingLayerId,
+      pathEditingLayerId,
+      marquee,
+      draft,
+      lassoPts,
+      setHoverLabelsIfChanged,
+    ],
+  );
+
+  const onFramePointerLeave = useCallback(() => {
+    if (hoverLabelsRef.current.length) setHoverLabelsIfChanged([]);
+  }, [setHoverLabelsIfChanged]);
 
   const onUpsertGuideRef = useRef(onUpsertGuide);
   onUpsertGuideRef.current = onUpsertGuide;
@@ -596,16 +798,19 @@ function Artboard({
     return () => ro.disconnect();
   }, []);
 
-  const cameraPrimedRef = useRef(false);
+
+
   useEffect(() => {
-    if (!cameraPrimedRef.current) {
-      cameraPrimedRef.current = true;
-      return;
-    }
-    setCameraMoving(true);
-    const timer = window.setTimeout(() => setCameraMoving(false), 140);
-    return () => window.clearTimeout(timer);
-  }, [pan.x, pan.y, zoom]);
+    if (!selectedIds.length || tool !== 'select') setHoverLabelsIfChanged([]);
+  }, [selectedIds.length, tool, setHoverLabelsIfChanged]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' && hoverLabelsRef.current.length) setHoverLabelsIfChanged([]);
+    };
+    window.addEventListener('keyup', onKey);
+    return () => window.removeEventListener('keyup', onKey);
+  }, [setHoverLabelsIfChanged]);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -728,7 +933,18 @@ function Artboard({
       };
 
       const applyMovePreview = (moved: CanvasLayer[], nextMoveIds: string[]) => {
-        applyImperativePreview(moved, nextMoveIds);
+        if (pinchGestureRef.current) return;
+        if (!gestureDirtyRef.current) {
+          onPreviewLayersRef.current?.(layersRef.current);
+          gestureDirtyRef.current = true;
+          setGestureActive(true);
+          setCanvasGestureActive(true);
+        }
+        gestureLayersRef.current = moved;
+        layersRef.current = moved;
+        imperativeMoveIdsRef.current = nextMoveIds;
+        const frame = frameRef.current;
+        if (frame) applyLayerDomTransforms(frame, moved, nextMoveIds);
       };
 
       const buildOthers = (snap: CanvasLayer[], moving: string[]) => {
@@ -874,17 +1090,65 @@ function Artboard({
     ],
   );
 
+  const enteredDescendants = useCallback((): Set<string> | null => {
+    const gid = enteredGroupIdRef.current;
+    if (!gid) return null;
+    const layers = layersRef.current;
+    if (!layers.some((l) => l.id === gid)) return null;
+    const set = new Set(expandWithDescendants(layers, [gid]));
+    set.delete(gid);
+    return set;
+  }, []);
+
+  const pickHit = useCallback(
+    (
+      clientX: number,
+      clientY: number,
+      opts?: { within?: Set<string> | null; skipSelected?: boolean },
+    ): string | null => {
+      const point = clientPointMm(clientX, clientY);
+      if (!point) return null;
+      let hits = buildSpatialIndex(layersRef.current).hitTest(point.x, point.y);
+      if (opts?.within) hits = hits.filter((h) => opts.within!.has(h));
+      if (!opts?.skipSelected) return hits[0] ?? null;
+      const selSet = new Set(selectedIdsRef.current);
+      return hits.find((h) => !selSet.has(h)) ?? hits[0] ?? null;
+    },
+    [clientPointMm],
+  );
+
   const handleLayerPointerDown = useCallback(
-    (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => {
+    (id: string, e: ReactPointerEvent<HTMLDivElement>) => {
       if (e.button === 1) return;
       if (e.button !== 0) return;
       onCancelInertia?.();
+      if (eyedropperActiveRef.current) {
+        const hitId = pickHit(e.clientX, e.clientY);
+        const color =
+          sampleLayerColor(layersRef.current.find((l) => l.id === hitId)) ?? '#FFFFFF';
+        onEyedropperPickRef.current?.(color);
+        return;
+      }
+      let targetId = id;
+      const groupMembers = enteredDescendants();
+      if (groupMembers) {
+        const hit = pickHit(e.clientX, e.clientY, { within: groupMembers });
+        if (!hit) {
+          onExitGroupEditRef.current?.();
+          onSelectIdsRef.current?.([]);
+          return;
+        }
+        targetId = hit;
+      } else if (e.ctrlKey || e.metaKey) {
+        targetId = pickHit(e.clientX, e.clientY, { skipSelected: true }) ?? id;
+      }
+      const additive = e.shiftKey;
       if (editingLayerIdRef.current) {
-        if (id === editingLayerIdRef.current) return;
+        if (targetId === editingLayerIdRef.current) return;
         onCommitEditRef.current?.();
       }
       const current = selectedIdsRef.current;
-      const wasSelected = current.includes(id);
+      const wasSelected = current.includes(targetId);
       let ids: string[];
       let onClickWithoutDrag: (() => void) | undefined;
 
@@ -892,20 +1156,20 @@ function Artboard({
         if (wasSelected) {
           ids = current;
           onClickWithoutDrag = () => {
-            onSelectIdsRef.current(current.filter((x) => x !== id));
+            onSelectIdsRef.current(current.filter((x) => x !== targetId));
           };
         } else {
-          ids = [...current, id];
+          ids = [...current, targetId];
           onSelectIdsRef.current(ids);
         }
       } else if (wasSelected && current.length > 1) {
         ids = current;
       } else {
-        ids = [id];
-        onSelectRef.current(id, false);
+        ids = [targetId];
+        onSelectRef.current(targetId, false);
       }
 
-      const layer = layersRef.current.find((l) => l.id === id);
+      const layer = layersRef.current.find((l) => l.id === targetId);
       if (!layer || layer.locked) return;
       const moveIds = ids.filter((sid) => {
         const l = layersRef.current.find((x) => x.id === sid);
@@ -919,7 +1183,7 @@ function Artboard({
         originSelectedIds: ids,
       });
     },
-    [beginSelectionMove, onCancelInertia],
+    [beginSelectionMove, onCancelInertia, enteredDescendants, pickHit],
   );
 
   const startResize = (e: ReactPointerEvent<HTMLDivElement>, corner: HandlePos) => {
@@ -1130,9 +1394,11 @@ function Artboard({
         };
         setMarquee(null);
         const currentLayers = layersRef.current;
+        const groupMembers = enteredDescendants();
         if (box.w < 1 && box.h < 1) {
           const hits = buildSpatialIndex(currentLayers).hitTest(cur.xMm, cur.yMm);
-          const top = hits[0];
+          const filtered = groupMembers ? hits.filter((h) => groupMembers.has(h)) : hits;
+          const top = filtered[0];
           if (top) {
             if (ev.shiftKey) {
               const merged = Array.from(new Set([...selectedIdsRef.current, top]));
@@ -1140,15 +1406,19 @@ function Artboard({
             } else {
               onSelect(top);
             }
+          } else if (groupMembers) {
+            onExitGroupEditRef.current?.();
+            onSelect(null);
           } else if (!ev.shiftKey) {
             onSelect(null);
           }
           return;
         }
-        const hit =
+        let hit =
           currentLayers.length > 30
             ? buildSpatialIndex(currentLayers).query(box)
             : layersInMarquee(currentLayers, box);
+        if (groupMembers) hit = hit.filter((id) => groupMembers.has(id));
         if (ev.shiftKey) {
           const merged = Array.from(new Set([...selectedIdsRef.current, ...hit]));
           onSelectIds(merged);
@@ -1162,6 +1432,61 @@ function Artboard({
         setMarquee(null);
       },
     });
+  };
+
+  const beginGapDrag = (
+    seq: SmartSequence,
+    index: number,
+    e: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    onCancelInertia?.();
+    if (!frameRef.current) return;
+    const snapshot = cloneLayers(
+      layersRef.current,
+      new Set(expandWithDescendants(layersRef.current, seq.ids)),
+    );
+    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
+    const originGap = seq.gaps[index] ?? 0;
+    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
+    gestureDirtyRef.current = false;
+    const raf = createGestureRaf((ev: PointerEvent) => {
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
+      const delta = seq.axis === 'x' ? cur.xMm - start.xMm : cur.yMm - start.yMm;
+      applyGestureLayers(resizeSmartGap(snapshot, seq, index, originGap + delta));
+    });
+    let session: ReturnType<typeof createPointerGestureSession>;
+    session = createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: (ev) => {
+        if (!ev) {
+          raf.cancel();
+          abortGesturePreview();
+          return;
+        }
+        raf.flush();
+        endGesture();
+      },
+      onKeyDown: escapeToAbort(() => session),
+      onAbort: () => {
+        raf.cancel();
+        abortGesturePreview();
+      },
+    });
+  };
+
+  const tidySmartSelection = (
+    seq: SmartSequence,
+    e: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    onCancelInertia?.();
+    applyGestureLayers(tidySmartSequence(layersRef.current, seq));
+    endGesture();
   };
 
   const beginPathPointDrag = (
@@ -1441,13 +1766,14 @@ function Artboard({
       onPointerDown={onCanvasPointerDown}
       onContextMenu={(e) => {
         e.preventDefault();
-        onContextMenu?.(null, e.clientX, e.clientY);
+        onContextMenu?.(null, e.clientX, e.clientY, clientPointMm(e.clientX, e.clientY));
       }}
     >
       {showRulers && (
         <CanvasRulers
           zoom={zoom}
           pan={pan}
+          camera={camera}
           pageWidthMm={document.page.widthMm}
           pageHeightMm={document.page.heightMm}
           pageIndex={pageIndex}
@@ -1458,6 +1784,7 @@ function Artboard({
       )}
 
       <div
+        ref={panLayerRef}
         data-testid="canvas-pan-layer"
         style={{
           position: 'absolute',
@@ -1466,7 +1793,7 @@ function Artboard({
           width: designW,
           height: designH,
           transform: `translate3d(calc(-50% + ${panX}px), calc(-50% + ${panY}px), 0)`,
-          willChange: panning ? 'transform' : undefined,
+          willChange: panning || cameraMoving ? 'transform' : undefined,
         }}
       >
         <div
@@ -1483,7 +1810,12 @@ function Artboard({
             backfaceVisibility: 'hidden',
             background: '#ffffff',
             boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
-            cursor: canPanTool || panning ? cursor : placing ? 'crosshair' : 'default',
+            cursor:
+              canPanTool || panning
+                ? cursor
+                : placing || eyedropperActive
+                  ? 'crosshair'
+                  : 'default',
             letterSpacing: 'normal',
           } as CSSProperties}
           onPointerDown={(e) => {
@@ -1508,9 +1840,15 @@ function Artboard({
               return;
             }
             if (tool === 'select' && e.button === 0) {
+              if (eyedropperActiveRef.current) {
+                onEyedropperPickRef.current?.('#FFFFFF');
+                return;
+              }
               beginMarquee(e);
             }
           }}
+          onPointerMove={onFramePointerMove}
+          onPointerLeave={onFramePointerLeave}
         >
           {pageMarginMm > 0 && (
             <div
@@ -1574,7 +1912,9 @@ function Artboard({
               scale={1}
               onSelect={handleSelect}
               onLayerPointerDown={handleLayerPointerDown}
-              onContextMenu={onContextMenu}
+              onContextMenu={(id, x, y) =>
+                onContextMenu?.(id, x, y, clientPointMm(x, y))
+              }
               onStartEdit={onStartEdit}
               onEditValue={onEditValue}
               onFitTextHeight={onFitTextHeight}
@@ -1686,7 +2026,7 @@ function Artboard({
             />
           )}
 
-          {distanceLabels.map((d) => (
+          {[...distanceLabels, ...hoverLabels].map((d) => (
             <div key={d.id} data-testid="canvas-distance-label" style={{ pointerEvents: 'none', zIndex: 46 }}>
               <div
                 style={{
@@ -1788,6 +2128,16 @@ function Artboard({
               onResize={startResize}
               onRotate={startRotate}
               onRadiusResize={startRadiusResize}
+            />
+          )}
+
+          {smartSeq && !panning && (
+            <SmartSelectionOverlay
+              seq={smartSeq}
+              selectionBbox={chromeBbox}
+              zoom={zoom}
+              onGapPointerDown={beginGapDrag}
+              onTidy={tidySmartSelection}
             />
           )}
         </div>

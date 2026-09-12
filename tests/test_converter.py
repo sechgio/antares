@@ -1,6 +1,4 @@
 
-import base64
-import io
 import os
 from pathlib import Path
 
@@ -9,7 +7,6 @@ from PIL import Image
 
 from backend.core.converter import (
     _build_save_kwargs,
-    convertir_a_preview,
     convertir_imagen,
     copiar_archivo,
 )
@@ -460,70 +457,3 @@ class TestCopiarArchivo:
         assert resultado == destino
         assert destino.exists()
         assert destino.parent not in mkdir_calls
-
-
-class TestConvertirAPreview:
-
-    def test_preview_cap_400px_con_resize_grande(self, tmp_path) -> None:
-        from backend.core.preview_cache import get_preview_cache
-
-        get_preview_cache().clear()
-        origen = tmp_path / "grande.png"
-        Image.new("RGB", (2000, 1500), color=(10, 20, 30)).save(origen)
-
-        resultado = convertir_a_preview(origen, "JPEG", calidad=85, resize=[4000, 3000])
-        assert resultado["width"] == "2000"
-        assert resultado["height"] == "1500"
-        assert "preview_path" in resultado
-        assert resultado["preview"].startswith("file:")
-        img = Image.open(resultado["preview_path"])
-        assert max(img.size) <= 400, f"preview excede 400px: {img.size}"
-        assert img.size == (400, 300)
-
-    def test_preview_legacy_data_uri_opt_in(self, tmp_path) -> None:
-        from backend.core.preview_cache import get_preview_cache
-
-        get_preview_cache().clear()
-        origen = tmp_path / "legacy.png"
-        Image.new("RGB", (100, 80), color=(1, 2, 3)).save(origen)
-        resultado = convertir_a_preview(origen, "JPEG", as_data_uri=True)
-        assert resultado["preview"].startswith("data:image/")
-        _header, b64 = resultado["preview"].split(",", 1)
-        img = Image.open(io.BytesIO(base64.b64decode(b64)))
-        assert max(img.size) <= 400
-
-    def test_preview_cache_invalidada_por_mtime(self, tmp_path) -> None:
-        from backend.core.preview_cache import get_preview_cache
-
-        get_preview_cache().clear()
-        origen = tmp_path / "mut.png"
-        Image.new("RGB", (800, 600), color=(255, 0, 0)).save(origen)
-        os.utime(origen, (1_000_000, 1_000_000))
-
-        r1 = convertir_a_preview(origen, "PNG")
-        r2 = convertir_a_preview(origen, "PNG")
-        assert r2["preview"] == r1["preview"]
-        assert r2["preview_path"] == r1["preview_path"]
-
-        Image.new("RGB", (800, 600), color=(0, 0, 255)).save(origen)
-        os.utime(origen, (2_000_000, 2_000_000))
-        r3 = convertir_a_preview(origen, "PNG")
-        assert r3["preview"] != r1["preview"], "preview stale tras editar imagen"
-
-    def test_preview_cache_normaliza_formato_y_detecta_reemplazo_rapido(self, tmp_path) -> None:
-        from backend.core.preview_cache import get_preview_cache
-
-        get_preview_cache().clear()
-        origen = tmp_path / "quick-replace.png"
-        fixed_ns = 2_000_000_000_000_000_000
-
-        Image.new("RGB", (80, 60), color=(255, 0, 0)).save(origen)
-        os.utime(origen, ns=(fixed_ns, fixed_ns))
-        first = convertir_a_preview(origen, "PNG")
-        alias = convertir_a_preview(origen, "png")
-        assert alias["preview"] == first["preview"]
-
-        Image.new("RGB", (80, 60), color=(0, 0, 255)).save(origen)
-        os.utime(origen, ns=(fixed_ns, fixed_ns))
-        replaced = convertir_a_preview(origen, "PNG")
-        assert replaced["preview"] != first["preview"], "quick replacement reused stale preview"

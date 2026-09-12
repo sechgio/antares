@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import sys
 import threading
 from pathlib import Path
 from typing import Any
 
 from backend.core.informes_v2.models import InformeV2, create_empty_report, next_informe_v2_number
 from backend.core.json_store import JsonDocumentStore
-from backend.utils.paths import user_data_path
+from backend.utils.paths import resource_path, user_data_path
 
 DEFAULT_DB_PATH = user_data_path("informes_v2.json")
+_DEFAULT_USER_DATA_PATH = DEFAULT_DB_PATH
+_LEGACY_DB_PATH = resource_path("data/informes_v2.json")
 
 _db_instance: InformesV2DB | None = None
 _db_instance_lock = threading.Lock()
@@ -28,7 +31,14 @@ class InformesV2DB(JsonDocumentStore):
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         path = Path(db_path) if db_path is not None else Path(DEFAULT_DB_PATH)
-        super().__init__(path, InformeV2.normalize)
+        legacy_path = (
+            _LEGACY_DB_PATH
+            if db_path is None
+            and not getattr(sys, "frozen", False)
+            and path == Path(_DEFAULT_USER_DATA_PATH)
+            else None
+        )
+        super().__init__(path, InformeV2.normalize, legacy_path=legacy_path)
 
     def create(self, report: dict[str, Any]) -> dict[str, Any]:
         return self.insert(report)

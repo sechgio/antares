@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import type { CanvasGuide } from '../types';
 import { MM_TO_PX } from '../ops/drawHelpers';
 import { screenChromePx } from '../ops/textTypography';
@@ -11,6 +11,9 @@ const RULER = 20;
 interface CanvasRulersProps {
   zoom: number;
   pan: { x: number; y: number };
+  camera?: {
+    subscribe: (listener: (zoom: number, pan: { x: number; y: number }) => void) => () => void;
+  };
   pageWidthMm: number;
   pageHeightMm: number;
   pageIndex: number;
@@ -86,6 +89,7 @@ export function GuidePositionChip({
 function CanvasRulers({
   zoom,
   pan,
+  camera,
   pageWidthMm,
   pageHeightMm,
   pageIndex,
@@ -97,6 +101,16 @@ function CanvasRulers({
   const frameH = Math.round(pageHeightMm * MM_TO_PX * zoom);
   const [createChip, setCreateChip] = useState<{ posMm: number; x: number; y: number } | null>(null);
   const [createPreview, setCreatePreview] = useState<CanvasGuide | null>(null);
+  const topStripRef = useRef<HTMLDivElement>(null);
+  const leftStripRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!camera) return;
+    return camera.subscribe((_z, p) => {
+      if (topStripRef.current) topStripRef.current.style.transform = `translateX(${Math.round(p.x)}px)`;
+      if (leftStripRef.current) leftStripRef.current.style.transform = `translateY(${Math.round(p.y)}px)`;
+    });
+  }, [camera]);
 
   const ticksH = useMemo(() => {
     const stepMm = zoom >= 1.5 ? 5 : zoom >= 0.6 ? 10 : 20;
@@ -121,8 +135,10 @@ function CanvasRulers({
     return out;
   }, [pageHeightMm, zoom]);
 
-  const originX = `calc(50% + ${Math.round(pan.x) - RULER / 2}px - ${frameW / 2}px)`;
-  const originY = `calc(50% + ${Math.round(pan.y) - RULER / 2}px - ${frameH / 2}px)`;
+  const originX = `calc(50% - ${RULER / 2 + frameW / 2}px)`;
+  const originY = `calc(50% - ${RULER / 2 + frameH / 2}px)`;
+  const panTransformX = `translateX(${Math.round(pan.x)}px)`;
+  const panTransformY = `translateY(${Math.round(pan.y)}px)`;
 
   const pageLeftCss = `calc(50% + ${Math.round(pan.x)}px - ${frameW / 2}px)`;
   const pageTopCss = `calc(50% + ${Math.round(pan.y)}px - ${frameH / 2}px)`;
@@ -227,7 +243,7 @@ function CanvasRulers({
           overflow: 'hidden',
         }}
       >
-        <div style={{ position: 'absolute', left: originX, top: 0, height: '100%', pointerEvents: 'none' }}>
+        <div ref={topStripRef} style={{ position: 'absolute', left: originX, top: 0, height: '100%', transform: panTransformX, pointerEvents: 'none' }}>
           {ticksH.map(({ mm: m, major, showLabel }) => (
             <div
               key={`h-${m}`}
@@ -275,7 +291,7 @@ function CanvasRulers({
           overflow: 'hidden',
         }}
       >
-        <div style={{ position: 'absolute', top: originY, left: 0, width: '100%', pointerEvents: 'none' }}>
+        <div ref={leftStripRef} style={{ position: 'absolute', top: originY, left: 0, width: '100%', transform: panTransformY, pointerEvents: 'none' }}>
           {ticksV.map(({ mm: m, major }) => (
             <div
               key={`v-${m}`}

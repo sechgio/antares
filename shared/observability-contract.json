@@ -35,7 +35,8 @@
     "rum_value",
     "rum_rating",
     "rum_id",
-    "rum_navigation_type"
+    "rum_navigation_type",
+    "view"
   ],
   "levels": ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"],
   "outcomes": [

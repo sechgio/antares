@@ -22,14 +22,18 @@ function run() {
     'utf8',
   );
 
-  const devMatch = source.match(/\? "([^"]+)"\s*:\s*"/);
-  const prodMatch = source.match(/:\s*"default-src 'self';[^"]+"/);
+  const cspMatches = [...source.matchAll(/buildCsp\("([^"]+)"\)/g)];
+  assert(cspMatches.length >= 2, 'dev and prod CSP strings are present');
 
-  assert(devMatch, 'dev CSP string is present');
-  assert(prodMatch, 'prod CSP string is present');
+  const devCsp = cspMatches[0]?.[1] ?? '';
+  const prodCsp = cspMatches[1]?.[1] ?? '';
 
-  const devCsp = devMatch?.[1] ?? '';
-  const prodCsp = prodMatch?.[0].slice(2).replace(/"$/, '') ?? '';
+  const hardeningMatch = source.match(/cspHardening\s*=\s*"([^"]+)"/);
+  const hardening = hardeningMatch?.[1] ?? '';
+  assert(hardening.includes("object-src 'none'"), 'hardening sets object-src none');
+  assert(hardening.includes("base-uri 'none'"), 'hardening sets base-uri none');
+  assert(hardening.includes("form-action 'none'"), 'hardening sets form-action none');
+  assert(hardening.includes("frame-ancestors 'none'"), 'hardening sets frame-ancestors none');
 
   for (const csp of [devCsp, prodCsp]) {
     assert(csp.includes('https://fonts.googleapis.com'), 'style-src allows fonts.googleapis.com');
@@ -37,6 +41,11 @@ function run() {
     assert(/https:\/\/[\w.*-]+\.supabase\.co/.test(csp), 'connect-src allows Supabase HTTPS');
     assert(/wss:\/\/[\w.*-]+\.supabase\.co/.test(csp), 'connect-src allows Supabase Realtime WSS');
   }
+
+  assert(
+    /\\\*\\\.supabase\\\.co/.test(source) && source.includes('_resolvePinnedSupabaseHost'),
+    'CSP supports optional Supabase host pinning via env',
+  );
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);

@@ -111,19 +111,7 @@ def _load_fields_unlocked() -> list[dict[str, Any]]:
                 data = json.load(f)
             fields = data.get("fields", [])
             if fields and isinstance(fields, list):
-                validated: list[dict[str, Any]] = []
-                for f in fields:
-                    if isinstance(f, dict) and "name" in f and "type" in f:
-                        nombre = str(f["name"]).strip().lower()
-                        tipo = str(f["type"]).strip().upper()
-                        if not _validar_nombre_campo(nombre) or not _validar_tipo_campo(tipo):
-                            continue
-                        validated.append({
-                            "name": nombre,
-                            "type": tipo,
-                            "required": bool(f.get("required", False)),
-                            "unique": bool(f.get("unique", False)),
-                        })
+                validated = sanitize_field_defs(fields)
                 if validated:
                     _cached_fields = (path, validated)
                     return [dict(f) for f in validated]
@@ -162,14 +150,6 @@ def get_field_names() -> list[str]:
         names = [f["name"] for f in load_fields()]
         _cached_field_names = (path, names)
         return list(names)
-
-
-def get_required_fields() -> list[str]:
-    return [f["name"] for f in load_fields() if f.get("required")]
-
-
-def get_unique_fields() -> list[str]:
-    return [f["name"] for f in load_fields() if f.get("unique")]
 
 
 def reset_to_defaults() -> list[dict[str, Any]]:

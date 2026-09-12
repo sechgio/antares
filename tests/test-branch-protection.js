@@ -103,7 +103,6 @@ function testNormalizeActual() {
   eq(flat.allowDeletions, false, 'allow_deletions se lee desde .enabled');
   eq(flat.requiredStatusChecks.length, 0, 'sin status checks');
 
-  // GitHub 404. El cuerpo viene nulo.
   const unprotected = core.normalizeActual(null);
   eq(unprotected.requiredApprovingReviewCount, 0, 'sin proteger => cero aprobaciones');
   eq(unprotected.allowForcePushes, false, 'sin proteger => force push en default');
@@ -128,7 +127,6 @@ function testDiffClean() {
 
 function testDiffIgnoresExtraFields() {
   process.stdout.write('diffProtection(): ignora campos que no estan en la politica\n');
-  // Campos extra de GitHub no están en FIELDS; no deben contar como deriva.
   const withExtras = Object.assign({}, ACTUAL_PROTECTED, {
     required_signatures: { enabled: true },
     block_creations: { enabled: true },
@@ -180,7 +178,6 @@ function testDiffStatusChecks() {
   eq(stillEmpty.length, 1, 'falta el check en GitHub');
   eq(stillEmpty[0].field, 'requiredStatusChecks', 'el campo es status checks');
 
-  // El orden de contexts no importa. Se comparan ordenados.
   const githubChecks = JSON.parse(JSON.stringify(ACTUAL_PROTECTED));
   githubChecks.required_status_checks = {
     strict: false,

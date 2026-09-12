@@ -32,16 +32,25 @@ describe('computeTooltipPosition', () => {
 });
 
 describe('HoverTooltip', () => {
-  it('portals a fixed tooltip that is not clipped by the trigger', () => {
+  it('keeps a bare tooltip out of the accessibility tree until the trigger is active', () => {
     render(
-      <div className="group relative">
+      <button type="button" aria-label="Top tip">
+        Action
         <HoverTooltip label="Top tip" placement="top" />
-      </div>,
+      </button>,
     );
+
+    const trigger = screen.getByRole('button', { name: 'Top tip' });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    fireEvent.focus(trigger);
     const tip = screen.getByRole('tooltip');
     expect(tip).toHaveClass('fixed');
     expect(tip).toHaveTextContent('Top tip');
     expect(document.body.contains(tip)).toBe(true);
+
+    fireEvent.blur(trigger);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 });
 
@@ -66,6 +75,8 @@ describe('WithHoverTooltip', () => {
     expect(tip).toHaveTextContent('Renombrar');
     expect(tip).toHaveClass('fixed');
     expect(tip.className).toMatch(/z-\[11000\]/);
+    expect(tip.className).toMatch(/bg-\[#1e1e1e\]/);
+    expect(tip.querySelector('span[aria-hidden="true"]')).toBeInTheDocument();
     expect(tip.style.transform).not.toMatch(/translateX\(-50%\)/);
     expect(document.body.contains(tip)).toBe(true);
 

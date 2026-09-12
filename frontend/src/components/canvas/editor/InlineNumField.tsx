@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { evalNumericExpression } from '../ops/numField';
+import { createPointerGestureSession } from '../ops/pointerGestureSession';
 
 interface InlineNumFieldProps {
   prefix: string;
@@ -33,16 +35,53 @@ export default function InlineNumField({
       return;
     }
     if (raw !== null) {
-      const n = Number(raw);
-      if (raw !== '' && Number.isFinite(n)) onChange(n);
+      const evaluated = evalNumericExpression(raw);
+      if (evaluated != null) onChange(evaluated);
     }
     setDraft(null);
     onCommit?.();
   };
 
+  const onScrubStart = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const drafted = draft != null ? evalNumericExpression(draft) : null;
+    const origin = drafted ?? (Number.isFinite(value) ? value : 0);
+    const startX = e.clientX;
+    let last = origin;
+    createPointerGestureSession({
+      onMove: (ev) => {
+        const mult = ev.shiftKey ? 10 : 1;
+        const next = Math.round((origin + (ev.clientX - startX) * step * mult) * 1000) / 1000;
+        if (next === last) return;
+        last = next;
+        setDraft(String(next));
+        onChange(next);
+      },
+      onEnd: () => {
+        setDraft(null);
+        onCommit?.();
+      },
+      onAbort: () => {
+        setDraft(null);
+        if (!mixed) onChange(origin);
+      },
+    });
+  };
+
   return (
     <label className="canvas-inline-field" title={title} data-mixed={mixed || undefined}>
-      {prefix ? <span className="canvas-inline-field-prefix">{prefix}</span> : null}
+      {prefix ? (
+        <span
+          className="canvas-inline-field-prefix"
+          onPointerDown={onScrubStart}
+          style={{ cursor: 'ew-resize', userSelect: 'none', touchAction: 'none' }}
+          role="presentation"
+        >
+          {prefix}
+        </span>
+      ) : null}
       <input
         type="text"
         inputMode="decimal"
@@ -73,8 +112,8 @@ export default function InlineNumField({
           }
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
-            const current = Number(draft ?? (mixed ? '' : display));
-            const base = Number.isFinite(current) ? current : originRef.current;
+            const current = evalNumericExpression(draft ?? (mixed ? '' : display));
+            const base = current ?? originRef.current;
             const next = Math.round((base + (e.key === 'ArrowUp' ? step : -step)) * 1000) / 1000;
             setDraft(String(next));
             if (!mixed) onChange(next);

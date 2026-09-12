@@ -35,6 +35,26 @@ process.on('uncaughtException', (err) => {
 
 const isDev = !app.isPackaged;
 const { isTrustedRendererFrame } = require('./renderer-trust');
+const CANVAS_ASSET_GC_INITIAL_DELAY_MS = 45_000;
+const CANVAS_ASSET_GC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+function runCanvasAssetGc() {
+  try {
+    const { gcOrphanCanvasAssets } = require('./canvas-assets');
+    return gcOrphanCanvasAssets()
+      .then((r) => {
+        if (r.removed > 0) {
+          appendLogLine('INFO', `[main] canvas asset GC removed=${r.removed} kept_refs=${r.kept}`);
+        }
+      })
+      .catch((err) => {
+        console.warn('[main] canvas asset GC failed:', err && err.message);
+      });
+  } catch (err) {
+    console.warn('[main] canvas asset GC unavailable:', err && err.message);
+    return Promise.resolve();
+  }
+}
 
 registerRendererObservability(ipcMain);
 registerIpcHandlers();
@@ -55,22 +75,9 @@ app.whenReady().then(async () => {
   startPythonBackend(isDev).catch((err) => {
     console.error('[main] startPythonBackend threw:', err);
   });
-  setTimeout(() => {
-    try {
-      const { gcOrphanCanvasAssets } = require('./canvas-assets');
-      gcOrphanCanvasAssets()
-        .then((r) => {
-          if (r.removed > 0) {
-            appendLogLine('INFO', `[main] canvas asset GC removed=${r.removed} kept_refs=${r.kept}`);
-          }
-        })
-        .catch((err) => {
-          console.warn('[main] canvas asset GC failed:', err && err.message);
-        });
-    } catch (err) {
-      console.warn('[main] canvas asset GC unavailable:', err && err.message);
-    }
-  }, 45_000);
+  setTimeout(runCanvasAssetGc, CANVAS_ASSET_GC_INITIAL_DELAY_MS);
+  const canvasAssetGcTimer = setInterval(runCanvasAssetGc, CANVAS_ASSET_GC_INTERVAL_MS);
+  canvasAssetGcTimer.unref?.();
   try {
     const { setupAutoUpdater } = require('./auto-updater');
     setupAutoUpdater(isDev);

@@ -49,6 +49,50 @@ describe('Artboard drag gestures', () => {
     queued.forEach((cb) => cb(now));
   };
 
+  it('keeps the default zoom without forcing an auto-fit on mount', () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.getAttribute?.('data-testid') === 'canvas-viewport') {
+        return {
+          width: 848,
+          height: 648,
+          top: 0,
+          left: 0,
+          bottom: 648,
+          right: 848,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      return originalRect.call(this);
+    };
+    try {
+      const onZoom = vi.fn();
+      const onPan = vi.fn();
+      const document = createEmptyDocument('Test');
+      render(
+        <Artboard
+          document={document}
+          selectedIds={[]}
+          zoom={1}
+          tool="select"
+          pan={{ x: 0, y: 0 }}
+          onPan={onPan}
+          onZoom={onZoom}
+          onSelect={() => {}}
+          onSelectIds={() => {}}
+          onChangeLayers={() => {}}
+        />,
+      );
+
+      expect(onZoom).not.toHaveBeenCalled();
+      expect(onPan).not.toHaveBeenCalled();
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect;
+    }
+  });
+
   const setup = (layers: CanvasLayer[], selectedIds: string[]) => {
     const document = createEmptyDocument('Test');
     document.layers.push(...layers);

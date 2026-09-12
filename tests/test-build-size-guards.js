@@ -68,6 +68,12 @@ assert(backendBuild.includes("path.join(distDir, 'backend')") || backendBuild.in
 assert(builderConfig.includes('from: dist/backend'), 'electron-builder should pack onedir from dist/backend');
 assert(spec.includes('COLLECT(') || spec.includes('exclude_binaries=True'), 'PyInstaller spec should use onedir COLLECT');
 
+const frozenBackendSmoke = readProjectFile('scripts', 'verify-frozen-backend.js');
+assert(frozenBackendSmoke.includes('sellador_inspect_pdf'), 'frozen backend smoke should probe sellador PDF inspection');
+assert(frozenBackendSmoke.includes('sellador_render_page'), 'frozen backend smoke should probe sellador page rendering');
+assert(frozenBackendSmoke.includes("image/jpeg"), 'frozen backend smoke should assert JPEG preview output');
+assert(frozenBackendSmoke.includes('PDFDocument.create'), 'frozen backend smoke should create an isolated PDF fixture');
+
 const packageJson = JSON.parse(readProjectFile('package.json'));
 assert(packageJson.scripts['clean:dist-electron'] === 'node scripts/clean-dist-electron.js', 'package scripts should expose a safe Electron output cleanup command');
 assert(packageJson.scripts['clean:after-package'] === 'node scripts/clean-after-package.js', 'package scripts should expose a post-package cleanup command');

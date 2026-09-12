@@ -31,7 +31,6 @@ describe('safeBase64ToBytes', () => {
     const original = new Uint8Array(Array.from({ length: 256 }, (_, i) => i));
     let binary = '';
     for (let i = 0; i < original.length; i++) binary += String.fromCharCode(original[i]);
-    // eslint-disable-next-line deprecation/deprecation
     const encoded = btoa(binary);
     const decoded = safeBase64ToBytes(encoded);
     expect(Array.from(decoded)).toEqual(Array.from(original));

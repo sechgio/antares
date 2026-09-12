@@ -1,5 +1,7 @@
-import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { FolderOpen, Save, Trash2 } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
+import ReportFormEmptyState from '../report-workspace/ReportFormEmptyState';
+import ReportFormHeader from '../report-workspace/ReportFormHeader';
+import { RESERVOIR_TYPES } from '../../types/reports';
 import { Field, LogoInput, Section } from '../technical-reports/trFormControls';
 import {
   DIAMETERS,
@@ -43,11 +45,7 @@ export default function FormPanel({
   onClearPhotos,
 }: Props) {
   if (!report) {
-    return (
-      <aside className="tr-panel tr-form">
-        <div className="tr-empty tr-empty-large">Selecciona un informe para editar</div>
-      </aside>
-    );
+    return <ReportFormEmptyState />;
   }
 
   const patch = (next: Partial<InformeV2>) => onChange({ ...report, ...next });
@@ -67,24 +65,13 @@ export default function FormPanel({
 
   return (
     <aside className="tr-panel tr-form">
-      <div className="tr-panel-header tr-form-header">
-        <h2 className="tr-form-title">
-          Informe #{report.metadata.informe_id}
-          <span className={`tr-change-dot ${hasChanges ? 'dirty' : ''}`} title={hasChanges ? 'Cambios sin guardar' : 'Sin cambios'} />
-        </h2>
-        <div className="tr-form-actions">
-          <WithHoverTooltip label={hasChanges ? 'Guardar cambios' : 'Sin cambios'} placement="bottom">
-            <button type="button" className="tr-form-action" onClick={onSave} disabled={!hasChanges || busy} aria-label="Guardar">
-              <Save size={14} strokeWidth={2} />
-            </button>
-          </WithHoverTooltip>
-          <WithHoverTooltip label="Eliminar informe" placement="bottom">
-            <button type="button" className="tr-form-action tr-form-action--danger" onClick={onDelete} disabled={busy} aria-label="Eliminar informe">
-              <Trash2 size={14} strokeWidth={2} />
-            </button>
-          </WithHoverTooltip>
-        </div>
-      </div>
+      <ReportFormHeader
+        informeId={report.metadata.informe_id}
+        hasChanges={hasChanges}
+        busy={busy}
+        onSave={onSave}
+        onDelete={onDelete}
+      />
 
       <div className="tr-form-scroll">
         <section className="tr-section tr-section-logos">
@@ -133,7 +120,7 @@ export default function FormPanel({
                 value={report.header.tipo}
                 onChange={(event) => patchHeader('tipo', event.target.value as ReservoirType)}
               >
-                {(['ELEVADO', 'ENTERRADO', 'SEMIENTERRADO', 'APOYADO', 'CISTERNA'] as const).map((tipo) => (
+                {RESERVOIR_TYPES.map((tipo) => (
                   <option key={tipo} value={tipo}>{tipo}</option>
                 ))}
               </select>

@@ -73,24 +73,27 @@ export function documentWithFill(doc: CanvasDocument, ctx: FillContext): CanvasD
 }
 
 function noopSelect(_id: string, _additive?: boolean) {}
-function noopPointerDown(_id: string, _additive: boolean, _e: ReactPointerEvent<HTMLDivElement>) {}
+function noopPointerDown(_id: string, _e: ReactPointerEvent<HTMLDivElement>) {}
 
 interface PageLayerPreviewProps {
   document: CanvasDocument;
   pageIndex?: number;
   scale?: number;
+  data?: Record<string, unknown>;
 }
 
 export default function PageLayerPreview({
   document,
   pageIndex = 0,
   scale = 1,
+  data,
 }: PageLayerPreviewProps) {
-  const layers = getActivePageLayers(document, pageIndex).filter(
-    (l): l is CanvasLayer => l.type !== 'frame' && l.visible !== false,
+  const pageLayers = getActivePageLayers(document, pageIndex).filter(
+    (l): l is CanvasLayer => l.type !== 'frame',
   );
+  const layers = pageLayers.filter((l) => l.visible !== false);
   const masterById = new Map<string, CanvasLayer>();
-  for (const l of layers) {
+  for (const l of pageLayers) {
     if (l.meta?.componentId) masterById.set(l.meta.componentId, l);
     else if (l.type === 'component' && !l.meta?.instanceOf) masterById.set(l.id, l);
   }
@@ -116,10 +119,11 @@ export default function PageLayerPreview({
           masterLayer={
             layer.meta?.instanceOf ? masterById.get(layer.meta.instanceOf) ?? null : null
           }
-          documentLayers={layers}
+          documentLayers={pageLayers}
           selected={false}
           interactive={false}
           scale={scale}
+          data={data}
           onSelect={noopSelect}
           onLayerPointerDown={noopPointerDown}
         />

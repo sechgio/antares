@@ -126,14 +126,14 @@ export function useCanvasHistory(initial: CanvasDocument) {
     setRevision(next);
   }, []);
 
-  const setDocument = useCallback((next: CanvasDocument) => {
-
-    if (next === documentRef.current) return;
-    const prev = documentRef.current;
+  const pushDiffStep = useCallback((from: CanvasDocument, to: CanvasDocument): boolean => {
+    const undoDiff = computeDocumentDiff(to, from);
+    const redoDiff = computeDocumentDiff(from, to);
+    if (Object.keys(undoDiff).length === 0 && Object.keys(redoDiff).length === 0) return false;
     const step: HistoryStepDiff = {
       type: 'diff',
-      undoDiff: computeDocumentDiff(next, prev),
-      redoDiff: computeDocumentDiff(prev, next),
+      undoDiff,
+      redoDiff,
     };
     const trimmed = trimHistoryByBudget(
       [...pastRef.current, step],
@@ -141,13 +141,19 @@ export function useCanvasHistory(initial: CanvasDocument) {
     );
     pastRef.current = trimmed.past;
     futureRef.current = trimmed.future;
-    documentRef.current = next;
     markUnsaved(true);
     setPast(trimmed.past);
     setFuture(trimmed.future);
-    setDocumentState(next);
     bumpRevision();
+    return true;
   }, [bumpRevision, markUnsaved]);
+
+  const setDocument = useCallback((next: CanvasDocument) => {
+    const prev = documentRef.current;
+    if (next === prev || !pushDiffStep(prev, next)) return;
+    documentRef.current = next;
+    setDocumentState(next);
+  }, [pushDiffStep]);
 
   const replaceDocument = useCallback((next: CanvasDocument) => {
     pastRef.current = [];
@@ -168,23 +174,8 @@ export function useCanvasHistory(initial: CanvasDocument) {
   }, [bumpRevision]);
 
   const commitFromBaseline = useCallback((baseline: CanvasDocument) => {
-    const current = documentRef.current;
-    const step: HistoryStepDiff = {
-      type: 'diff',
-      undoDiff: computeDocumentDiff(current, baseline),
-      redoDiff: computeDocumentDiff(baseline, current),
-    };
-    const trimmed = trimHistoryByBudget(
-      [...pastRef.current, step],
-      [],
-    );
-    pastRef.current = trimmed.past;
-    futureRef.current = trimmed.future;
-    markUnsaved(true);
-    setPast(trimmed.past);
-    setFuture(trimmed.future);
-    bumpRevision();
-  }, [bumpRevision, markUnsaved]);
+    pushDiffStep(baseline, documentRef.current);
+  }, [pushDiffStep]);
 
   const undo = useCallback(() => {
     const p = pastRef.current;
@@ -263,7 +254,6 @@ export function useCanvasHistory(initial: CanvasDocument) {
       redo,
       markSaved,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -281,7 +271,6 @@ export function useCanvasHistory(initial: CanvasDocument) {
       hasUnsavedEditsRef,
       ...actions,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [document, past, future, revision, hasUnsavedEdits],
   );
 }

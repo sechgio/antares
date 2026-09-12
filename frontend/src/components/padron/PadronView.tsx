@@ -116,6 +116,7 @@ export default function PadronView() {
   const [importStatus, setImportStatus] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [logosBase64, setLogosBase64] = useState<{ acciona: string | null; sedapal: string | null }>({ acciona: null, sedapal: null });
   const [logosLoaded, setLogosLoaded] = useState(false);
   const [pdfProgress, setPdfProgress] = useState('');
@@ -240,6 +241,10 @@ export default function PadronView() {
     [activePagesCount, folioConfig],
   );
 
+  const folioLabelTotal = physicalFolios.length > 0
+    ? Math.max(...physicalFolios)
+    : activePagesCount;
+
   const previewPages = useMemo(() => {
     const start = Math.min(
       previewPageOffset,
@@ -253,6 +258,15 @@ export default function PadronView() {
       waterCutItems: waterCutPages.slice(start, end),
     };
   }, [activePagesCount, previewPageOffset, servicePages, waterCutPages]);
+
+  const renderedPages = isPrinting
+    ? {
+        start: 0,
+        end: activePagesCount,
+        serviceItems: servicePages,
+        waterCutItems: waterCutPages,
+      }
+    : previewPages;
 
   useEffect(() => {
     setPreviewPageOffset(0);
@@ -527,7 +541,7 @@ export default function PadronView() {
                     items={pageItems as WaterCutItem[]}
                     sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                     pageNumber={getPageFolio(batchStart + j, physicalFolios)}
-                    totalPages={exportPages.length}
+                    totalPages={folioLabelTotal}
                     pageNumberStyle={folioConfig.pageNumberStyle}
                     pageNumberSize={folioConfig.pageNumberSize}
                     pageNumberFontStyle={folioConfig.pageNumberFontStyle}
@@ -540,7 +554,7 @@ export default function PadronView() {
                       accionaLogo={logosBase64.acciona || ACCIONA_LOGO}
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                       pageNumber={getPageFolio(batchStart + j, physicalFolios)}
-                      totalPages={exportPages.length}
+                      totalPages={folioLabelTotal}
                       isFirstPage={batchStart + j === 0}
                       isLastPage={batchStart + j === exportPages.length - 1}
                       variant={previewVariant}
@@ -652,10 +666,18 @@ export default function PadronView() {
     waterCutVisibleItems.length,
     visibleItems.length,
     physicalFolios,
+    folioLabelTotal,
     previewVariant,
   ]);
 
-  const handlePrint = useCallback(() => window.print(), []);
+  const handlePrint = useCallback(() => {
+    flushSync(() => setIsPrinting(true));
+    try {
+      window.print();
+    } finally {
+      setIsPrinting(false);
+    }
+  }, []);
 
   const openTutorial = useCallback(() => {
     setSidebarVisible(true);
@@ -981,8 +1003,8 @@ export default function PadronView() {
 
         <div className="vpad-preview-scroll-container vpad-preview-pane">
           <div className="vpad-print-doc" ref={previewRef}>
-            {(isWaterCutNotice ? previewPages.waterCutItems : previewPages.serviceItems).map((pageItems, i) => {
-              const globalIndex = previewPages.start + i;
+            {(isWaterCutNotice ? renderedPages.waterCutItems : renderedPages.serviceItems).map((pageItems, i) => {
+              const globalIndex = renderedPages.start + i;
               return (
                 <div className="vpad-print-page" key={globalIndex}>
                   {isWaterCutNotice ? (
@@ -991,7 +1013,7 @@ export default function PadronView() {
                       items={pageItems as WaterCutItem[]}
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                       pageNumber={getPageFolio(globalIndex, physicalFolios)}
-                      totalPages={activePagesCount}
+                      totalPages={folioLabelTotal}
                       pageNumberStyle={folioConfig.pageNumberStyle}
                       pageNumberSize={folioConfig.pageNumberSize}
                       pageNumberFontStyle={folioConfig.pageNumberFontStyle}
@@ -1004,7 +1026,7 @@ export default function PadronView() {
                       accionaLogo={logosBase64.acciona || ACCIONA_LOGO}
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                       pageNumber={getPageFolio(globalIndex, physicalFolios)}
-                      totalPages={activePagesCount}
+                      totalPages={folioLabelTotal}
                       isFirstPage={globalIndex === 0}
                       isLastPage={globalIndex === activePagesCount - 1}
                       variant={previewVariant}

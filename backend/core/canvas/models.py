@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import json
+import math
 import pathlib
 import re
 import uuid
@@ -242,6 +243,20 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
     mask_layer_id = raw.get("maskLayerId")
     if isinstance(mask_layer_id, str) and mask_layer_id.strip():
         cleaned["maskLayerId"] = mask_layer_id.strip()
+    for sizing_key in ("layoutSizingMain", "layoutSizingCross"):
+        if raw.get(sizing_key) in _CHILD_LAYOUT_SIZINGS:
+            cleaned[sizing_key] = raw[sizing_key]
+    if isinstance(raw.get("variantProps"), dict):
+        vprops = {
+            str(k).strip(): str(v).strip()
+            for k, v in raw["variantProps"].items()
+            if isinstance(k, str) and k.strip() and isinstance(v, (str, int, float))
+        }
+        if vprops:
+            cleaned["variantProps"] = vprops
+    variant_binding = _normalize_variant_binding(raw.get("variantBinding"))
+    if variant_binding is not None:
+        cleaned["variantBinding"] = variant_binding
     ops_out = _normalize_boolean_ops(raw.get("ops"))
     if ops_out is not None:
         cleaned["ops"] = ops_out
@@ -249,6 +264,47 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
 
 
 _ALLOWED_BOOLEAN_OPS = frozenset({"union", "subtract", "intersect", "exclude"})
+_CHILD_LAYOUT_SIZINGS = frozenset({"fixed", "hug", "fill"})
+
+
+def _normalize_variant_binding(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, Any] = {}  # allowlist: dict[str, Any]
+    if isinstance(raw.get("fieldKey"), str) and raw["fieldKey"].strip():
+        out["fieldKey"] = raw["fieldKey"].strip()
+    if isinstance(raw.get("fallbackVariant"), str) and raw["fallbackVariant"].strip():
+        out["fallbackVariant"] = raw["fallbackVariant"].strip()
+    if isinstance(raw.get("mapping"), dict):
+        mapping = {
+            str(k): str(v)
+            for k, v in raw["mapping"].items()
+            if isinstance(k, str) and isinstance(v, (str, int, float))
+        }
+        if mapping:
+            out["mapping"] = mapping
+    if isinstance(raw.get("propBindings"), dict):
+        prop_bindings: dict[str, Any] = {}  # allowlist: dict[str, Any]
+        for pk, pv in raw["propBindings"].items():
+            if isinstance(pk, str) and pk.strip() and isinstance(pv, dict):
+                p_out: dict[str, Any] = {}  # allowlist: dict[str, Any]
+                if isinstance(pv.get("fieldKey"), str) and pv["fieldKey"].strip():
+                    p_out["fieldKey"] = pv["fieldKey"].strip()
+                if pv.get("fallback") is not None:
+                    p_out["fallback"] = str(pv["fallback"])
+                if isinstance(pv.get("mapping"), dict):
+                    p_map = {
+                        str(mk): str(mv)
+                        for mk, mv in pv["mapping"].items()
+                        if isinstance(mk, str) and isinstance(mv, (str, int, float))
+                    }
+                    if p_map:
+                        p_out["mapping"] = p_map
+                if p_out:
+                    prop_bindings[pk.strip()] = p_out
+        if prop_bindings:
+            out["propBindings"] = prop_bindings
+    return out or None
 
 
 def _normalize_boolean_ops(raw: Any) -> list[dict[str, str]] | None:
@@ -290,9 +346,9 @@ def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # allowlist: dic
         pad_mm = float(raw["padMm"])
     except (KeyError, TypeError, ValueError):
         return None
-    if gap_mm < 0 or pad_mm < 0 or gap_mm != gap_mm or pad_mm != pad_mm:
+    if gap_mm < 0 or pad_mm < 0 or not math.isfinite(gap_mm) or not math.isfinite(pad_mm):
         return None
-    return {
+    res: dict[str, Any] = {  # allowlist: dict[str, Any]
         "direction": direction,
         "gapMm": gap_mm,
         "padMm": pad_mm,
@@ -300,6 +356,24 @@ def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # allowlist: dic
         "alignCross": align_cross,
         "sizing": sizing,
     }
+    for pad_key in ("padTopMm", "padRightMm", "padBottomMm", "padLeftMm"):
+        if pad_key in raw and raw[pad_key] is not None:
+            try:
+                v = float(raw[pad_key])
+                if v >= 0 and math.isfinite(v):
+                    res[pad_key] = v
+            except (TypeError, ValueError):
+                pass
+    if isinstance(raw.get("wrap"), bool):
+        res["wrap"] = raw["wrap"]
+    if "crossGapMm" in raw and raw["crossGapMm"] is not None:
+        try:
+            v = float(raw["crossGapMm"])
+            if v >= 0 and math.isfinite(v):
+                res["crossGapMm"] = v
+        except (TypeError, ValueError):
+            pass
+    return res
 
 
 def _normalize_frame_constraint(raw: Any) -> str | None:

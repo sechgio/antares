@@ -797,7 +797,6 @@ function _spawn(isDev) {
     console.log(`[backend-spawner] Python backend exited (code=${code}, signal=${signal})`);
     const wasReady = _state === STATE.READY;
     const isCleanShutdown = !!_isShuttingDown;
-    // Quit ordenado: INFO/cancelled, no crash.
     appendLogEvent(isCleanShutdown ? 'INFO' : (wasReady ? 'WARN' : 'INFO'), 'backend.exited', {
       component: 'backend',
       pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
@@ -843,10 +842,19 @@ function _spawn(isDev) {
             if (msg.params?.backend_version) {
               setAppContext({ backendVersion: msg.params.backend_version });
             }
-            appendLogEvent('INFO', 'backend.ready', {
+            const degraded = msg.params?.status === 'degraded';
+            if (degraded) {
+              console.warn(
+                '[backend-spawner] backend ready with status=degraded; failed_handler_modules=',
+                msg.params?.failed_handler_modules,
+              );
+            }
+            appendLogEvent(degraded ? 'WARN' : 'INFO', 'backend.ready', {
               component: 'backend',
               pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
-              outcome: 'success',
+              outcome: degraded ? 'degraded' : 'success',
+              reason: degraded ? 'failed_handler_modules' : undefined,
+              message: degraded ? JSON.stringify(msg.params?.failed_handler_modules ?? []) : undefined,
               duration_ms: Date.now() - spawnStartedAtMs,
             });
             resolve(spawnedPid);

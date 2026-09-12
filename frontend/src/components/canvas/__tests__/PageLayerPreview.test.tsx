@@ -4,7 +4,7 @@ import PageLayerPreview, { documentWithFill } from '../editor/PageLayerPreview';
 import { planMultiPageDocuments } from '../runtime/planning';
 import { createEmptyDocument, mm, newId } from '../types';
 import { render } from '@testing-library/react';
-import type { FillContext } from '../runtime/renderHtml';
+import { renderCanvasHtml, type FillContext } from '../runtime/renderHtml';
 
 describe('documentWithFill', () => {
   it('maps field/logo/slot/checkbox/signature from FillContext for LayerNode preview', () => {
@@ -90,6 +90,42 @@ describe('PageLayerPreview', () => {
     const text = container.querySelector('[data-testid="page-layer-preview"]')?.textContent ?? '';
     expect(text).toContain('SOLO_PAGINA_0');
     expect(text).not.toContain('SOLO_PAGINA_1');
+  });
+
+  it('applies data-bound component variants in the screen preview and HTML export', () => {
+    const doc = createEmptyDocument('Variants');
+    const master = {
+      ...createLayer('rect', { id: 'master', name: 'Estado' }),
+      type: 'component' as const,
+      meta: {
+        componentId: 'master',
+        variants: { Aprobado: { '--background-color': '#22c55e' } },
+      },
+      visible: false,
+    };
+    const instance = {
+      ...createLayer('rect', { id: 'instance', name: 'Estado instancia' }),
+      type: 'component' as const,
+      meta: {
+        instanceOf: 'master',
+        variantBinding: { fieldKey: 'estado', mapping: { AP: 'Aprobado' } },
+      },
+    };
+    doc.layers.push(master, instance);
+    const data = { estado: 'ap' };
+
+    const { container } = render(<PageLayerPreview document={doc} data={data} />);
+    const previewLayer = container.querySelector('[data-layer-id="instance"]') as HTMLElement;
+    expect(previewLayer.style.backgroundColor).toBe('rgb(34, 197, 94)');
+
+    const html = renderCanvasHtml(doc, {
+      data,
+      images: [],
+      logoLeft: null,
+      logoRight: null,
+    });
+    const instanceHtml = html.match(/data-layer="instance"[^>]*style="([^"]*)"/)?.[1] ?? '';
+    expect(instanceHtml).toMatch(/background-color:#22c55e/i);
   });
 });
 

@@ -22,6 +22,7 @@ export function useInlineEdit({
   setTool,
   setContextMenu,
 }: UseInlineEditOptions) {
+  const { commitFromBaseline, documentRef, updateSilent } = history;
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingSelectAll, setEditingSelectAll] = useState(true);
   const editBaselineRef = useRef<CanvasDocument | null>(null);
@@ -40,17 +41,18 @@ export function useInlineEdit({
   const commitInlineEdit = useCallback(() => {
     if (!editingLayerId) return;
     const baseline = editBaselineRef.current;
-    const layer = history.document.layers.find((l) => l.id === editingLayerId);
+    const layer = documentRef.current.layers.find((l) => l.id === editingLayerId);
     if (baseline && layer && layer.value !== baseline.layers.find((l) => l.id === editingLayerId)?.value) {
-      history.commitFromBaseline(baseline);
+      commitFromBaseline(baseline);
     }
     editBaselineRef.current = null;
     setEditingLayerId(null);
-  }, [editingLayerId, history]);
+  }, [commitFromBaseline, documentRef, editingLayerId]);
 
   const startInlineEdit = useCallback(
     (id: string, opts?: { seed?: string }) => {
-      const layer = history.document.layers.find((l) => l.id === id);
+      const doc = documentRef.current;
+      const layer = doc.layers.find((l) => l.id === id);
       if (canFocusFieldBinding(layer)) {
         if (editingLayerId) commitInlineEdit();
         setSelectedIds([id]);
@@ -64,27 +66,29 @@ export function useInlineEdit({
         return;
       }
       if (!canInlineEditLayer(layer)) return;
-      editBaselineRef.current = cloneDocument(history.document);
+      const seed = opts?.seed;
+      editBaselineRef.current = cloneDocument(doc);
       setSelectedIds([id]);
       setTool('select');
-      setEditingSelectAll(opts?.seed == null);
-      if (opts?.seed != null) {
-        history.updateSilent({
-          ...history.document,
-          layers: history.document.layers.map((l) => (l.id === id ? { ...l, value: opts.seed! } : l)),
+      setEditingSelectAll(seed == null);
+      if (seed != null) {
+        updateSilent({
+          ...doc,
+          layers: doc.layers.map((l) => (l.id === id ? { ...l, value: seed } : l)),
         });
       }
       setEditingLayerId(id);
       setContextMenu(null);
     },
-    [history, editingLayerId, commitInlineEdit, setSelectedIds, setTool, setContextMenu],
+    [commitInlineEdit, documentRef, editingLayerId, setContextMenu, setSelectedIds, setTool, updateSilent],
   );
 
   const onInlineEditValue = useCallback(
     (id: string, value: string, contentHeightPx?: number, zoom?: number) => {
-      history.updateSilent({
-        ...history.document,
-        layers: history.document.layers.map((l) => {
+      const doc = documentRef.current;
+      updateSilent({
+        ...doc,
+        layers: doc.layers.map((l) => {
           if (l.id !== id) return l;
           const next = { ...l, value };
 
@@ -94,21 +98,22 @@ export function useInlineEdit({
         }),
       });
     },
-    [history],
+    [documentRef, updateSilent],
   );
 
   const onFitTextHeight = useCallback(
     (id: string, contentHeightPx: number, zoom: number) => {
-      const layer = history.document.layers.find((l) => l.id === id);
+      const doc = documentRef.current;
+      const layer = doc.layers.find((l) => l.id === id);
       if (!layer) return;
       const next = growTextLayerToContent(layer, contentHeightPx, zoom);
       if (next === layer) return;
-      history.updateSilent({
-        ...history.document,
-        layers: history.document.layers.map((l) => (l.id === id ? next : l)),
+      updateSilent({
+        ...doc,
+        layers: doc.layers.map((l) => (l.id === id ? next : l)),
       });
     },
-    [history],
+    [documentRef, updateSilent],
   );
 
   const beginEditWithBaseline = useCallback(

@@ -155,7 +155,8 @@ describe('createWheelGestureRaf', () => {
     tick();
     expect(seen).toEqual([
       { kind: 'pan', deltaY: 12 },
-      { kind: 'zoom', deltaY: 38 },
+      { kind: 'zoom', deltaY: 30 },
+      { kind: 'zoom', deltaY: 8 },
     ]);
   });
 
@@ -170,6 +171,20 @@ describe('createWheelGestureRaf', () => {
     expect(seen).toEqual([
       { shiftKey: true, deltaY: 10 },
       { shiftKey: false, deltaY: 6 },
+    ]);
+  });
+
+  it('keeps zoom events with different cursor positions as separate segments', () => {
+    const seen: Array<{ deltaY: number; clientX: number; clientY: number }> = [];
+    const raf = createWheelGestureRaf((segments) => {
+      seen.push(...segments.map((s) => ({ deltaY: s.deltaY, clientX: s.clientX, clientY: s.clientY })));
+    });
+    raf.schedule(wheel({ deltaY: 10, ctrlKey: true, clientX: 20, clientY: 30 }));
+    raf.schedule(wheel({ deltaY: 10, ctrlKey: true, clientX: 200, clientY: 300 }));
+    tick();
+    expect(seen).toEqual([
+      { deltaY: 10, clientX: 20, clientY: 30 },
+      { deltaY: 10, clientX: 200, clientY: 300 },
     ]);
   });
 

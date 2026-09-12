@@ -41,6 +41,7 @@ import {
   Search,
   Component,
   Frame,
+  LayoutTemplate,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import {
@@ -80,11 +81,13 @@ interface LeftSidebarProps {
   onOpenDoc: (id: string) => void;
   onNew: () => void;
   onDeleteDoc: () => void;
+  onOpenTemplates?: () => void;
   onPageChange: (index: number) => void;
   onAddPage: () => void;
   onRemovePage: (index: number) => void;
   onDuplicatePage: (index: number) => void;
   onRenamePage: (index: number, name: string) => void;
+  onReorderPage?: (fromIndex: number, toIndex: number) => void;
   onMoveLayer: (
     draggedId: string,
     targetId: string,
@@ -359,11 +362,13 @@ export default memo(function LeftSidebar({
   onOpenDoc,
   onNew,
   onDeleteDoc,
+  onOpenTemplates,
   onPageChange,
   onAddPage,
   onRemovePage,
   onDuplicatePage,
   onRenamePage,
+  onReorderPage,
   onMoveLayer,
   onGroupSelected,
   onUngroupSelected,
@@ -404,10 +409,13 @@ export default memo(function LeftSidebar({
   const documentIdRef = useRef(documentId);
   const pendingRevealIdRef = useRef<string | null>(null);
   const lastRevealedKeyRef = useRef('');
+  const lastRevealedRowsRef = useRef<unknown>(null);
   const [layerQuery, setLayerQuery] = useState('');
   const [layerScrollTop, setLayerScrollTop] = useState(0);
   const [layerListHeight, setLayerListHeight] = useState(400);
   const [pageMenu, setPageMenu] = useState<PageContextMenuState | null>(null);
+  const pageDragIndexRef = useRef<number | null>(null);
+  const [pageDropIndex, setPageDropIndex] = useState<number | null>(null);
   const [renamingIndex, setRenamingIndex] = useState<number | null>(null);
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -514,13 +522,21 @@ export default memo(function LeftSidebar({
       const onMove = (ev: PointerEvent) => {
         raf.schedule(clampLeftPanelWidth(originW + (ev.clientX - originX)));
       };
-      const onUp = () => {
-        raf.flush();
-        setResizing(false);
-        handle.releasePointerCapture(event.pointerId);
+      const cleanup = () => {
         handle.removeEventListener('pointermove', onMove);
         handle.removeEventListener('pointerup', onUp);
         handle.removeEventListener('pointercancel', onUp);
+      };
+      const onUp = () => {
+        raf.flush();
+        setResizing(false);
+        try {
+          handle.releasePointerCapture(event.pointerId);
+        } catch {
+          // Pointer capture may already have been released by the browser.
+        } finally {
+          cleanup();
+        }
       };
       handle.addEventListener('pointermove', onMove);
       handle.addEventListener('pointerup', onUp);
@@ -620,9 +636,14 @@ export default memo(function LeftSidebar({
     if (!id) {
       pendingRevealIdRef.current = null;
       lastRevealedKeyRef.current = '';
+      lastRevealedRowsRef.current = null;
       return;
     }
-    if (selectionKey === lastRevealedKeyRef.current && !pendingRevealIdRef.current) return;
+    if (
+      selectionKey === lastRevealedKeyRef.current
+      && lastRevealedRowsRef.current === rows
+      && !pendingRevealIdRef.current
+    ) return;
 
     const nextExpanded = expandAncestorsForSelection(expandedIds, layersRef.current, selectedIds);
     if (nextExpanded !== expandedIds) {
@@ -643,6 +664,7 @@ export default memo(function LeftSidebar({
     const nextScroll = scrollTopToRevealIndex(index, LAYER_ROW_H, listHeight, current);
     pendingRevealIdRef.current = null;
     lastRevealedKeyRef.current = selectionKey;
+    lastRevealedRowsRef.current = rows;
     if (el && el.scrollTop !== nextScroll) el.scrollTop = nextScroll;
     if (nextScroll !== layerScrollTop) setLayerScrollTop(nextScroll);
   }, [selectedIds, rows, expandedIds, layerListHeight, layerScrollTop]);
@@ -691,6 +713,19 @@ export default memo(function LeftSidebar({
                 <Plus className="h-3 w-3" />
               </button>
             </WithHoverTooltip>
+            {onOpenTemplates && (
+              <WithHoverTooltip label="Plantillas" placement="bottom" variant="dark">
+                <button
+                  type="button"
+                  className="canvas-icon-btn !h-6 !w-6"
+                  onClick={onOpenTemplates}
+                  aria-label="Plantillas"
+                  data-testid="canvas-open-templates"
+                >
+                  <LayoutTemplate className="h-3 w-3" />
+                </button>
+              </WithHoverTooltip>
+            )}
             <WithHoverTooltip label="Eliminar" placement="bottom" variant="dark">
               <button
                 type="button"
@@ -795,6 +830,38 @@ export default memo(function LeftSidebar({
                 aria-current={pageIndex === i ? 'page' : undefined}
                 aria-label={`${pageLabel(i)} A4`}
                 title={`${pageLabel(i)} · A4`}
+                data-page-drop={pageDropIndex === i ? 'true' : undefined}
+                draggable={Boolean(onReorderPage) && pageCount > 1 && renamingIndex !== i}
+                onDragStart={(e) => {
+                  if (!onReorderPage || pageCount <= 1) {
+                    e.preventDefault();
+                    return;
+                  }
+                  pageDragIndexRef.current = i;
+                  e.dataTransfer.setData('text/plain', String(i));
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(e) => {
+                  if (!onReorderPage || pageDragIndexRef.current === null) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = 'move';
+                  setPageDropIndex(i);
+                }}
+                onDragLeave={() => setPageDropIndex((cur) => (cur === i ? null : cur))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const from = pageDragIndexRef.current;
+                  pageDragIndexRef.current = null;
+                  setPageDropIndex(null);
+                  if (from === null || from === i) return;
+                  onReorderPage?.(from, i);
+                }}
+                onDragEnd={() => {
+                  pageDragIndexRef.current = null;
+                  setPageDropIndex(null);
+                }}
               >
                 <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 <span className="min-w-0 flex-1 truncate">{pageLabel(i)}</span>

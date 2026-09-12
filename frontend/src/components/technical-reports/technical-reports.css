@@ -788,12 +788,7 @@
 }
 
 .ft-preview-scroll {
-  container-type: inline-size;
   padding: 8px;
-}
-
-.ficha-preview-container {
-  zoom: calc(100cqw / 210mm);
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -1854,15 +1849,15 @@
 .tr-preview-wrap {
   display: flex;
   justify-content: center;
+  align-items: flex-start;
   background: color-mix(in srgb, var(--bg-base), #000 18%);
   border-radius: 8px;
   border: 1px solid var(--border-subtle);
   padding: 10px 8px 16px;
-  container-type: inline-size;
 }
 
 .tr-paper {
-  width: 210mm;
+  width: min(100%, 210mm);
   min-height: 297mm;
   flex: 0 0 auto;
   background: #fff;
@@ -1872,7 +1867,6 @@
   font-family: "Segoe UI", Calibri, Arial, sans-serif;
   font-size: 7.5pt;
   line-height: 1.15;
-  zoom: calc((100cqw - 20px) / 210mm);
 }
 
 .tr-paper-empty {

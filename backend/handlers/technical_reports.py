@@ -6,13 +6,15 @@ from backend.handlers.common import (
     clear_store,
     create_report_from_params,
     delete_item_or_raise,
+    filter_by_optional_ids,
     get_item_id,
     get_item_or_raise,
+    require_b64_file_payload,
     require_update_payload,
+    resolve_payload_or_store,
     update_item_or_raise,
     with_locale,
 )
-from backend.utils.image_data import decode_b64_payload
 
 
 def _db():
@@ -73,17 +75,9 @@ def technical_reports_clear(params: dict[str, Any]) -> dict[str, Any]:
 @with_locale
 def technical_reports_import_file(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.technical_reports.importer import import_reports_from_bytes
-    filename = str(params.get("filename") or "")
-    content_b64 = str(params.get("content_b64") or "")
-    if not filename or not content_b64:
-        msg = "filename y content_b64 son requeridos"
-        raise ValueError(msg)
-
-    content = decode_b64_payload(content_b64)
+    filename, content = require_b64_file_payload(params)
     reports = import_reports_from_bytes(filename, content)
-    db = _db()
-    deleted_count = len(db.get_all())
-    imported = db.replace_all(reports)
+    imported, deleted_count = _db().replace_all_counted(reports)
     return {"success": True, "message": f"{len(imported)} informes importados", "deleted_count": deleted_count, "imported_count": len(imported), "total_rows_in_file": len(reports)}
 
 
@@ -95,41 +89,22 @@ def technical_reports_autocomplete_contratista(params: dict[str, Any]) -> dict[s
     cs = str(params.get("cs") or "").strip()
     return {"options": _db().get_unique_contratista(cs if cs else None)}
 
-def _resolve_report_for_render(params: dict[str, Any]) -> dict[str, Any]:
-    report_payload = params.get("report")
-    report_id = str(params.get("id") or "").strip()
-
-    if isinstance(report_payload, dict) and report_payload:
-        return report_payload
-
-    if report_id:
-        stored = _db().get(report_id)
-        if isinstance(stored, dict):
-            return stored
-
-    msg = "Informe no encontrado: envíe el report actual o un id válido"
-    raise ValueError(msg)
-
-
 @with_locale
 def technical_reports_render_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.technical_reports.rendering import render_report_html
 
-    report = _resolve_report_for_render(params)
+    report = resolve_payload_or_store(
+        _db(), params, "report", "Informe no encontrado: envíe el report actual o un id válido"
+    )
     html = render_report_html(report, params.get("logo_left"), params.get("logo_right"))
     return {"html": html, "filename": f"informe_{report.get('id') or 'inline'}.pdf"}
 
 @with_locale
 def technical_reports_render_consolidated_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.technical_reports.rendering import render_consolidated_html
-    reports = _db().get_all()
-    report_ids = params.get("report_ids")
-    if isinstance(report_ids, list) and report_ids:
-        allowed = {str(rid) for rid in report_ids}
-        reports = [r for r in reports if r["id"] in allowed]
-    if not reports:
-        msg = "No hay informes para exportar"
-        raise ValueError(msg)
+    reports = filter_by_optional_ids(
+        _db().get_all(), params.get("report_ids"), "No hay informes para exportar"
+    )
     reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
     html = render_consolidated_html(reports, params.get("logo_left"), params.get("logo_right"))
     return {"html": html, "filename": f"informes_tecnicos_consolidado_{len(reports)}.pdf", "count": len(reports)}

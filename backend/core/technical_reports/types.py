@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Literal, TypedDict
 
-TechnicalStatus = Literal["draft", "completed"]
+from backend.core.report_types import ReportStatus, ReservoirType
+
+TechnicalStatus = ReportStatus
 CheckState = Literal["normal", "critico", "unchecked"]
-ReservoirType = Literal["ELEVADO", "ENTERRADO", "SEMIENTERRADO", "APOYADO", "CISTERNA"]
 
 
 class TechnicalMetadata(TypedDict):

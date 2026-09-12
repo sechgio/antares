@@ -138,10 +138,30 @@ def _stamp_image_to_pdf_page(img: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
+def _stamp_transform_for_page(
+    page: Any,
+    x: float,
+    y: float,
+    stamp_height_pt: float,
+) -> Transformation:
+    cropbox = page.cropbox
+    left = float(cropbox.left)
+    bottom = float(cropbox.bottom)
+    right = float(cropbox.right)
+    top = float(cropbox.top)
+    rotation = int(page.rotation or 0) % 360
+
+    if rotation == 90:
+        return Transformation((0, 1, -1, 0, left + y + stamp_height_pt, bottom + x))
+    if rotation == 180:
+        return Transformation((-1, 0, 0, -1, right - x, bottom + y + stamp_height_pt))
+    if rotation == 270:
+        return Transformation((0, -1, 1, 0, right - y - stamp_height_pt, top - x))
+    return Transformation((1, 0, 0, 1, left + x, top - y - stamp_height_pt))
+
+
 def _apply_stamp_to_page(page: Any, stamp_page: Any, x: float, y: float, stamp_height_pt: float) -> None:
-    page_height = float(page.mediabox.height)
-    pdf_y = page_height - y - stamp_height_pt
-    transform = Transformation().translate(tx=x, ty=pdf_y)
+    transform = _stamp_transform_for_page(page, x, y, stamp_height_pt)
     page.merge_transformed_page(stamp_page, transform)
 
 

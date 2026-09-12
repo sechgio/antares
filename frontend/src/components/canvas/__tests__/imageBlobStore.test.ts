@@ -99,6 +99,38 @@ describe('imageBlobStore', () => {
     await expect(hydrate(doc, { strict: true })).rejects.toThrow(/asset|resolver|not found/i);
   });
 
+  it('deduplicates asset reads without sharing generated ObjectURLs', async () => {
+    const ref = 'canvas-asset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const chunk = new Uint8Array([1, 2, 3]).buffer;
+    const get = vi.fn(async () => ({ ref, chunk, bytes: chunk.byteLength }));
+    (window as unknown as { electronAPI: { canvasAssetGet: typeof get } }).electronAPI = {
+      canvasAssetGet: get,
+    };
+    const cssVars = {
+      '--width': '10mm',
+      '--height': '10mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    const doc = createEmptyDocument('Duplicate asset');
+    doc.layers.push(
+      { id: 'image-a', type: 'image', name: 'A', value: ref, cssVars },
+      { id: 'image-b', type: 'image', name: 'B', value: ref, cssVars },
+    );
+
+    const hydrated = await hydrateDocumentImages(doc);
+    const values = hydrated.layers
+      .filter((layer) => layer.type === 'image')
+      .map((layer) => layer.value);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(values[0]).toMatch(/^blob:/);
+    expect(values[1]).toMatch(/^blob:/);
+    expect(values[0]).not.toBe(values[1]);
+
+    releaseImageBlob(values[0]);
+    expect(getBlobUrl(values[1])).toBe(values[1]);
+  });
+
   it('serializes ObjectURL layers back to persistent DataURLs when asset API missing', async () => {
     const fakeBlob = new Blob(['test content'], { type: 'image/png' });
     const registered = await registerImageBlob(fakeBlob);
@@ -150,6 +182,55 @@ describe('imageBlobStore', () => {
     const serialized = await serializeDocumentImages(doc);
     expect(serialized.layers.find((l) => l.id === 'img1')?.value).toBe('canvas-asset:abc123');
     expect(put).toHaveBeenCalledOnce();
+  });
+
+  it('serializes asset writes one at a time and reuses a ref for repeated blobs', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let active = 0;
+    let maxActive = 0;
+    const put = vi.fn(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await gate;
+      active -= 1;
+      return { ref: `canvas-asset:${put.mock.calls.length}`, asset_id: 'asset', bytes: 4 };
+    });
+    (window as unknown as { electronAPI: { canvasAssetPut: typeof put } }).electronAPI = {
+      canvasAssetPut: put,
+    };
+
+    const first = await registerImageBlob(new Blob(['same'], { type: 'image/png' }));
+    const second = await registerImageBlob(new Blob(['other'], { type: 'image/png' }));
+    const doc = createEmptyDocument('Serial assets');
+    const cssVars = {
+      '--width': '10mm',
+      '--height': '10mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    doc.layers.push(
+      { id: 'img-a', type: 'image', name: 'A', value: first.url, cssVars },
+      { id: 'img-b', type: 'image', name: 'B', value: first.url, cssVars },
+      { id: 'img-c', type: 'image', name: 'C', value: second.url, cssVars },
+    );
+
+    const pending = serializeDocumentImages(doc);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(put).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+    }
+
+    const serialized = await pending;
+    expect(maxActive).toBe(1);
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(serialized.layers.find((layer) => layer.id === 'img-a')?.value).toBe(
+      serialized.layers.find((layer) => layer.id === 'img-b')?.value,
+    );
   });
 
   it('serializeHistorySteps persists blob image values in diff steps', async () => {
@@ -209,80 +290,6 @@ describe('imageBlobStore', () => {
     const val = (hydrated[0] as { redoDiff: { addedLayers: Array<{ value: string }> } }).redoDiff
       .addedLayers[0]?.value;
     expect(val).toMatch(/^blob:/);
-  });
-
-  it('prepareDocumentImagesForExport expands assets and managed blobs to data URLs', async () => {
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
-    const get = vi.fn(async (ref: string) => {
-      if (ref !== 'canvas-asset:abc') throw new Error('not found');
-      return {
-        chunk: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength),
-        ref,
-        bytes: 4,
-      };
-    });
-    (window as unknown as { electronAPI: { canvasAssetGet: typeof get } }).electronAPI = {
-      canvasAssetGet: get,
-    };
-
-    const {
-      prepareDocumentImagesForExport,
-      embedCanvasAssetsAsDataUrls,
-    } = await import('../utils/imageBlobStore');
-
-    const doc = createEmptyDocument('Export');
-    doc.layers.push({
-      id: 'img1',
-      type: 'image',
-      name: 'Asset',
-      value: 'canvas-asset:abc',
-      cssVars: { '--width': '10mm', '--height': '10mm', '--translate-x': '0mm', '--translate-y': '0mm' },
-    });
-    const prepared = await prepareDocumentImagesForExport(doc);
-    const img = prepared.layers.find((l) => l.id === 'img1');
-    expect(img?.value).toMatch(/^data:/);
-    expect(get).toHaveBeenCalledWith('canvas-asset:abc');
-
-    await expect(
-      embedCanvasAssetsAsDataUrls(
-        {
-          ...doc,
-          layers: doc.layers.map((l) =>
-            l.id === 'img1' ? { ...l, value: 'canvas-asset:missing' } : l,
-          ),
-        },
-        { strict: true },
-      ),
-    ).rejects.toThrow(/No se pudo resolver|not found/);
-  });
-
-  it('prepareDocumentImagesForExport cmyk mode keeps canvas-asset refs (no data: inflate)', async () => {
-    const put = vi.fn(async () => ({ ref: 'canvas-asset:fromdata', asset_id: 'fromdata', bytes: 4 }));
-    (window as unknown as { electronAPI: { canvasAssetPut: typeof put } }).electronAPI = {
-      canvasAssetPut: put,
-    };
-
-    const { prepareDocumentImagesForExport } = await import('../utils/imageBlobStore');
-    const doc = createEmptyDocument('CMYK export');
-    doc.layers.push({
-      id: 'img1',
-      type: 'image',
-      name: 'Asset',
-      value: 'canvas-asset:keepme',
-      cssVars: { '--width': '10mm', '--height': '10mm', '--translate-x': '0mm', '--translate-y': '0mm' },
-    });
-    doc.layers.push({
-      id: 'img2',
-      type: 'image',
-      name: 'Inline',
-      value: 'data:image/png;base64,iVBORw0KGgo=',
-      cssVars: { '--width': '10mm', '--height': '10mm', '--translate-x': '0mm', '--translate-y': '0mm' },
-    });
-
-    const prepared = await prepareDocumentImagesForExport(doc, { mode: 'cmyk' });
-    expect(prepared.layers.find((l) => l.id === 'img1')?.value).toBe('canvas-asset:keepme');
-    expect(prepared.layers.find((l) => l.id === 'img2')?.value).toBe('canvas-asset:fromdata');
-    expect(put).toHaveBeenCalled();
   });
 
   it('roundtrips blob URL and blobId through serialize then hydrate', async () => {

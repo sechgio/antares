@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const _allowedReadPaths = new Set();
+const MAX_ALLOWED_READ_PATHS = 1000;
 
 function isPathInside(parent, child) {
   const resolvedParent = path.resolve(parent);
@@ -23,10 +24,29 @@ function assertPathNotSymlink(resolved) {
   return stat;
 }
 
+function hasSymlinkAncestor(resolved) {
+  let current = path.resolve(resolved);
+  while (true) {
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    try {
+      if (fs.lstatSync(parent).isSymbolicLink()) return true;
+    } catch (err) {
+      // Missing ancestors are fine (the tree may not exist yet); anything else
+      // means the path cannot be verified — fail closed.
+      if (!err || err.code !== 'ENOENT') throw err;
+    }
+    current = parent;
+  }
+}
+
 function registerAllowedReadPath(rawPath) {
   if (typeof rawPath !== 'string' || !rawPath.trim() || rawPath.includes('\0')) return;
   if (!path.isAbsolute(rawPath)) return;
   const resolved = path.resolve(rawPath);
+  if (_allowedReadPaths.size >= MAX_ALLOWED_READ_PATHS && !_allowedReadPaths.has(resolved)) {
+    _allowedReadPaths.delete(_allowedReadPaths.keys().next().value);
+  }
   _allowedReadPaths.add(resolved);
 }
 
@@ -54,6 +74,11 @@ function assertAllowedReadPath(rawPath) {
   if (!_allowedReadPaths.has(resolved)) {
     throw new Error('path not allowed');
   }
+  // A swapped symlink ancestor makes a registered lexical path resolve outside
+  // the intended tree — the same policy write paths already enforce.
+  if (hasSymlinkAncestor(resolved)) {
+    throw new Error('symbolic links not allowed');
+  }
   return resolved;
 }
 
@@ -73,6 +98,7 @@ module.exports = {
   registerAllowedReadPaths,
   assertAllowedReadPath,
   assertPathNotSymlink,
+  hasSymlinkAncestor,
   isAllowedReadPath,
   clearAllowedReadPaths,
 };

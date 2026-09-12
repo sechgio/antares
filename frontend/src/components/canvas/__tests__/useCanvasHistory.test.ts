@@ -82,6 +82,9 @@ describe('useCanvasHistory gesture coalesce', () => {
 
   it(`caps undo stack at MAX_HISTORY (${MAX_HISTORY})`, () => {
     const base = createEmptyDocument('Test');
+    const text = createLayer('text');
+    text.cssVars['--translate-x'] = '0mm';
+    base.layers.push(text);
     const { result } = renderHook(() => useCanvasHistory(base));
 
     for (let i = 0; i < MAX_HISTORY + 10; i += 1) {

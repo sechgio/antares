@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -32,7 +33,7 @@ def test_successful_retry_cleans_document_spill(tmp_path: Path, monkeypatch: pyt
 
     spill_path = Path(caught.value.details["spill_path"])
     assert spill_path.is_file()
-    assert spill_path.name == f"{document['id']}.json"
+    assert spill_path.name == f"document__{document['id']}.json"
 
     _force_memory_pressure(monkeypatch, False)
     result = canvas_handlers.canvas_save({"document": document})
@@ -102,10 +103,14 @@ def test_failed_spill_removes_partial_temp_file(tmp_path: Path, monkeypatch: pyt
     store = CanvasStore(tmp_path)
     _install_store(monkeypatch, store)
 
-    def fail_dump(*_args: object, **_kwargs: object) -> None:
-        raise OSError("disk full")
+    original_write_bytes = Path.write_bytes
 
-    monkeypatch.setattr(canvas_handlers.json, "dump", fail_dump)
+    def fail_write(self: Path, data: bytes) -> int:
+        if self.suffix == ".tmp":
+            raise OSError("disk full")
+        return original_write_bytes(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", fail_write)
 
     assert canvas_handlers._spill_payload("doc-temp", {"name": "pending"}) is None
     spill_dir = tmp_path.parent / "spill"
@@ -142,3 +147,49 @@ def test_new_store_recovers_pending_history_spill(tmp_path: Path, monkeypatch: p
     history = recovered.get_history(str(document["id"]))
     assert history["past"][0]["name"] == "Past"
     assert not spill_path.exists()
+
+
+def test_document_and_history_spills_do_not_collide_for_suffix_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CanvasStore(tmp_path)
+    _install_store(monkeypatch, store)
+    document_id = "report_history"
+    history_id = "report"
+    document = create_empty_document(name="Document survives")
+    document["id"] = document_id
+    history = {"past": [create_empty_document(name="History survives")], "future": []}
+
+    document_spill = Path(canvas_handlers._spill_payload(document_id, document) or "")
+    history_spill = Path(canvas_handlers._spill_payload(history_id, history, "_history.json") or "")
+
+    assert document_spill != history_spill
+    assert document_spill.is_file()
+    assert history_spill.is_file()
+
+    recovered = CanvasStore(tmp_path, migrate_legacy=False)
+
+    assert recovered.get(document_id)["name"] == "Document survives"
+    assert recovered.get_history(history_id)["past"][0]["name"] == "History survives"
+
+
+def test_concurrent_spills_use_distinct_temp_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = CanvasStore(tmp_path)
+    _install_store(monkeypatch, store)
+    replaced: list[str] = []
+    original_replace = Path.replace
+
+    def capture_replace(self: Path, target: Path) -> Path:
+        replaced.append(self.name)
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", capture_replace)
+    document = create_empty_document(name="Concurrent")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: canvas_handlers._spill_payload("same-id", document), range(2)))
+
+    assert all(results)
+    assert len(set(replaced)) == 2
+    assert not list((tmp_path.parent / "spill").glob("*.tmp"))

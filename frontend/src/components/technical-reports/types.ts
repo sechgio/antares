@@ -1,6 +1,7 @@
+import type { ReportStatus, ReservoirType } from '../../types/reports';
+
 export type CheckState = 'normal' | 'critico' | 'unchecked';
-export type ReportStatus = 'draft' | 'completed';
-export type ReservoirType = 'ELEVADO' | 'ENTERRADO' | 'SEMIENTERRADO' | 'APOYADO' | 'CISTERNA';
+export type { ReportStatus, ReservoirType } from '../../types/reports';
 
 export interface ReportMetadata {
   informe_id: number;

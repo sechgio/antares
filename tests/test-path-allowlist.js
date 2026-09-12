@@ -59,6 +59,34 @@ async function run() {
       }
       assert(symlinkRejected, 'symbolic links should be rejected');
     }
+
+    // A registered file read through a symlinked/junction ancestor must be
+    // rejected — the lexical allowlist entry must not survive a swapped parent.
+    const realDir = path.join(tempDir, 'real-dir');
+    await fs.promises.mkdir(realDir);
+    const nestedFile = path.join(realDir, 'nested.txt');
+    await fs.promises.writeFile(nestedFile, 'x');
+    registerAllowedReadPath(nestedFile);
+    assert(assertAllowedReadPath(nestedFile) === path.resolve(nestedFile), 'nested file allowed');
+
+    const linkDir = path.join(tempDir, 'linked-dir');
+    let linkMade = true;
+    try {
+      await fs.promises.symlink(realDir, linkDir, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch {
+      linkMade = false;
+    }
+    if (linkMade) {
+      const linkedFile = path.join(linkDir, 'nested.txt');
+      registerAllowedReadPath(linkedFile);
+      let ancRejected = false;
+      try {
+        assertAllowedReadPath(linkedFile);
+      } catch (err) {
+        ancRejected = /symbolic links/i.test(err.message);
+      }
+      assert(ancRejected, 'file under a symlinked ancestor should be rejected');
+    }
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
     clearAllowedReadPaths();

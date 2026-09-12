@@ -5,6 +5,7 @@ const {
   REPO_OWNER,
   REPO_NAME,
   BASE_BRANCH,
+  ROOT,
   sh,
   trySh,
   step,

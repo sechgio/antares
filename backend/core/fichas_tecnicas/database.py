@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -11,9 +12,11 @@ from backend.core.fichas_tecnicas.models import (
     next_ficha_number,
 )
 from backend.core.json_store import JsonDocumentStore
-from backend.utils.paths import user_data_path
+from backend.utils.paths import resource_path, user_data_path
 
 DEFAULT_DB_PATH = user_data_path("fichas_tecnicas.json")
+_DEFAULT_USER_DATA_PATH = DEFAULT_DB_PATH
+_LEGACY_DB_PATH = resource_path("data/fichas_tecnicas.json")
 
 _db_instance: FichasTecnicasDB | None = None
 _db_instance_lock = threading.Lock()
@@ -33,7 +36,14 @@ class FichasTecnicasDB(JsonDocumentStore):
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         path = Path(db_path) if db_path is not None else Path(DEFAULT_DB_PATH)
-        super().__init__(path, FichaTecnica.normalize)
+        legacy_path = (
+            _LEGACY_DB_PATH
+            if db_path is None
+            and not getattr(sys, "frozen", False)
+            and path == Path(_DEFAULT_USER_DATA_PATH)
+            else None
+        )
+        super().__init__(path, FichaTecnica.normalize, legacy_path=legacy_path)
 
     def create(self, ficha: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:

@@ -7,6 +7,7 @@ import {
   formatSizeMm,
   guidesForPage,
   isGuideRemovalPoint,
+  measureHoverGap,
   measureSelectionGaps,
   moveGuide,
   removeGuide,
@@ -149,6 +150,50 @@ describe('guides', () => {
     );
     expect(result.dx).toBeCloseTo(-4, 5);
     expect(result.labels.some((l) => l.axis === 'x' && Math.abs(l.valueMm - 8) < 0.01)).toBe(true);
+  });
+
+  it('measureHoverGap measures gap to a separated layer', () => {
+    const sel = { x: 20, y: 20, w: 10, h: 10 };
+    const target = { x: 60, y: 25, w: 10, h: 10 };
+    const labels = measureHoverGap(sel, target, { widthMm: 210, heightMm: 297 });
+    const xGap = labels.find((l) => l.id === 'hover-x');
+    expect(xGap).toBeTruthy();
+    expect(xGap!.valueMm).toBeCloseTo(30, 5);
+    const yGap = labels.find((l) => l.id === 'hover-y');
+    expect(yGap).toBeUndefined();
+  });
+
+  it('measureHoverGap omits the gap label when boxes only touch', () => {
+    const sel = { x: 20, y: 20, w: 10, h: 10 };
+    const target = { x: 30, y: 20, w: 10, h: 10 };
+    const labels = measureHoverGap(sel, target, { widthMm: 210, heightMm: 297 });
+    expect(labels.find((l) => l.id === 'hover-x')).toBeUndefined();
+  });
+
+  it('measureHoverGap reports edge deltas when overlapping on an axis', () => {
+    const sel = { x: 20, y: 20, w: 10, h: 10 };
+    const target = { x: 25, y: 20, w: 15, h: 10 };
+    const labels = measureHoverGap(sel, target, { widthMm: 210, heightMm: 297 });
+    const left = labels.find((l) => l.id === 'hover-x-left');
+    const right = labels.find((l) => l.id === 'hover-x-right');
+    expect(left!.valueMm).toBeCloseTo(5, 5);
+    expect(right!.valueMm).toBeCloseTo(10, 5);
+  });
+
+  it('measureHoverGap falls back to page distances without a target', () => {
+    const sel = { x: 20, y: 20, w: 10, h: 10 };
+    const labels = measureHoverGap(sel, null, { widthMm: 210, heightMm: 297 });
+    expect(labels.some((l) => l.id === 'page-left')).toBe(true);
+    expect(labels.some((l) => l.id === 'page-right')).toBe(true);
+    expect(labels.some((l) => l.id.startsWith('hover-'))).toBe(false);
+  });
+
+  it('measureHoverGap omits aligned edges', () => {
+    const sel = { x: 20, y: 20, w: 10, h: 10 };
+    const target = { x: 20, y: 60, w: 10, h: 10 };
+    const labels = measureHoverGap(sel, target, { widthMm: 210, heightMm: 297 });
+    expect(labels.filter((l) => l.axis === 'x')).toHaveLength(0);
+    expect(labels.find((l) => l.id === 'hover-y')!.valueMm).toBeCloseTo(30, 5);
   });
 
   it('measureSelectionGaps measures all consecutive gaps in a multi-object sequence', () => {

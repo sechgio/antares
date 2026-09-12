@@ -131,15 +131,35 @@ export type CanvasMode = 'design' | 'generate';
 export type AutoLayoutDirection = 'row' | 'col';
 export type AutoLayoutAlign = 'start' | 'center' | 'end' | 'stretch';
 export type AutoLayoutSizing = 'hug' | 'fixed';
+export type ChildLayoutSizing = 'fixed' | 'hug' | 'fill';
 export type FrameConstraint = 'start' | 'end' | 'center' | 'scale';
 
 export interface LayerAutoLayout {
   direction: AutoLayoutDirection;
   gapMm: number;
   padMm: number;
+  padTopMm?: number;
+  padRightMm?: number;
+  padBottomMm?: number;
+  padLeftMm?: number;
   alignMain: AutoLayoutAlign;
   alignCross: AutoLayoutAlign;
   sizing: AutoLayoutSizing;
+  wrap?: boolean;
+  crossGapMm?: number;
+}
+
+export interface VariantPropBinding {
+  fieldKey: string;
+  mapping?: Record<string, string>;
+  fallback?: string;
+}
+
+export interface VariantDataBinding {
+  fieldKey?: string;
+  mapping?: Record<string, string>;
+  fallbackVariant?: string;
+  propBindings?: Record<string, VariantPropBinding>;
 }
 
 export interface LayerMeta {
@@ -162,11 +182,15 @@ export interface LayerMeta {
   pageIndex?: number;
   path?: LayerPath;
   autoLayout?: LayerAutoLayout;
+  layoutSizingMain?: ChildLayoutSizing;
+  layoutSizingCross?: ChildLayoutSizing;
   constraintH?: FrameConstraint;
   constraintV?: FrameConstraint;
   instanceOf?: string;
   overrideVars?: Partial<LayerCssVars>;
   variant?: string;
+  variantProps?: Record<string, string>;
+  variantBinding?: VariantDataBinding;
   componentId?: string;
   variants?: Record<string, Partial<LayerCssVars>>;
   maskLayerId?: string;

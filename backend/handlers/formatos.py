@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import base64
 import uuid
-from pathlib import Path
 from typing import Any
 
 from backend.handlers.common import parse_positive_int, with_locale
+from backend.utils.atomic_write import atomic_output_file
 
 _PDF_MAGIC = b"%PDF"
 _MAX_PREVIEW_WIDTH = 2400
@@ -31,20 +31,9 @@ def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
     output_path = str(params.get("output_path") or "").strip()
     if output_path:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
-        from backend.utils.validators import sanitizar_nombre as _snF
-        safe = _snF(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".pdf"):
-            safe += ".pdf"
-        destination = Path(resolved).parent / safe
-        if destination.is_symlink() or destination.parent.is_symlink():
-            raise ValueError("symlink no permitido en ruta de salida")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            raise FileExistsError(f"El archivo ya existe: {destination}")
-        tmp = destination.with_suffix(destination.suffix + ".tmp")
-        tmp.write_bytes(pdf_bytes)
-        import os as _osF
-        _osF.replace(tmp, destination)
+        with atomic_output_file(resolved, extension=".pdf") as target:
+            target.tmp_path.write_bytes(pdf_bytes)
+        destination = target.destination
         return {"saved_path": str(destination), "filename": destination.name}
 
     if len(pdf_bytes) > _MAX_INLINE_PDF_BYTES:

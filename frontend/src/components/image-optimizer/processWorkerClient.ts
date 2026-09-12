@@ -210,6 +210,9 @@ export async function runProcessInWorker(input: WorkerProcessInput): Promise<{
 
   const requestId = `img-${Date.now()}-${requestSeq += 1}`;
   const entry = await acquireWorker(input.signal);
+  if (entry.retired) {
+    throw new Error('Image process worker disposed');
+  }
   try {
     throwIfAborted(input.signal);
   } catch (error) {
@@ -278,13 +281,22 @@ export async function runProcessInWorker(input: WorkerProcessInput): Promise<{
   };
 }
 
-export function _resetProcessWorkersForTests(): void {
-  pool?.forEach((entry) => entry.worker.terminate());
+export function disposeProcessWorkers(): void {
+  const workers = pool;
   pool = null;
+  workers?.forEach((entry) => {
+    entry.retired = true;
+    entry.worker.terminate();
+  });
   for (const waiter of waitQueue.splice(0)) waiter.cancel();
   for (const pending of pendingById.values()) {
     clearPending(pending);
+    pending.reject(new Error('Image process worker disposed'));
   }
   pendingById.clear();
+}
+
+export function _resetProcessWorkersForTests(): void {
+  disposeProcessWorkers();
   requestSeq = 0;
 }

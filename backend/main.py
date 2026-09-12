@@ -104,13 +104,14 @@ HEAVY_METHODS = {
     "preview_ubicacion",
     "evidencia_volanteo_render",
     "canvas_get",
+    "canvas_bootstrap",
     "canvas_save",
     "canvas_save_history",
     "canvas_export_cmyk_pdf",
 }
 
 _WARM_WAIT_METHODS = frozenset(
-    HEAVY_METHODS - {"canvas_get", "canvas_save", "canvas_save_history"} | {"preview"}
+    HEAVY_METHODS - {"canvas_get", "canvas_bootstrap", "canvas_save", "canvas_save_history"} | {"preview"}
 )
 _WARM_WAIT_TIMEOUT = 15.0
 
@@ -329,7 +330,7 @@ def main() -> None:
             logger.exception("Failed to emit db_init_failed notification")
         sys.exit(1)
 
-    HANDLERS.warm_core()
+    _warm_failed_core = HANDLERS.warm_core()
     if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
         HANDLERS.warm_deferred()
 
@@ -347,10 +348,14 @@ def main() -> None:
 
     if not _shutdown_requested:
         logger.info(t("info.backend_ready"))
-        send_notification("ready", {
-            "status": "ok",
+        ready_payload: dict[str, Any] = {
+            "status": "ok" if not _warm_failed_core else "degraded",
             "backend_version": get_context()["backend_version"],
-        })
+        }
+        if _warm_failed_core:
+            ready_payload["failed_handler_modules"] = sorted(_warm_failed_core)
+            logger.error("Backend ready but degraded: failed core handler modules %s", _warm_failed_core)
+        send_notification("ready", ready_payload)
         def _post_ready_warm():
             try:
                 HANDLERS.warm_post_ready()
@@ -381,29 +386,23 @@ def main() -> None:
                     continue
 
                 handler = HANDLERS.get_loaded(msg.method)
-                if handler is not None:
-                    if msg.method in SYNC_METHODS:
-                        ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="sync")
-                        _dispatch(handler, msg.params, msg.id, msg.method)
-                    else:
-                        _submit_handler(handler, msg.params, msg.id, msg.method)
-                elif HANDLERS.is_known(msg.method):
-                    if msg.method in SYNC_METHODS:
-                        sync_handler = HANDLERS.get(msg.method)
-                        if sync_handler is not None:
-                            ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="sync")
-                            _dispatch(sync_handler, msg.params, msg.id, msg.method)
-                        else:
-                            ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="-", ok=False)
-                            send_response(None, msg.id, error=MethodNotFoundError(f"Método desconocido: {msg.method}"))
-                    else:
-                        def _deferred_resolver(params, _method=msg.method):
-                            h = HANDLERS.get(_method)
-                            if h is None:
-                                raise MethodNotFoundError(f"Método desconocido: {_method}")
-                            return h(params)
+                if handler is None and HANDLERS.is_known(msg.method):
+                    def _deferred_resolver(params, _method=msg.method):
+                        h = HANDLERS.get(_method)
+                        if h is None:
+                            raise MethodNotFoundError(f"Método desconocido: {_method}")
+                        return h(params)
+                    deferred = _deferred_resolver
+                else:
+                    deferred = None
 
-                        _submit_handler(_deferred_resolver, msg.params, msg.id, msg.method)
+                if msg.method in SYNC_METHODS and (handler is not None or deferred is not None):
+                    ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="sync")
+                    _dispatch(handler or deferred, msg.params, msg.id, msg.method)
+                elif handler is not None:
+                    _submit_handler(handler, msg.params, msg.id, msg.method)
+                elif deferred is not None:
+                    _submit_handler(deferred, msg.params, msg.id, msg.method)
                 else:
                     ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="-", ok=False)
                     send_response(None, msg.id, error=MethodNotFoundError(f"Método desconocido: {msg.method}"))

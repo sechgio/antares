@@ -66,7 +66,6 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
         )
         raise InvalidExcelError(_ERR_INVALID_EXTENSION)
 
-    # openpyxl arrastra numpy (~1,600 archivos, 10.4s el 2026-09-04).
     try:
         import openpyxl
         from openpyxl.utils.exceptions import InvalidFileException

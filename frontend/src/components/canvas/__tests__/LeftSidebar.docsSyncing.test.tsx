@@ -121,6 +121,25 @@ describe('LeftSidebar Archivos picker during sync', () => {
     expect(screen.getByTestId('canvas-left-panel')).not.toHaveAttribute('data-resizing');
   });
 
+  it('cleans up resize listeners when pointer capture is already gone', () => {
+    const onWidthChange = vi.fn();
+    render(<LeftSidebar {...baseProps} width={248} onWidthChange={onWidthChange} />);
+    const resizer = screen.getByTestId('canvas-left-resizer');
+    resizer.setPointerCapture = vi.fn();
+    resizer.releasePointerCapture = vi.fn(() => {
+      throw new Error('pointer capture already released');
+    });
+
+    fireEvent.pointerDown(resizer, { clientX: 248, pointerId: 1 });
+    fireEvent.pointerMove(resizer, { clientX: 300, pointerId: 1 });
+    fireEvent.pointerCancel(resizer, { pointerId: 1 });
+
+    const callsAfterCancel = onWidthChange.mock.calls.length;
+    expect(screen.getByTestId('canvas-left-panel')).not.toHaveAttribute('data-resizing');
+    fireEvent.pointerMove(resizer, { clientX: 320, pointerId: 1 });
+    expect(onWidthChange).toHaveBeenCalledTimes(callsAfterCancel);
+  });
+
   it('prevents default on layer list arrows so the canvas does not nudge', () => {
     const a = createLayer('text', { id: 'a', name: 'Alpha' });
     const b = createLayer('text', { id: 'b', name: 'Beta' });
@@ -272,6 +291,59 @@ describe('LeftSidebar Archivos picker during sync', () => {
       expect(list.querySelector('[data-layer-id="l170"]')).toBeTruthy();
       expect(Number(list.getAttribute('data-window-start'))).toBeGreaterThan(0);
       expect(list.scrollTop).toBeGreaterThan(0);
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect;
+      if (clientHeight) Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeight);
+    }
+  });
+
+  it('re-reveals a selected layer when its row moves without changing selection', async () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.getAttribute?.('data-testid') === 'canvas-layer-list') {
+        return {
+          width: 240,
+          height: 224,
+          top: 0,
+          left: 0,
+          bottom: 224,
+          right: 240,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      return originalRect.call(this);
+    };
+    const clientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get() {
+        if ((this as HTMLElement).getAttribute?.('data-testid') === 'canvas-layer-list') return 224;
+        return clientHeight?.get?.call(this) ?? 0;
+      },
+    });
+
+    try {
+      const layers = Array.from({ length: 180 }, (_, i) =>
+        createLayer('text', { id: `l${i}`, name: `Fila-${i}` }),
+      );
+      const { rerender } = render(<LeftSidebar {...baseProps} layers={layers} selectedIds={['l170']} />);
+      const list = screen.getByTestId('canvas-layer-list');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(list.scrollTop).toBeGreaterThan(0);
+
+      const reordered = [...layers.filter((layer) => layer.id !== 'l170'), layers[170]!];
+      rerender(<LeftSidebar {...baseProps} layers={reordered} selectedIds={['l170']} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(list.scrollTop).toBe(0);
+      expect(Number(list.getAttribute('data-window-start'))).toBe(0);
+      expect(list.querySelector('[data-layer-id="l170"]')).toBeTruthy();
     } finally {
       HTMLElement.prototype.getBoundingClientRect = originalRect;
       if (clientHeight) Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeight);

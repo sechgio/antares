@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from backend.core.state import ProcessState
 from backend.utils.i18n import set_locale
+from backend.utils.image_data import decode_b64_payload
 from backend.utils.validators import is_safe_user_path, path_param_violations
 
 if TYPE_CHECKING:
@@ -61,6 +62,46 @@ def update_item_or_raise(store: Any, item_id: str, payload: dict[str, Any]) -> d
         return cast(dict[str, Any], store.update(item_id, payload))
     except KeyError as exc:
         raise ValueError(str(exc)) from exc
+
+
+def resolve_payload_or_store(
+    store: Any,
+    params: dict[str, Any],
+    payload_key: str,
+    missing_message: str,
+) -> dict[str, Any]:
+    payload = params.get(payload_key)
+    item_id = str(params.get("id") or "").strip()
+    if isinstance(payload, dict) and payload:
+        return payload
+    if item_id:
+        stored = store.get(item_id)
+        if isinstance(stored, dict):
+            return stored
+    raise ValueError(missing_message)
+
+
+def require_b64_file_payload(params: dict[str, Any]) -> tuple[str, bytes]:
+    filename = str(params.get("filename") or "")
+    content_b64 = str(params.get("content_b64") or "")
+    if not filename or not content_b64:
+        msg = "filename y content_b64 son requeridos"
+        raise ValueError(msg)
+    return filename, decode_b64_payload(content_b64)
+
+
+def filter_by_optional_ids(
+    items: list[dict[str, Any]],
+    raw_ids: Any,
+    empty_message: str,
+) -> list[dict[str, Any]]:
+    selected = items
+    if isinstance(raw_ids, list) and raw_ids:
+        allowed = {str(item_id) for item_id in raw_ids}
+        selected = [item for item in items if str(item["id"]) in allowed]
+    if not selected:
+        raise ValueError(empty_message)
+    return selected
 
 
 def parse_positive_int(value: Any, label: str, *, maximum: int | None = None) -> int:

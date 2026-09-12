@@ -3,7 +3,25 @@ from __future__ import annotations
 from typing import Any
 
 from backend import main as backend_main
+from backend.core.scheduler import WorkScheduler
 from backend.handlers import HANDLERS
+
+
+def _fresh_scheduler(monkeypatch, *, sync: bool = False) -> WorkScheduler:
+    sched = WorkScheduler(light_workers=2, heavy_workers=1, heavy_queue_limit=1)
+    if sync:
+        class _SyncFuture:
+            def add_done_callback(self, _cb: Any) -> None:
+                pass
+
+        def _sync_submit(fn: Any, *args: Any, **kwargs: Any) -> Any:
+            fn(*args, **kwargs)
+            return _SyncFuture()
+
+        monkeypatch.setattr(sched, "submit_light", _sync_submit)
+        monkeypatch.setattr(sched, "submit_heavy", _sync_submit)
+    monkeypatch.setattr(backend_main, "get_scheduler", lambda: sched)
+    return sched
 
 
 def test_sync_method_lazy_loaded_when_not_preloaded(monkeypatch) -> None:
@@ -43,6 +61,7 @@ def test_sync_method_lazy_loaded_when_not_preloaded(monkeypatch) -> None:
 
     fake_handlers = LazySyncHandlers()
     monkeypatch.setattr(backend_main, "HANDLERS", fake_handlers)
+    _fresh_scheduler(monkeypatch, sync=True)
     monkeypatch.setattr(
         backend_main,
         "_dispatch",
@@ -67,7 +86,9 @@ def test_sync_method_lazy_loaded_when_not_preloaded(monkeypatch) -> None:
 
     assert len(dispatched) == 1
     handler, params, msg_id, method = dispatched[0]
-    assert handler is handler_fn
+    assert "process_status" not in fake_handlers.loaded
+    assert handler(params) == {"status": "ok", "echo": params}
+    assert fake_handlers.loaded["process_status"] is handler_fn
     assert params == {"job_id": "test-123"}
     assert msg_id == "req-1"
     assert method == "process_status"
@@ -100,6 +121,7 @@ def test_sync_method_not_found_if_get_returns_none(monkeypatch) -> None:
             return method == "process_status"
 
     monkeypatch.setattr(backend_main, "HANDLERS", MissingSyncHandlers())
+    _fresh_scheduler(monkeypatch, sync=True)
     monkeypatch.setattr(
         backend_main,
         "send_response",

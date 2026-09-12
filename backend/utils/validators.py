@@ -118,13 +118,17 @@ def path_param_violations(params: object, *, strict: bool = False) -> Iterator[t
             continue
         if isinstance(value, list):
             for item in value:
-                if _path_item_violates(item, strict=strict):
+                if isinstance(item, dict):
+                    yield from path_param_violations(item, strict=strict)
+                elif _path_item_violates(item, strict=strict):
                     yield key, item
         elif isinstance(value, dict):
             for item in value.values():
                 if item is None:
                     continue
-                if _path_item_violates(item, strict=strict):
+                if isinstance(item, dict):
+                    yield from path_param_violations(item, strict=strict)
+                elif _path_item_violates(item, strict=strict):
                     yield key, item
         elif isinstance(value, str) and _path_item_violates(value, strict=strict):
             yield key, value

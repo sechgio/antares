@@ -51,8 +51,10 @@ export function applyLayerDomGeometry(
     const g = layerGeometry(layer, scale);
     el.style.transform = g.transform;
     if (g.transformOrigin) el.style.transformOrigin = g.transformOrigin;
-    el.style.width = `${g.widthPx}px`;
-    el.style.height = `${g.heightPx}px`;
+    const nextW = `${g.widthPx}px`;
+    if (el.style.width !== nextW) el.style.width = nextW;
+    const nextH = `${g.heightPx}px`;
+    if (el.style.height !== nextH) el.style.height = nextH;
     if (willChange) el.style.willChange = 'transform';
   });
 }
@@ -64,6 +66,7 @@ export function clearLayerDomGestureStyles(
 ): void {
   forGestureLayerEls(root, layers, ids, (el) => {
     el.style.willChange = '';
+    if (el.style.transformOrigin) el.style.transformOrigin = '';
   });
 }
 

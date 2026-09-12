@@ -17,7 +17,7 @@ export default function SaveButton({ onSave, dirty = false }: SaveButtonProps) {
       onClick={onSave}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="canvas-btn-primary"
+      className={dirty ? 'canvas-btn-primary' : 'canvas-btn-ghost'}
     >
       <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
         <span

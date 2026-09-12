@@ -31,7 +31,6 @@ export function buildTelemetryPayload(metric: RumMetric) {
 }
 
 function logRum(context: string, error: unknown): void {
-  // eslint-disable-next-line no-console
   console.error(`[rum] ${context}`, error);
 }
 
@@ -65,8 +64,4 @@ export function initRUM(): void {
     .catch((error: unknown) => {
       logRum('web-vitals load failed', error);
     });
-}
-
-export function __resetForTests() {
-  inited = false;
 }

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '../../api';
-import { stageFileForIpc } from '../../utils/stageFile';
+import { acquireStagedFile } from '../../utils/stageFile';
 import {
   createLruMap,
+  createObjectIdentity,
   estimateStringBytes,
   SELLADOR_PREVIEW_CACHE_MAX_BYTES,
 } from './lruMap';
@@ -30,17 +31,7 @@ const renderCache = createLruMap<string, string>({
   maxBytes: SELLADOR_PREVIEW_CACHE_MAX_BYTES,
   sizeOf: estimateStringBytes,
 });
-let nextFileIdentity = 1;
-const fileIdentities = new WeakMap<File, number>();
-
-function fileCacheIdentity(file: File): number {
-  const existing = fileIdentities.get(file);
-  if (existing !== undefined) return existing;
-  const identity = nextFileIdentity;
-  nextFileIdentity += 1;
-  fileIdentities.set(file, identity);
-  return identity;
-}
+const fileCacheIdentity = createObjectIdentity<File>();
 
 function bucketRenderWidth(width: number): number {
   const clamped = Math.max(width, 320);
@@ -91,7 +82,7 @@ export default function PdfPagePreview({
   useEffect(() => {
     pageSizeReportedRef.current = false;
     hasDisplayedImageRef.current = false;
-  }, [pdfFile, pdfPath, pdfBase64, pageNum]);
+  }, [pdfFile, pdfPath, pdfBase64, pageNum, sourceRevision]);
 
   useEffect(() => {
     if (!pdfPath && !pdfBase64 && !pdfFile) return undefined;
@@ -138,11 +129,15 @@ export default function PdfPagePreview({
       }
 
       if (pdfFile && !pdfBase64) {
-        const fileToken = await stageFileForIpc(pdfFile, { reuse: true });
-        if (!fileToken) {
-          throw new Error('No se pudo preparar el PDF para la vista previa.');
+        const handle = await acquireStagedFile(pdfFile);
+        try {
+          if (!handle.token) {
+            throw new Error('No se pudo preparar el PDF para la vista previa.');
+          }
+          await renderNativePage(handle.token);
+        } finally {
+          handle.release();
         }
-        await renderNativePage(fileToken);
         return;
       }
 

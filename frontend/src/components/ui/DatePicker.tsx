@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { isSameDate, monthStart, parseIsoDateLocal, toIsoDateLocal } from '../../utils/dates';
+import { buildMonthCalendar, formatIsoDate } from '../../utils/datePickerCalendar';
 
 export interface DatePickerProps {
   value: string;
@@ -26,54 +27,11 @@ const POPUP_GAP = 6;
 const POPUP_EST_HEIGHT = 268;
 const POPUP_EST_WIDTH = 248;
 
-type CalendarDay = {
-  date: Date;
-  outside: boolean;
-};
-
 type PopupPosition = {
   top: number;
   left: number;
   width: number;
 };
-
-function formatDisplayDate(value: string, placeholder: string): string {
-  const parsed = parseIsoDateLocal(value);
-  if (!parsed) return placeholder;
-  return parsed.toLocaleDateString('es-ES', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-}
-
-function getCalendarDays(month: Date): CalendarDay[] {
-  const year = month.getFullYear();
-  const monthIndex = month.getMonth();
-  const firstDay = new Date(year, monthIndex, 1);
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-  const leadingEmpty = firstDay.getDay();
-  const days: CalendarDay[] = [];
-
-  const previousMonthDays = new Date(year, monthIndex, 0).getDate();
-  for (let index = leadingEmpty - 1; index >= 0; index -= 1) {
-    days.push({
-      date: new Date(year, monthIndex - 1, previousMonthDays - index),
-      outside: true,
-    });
-  }
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    days.push({ date: new Date(year, monthIndex, day), outside: false });
-  }
-
-  while (days.length % 7 !== 0) {
-    const nextDay = days.length - leadingEmpty - daysInMonth + 1;
-    days.push({ date: new Date(year, monthIndex + 1, nextDay), outside: true });
-  }
-
-  return days;
-}
 
 export default function DatePicker({
   value,
@@ -173,7 +131,7 @@ export default function DatePicker({
 
   const selectedDate = parseIsoDateLocal(value);
   const today = new Date();
-  const days = getCalendarDays(currentMonth);
+  const days = buildMonthCalendar(currentMonth, true);
   const triggerSizeClass =
     size === 'sm'
       ? 'app-date-picker-trigger-sm'
@@ -279,7 +237,7 @@ export default function DatePicker({
           strokeWidth={2}
         />
         <span className={`app-date-picker-trigger-value ${value ? '' : 'is-placeholder'}`}>
-          {formatDisplayDate(value, placeholder)}
+          {formatIsoDate(value, placeholder)}
         </span>
       </button>
 
@@ -341,6 +299,7 @@ export default function DatePicker({
 
             <div className="app-date-picker-days">
               {days.map(({ date, outside }) => {
+                if (!date) return null;
                 const selected = selectedDate ? isSameDate(date, selectedDate) : false;
                 const isToday = isSameDate(date, today);
 

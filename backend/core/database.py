@@ -419,7 +419,10 @@ def importar_excel(excel_path: str) -> dict[str, int]:
 
 def exportar_excel(excel_path: str) -> int:
     try:
-        import pandas as pd
+        from backend.core.import_guard import serialized_import
+
+        with serialized_import():
+            import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc

@@ -4,11 +4,12 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
+from backend.core.report_types import REPORT_STATUS_VALUES, RESERVOIR_TYPES
 from backend.utils.coercion import safe_int as _safe_int
 from backend.utils.coercion import safe_str as _safe_str
 
 CHECK_STATES = {"normal", "critico", "unchecked"}
-REPORT_TYPES = {"ELEVADO", "ENTERRADO", "SEMIENTERRADO", "APOYADO", "CISTERNA"}
+REPORT_TYPES = RESERVOIR_TYPES
 
 INSPECTION_ITEMS = [
     "caja_registro",
@@ -221,7 +222,7 @@ class TechnicalReport:
         report["medidas"] = _normalize_medidas(source.get("medidas"))
         report["observaciones"] = _safe_str(source.get("observaciones"), "")
         report["sugerencias"] = _safe_str(source.get("sugerencias"), "")
-        report["status"] = source.get("status") if source.get("status") in {"draft", "completed"} else "draft"
+        report["status"] = source.get("status") if source.get("status") in REPORT_STATUS_VALUES else "draft"
         report["last_modified"] = _safe_str(source.get("last_modified"), datetime.now().isoformat())
         return report
 

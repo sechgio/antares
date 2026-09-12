@@ -45,3 +45,35 @@ export interface DriveVerifyResult {
   has_more?: boolean;
   sample_files: string[];
 }
+
+export interface AutoImgFolderPreviewResponse {
+  folder_id: string;
+  thumbs: DriveFolderThumb[];
+}
+
+export interface AutoImgFoldersResponse {
+  folders: AutoImgFolder[];
+  cached?: boolean;
+}
+
+export interface AutoImgSyncFromSheetResponse {
+  success: boolean;
+  rows: string[][];
+  arrastre?: ArrastreEntry[];
+}
+
+export interface AutoImgArrastreResponse {
+  entries: ArrastreEntry[];
+  cached?: boolean;
+}
+
+export interface AutoImgBootstrapResponse extends AutoImgStatus {
+  folders: AutoImgFolder[];
+  bdRows: string[][];
+  logRows: string[][];
+  arrastre: ArrastreEntry[];
+  error?: string;
+  error_code?: string;
+  stale?: boolean;
+  cached?: boolean;
+}

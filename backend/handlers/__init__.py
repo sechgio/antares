@@ -96,8 +96,12 @@ _PREFIX_MODULE: tuple[tuple[str, str], ...] = (
     ("db_", "backend.handlers.database"),
 )
 
+_RETIRED_METHODS = frozenset(("db_records", "db_detect_key_column", "image_optimizer_zip"))
+
 
 def _module_for_method(method: str) -> str | None:
+    if method in _RETIRED_METHODS:
+        return None
     exact = _EXACT_MODULE.get(method)
     if exact is not None:
         return exact
@@ -138,16 +142,19 @@ class HandlerRegistry:
                 self._map.update(group)
                 self._loaded_modules.add(mod_name)
 
-    def warm(self, modules: tuple[str, ...] | None = None) -> None:
+    def warm(self, modules: tuple[str, ...] | None = None) -> list[str]:
+        failed: list[str] = []
         for mod_name in modules if modules is not None else _HANDLER_MODULES:
             try:
                 self._load_module(mod_name)
             except Exception:
+                failed.append(mod_name)
                 logger.exception("Handler warm-up failed for %s", mod_name)
         logger.info("Handler registry warmed (%d methods)", len(self._map))
+        return failed
 
-    def warm_core(self) -> None:
-        self.warm(_CORE_HANDLER_MODULES)
+    def warm_core(self) -> list[str]:
+        return self.warm(_CORE_HANDLER_MODULES)
 
     def warm_pandas_sync(self) -> None:
         try:
@@ -165,6 +172,13 @@ class HandlerRegistry:
                 self.warm(_POST_READY_HANDLER_MODULES)
         except Exception:
             logger.exception("canvas/conversion post-ready warm failed")
+        try:
+            from backend.core.canvas.store import get_canvas_store
+
+            get_canvas_store().list_documents()
+            logger.info("canvas store post-ready warm complete")
+        except Exception:
+            logger.exception("canvas store post-ready warm failed")
         write_pdf_sanitized: Callable[[str], bytes] | None = None
         try:
             with serialized_import():

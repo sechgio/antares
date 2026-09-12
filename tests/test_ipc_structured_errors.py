@@ -1,11 +1,9 @@
 
 from backend.core.exceptions import (
     AntaresBaseException,
-    InternalError,
     InvalidRequestError,
     MethodNotFoundError,
     NotFoundError,
-    ResourceLockedError,
     ValidationError,
 )
 from backend.ipc_protocol import send_response
@@ -25,14 +23,6 @@ def test_specific_exception_subclasses() -> None:
     val_err = ValidationError("Parámetro inválido", details={"param": "output_path"})
     assert val_err.code == -32602
     assert val_err.category == "VALIDATION_ERROR"
-
-    lock_err = ResourceLockedError("Archivo bloqueado", details={"path": "doc.xlsx"})
-    assert lock_err.code == -32002
-    assert lock_err.category == "RESOURCE_LOCKED"
-
-    internal_err = InternalError("Error interno en conversor")
-    assert internal_err.code == -32603
-    assert internal_err.category == "INTERNAL_ERROR"
 
     not_found_err = NotFoundError("Plantilla no encontrada")
     assert not_found_err.code == -32004

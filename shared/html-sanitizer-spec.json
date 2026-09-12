@@ -4,6 +4,7 @@
   "adapters": {
     "pdf": "sanitizeHtmlForPdf — Chromium printToPDF (Electron dialog-handlers + preview-panel pdfExport). Allowlist: data:image/* + Google Fonts (WYSIWYG del canvas RGB).",
     "preview": "sanitizeHtmlForPreview — iframe de vista previa (frontend). Allowlist: data:image/* + blob:. Borra base/meta/link.",
+    "canvasPreview": "sanitizeHtmlForCanvasPreview. Iframe de preview del editor Canvas (GeneratePanel). Allowlist: data:image/* + blob: + Google Fonts (WYSIWYG). Sin scripts.",
     "cmyk": "sanitize_html_for_pdf — WeasyPrint (canvas CMYK, evidencia volanteo, panel aviso corte). Sin red: deny_external_url_fetcher es el guardia real; la CSP es decorativa.",
     "policy_note": "El contrato NO exige salidas byte-idénticas: la diferencia Google Fonts (pdf sí / cmyk no) es intencional y está modelada aquí como política por adaptador."
   },
@@ -100,6 +101,24 @@
       "absent": ["javascript", "alert(1)"]
     },
     {
+      "id": "entity-encoded-scheme-attr",
+      "note": "Entidad numérica &#58; que decodifica a ':' debe neutralizarse igual que javascript: literal.",
+      "html": "<head></head><a href=\"javascript&#58;alert(1)\">x</a>",
+      "absent": ["alert(1)"]
+    },
+    {
+      "id": "named-entity-scheme-attr",
+      "note": "Entidad nombrada &colon; con el mismo efecto que &#58;.",
+      "html": "<head></head><a href=\"javascript&colon;alert(1)\">x</a>",
+      "absent": ["alert(1)"]
+    },
+    {
+      "id": "numeric-entity-no-semicolon",
+      "note": "Entidad numérica sin punto y coma: los browsers decodifican &#58 igual que &#58;; debe neutralizarse.",
+      "html": "<head></head><a href=\"javascript&#58alert(1)\">x</a>",
+      "absent": ["alert(1)"]
+    },
+    {
       "id": "external-href-collapse",
       "note": "href https externo (no allowlist) debe neutralizarse.",
       "html": "<head></head><a href=\"https://evil.example/x\">x</a>",
@@ -124,6 +143,7 @@
       "adapters": {
         "pdf": { "present": ["fonts.googleapis.com/css2?family=Inter"], "absent": [] },
         "preview": { "absent": ["fonts.googleapis.com"] },
+        "canvasPreview": { "present": ["fonts.googleapis.com/css2?family=Inter"], "absent": [] },
         "cmyk": { "absent": ["fonts.googleapis.com"] }
       }
     },
@@ -146,8 +166,74 @@
       "adapters": {
         "pdf": { "absent": ["blob:https://app.example/abc"] },
         "preview": { "present": ["blob:https://app.example/abc"] },
+        "canvasPreview": { "present": ["blob:https://app.example/abc"] },
         "cmyk": { "absent": ["blob:https://app.example/abc"] }
       }
+    },
+    {
+      "id": "meta-refresh-strip",
+      "note": "meta http-equiv=refresh puede forzar navegación; todos los adaptadores eliminan metas http-equiv.",
+      "html": "<head></head><meta http-equiv=\"refresh\" content=\"0;url=https://evil.example/x\">",
+      "absent": ["refresh", "evil.example"]
+    },
+    {
+      "id": "base-tag-strip",
+      "note": "<base href> puede reescribir todas las URLs relativas del documento; se elimina.",
+      "html": "<head><base href=\"https://evil.example/\"></head>",
+      "absent": ["<base", "evil.example"]
+    },
+    {
+      "id": "srcset-external-collapse",
+      "note": "srcset con URLs http(s) externas debe colapsarse.",
+      "html": "<head></head><img srcset=\"https://evil.example/a.png 1x, https://evil.example/b.png 2x\">",
+      "absent": ["evil.example"]
+    },
+    {
+      "id": "srcset-data-image-kept",
+      "note": "srcset con data:image seguro se conserva.",
+      "html": "<head></head><img srcset=\"data:image/png;base64,AAAA 1x\">",
+      "present": ["data:image/png;base64,AAAA"]
+    },
+    {
+      "id": "srcset-svg-data-collapse",
+      "note": "data:image/svg+xml en srcset puede portar <script>; colapsa.",
+      "html": "<head></head><img srcset=\"data:image/svg+xml;base64,PHN2Zz4= 1x\">",
+      "absent": ["data:image/svg"]
+    },
+    {
+      "id": "import-string-url-collapse",
+      "note": "@import \"https://…\" (forma string, sin url()) debe eliminarse salvo allowlist.",
+      "html": "<head></head><style>@import \"https://evil.example/x.css\";</style>",
+      "absent": ["evil.example"]
+    },
+    {
+      "id": "import-google-fonts-policy",
+      "note": "Política: @import de Google Fonts se conserva SOLO en pdf/canvasPreview (WYSIWYG); preview y cmyk lo eliminan.",
+      "html": "<head></head><style>@import \"https://fonts.googleapis.com/css2?family=Inter\";</style>",
+      "adapters": {
+        "pdf": { "present": ["family=inter"] },
+        "canvasPreview": { "present": ["family=inter"] },
+        "preview": { "absent": ["family=inter"] },
+        "cmyk": { "absent": ["family=inter"] }
+      }
+    },
+    {
+      "id": "form-action-collapse",
+      "note": "action= externo en <form> debe neutralizarse.",
+      "html": "<head></head><form action=\"https://evil.example/x\"></form>",
+      "absent": ["evil.example"]
+    },
+    {
+      "id": "poster-attr-collapse",
+      "note": "poster= externo en <video> debe neutralizarse.",
+      "html": "<head></head><video poster=\"https://evil.example/p.png\"></video>",
+      "absent": ["evil.example"]
+    },
+    {
+      "id": "expression-strip",
+      "note": "expression() de CSS legado (IE) debe eliminarse en todos los adaptadores.",
+      "html": "<head></head><style>.x{width:expression(alert(1))}</style>",
+      "absent": ["expression("]
     }
   ]
 }

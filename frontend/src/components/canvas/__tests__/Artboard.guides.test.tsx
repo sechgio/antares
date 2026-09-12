@@ -172,5 +172,31 @@ describe('Artboard guide dragging', () => {
     const atHalf = screen.getByTestId('canvas-manual-guide') as HTMLElement;
     expect(atHalf.style.width).toBe('20px');
   });
+
+  it('does not render rulers by default', () => {
+    setup();
+    expect(screen.queryByTestId('canvas-ruler-top')).toBeNull();
+    expect(screen.queryByTestId('canvas-ruler-left')).toBeNull();
+  });
+
+  it('renders rulers when showRulers is true', () => {
+    const document = createEmptyDocument('Rulers test');
+    render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        showRulers={true}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('canvas-ruler-top')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-ruler-left')).toBeInTheDocument();
+  });
 });
 

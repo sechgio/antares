@@ -76,6 +76,9 @@ describe('responsive surface contracts', () => {
     const fichasCss = readSource('components/technical-reports/technical-reports.css');
     expect(fichasCss).toContain('.ft-app .tr-workspace.is-focus');
     expect(fichasCss).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(fichasCss).toContain('width: min(100%, 210mm)');
+    expect(fichasCss).not.toContain('zoom:');
+    expect(fichasPreview).toContain("width: 'min(100%, 210mm)'");
     expect(fichasPreview).toContain('tr-preview-wrap');
     expect(reportesPhotos).toContain('role="button"');
     expect(reportesPhotos).toContain('inputRef.current?.click()');

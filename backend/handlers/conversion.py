@@ -546,12 +546,14 @@ def _run_conversion_job(job: Job) -> None:
 
             def _handle_completion(success: bool, name: str, error: str) -> None:
                 nonlocal completed, cancelled, _last_notify_time
+                now = time.time()
+                notif_data: dict[str, Any] | None = None
+                is_last = False
                 with state._lock:
                     if state.cancel_requested:
                         cancelled = True
                         return
-                completed += 1
-                with state._lock:
+                    completed += 1
                     if success:
                         state.ok_count += 1
                         log_message(
@@ -568,27 +570,23 @@ def _run_conversion_job(job: Job) -> None:
                         )
                     state.progress = int((completed / total) * 100)
                     state.current_file = name
-                    progress = state.progress
-                    current_file = state.current_file
-                    ok_count = state.ok_count
-                    err_count = state.err_count
+                    is_last = completed == total
+                    should_notify = (
+                        is_last
+                        or _last_notify_time == 0.0
+                        or (now - _last_notify_time >= _NOTIFY_INTERVAL)
+                    )
+                    if should_notify:
+                        _last_notify_time = now
+                        notif_data = {
+                            "progress": state.progress,
+                            "current_file": state.current_file,
+                            "ok_count": state.ok_count,
+                            "err_count": state.err_count,
+                            "job_id": job_id,
+                        }
 
-                now = time.time()
-                is_last = completed == total
-                should_notify = (
-                    is_last
-                    or _last_notify_time == 0.0
-                    or (now - _last_notify_time >= _NOTIFY_INTERVAL)
-                )
-                if should_notify:
-                    _last_notify_time = now
-                    notif_data = {
-                        "progress": progress,
-                        "current_file": current_file,
-                        "ok_count": ok_count,
-                        "err_count": err_count,
-                        "job_id": job_id,
-                    }
+                if notif_data is not None:
                     _emit_progress_notifications(job_id, notif_data, is_default)
 
                 with state._lock:

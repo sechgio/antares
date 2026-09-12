@@ -42,7 +42,6 @@ files:
   - "!node_modules/electron-publish/**/*"
   - "!node_modules/electron-rebuild/**/*"
   - "!node_modules/@electron/**/*"
-  # Transitives de electron-builder/typescript: no van en el instalador.
   - "!node_modules/app-builder-bin/**/*"
   - "!node_modules/7zip-bin/**/*"
   - "!node_modules/typescript/**/*"
@@ -72,7 +71,6 @@ extraResources:
   - from: formatos
     to: formatos
     filter: ["**/*"]
-  # Onedir de scripts/build-backend.js.
   - from: dist/backend
     to: backend
     filter: ["**/*"]
@@ -113,7 +111,6 @@ publish:
   repo: antares
   releaseType: release
 asar: true
-# asarUnpack: solo .node, el resto queda en asar.
 asarUnpack:
   - "**/*.node"
   - "node_modules/**/build/Release/*.node"

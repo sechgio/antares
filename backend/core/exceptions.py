@@ -67,18 +67,6 @@ class ValidationError(AntaresBaseException):
         super().__init__(message, code=-32602, category="VALIDATION_ERROR", details=details)
 
 
-class ResourceLockedError(AntaresBaseException):
-
-    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
-        super().__init__(message, code=-32002, category="RESOURCE_LOCKED", details=details)
-
-
-class InternalError(AntaresBaseException):
-
-    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
-        super().__init__(message, code=-32603, category="INTERNAL_ERROR", details=details)
-
-
 class NotFoundError(AntaresBaseException):
 
     def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:

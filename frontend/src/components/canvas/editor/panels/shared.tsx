@@ -12,7 +12,10 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { clampOpacity, normalizeHex } from '../../ops/layerStyle';
+import { clampImageZoom, clampOpacity, normalizeHex, parseImageZoom } from '../../ops/layerStyle';
+import type { CanvasLayer } from '../../types';
+import CanvasSelect from '../CanvasSelect';
+import InlineNumField from '../InlineNumField';
 
 export function HexField({
   color,
@@ -183,3 +186,48 @@ export const IMAGE_POSITION_OPTIONS = [
   { value: '50% 100%', label: 'Abajo' },
   { value: '100% 100%', label: 'Abajo der.' },
 ];
+
+export function ImageObjectControls({
+  layer,
+  setVar,
+  setVarLive,
+  onCommitLive,
+  ariaPrefix,
+}: {
+  layer: CanvasLayer;
+  setVar: (key: string, value: string) => void;
+  setVarLive: (key: string, value: string) => void;
+  onCommitLive?: () => void;
+  ariaPrefix: 'imagen' | 'foto';
+}) {
+  return (
+    <>
+      <PropRow label="Ajuste">
+        <CanvasSelect
+          value={layer.cssVars['--object-fit'] || 'cover'}
+          aria-label={`Ajuste de ${ariaPrefix}`}
+          onChange={(val) => setVar('--object-fit', val)}
+          options={IMAGE_FIT_OPTIONS}
+        />
+      </PropRow>
+      <PropRow label="Zoom">
+        <InlineNumField
+          prefix="Z"
+          value={parseImageZoom(layer.cssVars)}
+          step={0.05}
+          title="Zoom de recorte"
+          onChange={(n) => setVarLive('--image-zoom', String(clampImageZoom(n)))}
+          onCommit={onCommitLive}
+        />
+      </PropRow>
+      <PropRow label="Posición">
+        <CanvasSelect
+          value={layer.cssVars['--object-position'] || '50% 50%'}
+          aria-label={`Posición de ${ariaPrefix}`}
+          onChange={(val) => setVar('--object-position', val)}
+          options={IMAGE_POSITION_OPTIONS}
+        />
+      </PropRow>
+    </>
+  );
+}

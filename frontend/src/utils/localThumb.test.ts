@@ -99,8 +99,35 @@ describe('getLocalThumbnail', () => {
     expect(localImageDataUrl).toHaveBeenCalledWith({ path: 'C:\\cache\\preview.jpg' });
   });
 
+  it('evicts full images when their combined payload exceeds the cache budget', async () => {
+    const payload = 'x'.repeat(8 * 1024 * 1024);
+    localImageDataUrl.mockImplementation(async ({ path }: { path: string }) => ({
+      dataUrl: `data:image/jpeg;base64,${path}:${payload}`,
+    }));
+
+    for (let index = 0; index < 5; index += 1) {
+      await getLocalImageDataUrl(`C:\\cache\\large-${index}.jpg`);
+    }
+    await getLocalImageDataUrl('C:\\cache\\large-0.jpg');
+
+    expect(localImageDataUrl).toHaveBeenCalledTimes(6);
+  });
+
   it('getLocalImageDataUrl returns null on IPC failure', async () => {
     localImageDataUrl.mockRejectedValueOnce(new Error('not allowed'));
     expect(await getLocalImageDataUrl('C:\\cache\\missing.jpg')).toBeNull();
+  });
+
+  it('recovers gracefully and processes subsequent requests if API call throws synchronously', async () => {
+    localThumbnail.mockImplementationOnce(() => {
+      throw new Error('sync crash');
+    });
+
+    const failed = await getLocalThumbnail('C:\\photos\\sync-fail.jpg');
+    expect(failed).toBeNull();
+
+    localThumbnail.mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,recovered' });
+    const success = await getLocalThumbnail('C:\\photos\\recovered.jpg');
+    expect(success).toBe('data:image/jpeg;base64,recovered');
   });
 });

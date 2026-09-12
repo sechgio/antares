@@ -1,9 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
 import { Upload, X, Trash2, ImageIcon, ChevronDown, ChevronUp } from 'lucide-react';
+import { useImageUploaderState } from '../../../hooks/useImageUploaderState';
 import { ARIA_LABELS, ACCEPTED_IMAGE_TYPES } from '../constants';
 import type { LocalImage } from '../types';
-
-const VISIBLE_LIMIT = 10;
 
 interface Props {
   images: LocalImage[];
@@ -13,30 +11,25 @@ interface Props {
 }
 
 export default function ImageUploader({ images, onAdd, onRemove, onClear }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [expanded, setExpanded] = useState(false);
-
-  const handleFiles = useCallback(async (files: FileList | null) => {
-    if (!files) return;
-    const fileList = Array.from(files).filter((f) => ACCEPTED_IMAGE_TYPES.includes(f.type));
-    const errs = await onAdd(fileList);
-    if (errs.length) setErrors(errs);
-  }, [onAdd]);
-
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
-  }, [handleFiles]);
-
-  const hasMore = images.length > VISIBLE_LIMIT;
-  const visibleImages = useMemo(
-    () => (expanded || !hasMore ? images : images.slice(0, VISIBLE_LIMIT)),
-    [images, expanded, hasMore],
-  );
-  const hiddenCount = images.length - VISIBLE_LIMIT;
+  const {
+    inputRef,
+    isDragging,
+    errors,
+    expanded,
+    hasMore,
+    hiddenCount,
+    visibleImages,
+    handleFiles,
+    onDrop,
+    onDragOver,
+    onDragLeave,
+    clearErrors,
+    toggleExpanded,
+  } = useImageUploaderState({
+    images,
+    onAdd,
+    acceptFile: (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
+  });
 
   return (
     <div className="flex flex-col gap-2">
@@ -52,8 +45,8 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
           }
         }}
         onDrop={onDrop}
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-        onDragLeave={() => setIsDragging(false)}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
         className={`cursor-pointer rounded-lg border-2 border-dashed px-3 py-3 flex items-center gap-2.5 transition-colors ${
           isDragging ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5' : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--accent-primary)]/50'
         }`}
@@ -86,7 +79,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
           {errors.map((err, i) => (
             <span key={i} className="text-[11px] text-[var(--accent-red)]">{err}</span>
           ))}
-          <button type="button" className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={() => setErrors([])}>Descartar</button>
+          <button type="button" className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={clearErrors}>Descartar</button>
         </div>
       )}
 
@@ -122,7 +115,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
           {hasMore && (
             <button
               type="button"
-              onClick={() => setExpanded((prev) => !prev)}
+              onClick={toggleExpanded}
               className="mx-auto flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] transition-all"
             >
               {expanded ? (

@@ -6,6 +6,7 @@ import { CheckCircle2, Crop, Download, Eye, Loader2, Sparkles, Trash2 } from 'lu
 import { BatchSettings, CropRectangle, ImageItem, PreviewTab, PresetId } from './types';
 import { BeforeAfterSlider, ItemSummary, ProgressBar, previewStageShellClass } from './ui';
 import ItemOverridesPanel from './ItemOverridesPanel';
+import { formatBytes } from './utils';
 
 interface PreviewWorkspaceProps {
   items: ImageItem[];
@@ -47,7 +48,9 @@ const chromeBtn =
 const GRID_VIRTUALIZATION_THRESHOLD = 100;
 const GRID_CARD_MIN_WIDTH = 160;
 const GRID_GAP = 8;
-const GRID_ROW_HEIGHT = 260;
+const GRID_PADDING = 20;
+const GRID_CARD_BORDER = 2;
+const GRID_CARD_INFO_HEIGHT = 40;
 const GRID_OVERSCAN = 2;
 
 export default function PreviewWorkspace({
@@ -99,36 +102,131 @@ export default function PreviewWorkspace({
 
     const updateViewport = () => {
       const rect = scrollElement.getBoundingClientRect();
-      setGridViewport({
-        width: Math.max(1, rect.width || scrollElement.clientWidth || 640),
-        height: Math.max(1, rect.height || scrollElement.clientHeight || 480),
+      const width = scrollElement.clientWidth || rect.width || 640;
+      const height = scrollElement.clientHeight || rect.height || 480;
+      setGridViewport((previous) => {
+        const next = { width: Math.max(1, width), height: Math.max(1, height) };
+        return previous.width === next.width && previous.height === next.height ? previous : next;
       });
     };
-    const handleScroll = () => setGridScrollTop(scrollElement.scrollTop);
 
     updateViewport();
-    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    setGridScrollTop(scrollElement.scrollTop);
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateViewport) : null;
+    observer?.observe(scrollElement);
     window.addEventListener('resize', updateViewport);
     return () => {
-      scrollElement.removeEventListener('scroll', handleScroll);
+      observer?.disconnect();
       window.removeEventListener('resize', updateViewport);
     };
   }, [gridIsVirtualized, items.length]);
 
-  const gridColumnCount = Math.max(1, Math.floor((gridViewport.width + GRID_GAP) / (GRID_CARD_MIN_WIDTH + GRID_GAP)));
+  const handleGridScroll = () => {
+    if (gridIsVirtualized) setGridScrollTop(gridScrollRef.current?.scrollTop ?? 0);
+  };
+  const gridContentWidth = Math.max(1, gridViewport.width - GRID_PADDING);
+  const gridColumnCount = Math.max(1, Math.floor((gridContentWidth + GRID_GAP) / (GRID_CARD_MIN_WIDTH + GRID_GAP)));
+  const gridCardWidth = Math.max(
+    1,
+    (gridContentWidth - (gridColumnCount - 1) * GRID_GAP) / gridColumnCount,
+  );
+  const gridCardHeight = Math.ceil(
+    Math.max(0, gridCardWidth - GRID_CARD_BORDER) * (4 / 3)
+      + GRID_CARD_INFO_HEIGHT
+      + GRID_CARD_BORDER,
+  );
+  const gridRowHeight = gridCardHeight + GRID_GAP;
   const gridRowCount = Math.ceil(items.length / gridColumnCount);
   const gridStartRow = gridIsVirtualized
-    ? Math.max(0, Math.floor(gridScrollTop / GRID_ROW_HEIGHT) - GRID_OVERSCAN)
+    ? Math.min(
+        Math.max(0, gridRowCount - 1),
+        Math.max(0, Math.floor(gridScrollTop / gridRowHeight) - GRID_OVERSCAN),
+      )
     : 0;
   const gridEndRow = gridIsVirtualized
     ? Math.min(
         gridRowCount,
-        gridStartRow + Math.ceil(gridViewport.height / GRID_ROW_HEIGHT) + GRID_OVERSCAN * 2,
+        gridStartRow + Math.ceil(gridViewport.height / gridRowHeight) + GRID_OVERSCAN * 2,
       )
     : gridRowCount;
-  const visibleGridItems = gridIsVirtualized
-    ? items.slice(gridStartRow * gridColumnCount, Math.min(items.length, gridEndRow * gridColumnCount))
-    : items;
+  const gridContentHeight = Math.max(0, gridRowCount * gridRowHeight - GRID_GAP);
+
+  const renderGridCard = (item: ImageItem) => {
+    const outputName = downloadNameMap.get(item.id) || item.originalName;
+    const statusColor = item.excluded ? 'var(--text-muted)'
+      : item.status === 'error' ? 'var(--accent-red)'
+        : item.stale ? 'var(--accent-yellow)'
+          : item.status === 'completed' ? 'var(--accent-green)'
+            : item.status === 'processing' ? 'var(--accent-blue)'
+              : 'var(--text-muted)';
+    const thumb = item.resultPreview || item.preview;
+
+    return (
+      <div
+        key={item.id}
+        data-image-optimizer-card="true"
+        className="group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] transition-[transform,background-color,border-color] duration-100 hover:bg-[var(--bg-elevated)] active:scale-[0.98] motion-reduce:active:scale-100"
+        style={gridIsVirtualized ? { height: gridCardHeight } : undefined}
+        onClick={() => {
+          onSetActiveItem(item.id);
+          onViewModeChange('single');
+        }}
+      >
+        <div className="relative aspect-[3/4] w-full overflow-hidden bg-[var(--bg-surface)]">
+          {thumb ? (
+            <img src={thumb} alt={item.originalName} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <Sparkles size={14} className="text-[var(--text-muted)]" />
+            </div>
+          )}
+
+          <div className="absolute inset-0 flex items-start justify-end p-1.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
+            <WithHoverTooltip label={t('optimizer.preview.adjustCrop')} placement="bottom">
+              <button
+                type="button"
+                aria-label={t('optimizer.preview.adjustCrop')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenCropEditor(item.id);
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-primary)] backdrop-blur-md transition-[transform,background-color] duration-100 hover:bg-[var(--accent-green)] hover:text-[var(--text-on-accent)] active:scale-[0.96]"
+                style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }}
+              >
+                <Crop size={12} />
+              </button>
+            </WithHoverTooltip>
+          </div>
+
+          {item.status === 'processing' && (
+            <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 50%, transparent)' }}>
+              <Loader2 size={14} className="animate-spin text-[var(--text-primary)]" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex h-10 shrink-0 items-center gap-1.5 px-2 py-1.5">
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <p
+              className={`truncate text-[10px] font-medium leading-tight text-[var(--text-primary)] ${item.excluded ? 'line-through opacity-50' : ''}`}
+              title={outputName !== item.originalName ? item.originalName : undefined}
+            >
+              {outputName}
+            </p>
+            <p className="mt-0.5 truncate whitespace-nowrap font-mono text-[9px] tabular-nums leading-tight text-[var(--text-secondary)]">
+              {item.sourceWidth && item.sourceHeight ? `${item.sourceWidth}×${item.sourceHeight} · ` : ''}
+              {formatBytes(item.originalSize)}
+              {item.resultSize != null ? <span className="text-[var(--accent-green)]"> → {formatBytes(item.resultSize)}</span> : null}
+            </p>
+          </div>
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'processing' ? 'animate-pulse' : ''}`}
+            style={{ backgroundColor: statusColor }}
+          />
+        </div>
+      </div>
+    );
+  };
 
   if (items.length === 0) {
     return (
@@ -177,117 +275,44 @@ export default function PreviewWorkspace({
         <div
           ref={gridScrollRef}
           data-virtualized-grid={gridIsVirtualized ? 'true' : undefined}
-          onScroll={gridIsVirtualized ? () => setGridScrollTop(gridScrollRef.current?.scrollTop ?? 0) : undefined}
+          data-image-optimizer-grid-scroll="true"
+          onScroll={handleGridScroll}
           className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5"
         >
           <div
-            className="grid gap-2"
-            style={{
-              gridTemplateColumns: gridIsVirtualized
-                ? `repeat(${gridColumnCount}, minmax(0, 1fr))`
-                : 'repeat(auto-fill, minmax(160px, 1fr))',
-            }}
+            data-virtualized-grid-content={gridIsVirtualized ? 'true' : undefined}
+            className={gridIsVirtualized ? 'relative w-full' : 'grid gap-2'}
+            style={gridIsVirtualized
+              ? { height: gridContentHeight }
+              : { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
           >
-            {gridIsVirtualized && gridStartRow > 0 && (
-              <div aria-hidden="true" style={{ height: gridStartRow * GRID_ROW_HEIGHT, gridColumn: '1 / -1' }} />
-            )}
-
-            {visibleGridItems.map((item) => {
-              const outputName = downloadNameMap.get(item.id) || item.originalName;
-              const statusColor = item.excluded ? 'var(--text-muted)'
-                : item.status === 'error' ? 'var(--accent-red)'
-                  : item.stale ? 'var(--accent-yellow)'
-                    : item.status === 'completed' ? 'var(--accent-green)'
-                      : item.status === 'processing' ? 'var(--accent-blue)'
-                        : 'var(--text-muted)';
-              const thumb = item.resultPreview || item.preview;
-
-              return (
-                <div
-                  key={item.id}
-                  data-image-optimizer-card="true"
-                  className="group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] transition-[transform,background-color,border-color] duration-100 hover:bg-[var(--bg-elevated)] active:scale-[0.98] motion-reduce:active:scale-100"
-                  onClick={() => {
-                    onSetActiveItem(item.id);
-                    onViewModeChange('single');
-                  }}
-                >
-                  <div className="relative aspect-[3/4] w-full overflow-hidden bg-[var(--bg-surface)]">
-                    {thumb ? (
-                      <img src={thumb} alt={item.originalName} loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center">
-                        <Sparkles size={14} className="text-[var(--text-muted)]" />
-                      </div>
-                    )}
-
-                    <div className="absolute inset-0 flex items-start justify-end p-1.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
-                      <WithHoverTooltip label={t('optimizer.preview.adjustCrop')} placement="bottom">
-                        <button
-                          type="button"
-                          aria-label={t('optimizer.preview.adjustCrop')}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenCropEditor(item.id);
-                          }}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-primary)] backdrop-blur-md transition-[transform,background-color] duration-100 hover:bg-[var(--accent-green)] hover:text-[var(--text-on-accent)] active:scale-[0.96]"
-                          style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }}
-                        >
-                          <Crop size={12} />
-                        </button>
-                      </WithHoverTooltip>
-                    </div>
-
-                    {item.status === 'processing' && (
-                      <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 50%, transparent)' }}>
-                        <Loader2 size={14} className="animate-spin text-[var(--text-primary)]" />
-                      </div>
-                    )}
+            {gridIsVirtualized
+              ? Array.from({ length: gridEndRow - gridStartRow }, (_, rowOffset) => {
+                const rowIndex = gridStartRow + rowOffset;
+                const rowItems = items.slice(
+                  rowIndex * gridColumnCount,
+                  Math.min(items.length, (rowIndex + 1) * gridColumnCount),
+                );
+                return (
+                  <div
+                    key={`grid-row-${rowIndex}`}
+                    data-virtualized-grid-row="true"
+                    data-virtualized-grid-row-index={rowIndex}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: `repeat(${gridColumnCount}, minmax(0, 1fr))`,
+                      gap: GRID_GAP,
+                      left: 0,
+                      position: 'absolute',
+                      right: 0,
+                      top: rowIndex * gridRowHeight,
+                    }}
+                  >
+                    {rowItems.map(renderGridCard)}
                   </div>
-
-                  <div className="flex items-center gap-1.5 px-2 py-1.5">
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className={`truncate text-[10px] font-medium leading-tight text-[var(--text-primary)] ${item.excluded ? 'line-through opacity-50' : ''}`}
-                        title={outputName !== item.originalName ? item.originalName : undefined}
-                      >
-                        {outputName}
-                      </p>
-                      <p className="mt-0.5 font-mono text-[9px] tabular-nums leading-tight text-[var(--text-secondary)]">
-                        {item.sourceWidth && item.sourceHeight ? `${item.sourceWidth}×${item.sourceHeight} · ` : ''}
-                        {(() => {
-                          const bytes = item.originalSize;
-                          if (bytes === 0) return '0 B';
-                          const k = 1024;
-                          const sizes = ['B', 'KB', 'MB', 'GB'];
-                          const i = Math.floor(Math.log(bytes) / Math.log(k));
-                          return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-                        })()}
-                        {item.resultSize != null ? <span className="text-[var(--accent-green)]"> → {(() => {
-                          const bytes = item.resultSize;
-                          if (bytes === 0) return '0 B';
-                          const k = 1024;
-                          const sizes = ['B', 'KB', 'MB', 'GB'];
-                          const i = Math.floor(Math.log(bytes) / Math.log(k));
-                          return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-                        })()}</span> : null}
-                      </p>
-                    </div>
-                    <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'processing' ? 'animate-pulse' : ''}`}
-                      style={{ backgroundColor: statusColor }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-
-            {gridIsVirtualized && gridEndRow < gridRowCount && (
-              <div
-                aria-hidden="true"
-                style={{ height: (gridRowCount - gridEndRow) * GRID_ROW_HEIGHT, gridColumn: '1 / -1' }}
-              />
-            )}
+                );
+              })
+              : items.map(renderGridCard)}
           </div>
         </div>
       </section>

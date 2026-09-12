@@ -11,6 +11,15 @@ function maskClientId(clientId) {
   return `${id.slice(0, 8)}…${id.slice(-4)}`;
 }
 
+function validateClientId(clientId) {
+  if (!clientId) return;
+  if (!clientId.endsWith('.apps.googleusercontent.com')) {
+    throw new Error(
+      'Client ID inválido. Debe ser de tipo "Aplicación de escritorio" en Google Cloud y terminar en .apps.googleusercontent.com',
+    );
+  }
+}
+
 function sanitizeErrorMessage(message) {
   const text = String(message || '');
   if (/429|RESOURCE_EXHAUSTED|Quota exceeded/i.test(text)) {
@@ -62,6 +71,7 @@ function assertNoSecretInObject(obj, path = 'root') {
 
 module.exports = {
   maskClientId,
+  validateClientId,
   sanitizeError,
   sanitizeErrorMessage,
   assertNoSecretInObject,

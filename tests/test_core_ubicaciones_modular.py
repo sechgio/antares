@@ -266,3 +266,11 @@ def test_compose_and_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
     assert img.size == (dim[0], dim[1])
     shot = _get_cached_map_screenshot(-12.0, -77.0, "vertical", preview=True)
     assert shot is not None
+
+
+def test_generar_ubicaciones_empty_coords_raises_clean_value_error(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="No hay filas con coordenadas validas"):
+        hub.handle_generar_ubicaciones({
+            "outputDir": str(tmp_path),
+            "manualData": {"cod_componente": "COD1", "lat": "invalid", "lon": "invalid"},
+        })

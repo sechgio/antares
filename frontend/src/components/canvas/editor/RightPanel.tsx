@@ -23,7 +23,6 @@ import {
 } from '../ops/layerStyle';
 import { exportSelectionPng } from '../ops/exportPng';
 import { clipPathForLayerType } from '../ops/shapePaths';
-import TemplatesSection from './TemplatesSection';
 import StylesSection from './StylesSection';
 import { ALIGN_ITEMS, BulkOpacityField, SectionHeader, ZOrderButtons } from './panels/shared';
 import PositionSection from './panels/common/PositionSection';
@@ -62,8 +61,6 @@ interface RightPanelProps {
   onBringForward: () => void;
   onSendBack: () => void;
   onSendBackward: () => void;
-  onApplyPreset?: (presetId: string) => void;
-  onNewFromPreset?: (presetId: string, label: string) => void;
   documentStyles?: CanvasSharedStyle[];
   onCreateStyle?: (kind: CanvasStyleKind) => void;
   onApplyStyle?: (styleId: string) => void;
@@ -72,6 +69,7 @@ interface RightPanelProps {
   onRenameStyle?: (styleId: string, name: string) => void;
   layers?: CanvasLayer[];
   onInstantiateComponent?: () => void;
+  onSelectLayer?: (id: string) => void;
   logoSideConflict?: boolean;
   zoomSlotRef?: (el: HTMLDivElement | null) => void;
   open?: boolean;
@@ -144,8 +142,6 @@ export default memo(function RightPanel({
   onBringForward,
   onSendBack,
   onSendBackward,
-  onApplyPreset,
-  onNewFromPreset,
   documentStyles = [],
   onCreateStyle,
   onApplyStyle,
@@ -154,6 +150,7 @@ export default memo(function RightPanel({
   onRenameStyle,
   layers = [],
   onInstantiateComponent,
+  onSelectLayer,
   logoSideConflict = false,
   zoomSlotRef,
   open = true,
@@ -280,6 +277,7 @@ export default memo(function RightPanel({
     onCommitLive,
     onAlign,
     onInstantiateComponent,
+    onSelectLayer,
     logoSideConflict,
     zOrder,
     isLine: Boolean(isLine),
@@ -428,15 +426,25 @@ export default memo(function RightPanel({
         <CanvasVersionsPanel documentId={documentId} onVersionRestored={onVersionRestored} />
       ) : (
         <>
-          {selectedCount === 0 && onApplyPreset && (
-            <div className="border-b px-3 py-3" style={{ borderColor: 'var(--cv-border)' }}>
-              <TemplatesSection
-                onApplyPreset={onApplyPreset}
-                onNewFromPreset={onNewFromPreset}
-                tooltipPlacement="left"
-              />
-            </div>
-          )}
+          {selectedCount === 0 &&
+            onCreateStyle &&
+            onApplyStyle &&
+            onDetachStyle &&
+            onRemoveStyle &&
+            onRenameStyle && (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <StylesSection
+                  styles={documentStyles}
+                  layer={null}
+                  canLink={false}
+                  onCreate={onCreateStyle}
+                  onApply={onApplyStyle}
+                  onDetach={onDetachStyle}
+                  onRemove={onRemoveStyle}
+                  onRename={onRenameStyle}
+                />
+              </div>
+            )}
 
       {selectedCount > 1 && (
         <div className="min-h-0 flex-1 overflow-y-auto">

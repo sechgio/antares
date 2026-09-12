@@ -5,9 +5,11 @@ import {
   applyInstanceOverrides,
   bakeInstanceOverrides,
   createComponentFromLayer,
+  detachInstance,
   findComponentMaster,
   INSTANCE_OFFSET_MM,
   instantiateComponent,
+  resetInstanceOverrides,
   syncChangedMasters,
   syncComponentFromLayer,
   syncComponentToInstances,
@@ -336,5 +338,46 @@ describe('components', () => {
     const { instance } = instantiateComponent(master, createEmptyDocument());
     const layers = [instance, master];
     expect(findComponentMaster(layers, 'm1')?.id).toBe('m1');
+  });
+
+  it('resetInstanceOverrides clears overrideVars and re-resolves from master', () => {
+    const master = createComponentFromLayer(
+      createLayer('rect', {
+        id: 'm1',
+        cssVars: {
+          ...createLayer('rect').cssVars,
+          '--background-color': '#111111',
+          '--width': mm(40),
+        },
+      }),
+      createEmptyDocument(),
+    );
+    const instance = {
+      ...master,
+      id: 'i1',
+      meta: {
+        instanceOf: 'm1',
+        overrideVars: { '--background-color': '#FF00AA', '--translate-x': mm(9) },
+      },
+      cssVars: { ...master.cssVars },
+    };
+    const reset = resetInstanceOverrides(instance, master);
+    expect(reset.meta?.overrideVars).toBeUndefined();
+    expect(reset.cssVars['--background-color']).toBe('#111111');
+    expect(reset.cssVars['--translate-x']).toBe(master.cssVars['--translate-x']);
+    expect(reset.meta?.instanceOf).toBe('m1');
+  });
+
+  it('detachInstance strips instance meta, keeps resolved cssVars, becomes group', () => {
+    const master = createComponentFromLayer(
+      createLayer('rect', { id: 'm1', name: 'Card' }),
+      createEmptyDocument(),
+    );
+    const { instance } = instantiateComponent(master, createEmptyDocument());
+    const detached = detachInstance(instance);
+    expect(detached.meta?.instanceOf).toBeUndefined();
+    expect(detached.meta?.overrideVars).toBeUndefined();
+    expect(detached.type).toBe('group');
+    expect(detached.cssVars['--width']).toBe(instance.cssVars['--width']);
   });
 });

@@ -1,9 +1,10 @@
-const { sanitizeHtmlForPdf, sanitizeHtmlForPreview } = require('../shared/html-sanitizer');
+const { sanitizeHtmlForPdf, sanitizeHtmlForPreview, sanitizeHtmlForCanvasPreview } = require('../shared/html-sanitizer');
 const spec = require('../shared/html-sanitizer-spec.json');
 
 const ADAPTERS = {
   pdf: sanitizeHtmlForPdf,
   preview: sanitizeHtmlForPreview,
+  canvasPreview: sanitizeHtmlForCanvasPreview,
 };
 
 let passed = 0;

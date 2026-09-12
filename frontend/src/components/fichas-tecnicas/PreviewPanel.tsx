@@ -20,7 +20,7 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
         data-template={ficha ? 'false' : 'true'}
         className="ficha-preview-container mx-auto shadow-lg"
         style={{
-          width: '210mm',
+          width: 'min(100%, 210mm)',
           height: '297mm',
           minHeight: '297mm',
           maxHeight: '297mm',

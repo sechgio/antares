@@ -78,3 +78,20 @@ class TestEmitHeartbeat:
         assert calls.index("job.default.heartbeat") < calls.index("process.complete") or (
             "process.complete" not in calls and calls[0] == "job.default.heartbeat"
         )
+
+
+class TestFilterByOptionalIds:
+    def test_matches_numeric_item_ids_against_string_params(self) -> None:
+        from backend.handlers.common import filter_by_optional_ids
+
+        items = [{'id': 1, 'v': 'a'}, {'id': 2, 'v': 'b'}]
+        assert filter_by_optional_ids(items, ['2'], 'empty') == [{'id': 2, 'v': 'b'}]
+        assert filter_by_optional_ids(items, [1, '2'], 'empty') == items
+
+    def test_raises_when_no_ids_match(self) -> None:
+        import pytest
+
+        from backend.handlers.common import filter_by_optional_ids
+
+        with pytest.raises(ValueError, match='sin coincidencias'):
+            filter_by_optional_ids([{'id': 1}], ['9'], 'sin coincidencias')

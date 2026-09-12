@@ -73,6 +73,30 @@ function normalizePhotoGridTemplate(sourceHtml: string): string {
   return `${compatCss}${sourceHtml}`;
 }
 
+function pickPreviewValue(...candidates: Array<unknown>): string {
+  for (const candidate of candidates) {
+    const normalized = normalizePreviewValue(candidate, '');
+    if (normalized && normalized !== '-') return normalized;
+  }
+  return '-';
+}
+
+function buildPhotoGridHtml(pageImages: File[], imageFiles: File[], imageUrls: string[]): string {
+  const slots: Array<File | null> = pageImages.length === 3
+    ? pageImages
+    : [...pageImages, ...Array.from({ length: Math.max(0, 4 - pageImages.length) }, () => null)];
+
+  return slots.map((image, slotIndex) => {
+    const extraClass = pageImages.length === 3 && slotIndex === 2 ? ' photo-cell-photo-3' : '';
+    if (!image) {
+      return `<div class="photo-cell${extraClass}"><div class="photo-placeholder">Sin imagen</div></div>`;
+    }
+    const imageUrl = imageUrls[imageFiles.indexOf(image)] || EMPTY_PIXEL;
+    const altText = image.name || `Foto ${slotIndex + 1}`;
+    return `<div class="photo-cell${extraClass}"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}"></div>`;
+  }).join('');
+}
+
 function buildMaqBaldePreviewHtml(
   reportData: Record<string, unknown>,
   imageFiles: File[],
@@ -80,47 +104,28 @@ function buildMaqBaldePreviewHtml(
   leftLogo: string,
   rightLogo: string
 ): string {
-  const pickValue = (...candidates: Array<unknown>): string => {
-    for (const candidate of candidates) {
-      const normalized = normalizePreviewValue(candidate, '');
-      if (normalized && normalized !== '-') return normalized;
-    }
-    return '-';
-  };
-
-  const title = pickValue(reportData.titulo, reportData.TITULO, 'PANEL FOTOGRAFICO');
-  const centro = pickValue(reportData.CENTRO, reportData.cs, reportData.centro_servicio, reportData.centro);
-  const fechaTrabajo = pickValue(
+  const title = pickPreviewValue(reportData.titulo, reportData.TITULO, 'PANEL FOTOGRAFICO');
+  const centro = pickPreviewValue(reportData.CENTRO, reportData.cs, reportData.centro_servicio, reportData.centro);
+  const fechaTrabajo = pickPreviewValue(
     reportData.FECHA_TRABAJO, reportData['FECHA DE TRABAJO'], reportData['Fecha de Trabajo'],
     reportData.fecha, reportData.fecha_trabajo, reportData['FECHA CORTE'],
     reportData.FECHA_CORTE, reportData.fecha_corte, reportData['FECHA-CORTE'],
   );
-  const estado = pickValue(reportData.ESTADO, reportData.estado);
-  const direcciones = pickValue(
+  const estado = pickPreviewValue(reportData.ESTADO, reportData.estado);
+  const direcciones = pickPreviewValue(
     reportData.DIRECCIONES_AFECTADAS, reportData['DIRECCIONES AFECTADAS'],
     reportData.direcciones, reportData.direccion, reportData.DIRECCION, reportData.ubicacion,
   );
-  const distrito = pickValue(reportData.DISTRITO, reportData.distrito);
-  const actividad = pickValue(reportData.ACTIVIDAD, reportData.actividad);
-  const cuadrilla = pickValue(reportData.CUADRILLA, reportData.cuadrilla);
+  const distrito = pickPreviewValue(reportData.DISTRITO, reportData.distrito);
+  const actividad = pickPreviewValue(reportData.ACTIVIDAD, reportData.actividad);
+  const cuadrilla = pickPreviewValue(reportData.CUADRILLA, reportData.cuadrilla);
 
   const pageChunks = imageFiles.length > 0 ? chunkItems(imageFiles, 4) : [[]];
   const totalPages = pageChunks.length;
 
   const pagesHtml = pageChunks.map((pageImages, pageIndex) => {
     const pageLabel = totalPages > 1 ? `<div class="page-label">Hoja ${pageIndex + 1}/${totalPages}</div>` : '';
-    const slots = pageImages.length === 3
-      ? pageImages
-      : [...pageImages, ...Array.from({ length: Math.max(0, 4 - pageImages.length) }, () => null as File | null)];
-
-    const gridHtml = slots.map((img, slotIndex) => {
-      const extraClass = pageImages.length === 3 && slotIndex === 2 ? ' photo-cell-photo-3' : '';
-      if (!img) return `<div class="photo-cell${extraClass}"><div class="photo-placeholder">Sin imagen</div></div>`;
-      const idx = imageFiles.indexOf(img);
-      const imgUrl = imageUrls[idx] || EMPTY_PIXEL;
-      const altText = img.name || `Foto ${slotIndex + 1}`;
-      return `<div class="photo-cell${extraClass}"><img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(altText)}"></div>`;
-    }).join('');
+    const gridHtml = buildPhotoGridHtml(pageImages, imageFiles, imageUrls);
 
     return `
     <div class="page">
@@ -164,40 +169,25 @@ function buildMaquinaBaldePreviewHtml(
   leftLogo: string,
   rightLogo: string
 ): string {
-  const pickValue = (...candidates: Array<unknown>): string => {
-    for (const candidate of candidates) {
-      const normalized = normalizePreviewValue(candidate, '');
-      if (normalized && normalized !== '-') return normalized;
-    }
-    return '-';
-  };
-
-  const title = pickValue(reportData.titulo, reportData.TITULO, 'Maquina de Balde');
-  const fechaTrabajo = pickValue(reportData.FECHA_TRABAJO, reportData['FECHA DE TRABAJO'], reportData.fecha_trabajo);
-  const nis = pickValue(reportData.NIS, reportData.nis);
-  const sgio = pickValue(reportData.SGIO, reportData.sgio);
-  const direccion = pickValue(reportData.DIRECCION, reportData.direccion, reportData.DIRECCIONES);
-  const localidad = pickValue(reportData.LOCALIDAD, reportData.localidad);
-  const distrito = pickValue(reportData.DISTRITO, reportData.distrito);
-  const actividad = pickValue(reportData.ACTIVIDAD, reportData.actividad);
+  const title = pickPreviewValue(reportData.titulo, reportData.TITULO, 'Maquina de Balde');
+  const fechaTrabajo = pickPreviewValue(
+    reportData.FECHA_TRABAJO,
+    reportData['FECHA DE TRABAJO'],
+    reportData.fecha_trabajo,
+  );
+  const nis = pickPreviewValue(reportData.NIS, reportData.nis);
+  const sgio = pickPreviewValue(reportData.SGIO, reportData.sgio);
+  const direccion = pickPreviewValue(reportData.DIRECCION, reportData.direccion, reportData.DIRECCIONES);
+  const localidad = pickPreviewValue(reportData.LOCALIDAD, reportData.localidad);
+  const distrito = pickPreviewValue(reportData.DISTRITO, reportData.distrito);
+  const actividad = pickPreviewValue(reportData.ACTIVIDAD, reportData.actividad);
 
   const pageChunks = imageFiles.length > 0 ? chunkItems(imageFiles, 4) : [[]];
   const totalPages = pageChunks.length;
 
   const pagesHtml = pageChunks.map((pageImages, pageIndex) => {
     const pageLabel = totalPages > 1 ? `<div class="page-label">Pagina ${pageIndex + 1}/${totalPages}</div>` : '';
-    const slots = pageImages.length === 3
-      ? pageImages
-      : [...pageImages, ...Array.from({ length: Math.max(0, 4 - pageImages.length) }, () => null as File | null)];
-
-    const gridHtml = slots.map((img, slotIndex) => {
-      const extraClass = pageImages.length === 3 && slotIndex === 2 ? ' photo-cell-photo-3' : '';
-      if (!img) return `<div class="photo-cell${extraClass}"><div class="photo-placeholder">Sin imagen</div></div>`;
-      const idx = imageFiles.indexOf(img);
-      const imgUrl = imageUrls[idx] || EMPTY_PIXEL;
-      const altText = img.name || `Foto ${slotIndex + 1}`;
-      return `<div class="photo-cell${extraClass}"><img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(altText)}"></div>`;
-    }).join('');
+    const gridHtml = buildPhotoGridHtml(pageImages, imageFiles, imageUrls);
 
     return `
     <div class="page">

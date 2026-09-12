@@ -26,12 +26,12 @@ from backend.core.evidencia_volanteo.layout import (
     PHOTO_TABLE_ROWS,
 )
 from backend.core.evidencia_volanteo.rendering import (
-    _build_image_uris,
     _jinja_env,
     _prepare_logos,
     _serialize_pages,
     layout_context,
 )
+from backend.utils.image_data import build_image_uris as _build_image_uris
 from tests.weasyprint_env import weasyprint_native_available
 
 requires_weasyprint = pytest.mark.skipif(

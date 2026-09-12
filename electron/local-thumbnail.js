@@ -31,7 +31,6 @@ function setThumbnailCacheDir(dir) {
 function getThumbnailCacheDir() {
   if (_cacheDir) return _cacheDir;
   try {
-    // eslint-disable-next-line global-require, import/no-extraneous-dependencies
     const { app } = require('electron');
     if (app && typeof app.getPath === 'function') {
       return path.join(app.getPath('userData'), 'thumb-cache');

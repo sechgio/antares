@@ -26,19 +26,37 @@ async function main() {
   const userChangeListeners = [];
   const savedScopes = [];
   const clearedScopes = [];
+  const persistedByScope = new Map();
 
   const fakeStore = {
     loadTokens: () => ({ ...currentTokens }),
-    saveTokens: () => {},
+    saveTokens: (tokens) => {
+      const saved = { ...tokens };
+      persistedByScope.set(activeUserKey, saved);
+      savedScopes.push({ userKey: activeUserKey, tokens: saved });
+    },
     clearTokens: () => {},
-    saveTokensForUserKey: (userKey, tokens) => savedScopes.push({ userKey, tokens }),
+    saveTokensForUserKey: (userKey, tokens) => {
+      const saved = { ...tokens };
+      persistedByScope.set(userKey, saved);
+      savedScopes.push({ userKey, tokens: saved });
+    },
     clearTokensForUserKey: (userKey) => clearedScopes.push(userKey),
     clearTokensLegacyPaths: () => {},
     loadOAuthConfigFromDisk: () => ({ clientId: '', clientSecret: '' }),
     saveOAuthConfig: () => ({ success: true }),
   };
   const fakeScope = {
-    setActiveUser: () => activeUserKey,
+    setActiveUser: (email) => {
+      const nextKey = email === 'b@example.com' ? 'user-b' : activeUserKey;
+      const previousKey = activeUserKey;
+      activeUserKey = nextKey;
+      if (previousKey !== nextKey) {
+        activeUserGeneration += 1;
+        for (const listener of userChangeListeners) listener({ previousKey, nextKey });
+      }
+      return activeUserKey;
+    },
     clearActiveUser: () => {},
     getActiveUserPublic: () => ({ active: true }),
     getActiveUserSnapshot: () => ({ userKey: activeUserKey, generation: activeUserGeneration }),
@@ -146,6 +164,87 @@ async function main() {
     releaseInvalid();
     assert((await invalidA) === null, 'invalid_grant obsoleto no rompe la sesión B');
     assert(clearedScopes.length === 1 && clearedScopes[0] === 'user-a', 'invalid_grant limpia solo A');
+
+    // OAuth A -> B: si el intercambio no trae refresh_token, no se debe
+    // importar el refresh token de A ni activar/escribir la sesión B.
+    activeUserKey = 'user-a';
+    activeUserGeneration += 1;
+    currentTokens = { access_token: 'access-a', refresh_token: 'refresh-A', expiry_date: Date.now() + 3600000 };
+    persistedByScope.clear();
+    persistedByScope.set('user-a', { ...currentTokens });
+    savedScopes.length = 0;
+    global.fetch = async (url, options = {}) => {
+      if (url === 'https://oauth2.googleapis.com/token') {
+        const params = new URLSearchParams(options.body);
+        assert(params.get('grant_type') === 'authorization_code', 'el caso A -> B usa intercambio de código');
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: 'access-B', expires_in: 3600 }),
+        };
+      }
+      if (url === 'https://www.googleapis.com/oauth2/v2/userinfo') {
+        return { ok: true, status: 200, json: async () => ({ email: 'b@example.com' }) };
+      }
+      throw new Error(`URL inesperada: ${url}`);
+    };
+    sheets.getAuthUrl();
+    let exchangeError = null;
+    try {
+      await sheets.exchangeCode('code-b', 'http://127.0.0.1:42813');
+    } catch (error) {
+      exchangeError = error;
+    }
+    assert(exchangeError instanceof Error && /refresh token/i.test(exchangeError.message), 'OAuth sin refresh falla cerrado');
+    assert(activeUserKey === 'user-a', 'OAuth sin refresh no cambia la cuenta activa');
+    assert(!persistedByScope.has('user-b'), 'OAuth sin refresh no crea tokens para B');
+    assert(persistedByScope.get('user-a')?.refresh_token === 'refresh-A', 'el refresh token de A permanece aislado');
+    sheets.cancelBrowserOAuthFlow();
+
+    // El flujo normal con refresh token conserva su funcionalidad.
+    activeUserKey = 'user-a';
+    activeUserGeneration += 1;
+    currentTokens = { access_token: 'access-a', refresh_token: 'refresh-A', expiry_date: Date.now() + 3600000 };
+    persistedByScope.clear();
+    persistedByScope.set('user-a', { ...currentTokens });
+    global.fetch = async (url, options = {}) => {
+      if (url === 'https://oauth2.googleapis.com/token') {
+        const params = new URLSearchParams(options.body);
+        assert(params.get('grant_type') === 'authorization_code', 'el caso normal usa intercambio de código');
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: 'access-B', refresh_token: 'refresh-B', expires_in: 3600 }),
+        };
+      }
+      if (url === 'https://www.googleapis.com/oauth2/v2/userinfo') {
+        return { ok: true, status: 200, json: async () => ({ email: 'b@example.com' }) };
+      }
+      throw new Error(`URL inesperada: ${url}`);
+    };
+    sheets.getAuthUrl();
+    const connected = await sheets.exchangeCode('code-b-with-refresh', 'http://127.0.0.1:42813');
+    assert(connected.refresh_token === 'refresh-B', 'OAuth normal conserva el refresh token nuevo');
+    assert(persistedByScope.get('user-b')?.refresh_token === 'refresh-B', 'OAuth normal guarda el token de B en B');
+
+    // Una renovación posterior de B debe enviar solo el refresh token de B.
+    currentTokens = { access_token: 'expired-b', refresh_token: 'refresh-B', expiry_date: 0 };
+    let refreshBody = null;
+    global.fetch = async (url, options = {}) => {
+      if (url === 'https://oauth2.googleapis.com/token') {
+        refreshBody = new URLSearchParams(options.body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: 'fresh-B', expires_in: 3600 }),
+        };
+      }
+      throw new Error(`URL inesperada: ${url}`);
+    };
+    const refreshedB = await sheets.getValidTokens();
+    assert(refreshedB?.access_token === 'fresh-B', 'B sigue pudiendo renovar su sesión');
+    assert(refreshBody?.get('refresh_token') === 'refresh-B', 'B nunca renueva con el refresh token de A');
+    assert(persistedByScope.get('user-a')?.refresh_token === 'refresh-A', 'la renovación de B no altera A');
 
     console.log('[PASS] Google token refresh single-flight.');
   } finally {

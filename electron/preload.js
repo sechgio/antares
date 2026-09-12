@@ -121,6 +121,7 @@ try {
     cleanupFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_cleanup', { token }),
     canvasAssetPut: (chunk) => ipcRenderer.invoke('ipc-call', 'canvas_asset_put', { chunk }),
     canvasAssetGet: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_get', { ref }),
+    canvasAssetInfo: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_info', { ref }),
   });
 } catch (err) {
   if (isDev) {

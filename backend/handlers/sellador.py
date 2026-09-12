@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import base64
-import os
-from pathlib import Path
 from typing import Any
 
 from backend.core.sellador import apply_sellador
 from backend.core.sellador_io import MAX_PDF_BYTES, MAX_STAMP_BYTES, resolve_pdf_bytes, resolve_stamp_bytes
 from backend.core.sellador_preview import inspect_pdf_path, render_pdf_page_preview
 from backend.handlers.common import parse_positive_int, validate_params, with_locale
+from backend.utils.atomic_write import atomic_output_file
 
 _MAX_INLINE_PDF_BYTES = 8 * 1024 * 1024
 
@@ -149,25 +148,10 @@ def sellador_apply(params: dict[str, Any]) -> dict[str, Any]:
 
     if output_path:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
-        from backend.utils.validators import sanitizar_nombre as _snS
-        safe = _snS(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".pdf"):
-            safe += ".pdf"
-        destination = Path(resolved).parent / safe
-        if destination.is_symlink() or destination.parent.is_symlink():
-            raise ValueError("symlink no permitido en ruta de salida")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            raise FileExistsError(f"El archivo ya existe: {destination}")
-        tmp_path = destination.with_suffix(destination.suffix + ".tmp")
-        try:
-            tmp_path.write_bytes(result_bytes)
-            os.replace(tmp_path, destination)
-        except Exception:
-            tmp_path.unlink(missing_ok=True)
-            raise
-        payload["saved_path"] = str(destination)
-        payload["filename"] = destination.name
+        with atomic_output_file(resolved, extension=".pdf") as target:
+            target.tmp_path.write_bytes(result_bytes)
+        payload["saved_path"] = str(target.destination)
+        payload["filename"] = target.destination.name
     elif len(result_bytes) > _MAX_INLINE_PDF_BYTES:
         msg = "El PDF generado es demasiado grande. Guárdalo con una ruta de salida."
         raise ValueError(msg)

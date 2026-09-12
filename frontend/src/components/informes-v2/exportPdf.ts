@@ -10,11 +10,6 @@ import type { PhotoAsset } from './types';
 
 export type LogoAsset = { src: string; file: File | null };
 
-export interface PreparedExportImages {
-  images: Array<{ path: string; name: string }>;
-  localImagePaths: Record<string, string>;
-}
-
 export async function photoToPdfPath(
   photo: PhotoAsset,
   key: string,

@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const store = require('./autoimg-user-store');
-const { maskClientId } = require('./autoimg-security');
+const { maskClientId, validateClientId } = require('./autoimg-security');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const { AUTOIMG_SHEET_TABS, listMissingAutoImgTabs } = require('./autoimg-sheet-rows');
 const {
@@ -54,15 +54,6 @@ function _normalizeOAuthConfig(cfg) {
   };
 }
 
-function _validateClientId(clientId) {
-  if (!clientId) return;
-  if (!clientId.endsWith('.apps.googleusercontent.com')) {
-    throw new Error(
-      'Client ID inválido. Debe ser de tipo "Aplicación de escritorio" en Google Cloud y terminar en .apps.googleusercontent.com',
-    );
-  }
-}
-
 let _sheetId = null;
 let _sheetMeta = null;
 
@@ -104,7 +95,7 @@ function _requireConfig() {
       'Credenciales OAuth no configuradas. En AutoIMG, abre el apartado "Credenciales OAuth" e ingresa tu Client ID y Client Secret de Google Cloud.',
     );
   }
-  _validateClientId(cfg.clientId);
+  validateClientId(cfg.clientId);
   return cfg;
 }
 
@@ -322,25 +313,27 @@ async function exchangeCode(code, redirectUri) {
     throw new Error(`Error OAuth: ${errBody}`);
   }
   const data = await res.json();
-  const previous = store.loadTokens() || {};
-  const tokens = {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token || previous.refresh_token,
-    expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
-  };
-  if (!tokens.refresh_token) {
+  if (!data.access_token || typeof data.refresh_token !== 'string' || !data.refresh_token) {
     throw new Error(
       'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
     );
   }
+  const tokens = {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
+  };
   const email = await _resolveGoogleEmail(tokens.access_token);
   if (!email) {
     throw new Error(
       'No se pudo identificar la cuenta de Google. Verifica tu conexión e intenta conectar de nuevo.',
     );
   }
-  setActiveUser(email);
-  store.saveTokens(tokens);
+  const userKey = setActiveUser(email);
+  if (!userKey) {
+    throw new Error('No se pudo establecer el scope de la cuenta de Google.');
+  }
+  store.saveTokensForUserKey(userKey, tokens);
   store.clearTokensLegacyPaths();
   return tokens;
 }

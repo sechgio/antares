@@ -21,7 +21,9 @@ export default function PreviewButton({ active, onToggle }: PreviewButtonProps) 
         onClick={onToggle}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        className="canvas-btn-primary canvas-preview-btn"
+        className={`canvas-preview-btn ${
+          active ? 'canvas-btn-primary' : 'canvas-btn-ghost'
+        }`}
       >
         <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           <span

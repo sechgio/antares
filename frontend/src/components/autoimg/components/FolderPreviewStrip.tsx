@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ImageOff } from 'lucide-react';
 import { api } from '../../../api';
+import { mapWithConcurrencyLimit } from '../../../utils/mapWithConcurrencyLimit';
 import type { DriveFolderThumb } from '../types';
 
 const SLOT_COUNT = 4;
@@ -10,22 +11,6 @@ type PreviewState =
   | { status: 'idle' | 'loading' }
   | { status: 'ready'; thumbs: DriveFolderThumb[] }
   | { status: 'error' };
-
-async function mapWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-): Promise<void> {
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const i = next;
-      next += 1;
-      await fn(items[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-}
 
 export function useFolderPreviews(folderIds: string[]) {
   const [previews, setPreviews] = useState<Record<string, PreviewState>>(() => {
@@ -59,7 +44,7 @@ export function useFolderPreviews(folderIds: string[]) {
       return next;
     });
 
-    void mapWithConcurrency(ids, CONCURRENCY, async (folderId) => {
+    void mapWithConcurrencyLimit(ids, CONCURRENCY, async (folderId) => {
       try {
         const res = await api.autoimgDriveFolderPreview(folderId);
         if (gen !== reqGen.current) return;

@@ -301,6 +301,13 @@ class WorkScheduler:
         cancel_check: Callable[[], bool] | None = None,
         **kwargs: Any,
     ) -> Future | None:
+        if not block and is_memory_pressure():
+            effective_queue = min(self.heavy_queue_limit, max(1, self.heavy_workers))
+            effective_capacity = self.heavy_workers + effective_queue
+            with self._lock:
+                if self._heavy_outstanding >= effective_capacity:
+                    self._record_rejection("heavy", "memory_pressure", memory_pressure=True)
+                    raise SchedulerBusy("heavy_queue_full", reason="memory_pressure")
         acquired = self._acquire_heavy_slot(block=block, cancel_check=cancel_check)
         if not acquired:
             log_event(

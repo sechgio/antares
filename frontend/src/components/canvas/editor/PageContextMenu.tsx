@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
 import { Copy, Pencil, Trash2 } from 'lucide-react';
+import { useContextMenuSurface } from '../hooks/useContextMenuSurface';
 
 export type PageContextAction = 'rename' | 'duplicate' | 'delete';
 
@@ -31,35 +31,7 @@ export default function PageContextMenu({
   onAction,
   onClose,
 }: PageContextMenuProps) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    const onPointer = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onPointer);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onPointer);
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const pad = 8;
-    const rect = el.getBoundingClientRect();
-    let left = menu.x;
-    let top = menu.y;
-    if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
-    if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
-    el.style.left = `${Math.max(pad, left)}px`;
-    el.style.top = `${Math.max(pad, top)}px`;
-  }, [menu.x, menu.y]);
+  const ref = useContextMenuSurface(menu.x, menu.y, onClose);
 
   const items: MenuItem[] = [
     { id: 'rename', label: 'Cambiar el nombre de página', icon: Pencil },

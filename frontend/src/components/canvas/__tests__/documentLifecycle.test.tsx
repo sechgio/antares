@@ -10,6 +10,7 @@ import { useCanvasBootstrap } from '../hooks/useCanvasBootstrap';
 vi.mock('../../../api', () => ({
   api: {
     canvasList: vi.fn(),
+    canvasBootstrap: vi.fn(),
     canvasGet: vi.fn(),
     canvasSave: vi.fn(),
     canvasCreate: vi.fn(),
@@ -257,6 +258,40 @@ describe('useDocumentLifecycle', () => {
     expect(result.current.history.hasUnsavedEditsRef.current).toBe(false);
   });
 
+  it('save: succeeds locally even when the cloud push fails', async () => {
+    vi.mocked(queueCanvasCloudPush).mockRejectedValueOnce(new Error('cloud quota reached'));
+
+    const { result, mocks } = renderLifecycle();
+    await act(async () => {
+      result.current.history.setDocument({ ...result.current.history.document, name: 'Pending cloud edit' });
+      const saved = await result.current.onSave();
+      expect(saved).toBe(true);
+    });
+
+    expect(result.current.history.hasUnsavedEditsRef.current).toBe(false);
+    expect(mocks.flashStatus).toHaveBeenCalledWith('Guardado');
+    expect(mocks.refreshList).toHaveBeenCalled();
+  });
+
+  it('lifecycle: consumes cloud push and delete failures without an unhandled rejection', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(queueCanvasCloudPush).mockRejectedValue(new Error('cloud unavailable'));
+    vi.mocked(queueCanvasCloudDelete).mockRejectedValue(new Error('cloud delete unavailable'));
+    vi.mocked(api.canvasCreate).mockResolvedValue({ document: makeDoc('doc-new', 'Sin título') });
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [] });
+
+    const { result } = renderLifecycle();
+    await act(async () => {
+      await result.current.onNew();
+      await result.current.onDeleteDoc();
+    });
+    await waitFor(() => {
+      expect(warn).toHaveBeenCalledWith('[canvas] No se pudo sincronizar con cloud:', 'cloud unavailable');
+    });
+    expect(warn).toHaveBeenCalledWith('[canvas] No se pudo sincronizar con cloud:', 'cloud delete unavailable');
+    warn.mockRestore();
+  });
+
   it('save: leaves newer edits dirty when a stale save response resolves', async () => {
     let resolveSave: (value: { document: CanvasDocument }) => void = () => {};
     vi.mocked(api.canvasSave).mockImplementation(
@@ -316,6 +351,31 @@ describe('useDocumentLifecycle', () => {
       result.current.history.past,
       result.current.history.future,
     );
+  });
+
+  it('retries history persistence after a transient failure for the same revision', async () => {
+    vi.useFakeTimers();
+    vi.mocked(api.canvasSaveHistory)
+      .mockRejectedValueOnce(new Error('history disk busy'))
+      .mockResolvedValue({ success: true });
+    const { result } = renderLifecycle();
+
+    await act(async () => {
+      result.current.history.setDocument({ ...result.current.history.document, name: 'History retry' });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.canvasSaveHistory).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.canvasSaveHistory).toHaveBeenCalledTimes(2);
   });
 
   it('open: keeps the source document when it changes while loading the target', async () => {
@@ -433,8 +493,9 @@ describe('useDocumentLifecycle', () => {
     const targetPast = [makeDoc('doc-b-history', 'Target history')];
     let resolveBootstrapHydration: () => void = () => {};
     let resolveTargetHydration: () => void = () => {};
-    vi.mocked(api.canvasList).mockResolvedValue({
+    vi.mocked(api.canvasBootstrap).mockResolvedValue({
       documents: [{ id: 'doc-a', name: 'Alpha', updatedAt: '2026-07-31T10:00:00.000Z' }],
+      document: makeDoc('doc-a', 'Alpha'),
     });
     vi.mocked(api.canvasGet).mockImplementation(async (id: string) => ({
       document: makeDoc(id, id === 'doc-a' ? 'Alpha' : 'Beta'),

@@ -4,10 +4,11 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
+from backend.core.report_types import REPORT_STATUS_VALUES, RESERVOIR_TYPES
 from backend.utils.coercion import safe_int as _safe_int
 from backend.utils.coercion import safe_str as _safe_str
 
-REPORT_TYPES = {"ELEVADO", "ENTERRADO", "SEMIENTERRADO", "APOYADO", "CISTERNA"}
+REPORT_TYPES = RESERVOIR_TYPES
 DIAMETERS = ["2", "4", "6", "8", "10", "12", "14", "16"]
 VALVULA_ROWS = ["conduccion", "impulsion", "aduccion", "bypass", "purga"]
 LINEA_ROWS = ["aduccion", "alimentacion", "impulsion_rebombeo", "rebose", "purga"]
@@ -174,7 +175,7 @@ class InformeV2:
         report["valvulas"] = _normalize_table(source.get("valvulas"), VALVULA_ROWS)
         report["linea"] = _normalize_table(source.get("linea"), LINEA_ROWS)
         report["medidas"] = _normalize_medidas(source.get("medidas"))
-        report["status"] = source.get("status") if source.get("status") in {"draft", "completed"} else "draft"
+        report["status"] = source.get("status") if source.get("status") in REPORT_STATUS_VALUES else "draft"
         report["last_modified"] = _safe_str(source.get("last_modified"), datetime.now().isoformat())
         return report
 

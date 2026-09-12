@@ -85,7 +85,7 @@ export function useConversionFileRefs(files: readonly string[]) {
 
       const file = fileObjects[filePath];
       if (file) {
-        const staged = await stageFileForIpc(file, { reuse: true });
+        const staged = await stageFileForIpc(file);
         if (staged) {
           stagedThisPass[filePath] = staged;
           return staged;

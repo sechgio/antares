@@ -1,14 +1,9 @@
+import type { ImageAsset } from '../../types/imageAssets';
+
 export type MatchStrategy = 'prefix' | 'contains' | 'exact' | 'regex';
 
-export interface LogoAsset {
-  file: File;
-  objectUrl: string;
-}
-
-export interface LocalImage {
-  file: File;
-  objectUrl: string;
-}
+export type LogoAsset = ImageAsset;
+export type LocalImage = ImageAsset;
 
 export interface ExcelRow {
   [column: string]: string;

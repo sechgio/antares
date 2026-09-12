@@ -1,10 +1,9 @@
 
 import type { CanvasLayer } from '../types';
 import { MM_TO_PX } from './drawHelpers';
-import { layerBounds, layerBoundsMm, type RectMm } from './layerBounds';
+import { layerBounds, type RectMm } from './layerBounds';
 
 export type { RectMm };
-export { layerBoundsMm };
 
 export const CULLING_MARGIN_MM = 40;
 const ZOOM_FLOOR = 0.4;

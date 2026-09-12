@@ -284,7 +284,6 @@ function _enforceLogBudget() {
   }
 }
 
-// Barrer el dir en cada evento: ~0.27ms y congela el loop.
 const _BUDGET_ENFORCE_INTERVAL = 200;
 let _budgetEnforceCounter = 0;
 

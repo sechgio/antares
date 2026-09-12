@@ -115,32 +115,6 @@ def _crop_footer_bar(img: Image.Image) -> Image.Image:
     return rgb.crop((0, 0, w, bar_h))
 
 
-def _measure_footer_band_height(jpg_path: str) -> int:
-    with Image.open(jpg_path) as opened:
-        img = opened.convert("RGB")
-    w, h = img.size
-    black_rows: list[int] = []
-    step = max(1, w // 30)
-    for y in range(h):
-        total = sum(sum(cast(tuple[int, ...], img.getpixel((x, y)))) for x in range(0, w, step))
-        if (total / (w // step + 1)) < 100:
-            black_rows.append(y)
-    if not black_rows:
-        return 0
-    groups: list[tuple[int, int]] = []
-    start = black_rows[0]
-    prev = black_rows[0]
-    for y in black_rows[1:]:
-        if y == prev + 1:
-            prev = y
-        else:
-            groups.append((start, prev))
-            start = prev = y
-    groups.append((start, prev))
-    best_start, best_end = max(groups, key=lambda band: band[1] - band[0])
-    return best_end - best_start + 1
-
-
 def _is_gutter_pixel(r: int, g: int, b: int) -> bool:
     spread = max(r, g, b) - min(r, g, b)
     return r > 225 and g > 232 and b > 228 and spread < 40
@@ -443,7 +417,6 @@ __all__ = [
     "_hex_to_rgb",
     "_is_gutter_pixel",
     "_map_capture_size",
-    "_measure_footer_band_height",
     "_normalize_map_screenshot",
     "_output_pdf_filename",
     "_parse_excel_columns",

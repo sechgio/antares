@@ -105,9 +105,42 @@ function pushResult(
 }
 
 function isMissingRpcError(error: unknown): boolean {
+  if (!error) return false;
+  if (typeof error === 'object') {
+    const errObj = error as { code?: unknown; message?: unknown; details?: unknown };
+    if (typeof errObj.code === 'string' && /PGRST202/i.test(errObj.code)) {
+      return true;
+    }
+    const msg = typeof errObj.message === 'string' ? errObj.message : '';
+    if (
+      /PGRST202|RPC function not found|function .* does not exist|could not find the function/i.test(
+        msg,
+      )
+    ) {
+      return true;
+    }
+    const details = typeof errObj.details === 'string' ? errObj.details : '';
+    if (/PGRST202|could not find the function/i.test(details)) {
+      return true;
+    }
+  }
   const message = error instanceof Error ? error.message : String(error ?? '');
-  return /PGRST202|RPC function not found|function .* does not exist/i.test(message);
+  return /PGRST202|RPC function not found|function .* does not exist|could not find the function/i.test(
+    message,
+  );
 }
+
+type CanvasRpcError = {
+  code?: string;
+  details?: string;
+  hint?: string;
+  message: string;
+};
+
+type CanvasRpcResponse<T> = {
+  data: T | null;
+  error: CanvasRpcError | null;
+};
 
 export async function pushCanvasDocumentResult(
   doc: CanvasDocument,
@@ -117,36 +150,73 @@ export async function pushCanvasDocumentResult(
   const uid = await sessionUserId();
   if (!uid) return pushResult(doc, false, doc.updatedAt || '');
 
-  const { embedCanvasAssetsAsDataUrls, countCanvasAssetRefs } = await import('../utils/imageBlobStore');
-  doc = await embedCanvasAssetsAsDataUrls(doc, { strict: true });
-  assertCloudCanvasDocumentSize(doc);
+  const {
+    assertCanvasAssetExpansionWithinBytes,
+    embedCanvasAssetsAsDataUrls,
+    countCanvasAssetRefs,
+  } = await import('../utils/imageBlobStore');
   if (countCanvasAssetRefs(doc) > 0) {
-    throw new Error('No se puede sincronizar: quedan imágenes canvas-asset: sin resolver');
+    await assertCanvasAssetExpansionWithinBytes(doc, MAX_CLOUD_CANVAS_DOCUMENT_BYTES);
+    doc = await embedCanvasAssetsAsDataUrls(doc, { strict: true });
   }
+  assertCloudCanvasDocumentSize(doc);
 
   const updatedAt = doc.updatedAt || new Date().toISOString();
 
-  if (typeof supabase.rpc === 'function' && !options?.forceResurrect) {
+  if (typeof supabase.rpc === 'function') {
     try {
       const rpcRes = (await withTimeout(
-        (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<{ data: boolean | null; error: { message: string } | null }>)(
-          'canvas_push_document_lww',
-          { p_document: doc, p_updated_at: updatedAt },
+        (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<CanvasRpcResponse<boolean>>)(
+          'canvas_push_document_lww_v2',
+          {
+            p_document: doc,
+            p_updated_at: updatedAt,
+            p_force_resurrect: options?.forceResurrect ?? false,
+          },
         ),
         CLOUD_SYNC_TIMEOUT_MS,
         'canvas-push-rpc',
-      )) as { data: boolean | null; error: { message: string } | null } | null;
+      )) as CanvasRpcResponse<boolean> | null;
       if (rpcRes?.error) {
         if (!isMissingRpcError(rpcRes.error)) throw new Error(rpcRes.error.message);
+        throw rpcRes.error;
       } else if (rpcRes && typeof rpcRes.data === 'boolean') {
         return pushResult(doc, rpcRes.data, updatedAt, uid);
       } else if (rpcRes) {
-        throw new Error('Respuesta inválida de canvas_push_document_lww');
+        throw new Error('Respuesta inválida de canvas_push_document_lww_v2');
       }
     } catch (err) {
       if (!isMissingRpcError(err)) throw err;
-      console.warn('[canvas-sync] canvas_push_document_lww no está disponible; usando compatibilidad legacy');
+      console.warn('[canvas-sync] canvas_push_document_lww_v2 no está disponible; usando compatibilidad legacy');
+
+      if (!options?.forceResurrect) {
+        try {
+          const legacyRes = (await withTimeout(
+            (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<CanvasRpcResponse<boolean>>)(
+              'canvas_push_document_lww',
+              { p_document: doc, p_updated_at: updatedAt },
+            ),
+            CLOUD_SYNC_TIMEOUT_MS,
+            'canvas-push-legacy-rpc',
+          )) as CanvasRpcResponse<boolean> | null;
+          if (legacyRes?.error) {
+            if (!isMissingRpcError(legacyRes.error)) throw new Error(legacyRes.error.message);
+            throw legacyRes.error;
+          }
+          if (legacyRes && typeof legacyRes.data === 'boolean') {
+            return pushResult(doc, legacyRes.data, updatedAt, uid);
+          }
+          if (legacyRes) throw new Error('Respuesta inválida de canvas_push_document_lww');
+        } catch (legacyErr) {
+          if (!isMissingRpcError(legacyErr)) throw legacyErr;
+          throw new Error('No se puede sincronizar Canvas: ningún RPC LWW está disponible');
+        }
+      }
     }
+  }
+
+  if (!options?.forceResurrect) {
+    throw new Error('No se puede sincronizar Canvas: ningún RPC LWW está disponible');
   }
 
   const { data: existing, error: selectError } = await withTimeout(
@@ -159,28 +229,6 @@ export async function pushCanvasDocumentResult(
     'canvas-push-select',
   );
   if (selectError) throw new Error(selectError.message);
-  if (
-    existing &&
-    !options?.forceResurrect &&
-    !shouldPushCanvasRow(updatedAt, existing.updated_at, existing.deleted_at)
-  ) {
-    try {
-      await withTimeout(
-        (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<unknown>)(
-          'canvas_append_document_version',
-          { p_document_id: doc.id, p_document: doc },
-        ),
-        CLOUD_SYNC_TIMEOUT_MS,
-        'canvas-push-skip-preserve',
-      );
-    } catch (err) {
-      if (!isMissingRpcError(err)) throw err;
-      throw new Error(
-        'No se puede preservar el cambio local: canvas_append_document_version no está disponible',
-      );
-    }
-    return pushResult(doc, false, updatedAt, uid);
-  }
 
   const existingRow = existing as { created_by?: string } | null;
   const row = {
@@ -193,12 +241,34 @@ export async function pushCanvasDocumentResult(
     created_by: existingRow?.created_by ?? uid,
   };
 
-  const { error } = await withTimeout(
-    supabase.from('canvas_documents').upsert(row, { onConflict: 'id' }),
+  const { data: upserted, error } = await withTimeout(
+    supabase.from('canvas_documents').upsert(row, { onConflict: 'id' }).select('id'),
     CLOUD_SYNC_TIMEOUT_MS,
     'canvas-push-upsert',
   );
   if (error) throw new Error(error.message);
+  if (!upserted || upserted.length === 0) {
+    // The LWW trigger suppressed the write: a newer remote row won. Preserve the
+    // local version best-effort and report the rejection honestly.
+    try {
+      const appendRes = (await withTimeout(
+        (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<{ data: unknown; error: { message: string; code?: string; details?: string } | null }>)(
+          'canvas_append_document_version',
+          { p_document_id: doc.id, p_document: doc },
+        ),
+        CLOUD_SYNC_TIMEOUT_MS,
+        'canvas-push-skip-preserve',
+      )) as { data: unknown; error: { message: string; code?: string; details?: string } | null } | null;
+      if (appendRes?.error && !isMissingRpcError(appendRes.error)) {
+        console.warn('[canvas-sync] no se pudo preservar la versión local rechazada:', appendRes.error.message);
+      }
+    } catch (err) {
+      if (!isMissingRpcError(err)) {
+        console.warn('[canvas-sync] no se pudo preservar la versión local rechazada:', err);
+      }
+    }
+    return pushResult(doc, false, updatedAt, uid);
+  }
   return pushResult(doc, true, updatedAt, uid);
 }
 
@@ -214,15 +284,43 @@ export async function markRemoteCanvasDeleted(id: string): Promise<boolean> {
   const uid = await sessionUserId();
   if (!uid) return false;
   const now = new Date().toISOString();
-  const { error } = await withTimeout(
+
+  if (typeof supabase.rpc === 'function') {
+    try {
+      const rpcRes = (await withTimeout(
+        (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<CanvasRpcResponse<boolean>>)(
+          'canvas_delete_document_lww_v2',
+          { p_id: id, p_deleted_at: now },
+        ),
+        CLOUD_SYNC_TIMEOUT_MS,
+        'canvas-mark-deleted-rpc',
+      )) as CanvasRpcResponse<boolean> | null;
+      if (rpcRes?.error) {
+        if (!isMissingRpcError(rpcRes.error)) throw new Error(rpcRes.error.message);
+        throw rpcRes.error;
+      }
+      if (rpcRes && typeof rpcRes.data === 'boolean') return rpcRes.data;
+      if (rpcRes) throw new Error('Respuesta inválida de canvas_delete_document_lww_v2');
+    } catch (err) {
+      if (!isMissingRpcError(err)) throw err;
+      console.warn('[canvas-sync] canvas_delete_document_lww_v2 no está disponible; usando compatibilidad legacy');
+    }
+  }
+
+  const { data: updated, error } = await withTimeout(
     supabase
       .from('canvas_documents')
       .update({ deleted_at: now, updated_at: now, updated_by: uid })
-      .eq('id', id),
+      .eq('id', id)
+      .select('id'),
     CLOUD_SYNC_TIMEOUT_MS,
     'canvas-mark-deleted',
   );
   if (error) throw new Error(error.message);
+  if (!updated || updated.length === 0) {
+    console.warn('[canvas-sync] tombstone suprimido por el trigger LWW o documento inexistente');
+    return false;
+  }
   return true;
 }
 
@@ -301,23 +399,23 @@ export async function pullCanvasDocument(
   const uid = await sessionUserId();
   if (!uid) return { kind: 'unchanged' };
 
-  const { data, error } = await withTimeout(
+  const { data: meta, error: metaError } = await withTimeout(
     supabase
       .from('canvas_documents')
-      .select('document, updated_at, deleted_at')
+      .select('updated_at, deleted_at')
       .eq('id', documentId)
       .maybeSingle(),
     CLOUD_SYNC_TIMEOUT_MS,
-    'canvas-pull-targeted',
+    'canvas-pull-meta',
   );
-  if (error) throw new Error(error.message);
+  if (metaError) throw new Error(metaError.message);
 
-  const row = data as CanvasRemoteDocumentRow | null;
-  if (!row) return { kind: 'unchanged' };
+  const metaRow = meta as CanvasRemoteDocumentRow | null;
+  if (!metaRow) return { kind: 'unchanged' };
 
   const localDocument = normalizeDocument(options.localDocument);
-  const remoteUpdatedAt = row.updated_at || row.deleted_at || '';
-  if (row.deleted_at) {
+  const remoteUpdatedAt = metaRow.updated_at || metaRow.deleted_at || '';
+  if (metaRow.deleted_at) {
     if (!isValidTimestamp(remoteUpdatedAt)) {
       throw new Error('Invalid remote Canvas document deletion timestamp');
     }
@@ -332,6 +430,29 @@ export async function pullCanvasDocument(
       },
     };
   }
+
+  if (remoteUpdatedAt && !isValidTimestamp(remoteUpdatedAt)) {
+    throw new Error('Invalid remote Canvas document timestamp');
+  }
+  if (!isNewer(remoteUpdatedAt, localDocument.updatedAt)) {
+    return { kind: 'unchanged', remoteUpdatedAt };
+  }
+
+  // Only fetch the (potentially multi-MB) document column when the remote
+  // snapshot is actually newer than the local one.
+  const { data, error } = await withTimeout(
+    supabase
+      .from('canvas_documents')
+      .select('document, updated_at')
+      .eq('id', documentId)
+      .maybeSingle(),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-pull-doc',
+  );
+  if (error) throw new Error(error.message);
+
+  const row = data as CanvasRemoteDocumentRow | null;
+  if (!row) return { kind: 'unchanged', remoteUpdatedAt };
 
   const remote = remoteDocumentFromRow(row, documentId);
   if (!isNewer(remote.updatedAt, localDocument.updatedAt)) {
@@ -378,6 +499,7 @@ const pendingPushById = new Map<
   { doc: CanvasDocument; options?: { forceResurrect?: boolean } }
 >();
 let pushFlushQueued = false;
+let pushFlushPromise: Promise<void> | null = null;
 
 function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
   return {
@@ -468,18 +590,21 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   let conflictRemoteDeletedMeta: CanvasRemoteMeta | undefined;
   for (const r of remote) {
     if (r.deleted_at) {
-      if (localById.has(r.id)) {
-        if (options.openDocumentId === r.id) {
-          conflictRemoteDeletedMeta = r;
-          continue;
-        }
-        if (options.guarded) {
-          continue;
-        }
-        await api.canvasDelete(r.id);
-        deletedLocal += 1;
-        localById.delete(r.id);
+      const localDeleted = localById.get(r.id);
+      if (!localDeleted) continue;
+      if (!isNewer(r.deleted_at || r.updated_at, localDeleted.updatedAt || '')) {
+        continue;
       }
+      if (options.openDocumentId === r.id) {
+        conflictRemoteDeletedMeta = r;
+        continue;
+      }
+      if (options.guarded) {
+        continue;
+      }
+      await api.canvasDelete(r.id);
+      deletedLocal += 1;
+      localById.delete(r.id);
       continue;
     }
     const local = localById.get(r.id);
@@ -555,6 +680,9 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
       if (result.accepted) {
         pushed += 1;
         await publishAcceptedPush(result);
+      } else {
+        pushErrors += 1;
+        lastError = 'El servidor conservó una versión más reciente del documento';
       }
     } catch (err) {
       pushErrors += 1;
@@ -575,31 +703,75 @@ async function publishAcceptedPush(result: CanvasPushResult): Promise<void> {
   }).catch(() => undefined);
 }
 
+const PUSH_RETRY_BASE_MS = 5_000;
+const PUSH_RETRY_MAX_ATTEMPTS = 6;
+let pushRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let pushRetryAttempt = 0;
+
+function schedulePendingPushRetry(): void {
+  if (pushRetryTimer !== null || pushRetryAttempt >= PUSH_RETRY_MAX_ATTEMPTS) return;
+  const delay = Math.min(PUSH_RETRY_BASE_MS * 2 ** pushRetryAttempt, 120_000);
+  pushRetryAttempt += 1;
+  pushRetryTimer = setTimeout(() => {
+    pushRetryTimer = null;
+    if (pendingPushById.size === 0) return;
+    void flushPendingPushes().catch(() => {});
+  }, delay);
+}
+
+function flushPendingPushes(): Promise<void> {
+  if (pushFlushQueued) {
+    return (pushFlushPromise ?? Promise.resolve()).then(() => undefined);
+  }
+  pushFlushQueued = true;
+  const flush = opChain.then(async () => {
+    pushFlushQueued = false;
+    const batch = Array.from(pendingPushById.values());
+    pendingPushById.clear();
+    let firstError: unknown = null;
+    for (const item of batch) {
+      try {
+        const result = await pushCanvasDocumentResult(item.doc, item.options);
+        await publishAcceptedPush(result);
+      } catch (err) {
+        firstError ??= err;
+        if (!pendingPushById.has(item.doc.id)) {
+          pendingPushById.set(item.doc.id, item);
+        }
+      }
+    }
+    if (firstError) {
+      schedulePendingPushRetry();
+      throw firstError;
+    }
+    pushRetryAttempt = 0;
+  });
+  pushFlushPromise = flush;
+  opChain = flush.catch(() => {});
+  return flush.then(() => undefined);
+}
+
 export function queueCanvasCloudPush(
   doc: CanvasDocument,
   options?: { forceResurrect?: boolean },
 ): Promise<void> {
   pendingPushById.set(doc.id, { doc, options });
-  if (!pushFlushQueued) {
-    pushFlushQueued = true;
-    const flush = opChain.then(async () => {
-      pushFlushQueued = false;
-      const batch = Array.from(pendingPushById.values());
-      pendingPushById.clear();
-      for (const item of batch) {
-        const result = await pushCanvasDocumentResult(item.doc, item.options);
-        await publishAcceptedPush(result);
-      }
-    });
-    opChain = flush.catch(() => {});
+  return flushPendingPushes();
+}
+
+export function _resetCanvasPushQueueForTests(): void {
+  pendingPushById.clear();
+  if (pushRetryTimer !== null) {
+    clearTimeout(pushRetryTimer);
+    pushRetryTimer = null;
   }
-  return opChain.then(() => undefined).catch(() => undefined);
+  pushRetryAttempt = 0;
 }
 
 export function queueCanvasCloudDelete(id: string): Promise<void> {
   const next = opChain.then(() => markRemoteCanvasDeleted(id));
   opChain = next.catch(() => {});
-  return next.then(() => undefined).catch(() => undefined);
+  return next.then(() => undefined);
 }
 
 export type CanvasVersionEntry = {

@@ -327,27 +327,40 @@ export function useEspaciosSync(userId: string | undefined) {
       activeEspacioId,
       activeProyectoId,
       ({ eventType, table, new: row, old }) => {
+        // DELETE events only carry the primary key in `old` (REPLICA IDENTITY
+        // DEFAULT), so resolve them by id instead of validating a full row.
+        if (eventType === 'DELETE') {
+          const id = old?.id;
+          if (typeof id !== 'string') return;
+          if (table === 'espacios') setEspacios((prev) => prev.filter((e) => e.id !== id));
+          if (table === 'proyectos') setProyectos((prev) => prev.filter((p) => p.id !== id));
+          if (table === 'tareas') setTareas((prev) => prev.filter((t) => t.id !== id));
+          if (table === 'board_columns') {
+            setBoardColumns((prev) => prev.filter((c) => c.id !== id));
+          }
+          return;
+        }
         if (table === 'espacios') {
-          const espacio = row ?? old;
+          const espacio = row;
           if (!isEspacioRow(espacio)) return;
           setEspacios((prev) => mergeById(prev, espacio, eventType));
         }
         if (table === 'proyectos') {
-          const proyecto = row ?? old;
+          const proyecto = row;
           if (!isProyectoRow(proyecto)) return;
           setProyectos((prev) => mergeById(prev, proyecto, eventType));
         }
         if (table === 'tareas') {
-          const tarea = row ?? old;
+          const tarea = row;
           if (!isTareaRow(tarea)) return;
-          if (tarea.proyecto_id !== activeProyectoId && eventType !== 'DELETE') return;
-          if (eventType !== 'DELETE' && pendingDeleteIdsRef.current.has(tarea.id)) return;
+          if (tarea.proyecto_id !== activeProyectoId) return;
+          if (pendingDeleteIdsRef.current.has(tarea.id)) return;
           setTareas((prev) => mergeById(prev, tarea, eventType));
         }
         if (table === 'board_columns') {
-          const col = row ?? old;
+          const col = row;
           if (!isBoardColumnRow(col)) return;
-          if (col.proyecto_id !== activeProyectoId && eventType !== 'DELETE') return;
+          if (col.proyecto_id !== activeProyectoId) return;
           setBoardColumns((prev) => {
             const next = mergeById(prev, col, eventType);
             return [...next].sort((a, b) => a.sort_order - b.sort_order);

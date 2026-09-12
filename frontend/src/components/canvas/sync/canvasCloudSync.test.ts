@@ -3,6 +3,7 @@ import type { CanvasDocument } from '../types';
 import {
   isNewer,
   MAX_CLOUD_CANVAS_DOCUMENT_BYTES,
+  markRemoteCanvasDeleted,
   pullCanvasDocument,
   pushCanvasDocument,
   queueCanvasCloudDelete,
@@ -10,6 +11,7 @@ import {
   shouldPushCanvasRow,
   syncCanvasDocuments,
   withTimeout,
+  _resetCanvasPushQueueForTests,
 } from './canvasCloudSync';
 
 const supabaseMock = vi.hoisted(() => {
@@ -92,6 +94,7 @@ function enqueueDeferred(): (data?: unknown, error?: unknown) => void {
 }
 
 function resetMocks(): void {
+  _resetCanvasPushQueueForTests();
   vi.mocked(api.canvasList).mockReset();
   vi.mocked(api.canvasGet).mockReset();
   vi.mocked(api.canvasSave).mockReset();
@@ -102,7 +105,7 @@ function resetMocks(): void {
   supabaseMock.responses.length = 0;
   supabaseMock.from.mockClear();
   supabaseMock.rpc.mockReset();
-  supabaseMock.rpc.mockRejectedValue(new Error('RPC function not found'));
+  supabaseMock.rpc.mockResolvedValue({ data: true, error: null });
   supabaseMock.getSession.mockReset();
   supabaseMock.getSession.mockResolvedValue({
     data: { session: { user: { id: 'user-1' } } },
@@ -382,7 +385,6 @@ describe('syncCanvasDocuments', () => {
 
     expect(result.pushed).toBe(1);
     expect(vi.mocked(api.canvasGet)).toHaveBeenCalledWith('doc-1');
-    expect(supabaseMock.from).toHaveBeenCalledWith('canvas_documents');
     expect(realtimeMock.broadcastCanvasDocumentSaved).toHaveBeenCalledWith({
       type: 'document_saved',
       documentId: 'doc-1',
@@ -459,8 +461,8 @@ describe('syncCanvasDocuments', () => {
   });
 
   it('does not push when remote is deleted and open doc is dirty (conflict instead)', async () => {
-    const localDoc = { id: 'doc-1', name: 'Edited', updatedAt: '2026-07-22T13:00:00Z' };
-    const localFull = makeDoc({ id: 'doc-1', name: 'Edited', updatedAt: '2026-07-22T13:00:00Z' });
+    const localDoc = { id: 'doc-1', name: 'Edited', updatedAt: '2026-07-22T11:00:00Z' };
+    const localFull = makeDoc({ id: 'doc-1', name: 'Edited', updatedAt: '2026-07-22T11:00:00Z' });
     const remoteMeta = {
       id: 'doc-1',
       name: 'Old',
@@ -500,13 +502,60 @@ describe('syncCanvasDocuments', () => {
 
     enqueue([remoteMeta]);
     enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null });
-    enqueue(null, { message: 'RLS denied' });
+    supabaseMock.rpc.mockRejectedValueOnce(new Error('RLS denied'));
 
     const result = await syncCanvasDocuments({});
 
     expect(result.pushErrors).toBe(1);
     expect(result.lastError).toContain('RLS denied');
     expect(result.pushed).toBe(0);
+  });
+
+  it('keeps a local doc newer than the remote tombstone (no delete, no conflict)', async () => {
+    const localDoc = { id: 'doc-1', name: 'Edited', updatedAt: '2026-07-22T13:00:00Z' };
+    const remoteMeta = {
+      id: 'doc-1',
+      name: 'Old',
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: '2026-07-22T12:00:00Z',
+    };
+
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
+    enqueue([remoteMeta]);
+
+    const result = await syncCanvasDocuments({
+      openDocumentId: 'doc-1',
+      openDirty: false,
+    });
+
+    expect(result.deletedLocal).toBe(0);
+    expect(result.conflict).toBeUndefined();
+    expect(vi.mocked(api.canvasDelete)).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a rejected push (remote newer) as pushErrors instead of silent success', async () => {
+    const localDoc = { id: 'doc-1', name: 'New', updatedAt: '2026-07-22T13:00:00Z' };
+    const remoteMeta = {
+      id: 'doc-1',
+      name: 'Old',
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: null,
+    };
+
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
+    vi.mocked(api.canvasGet).mockResolvedValue({
+      document: makeDoc({ id: 'doc-1', name: 'New', updatedAt: '2026-07-22T13:00:00Z' }),
+    });
+
+    enqueue([remoteMeta]);
+    supabaseMock.rpc.mockResolvedValueOnce({ data: false, error: null });
+
+    const result = await syncCanvasDocuments({});
+
+    expect(result.pushed).toBe(0);
+    expect(result.pushErrors).toBe(1);
+    expect(result.lastError).toBeTruthy();
+    expect(realtimeMock.broadcastCanvasDocumentSaved).not.toHaveBeenCalled();
   });
 
   it('coalesces a retry after sync-in-flight skip', async () => {
@@ -736,18 +785,15 @@ describe('opChain push serialization', () => {
     enqueue([]);
     enqueue([]);
 
-    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
-    upsert.mockImplementation(() => {
-      events.push('push-upsert');
-      return supabaseMock.chainable;
+    supabaseMock.rpc.mockImplementation(async (name: string) => {
+      if (name === 'canvas_push_document_lww_v2') events.push('push-rpc');
+      return { data: true, error: null };
     });
 
     const first = syncCanvasDocuments({ openDocumentId: 'doc-a', openDirty: false });
     await Promise.resolve();
     await Promise.resolve();
 
-    enqueue(null);
-    enqueue(null);
     queueCanvasCloudPush(makeDoc({ id: 'doc-push' }));
 
     const skipped = await syncCanvasDocuments({ openDocumentId: 'doc-b', openDirty: true });
@@ -758,50 +804,74 @@ describe('opChain push serialization', () => {
 
     await vi.waitFor(() => {
       expect(events.filter((e) => e === 'list')).toHaveLength(2);
-      expect(events).toContain('push-upsert');
+      expect(events).toContain('push-rpc');
     });
     const firstList = events.indexOf('list');
     const secondList = events.indexOf('list', firstList + 1);
-    const pushAt = events.indexOf('push-upsert');
+    const pushAt = events.indexOf('push-rpc');
     expect(secondList).toBeGreaterThan(firstList);
     expect(pushAt).toBeGreaterThan(secondList);
   });
 
   it('serializes two queued pushes (second waits for first)', async () => {
     const events: string[] = [];
-    const releaseSelect1 = enqueueDeferred();
-    enqueue(null);
-    enqueue(null);
-    enqueue(null);
-
-    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
-    upsert.mockImplementation(() => {
-      events.push(`upsert:${(upsert.mock.calls.at(-1)?.[0] as { id: string }).id}`);
-      return supabaseMock.chainable;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let callCount = 0;
+    supabaseMock.rpc.mockImplementation(async (name: string, params: { p_document?: { id: string } }) => {
+      if (name !== 'canvas_push_document_lww_v2') return { data: true, error: null };
+      callCount += 1;
+      events.push(`rpc:${params.p_document?.id}`);
+      if (callCount === 1) await firstGate;
+      return { data: true, error: null };
     });
 
     queueCanvasCloudPush(makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T12:00:00Z' }));
     queueCanvasCloudPush(makeDoc({ id: 'doc-2', updatedAt: '2026-07-22T12:00:00Z' }));
 
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(events).toEqual([]);
-
-    releaseSelect1(null);
     await vi.waitFor(() => {
-      expect(events).toEqual(['upsert:doc-1', 'upsert:doc-2']);
+      expect(events).toEqual(['rpc:doc-1']);
+    });
+
+    releaseFirst();
+    await vi.waitFor(() => {
+      expect(events).toEqual(['rpc:doc-1', 'rpc:doc-2']);
     });
   });
 
-  it('coalesces five pushes of the same id into one upsert (last-write-wins)', async () => {
-    enqueue(null);
-    enqueue(null);
+  it('flushes a push queued while the previous batch is in flight', async () => {
+    const events: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let callCount = 0;
+    supabaseMock.rpc.mockImplementation(async (name: string, params: { p_document?: { id: string } }) => {
+      if (name !== 'canvas_push_document_lww_v2') return { data: true, error: null };
+      callCount += 1;
+      events.push(`rpc:${params.p_document?.id}`);
+      if (callCount === 1) await firstGate;
+      return { data: true, error: null };
+    });
 
-    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
+    const first = queueCanvasCloudPush(makeDoc({ id: 'doc-in-flight-1' }));
+    await vi.waitFor(() => {
+      expect(events).toEqual(['rpc:doc-in-flight-1']);
+    });
+    const second = queueCanvasCloudPush(makeDoc({ id: 'doc-in-flight-2' }));
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(events).toEqual(['rpc:doc-in-flight-1', 'rpc:doc-in-flight-2']);
+  });
+
+  it('coalesces five pushes of the same id into one atomic push (last-write-wins)', async () => {
     const names: string[] = [];
-    upsert.mockImplementation((row: { id: string; name: string }) => {
-      names.push(row.name);
-      return supabaseMock.chainable;
+    supabaseMock.rpc.mockImplementation(async (name: string, params: { p_document?: { name: string } }) => {
+      if (name === 'canvas_push_document_lww_v2') names.push(params.p_document?.name ?? '');
+      return { data: true, error: null };
     });
 
     for (let i = 0; i < 5; i++) {
@@ -811,55 +881,44 @@ describe('opChain push serialization', () => {
     await vi.waitFor(() => {
       expect(names).toEqual(['v4']);
     });
-    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(supabaseMock.rpc).toHaveBeenCalledTimes(1);
   });
 
   it('runs push immediately when opChain is idle', async () => {
-    enqueue(null);
-    enqueue(null);
-    const ok = await new Promise<boolean>((resolve) => {
-      const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
-      upsert.mockImplementationOnce(() => {
-        resolve(true);
-        return supabaseMock.chainable;
-      });
-      queueCanvasCloudPush(makeDoc({ id: 'doc-idle' }));
-    });
-    expect(ok).toBe(true);
+    await expect(queueCanvasCloudPush(makeDoc({ id: 'doc-idle' }))).resolves.toBeUndefined();
+    expect(supabaseMock.rpc).toHaveBeenCalledWith(
+      'canvas_push_document_lww_v2',
+      expect.objectContaining({ p_document: expect.objectContaining({ id: 'doc-idle' }) }),
+    );
   });
 
   it('serializes delete behind a pending push', async () => {
     const events: string[] = [];
-    const releaseSelect = enqueueDeferred();
-    enqueue(null);
-    enqueue(null);
-
-    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
-    upsert.mockImplementation(() => {
-      events.push('upsert');
-      return supabaseMock.chainable;
+    let releasePush!: () => void;
+    const pushGate = new Promise<void>((resolve) => {
+      releasePush = resolve;
     });
-    const update = supabaseMock.chainable.update as ReturnType<typeof vi.fn>;
-    update.mockImplementation(() => {
-      events.push('delete');
-      return supabaseMock.chainable;
+    supabaseMock.rpc.mockImplementation(async (name: string) => {
+      if (name === 'canvas_push_document_lww_v2') {
+        events.push('push');
+        await pushGate;
+      } else if (name === 'canvas_delete_document_lww_v2') {
+        events.push('delete');
+      }
+      return { data: true, error: null };
     });
 
     queueCanvasCloudPush(makeDoc({ id: 'doc-1' }));
     queueCanvasCloudDelete('doc-1');
-    await Promise.resolve();
-    expect(events).toEqual([]);
+    await vi.waitFor(() => expect(events).toEqual(['push']));
 
-    releaseSelect(null);
+    releasePush();
     await vi.waitFor(() => {
-      expect(events).toEqual(['upsert', 'delete']);
+      expect(events).toEqual(['push', 'delete']);
     });
   });
 
   it('publishes only an accepted queued push', async () => {
-    enqueue(null);
-    enqueue(null);
-
     await queueCanvasCloudPush(makeDoc({
       id: 'doc-queued',
       updatedAt: '2026-07-22T12:00:00Z',
@@ -874,48 +933,87 @@ describe('opChain push serialization', () => {
   });
 
   it('does not publish a queued push rejected by LWW', async () => {
-    enqueue({ updated_at: '2026-07-22T13:00:00Z', deleted_at: null });
-    enqueue(null);
+    supabaseMock.rpc.mockResolvedValueOnce({ data: false, error: null });
 
-    await queueCanvasCloudPush(makeDoc({
+    await expect(queueCanvasCloudPush(makeDoc({
       id: 'doc-rejected',
       updatedAt: '2026-07-22T12:00:00Z',
-    }));
+    }))).resolves.toBeUndefined();
 
     expect(realtimeMock.broadcastCanvasDocumentSaved).not.toHaveBeenCalled();
+  });
+
+  it('continues the batch and retries a failed queued document', async () => {
+    const first = makeDoc({ id: 'doc-batch-fail-1' });
+    const second = makeDoc({ id: 'doc-batch-fail-2' });
+    let attempts = 0;
+    supabaseMock.rpc.mockImplementation(async (name: string) => {
+      if (name === 'canvas_push_document_lww_v2') {
+        attempts += 1;
+        if (attempts === 1) throw new Error('temporary cloud failure');
+        return { data: true, error: null };
+      }
+      return { data: true, error: null };
+    });
+
+    const firstPush = queueCanvasCloudPush(first);
+    const secondPush = queueCanvasCloudPush(second);
+
+    await expect(firstPush).rejects.toThrow('temporary cloud failure');
+    await expect(secondPush).rejects.toThrow('temporary cloud failure');
+    await expect(queueCanvasCloudPush(first)).resolves.toBeUndefined();
+    expect(supabaseMock.rpc).toHaveBeenCalledWith(
+      'canvas_push_document_lww_v2',
+      expect.objectContaining({ p_document: second }),
+    );
+  });
+
+  it('automatically retries a failed queued push with backoff', async () => {
+    vi.useFakeTimers();
+    const doc = makeDoc({ id: 'doc-auto-retry', updatedAt: '2026-07-22T12:00:00Z' });
+    let calls = 0;
+    supabaseMock.rpc.mockImplementation(async (name: string) => {
+      if (name === 'canvas_push_document_lww_v2') {
+        calls += 1;
+        if (calls === 1) return { data: null, error: { code: 'XX001', message: 'temporary failure' } };
+        return { data: true, error: null };
+      }
+      return { data: true, error: null };
+    });
+
+    const push = queueCanvasCloudPush(doc);
+    const settled = expect(push).rejects.toThrow('temporary failure');
+    await vi.advanceTimersByTimeAsync(0);
+    await settled;
+    expect(calls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(calls).toBeGreaterThanOrEqual(2);
+    vi.useRealTimers();
   });
 });
 
 describe('pushCanvasDocument', () => {
   beforeEach(resetMocks);
 
-  it('calls upsert with onConflict id', async () => {
+  it('uses the atomic LWW RPC for a normal push', async () => {
     const doc = makeDoc({
       id: 'doc-1',
       name: 'Test',
       updatedAt: '2026-07-22T12:00:00Z',
     });
 
-    enqueue(null);
-    enqueue(null);
+    supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
 
     const ok = await pushCanvasDocument(doc);
 
     expect(ok).toBe(true);
-    expect(supabaseMock.from).toHaveBeenCalledWith('canvas_documents');
-    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
-    expect(upsert).toHaveBeenCalledTimes(1);
-    const [row, options] = upsert.mock.calls[0];
-    expect(row).toMatchObject({
-      id: 'doc-1',
-      name: 'Test',
-      document: doc,
-      updated_at: '2026-07-22T12:00:00Z',
-      updated_by: 'user-1',
-      created_by: 'user-1',
-      deleted_at: null,
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_push_document_lww_v2', {
+      p_document: doc,
+      p_updated_at: '2026-07-22T12:00:00Z',
+      p_force_resurrect: false,
     });
-    expect(options).toEqual({ onConflict: 'id' });
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
   it('fails closed when remote is newer but version preservation is unavailable', async () => {
@@ -923,38 +1021,39 @@ describe('pushCanvasDocument', () => {
       id: 'doc-1',
       updatedAt: '2026-07-22T12:00:00Z',
     });
-    enqueue({ updated_at: '2026-07-22T13:00:00Z', deleted_at: null });
+    supabaseMock.rpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST202', message: 'canvas_push_document_lww_v2 is missing' },
+      })
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST202', message: 'canvas_push_document_lww is missing' },
+      });
 
-    await expect(pushCanvasDocument(doc)).rejects.toThrow(/preservar el cambio local/);
+    await expect(pushCanvasDocument(doc)).rejects.toThrow(/ningún RPC LWW/);
     expect(supabaseMock.chainable.insert).not.toHaveBeenCalled();
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
   it('preserves existing created_by on update instead of overwriting with the current user', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T13:00:00Z' });
-    enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null, created_by: 'user-original' });
-    enqueue(null);
+    supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
 
     const ok = await pushCanvasDocument(doc);
 
     expect(ok).toBe(true);
-    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
-    const [row] = upsert.mock.calls[0];
-    expect(row.created_by).toBe('user-original');
-    expect(row.updated_by).toBe('user-1');
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
   it('sets created_by to the current user when the row is new', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T13:00:00Z' });
-    enqueue(null);
-    enqueue(null);
+    supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
 
     const ok = await pushCanvasDocument(doc);
 
     expect(ok).toBe(true);
-    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
-    const [row] = upsert.mock.calls[0];
-    expect(row.created_by).toBe('user-1');
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
   it('aborts before upsert when canvas-asset refs cannot be resolved', async () => {
@@ -1005,39 +1104,172 @@ describe('pushCanvasDocument', () => {
 
   it('fails closed when the version-preservation RPC is unavailable', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T10:00:00Z' });
+    supabaseMock.rpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST202', message: 'canvas_push_document_lww_v2 is missing' },
+      })
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST202', message: 'canvas_push_document_lww is missing' },
+      });
     enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null, created_by: 'user-other' });
 
-    await expect(pushCanvasDocument(doc)).rejects.toThrow(/preservar el cambio local/);
+    await expect(pushCanvasDocument(doc)).rejects.toThrow(/ningún RPC LWW/);
 
     expect(supabaseMock.chainable.insert).not.toHaveBeenCalled();
   });
 
-  it('uses atomic RPC canvas_push_document_lww when available and returns true on success', async () => {
+  it('uses the versioned atomic RPC when available and returns true on success', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T12:00:00Z' });
     supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
 
     const ok = await pushCanvasDocument(doc);
 
     expect(ok).toBe(true);
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_push_document_lww', {
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_push_document_lww_v2', {
+      p_document: doc,
+      p_updated_at: '2026-07-22T12:00:00Z',
+      p_force_resurrect: false,
+    });
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the legacy atomic LWW RPC when v2 is missing', async () => {
+    const doc = makeDoc({ id: 'doc-legacy-rpc', updatedAt: '2026-07-22T12:00:00Z' });
+    supabaseMock.rpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          code: 'PGRST202',
+          message: 'Could not find the function public.canvas_push_document_lww_v2',
+        },
+      })
+      .mockResolvedValueOnce({ data: true, error: null });
+
+    await expect(pushCanvasDocument(doc)).resolves.toBe(true);
+
+    expect(supabaseMock.rpc).toHaveBeenNthCalledWith(2, 'canvas_push_document_lww', {
       p_document: doc,
       p_updated_at: '2026-07-22T12:00:00Z',
     });
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
-  it('uses atomic RPC canvas_push_document_lww and returns false when remote was newer', async () => {
+  it('fails closed instead of using an unsafe upsert when both LWW RPCs are missing', async () => {
+    const doc = makeDoc({ id: 'doc-no-rpc', updatedAt: '2026-07-22T12:00:00Z' });
+    supabaseMock.rpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST202', message: 'canvas_push_document_lww_v2 is missing' },
+      })
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST202', message: 'canvas_push_document_lww is missing' },
+      });
+
+    await expect(pushCanvasDocument(doc)).rejects.toThrow(/LWW.*disponible|sincronizar/i);
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+  });
+
+  it('forceResurrect without LWW RPCs uses the manual upsert and reports trigger suppression', async () => {
+    const doc = makeDoc({ id: 'doc-force', updatedAt: '2026-07-22T12:00:00Z' });
+    supabaseMock.rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'PGRST202', message: 'rpc missing' },
+    });
+    // select() for the existing row, then upsert() suppressed by the LWW trigger.
+    enqueue(null);
+    enqueue([]);
+
+    await expect(pushCanvasDocument(doc, { forceResurrect: true })).resolves.toBe(false);
+    expect(supabaseMock.chainable.upsert).toHaveBeenCalled();
+  });
+
+  it('forceResurrect without LWW RPCs accepts a landed manual upsert', async () => {
+    const doc = makeDoc({ id: 'doc-force-ok', updatedAt: '2026-07-22T12:00:00Z' });
+    supabaseMock.rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'PGRST202', message: 'rpc missing' },
+    });
+    enqueue(null);
+    enqueue([{ id: 'doc-force-ok' }]);
+
+    await expect(pushCanvasDocument(doc, { forceResurrect: true })).resolves.toBe(true);
+  });
+
+  it('uses the versioned atomic RPC and returns false when remote was newer', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T10:00:00Z' });
     supabaseMock.rpc.mockResolvedValueOnce({ data: false, error: null });
 
     const ok = await pushCanvasDocument(doc);
 
     expect(ok).toBe(false);
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_push_document_lww', {
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_push_document_lww_v2', {
       p_document: doc,
       p_updated_at: '2026-07-22T10:00:00Z',
+      p_force_resurrect: false,
     });
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+  });
+
+  it('passes force resurrection through the versioned atomic RPC', async () => {
+    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T10:00:00Z' });
+    supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
+
+    await expect(pushCanvasDocument(doc, { forceResurrect: true })).resolves.toBe(true);
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_push_document_lww_v2', {
+      p_document: doc,
+      p_updated_at: '2026-07-22T10:00:00Z',
+      p_force_resurrect: true,
+    });
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+  });
+
+  it('uses the versioned atomic RPC for remote deletion', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
+
+    await expect(markRemoteCanvasDeleted('doc-1')).resolves.toBe(true);
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_delete_document_lww_v2', {
+      p_id: 'doc-1',
+      p_deleted_at: expect.any(String),
+    });
+    expect(supabaseMock.chainable.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy deletion available when the versioned RPC is missing', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message: 'Could not find the function public.canvas_delete_document_lww_v2 in the schema cache',
+      },
+    });
+    enqueue([{ id: 'doc-1' }]);
+
+    await expect(markRemoteCanvasDeleted('doc-1')).resolves.toBe(true);
+
+    expect(supabaseMock.chainable.update).toHaveBeenCalledWith(expect.objectContaining({
+      deleted_at: expect.any(String),
+      updated_at: expect.any(String),
+      updated_by: 'user-1',
+    }));
+    expect(supabaseMock.chainable.select).toHaveBeenCalledWith('id');
+  });
+
+  it('reports false when the legacy tombstone update is suppressed by the LWW trigger', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message: 'Could not find the function public.canvas_delete_document_lww_v2 in the schema cache',
+      },
+    });
+    enqueue([]);
+
+    await expect(markRemoteCanvasDeleted('doc-1')).resolves.toBe(false);
   });
 
   it('does not hide transient LWW RPC failures behind the legacy upsert', async () => {
@@ -1045,6 +1277,22 @@ describe('pushCanvasDocument', () => {
     supabaseMock.rpc.mockRejectedValueOnce(new Error('deadlock detected'));
 
     await expect(pushCanvasDocument(doc)).rejects.toThrow('deadlock detected');
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to an unsafe upsert after real PostgREST missing-RPC errors', async () => {
+    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T12:00:00Z' });
+    supabaseMock.rpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST202', message: 'Could not find the function public.canvas_push_document_lww_v2' },
+      })
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST202', message: 'Could not find the function public.canvas_push_document_lww' },
+      });
+
+    await expect(pushCanvasDocument(doc)).rejects.toThrow(/ningún RPC LWW/);
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 });
@@ -1062,11 +1310,8 @@ describe('pullCanvasDocument', () => {
       updatedAt: '2026-07-22T12:00:00Z',
     });
     vi.mocked(api.canvasSave).mockResolvedValue({ document: remoteDocument });
-    enqueue({
-      document: remoteDocument,
-      updated_at: '2026-07-22T12:00:00Z',
-      deleted_at: null,
-    });
+    enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null });
+    enqueue({ document: remoteDocument, updated_at: '2026-07-22T12:00:00Z' });
 
     const result = await pullCanvasDocument('doc-1', {
       localDocument,
@@ -1083,11 +1328,8 @@ describe('pullCanvasDocument', () => {
   it('returns a conflict without writing when the open document is dirty', async () => {
     const localDocument = makeDoc({ name: 'Local', updatedAt: '2026-07-22T10:00:00Z' });
     const remoteDocument = makeDoc({ name: 'Remote', updatedAt: '2026-07-22T12:00:00Z' });
-    enqueue({
-      document: remoteDocument,
-      updated_at: '2026-07-22T12:00:00Z',
-      deleted_at: null,
-    });
+    enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null });
+    enqueue({ document: remoteDocument, updated_at: '2026-07-22T12:00:00Z' });
 
     const result = await pullCanvasDocument('doc-1', {
       localDocument,
@@ -1104,7 +1346,6 @@ describe('pullCanvasDocument', () => {
   it('returns a deletion conflict even when the editor is clean', async () => {
     const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
     enqueue({
-      document: null,
       updated_at: '2026-07-22T12:00:00Z',
       deleted_at: '2026-07-22T12:00:00Z',
     });
@@ -1119,13 +1360,28 @@ describe('pullCanvasDocument', () => {
       conflict: { remoteDoc: null, remoteDeleted: true },
     });
     expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
   });
 
   it('does not apply an equal or older remote snapshot', async () => {
     const localDocument = makeDoc({ updatedAt: '2026-07-22T12:00:00Z' });
-    const remoteDocument = makeDoc({ name: 'Remote', updatedAt: '2026-07-22T11:00:00Z' });
     enqueue({
-      document: remoteDocument,
+      updated_at: '2026-07-22T11:00:00Z',
+      deleted_at: null,
+    });
+
+    const result = await pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    });
+
+    expect(result).toMatchObject({ kind: 'unchanged', remoteUpdatedAt: '2026-07-22T11:00:00Z' });
+    expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
+  });
+
+  it('skips the document column fetch when the remote row is not newer', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T12:00:00Z' });
+    enqueue({
       updated_at: '2026-07-22T12:00:00Z',
       deleted_at: null,
     });
@@ -1135,17 +1391,18 @@ describe('pullCanvasDocument', () => {
       openDirty: false,
     });
 
-    expect(result).toMatchObject({ kind: 'unchanged', remoteUpdatedAt: '2026-07-22T12:00:00Z' });
-    expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ kind: 'unchanged' });
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
+    expect(supabaseMock.chainable.select).toHaveBeenCalledWith('updated_at, deleted_at');
+    expect(supabaseMock.chainable.select).not.toHaveBeenCalledWith(
+      expect.stringContaining('document'),
+    );
   });
 
   it('fails instead of accepting a remote row without a document snapshot', async () => {
     const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
-    enqueue({
-      document: null,
-      updated_at: '2026-07-22T12:00:00Z',
-      deleted_at: null,
-    });
+    enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null });
+    enqueue({ document: null, updated_at: '2026-07-22T12:00:00Z' });
 
     await expect(pullCanvasDocument('doc-1', {
       localDocument,
@@ -1156,7 +1413,6 @@ describe('pullCanvasDocument', () => {
   it('fails instead of accepting a remote row with an invalid timestamp', async () => {
     const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
     enqueue({
-      document: makeDoc({ updatedAt: '2026-07-22T12:00:00Z' }),
       updated_at: 'not-a-date',
       deleted_at: null,
     });
@@ -1170,7 +1426,6 @@ describe('pullCanvasDocument', () => {
   it('fails instead of accepting a deletion row with an invalid timestamp', async () => {
     const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
     enqueue({
-      document: null,
       updated_at: 'not-a-date',
       deleted_at: 'not-a-date',
     });

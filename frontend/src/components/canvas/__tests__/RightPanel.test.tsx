@@ -466,36 +466,40 @@ describe('RightPanel shape inspector', () => {
     expect(screen.getByTestId('canvas-zoom-slot')).toBeTruthy();
   });
 
-  it('shows Plantillas under Propiedades when nothing is selected', async () => {
-    const onApplyPreset = vi.fn();
+  it('shows document styles under Propiedades when nothing is selected', () => {
+    const onRenameStyle = vi.fn();
     render(
       <RightPanel
         {...panelProps}
         layer={null}
         selectedCount={0}
         onChange={vi.fn()}
-        onApplyPreset={onApplyPreset}
+        documentStyles={[
+          { id: 's1', name: 'Marca', kind: 'color', cssVars: { '--background-color': '#ff0000' } },
+        ]}
+        onCreateStyle={vi.fn()}
+        onApplyStyle={vi.fn()}
+        onDetachStyle={vi.fn()}
+        onRemoveStyle={vi.fn()}
+        onRenameStyle={onRenameStyle}
       />,
     );
-    expect(screen.getByText('Plantillas')).toBeTruthy();
-    const section = screen.getByTestId('canvas-templates-section');
-    fireEvent.mouseEnter(section);
-    const button = await screen.findByLabelText('Aplicar plantilla Panel fotográfico');
-    fireEvent.click(button);
-    expect(onApplyPreset).toHaveBeenCalledWith('report');
+    expect(screen.getByTestId('canvas-styles-section')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Nombre estilo Marca'), { target: { value: 'Marca 2' } });
+    expect(onRenameStyle).toHaveBeenCalledWith('s1', 'Marca 2');
   });
 
-  it('hides Plantillas in right panel when a layer is selected', () => {
+  it('renders no empty-state content without style callbacks', () => {
     render(
       <RightPanel
         {...panelProps}
-        layer={createLayer('rect')}
-        selectedCount={1}
+        layer={null}
+        selectedCount={0}
         onChange={vi.fn()}
-        onApplyPreset={vi.fn()}
       />,
     );
-    expect(screen.queryByText('Plantillas')).toBeNull();
+    expect(screen.queryByTestId('canvas-styles-section')).toBeNull();
+    expect(screen.queryByTestId('canvas-templates-section')).toBeNull();
   });
 
   it('shows logo side conflict hint when logoSideConflict is true', () => {

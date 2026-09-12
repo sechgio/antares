@@ -23,10 +23,21 @@ function retryAfterMsFromError(error: unknown): number | null {
   return Math.min(Math.ceil(ms), 60_000);
 }
 
+function logCloudPersistFailure(error: unknown): void {
+  console.warn(
+    '[canvas] No se pudo sincronizar con cloud:',
+    error instanceof Error ? error.message : error,
+  );
+}
+
 interface DocumentSnapshot {
   documentId: string;
   revision: number;
 }
+
+const HISTORY_PERSIST_DELAY_MS = 500;
+const HISTORY_PERSIST_RETRY_DELAY_MS = 1_500;
+const HISTORY_PERSIST_MAX_RETRIES = 2;
 
 export interface UseDocumentLifecycleOptions {
   history: CanvasHistoryHandle;
@@ -145,7 +156,7 @@ export function useDocumentLifecycle({
     const saved = normalizeDocument(savedRes.document as CanvasDocument);
     const current = isCurrentSnapshot(snapshot);
     if (current) {
-      queueCanvasCloudPush(saved);
+      void Promise.resolve(queueCanvasCloudPush(saved)).catch(logCloudPersistFailure);
       if (histPersistOk) markHistoryPersisted(document.id);
     }
     return { current, saved, histPersistOk, document, past, future };
@@ -194,16 +205,37 @@ export function useDocumentLifecycle({
     if (!docId) return;
     const sig = `${docId}:${history.revision}`;
     if (lastSavedHistorySigRef.current === sig) return;
-    const timer = setTimeout(() => {
-      lastSavedHistorySigRef.current = sig;
-      persistHistoryStacks(docId, history.past, history.future).catch(warnHistoryPersistFailed);
-    }, 500);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const persist = (attempt: number): void => {
+      if (cancelled || lastSavedHistorySigRef.current === sig) return;
+      persistHistoryStacks(docId, history.past, history.future)
+        .then(() => {
+          if (cancelled) return;
+          const currentSig = `${history.documentRef.current.id}:${history.revisionRef.current}`;
+          if (currentSig === sig) lastSavedHistorySigRef.current = sig;
+        })
+        .catch((err) => {
+          warnHistoryPersistFailed(err);
+          if (!cancelled && attempt < HISTORY_PERSIST_MAX_RETRIES) {
+            retryTimer = setTimeout(() => persist(attempt + 1), HISTORY_PERSIST_RETRY_DELAY_MS);
+          }
+        });
+    };
+    timer = setTimeout(() => persist(0), HISTORY_PERSIST_DELAY_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+    };
   }, [
     history.document.id,
+    history.documentRef,
     history.past,
     history.future,
     history.revision,
+    history.revisionRef,
     historyReadyRef,
     persistHistoryStacks,
     warnHistoryPersistFailed,
@@ -298,7 +330,7 @@ export function useDocumentLifecycle({
           setPageIndex(0);
           resetViewportPan();
           await refreshList();
-          queueCanvasCloudPush(hydrated);
+          void Promise.resolve(queueCanvasCloudPush(hydrated)).catch(logCloudPersistFailure);
         } catch (err) {
           setStatus(err instanceof Error ? err.message : 'Error al crear');
         }
@@ -339,7 +371,7 @@ export function useDocumentLifecycle({
           setPageIndex(0);
           await refreshList();
           flashStatus('Duplicado');
-          queueCanvasCloudPush(dup);
+          void Promise.resolve(queueCanvasCloudPush(dup)).catch(logCloudPersistFailure);
         } catch (err) {
           setStatus(err instanceof Error ? err.message : 'Error al duplicar');
         }
@@ -365,7 +397,7 @@ export function useDocumentLifecycle({
         try {
           const deletedId = history.document.id;
           await api.canvasDelete(deletedId);
-          queueCanvasCloudDelete(deletedId);
+          void Promise.resolve(queueCanvasCloudDelete(deletedId)).catch(logCloudPersistFailure);
           const list = await api.canvasList();
           if (list.documents.length) {
             await openDocumentWithHistory(list.documents[0].id);
@@ -375,7 +407,7 @@ export function useDocumentLifecycle({
             const doc = normalizeDocument(created.document as CanvasDocument);
             history.replaceDocument(await hydrateDocumentImages(doc));
             setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
-            queueCanvasCloudPush(doc);
+            void Promise.resolve(queueCanvasCloudPush(doc)).catch(logCloudPersistFailure);
           }
           setSelectedIds([]);
           setPageIndex(0);

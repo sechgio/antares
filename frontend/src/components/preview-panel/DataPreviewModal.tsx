@@ -47,27 +47,27 @@ type RowDensity = 'compact' | 'normal' | 'spacious';
 function getColumnWidthClass(header: string): string {
   const h = header.toUpperCase().trim();
   if (h === 'ID' || h === 'NIS' || h === 'OT' || h.includes('NRO') || h === 'SECTOR' || h === 'CUADRILLA') {
-    return 'min-w-[110px]';
+    return 'min-w-[96px]';
   }
   if (h.includes('OBSERVACION') || h.includes('OBS') || h.includes('DETALLE') || h.includes('DESCRIPCION')) {
-    return 'min-w-[280px] max-w-[440px]';
+    return 'min-w-[200px] max-w-[360px]';
   }
   if (h.includes('DIRECCION') || h.includes('UBICACION')) {
-    return 'min-w-[240px] max-w-[360px]';
+    return 'min-w-[180px] max-w-[300px]';
   }
   if (h.includes('ACTIVIDAD') || h.includes('TRABAJO')) {
-    return 'min-w-[220px] max-w-[340px]';
+    return 'min-w-[180px] max-w-[280px]';
   }
   if (h.includes('ESTADO') || h.includes('STATUS')) {
-    return 'min-w-[130px]';
-  }
-  if (h.includes('CONTRATA') || h.includes('LOCALIDAD') || h.includes('DISTRITO') || h.includes('CENTRO') || h.includes('RED')) {
-    return 'min-w-[140px]';
-  }
-  if (h.includes('FECHA') || h.includes('DATE') || h.includes('CORTE')) {
     return 'min-w-[120px]';
   }
-  return h.length > 15 ? 'min-w-[180px]' : 'min-w-[130px]';
+  if (h.includes('CONTRATA') || h.includes('LOCALIDAD') || h.includes('DISTRITO') || h.includes('CENTRO') || h.includes('RED')) {
+    return 'min-w-[120px]';
+  }
+  if (h.includes('FECHA') || h.includes('DATE') || h.includes('CORTE')) {
+    return 'min-w-[104px]';
+  }
+  return h.length > 15 ? 'min-w-[150px]' : 'min-w-[110px]';
 }
 
 function isMonospaceColumn(header: string): boolean {
@@ -108,7 +108,7 @@ function renderStatusBadge(value: string, query = '') {
   const normalized = value.trim().toUpperCase();
   if (['ATENDIDO', 'COMPLETO', 'COMPLETADO', 'EJECUTADO', 'FINALIZADO', 'OK', 'APROBADO', 'ACTIVO'].includes(normalized)) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30 whitespace-nowrap">
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-green)]/15 text-[var(--accent-green)] whitespace-nowrap">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
         <HighlightMatch text={value} query={query} />
       </span>
@@ -116,7 +116,7 @@ function renderStatusBadge(value: string, query = '') {
   }
   if (['PENDIENTE', 'EN PROCESO', 'EN CURSO', 'INICIADO', 'ASIGNADO', 'REVISION', 'EN ESPERA'].includes(normalized)) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-yellow)]/15 text-[var(--accent-yellow)] border border-[var(--accent-yellow)]/30 whitespace-nowrap">
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-yellow)]/15 text-[var(--accent-yellow)] whitespace-nowrap">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-yellow)]" />
         <HighlightMatch text={value} query={query} />
       </span>
@@ -124,14 +124,14 @@ function renderStatusBadge(value: string, query = '') {
   }
   if (['CANCELADO', 'ANULADO', 'RECHAZADO', 'NO ATENDIDO', 'URGENTE', 'ERROR', 'BAJA'].includes(normalized)) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-red)]/15 text-[var(--accent-red)] border border-[var(--accent-red)]/30 whitespace-nowrap">
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-red)]/15 text-[var(--accent-red)] whitespace-nowrap">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-red)]" />
         <HighlightMatch text={value} query={query} />
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)] whitespace-nowrap">
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium bg-[var(--bg-elevated)] text-[var(--text-secondary)] whitespace-nowrap">
       <HighlightMatch text={value} query={query} />
     </span>
   );
@@ -153,7 +153,7 @@ export default function DataPreviewModal({
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
   const [photoFilter, setPhotoFilter] = useState<FilterPhotoType>('all');
-  const [wrapText, setWrapText] = useState(true);
+  const [wrapText, setWrapText] = useState(false);
   const [density, setDensity] = useState<RowDensity>('normal');
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
@@ -402,7 +402,7 @@ export default function DataPreviewModal({
   };
 
   const VIRTUALIZE_THRESHOLD = 100;
-  const ROW_HEIGHT_MAP = { compact: 32, normal: 40, spacious: 48 } as const;
+  const ROW_HEIGHT_MAP = { compact: 30, normal: 36, spacious: 44 } as const;
   const virtualRowHeight = ROW_HEIGHT_MAP[density];
   const useVirtual = filteredAndSortedRows.length >= VIRTUALIZE_THRESHOLD;
   const [listHeight, setListHeight] = useState(400);
@@ -432,7 +432,7 @@ export default function DataPreviewModal({
   const focusedRowPhotoInfo = rowPhotoMap.get(focusedRowIndex) ?? { count: 0, files: [] };
 
   const densityPadding =
-    density === 'compact' ? 'px-3 py-1.5 text-[11px]' : density === 'spacious' ? 'px-4 py-3 text-[13px]' : 'px-3.5 py-2.5 text-[12px]';
+    density === 'compact' ? 'px-3 py-1 text-[11px]' : density === 'spacious' ? 'px-4 py-3 text-[13px]' : 'px-3.5 py-2 text-[12px]';
 
   type VirtualRowData = {
     rows: typeof filteredAndSortedRows;
@@ -482,26 +482,24 @@ export default function DataPreviewModal({
                 ? 'bg-[color-mix(in_srgb,var(--accent-primary)_15%,transparent)] font-medium'
                 : isFocused
                   ? 'bg-[color-mix(in_srgb,var(--bg-elevated)_75%,transparent)]'
-                  : index % 2 === 0
-                    ? 'bg-transparent hover:bg-[color-mix(in_srgb,var(--accent-primary)_8%,transparent)]'
-                    : 'bg-[color-mix(in_srgb,var(--bg-surface)_25%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent-primary)_8%,transparent)]'
+                  : 'bg-transparent hover:bg-[color-mix(in_srgb,var(--accent-primary)_8%,transparent)]'
             }`}
           >
             <div
               className={`flex h-full w-12 shrink-0 items-center justify-center border-r border-[var(--border-subtle)] font-mono text-[11px] tabular-nums ${
                 isSelected
-                  ? 'bg-[var(--bg-base)] font-bold text-[var(--accent-primary)]'
+                  ? 'bg-[var(--bg-base)] font-bold text-[var(--accent-primary)] shadow-[inset_2px_0_0_var(--accent-primary)]'
                   : isFocused
                     ? 'bg-[var(--bg-elevated)]'
                     : 'bg-[var(--bg-base)] text-[var(--text-muted)]'
               }`}
             >
               <span
-                className={`inline-flex h-5 w-5 items-center justify-center rounded ${
+                className={`inline-flex h-5 w-5 items-center justify-center rounded tabular-nums ${
                   isSelected
-                    ? 'bg-[var(--accent-primary)] font-semibold text-[var(--text-on-accent)] shadow-sm'
+                    ? 'font-bold text-[var(--accent-primary)]'
                     : isFocused
-                      ? 'bg-[var(--border-medium)] text-[var(--text-primary)]'
+                      ? 'text-[var(--text-primary)]'
                       : 'text-[var(--text-muted)]'
                 }`}
               >
@@ -517,7 +515,7 @@ export default function DataPreviewModal({
               return (
                 <div
                   key={header}
-                  className={`flex h-full min-w-0 flex-1 items-center border-r border-[var(--border-subtle)] ${dPad} ${
+                  className={`flex h-full min-w-0 flex-1 items-center ${dPad} ${
                     isSelected ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'
                   } ${getColumnWidthClass(header)}`}
                   title={cellText}
@@ -527,7 +525,7 @@ export default function DataPreviewModal({
                   ) : (
                     <div
                       className={`${isMono ? 'font-mono text-[11.5px] tabular-nums text-[var(--text-primary)]' : ''} ${
-                        wText ? 'whitespace-normal break-words leading-relaxed' : 'truncate max-w-xs'
+                        wText ? 'whitespace-normal break-words leading-snug' : 'truncate max-w-xs'
                       } w-full`}
                     >
                       {cellText ? <HighlightMatch text={cellText} query={query} /> : <span className="text-[var(--text-muted)] opacity-50">—</span>}
@@ -542,15 +540,12 @@ export default function DataPreviewModal({
               }`}
             >
               {photoInfo.count > 0 ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap shadow-sm">
+                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap">
                   <ImageIcon size={11} />
-                  {photoInfo.count} {photoInfo.count === 1 ? 'foto' : 'fotos'}
+                  {photoInfo.count}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)] whitespace-nowrap">
-                  <ImageIcon size={11} className="opacity-35" />
-                  0 fotos
-                </span>
+                <span className="text-[11px] text-[var(--text-muted)] opacity-50">—</span>
               )}
             </div>
           </div>
@@ -617,7 +612,7 @@ export default function DataPreviewModal({
                 )}
               </div>
               <p className="text-[11px] text-[var(--text-muted)]">
-                {visibleHeaders.length} de {headers.length} columnas visibles · Navega con las flechas o haz clic en una fila
+                {visibleHeaders.length} de {headers.length} columnas visibles
               </p>
             </div>
           </div>
@@ -669,7 +664,7 @@ export default function DataPreviewModal({
 
               {showColumnDropdown && (
                 <div
-                  className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-base)] p-3 animate-fade-in"
+                  className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 shadow-xl animate-fade-in"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
                     <span className="text-[12px] font-semibold text-[var(--text-primary)]">Columnas ({visibleHeaders.length}/{headers.length})</span>
@@ -730,35 +725,73 @@ export default function DataPreviewModal({
               )}
             </div>
 
-            <WithHoverTooltip label={`Densidad: ${density}`} placement="bottom">
-              <button
-                type="button"
-                onClick={() =>
-                  setDensity((d) => (d === 'compact' ? 'normal' : d === 'normal' ? 'spacious' : 'compact'))
-                }
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 text-[11px] font-medium text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] transition-colors"
-                aria-label="Cambiar densidad de filas"
-              >
-                <span className="text-[10px] uppercase font-mono tracking-wider">{density[0]}</span>
-                <span className="hidden lg:inline capitalize">{density}</span>
-              </button>
-            </WithHoverTooltip>
+            <div
+              className="flex items-center gap-0.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5"
+              role="group"
+              aria-label="Densidad de filas"
+            >
+              {(
+                [
+                  { d: 'compact', label: 'Compacta' },
+                  { d: 'normal', label: 'Normal' },
+                  { d: 'spacious', label: 'Espaciosa' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.d}
+                  type="button"
+                  onClick={() => setDensity(opt.d)}
+                  className={`h-7 rounded-md px-2.5 text-[11px] font-medium transition-colors ${
+                    density === opt.d
+                      ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  aria-label={`Densidad ${opt.label}`}
+                  aria-pressed={density === opt.d}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
 
-            <WithHoverTooltip label={wrapText ? 'Modo compacto (una línea)' : 'Modo legible (ajustar texto)'} placement="bottom">
-              <button
-                type="button"
-                onClick={() => setWrapText((v) => !v)}
-                className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
-                  wrapText
-                    ? 'border-[var(--border-medium)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
-                    : 'border-[var(--border-subtle)] bg-transparent text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
-                }`}
-                aria-label="Alternar ajuste de texto"
-              >
-                {wrapText ? <WrapText size={13} /> : <AlignLeft size={13} />}
-                <span className="hidden lg:inline">{wrapText ? 'Ajustado' : 'Compacto'}</span>
-              </button>
-            </WithHoverTooltip>
+            <div
+              className="flex items-center gap-0.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5"
+              role="group"
+              aria-label="Ajuste de texto"
+            >
+              <WithHoverTooltip label="Texto ajustado a la columna" placement="bottom">
+                <button
+                  type="button"
+                  onClick={() => setWrapText(true)}
+                  className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors ${
+                    wrapText
+                      ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  aria-label="Modo ajustado"
+                  aria-pressed={wrapText}
+                >
+                  <WrapText size={13} />
+                  <span className="hidden lg:inline">Ajustado</span>
+                </button>
+              </WithHoverTooltip>
+              <WithHoverTooltip label="Una línea por celda" placement="bottom">
+                <button
+                  type="button"
+                  onClick={() => setWrapText(false)}
+                  className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors ${
+                    !wrapText
+                      ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  aria-label="Modo una línea"
+                  aria-pressed={!wrapText}
+                >
+                  <AlignLeft size={13} />
+                  <span className="hidden lg:inline">Una línea</span>
+                </button>
+              </WithHoverTooltip>
+            </div>
 
             <WithHoverTooltip label={showDetailPane ? 'Ocultar panel de detalle' : 'Ver detalle del registro'} placement="bottom">
               <button
@@ -812,66 +845,42 @@ export default function DataPreviewModal({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/40 px-5 py-2">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setPhotoFilter('all')}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-all ${
-                photoFilter === 'all'
-                  ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] shadow-sm'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <span>Todos</span>
-              <span
-                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  photoFilter === 'all' ? 'bg-[color:var(--text-on-accent)]/20 text-[var(--text-on-accent)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'
+          <div
+            className="flex items-center gap-0.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5"
+            role="group"
+            aria-label="Filtrar por fotos"
+          >
+            {(
+              [
+                { f: 'all', label: 'Todos', count: photoStats.total, icon: null },
+                { f: 'with-photos', label: 'Con fotos', count: photoStats.withPhotos, icon: ImageIcon },
+                { f: 'without-photos', label: 'Sin fotos', count: photoStats.withoutPhotos, icon: null },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.f}
+                type="button"
+                onClick={() => setPhotoFilter(opt.f)}
+                aria-pressed={photoFilter === opt.f}
+                className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors ${
+                  photoFilter === opt.f
+                    ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                 }`}
               >
-                {photoStats.total}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPhotoFilter('with-photos')}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-all ${
-                photoFilter === 'with-photos'
-                  ? 'bg-[var(--accent-green)] text-[var(--text-on-accent)] shadow-sm'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <ImageIcon size={12} />
-              <span>Con fotos</span>
-              <span
-                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  photoFilter === 'with-photos'
-                    ? 'bg-[color:var(--text-on-accent)]/20 text-[var(--text-on-accent)]'
-                    : 'bg-[var(--accent-green)]/10 text-[var(--accent-green)]'
-                }`}
-              >
-                {photoStats.withPhotos}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPhotoFilter('without-photos')}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-all ${
-                photoFilter === 'without-photos'
-                  ? 'bg-[var(--border-active)] text-[var(--text-primary)] shadow-sm'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <span>Sin fotos</span>
-              <span
-                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  photoFilter === 'without-photos' ? 'bg-[color:var(--text-on-accent)]/20 text-[var(--text-on-accent)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'
-                }`}
-              >
-                {photoStats.withoutPhotos}
-              </span>
-            </button>
+                {opt.icon && <opt.icon size={12} />}
+                <span>{opt.label}</span>
+                <span
+                  className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
+                    photoFilter === opt.f
+                      ? 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]'
+                      : 'bg-[var(--bg-input)] text-[var(--text-muted)]'
+                  }`}
+                >
+                  {opt.count}
+                </span>
+              </button>
+            ))}
           </div>
 
           <div className="flex items-center gap-3 text-[11px] text-[var(--text-muted)]">
@@ -962,7 +971,7 @@ export default function DataPreviewModal({
                         <th
                           key={header}
                           onClick={() => handleHeaderClick(header)}
-                          className={`px-3.5 py-2.5 font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none transition-colors border-r border-[var(--border-subtle)] ${getColumnWidthClass(
+                          className={`group/th px-3.5 py-2.5 font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none transition-colors ${getColumnWidthClass(
                             header
                           )}`}
                           title={`Ordenar por ${header}`}
@@ -977,7 +986,7 @@ export default function DataPreviewModal({
                                   <ChevronDown size={13} className="font-bold text-[var(--accent-primary)]" />
                                 )
                               ) : (
-                                <ArrowUpDown size={11} className="opacity-30 hover:opacity-100 transition-opacity" />
+                                <ArrowUpDown size={11} className="opacity-0 group-hover/th:opacity-60 transition-opacity" />
                               )}
                             </span>
                           </div>
@@ -1034,24 +1043,24 @@ export default function DataPreviewModal({
                             ? 'bg-[var(--accent-primary)]/15 font-medium'
                             : isFocused
                             ? 'bg-[var(--bg-elevated)]/75'
-                            : 'even:bg-[var(--bg-surface)]/25 hover:bg-[var(--accent-primary)]/8'
+                            : 'hover:bg-[var(--accent-primary)]/8'
                         }`}
                       >
                         <td
                           className={`sticky left-0 z-10 px-2 py-2 text-center font-mono text-[11px] tabular-nums border-r border-[var(--border-subtle)] transition-colors ${
                             isSelected
-                              ? 'bg-[var(--bg-base)] font-bold text-[var(--accent-primary)]'
+                              ? 'bg-[var(--bg-base)] font-bold text-[var(--accent-primary)] shadow-[inset_2px_0_0_var(--accent-primary)]'
                               : isFocused
                               ? 'bg-[var(--bg-elevated)]'
                               : 'bg-[var(--bg-base)] group-hover:bg-[var(--bg-surface)] text-[var(--text-muted)]'
                           }`}
                         >
                           <span
-                            className={`inline-flex h-5 w-5 items-center justify-center rounded ${
+                            className={`inline-flex h-5 w-5 items-center justify-center rounded tabular-nums ${
                               isSelected
-                                ? 'bg-[var(--accent-primary)] font-semibold text-[var(--text-on-accent)] shadow-sm'
+                                ? 'font-bold text-[var(--accent-primary)]'
                                 : isFocused
-                                ? 'bg-[var(--border-medium)] text-[var(--text-primary)]'
+                                ? 'text-[var(--text-primary)]'
                                 : 'text-[var(--text-muted)]'
                             }`}
                           >
@@ -1069,7 +1078,7 @@ export default function DataPreviewModal({
                           return (
                             <td
                               key={header}
-                              className={`align-top border-r border-[var(--border-subtle)] ${densityPadding} ${
+                              className={`align-top ${densityPadding} ${
                                 isSelected ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'
                               } ${getColumnWidthClass(header)}`}
                               title={cellText}
@@ -1082,7 +1091,7 @@ export default function DataPreviewModal({
                                     isMono ? 'font-mono text-[11.5px] tabular-nums text-[var(--text-primary)]' : ''
                                   } ${
                                     wrapText
-                                      ? 'whitespace-normal break-words leading-relaxed'
+                                      ? 'whitespace-normal break-words leading-snug'
                                       : 'truncate max-w-xs'
                                   }`}
                                 >
@@ -1107,15 +1116,12 @@ export default function DataPreviewModal({
                           }`}
                         >
                           {photoInfo.count > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap shadow-sm">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap">
                               <ImageIcon size={11} />
-                              {photoInfo.count} {photoInfo.count === 1 ? 'foto' : 'fotos'}
+                              {photoInfo.count}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)] whitespace-nowrap">
-                              <ImageIcon size={11} className="opacity-35" />
-                              0 fotos
-                            </span>
+                            <span className="text-[11px] text-[var(--text-muted)] opacity-50">—</span>
                           )}
                         </td>
                       </tr>
@@ -1166,7 +1172,7 @@ export default function DataPreviewModal({
                     <span
                       className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                         focusedRowPhotoInfo.count > 0
-                          ? 'bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30'
+                          ? 'bg-[var(--accent-green)]/15 text-[var(--accent-green)]'
                           : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'
                       }`}
                     >
@@ -1179,7 +1185,7 @@ export default function DataPreviewModal({
                       {focusedRowPhotoInfo.files.map((file, i) => (
                         <div
                           key={i}
-                          className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] bg-[var(--bg-elevated)]/60 px-2 py-1 rounded border border-[var(--border-subtle)]"
+                          className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] bg-[var(--bg-elevated)]/60 px-2 py-1 rounded"
                         >
                           <span className="truncate font-mono">{file.name}</span>
                           <span className="text-[9px] text-[var(--text-muted)] shrink-0 font-mono ml-2">
@@ -1242,10 +1248,10 @@ export default function DataPreviewModal({
           )}
         </div>
 
-        <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] px-5 py-3 text-[11px] shadow-[0_-6px_20px_rgba(0,0,0,0.28)]">
+        <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] px-5 py-3 text-[11px]">
           <div className="flex items-center gap-3 text-[var(--text-secondary)]">
-            <span className="flex items-center gap-1.5 font-medium text-[var(--accent-primary)]">
-              <Info size={13} />
+            <span className="flex items-center gap-1.5 font-medium text-[var(--text-secondary)]">
+              <Info size={13} className="text-[var(--accent-primary)]" />
               <span>Doble clic en una fila o presiona <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] font-mono text-[10px]">Enter</kbd> para seleccionarla</span>
             </span>
 

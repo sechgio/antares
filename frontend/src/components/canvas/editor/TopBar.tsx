@@ -12,7 +12,7 @@ interface TopBarProps {
   mode: CanvasMode;
   canUndo: boolean;
   canRedo: boolean;
-  status: string | null;
+  status?: string | null;
   showShortcuts?: boolean;
   previewOpen?: boolean;
   onToggleShortcuts?: () => void;
@@ -39,21 +39,11 @@ function TopBarDivider() {
   return <div className="canvas-topbar-divider" aria-hidden />;
 }
 
-const StatusPill = memo(function StatusPill({ status }: { status: string | null }) {
-  if (!status) return null;
-  return (
-    <span className="canvas-status-pill" role="status">
-      {status}
-    </span>
-  );
-});
-
 function TopBar({
   name,
   mode,
   canUndo,
   canRedo,
-  status,
   showShortcuts,
   previewOpen = false,
   onToggleShortcuts,
@@ -131,6 +121,7 @@ function TopBar({
             <Redo2 className="h-3.5 w-3.5" />
           </button>
         </WithHoverTooltip>
+        <TopBarDivider />
         <div className="canvas-topbar-secondary">
           <WithHoverTooltip label="Duplicar" placement="bottom" variant="dark">
             <button type="button" className="canvas-icon-btn" onClick={onDuplicate} aria-label="Duplicar documento">
@@ -214,10 +205,15 @@ function TopBar({
             : 'canvas-topbar-trailing'
         }
       >
-        <span className="canvas-save-state" data-dirty={dirty} data-testid="canvas-save-state">
+        <span className="canvas-save-state select-none" data-dirty={dirty} data-testid="canvas-save-state">
+          <span
+            className={`h-1.5 w-1.5 rounded-full transition-colors duration-200 ${
+              dirty ? 'bg-amber-400' : 'bg-emerald-400/80'
+            }`}
+            aria-hidden="true"
+          />
           {dirty ? 'Sin guardar' : 'Guardado'}
         </span>
-        <StatusPill status={status} />
 
         {mode === 'design' && onTogglePreview && (
           <PreviewButton active={Boolean(previewOpen)} onToggle={onTogglePreview} />

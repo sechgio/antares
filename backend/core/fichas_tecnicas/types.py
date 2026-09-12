@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Literal, TypedDict
 
-FichaStatus = Literal["draft", "completed"]
+from backend.core.report_types import ReportStatus
+
+FichaStatus = ReportStatus
 FichaSatisfaccion = Literal["muy_satisfecho", "satisfecho", "regular", "insatisfecho", ""]
 
 

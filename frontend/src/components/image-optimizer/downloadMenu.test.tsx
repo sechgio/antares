@@ -32,12 +32,15 @@ const mockPipeline = vi.hoisted(() => ({
   }),
 }));
 
+const disposeProcessWorkers = vi.hoisted(() => vi.fn());
+
 vi.mock('../../api', () => ({ api: mockApi }));
 vi.mock('../../utils/history', () => ({ saveFeatureHistory: vi.fn() }));
 vi.mock('./pipeline', () => ({
   createImageItem: mockPipeline.createImageItem,
   processImageItem: mockPipeline.processImageItem,
 }));
+vi.mock('./processWorkerClient', () => ({ disposeProcessWorkers }));
 
 import ImageOptimizer from './index';
 import { ImageItem } from './types';
@@ -165,6 +168,14 @@ describe('ImageOptimizer download menu', () => {
     expect(observedSignal?.aborted).toBe(true);
     release?.();
     await act(async () => {});
+  });
+
+  it('disposes image workers when the optimizer unmounts', () => {
+    const { unmount } = renderOptimizer();
+
+    unmount();
+
+    expect(disposeProcessWorkers).toHaveBeenCalledOnce();
   });
 
   it('reveals individual export option when the chevron is clicked', async () => {

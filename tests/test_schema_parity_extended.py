@@ -27,7 +27,18 @@ def _read_frontend_interface(path: pathlib.Path, interface: str) -> dict[str, st
 def _read_frontend_literals(path: pathlib.Path, alias: str) -> set[str]:
     text = path.read_text(encoding="utf-8")
     match = re.search(rf"export type {alias}\s*=\s*([^;]+);", text, re.DOTALL)
-    return set(re.findall(r"'([^']+)'", match.group(1))) if match else set()
+    if match:
+        return set(re.findall(r"'([^']+)'", match.group(1)))
+    for m in re.finditer(rf"(?:import|export)\s+type\s*\{{[^}}]*\b{alias}\b[^}}]*\}}\s*from\s*['\"]([^'\"]+)['\"]", text):
+        rel = m.group(1)
+        target = (path.parent / f"{rel}.ts").resolve()
+        if not target.exists():
+            target = (path.parent / rel / "index.ts").resolve()
+        if target.exists():
+            found = _read_frontend_literals(target, alias)
+            if found:
+                return found
+    return set()
 
 
 def _read_backend_keys(typeddict: type) -> set[str]:

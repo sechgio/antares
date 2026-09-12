@@ -16,6 +16,11 @@ import PreviewViewport, { type PreviewViewportHandle } from './PreviewViewport';
 
 const PAGE_STACK_GAP_PX = 24;
 
+interface PreviewPage {
+  document: CanvasDocument;
+  data: Record<string, unknown>;
+}
+
 interface GeneratePanelProps {
   document: CanvasDocument;
   runCloudSync?: () => Promise<void>;
@@ -101,7 +106,7 @@ export default function GeneratePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewHtml, setPreviewHtml] = useState('');
-  const [previewPages, setPreviewPages] = useState<CanvasDocument[]>([]);
+  const [previewPages, setPreviewPages] = useState<PreviewPage[]>([]);
   const [dragData, setDragData] = useState(false);
   const [dragImages, setDragImages] = useState(false);
 
@@ -228,7 +233,12 @@ export default function GeneratePanel({
       const prevPreviewUrls = previewObjectUrlsRef.current;
       previewObjectUrlsRef.current = ctx.images.filter((u) => u.startsWith('blob:'));
       const plan = planMultiPageDocuments(templateDoc, ctx);
-      setPreviewPages(plan.map(({ pageDoc, pageCtx }) => documentWithFill(pageDoc, pageCtx)));
+      setPreviewPages(
+        plan.map(({ pageDoc, pageCtx }) => ({
+          document: documentWithFill(pageDoc, pageCtx),
+          data: pageCtx.data,
+        })),
+      );
       const html = renderMultiPageHtml(templateDoc, ctx, { forScreen: true });
       setPreviewHtml(html);
       setError(null);
@@ -405,8 +415,13 @@ export default function GeneratePanel({
                   alignItems: 'center',
                 }}
               >
-                {previewPages.map((pageDoc, i) => (
-                  <PageLayerPreview key={`${pageDoc.id}-p${i}`} document={pageDoc} scale={scale} />
+                {previewPages.map(({ document: pageDoc, data }, i) => (
+                  <PageLayerPreview
+                    key={`${pageDoc.id}-p${i}`}
+                    document={pageDoc}
+                    data={data}
+                    scale={scale}
+                  />
                 ))}
               </div>
             )

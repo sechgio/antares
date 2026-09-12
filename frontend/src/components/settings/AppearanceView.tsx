@@ -74,6 +74,32 @@ function toStoredBool(value?: string, fallback = false) {
   return fallback;
 }
 
+type ThemeStateFallbacks = {
+  mode: ThemeMode;
+  language: string;
+  accentFallback?: string;
+  pointerCursors?: boolean;
+  sidebarTranslucent?: boolean;
+  contrast: number;
+  density?: string;
+  interfaceFontSize: number;
+  codeFontSize: number;
+};
+
+function themeStateFrom(nextTheme: ThemeConfig, fallbacks: ThemeStateFallbacks) {
+  return {
+    nextMode: (nextTheme.mode as ThemeMode) || fallbacks.mode,
+    nextAccent: accentKeyForTheme(nextTheme, fallbacks.accentFallback),
+    nextLanguage: nextTheme.language || fallbacks.language,
+    pointerCursors: toStoredBool(nextTheme.pointer_cursors, fallbacks.pointerCursors),
+    sidebarTranslucent: toStoredBool(nextTheme.sidebar_translucent, fallbacks.sidebarTranslucent),
+    contrast: Number(nextTheme.contrast || fallbacks.contrast),
+    density: normalizeThemeDensity(nextTheme.density || fallbacks.density),
+    interfaceFontSize: Number(nextTheme.interface_font_size || fallbacks.interfaceFontSize),
+    codeFontSize: Number(nextTheme.code_font_size || fallbacks.codeFontSize),
+  };
+}
+
 function SettingRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="grid min-h-[40px] grid-cols-[minmax(0,1fr)_minmax(120px,190px)] items-center gap-4 border-t border-[var(--border-subtle)] px-4 py-2.5 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_160px]">
@@ -105,6 +131,21 @@ export default function AppearanceView() {
 
   useEffect(() => { setLanguage(i18n.language); }, [i18n.language]);
 
+  const commitThemeState = useCallback((nextTheme: ThemeConfig, fallbacks: ThemeStateFallbacks) => {
+    const state = themeStateFrom(nextTheme, fallbacks);
+    setTheme(nextTheme);
+    setMode(state.nextMode);
+    setAccent(state.nextAccent);
+    setLanguage(state.nextLanguage);
+    setPointerCursors(state.pointerCursors);
+    setSidebarTranslucent(state.sidebarTranslucent);
+    setContrast(state.contrast);
+    setDensity(state.density);
+    setInterfaceFontSize(state.interfaceFontSize);
+    setCodeFontSize(state.codeFontSize);
+    return state;
+  }, []);
+
   const refresh = useCallback(async () => {
     const cachedTheme = readCachedActiveTheme();
     let backendTheme: ThemeConfig | null = null;
@@ -114,21 +155,13 @@ export default function AppearanceView() {
     }
 
     const initialTheme = cachedTheme || backendTheme || DEFAULT_THEME;
-
-    const nextMode = (initialTheme?.mode as ThemeMode) || 'dark';
-    const nextAccent = accentKeyForTheme(initialTheme);
-    const nextLanguage = initialTheme?.language || i18n.language || 'es';
-
-    setTheme(initialTheme);
-    setMode(nextMode);
-    setAccent(nextAccent);
-    setLanguage(nextLanguage);
-    setPointerCursors(toStoredBool(initialTheme.pointer_cursors));
-    setSidebarTranslucent(toStoredBool(initialTheme.sidebar_translucent));
-    setContrast(Number(initialTheme.contrast || 60));
-    setDensity(normalizeThemeDensity(initialTheme.density));
-    setInterfaceFontSize(Number(initialTheme.interface_font_size || 13));
-    setCodeFontSize(Number(initialTheme.code_font_size || 12));
+    const { nextMode, nextAccent } = commitThemeState(initialTheme, {
+      mode: 'dark',
+      language: i18n.language || 'es',
+      contrast: 60,
+      interfaceFontSize: 13,
+      codeFontSize: 12,
+    });
 
     if (cachedTheme || !hasCachedThemeCSS()) {
       applyThemeToCSS(initialTheme, nextMode, nextAccent);
@@ -140,7 +173,7 @@ export default function AppearanceView() {
     } catch {
       setPresets([]);
     }
-  }, [i18n.language]);
+  }, [commitThemeState, i18n.language]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -236,20 +269,13 @@ export default function AppearanceView() {
   const reset = async () => {
     try {
       const resetTheme = await api.resetTheme();
-      const nextMode = (resetTheme?.mode as ThemeMode) || 'dark';
-      const nextAccent = accentKeyForTheme(resetTheme);
-      const nextLanguage = resetTheme?.language || 'es';
-
-      setTheme(resetTheme);
-      setMode(nextMode);
-      setAccent(nextAccent);
-      setLanguage(nextLanguage);
-      setPointerCursors(toStoredBool(resetTheme.pointer_cursors));
-      setSidebarTranslucent(toStoredBool(resetTheme.sidebar_translucent));
-      setContrast(Number(resetTheme.contrast || 60));
-      setDensity(normalizeThemeDensity(resetTheme.density));
-      setInterfaceFontSize(Number(resetTheme.interface_font_size || 13));
-      setCodeFontSize(Number(resetTheme.code_font_size || 12));
+      const { nextMode, nextAccent, nextLanguage } = commitThemeState(resetTheme, {
+        mode: 'dark',
+        language: 'es',
+        contrast: 60,
+        interfaceFontSize: 13,
+        codeFontSize: 12,
+      });
       applyThemeToCSS(resetTheme, nextMode, nextAccent);
 
       if (nextLanguage !== i18n.language) {
@@ -263,21 +289,18 @@ export default function AppearanceView() {
 
   const applyPreset = async (name: string) => {
     const presetTheme = await api.applyPreset(name);
-    const nextMode = (presetTheme?.mode as ThemeMode) || mode;
-    const nextAccent = accentKeyForTheme(presetTheme, accent);
-    const nextLanguage = presetTheme?.language || language;
-
-    setTheme(presetTheme);
-    setMode(nextMode);
-    setAccent(nextAccent);
-    setLanguage(nextLanguage);
+    const { nextMode, nextAccent } = commitThemeState(presetTheme, {
+      mode,
+      language,
+      accentFallback: accent,
+      pointerCursors,
+      sidebarTranslucent,
+      contrast,
+      density,
+      interfaceFontSize,
+      codeFontSize,
+    });
     setPresetOpen(false);
-    setPointerCursors(toStoredBool(presetTheme.pointer_cursors, pointerCursors));
-    setSidebarTranslucent(toStoredBool(presetTheme.sidebar_translucent, sidebarTranslucent));
-    setContrast(Number(presetTheme.contrast || contrast));
-    setDensity(normalizeThemeDensity(presetTheme.density || density));
-    setInterfaceFontSize(Number(presetTheme.interface_font_size || interfaceFontSize));
-    setCodeFontSize(Number(presetTheme.code_font_size || codeFontSize));
     applyThemeToCSS(presetTheme, nextMode, nextAccent);
     addToast({
       message: t('appearance.presetApplied', {
@@ -289,25 +312,17 @@ export default function AppearanceView() {
   };
 
   const applyImportedTheme = (importedTheme: ThemeConfig) => {
-    const nextMode = (importedTheme?.mode as ThemeMode) || mode;
-    const nextAccent = accentKeyForTheme(importedTheme, accent);
-    const nextLanguage = importedTheme?.language || language;
-    const nextPointerCursors = toStoredBool(importedTheme.pointer_cursors, pointerCursors);
-    const nextSidebarTranslucent = toStoredBool(importedTheme.sidebar_translucent, sidebarTranslucent);
-    const nextContrast = Number(importedTheme.contrast || contrast);
-    const nextInterfaceFontSize = Number(importedTheme.interface_font_size || interfaceFontSize);
-    const nextCodeFontSize = Number(importedTheme.code_font_size || codeFontSize);
-
-    setTheme(importedTheme);
-    setMode(nextMode);
-    setAccent(nextAccent);
-    setLanguage(nextLanguage);
-    setPointerCursors(nextPointerCursors);
-    setSidebarTranslucent(nextSidebarTranslucent);
-    setContrast(nextContrast);
-    setDensity(normalizeThemeDensity(importedTheme.density || density));
-    setInterfaceFontSize(nextInterfaceFontSize);
-    setCodeFontSize(nextCodeFontSize);
+    const { nextMode, nextAccent, nextLanguage } = commitThemeState(importedTheme, {
+      mode,
+      language,
+      accentFallback: accent,
+      pointerCursors,
+      sidebarTranslucent,
+      contrast,
+      density,
+      interfaceFontSize,
+      codeFontSize,
+    });
     applyThemeToCSS(importedTheme, nextMode, nextAccent);
 
     if (nextLanguage !== i18n.language) {
