@@ -8,7 +8,9 @@ async function main() {
 
   const fakeHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-asset-usage-'));
   const prev = process.env.LOCALAPPDATA;
+  const prevXdg = process.env.XDG_DATA_HOME;
   process.env.LOCALAPPDATA = fakeHome;
+  process.env.XDG_DATA_HOME = fakeHome;
 
   // `canvas-assets.js` captures `fs.promises` by reference, so patching the
   // object's methods after requiring it still counts the module's calls.
@@ -125,6 +127,8 @@ async function main() {
     fsp.stat = realStat;
     if (prev === undefined) delete process.env.LOCALAPPDATA;
     else process.env.LOCALAPPDATA = prev;
+    if (prevXdg === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = prevXdg;
     await fs.promises.rm(fakeHome, { recursive: true, force: true });
   }
 }

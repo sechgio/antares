@@ -9,7 +9,9 @@ async function main() {
 
   const fakeHome = await fsp.mkdtemp(path.join(os.tmpdir(), 'antares-asset-gc-'));
   const prev = process.env.LOCALAPPDATA;
+  const prevXdg = process.env.XDG_DATA_HOME;
   process.env.LOCALAPPDATA = fakeHome;
+  process.env.XDG_DATA_HOME = fakeHome;
 
   try {
     delete require.cache[require.resolve('../electron/canvas-assets.js')];
@@ -128,6 +130,8 @@ async function main() {
   } finally {
     if (prev === undefined) delete process.env.LOCALAPPDATA;
     else process.env.LOCALAPPDATA = prev;
+    if (prevXdg === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = prevXdg;
     await fsp.rm(fakeHome, { recursive: true, force: true });
   }
 }
