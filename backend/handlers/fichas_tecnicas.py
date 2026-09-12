@@ -8,7 +8,7 @@ from backend.handlers.common import (
     filter_by_optional_ids,
     get_item_id,
     get_item_or_raise,
-    require_b64_file_payload,
+    import_into_store,
     require_update_payload,
     resolve_payload_or_store,
     update_item_or_raise,
@@ -77,16 +77,7 @@ def fichas_tecnicas_clear(params: dict[str, Any]) -> dict[str, Any]:
 def fichas_tecnicas_import_file(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.fichas_tecnicas.importer import import_fichas_from_bytes
 
-    filename, content = require_b64_file_payload(params)
-    imported_rows = import_fichas_from_bytes(filename, content)
-    imported, deleted_count = _db().replace_all_counted(imported_rows)
-    return {
-        "success": True,
-        "message": f"{len(imported)} fichas importadas",
-        "deleted_count": deleted_count,
-        "imported_count": len(imported),
-        "total_rows_in_file": len(imported_rows),
-    }
+    return import_into_store(_db(), params, import_fichas_from_bytes, "fichas importadas")
 
 
 @with_locale

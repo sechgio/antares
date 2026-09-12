@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-
 from backend.core.informes_v2.models import (
     DIAMETERS,
     LINEA_ROWS,
@@ -13,6 +11,7 @@ from backend.core.informes_v2.models import (
     sum_diameter_columns,
     sum_oper_no_op,
 )
+from backend.core.jinja_environment import make_cached_jinja_environment
 from backend.utils.paths import resource_path
 
 VALVULA_LABELS = {
@@ -39,30 +38,19 @@ def _templates_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "templates" / "informes_v2"
 
 
-_jinja_env: Environment | None = None
-_jinja_template_mtime: float = 0.0
-
-
-def _environment() -> Environment:
-    global _jinja_env, _jinja_template_mtime
-    templates_dir = _templates_dir()
-    template_file = templates_dir / "informe_v2.html"
-    template_mtime = template_file.stat().st_mtime if template_file.exists() else 0.0
-    if _jinja_env is None or template_mtime != _jinja_template_mtime:
-        _jinja_env = Environment(
-            loader=FileSystemLoader(str(templates_dir)),
-            autoescape=select_autoescape(("html", "xml")),
-            auto_reload=True,
-        )
-        _jinja_env.globals["sum_diameter_columns"] = sum_diameter_columns
-        _jinja_env.globals["sum_oper_no_op"] = sum_oper_no_op
-        _jinja_env.globals["DIAMETERS"] = DIAMETERS
-        _jinja_env.globals["VALVULA_ROWS"] = VALVULA_ROWS
-        _jinja_env.globals["LINEA_ROWS"] = LINEA_ROWS
-        _jinja_env.globals["VALVULA_LABELS"] = VALVULA_LABELS
-        _jinja_env.globals["LINEA_LABELS"] = LINEA_LABELS
-        _jinja_template_mtime = template_mtime
-    return _jinja_env
+_environment = make_cached_jinja_environment(
+    _templates_dir,
+    "informe_v2.html",
+    global_values={
+        "sum_diameter_columns": sum_diameter_columns,
+        "sum_oper_no_op": sum_oper_no_op,
+        "DIAMETERS": DIAMETERS,
+        "VALVULA_ROWS": VALVULA_ROWS,
+        "LINEA_ROWS": LINEA_ROWS,
+        "VALVULA_LABELS": VALVULA_LABELS,
+        "LINEA_LABELS": LINEA_LABELS,
+    },
+)
 
 
 def _prepare_report(report: dict[str, Any], images: list[dict[str, str]] | None = None) -> dict[str, Any]:

@@ -4,13 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-
 from backend.core.fichas_tecnicas.models import FichaTecnica, template_placeholder_ficha
+from backend.core.jinja_environment import make_cached_jinja_environment
 from backend.utils.paths import resource_path
-
-_jinja_env: Environment | None = None
-_jinja_template_mtime: float = 0.0
 
 
 def _templates_dir() -> Path:
@@ -49,22 +45,15 @@ def _format_os_display(value: Any) -> str:
     return text.replace("-", "")
 
 
-def _environment() -> Environment:
-    global _jinja_env, _jinja_template_mtime
-    templates_dir = _templates_dir()
-    template_file = templates_dir / "ficha_tecnica.html"
-    template_mtime = template_file.stat().st_mtime if template_file.exists() else 0.0
-    if _jinja_env is None or template_mtime != _jinja_template_mtime:
-        _jinja_env = Environment(
-            loader=FileSystemLoader(str(templates_dir)),
-            autoescape=select_autoescape(("html", "xml")),
-            auto_reload=True,
-        )
-        _jinja_env.filters["format_cantidad"] = _format_cantidad
-        _jinja_env.filters["format_fecha_display"] = _format_fecha_display
-        _jinja_env.filters["format_os_display"] = _format_os_display
-        _jinja_template_mtime = template_mtime
-    return _jinja_env
+_environment = make_cached_jinja_environment(
+    _templates_dir,
+    "ficha_tecnica.html",
+    filters={
+        "format_cantidad": _format_cantidad,
+        "format_fecha_display": _format_fecha_display,
+        "format_os_display": _format_os_display,
+    },
+)
 
 
 def render_ficha_html(

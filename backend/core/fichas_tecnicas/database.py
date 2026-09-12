@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +10,7 @@ from backend.core.fichas_tecnicas.models import (
     create_empty_ficha,
     next_ficha_number,
 )
-from backend.core.json_store import JsonDocumentStore
+from backend.core.report_store import ReportStore, resolve_report_store_paths
 from backend.utils.paths import resource_path, user_data_path
 
 DEFAULT_DB_PATH = user_data_path("fichas_tecnicas.json")
@@ -31,19 +30,23 @@ def get_fichas_db(db_path: str | Path | None = None) -> FichasTecnicasDB:
     return _db_instance
 
 
-class FichasTecnicasDB(JsonDocumentStore):
+class FichasTecnicasDB(ReportStore):
     not_found_template = "Ficha no encontrada: {id}"
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        path = Path(db_path) if db_path is not None else Path(DEFAULT_DB_PATH)
-        legacy_path = (
-            _LEGACY_DB_PATH
-            if db_path is None
-            and not getattr(sys, "frozen", False)
-            and path == Path(_DEFAULT_USER_DATA_PATH)
-            else None
+        path, legacy_path = resolve_report_store_paths(
+            db_path,
+            DEFAULT_DB_PATH,
+            _DEFAULT_USER_DATA_PATH,
+            _LEGACY_DB_PATH,
         )
-        super().__init__(path, FichaTecnica.normalize, legacy_path=legacy_path)
+        super().__init__(
+            path,
+            FichaTecnica.normalize,
+            create_empty_ficha,
+            next_ficha_number,
+            legacy_path=legacy_path,
+        )
 
     def create(self, ficha: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
@@ -54,8 +57,7 @@ class FichasTecnicasDB(JsonDocumentStore):
                     normalized["id"] = f"FT-{n:05d}"
                 normalized["last_modified"] = datetime.now().isoformat()
             else:
-                n = next_ficha_number(list(self._items.values()))
-                normalized = create_empty_ficha(n)
+                return self.create_empty()
             return self._commit(normalized)
 
     def update(self, ficha_id: str, ficha: dict[str, Any]) -> dict[str, Any]:
