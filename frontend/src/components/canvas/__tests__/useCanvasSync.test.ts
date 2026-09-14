@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { useRef } from 'react';
-import type { SyncConflict } from '../sync/canvasCloudSync';
+import type { SyncConflict, SyncResult } from '../sync/canvasCloudSync';
 import { useCanvasSync } from '../hooks/useCanvasSync';
 import { createEmptyDocument } from '../types';
 import { api } from '../../../api';
@@ -681,5 +681,192 @@ describe('useCanvasSync conflict handling', () => {
     });
 
     expect(pullCanvasDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a reloadOpenId meant for a doc that was switched mid-sync', async () => {
+    const docA = createEmptyDocument('Local A');
+    docA.id = 'doc-a';
+    const docB = createEmptyDocument('Local B');
+    docB.id = 'doc-b';
+    const historyDocRef = { current: docA };
+    const openDirtyRef = { current: false };
+    const replaceDocument = vi.fn();
+
+    syncCanvasDocuments.mockImplementation(async () => {
+      historyDocRef.current = docB;
+      return {
+        pulled: 1,
+        pushed: 0,
+        deletedLocal: 0,
+        skipped: false,
+        pushErrors: 0,
+        reloadOpenId: 'doc-a',
+      };
+    });
+
+    const { result } = renderHook(() => useCanvasSync({
+      historyDocRef,
+      openDirtyRef,
+      refreshList: vi.fn().mockResolvedValue(undefined),
+      replaceDocument,
+    }));
+
+    await act(async () => {
+      await result.current.runCloudSync();
+    });
+
+    expect(replaceDocument).not.toHaveBeenCalled();
+    expect(api.canvasGet).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(result.current.syncing).toBe(false);
+    });
+  });
+
+  it('drops a sync conflict meant for a doc that was switched mid-sync', async () => {
+    const docA = createEmptyDocument('Local A');
+    docA.id = 'doc-a';
+    docA.updatedAt = '2026-07-31T10:00:00.000Z';
+    const docB = createEmptyDocument('Local B');
+    docB.id = 'doc-b';
+    const remoteA = { ...docA, name: 'Remote A', updatedAt: '2026-07-31T11:00:00.000Z' };
+    const historyDocRef = { current: docA };
+    const openDirtyRef = { current: true };
+    const replaceDocument = vi.fn();
+    const onConflict = vi.fn();
+
+    let resolveSync!: (value: SyncResult) => void;
+    syncCanvasDocuments.mockImplementation(
+      () => new Promise<SyncResult>((resolve) => { resolveSync = resolve; }),
+    );
+
+    const { result } = renderHook(() => useCanvasSync({
+      historyDocRef,
+      openDirtyRef,
+      refreshList: vi.fn().mockResolvedValue(undefined),
+      replaceDocument,
+      onConflict,
+    }));
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.runCloudSync();
+    });
+    historyDocRef.current = docB;
+    await act(async () => {
+      resolveSync({
+        pulled: 0,
+        pushed: 0,
+        deletedLocal: 0,
+        skipped: false,
+        pushErrors: 0,
+        conflict: {
+          localDoc: docA,
+          remoteDoc: remoteA,
+          localUpdatedAt: docA.updatedAt,
+          remoteUpdatedAt: remoteA.updatedAt,
+        },
+      });
+      await pending;
+    });
+
+    expect(onConflict).not.toHaveBeenCalled();
+    expect(replaceDocument).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(result.current.syncing).toBe(false);
+    });
+  });
+
+  it('delivers a sync conflict while the owning document is still open', async () => {
+    const docA = createEmptyDocument('Local A');
+    docA.id = 'doc-a';
+    docA.updatedAt = '2026-07-31T10:00:00.000Z';
+    const remoteA = { ...docA, name: 'Remote A', updatedAt: '2026-07-31T11:00:00.000Z' };
+    const historyDocRef = { current: docA };
+    const openDirtyRef = { current: true };
+    const onConflict = vi.fn();
+
+    syncCanvasDocuments.mockResolvedValue({
+      pulled: 0,
+      pushed: 0,
+      deletedLocal: 0,
+      skipped: false,
+      pushErrors: 0,
+      conflict: {
+        localDoc: docA,
+        remoteDoc: remoteA,
+        localUpdatedAt: docA.updatedAt,
+        remoteUpdatedAt: remoteA.updatedAt,
+      },
+    });
+
+    const { result } = renderHook(() => useCanvasSync({
+      historyDocRef,
+      openDirtyRef,
+      refreshList: vi.fn().mockResolvedValue(undefined),
+      replaceDocument: vi.fn(),
+      onConflict,
+    }));
+
+    await act(async () => {
+      await result.current.runCloudSync();
+    });
+
+    expect(onConflict).toHaveBeenCalledWith(
+      expect.objectContaining({ localDoc: docA, remoteDoc: remoteA }),
+    );
+  });
+
+  it('surfaces conflict when the doc dirties while the remote snapshot loads', async () => {
+    const localDoc = createEmptyDocument('Local');
+    localDoc.id = 'doc-1';
+    localDoc.updatedAt = '2026-07-31T10:00:00.000Z';
+    const remoteDoc = { ...localDoc, name: 'Remote', updatedAt: '2026-07-31T11:00:00.000Z' };
+    const historyDocRef = { current: localDoc };
+    const openDirtyRef = { current: false };
+    const replaceDocument = vi.fn();
+    const onConflict = vi.fn();
+
+    syncCanvasDocuments.mockResolvedValue({
+      pulled: 1,
+      pushed: 0,
+      deletedLocal: 0,
+      skipped: false,
+      pushErrors: 0,
+      reloadOpenId: 'doc-1',
+    });
+    let resolveGet!: (value: unknown) => void;
+    vi.mocked(api.canvasGet).mockImplementation(
+      () => new Promise((resolve) => { resolveGet = resolve; }),
+    );
+
+    const { result } = renderHook(() => useCanvasSync({
+      historyDocRef,
+      openDirtyRef,
+      refreshList: vi.fn().mockResolvedValue(undefined),
+      replaceDocument,
+      onConflict,
+    }));
+
+    let syncDone: Promise<void> | undefined;
+    act(() => {
+      syncDone = result.current.runCloudSync();
+    });
+    await act(async () => Promise.resolve());
+
+    act(() => {
+      openDirtyRef.current = true;
+    });
+    await act(async () => {
+      resolveGet({ document: remoteDoc });
+      await syncDone;
+    });
+
+    expect(replaceDocument).not.toHaveBeenCalled();
+    expect(onConflict).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localDoc,
+        remoteDoc: expect.objectContaining({ name: 'Remote' }),
+      }),
+    );
   });
 });

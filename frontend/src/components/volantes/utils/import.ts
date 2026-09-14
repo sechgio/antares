@@ -103,14 +103,8 @@ const appendRecordsFromRows = (
 
 export const importSpreadsheet = async (file: File): Promise<ImportResult> => {
   const { api } = await import("../../../api");
-  const { stageFileForIpc } = await import("../../../utils/stageFile");
-  const ext = file.name.toLowerCase().split('.').pop() || '';
-  const formatHint = ['xlsx','xls','csv'].includes(ext) ? ext : undefined;
-  const fileToken = await stageFileForIpc(file);
-  const res = await api.spreadsheetParse(
-    { file_token: fileToken, format_hint: formatHint },
-    { hydrate: false },
-  );
+  const { stageAndParseSpreadsheet } = await import("../../../utils/spreadsheet");
+  const res = await stageAndParseSpreadsheet(file, { hydrate: false });
   const warnings: string[] = [...(res.warnings||[])];
   const records: FlyerRecord[] = [];
   const resultToken = res.result_file_token;

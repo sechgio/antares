@@ -10,6 +10,8 @@ import re
 import shutil
 import threading
 import uuid
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -153,9 +155,15 @@ def _extract_doc_meta(path: Path) -> tuple[str, str, str] | None:
                 return _meta_from_dict(raw)
 
         return str(doc_name), str(updated_at), str(inner_id)
-    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as exc:
         logger.warning("Skipping unreadable canvas document %s: %s", path, exc)
         return None
+
+
+@dataclass
+class _DocumentLockEntry:
+    lock: threading.RLock = field(default_factory=threading.RLock)
+    users: int = 0
 
 
 class CanvasStore:
@@ -168,7 +176,7 @@ class CanvasStore:
         using_default = docs_dir is None
         self.docs_dir = Path(docs_dir) if docs_dir is not None else _default_docs_dir()
         self.history_dir = (self.docs_dir.parent / "history") if using_default else (self.docs_dir / "history")
-        self._doc_locks: dict[str, threading.RLock] = {}
+        self._doc_locks: dict[str, _DocumentLockEntry] = {}
         self._doc_locks_guard = threading.Lock()
         self._index_lock = threading.RLock()
         self.docs_dir.mkdir(parents=True, exist_ok=True)
@@ -196,14 +204,27 @@ class CanvasStore:
             raise ValueError(f"Invalid document id: {doc_id}")
         return safe
 
-    def _doc_lock(self, doc_id: str) -> threading.RLock:
+    @contextlib.contextmanager
+    def _doc_lock(self, doc_id: str) -> Iterator[None]:
         stem = self._safe_stem(doc_id)
         with self._doc_locks_guard:
-            lock = self._doc_locks.get(stem)
-            if lock is None:
-                lock = threading.RLock()
-                self._doc_locks[stem] = lock
-            return lock
+            entry = self._doc_locks.get(stem)
+            if entry is None:
+                entry = _DocumentLockEntry()
+                self._doc_locks[stem] = entry
+            entry.users += 1
+        acquired = False
+        try:
+            entry.lock.acquire()
+            acquired = True
+            yield
+        finally:
+            if acquired:
+                entry.lock.release()
+            with self._doc_locks_guard:
+                entry.users -= 1
+                if entry.users == 0 and self._doc_locks.get(stem) is entry:
+                    self._doc_locks.pop(stem)
 
     def _path_for(self, doc_id: str) -> Path:
         return self.docs_dir / f"{self._safe_stem(doc_id)}.json"
@@ -448,19 +469,10 @@ class CanvasStore:
                     spill_path.unlink()
             self._history_digests.pop(str(doc_id), None)
             if not path.exists():
-                self._evict_doc_lock(safe_id)
                 return False
             path.unlink()
             self._drop_index_entry(path.stem)
-            self._evict_doc_lock(safe_id)
             return True
-
-    def _evict_doc_lock(self, stem: str) -> None:
-        # Caller holds the doc lock. A thread already waiting on the same lock
-        # object still proceeds with it; removing the dict entry bounds the map
-        # to live documents while future callers get a fresh lock.
-        with self._doc_locks_guard:
-            self._doc_locks.pop(stem, None)
 
     def _refresh_index_entry(self, doc: dict[str, Any], path: Path) -> None:  # allowlist: dict[str, Any]
         with self._index_lock:

@@ -1,4 +1,4 @@
-import { matchesRecordId, naturalSortByName } from './utils';
+import { matchesRecordId, naturalSortFilesByName } from '../../utils/recordMatching';
 import { sanitizeHtmlForPdf } from '../../../../shared/html-sanitizer.js';
 export {
   buildLocalImageToken,
@@ -57,7 +57,7 @@ export function selectRowsForPdfExport({
     if (!requiresImages || !idColumn) return [];
     const idValue = String(row[idColumn] ?? '');
     if (!idValue) return [];
-    return images.filter(img => matchesRecordId(img.name, idValue)).sort(naturalSortByName);
+    return images.filter(img => matchesRecordId(img.name, idValue)).sort(naturalSortFilesByName);
   };
   const rowIdValue = (row: Record<string, unknown>, rowIndex: number): string =>
     idColumn ? String(row[idColumn] ?? rowIndex + 1) : String(rowIndex + 1);

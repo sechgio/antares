@@ -39,6 +39,7 @@ import {
 } from './utils';
 import { createStoredZipBlob } from './zip';
 import { saveFeatureHistory } from '../../utils/history';
+import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import { api } from '../../api';
 
 export default function ImageOptimizer() {
@@ -55,38 +56,27 @@ export default function ImageOptimizer() {
   const [processingMessage, setProcessingMessage] = useState('');
   const [cropEditorItemId, setCropEditorItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'single'>('grid');
-  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
-  const [downloadMenuPosition, setDownloadMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const downloadMenuAnchorRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<ImageItem[]>([]);
   const settingsRef = useRef<BatchSettings>(settings);
   const saveCancelledRef = useRef(false);
   const processingAbortRef = useRef<AbortController | null>(null);
 
-  const updateDownloadMenuPosition = useCallback(() => {
-    const anchor = downloadMenuAnchorRef.current;
-    if (!anchor) return;
-    const rect = anchor.getBoundingClientRect();
-    setDownloadMenuPosition({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-  }, []);
-
-  const closeDownloadMenu = useCallback(() => {
-    setDownloadMenuOpen(false);
-    setDownloadMenuPosition(null);
-  }, []);
-
-  const toggleDownloadMenu = useCallback(() => {
-    setDownloadMenuOpen((open) => {
-      if (open) {
-        setDownloadMenuPosition(null);
-        return false;
-      }
-      updateDownloadMenuPosition();
-      return true;
-    });
-  }, [updateDownloadMenuPosition]);
+  const {
+    isOpen: downloadMenuOpen,
+    position: downloadMenuPosition,
+    triggerRef: downloadMenuAnchorRef,
+    popupRef: downloadMenuRef,
+    close: closeDownloadMenu,
+    toggle: toggleDownloadMenu,
+  } = useAnchoredPopover<HTMLDivElement>({
+    estimatedHeight: 120,
+    estimatedWidth: 208,
+    align: 'end',
+    direction: 'down',
+    gap: 4,
+  });
 
   useEffect(() => {
     itemsRef.current = items;
@@ -99,22 +89,6 @@ export default function ImageOptimizer() {
   useEffect(() => {
     if (isProcessing) closeDownloadMenu();
   }, [closeDownloadMenu, isProcessing]);
-
-  useEffect(() => {
-    if (!downloadMenuOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeDownloadMenu();
-    };
-    const handleReposition = () => updateDownloadMenuPosition();
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('resize', handleReposition);
-    window.addEventListener('scroll', handleReposition, true);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('resize', handleReposition);
-      window.removeEventListener('scroll', handleReposition, true);
-    };
-  }, [closeDownloadMenu, downloadMenuOpen, updateDownloadMenuPosition]);
 
   useEffect(() => {
     return () => {
@@ -779,11 +753,10 @@ export default function ImageOptimizer() {
                   )}
                 </div>
                 {downloadMenuOpen && downloadMenuPosition && createPortal(
-                  <>
-                    <div className="fixed inset-0 z-[120]" onClick={closeDownloadMenu} aria-hidden="true" />
                     <div
+                      ref={downloadMenuRef}
                       role="menu"
-                      style={{ top: downloadMenuPosition.top, right: downloadMenuPosition.right }}
+                      style={{ top: downloadMenuPosition.top, left: downloadMenuPosition.left }}
                       className="fixed z-[130] w-52 overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-0.5 shadow-lg"
                     >
                       {downloadableItems.length > 1 && (
@@ -808,8 +781,7 @@ export default function ImageOptimizer() {
                         {t('optimizer.actions.downloadIndividual')}
                         <span className="ml-auto font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{downloadableItems.length}</span>
                       </button>
-                    </div>
-                  </>,
+                    </div>,
                   document.body,
                 )}
                 <button

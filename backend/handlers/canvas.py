@@ -171,6 +171,17 @@ def canvas_get(params: dict[str, Any]) -> dict[str, Any]:
     return {"document": document}
 
 
+def _document_meta(document: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": document.get("id"),
+        "name": document.get("name"),
+        "updatedAt": document.get("updatedAt"),
+        "version": document.get("version"),
+        "page": document.get("page"),
+        "pages": document.get("pages"),
+    }
+
+
 @with_locale
 @validate_params("document")
 def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
@@ -190,6 +201,10 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
             details = {"limit_bytes": MAX_CANVAS_DOCUMENT_BYTES}
         raise ValidationError(str(exc), details=details) from exc
     _cleanup_spill(str(document.get("id") or "unknown"))
+    if params.get("slim"):
+        # Avoid echoing a multi-MB document back over IPC; the caller already
+        # holds the serialized document and only needs backend-stamped meta.
+        return {"document": _document_meta(saved), "slim": True}
     return {"document": saved}
 
 @with_locale
@@ -232,7 +247,7 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     import uuid
 
     from backend.core.canvas.models import normalize_document
-    from backend.core.cmyk_pdf import CanvasCmykRenderer
+    from backend.core.cmyk_pdf.renderer import CanvasCmykRenderer
     from backend.utils.paths import user_data_path
 
     document = normalize_document(params["document"])
@@ -246,6 +261,11 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Demasiadas páginas a exportar (máx 200)")
     if isinstance(params.get("localImagePaths"), dict) and len(params["localImagePaths"]) > 64:
         raise ValueError("Demasiadas imágenes locales (máx 64)")
+    if isinstance(params.get("localImagePaths"), dict) and not all(
+        isinstance(k, str) and isinstance(v, str) and v
+        for k, v in params["localImagePaths"].items()
+    ):
+        raise ValueError("localImagePaths debe ser un mapa de token a ruta")
     color_profile = str(params.get("color_profile") or "cmyk_iso_coated_v2")
     dpi = int(params.get("dpi") or 300)
     bleed_mm = float(params.get("bleed_mm") or 0.0)
@@ -272,7 +292,12 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
 
     if output_path:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
-        with atomic_output_file(resolved, extension=".pdf", overwrite=True) as target:
+        with atomic_output_file(
+            resolved,
+            extension=".pdf",
+            overwrite=True,
+            write_token=params.get("_write_token"),
+        ) as target:
             target.tmp_path.write_bytes(pdf_bytes)
         out = target.destination
         return {

@@ -1,6 +1,5 @@
 import type { CanvasDocument } from '../types';
 import type { FillContext } from './renderHtml';
-import { renderMultiPageHtml } from './planning';
 import { templateImagesPerPage } from '../ops/pages';
 
 const SAMPLE_BY_KEY: Record<string, string> = {
@@ -109,9 +108,4 @@ export function buildDemoFillContext(doc: CanvasDocument): FillContext {
     logoRight: hasRightLogo ? placeholderImageDataUrl(1, 'Logo R') : null,
     imageMeta,
   };
-}
-
-export function renderDemoPreviewHtml(doc: CanvasDocument): string {
-  const ctx = buildDemoFillContext(doc);
-  return renderMultiPageHtml(doc, ctx, { forScreen: true });
 }

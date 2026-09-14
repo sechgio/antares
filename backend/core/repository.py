@@ -141,21 +141,13 @@ def get_read_connection(db_path: Path) -> sqlite3.Connection:
                 )
                 _apply_pragmas(_db_read_conn)
                 _db_read_conn_path = current_path
-            except sqlite3.Error:
-                logger.debug("Read-only connect failed; retrying with rw handle", exc_info=True)
-                try:
-                    _db_read_conn = sqlite3.connect(
-                        current_path,
-                        check_same_thread=False,
-                        isolation_level=None,
-                        timeout=30.0,
-                    )
-                    _apply_pragmas(_db_read_conn)
-                    _db_read_conn_path = current_path
-                except sqlite3.Error:
-                    _db_read_conn = None
-                    _db_read_conn_path = None
-                    raise
+            except sqlite3.Error as exc:
+                _db_read_conn = None
+                _db_read_conn_path = None
+                logger.error("Read-only connect failed for %s: %s", current_path, exc)
+                raise sqlite3.OperationalError(
+                    f"No se pudo abrir la base en modo solo-lectura: {exc}"
+                ) from exc
         return _db_read_conn
 
 

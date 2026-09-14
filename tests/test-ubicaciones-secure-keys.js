@@ -76,7 +76,12 @@ function main() {
     ubicacionesKeys.setUbicacionesApiKeys({});
     try {
       for (let i = 0; i < 40; i++) {
-        ubicacionesKeys.resolveProviderApiKey('google', `fallback-${i}`);
+        const resolved = ubicacionesKeys.resolveProviderApiKey('google', `fallback-${i}`);
+        if (resolved !== '') {
+          console.error(`[FAIL] renderer-supplied fallback key was honored: ${resolved}`);
+          failed = true;
+          break;
+        }
       }
       const size = ubicacionesKeys.__resolveCacheSizeForTests();
       if (size > 32) {

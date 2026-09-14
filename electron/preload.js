@@ -105,9 +105,7 @@ try {
         return '';
       }
     },
-    registerFileInputPath,
     canvasFlushAck: () => ipcRenderer.invoke('canvas-flush-ack'),
-    registerLocalPath: (filePath) => ipcRenderer.invoke('ipc-call', 'register_local_path', { path: filePath }),
     fileStagedCreate: (name, size) => ipcRenderer.invoke('ipc-call', 'file_staged_create', { name, size }),
     fileStagedAppend: (token, chunk) => {
       if (typeof chunk === 'string') {

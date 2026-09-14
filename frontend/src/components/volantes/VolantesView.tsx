@@ -6,7 +6,7 @@ import type { ChangeEvent, DragEvent } from "react";
 import SheetPreview from "./components/SheetPreview";
 import FloatingSizePanel from "./components/FloatingSizePanel";
 import FloatingRecordsPanel from "./components/FloatingRecordsPanel";
-import DatePicker from "./components/DatePicker";
+import DatePicker from "@/components/ui/DatePicker";
 import TimePicker from "./components/TimePicker";
 import TutorialOverlay from "./components/TutorialOverlay";
 import type {
@@ -858,6 +858,9 @@ export default function VolantesView() {
                         onChange={(value) =>
                           updateSelectedRecord({ fecha: value })
                         }
+                        className="vgen-date-picker"
+                        size="sm"
+                        clearable={false}
                       />
                       <TimePicker
                         label="Inicio"

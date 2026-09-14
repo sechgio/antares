@@ -2035,81 +2035,47 @@ textarea.vgen-input {
     animation: vgen-fab-check-in 0.2s ease;
 }
 
+/* Skin del primitivo compartido app-date-picker para la superficie volantes. */
 .vgen-date-picker {
     width: 100%;
     position: relative;
 }
 
-.vgen-date-picker-trigger {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    min-width: 0;
-    padding: 6px 8px;
-    border: 1px solid transparent;
-    border-radius: var(--vgen-radius-control);
-    background: var(--vgen-bg-input);
-    cursor: pointer;
-    transition:
-        background-color 160ms ease,
-        border-color 160ms ease,
-        box-shadow 160ms ease,
-        transform 100ms ease-out;
-    font-size: 0.72rem;
-    color: var(--vgen-ink);
-    font-family: inherit;
-    text-align: left;
+.vgen-date-picker .app-date-picker-label {
+    margin-bottom: 3px;
+    font-size: 0.65rem;
+    color: var(--vgen-ink-soft);
 }
 
-.vgen-date-picker-trigger:hover {
+.vgen-date-picker .app-date-picker-trigger {
+    gap: 6px;
+    padding: 6px 8px;
+    border-color: transparent;
+    border-radius: var(--vgen-radius-control);
+    background: var(--vgen-bg-input);
+    font-size: 0.72rem;
+    color: var(--vgen-ink);
+}
+
+.vgen-date-picker .app-date-picker-trigger:hover:not(:disabled) {
+    border-color: transparent;
     background: color-mix(in srgb, var(--vgen-bg-input) 88%, var(--vgen-ink) 12%);
 }
 
-.vgen-date-picker-trigger:active {
-    transform: scale(0.985);
-}
-
-.vgen-date-picker-trigger.is-open {
+.vgen-date-picker .app-date-picker-trigger:focus-visible,
+.vgen-date-picker .app-date-picker-trigger.is-open {
     border-color: color-mix(in srgb, var(--vgen-accent) 45%, transparent);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--vgen-accent) 14%, transparent);
     background: var(--vgen-bg-panel);
 }
 
-.vgen-date-picker-trigger-icon {
+.vgen-date-picker .app-date-picker-trigger-icon {
     color: var(--vgen-ink-soft);
-    flex-shrink: 0;
 }
 
-.vgen-date-picker-trigger-value {
-    flex: 1;
-    min-width: 0;
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.vgen-date-picker-popup {
-    position: fixed;
-    z-index: 10050;
-    width: 260px;
-    background: color-mix(in srgb, var(--vgen-bg-panel) 92%, transparent);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid color-mix(in srgb, var(--vgen-line) 70%, transparent);
-    border-radius: 14px;
-    box-shadow: var(--vgen-shadow-float);
-    padding: 10px;
-    animation: vgen-popup-in 0.18s ease;
-}
-
-@media (prefers-reduced-transparency: reduce) {
-    .vgen-date-picker-popup {
-        background: var(--vgen-bg-panel);
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
-    }
+.vgen-date-picker .app-date-picker-trigger.is-open .app-date-picker-trigger-icon,
+.vgen-date-picker .app-date-picker-trigger:hover:not(:disabled) .app-date-picker-trigger-icon {
+    color: var(--vgen-accent);
 }
 
 @keyframes vgen-popup-in {
@@ -2121,127 +2087,6 @@ textarea.vgen-input {
         opacity: 1;
         transform: none;
     }
-}
-
-.vgen-date-picker-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-}
-
-.vgen-date-picker-nav {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--vgen-line);
-    border-radius: 8px;
-    background: var(--vgen-bg-canvas);
-    color: var(--vgen-ink-soft);
-    cursor: pointer;
-    transition: all 0.2s;
-    padding: 0;
-}
-
-.vgen-date-picker-nav:hover {
-    background: var(--vgen-bg-panel);
-    border-color: var(--vgen-accent);
-    color: var(--vgen-accent);
-}
-
-.vgen-date-picker-month {
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--vgen-ink);
-    text-transform: capitalize;
-}
-
-.vgen-date-picker-weekdays {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
-    margin-bottom: 8px;
-}
-
-.vgen-date-picker-weekday {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--vgen-ink-soft);
-    text-align: center;
-    padding: 6px 0;
-    text-transform: uppercase;
-}
-
-.vgen-date-picker-days {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
-}
-
-.vgen-date-picker-day {
-    aspect-ratio: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    background: transparent;
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: var(--vgen-ink);
-    cursor: pointer;
-    transition: all 0.15s;
-    padding: 0;
-    font-family: inherit;
-}
-
-.vgen-date-picker-day.empty {
-    cursor: default;
-    pointer-events: none;
-}
-
-.vgen-date-picker-day:hover:not(.empty):not(.selected) {
-    background: var(--vgen-bg-canvas);
-    border-color: var(--vgen-line);
-}
-
-.vgen-date-picker-day.selected {
-    background: var(--vgen-accent);
-    color: var(--vgen-on-accent);
-    border-color: var(--vgen-accent);
-    font-weight: 600;
-}
-
-.vgen-date-picker-day.today:not(.selected) {
-    border-color: var(--vgen-accent);
-    font-weight: 600;
-}
-
-.vgen-date-picker-today {
-    width: 100%;
-    margin-top: 8px;
-    padding: 7px 10px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--vgen-accent);
-    cursor: pointer;
-    transition:
-        background-color 140ms ease,
-        transform 100ms ease-out;
-    font-family: inherit;
-}
-
-.vgen-date-picker-today:hover {
-    background: color-mix(in srgb, var(--vgen-accent) 10%, transparent);
-}
-
-.vgen-date-picker-today:active {
-    transform: scale(0.97);
 }
 
 .vgen-time-picker {
@@ -2475,7 +2320,6 @@ textarea.vgen-input {
 
     .v-btn:active,
     .v-upload-box:active,
-    .vgen-date-picker-trigger:active,
     .vgen-time-picker-trigger:active {
         transform: none;
     }

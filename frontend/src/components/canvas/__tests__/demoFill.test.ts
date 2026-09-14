@@ -5,9 +5,9 @@ import {
   buildDemoFillContext,
   collectDemoFieldKeys,
   placeholderImageDataUrl,
-  renderDemoPreviewHtml,
   sampleValueForKey,
 } from '../runtime/demoFill';
+import { renderMultiPageHtml } from '../runtime/planning';
 import { createEmptyDocument, mm, newId } from '../types';
 
 describe('demoFill', () => {
@@ -65,7 +65,7 @@ describe('demoFill', () => {
     expect(collectDemoFieldKeys(doc).sort()).toEqual(['FIRMA', 'NIS'].sort());
   });
 
-  it('renderDemoPreviewHtml embeds sample field values', () => {
+  it('the production renderer embeds demo field values', () => {
     const doc = createEmptyDocument('Demo');
     doc.layers.push({
       ...createLayer('field'),
@@ -78,11 +78,11 @@ describe('demoFill', () => {
         '--translate-y': '10mm',
       },
     });
-    const html = renderDemoPreviewHtml(doc);
+    const html = renderMultiPageHtml(doc, buildDemoFillContext(doc), { forScreen: true });
     expect(html).toContain('45871203');
   });
 
-  it('renderDemoPreviewHtml keeps design pages separate (no layer stacking)', () => {
+  it('the production renderer keeps demo design pages separate (no layer stacking)', () => {
     let doc = createEmptyDocument('Multi');
     doc.layers.push({
       id: 'p0-text',
@@ -114,7 +114,7 @@ describe('demoFill', () => {
       },
     });
 
-    const html = renderDemoPreviewHtml(doc);
+    const html = renderMultiPageHtml(doc, buildDemoFillContext(doc), { forScreen: true });
     expect(html.match(/class="page"/g)?.length).toBe(2);
     expect(html).toContain('px');
     expect(html).not.toMatch(/left:\d+(\.\d+)?mm/);

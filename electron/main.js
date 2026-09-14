@@ -15,7 +15,16 @@ const {
 installConsoleLogTee();
 
 process.on('unhandledRejection', (reason) => {
-  console.warn('[main] Unhandled rejection caught:', reason instanceof Error ? reason.message : reason);
+  const message = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
+  console.warn('[main] Unhandled rejection caught:', message);
+  try {
+    appendLogEvent('ERROR', 'app.unhandled_rejection', {
+      component: 'electron',
+      outcome: 'failed',
+      reason: reason instanceof Error && reason.name ? reason.name : 'unhandled_rejection',
+      message,
+    });
+  } catch {}
 });
 
 // appendFileSync deja el JSONL en disco antes de exit(1).
@@ -75,7 +84,8 @@ app.whenReady().then(async () => {
   startPythonBackend(isDev).catch((err) => {
     console.error('[main] startPythonBackend threw:', err);
   });
-  setTimeout(runCanvasAssetGc, CANVAS_ASSET_GC_INITIAL_DELAY_MS);
+  const canvasAssetGcInitialTimer = setTimeout(runCanvasAssetGc, CANVAS_ASSET_GC_INITIAL_DELAY_MS);
+  canvasAssetGcInitialTimer.unref?.();
   const canvasAssetGcTimer = setInterval(runCanvasAssetGc, CANVAS_ASSET_GC_INTERVAL_MS);
   canvasAssetGcTimer.unref?.();
   try {
@@ -156,7 +166,8 @@ if (typeof ipcMain.on === 'function') {
       if (!isTrustedRendererFrame(event, win, isDev)) return;
       const { registerFileInputPath } = require('./dialog-handlers');
       registerFileInputPath(rawPath);
-    } catch {
+    } catch (err) {
+      console.warn('[main] register-file-input-path failed:', err && err.message);
     }
   });
 }

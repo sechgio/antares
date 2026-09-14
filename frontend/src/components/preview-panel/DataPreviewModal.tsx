@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { buildImagesByRecordId, normalizeRecordId } from '../canvas/runtime/excel';
+import { buildImagesByRecordId, normalizeRecordId } from '../../utils/recordMatching';
 
 export interface DataPreviewModalProps {
   open: boolean;

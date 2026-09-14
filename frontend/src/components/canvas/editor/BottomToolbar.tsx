@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowUpRight,
@@ -28,6 +28,7 @@ import {
   Type,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import { useAnchoredPopover, type PopoverPosition } from '@/hooks/useAnchoredPopover';
 import type { CanvasToolbarPosition } from '../ops/panelChrome';
 import { isShapeTool, type ShapeTool } from '../ops/shapePaths';
 import type { CanvasTool } from '../types';
@@ -104,66 +105,40 @@ const MENU_WIDTH = 220;
 const MORE_MENU_WIDTH = 236;
 const MENU_GAP = 8;
 
-type MenuCoords = { left: number; top: number };
-
 function isMenuItemChecked(id: ShapeTool | 'image', tool: CanvasTool, lastShapeTool: ShapeTool): boolean {
   if (id === 'image') return tool === 'image';
   return isShapeTool(tool) ? tool === id : lastShapeTool === id;
 }
 
-function menuPosition(trigger: DOMRect, width: number, position: CanvasToolbarPosition): MenuCoords {
+function menuPosition(trigger: DOMRect, width: number, position: CanvasToolbarPosition): PopoverPosition {
   const left = Math.min(Math.max(width / 2 + 8, trigger.left + trigger.width / 2), window.innerWidth - width / 2 - 8);
   const top =
     position === 'bottom'
       ? Math.max(8, trigger.top - MENU_GAP)
       : Math.min(trigger.bottom + MENU_GAP, window.innerHeight - 8);
-  return { left, top };
+  return { left, top, width };
 }
 
 function ShapeToolMenu({ tool, onTool, position = 'top' }: BottomToolbarProps) {
   const [lastShapeTool, setLastShapeTool] = useState<ShapeTool>('rect');
-  const [menu, setMenu] = useState<MenuCoords | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
-  const open = menu != null;
+
+  const positioner = useCallback(
+    (rect: DOMRect) => menuPosition(rect, MENU_WIDTH, position),
+    [position],
+  );
+  const {
+    isOpen: open,
+    position: menu,
+    triggerRef: rootRef,
+    popupRef: menuRef,
+    close: closeMenu,
+    toggle: toggleMenu,
+  } = useAnchoredPopover<HTMLDivElement>({ positioner });
 
   useEffect(() => {
     if (isShapeTool(tool)) setLastShapeTool(tool);
   }, [tool]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null);
-    };
-
-    let onPointer: ((e: MouseEvent) => void) | null = null;
-    const onLayout = () => {
-      const el = rootRef.current;
-      if (el) setMenu(menuPosition(el.getBoundingClientRect(), MENU_WIDTH, position));
-    };
-    const timer = window.setTimeout(() => {
-      onPointer = (e: MouseEvent) => {
-        const target = e.target as Node;
-        if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
-        setMenu(null);
-      };
-      window.addEventListener('mousedown', onPointer);
-    }, 0);
-
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-      if (onPointer) window.removeEventListener('mousedown', onPointer);
-    };
-  }, [open, position]);
 
   const currentShapeId: ShapeTool | 'image' = tool === 'image' ? 'image' : isShapeTool(tool) ? tool : lastShapeTool;
   const currentShape = SHAPE_MENU_ITEMS.find((item) => item.id === currentShapeId) ?? SHAPE_MENU_ITEMS[0];
@@ -171,18 +146,6 @@ function ShapeToolMenu({ tool, onTool, position = 'top' }: BottomToolbarProps) {
   const shapeActive = isShapeTool(tool) || tool === 'image';
   const lastLabel = currentShape.title;
   const lastTip = currentShape.tip || undefined;
-
-  const closeMenu = () => setMenu(null);
-
-  const toggleMenu = () => {
-    if (open) {
-      closeMenu();
-      return;
-    }
-    const el = rootRef.current;
-    if (!el) return;
-    setMenu(menuPosition(el.getBoundingClientRect(), MENU_WIDTH, position));
-  };
 
   const selectTool = (id: ShapeTool | 'image') => {
     if (isShapeTool(id)) setLastShapeTool(id);
@@ -299,64 +262,30 @@ function MoreToolMenu({
   position = 'top',
   onPositionChange,
 }: BottomToolbarProps) {
-  const [menu, setMenu] = useState<MenuCoords | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
-  const open = menu != null;
   const active = isMoreTool(tool);
 
-  useEffect(() => {
-    if (!open) return;
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null);
-    };
-
-    let onPointer: ((e: MouseEvent) => void) | null = null;
-    const onLayout = () => {
-      const el = rootRef.current;
-      if (el) setMenu(menuPosition(el.getBoundingClientRect(), MORE_MENU_WIDTH, position));
-    };
-    const timer = window.setTimeout(() => {
-      onPointer = (e: MouseEvent) => {
-        const target = e.target as Node;
-        if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
-        setMenu(null);
-      };
-      window.addEventListener('mousedown', onPointer);
-    }, 0);
-
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-      if (onPointer) window.removeEventListener('mousedown', onPointer);
-    };
-  }, [open, position]);
-
-  const toggleMenu = () => {
-    if (open) {
-      setMenu(null);
-      return;
-    }
-    const el = rootRef.current;
-    if (!el) return;
-    setMenu(menuPosition(el.getBoundingClientRect(), MORE_MENU_WIDTH, position));
-  };
+  const positioner = useCallback(
+    (rect: DOMRect) => menuPosition(rect, MORE_MENU_WIDTH, position),
+    [position],
+  );
+  const {
+    isOpen: open,
+    position: menu,
+    triggerRef: rootRef,
+    popupRef: menuRef,
+    close,
+    toggle: toggleMenu,
+  } = useAnchoredPopover<HTMLDivElement>({ positioner });
 
   const selectTool = (id: CanvasTool) => {
     onTool(id);
-    setMenu(null);
+    close();
   };
 
   const selectPosition = (next: CanvasToolbarPosition) => {
     onPositionChange?.(next);
-    setMenu(null);
+    close();
   };
 
   return (

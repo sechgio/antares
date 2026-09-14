@@ -74,6 +74,33 @@ def test_path_traversal_dict_value() -> None:
     assert validate_params({"image_paths": {"logo": None}}), "None dict entries must pass"
 
 
+def test_send_response_sanitizes_nonfinite_floats(monkeypatch) -> None:
+    stdout = _BinaryStdout()
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    ipc_protocol.send_response(
+        {"value": float("nan"), "items": [float("inf"), 1.0, {"x": float("-inf")}]},
+        "req-nan",
+    )
+
+    line = stdout.buffer.getvalue().decode("utf-8").strip()
+    msg = json.loads(line)
+    assert msg["id"] == "req-nan"
+    assert msg["result"] == {"value": None, "items": [None, 1.0, {"x": None}]}
+
+
+def test_send_notification_sanitizes_nonfinite_floats(monkeypatch) -> None:
+    stdout = _BinaryStdout()
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    ipc_protocol.send_notification("progress", {"pct": float("nan")})
+
+    line = stdout.buffer.getvalue().decode("utf-8").strip()
+    msg = json.loads(line)
+    assert msg["method"] == "progress"
+    assert msg["params"] == {"pct": None}
+
+
 def test_parse_errors_skip_without_orphan_response(monkeypatch) -> None:
     stdin = io.StringIO("{not-json}\n")
     stdout = io.StringIO()

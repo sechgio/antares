@@ -100,9 +100,6 @@ const lookupWithIndex = (index: MappingLookupIndex, fileName: string): string | 
   return undefined;
 };
 
-export const lookupMappingValue = (mapping: Record<string, string>, fileName: string): string | undefined =>
-  lookupWithIndex(buildMappingLookupIndex(mapping), fileName);
-
 const mappingIdMatchesFile = (idKey: string, fileName: string) => {
   const keyLower = idKey.toLowerCase();
   const stemKey = idKey.includes('.') ? idKey.slice(0, idKey.lastIndexOf('.')).toLowerCase() : idKey.toLowerCase();

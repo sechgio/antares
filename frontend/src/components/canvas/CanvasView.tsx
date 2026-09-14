@@ -37,6 +37,7 @@ import { CANVAS_SHORTCUTS } from './shortcuts';
 import {
   hydrateDocumentImages,
   serializeDocumentImages,
+  applySavedDocumentKeepingImages,
   clearBlobStore,
   collectImageRefsFromHistory,
   collectImageRefsFromLayers,
@@ -114,7 +115,11 @@ import {
   writeBoolLS,
   writeLeftPanelWidth,
 } from './ops/panelChrome';
-import { canFocusFieldBinding, canInlineEditLayer } from './ops/inlineEdit';
+import {
+  canFocusFieldBinding,
+  canInlineEditLayer,
+  type InlineEditStartOpts,
+} from './ops/inlineEdit';
 import {
   createClipboardCopyCoordinator,
   parseClipboardLayers,
@@ -274,10 +279,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const {
     editingLayerId,
     editingSelectAll,
+    editingRange,
     commitInlineEdit,
     startInlineEdit,
     onInlineEditValue,
     onFitTextHeight,
+    onInlineEditStyle,
     beginEditWithBaseline,
   } = useInlineEdit({ history, setSelectedIds, setTool, setContextMenu });
 
@@ -368,8 +375,15 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
                 ? historyDocRef.current
                 : conflict.localDoc;
             const serialized = await serializeDocumentImages(mem);
-            const res = await api.canvasSave(serialized, { touch: true });
-            const saved = normalizeDocument(res.document as CanvasDocument);
+            const res = await api.canvasSave(serialized, { touch: true, slim: true });
+            const saved = normalizeDocument({ ...serialized, ...res.document });
+            // El doc persistido lleva el updatedAt estampado por el backend:
+            // hay que adoptarlo en memoria y limpiar el dirty flag para que las
+            // comparaciones LWW posteriores no comparen contra un estado viejo.
+            if (historyDocRef.current.id === saved.id) {
+              history.updateSilent(applySavedDocumentKeepingImages(mem, saved));
+              history.markSaved();
+            }
             await queueCanvasCloudPush(saved, { forceResurrect: true });
             await refreshList();
           } catch {
@@ -392,7 +406,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       void (async () => {
         try {
           const hydrated = await hydrateDocumentImages(conflict.remoteDoc!, { strict: true });
-          await api.canvasSave(conflict.remoteDoc!, { touch: false });
+          await api.canvasSave(conflict.remoteDoc!, { touch: false, slim: true });
           history.replaceDocument(hydrated);
           handleRemoteDocumentApplied(hydrated);
           await refreshList();
@@ -510,7 +524,16 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     if (autosavePendingRef.current) return;
     const delay = autosaveDelayForDoc(history.document);
     const timer = window.setTimeout(() => flushAutosaveRef.current(), delay);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      // Un retry pendiente pertenece al documento/activo anterior: al cambiar
+      // el estado relevante el debounce de este efecto vuelve a armarse si
+      // sigue habiendo cambios sin guardar.
+      if (autosaveRetryTimerRef.current != null) {
+        window.clearTimeout(autosaveRetryTimerRef.current);
+        autosaveRetryTimerRef.current = null;
+      }
+    };
   }, [active, history.document, history.hasUnsavedEdits, history.hasUnsavedEditsRef]);
 
   useEffect(() => {
@@ -563,21 +586,18 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     sweepOrphanBlobs(live);
   }, [history.document, history.past, history.future, clipboard]);
 
-  const onBeforeUnload = useCallback(
-    (e: BeforeUnloadEvent) => {
-      if (!history.hasUnsavedEditsRef.current) return;
-      if (!autosavePendingRef.current) {
-        autosavePendingRef.current = true;
-        onSave({ silent: true }).finally(() => {
-          autosavePendingRef.current = false;
-        });
-      }
-
-      e.preventDefault();
-      e.returnValue = '';
-    },
-    [onSave],
-  );
+  const onBeforeUnload = useCallback(() => {
+    if (!history.hasUnsavedEditsRef.current) return;
+    if (!autosavePendingRef.current) {
+      autosavePendingRef.current = true;
+      onSave({ silent: true }).finally(() => {
+        autosavePendingRef.current = false;
+      });
+    }
+    // Sin preventDefault/returnValue: en Chromium es un prompt que compite con
+    // el protocolo de quit-flush (app.flush-canvas-before-quit); el save de
+    // arriba queda como respaldo best-effort.
+  }, [onSave]);
   useEffect(() => {
     if (!active) return;
     window.addEventListener('beforeunload', onBeforeUnload);
@@ -687,7 +707,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   }, [selectedIds]);
 
   const startContainerOrInlineEdit = useCallback(
-    (id: string, opts?: { seed?: string }) => {
+    (id: string, opts?: InlineEditStartOpts) => {
       const layer = history.document.layers.find((l) => l.id === id);
       if (layer && isLayerContainer(layer)) {
 
@@ -1246,6 +1266,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     commitInlineEdit,
     startInlineEdit,
     onInlineEditValue,
+    onInlineEditStyle,
     startContainerOrInlineEdit,
     runUndo,
     runRedo,
@@ -1625,6 +1646,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             tool={tool}
             editingLayerId={editingLayerId}
             editingSelectAll={editingSelectAll}
+            editingRange={editingRange}
             pathEditingLayerId={pathEditingLayerId}
             onSelect={onSelect}
             onSelectIds={handleSelectIds}
@@ -1641,6 +1663,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             onStartPathEdit={onStageStartPathEdit}
             onEditValue={onInlineEditValue}
             onFitTextHeight={onFitTextHeight}
+            onEditStyle={onInlineEditStyle}
             onCommitEdit={commitInlineEdit}
             onUpsertGuide={onStageUpsertGuide}
             onCommitGuideCreate={onStageCommitGuideCreate}

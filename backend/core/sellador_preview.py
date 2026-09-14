@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def _require_fitz():
     try:
-        import fitz
+        import pymupdf as fitz
     except ImportError as exc:
         msg = "PyMuPDF no está instalado. Ejecuta: pip install pymupdf"
         raise ValueError(msg) from exc

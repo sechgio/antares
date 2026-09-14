@@ -8,20 +8,6 @@ const jsDir = path.join(distDir, 'assets/js');
 const indexHtmlPath = path.join(distDir, 'index.html');
 
 const BUDGETS_PATH = path.resolve(__dirname, '../../shared/budgets.json');
-let FORBIDDEN_STATIC = [
-  'vendor-jspdf',
-  'vendor-dnd',
-  'vendor-pdfjs',
-  'vendor-data',
-  'vendor-fullcalendar',
-  'vendor-supabase',
-];
-let INCREMENTAL_BUDGET_KB = 500;
-try {
-  const _b = JSON.parse(fs.readFileSync(BUDGETS_PATH, 'utf8'));
-  if (Array.isArray(_b?.canvasAppear?.forbiddenStatic)) FORBIDDEN_STATIC = _b.canvasAppear.forbiddenStatic;
-  if (typeof _b?.canvasAppear?.incrementalBudgetKb === 'number') INCREMENTAL_BUDGET_KB = _b.canvasAppear.incrementalBudgetKb;
-} catch {}
 
 function fail(msg) {
   console.error(`RED: ${msg}`);
@@ -34,6 +20,13 @@ function ok(msg) {
 
 function kb(bytes) {
   return Math.round((bytes / 1024) * 10) / 10;
+}
+
+const budgets = JSON.parse(fs.readFileSync(BUDGETS_PATH, 'utf8'));
+const FORBIDDEN_STATIC = budgets.canvasAppear?.forbiddenStatic;
+const INCREMENTAL_BUDGET_KB = budgets.canvasAppear?.incrementalBudgetKb;
+if (!Array.isArray(FORBIDDEN_STATIC) || typeof INCREMENTAL_BUDGET_KB !== 'number') {
+  fail(`missing canvasAppear config in ${BUDGETS_PATH}`);
 }
 
 if (!fs.existsSync(jsDir)) {

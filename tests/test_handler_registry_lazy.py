@@ -225,15 +225,18 @@ def test_warm_core_faster_than_full_warm_when_deferred_are_slow(
 
 
 def test_every_electron_backend_method_resolves() -> None:
-    import re
+    import json
     from pathlib import Path
 
     from backend.handlers import HandlerRegistry, _module_for_method
 
-    text = (Path(__file__).resolve().parent.parent / "electron" / "ipc-methods.js").read_text(encoding="utf-8")
-    start = text.index("const BACKEND_METHODS")
-    end = text.index("];", start)
-    methods = re.findall(r"'([a-z][a-z0-9_]*)'", text[start:end])
+    catalog_path = Path(__file__).resolve().parent.parent / "shared" / "ipc-method-catalog.json"
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    methods = [
+        name
+        for name, entry in catalog["methods"].items()
+        if str(entry.get("handler", "")).startswith("backend:")
+    ]
     assert methods
 
     unmapped = [m for m in methods if _module_for_method(m) is None]
@@ -242,6 +245,61 @@ def test_every_electron_backend_method_resolves() -> None:
     reg = HandlerRegistry()
     unresolved = [m for m in methods if reg.get(m) is None]
     assert unresolved == []
+
+
+def test_sync_resolve_during_post_ready_warm_does_not_deadlock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+    import threading
+    import types
+
+    from backend.handlers import HandlerRegistry
+
+    canvas_started = threading.Event()
+    release_canvas = threading.Event()
+    orig_import = importlib.import_module
+
+    def gated_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+        if name == "backend.handlers.canvas":
+            canvas_started.set()
+            release_canvas.wait(timeout=60)
+        return orig_import(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", gated_import)
+    fake_pdf_html = types.SimpleNamespace(write_pdf_sanitized=lambda html: b"%PDF-fake")
+    monkeypatch.setitem(sys.modules, "backend.utils.pdf_html", fake_pdf_html)
+
+    reg = HandlerRegistry()
+    warm_done = threading.Event()
+
+    def do_warm() -> None:
+        try:
+            reg.warm_post_ready()
+        finally:
+            warm_done.set()
+
+    threading.Thread(target=do_warm, daemon=True).start()
+    assert canvas_started.wait(timeout=30), "post-ready warm never reached canvas import"
+
+    reader_done = threading.Event()
+    result: dict[str, object] = {}
+
+    def do_reader() -> None:
+        try:
+            result["handler"] = reg.get("process_status")
+        finally:
+            reader_done.set()
+
+    reader_thread = threading.Thread(target=do_reader, daemon=True)
+    reader_thread.start()
+    # Deja que el reader tome module_lock(conversion) antes de liberar el warm.
+    time.sleep(0.5)
+    release_canvas.set()
+
+    assert reader_done.wait(timeout=60), "reader quedó en deadlock contra warm_post_ready"
+    assert result["handler"] is not None
+    assert warm_done.wait(timeout=120)
 
 
 def test_warm_post_ready_releases_critical_waiters_before_formatos_warm(

@@ -275,3 +275,33 @@ class TestRenamerEngine:
 
         assert [item[1] for item in preview] == ["69841274_001.jpg", "69841274_002.jpg"]
         assert engine.aplicar(a, datos_bd=fila, sequence_group="4210502") == "69841274_001.jpg"
+
+    def test_aplicar_valor_bd_con_token_queda_literal(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo", "nombre"])
+        engine = RenamerEngine("{codigo}_{nombre}{ext}", secuencia_inicial=1)
+        archivo = tmp_path / "f.jpg"
+        archivo.write_text("x")
+
+        resultado = engine.aplicar(archivo, datos_bd={"codigo": "A", "nombre": "{seq}"})
+
+        assert resultado == "A_{seq}.jpg"
+
+    def test_aplicar_tokens_repetidos_se_sustituyen_todos(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        engine = RenamerEngine("{codigo}_{codigo}{ext}")
+        archivo = tmp_path / "f.jpg"
+        archivo.write_text("x")
+
+        resultado = engine.aplicar(archivo, datos_bd={"codigo": "X"})
+
+        assert resultado == "X_X.jpg"
+
+    def test_aplicar_placeholders_solapados_no_se_corrompen(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo", "codigo_nombre"])
+        engine = RenamerEngine("{codigo}_{codigo_nombre}{ext}")
+        archivo = tmp_path / "f.jpg"
+        archivo.write_text("x")
+
+        resultado = engine.aplicar(archivo, datos_bd={"codigo": "A", "codigo_nombre": "B"})
+
+        assert resultado == "A_B.jpg"

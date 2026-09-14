@@ -13,6 +13,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Canvas / PDF round-trip**: manifiesto semántico embebido en exportaciones RGB y CMYK para reconstruir páginas, capas, estilos y referencias `canvas-asset:` cuando los assets locales están disponibles.
 
 ### Changed
+- **IPC / catálogo**: `shared/ipc-method-catalog.json` es la única fuente por método (handler, lane del scheduler, tier de timeout, idempotencia, file-tokens, raw output path); el router, la allowlist, `api.ts` y el backend consumen proyecciones del mismo. Sustituye a `heavy-ipc-methods.json`, `long-running-methods.json`, `IDEMPOTENT_METHODS`, `READ_FILE_TOKEN_SCHEMAS` y las tablas de routing `_EXACT_MODULE`/`_PREFIX_MODULE`.
 - **Persistencia**: fichas técnicas, informes v2 y reportes técnicos guardan en el directorio de datos de usuario también en desarrollo, no en `data/` empaquetado.
 - **Reportes de campo**: acciones de panel en grid, con estado de exportables y foco visible.
 - **UI / diálogos**: se quita el halo extra de Dialog, Settings, paleta de comandos y modales equivalentes.
@@ -25,7 +26,12 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Sellador / preview**: el raster se codifica con JPEG (PIL q85) en lugar del PNG de MuPDF. El floor de 220 DPI no cambia; Formatos sigue en PNG. A4 con contenido (n=16): p50 187,5 → 58,8 ms (-68,6%); p95 217,1 → 64,1 ms (-70,5%). IPC `sellador_render_page` (n=20): p50 35,7 → 14,0 ms; p95 45,9 → 15,7 ms. `inspect_pdf_path` mide con PyMuPDF.
 
 ### Fixed
+- **IPC / timeouts**: `canvas_export_cmyk_pdf` (lane heavy del backend) pasa de 300 s a 900 s en el bridge, alineado con el resto de renders pesados como `html_to_pdf`.
+- **IPC / escritura**: todas las claves de salida presentes (`output_path`, `outputDir`, `destino`, …) se validan contra roots/tokens de escritura; un señuelo autorizado ya no puede sombrear un destino no autorizado en `process_start`.
 - **Canvas / sync**: si falta `canvas_append_document_version`, el push falla a la vista en vez de insertar a ciegas.
+- **Canvas / sync**: un conflicto del sync general se descarta si el documento activo cambió durante el sync; resolverlo ya no puede borrar o reemplazar el documento equivocado.
+- **Canvas / blobs**: `clearBlobStore` respeta los pins activos durante save y quit-flush; una limpieza concurrente ya no deja referencias `blob:` muertas en el documento persistido.
+- **Stores JSON**: `get_all`/`get` devuelven copias JSON desacopladas sin re-normalizar en lectura; el listado de informes (~132 ms @1000 docs) baja a ~53 ms manteniendo el aislamiento y el commit atómico.
 - **Catálogo SQLite**: espera 30 s en `busy_timeout` ante un lock corto.
 - **Tooltips**: portal `fixed`, clamp al viewport y flip de placement para que el label no se corte en el borde de la ventana.
 - **Apariencia**: los avisos de guardado/error usan traducciones, no la key i18n.

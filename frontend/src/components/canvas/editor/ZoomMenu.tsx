@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import { clampZoom, nextZoomPreset } from '../ops/viewportNav';
 
 interface ZoomMenuProps {
@@ -31,14 +32,8 @@ interface ZoomAction {
   checked?: boolean;
 }
 
-interface MenuBox {
-  top: number;
-  left: number;
-}
-
 const MENU_WIDTH = 260;
 const MENU_GAP = 6;
-const MENU_EDGE = 8;
 
 export default function ZoomMenu({
   zoom,
@@ -50,30 +45,27 @@ export default function ZoomMenu({
   snapToGrid = false,
   onToggleSnapToGrid,
 }: ZoomMenuProps) {
-  const [open, setOpen] = useState(false);
+  const {
+    isOpen: open,
+    position: menuBox,
+    triggerRef: rootRef,
+    popupRef: menuRef,
+    close,
+    toggle,
+  } = useAnchoredPopover<HTMLDivElement>({
+    estimatedWidth: MENU_WIDTH,
+    align: 'end',
+    direction: 'down',
+    gap: MENU_GAP,
+  });
   const [draft, setDraft] = useState('');
-  const [menuBox, setMenuBox] = useState<MenuBox | null>(null);
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuId = useId();
   const pct = Math.round(zoom * 100);
 
-  const updateMenuBox = useCallback(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const left = Math.max(
-      MENU_EDGE,
-      Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - MENU_EDGE),
-    );
-    setMenuBox({ top: rect.bottom + MENU_GAP, left });
-  }, []);
-
   useLayoutEffect(() => {
     if (!open) {
-      setMenuBox(null);
       setPortalRoot(null);
       return;
     }
@@ -81,43 +73,18 @@ export default function ZoomMenu({
     const host =
       (rootRef.current?.closest('.canvas-app') as HTMLElement | null) ?? document.body;
     setPortalRoot(host);
-    updateMenuBox();
     const t = window.setTimeout(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
     }, 0);
     return () => window.clearTimeout(t);
-  }, [open, updateMenuBox]);
+  }, [open, pct, rootRef]);
 
   useEffect(() => {
     if (!open) return;
     if (document.activeElement === inputRef.current) return;
     setDraft(`${pct}%`);
   }, [open, pct]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    const onPointer = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (rootRef.current?.contains(target)) return;
-      if (menuRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    const onLayout = () => updateMenuBox();
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onPointer);
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onPointer);
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-    };
-  }, [open, updateMenuBox]);
 
   const commitDraft = () => {
     const next = parseZoomPercent(draft);
@@ -126,12 +93,12 @@ export default function ZoomMenu({
       return;
     }
     onZoom(next);
-    setOpen(false);
+    close();
   };
 
   const runAndClose = (fn: () => void) => {
     fn();
-    setOpen(false);
+    close();
   };
 
   const near = (target: number) => Math.abs(pct - target) < 1;
@@ -218,7 +185,7 @@ export default function ZoomMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           aria-controls={menuId}
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggle}
         >
           <span>{pct}%</span>
           <ChevronDown className="h-2.5 w-2.5 opacity-70" strokeWidth={2.5} aria-hidden />

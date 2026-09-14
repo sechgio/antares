@@ -29,11 +29,17 @@ const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-backend-command-'
 try {
   const fakeElectronDir = path.join(tmpRoot, 'electron');
   const fakeVenvPython = path.join(tmpRoot, 'venv312', 'Scripts', 'python.exe');
+  const fakeDotVenvPython = path.join(tmpRoot, '.venv', 'Scripts', 'python.exe');
   fs.mkdirSync(fakeElectronDir, { recursive: true });
   fs.mkdirSync(path.dirname(fakeVenvPython), { recursive: true });
   fs.writeFileSync(fakeVenvPython, '');
   const devWinWithVenv = getBackendCommand(true, 'win32', fakeElectronDir);
   assert(devWinWithVenv.cmd === fakeVenvPython, 'Dev mode should prefer the local venv when it exists');
+
+  fs.mkdirSync(path.dirname(fakeDotVenvPython), { recursive: true });
+  fs.writeFileSync(fakeDotVenvPython, '');
+  const devWinWithDotVenv = getBackendCommand(true, 'win32', fakeElectronDir);
+  assert(devWinWithDotVenv.cmd === fakeDotVenvPython, 'Dev mode should prefer .venv over venv312');
 } finally {
   try {
     fs.rmSync(tmpRoot, { recursive: true, force: true });

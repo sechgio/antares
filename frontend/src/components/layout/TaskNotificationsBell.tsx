@@ -1,19 +1,15 @@
 import { Bell } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useDueNotifications } from '../espacios/hooks/useDueNotifications';
 import { formatRelativeDate } from '../espacios/utils/dates';
 import type { DueNotification, DueUrgency } from '../espacios/utils/dueNotifications';
 import { writeEspaciosFocusTarget } from '../espacios/utils/focusTarget';
 import { HoverTooltip } from '@/components/ui/HoverTooltip';
+import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 
 interface TaskNotificationsBellProps {
   onOpenEspacios?: () => void;
-}
-
-interface MenuPosition {
-  top: number;
-  right: number;
 }
 
 const URGENCY_DOT: Record<DueUrgency, string> = {
@@ -30,57 +26,24 @@ const URGENCY_LABEL: Record<DueUrgency, string> = {
 
 export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificationsBellProps) {
   const { items, count, loading, error, refresh } = useDueNotifications(true);
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<MenuPosition | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const {
+    isOpen: open,
+    position,
+    triggerRef,
+    popupRef: panelRef,
+    close,
+    toggle,
+  } = useAnchoredPopover({
+    estimatedHeight: 360,
+    estimatedWidth: 320,
+    align: 'end',
+    direction: 'down',
+  });
   const panelId = useId();
 
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    setPosition({
-      top: rect.bottom + 6,
-      right: Math.max(8, window.innerWidth - rect.right),
-    });
-  }, []);
-
   useLayoutEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return;
-    }
-    updatePosition();
-    void refresh();
-  }, [open, refresh, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (panelRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    const onLayout = () => updatePosition();
-
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-    };
-  }, [open, updatePosition]);
+    if (open) void refresh();
+  }, [open, refresh]);
 
   const handleSelect = (item: DueNotification) => {
     writeEspaciosFocusTarget({
@@ -88,7 +51,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
       proyectoId: item.proyecto_id,
       espacioId: item.espacio_id,
     });
-    setOpen(false);
+    close();
     onOpenEspacios?.();
   };
 
@@ -106,7 +69,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggle}
           className="app-titlebar-button relative flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
         >
           <Bell size={14} strokeWidth={1.8} />
@@ -134,8 +97,8 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
             className="fixed z-[220] w-[320px] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] shadow-[0_16px_48px_color-mix(in_srgb,var(--bg-base)_60%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-subtle)_80%,transparent)]"
             style={
               position
-                ? { top: position.top, right: position.right }
-                : { top: -9999, right: 0, visibility: 'hidden' }
+                ? { top: position.top, left: position.left }
+                : { top: -9999, left: -9999, visibility: 'hidden' }
             }
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -223,7 +186,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
                 <button
                   type="button"
                   onClick={() => {
-                    setOpen(false);
+                    close();
                     onOpenEspacios();
                   }}
                   className="w-full rounded-lg px-2.5 py-2 text-center text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-base)]/70 hover:text-[var(--text-primary)]"

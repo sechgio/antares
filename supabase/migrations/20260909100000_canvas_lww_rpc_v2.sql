@@ -19,7 +19,7 @@ AS $$
 DECLARE
   v_limit integer := LEAST(GREATEST(COALESCE(p_limit, 100), 1), 1000);
 BEGIN
-  IF COALESCE(current_setting('request.jwt.claim.role', true), '') <> 'service_role' THEN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
     RAISE EXCEPTION 'Sólo service_role puede validar el almacenamiento Canvas';
   END IF;
 

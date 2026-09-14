@@ -16,8 +16,9 @@ import TemplatePicker from './TemplatePicker';
 import { REPORT_FIELDS } from './constants';
 import {
   excelSerialToDate, isDateColumn,
-  validateTemplateStructure, matchesRecordId, naturalSortByName,
+  validateTemplateStructure,
 } from './utils';
+import { matchesRecordId, naturalSortFilesByName } from '../../utils/recordMatching';
 import {
   buildPdfFilename,
   imageToPdfSource,
@@ -489,15 +490,8 @@ export default function PreviewPanelView() {
 
     let resultSpillToken: string | null = null;
     try {
-      const { stageFileForIpc } = await import('../../utils/stageFile');
-      const fileToken = await stageFileForIpc(file);
-      if (!fileToken) throw new Error('No se pudo preparar el archivo para lectura');
-      const ext = file.name.toLowerCase().split('.').pop() || '';
-      const formatHint = ['xlsx', 'xls', 'csv'].includes(ext) ? ext : undefined;
-      const res = await api.spreadsheetParse(
-        { file_token: fileToken, format_hint: formatHint },
-        { hydrate: false },
-      );
+      const { stageAndParseSpreadsheet } = await import('../../utils/spreadsheet');
+      const res = await stageAndParseSpreadsheet(file, { hydrate: false });
 
       resultSpillToken = res.result_file_token || null;
       if (parseGen !== parseGenRef.current) {
@@ -623,7 +617,7 @@ export default function PreviewPanelView() {
       seen.add(img.name);
       return true;
     });
-    return unique.sort(naturalSortByName);
+    return unique.sort(naturalSortFilesByName);
   }, [selectedIndex, data, idColumn, images]);
 
   const stepStates = useMemo(() => [
@@ -1098,7 +1092,7 @@ export default function PreviewPanelView() {
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
         <PreviewPanel
           ref={panelRef}
-          data={selectedIndex !== '' ? data[parseInt(selectedIndex)] : null}
+          data={selectedIndex !== '' ? data[parseInt(selectedIndex, 10)] : null}
           images={filteredImages}
           mappings={mappings}
           logoLeft={logoLeft}

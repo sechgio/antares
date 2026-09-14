@@ -7,6 +7,11 @@ import { A4_HEIGHT_PX, A4_WIDTH_PX } from '../types';
 import { MM_TO_PX, type DrawRect } from '../ops/drawHelpers';
 import { selectionBounds } from '../ops/selectionTransform';
 import { fitZoomForViewport, zoomToFitRectMm } from '../ops/viewportNav';
+import type {
+  InlineEditStartOpts,
+  InlineSelectionRange,
+  InlineTextStyle,
+} from '../ops/inlineEdit';
 import { useSmoothViewport } from '../hooks/useSmoothViewport';
 import Artboard from './Artboard';
 import ZoomMenu from './ZoomMenu';
@@ -30,6 +35,7 @@ interface DesignStageProps {
   tool: CanvasTool;
   editingLayerId: string | null;
   editingSelectAll: boolean;
+  editingRange?: InlineSelectionRange | null;
   pathEditingLayerId?: string | null;
   onSelect: (id: string | null, additive?: boolean) => void;
   onSelectIds: (ids: string[]) => void;
@@ -37,10 +43,11 @@ interface DesignStageProps {
   onPreviewLayers: (layers: CanvasLayer[]) => void;
   onCommitGesture: () => void;
   onDrawLayer: (tool: CanvasTool, rect: DrawRect) => void;
-  onStartEdit: (id: string) => void;
+  onStartEdit: (id: string, opts?: InlineEditStartOpts) => void;
   onStartPathEdit?: (id: string) => void;
   onEditValue: (id: string, value: string, contentHeightPx?: number, zoom?: number) => void;
   onFitTextHeight: (id: string, contentHeightPx: number, zoom: number) => void;
+  onEditStyle?: (id: string, style: InlineTextStyle) => void;
   onCommitEdit: () => void;
   onContextMenu: (
     layerId: string | null,
@@ -82,6 +89,7 @@ export default function DesignStage({
   tool,
   editingLayerId,
   editingSelectAll,
+  editingRange = null,
   pathEditingLayerId = null,
   onSelect,
   onSelectIds,
@@ -93,6 +101,7 @@ export default function DesignStage({
   onStartPathEdit,
   onEditValue,
   onFitTextHeight,
+  onEditStyle,
   onCommitEdit,
   onContextMenu,
   onUpsertGuide,
@@ -199,6 +208,7 @@ export default function DesignStage({
         pageIndex={pageIndex}
         editingLayerId={editingLayerId}
         editingSelectAll={editingSelectAll}
+        editingRange={editingRange}
         pathEditingLayerId={pathEditingLayerId}
         onPan={setPan}
         onSelect={onSelect}
@@ -212,6 +222,7 @@ export default function DesignStage({
         onStartPathEdit={onStartPathEdit}
         onEditValue={handleEditValue}
         onFitTextHeight={handleFitTextHeight}
+        onEditStyle={onEditStyle}
         onCommitEdit={onCommitEdit}
         onContextMenu={onContextMenu}
         onUpsertGuide={onUpsertGuide}

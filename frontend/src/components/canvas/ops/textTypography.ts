@@ -43,13 +43,6 @@ export function formatLineHeight(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
-export function ensureCssUnit(raw: string, defaultUnit: string): string {
-  const t = raw.trim();
-  if (!t) return '';
-  if (/^-?[\d.]+$/.test(t)) return `${t}${defaultUnit}`;
-  return t;
-}
-
 export function screenChromePx(screenPx: number, cameraZoom: number): number {
   const z = cameraZoom > 0 ? cameraZoom : 1;
   return screenPx / z;

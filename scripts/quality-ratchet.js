@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Falla si type:ignore, any o archivos grandes suben respecto a
- * .quality-baseline.json. Sin baseline sale 0.
+ * Falla si type:ignore, any, dict[str, Any] sin allowlist en backend
+ * o archivos grandes suben respecto a .quality-baseline.json. Sin baseline sale 0.
  *
  *   node scripts/quality-ratchet.js [--json]
  *   node scripts/quality-ratchet.js --update [--force]
@@ -27,11 +27,15 @@ const SOURCE_EXT = new Set(['.py', '.js', '.ts', '.tsx']);
 const METRICS = [
   { id: 'typeIgnore', label: '`# type: ignore` en backend' },
   { id: 'anyInFrontend', label: '`any` explícitos en frontend/src' },
+  { id: 'dictAnyBackend', label: '`dict[str, Any]` sin allowlist en backend' },
   { id: 'largeFiles', label: `archivos fuente > ${LARGE_FILE_LINES} líneas` },
 ];
 
 const TYPE_IGNORE_RE = /#\s*type:\s*ignore/;
 const ANY_RE = /:\s*any\b|<any>|[=,]\s*any\s*>|\bas\s+any\b/;
+// Paridad con scripts/check_any_guard.py: ocurrencias por línea, exenta con allowlist/type: ignore/noqa.
+const DICT_ANY_RE = /dict\[str,\s*Any\]/g;
+const DICT_ANY_ALLOW_RE = /#\s*(allowlist|type:\s*ignore|noqa\b)/i;
 
 function collectSourceFiles(rootDir = ROOT) {
   const out = [];
@@ -91,6 +95,18 @@ function countAny(files) {
   return countMatchingLines(files.filter(isFrontendTs), ANY_RE);
 }
 
+function countDictAnyBackend(files) {
+  let total = 0;
+  for (const file of files.filter(isBackendPython)) {
+    for (const line of readText(file).split('\n')) {
+      if (DICT_ANY_ALLOW_RE.test(line)) continue;
+      const matches = line.match(DICT_ANY_RE);
+      if (matches) total += matches.length;
+    }
+  }
+  return total;
+}
+
 function countLargeFiles(files) {
   return files.filter((f) => readText(f).split('\n').length > LARGE_FILE_LINES).length;
 }
@@ -100,6 +116,7 @@ function measure(rootDir = ROOT) {
   return {
     typeIgnore: countTypeIgnore(files),
     anyInFrontend: countAny(files),
+    dictAnyBackend: countDictAnyBackend(files),
     largeFiles: countLargeFiles(files),
   };
 }
@@ -221,6 +238,7 @@ module.exports = {
   collectSourceFiles,
   countTypeIgnore,
   countAny,
+  countDictAnyBackend,
   countLargeFiles,
   measure,
   compare,

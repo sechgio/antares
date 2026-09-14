@@ -473,7 +473,7 @@ export async function pullCanvasDocument(
 
   const { assertDocumentImagesResolvable } = await import('../utils/imageBlobStore');
   await assertDocumentImagesResolvable(remote.document);
-  await api.canvasSave(remote.document, { touch: false });
+  await api.canvasSave(remote.document, { touch: false, slim: true });
   return {
     kind: 'applied',
     document: remote.document,
@@ -504,7 +504,9 @@ let pushFlushPromise: Promise<void> | null = null;
 function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
   return {
     openDocumentId: b.openDocumentId ?? a?.openDocumentId,
-    openDocument: b.openDocument ?? a?.openDocument,
+    // No heredar el snapshot openDocument del sync anterior: puede estar viejo
+    // y resolverConflictLocalDoc recarga por id cuando falta.
+    openDocument: b.openDocument,
     openDirty: Boolean(a?.openDirty || b.openDirty),
     guarded: Boolean(a?.guarded || b.guarded),
   };
@@ -626,7 +628,7 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
 
   if (toPullIds.length > 0) {
     const docs = await fetchRemoteDocuments(toPullIds);
-    await Promise.all(docs.map((doc) => api.canvasSave(doc, { touch: false })));
+    await Promise.all(docs.map((doc) => api.canvasSave(doc, { touch: false, slim: true })));
     pulled = docs.length;
     for (const doc of docs) {
       if (options.openDocumentId === doc.id && !options.openDirty) {
@@ -827,7 +829,7 @@ export async function restoreCanvasVersion(
   });
   const serialized = await serializeDocumentImages(restoredDoc);
 
-  await api.canvasSave(serialized, { touch: true });
+  await api.canvasSave(serialized, { touch: true, slim: true });
   await queueCanvasCloudPush(serialized, { forceResurrect: true });
 
   return serialized;

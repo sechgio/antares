@@ -30,6 +30,9 @@ vi.mock('../hooks/useCanvasSync', () => ({
 vi.mock('../utils/imageBlobStore', () => ({
   serializeDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
   serializeHistorySteps: vi.fn(async (steps: unknown[]) => steps),
+  pinImageRefs: vi.fn(() => () => {}),
+  collectImageRefsFromLayers: vi.fn(() => new Set<string>()),
+  collectImageRefsFromHistory: vi.fn(() => new Set<string>()),
 }));
 
 import { api } from '../../../api';

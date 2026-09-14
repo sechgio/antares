@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ensureCssUnit,
   formatFontSizePt,
   formatLetterSpacingPx,
   parseFontSizePt,
@@ -15,13 +14,6 @@ describe('textTypography (Figma-like inspector)', () => {
     expect(parseFontSizePt('14')).toBe(14);
     expect(parseFontSizePt('16px')).toBeCloseTo(12, 5);
     expect(formatFontSizePt(11)).toBe('11pt');
-  });
-
-  it('ensureCssUnit adds default unit to bare numbers', () => {
-    expect(ensureCssUnit('14', 'pt')).toBe('14pt');
-    expect(ensureCssUnit('0.5', 'px')).toBe('0.5px');
-    expect(ensureCssUnit('11pt', 'pt')).toBe('11pt');
-    expect(ensureCssUnit('', 'pt')).toBe('');
   });
 
   it('parses letter-spacing and line-height', () => {

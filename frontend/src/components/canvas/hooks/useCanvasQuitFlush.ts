@@ -5,7 +5,13 @@ import { reportFrontendEvent } from '../../../utils/observability';
 import { isOpenDocumentDirty } from './useCanvasSync';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 import type { CanvasDocument } from '../types';
-import { serializeDocumentImages, serializeHistorySteps } from '../utils/imageBlobStore';
+import {
+  collectImageRefsFromHistory,
+  collectImageRefsFromLayers,
+  pinImageRefs,
+  serializeDocumentImages,
+  serializeHistorySteps,
+} from '../utils/imageBlobStore';
 
 interface UseCanvasQuitFlushOptions {
   history: CanvasHistoryHandle;
@@ -72,19 +78,27 @@ export function useCanvasQuitFlush({
         }
 
         if (history.hasUnsavedEditsRef.current) {
+          let unpin: (() => void) | undefined;
           try {
+            unpin = pinImageRefs([
+              ...collectImageRefsFromLayers(history.documentRef.current.layers),
+              ...collectImageRefsFromHistory(history.past),
+              ...collectImageRefsFromHistory(history.future),
+            ]);
             const serialized = await serializeDocumentImages(history.documentRef.current);
             const [serializedPast, serializedFuture] = await Promise.all([
               serializeHistorySteps(history.past),
               serializeHistorySteps(history.future),
             ]);
             await Promise.all([
-              api.canvasSave(serialized),
+              api.canvasSave(serialized, { slim: true }),
               api.canvasSaveHistory(serialized.id, serializedPast, serializedFuture),
             ]);
             history.markSaved();
           } catch {
             flushFailed = 'canvas_save_failed';
+          } finally {
+            unpin?.();
           }
         }
       }

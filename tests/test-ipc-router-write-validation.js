@@ -94,7 +94,8 @@ async function run() {
     appendStagedChunk,
     completeStagedSession,
   } = require('../electron/file-capabilities');
-  const { clearAllowedReadPaths, registerAllowedReadPath } = require('../electron/path-allowlist');
+  const { _collectStagedTokens, _cleanupStagedTokens } = require('../electron/ipc-file-policy');
+  const { clearAllowedReadPaths, registerAllowedReadPath, isAllowedReadPath } = require('../electron/path-allowlist');
 
   try {
     const p1 = router._validateAndResolveWriteParams({ outputDir: path.join(docsDir, 'salidas') }, null);
@@ -216,6 +217,30 @@ async function run() {
       'dialog_folder persiste la raíz de escritura en userData',
     );
 
+    const readOnlyDir = path.join(tmpRoot, 'solo-lectura');
+    await fs.promises.mkdir(readOnlyDir, { recursive: true });
+    const readOnlyInput = path.join(readOnlyDir, 'entrada.jpg');
+    await fs.promises.writeFile(readOnlyInput, 'x');
+    const filesDialog = {
+      async showOpenDialog() {
+        return { canceled: false, filePaths: [readOnlyInput] };
+      },
+      async showSaveDialog() { return { canceled: true }; },
+    };
+    const filesResult = await freshHandleDialogCall('dialog_files', {}, filesDialog, { id: 1 });
+    assert(
+      filesResult.result.paths[0] === readOnlyInput && filesResult.result.file_tokens.length === 1,
+      'dialog_files sigue devolviendo rutas y tokens de lectura',
+    );
+    assert(isAllowedReadPath(readOnlyInput), 'dialog_files sigue registrando la ruta para lectura');
+    let readOnlyDirRejected = false;
+    try {
+      router2._validateAndResolveWriteParams({ outputDir: path.join(readOnlyDir, 'salida') }, null);
+    } catch (e) {
+      readOnlyDirRejected = /no está permitida/.test(e.message);
+    }
+    assert(readOnlyDirRejected, 'dialog_files no concede raíz de escritura sobre la carpeta de origen');
+
     const staged = createStagedSession({ name: 'foto.jpg', size: 4, webContentsId: 1 });
     await appendStagedChunk(staged.token, Buffer.from([0xff, 0xd8, 0xff, 0xd9]), 1);
     const stagedCap = await completeStagedSession(staged.token, 1);
@@ -278,12 +303,12 @@ async function run() {
       'legacy db_export path remains a write target',
     );
 
-    const stagedTokens = router2._collectStagedTokens(
+    const stagedTokens = _collectStagedTokens(
       'canvas_export_cmyk_pdf',
       nestedPayload,
     );
     assert(stagedTokens.length === 1 && stagedTokens[0] === stagedCap.token, 'staged tokens are collected from nested read fields');
-    await router2._cleanupStagedTokens(stagedTokens, 1);
+    await _cleanupStagedTokens(stagedTokens, 1);
     assert(!fs.existsSync(stagedCap.path), 'staged token nested se elimina después de la operación');
 
     const rawInput = path.join(arbitraryDir, 'raw.jpg');
@@ -350,6 +375,138 @@ async function run() {
       'panel_aviso_corte_render_pdf',
     );
     assert(panelParams.image_paths.img1 === registeredInput, 'panel export keeps registered raw image paths');
+    let destinoRejected = false;
+    try {
+      const params = router2._maybeResolveFileTokens(
+        { files: [registeredInput], destino: path.join(arbitraryDir, 'salida') },
+        winHandle,
+        'process_start',
+      );
+      router2._validateAndResolveWriteParams(params, winHandle, 'process_start');
+    } catch (e) {
+      destinoRejected = /no está permitida|ruta de salida/i.test(e.message);
+    }
+    assert(destinoRejected, 'process_start rechaza destino fuera de roots autorizados');
+
+    const destinoDocs = path.join(docsDir, 'salida');
+    const allowedParams = router2._maybeResolveFileTokens(
+      { files: [registeredInput], destino: destinoDocs },
+      winHandle,
+      'process_start',
+    );
+    const allowedResolved = router2._validateAndResolveWriteParams(
+      allowedParams,
+      winHandle,
+      'process_start',
+    );
+    assert(
+      allowedResolved.destino === destinoDocs,
+      'process_start acepta destino bajo Documentos',
+    );
+
+    const destinoCustom = path.join(tmpRoot, 'nueva-raiz', 'salida');
+    const customResolved = router2._validateAndResolveWriteParams(
+      router2._maybeResolveFileTokens(
+        { files: [registeredInput], destino: destinoCustom },
+        winHandle,
+        'process_start',
+      ),
+      winHandle,
+      'process_start',
+    );
+    assert(
+      customResolved.destino === destinoCustom,
+      'process_start acepta destino bajo raíz registrada por diálogo',
+    );
+
+    const wDir = path.join(tmpRoot, 'nueva-raiz', 'destino-token');
+    await fs.promises.mkdir(wDir, { recursive: true });
+    const wCap = createFileCapability({ filePath: wDir, mode: 'write', webContentsId: 1 });
+    const tokenResolved = router2._validateAndResolveWriteParams(
+      router2._maybeResolveFileTokens(
+        { files: [registeredInput], destino: wCap.token },
+        winHandle,
+        'process_start',
+      ),
+      winHandle,
+      'process_start',
+    );
+    assert(
+      tokenResolved.destino === wDir && tokenResolved._resolved_output_path === wDir,
+      'process_start resuelve destino con write token a la ruta real',
+    );
+
+    let destinoTraversal = false;
+    try {
+      const traversalParams = router2._maybeResolveFileTokens(
+        { files: [registeredInput], destino: path.join(docsDir, '..', 'escape') },
+        winHandle,
+        'process_start',
+      );
+      router2._validateAndResolveWriteParams(traversalParams, winHandle, 'process_start');
+    } catch (e) {
+      destinoTraversal = /traversal|no está permitida|ruta de salida/i.test(e.message);
+    }
+    assert(destinoTraversal, 'process_start rechaza destino con traversal');
+
+    let shadowedDestinoRejected = false;
+    try {
+      const shadowed = router2._maybeResolveFileTokens(
+        {
+          files: [registeredInput],
+          output_path: path.join(docsDir, 'señuelo'),
+          destino: path.join(arbitraryDir, 'prohibido'),
+        },
+        winHandle,
+        'process_start',
+      );
+      router2._validateAndResolveWriteParams(shadowed, winHandle, 'process_start');
+    } catch (e) {
+      shadowedDestinoRejected = /no está permitida|ruta de salida/i.test(e.message);
+    }
+    assert(
+      shadowedDestinoRejected,
+      'process_start rechaza destino no autorizado aunque output_path señuelo sea válido',
+    );
+
+    let shadowedGenericRejected = false;
+    try {
+      const shadowedGeneric = router2._maybeResolveFileTokens(
+        {
+          files: [registeredInput],
+          destino: path.join(docsDir, 'permitido'),
+          output_path: path.join(arbitraryDir, 'prohibido'),
+        },
+        winHandle,
+        'process_start',
+      );
+      router2._validateAndResolveWriteParams(shadowedGeneric, winHandle, 'process_start');
+    } catch (e) {
+      shadowedGenericRejected = /no está permitida|ruta de salida/i.test(e.message);
+    }
+    assert(
+      shadowedGenericRejected,
+      'process_start rechaza output_path no autorizado aunque destino sea válido',
+    );
+
+    const bothAllowed = router2._validateAndResolveWriteParams(
+      router2._maybeResolveFileTokens(
+        {
+          files: [registeredInput],
+          output_path: path.join(docsDir, 'out-a'),
+          destino: path.join(docsDir, 'out-b'),
+        },
+        winHandle,
+        'process_start',
+      ),
+      winHandle,
+      'process_start',
+    );
+    assert(
+      bothAllowed.destino === path.join(docsDir, 'out-b'),
+      'destino autorizado coexiste con otra clave de salida autorizada',
+    );
+
     const cmykParams = router2._maybeResolveFileTokens(
       { localImagePaths: { 'antares-local-image:logo': registeredInput } },
       winHandle,
@@ -411,18 +568,71 @@ async function run() {
         && nestedInformeResolved.images[0].path === registeredInput,
       'read tokens resolve in nested payload fields',
     );
-    const collectedNestedTokens = router2._collectStagedTokens('process_start', {
+    const collectedNestedTokens = _collectStagedTokens('process_start', {
       files: [nestedCap.token],
       images: [{ path: nestedCap.token }],
       image_paths: { img1: nestedCap.token },
     });
     assert(collectedNestedTokens.includes(nestedCap.token), 'nested read tokens are collected for cleanup');
-    const unrelatedTokens = router2._collectStagedTokens('canvas_save', {
+    const unrelatedTokens = _collectStagedTokens('canvas_save', {
       document: { metadata: { source: 'antares-read-unrelated' } },
     });
     assert(unrelatedTokens.length === 0, 'tokens in opaque payloads are not revoked as staged inputs');
     const { revokeCapability } = require('../electron/file-capabilities');
     revokeCapability(nestedCap.token);
+
+    const MAX_ROOTS = 500;
+    const capBase = path.join(tmpRoot, 'cap-roots');
+    let saveCounter = 0;
+    const capDialog = {
+      async showOpenDialog() { return { canceled: true, filePaths: [] }; },
+      async showSaveDialog() {
+        const dir = path.join(capBase, `d${saveCounter++}`);
+        return { canceled: false, filePath: path.join(dir, 'out.pdf') };
+      },
+    };
+    for (let i = 0; i < MAX_ROOTS + 5; i++) {
+      await freshHandleDialogCall('dialog_save', {}, capDialog, { id: 1 });
+    }
+    const { isUnderAllowedWriteRoot } = require(dialogHandlersPath);
+    assert(
+      !isUnderAllowedWriteRoot(path.join(capBase, 'd0'))
+        && !isUnderAllowedWriteRoot(path.join(tmpRoot, 'nueva-raiz')),
+      'las raíces de escritura expulsan las más antiguas al superar el tope',
+    );
+    assert(
+      isUnderAllowedWriteRoot(path.join(capBase, `d${MAX_ROOTS + 4}`)),
+      'la raíz de escritura más reciente sigue autorizada tras la expulsión',
+    );
+    const persistedAfterCap = JSON.parse(
+      await fs.promises.readFile(path.join(userDataDir, 'antares-write-roots.json'), 'utf8'),
+    );
+    assert(
+      persistedAfterCap.length === MAX_ROOTS
+        && !persistedAfterCap.includes(path.resolve(path.join(capBase, 'd0'))),
+      'el archivo de raíces persistidas queda acotado al tope',
+    );
+
+    const overCapRoots = [];
+    for (let i = 0; i < MAX_ROOTS + 100; i++) overCapRoots.push(path.join(tmpRoot, 'bulk', `r${i}`));
+    await fs.promises.writeFile(
+      path.join(userDataDir, 'antares-write-roots.json'),
+      JSON.stringify(overCapRoots),
+    );
+    delete require.cache[dialogHandlersPath];
+    const reloadedHandlers = require(dialogHandlersPath);
+    assert(
+      !reloadedHandlers.isUnderAllowedWriteRoot(path.join(tmpRoot, 'bulk', 'r0')),
+      'la carga expulsa las raíces más antiguas de un archivo sobre el tope',
+    );
+    assert(
+      reloadedHandlers.isUnderAllowedWriteRoot(path.join(tmpRoot, 'bulk', `r${MAX_ROOTS + 99}`)),
+      'la carga conserva las raíces más recientes de un archivo sobre el tope',
+    );
+    const trimmedFile = JSON.parse(
+      await fs.promises.readFile(path.join(userDataDir, 'antares-write-roots.json'), 'utf8'),
+    );
+    assert(trimmedFile.length === MAX_ROOTS, 'la carga re-persiste el archivo recortado al tope');
   } finally {
     _clearAllowedWriteRoots();
     clearAllowedReadPaths();

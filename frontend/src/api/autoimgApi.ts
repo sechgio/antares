@@ -21,7 +21,15 @@ export function createAutoimgApi(invoke: IpcInvoke) {
     autoimgSheetsAuthStatus: () => invoke<{ authenticated: boolean; email?: string }>('autoimg_sheets_auth_status'),
     autoimgSheetsAuthRevoke: () => invoke<{ success: boolean }>('autoimg_sheets_auth_revoke'),
     autoimgSheetsOpen: (sheet_id: string) =>
-      invoke<{ success: boolean; sheet_id?: string; name?: string; sheets?: string[]; created_tabs?: string[] }>('autoimg_sheets_open', { sheet_id }),
+      invoke<{
+        success: boolean;
+        sheet_id?: string;
+        name?: string;
+        sheets?: string[];
+        created_tabs?: string[];
+        config_persisted: boolean;
+        config_error?: string;
+      }>('autoimg_sheets_open', { sheet_id }),
     autoimgSheetsGetConfig: () => invoke<{ sheet_id: string; name: string; linked: boolean }>('autoimg_sheets_get_config'),
     autoimgSheetsReadRange: (range: string) => invoke<{ values: string[][] }>('autoimg_sheets_read_range', { range }),
     autoimgSheetsWriteRange: (range: string, values: string[][]) =>
@@ -53,6 +61,9 @@ export function createAutoimgApi(invoke: IpcInvoke) {
       new_rows: number;
       duplicate_nis?: number;
       logs: string[];
+      partial?: boolean;
+      config_persisted?: boolean;
+      warning?: string;
       folder_errors: number;
       scan: {
         summary: {
@@ -74,6 +85,9 @@ export function createAutoimgApi(invoke: IpcInvoke) {
       new_rows: number;
       duplicate_nis?: number;
       logs: string[];
+      partial?: boolean;
+      config_persisted?: boolean;
+      warning?: string;
     }>('autoimg_sync_to_sheet'),
     autoimgSyncFromSheet: () =>
       invoke<AutoImgSyncFromSheetResponse>('autoimg_sync_from_sheet'),
@@ -109,6 +123,9 @@ export function createAutoimgApi(invoke: IpcInvoke) {
         reason: string;
         detail?: string;
       }>;
+      partial?: boolean;
+      config_persisted?: boolean;
+      warning?: string;
       scan_summary?: {
         total: number;
         completos: number;
@@ -123,7 +140,10 @@ export function createAutoimgApi(invoke: IpcInvoke) {
     autoimgLogsList: (force = false) =>
       invoke<{ values: string[][]; cached?: boolean }>('autoimg_logs_list', { force }),
     autoimgBootstrap: (refresh = true) => invoke<AutoImgBootstrapResponse>('autoimg_bootstrap', { refresh }),
-    autoimgAutoSyncToggle: (enabled: boolean) => invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
+    autoimgAutoSyncToggle: (enabled: boolean) => invoke<{ enabled: boolean; persisted: boolean; error?: string }>(
+      'autoimg_auto_sync_toggle',
+      { enabled },
+    ),
     autoimgScanAll: () => invoke<{ success: boolean; results?: unknown }>('autoimg_scan_all'),
     autoimgCancelOperation: () => invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
     autoimgOperationStatus: () =>

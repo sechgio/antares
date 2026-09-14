@@ -1,8 +1,21 @@
 const crypto = require('crypto');
 const store = require('./autoimg-user-store');
-const { maskClientId, validateClientId } = require('./autoimg-security');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const { AUTOIMG_SHEET_TABS, listMissingAutoImgTabs } = require('./autoimg-sheet-rows');
+const {
+  getOAuthConfig,
+  getOAuthConfigStatus,
+  saveOAuthConfig,
+  requireOAuthConfig: _requireConfig,
+  captureAuthSession: _captureAuthSession,
+  isAuthSessionCurrent: _isAuthSessionCurrent,
+  sessionStoreKey: _sessionStoreKey,
+  assertAuthSessionCurrent: _assertAuthSessionCurrent,
+  getValidTokens,
+  refreshAccessToken,
+  isInvalidGrantResponse,
+  REAUTH_REQUIRED_MESSAGE,
+} = require('./google-session');
 const {
   findAvailablePort,
   startCallbackServer,
@@ -14,8 +27,6 @@ const {
   getActiveUserPublic,
   maskEmail,
   onActiveUserChange,
-  getActiveUserSnapshot,
-  isActiveUserSnapshotCurrent,
 } = require('./autoimg-user-scope');
 
 const SCOPES = [
@@ -24,20 +35,10 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
-const REAUTH_REQUIRED_MESSAGE =
-  'La sesión de Google expiró o fue revocada. Vuelve a conectar tu cuenta con "Conectar con Google".';
-const SESSION_CHANGED_MESSAGE = 'La sesión de Google cambió durante la operación.';
-
 let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
 let _pendingOAuthState = null;
 let _oauthFlowPromise = null;
-const _tokenRefreshPromises = new Map();
-
-function isInvalidGrantResponse(body) {
-  const text = String(body || '');
-  return /invalid_grant/i.test(text) || /Token has been expired or revoked/i.test(text);
-}
 
 function _generateCodeVerifier() {
   return crypto.randomBytes(32).toString('base64url');
@@ -47,13 +48,6 @@ function _generateCodeChallenge(verifier) {
   return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
 
-function _normalizeOAuthConfig(cfg) {
-  return {
-    clientId: String(cfg.clientId || '').trim(),
-    clientSecret: String(cfg.clientSecret || '').trim(),
-  };
-}
-
 let _sheetId = null;
 let _sheetMeta = null;
 
@@ -61,158 +55,6 @@ onActiveUserChange(() => {
   _sheetId = null;
   _sheetMeta = null;
 });
-
-function _loadOAuthConfigFromDisk() {
-  return store.loadOAuthConfigFromDisk();
-}
-
-function getOAuthConfig() {
-  const fromEnv = _normalizeOAuthConfig({
-    clientId: process.env.AUTOIMG_GOOGLE_CLIENT_ID || '',
-    clientSecret: process.env.AUTOIMG_GOOGLE_CLIENT_SECRET || '',
-  });
-  if (fromEnv.clientId && fromEnv.clientSecret) return fromEnv;
-  return _normalizeOAuthConfig(_loadOAuthConfigFromDisk());
-}
-
-function saveOAuthConfig(clientId, clientSecret) {
-  return store.saveOAuthConfig(clientId, clientSecret);
-}
-
-function getOAuthConfigStatus() {
-  const cfg = getOAuthConfig();
-  const configured = !!(cfg.clientId && cfg.clientSecret);
-  return {
-    configured,
-    client_id_masked: configured ? maskClientId(cfg.clientId) : undefined,
-  };
-}
-
-function _requireConfig() {
-  const cfg = getOAuthConfig();
-  if (!cfg.clientId || !cfg.clientSecret) {
-    throw new Error(
-      'Credenciales OAuth no configuradas. En AutoIMG, abre el apartado "Credenciales OAuth" e ingresa tu Client ID y Client Secret de Google Cloud.',
-    );
-  }
-  validateClientId(cfg.clientId);
-  return cfg;
-}
-
-function _captureAuthSession() {
-  if (typeof getActiveUserSnapshot === 'function') return getActiveUserSnapshot();
-  return { userKey: null, generation: 0 };
-}
-
-function _isAuthSessionCurrent(session) {
-  if (typeof isActiveUserSnapshotCurrent === 'function') {
-    return isActiveUserSnapshotCurrent(session);
-  }
-  return true;
-}
-
-function _sessionStoreKey(session) {
-  return session?.userKey || 'anonymous';
-}
-
-function _clearSessionTokens(session = _captureAuthSession()) {
-  store.clearTokensForUserKey(_sessionStoreKey(session));
-}
-
-function _assertAuthSessionCurrent(session) {
-  if (!_isAuthSessionCurrent(session)) throw new Error(SESSION_CHANGED_MESSAGE);
-}
-
-async function _refreshAccessToken(tokens, session = _captureAuthSession()) {
-  _assertAuthSessionCurrent(session);
-  const cfg = _requireConfig();
-  if (!tokens?.refresh_token) {
-    _clearSessionTokens(session);
-    throw new Error(REAUTH_REQUIRED_MESSAGE);
-  }
-  const body = new URLSearchParams({
-    client_id: cfg.clientId,
-    client_secret: cfg.clientSecret,
-    refresh_token: tokens.refresh_token,
-    grant_type: 'refresh_token',
-  });
-  const res = await fetchWithRetry(
-    'https://oauth2.googleapis.com/token',
-    { method: 'POST', body },
-    { retries: 0 },
-  );
-  if (!res.ok) {
-    const err = await res.text();
-    if (isInvalidGrantResponse(err)) {
-      _clearSessionTokens(session);
-      throw new Error(REAUTH_REQUIRED_MESSAGE);
-    }
-    throw new Error(`No se pudo refrescar el token: ${err}`);
-  }
-  const data = await res.json();
-  const updated = {
-    ...tokens,
-    access_token: data.access_token,
-    refresh_token: data.refresh_token || tokens.refresh_token,
-    expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
-  };
-  _assertAuthSessionCurrent(session);
-  store.saveTokensForUserKey(_sessionStoreKey(session), updated);
-  return updated;
-}
-
-function _refreshAccessTokenSingleFlight(tokens, session = _captureAuthSession()) {
-  const refreshToken = tokens?.refresh_token;
-  if (!refreshToken) return _refreshAccessToken(tokens, session);
-
-  _assertAuthSessionCurrent(session);
-  const key = `${_sessionStoreKey(session)}:${session.generation}:${refreshToken}`;
-
-  const pending = _tokenRefreshPromises.get(key);
-  if (pending) return pending;
-
-  const request = _refreshAccessToken(tokens, session).finally(() => {
-    if (_tokenRefreshPromises.get(key) === request) {
-      _tokenRefreshPromises.delete(key);
-    }
-  });
-  _tokenRefreshPromises.set(key, request);
-  return request;
-}
-
-async function getValidTokens(expectedSession) {
-  const session = expectedSession || _captureAuthSession();
-  let tokens = store.loadTokens();
-  if (!tokens) return null;
-  if (!_isAuthSessionCurrent(session)) return null;
-
-  const hasAccess = Boolean(tokens.access_token);
-  const hasRefresh = Boolean(tokens.refresh_token);
-  if (!hasAccess && !hasRefresh) return null;
-
-  const expiresSoon = !tokens.expiry_date || tokens.expiry_date < Date.now() + 60_000;
-  const needsRefresh = !hasAccess || expiresSoon;
-
-  if (needsRefresh) {
-    if (!hasRefresh) {
-      _clearSessionTokens(session);
-      return null;
-    }
-    try {
-      tokens = await _refreshAccessTokenSingleFlight(tokens, session);
-    } catch (err) {
-      if (err instanceof Error && (
-        err.message === REAUTH_REQUIRED_MESSAGE
-        || err.message === SESSION_CHANGED_MESSAGE
-      )) {
-        return null;
-      }
-      throw err;
-    }
-  }
-  if (!_isAuthSessionCurrent(session)) return null;
-  return tokens;
-}
 
 function _buildAuthUrl(redirectUri, codeChallenge, state) {
   const cfg = _requireConfig();
@@ -415,7 +257,7 @@ async function _apiFetch(url, options = {}) {
   _assertAuthSessionCurrent(session);
   if (res.status === 401 && tokens.refresh_token) {
     try {
-      const refreshed = await _refreshAccessTokenSingleFlight(tokens, session);
+      const refreshed = await refreshAccessToken(tokens, session);
       headers.Authorization = `Bearer ${refreshed.access_token}`;
       const retried = await fetchWithRetry(url, { ...options, headers });
       _assertAuthSessionCurrent(session);
@@ -528,7 +370,8 @@ async function restorePersistedSheet() {
   try {
     await openSpreadsheet(stored.sheet_id);
   } catch {
-    _sheetId = stored.sheet_id;
+    // Reapertura fallida (token expirado, hoja eliminada o permisos): no marcar
+    // _sheetId para que linked sea false y el próximo intento vuelva a abrir.
   }
   return getStoredSheetConfig();
 }
@@ -640,7 +483,7 @@ module.exports = {
   appendRow,
   batchWriteRanges,
   getValidTokens,
-  refreshAccessToken: _refreshAccessTokenSingleFlight,
+  refreshAccessToken,
   ensureAutoImgTabs,
   isInvalidGrantResponse,
   REAUTH_REQUIRED_MESSAGE,

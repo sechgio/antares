@@ -1,4 +1,4 @@
-import { matchesRecordId, normalizeRecordId } from '../runtime/excel';
+import { matchesRecordId, normalizeRecordId } from '../../../utils/recordMatching';
 
 export type GenerateExportScope = 'single' | 'all';
 

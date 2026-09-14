@@ -9,63 +9,9 @@ backend_dir = Path(sys._getframe().f_code.co_filename).parent.resolve()
 project_dir = backend_dir.parent
 
 _hidden = [
-    'backend.core.converter',
-    'backend.core.database',
-    'backend.core.renamer',
-    'backend.core.config_fields',
-    'backend.core.config_theme',
-    'backend.core.plugins',
-    'backend.core.history',
-    'backend.core.format_registry',
-    'backend.core.formatos',
-    'backend.core.technical_reports',
-    'backend.core.technical_reports.models',
-    'backend.core.technical_reports.database',
-    'backend.core.technical_reports.importer',
-    'backend.core.technical_reports.rendering',
-    'backend.core.informes_v2',
-    'backend.core.informes_v2.models',
-    'backend.core.informes_v2.database',
-    'backend.core.informes_v2.importer',
-    'backend.core.informes_v2.rendering',
-    'backend.core.informes_v2.template_xlsx',
-    'backend.core.fichas_tecnicas',
-    'backend.core.fichas_tecnicas.models',
-    'backend.core.fichas_tecnicas.database',
-    'backend.core.fichas_tecnicas.importer',
-    'backend.core.fichas_tecnicas.rendering',
-    'backend.core.canvas',
-    'backend.core.canvas.store',
-    'backend.core.canvas.models',
-    'backend.core.ubicaciones',
-    'backend.core.ubicaciones.client',
-    'backend.core.ubicaciones.cache',
-    'backend.core.ubicaciones.composer',
-    'backend.core.ubicaciones.consolidator',
     'backend.utils.validators',
     'backend.utils.paths',
     'backend.ipc_protocol',
-    'backend.handlers',
-    'backend.handlers.common',
-    'backend.handlers.info',
-    'backend.handlers.diagnostics',
-    'backend.handlers.theme',
-    'backend.handlers.history',
-    'backend.handlers.database',
-    'backend.handlers.templates',
-    'backend.handlers.canvas',
-    'backend.handlers.conversion',
-    'backend.handlers.formatos',
-    'backend.handlers.optimizer',
-    'backend.handlers.sellador',
-    'backend.handlers.technical_reports',
-    'backend.handlers.informes_v2',
-    'backend.handlers.fichas_tecnicas',
-    'backend.handlers.panel_aviso_corte',
-    'backend.handlers.ubicaciones',
-    'backend.handlers.evidencia_volanteo',
-    'backend.handlers.spreadsheet',
-    'backend.handlers.telemetry',
     'backend.version',
 ]
 _hidden += collect_submodules('backend.handlers')
@@ -80,7 +26,7 @@ def _runtime_submodules(pkg: str) -> list[str]:
 
 
 for _pkg in ('pandas', 'openpyxl', 'weasyprint', 'PIL', 'lxml', 'pypdf',
-             'jinja2', 'jsonschema', 'docx', 'fitz', 'pymupdf'):
+             'jinja2', 'jsonschema', 'docx', 'pymupdf'):
     _hidden += _runtime_submodules(_pkg)
 
 try:
@@ -114,6 +60,7 @@ _datas = [
     (str(backend_dir / 'core' / 'presets.json'), 'backend/core'),
     (str(project_dir / 'assets' / 'ubicaciones'), 'assets/ubicaciones'),
     (str(project_dir / 'shared' / 'default-theme.json'), 'shared'),
+    (str(project_dir / 'shared' / 'ipc-method-catalog.json'), 'shared'),
 ]
 _datas += collect_data_files('weasyprint')
 
@@ -126,7 +73,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-excludes=[
+    excludes=[
         'scipy',
         'numba',
         'llvmlite',

@@ -6,16 +6,18 @@ import logging
 import os
 from typing import Any
 
+from backend.core.exceptions import ResourceLockedError
+
 logger = logging.getLogger(__name__)
 
 _CONSOLIDATED_PDF_NAME = "ubicaciones_consolidado.pdf"
 _MAX_CONSOLIDATED_PAGE_BYTES = 64 * 1024 * 1024
 
 
-def _consolidated_pdf_permission_error(path: str) -> PermissionError:
-    return PermissionError(
+def _consolidated_pdf_permission_error(path: str) -> ResourceLockedError:
+    return ResourceLockedError(
         f"No se pudo guardar el PDF consolidado en '{path}'. "
-        "Cierra el archivo si está abierto en un visor PDF o en el Explorador de Windows e intenta de nuevo."
+        "Cierra el archivo si está abierto en un visor PDF o en el Explorador de Windows e intenta de nuevo.",
     )
 
 
@@ -102,10 +104,6 @@ def _merge_consolidated_pdfs(page_paths: list[str], output_dir: str) -> str:
                 os.remove(page_path)
 
 
-def build_consolidated_pdf(page_paths: list[str], output_dir: str) -> str:
-    return _merge_consolidated_pdfs(page_paths, output_dir)
-
-
 __all__ = [
     "_CONSOLIDATED_PDF_NAME",
     "_MAX_CONSOLIDATED_PAGE_BYTES",
@@ -115,7 +113,6 @@ __all__ = [
     "_save_consolidated_writer",
     "_write_consolidated_pdf",
     "append_page_to_writer",
-    "build_consolidated_pdf",
     "close_consolidated_writer",
     "create_consolidated_writer",
 ]

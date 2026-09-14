@@ -68,19 +68,12 @@ function setUbicacionesApiKeys(keys) {
   return safe;
 }
 
-function resolveProviderApiKey(provider, fallbackFromRenderer) {
-  const cacheKey = `${provider || ''}::${String(fallbackFromRenderer || '')}`;
+function resolveProviderApiKey(provider) {
+  const cacheKey = String(provider || '').trim();
   if (_resolveCache.has(cacheKey)) return _resolveCache.get(cacheKey);
 
   const full = getUbicacionesApiKeys();
-  const fromStore = full[String(provider || '').trim()] || '';
-  let resolved = '';
-  if (fromStore) {
-    resolved = fromStore;
-  } else {
-    const fb = String(fallbackFromRenderer || '').trim();
-    if (fb && !fb.startsWith('••••')) resolved = fb.slice(0, 512);
-  }
+  const resolved = full[cacheKey] || '';
   _cacheProviderApiKeyResolution(cacheKey, resolved);
   return resolved;
 }

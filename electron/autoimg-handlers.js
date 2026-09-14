@@ -71,12 +71,18 @@ async function handleAutoimgCall(method, params = {}) {
 
       case 'autoimg_sheets_open': {
         const result = await sheets.openSpreadsheet(params.sheet_id || params.url || '');
+        let persistence = { persisted: true };
         if (result?.sheet_id) {
-          try {
-            await engine.persistSheetIdConfig(result.sheet_id);
-          } catch {  }
+          persistence = await engine.persistSheetIdConfig(result.sheet_id);
         }
-        return { handled: true, result };
+        return {
+          handled: true,
+          result: {
+            ...result,
+            config_persisted: persistence.persisted,
+            ...(persistence.error ? { config_error: sanitizeErrorMessage(persistence.error) } : {}),
+          },
+        };
       }
 
       case 'autoimg_sheets_get_config':

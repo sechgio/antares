@@ -25,6 +25,29 @@ def _write_xlsx(path: Path, rows: list[list[Any]]) -> None:
     wb.close()
 
 
+def test_serialize_cell_nonfinite_floats_become_none() -> None:
+    from backend.handlers.spreadsheet import _serialize_cell
+
+    assert _serialize_cell(float("inf")) is None
+    assert _serialize_cell(float("-inf")) is None
+    assert _serialize_cell(float("nan")) is None
+    assert _serialize_cell(1.5) == 1.5
+    assert _serialize_cell(0.0) == 0.0
+    assert _serialize_cell("Infinity") == "Infinity"
+    assert _serialize_cell(True) is True
+
+
+def test_parse_xlsx_inf_cell_does_not_poison_payload(tmp_path: Path) -> None:
+    staged = tmp_path / "inf.xlsx"
+    _write_xlsx(staged, [["H", "V"], [float("inf"), "a"]])
+
+    result = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
+
+    json.dumps(result, allow_nan=False)
+    row = result["sheets"][0]["rows"][1]
+    assert row == [None, "a"]
+
+
 def test_parse_xlsx_with_tmp_suffix_via_format_hint(tmp_path: Path) -> None:
     staged = tmp_path / "token_datos.xlsx.tmp"
     _write_xlsx(

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search, X } from 'lucide-react';
+import { useAnchoredPopover, type PopoverPosition } from '@/hooks/useAnchoredPopover';
 import {
   CANVAS_FONTS,
   ensureCanvasFontsLoaded,
@@ -15,13 +16,6 @@ interface FontPickerProps {
   disabled?: boolean;
 }
 
-interface MenuBox {
-  top: number;
-  left: number;
-  width: number;
-  maxHeight: number;
-}
-
 const MENU_GAP = 8;
 const MENU_EDGE = 8;
 const MENU_WIDTH = 240;
@@ -34,27 +28,11 @@ export default function FontPicker({
   className = '',
   disabled = false,
 }: FontPickerProps) {
-  const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [menuBox, setMenuBox] = useState<MenuBox | null>(null);
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const selected = getFontByStack(value) ?? CANVAS_FONTS[0];
-  const displayLabel = selected?.label ?? value;
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return CANVAS_FONTS;
-    return CANVAS_FONTS.filter((f) => f.label.toLowerCase().includes(q));
-  }, [query]);
-
-  const updateMenuBox = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
+  const positioner = useCallback((rect: DOMRect): PopoverPosition => {
     const width = MENU_WIDTH;
     const spaceLeft = rect.left - MENU_GAP - MENU_EDGE;
     const spaceRight = window.innerWidth - rect.right - MENU_GAP - MENU_EDGE;
@@ -72,12 +50,29 @@ export default function FontPicker({
       top = Math.max(MENU_EDGE, window.innerHeight - MENU_EDGE - maxHeight);
     }
 
-    setMenuBox({ top, left, width, maxHeight });
+    return { top, left, width, maxHeight };
   }, []);
+
+  const {
+    isOpen,
+    position: menuBox,
+    triggerRef: containerRef,
+    popupRef: menuRef,
+    close,
+    toggle,
+  } = useAnchoredPopover<HTMLDivElement>({ positioner });
+
+  const selected = getFontByStack(value) ?? CANVAS_FONTS[0];
+  const displayLabel = selected?.label ?? value;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return CANVAS_FONTS;
+    return CANVAS_FONTS.filter((f) => f.label.toLowerCase().includes(q));
+  }, [query]);
 
   useLayoutEffect(() => {
     if (!isOpen) {
-      setMenuBox(null);
       setPortalRoot(null);
       return;
     }
@@ -85,48 +80,21 @@ export default function FontPicker({
     const host =
       (containerRef.current?.closest('.canvas-app') as HTMLElement | null) ?? document.body;
     setPortalRoot(host);
-    updateMenuBox();
     setQuery('');
     requestAnimationFrame(() => searchRef.current?.focus());
-  }, [isOpen, updateMenuBox]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false);
-    };
-    const handlePointerDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (containerRef.current?.contains(target)) return;
-      if (menuRef.current?.contains(target)) return;
-      setIsOpen(false);
-    };
-    const onLayout = () => updateMenuBox();
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-    };
-  }, [isOpen, updateMenuBox]);
+  }, [isOpen, containerRef]);
 
   const handleSelect = (stack: string) => {
     if (disabled) return;
     onChange(stack);
-    setIsOpen(false);
+    close();
   };
 
   return (
     <div ref={containerRef} className={`relative w-full ${className}`}>
       <button
         type="button"
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={() => { if (!disabled) toggle(); }}
         disabled={disabled}
         aria-expanded={isOpen}
         aria-label={ariaLabel}
@@ -180,7 +148,7 @@ export default function FontPicker({
                 type="button"
                 className="canvas-icon-btn shrink-0"
                 aria-label="Cerrar"
-                onClick={() => setIsOpen(false)}
+                onClick={close}
               >
                 <X className="h-3.5 w-3.5" />
               </button>

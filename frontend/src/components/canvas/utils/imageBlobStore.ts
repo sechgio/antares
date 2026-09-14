@@ -674,11 +674,30 @@ export async function hydrateHistorySteps(steps: HistoryStep[]): Promise<History
   );
 }
 
+const pinnedRefCounts = new Map<string, number>();
+
+export function pinImageRefs(refs: Iterable<string>): () => void {
+  const live = new Set<string>();
+  for (const value of refs) trackImageRef(live, value);
+  for (const ref of live) pinnedRefCounts.set(ref, (pinnedRefCounts.get(ref) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const ref of live) {
+      const next = (pinnedRefCounts.get(ref) ?? 0) - 1;
+      if (next <= 0) pinnedRefCounts.delete(ref);
+      else pinnedRefCounts.set(ref, next);
+    }
+  };
+}
+
 export function releaseImageBlob(value: string | undefined): void {
   if (!value) return;
 
   const blobId = blobMap.has(value) ? value : urlToBlobIdMap.get(value);
   if (!blobId) return;
+  if (pinnedRefCounts.has(blobId) || pinnedRefCounts.has(value)) return;
 
   const reg = blobMap.get(blobId);
   if (!reg) return;
@@ -692,7 +711,8 @@ export function releaseImageBlob(value: string | undefined): void {
 }
 
 export function sweepOrphanBlobs(liveRefs: Iterable<string>): number {
-  const live = liveRefs instanceof Set ? liveRefs : new Set(liveRefs);
+  const live = new Set(liveRefs);
+  for (const ref of pinnedRefCounts.keys()) live.add(ref);
   for (const value of [...live]) {
     trackImageRef(live, value);
   }
@@ -709,14 +729,15 @@ export function sweepOrphanBlobs(liveRefs: Iterable<string>): number {
 }
 
 export function clearBlobStore(): void {
-  for (const reg of blobMap.values()) {
+  for (const [blobId, reg] of [...blobMap]) {
+    if (pinnedRefCounts.has(blobId) || pinnedRefCounts.has(reg.url)) continue;
     if (reg.url.startsWith('blob:')) URL.revokeObjectURL(reg.url);
     if (reg.thumbnailUrl && reg.thumbnailUrl !== reg.url && reg.thumbnailUrl.startsWith('blob:')) {
       URL.revokeObjectURL(reg.thumbnailUrl);
     }
+    urlToBlobIdMap.delete(reg.url);
+    blobMap.delete(blobId);
   }
-  blobMap.clear();
-  urlToBlobIdMap.clear();
   const processorModule = imageProcessorModulePromise;
   imageProcessorModulePromise = null;
   if (processorModule) {

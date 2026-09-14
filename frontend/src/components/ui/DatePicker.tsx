@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { isSameDate, monthStart, parseIsoDateLocal, toIsoDateLocal } from '../../utils/dates';
 import { buildMonthCalendar, formatIsoDate } from '../../utils/datePickerCalendar';
@@ -23,15 +24,8 @@ const MONTH_NAMES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
-const POPUP_GAP = 6;
 const POPUP_EST_HEIGHT = 268;
 const POPUP_EST_WIDTH = 248;
-
-type PopupPosition = {
-  top: number;
-  left: number;
-  width: number;
-};
 
 export default function DatePicker({
   value,
@@ -46,34 +40,14 @@ export default function DatePicker({
 }: DatePickerProps) {
   const popupId = useId();
   const triggerId = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
+  const { isOpen, position, triggerRef, popupRef, open, close, updatePosition } =
+    useAnchoredPopover({
+      estimatedHeight: POPUP_EST_HEIGHT,
+      estimatedWidth: POPUP_EST_WIDTH,
+    });
   const focusedDayRef = useRef<HTMLButtonElement>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [position, setPosition] = useState<PopupPosition | null>(null);
   const [currentMonth, setCurrentMonth] = useState(() => parseIsoDateLocal(value) ?? new Date());
   const [focusedDate, setFocusedDate] = useState(() => parseIsoDateLocal(value) ?? new Date());
-
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-
-    const rect = trigger.getBoundingClientRect();
-    const height = popupRef.current?.offsetHeight ?? POPUP_EST_HEIGHT;
-    const width = Math.min(
-      Math.max(POPUP_EST_WIDTH, rect.width),
-      window.innerWidth - 16,
-    );
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openUp = spaceBelow < height + POPUP_GAP && rect.top > spaceBelow;
-
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-    const top = openUp
-      ? Math.max(8, rect.top - height - POPUP_GAP)
-      : Math.min(rect.bottom + POPUP_GAP, window.innerHeight - height - 8);
-
-    setPosition({ top, left, width });
-  }, []);
 
   useEffect(() => {
     const parsed = parseIsoDateLocal(value);
@@ -83,45 +57,9 @@ export default function DatePicker({
     }
   }, [value]);
 
-  useLayoutEffect(() => {
-    if (!isOpen) {
-      setPosition(null);
-      return;
-    }
-    updatePosition();
-  }, [isOpen, currentMonth, updatePosition]);
-
   useEffect(() => {
-    if (!isOpen) return undefined;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (popupRef.current?.contains(target)) return;
-      setIsOpen(false);
-      triggerRef.current?.focus({ preventScroll: true });
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-        triggerRef.current?.focus({ preventScroll: true });
-      }
-    };
-
-    const handleLayout = () => updatePosition();
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('resize', handleLayout);
-    window.addEventListener('scroll', handleLayout, true);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('resize', handleLayout);
-      window.removeEventListener('scroll', handleLayout, true);
-    };
-  }, [isOpen, updatePosition]);
+    if (isOpen) updatePosition();
+  }, [isOpen, currentMonth, updatePosition]);
 
   useFocusTrap(popupRef, isOpen, focusedDayRef);
 
@@ -142,7 +80,7 @@ export default function DatePicker({
   const handleSelect = (date: Date) => {
     setFocusedDate(date);
     onChange(toIsoDateLocal(date));
-    setIsOpen(false);
+    close();
     triggerRef.current?.focus({ preventScroll: true });
   };
 
@@ -150,7 +88,7 @@ export default function DatePicker({
     const nextDate = selectedDate ?? new Date();
     setFocusedDate(nextDate);
     setCurrentMonth(monthStart(nextDate));
-    setIsOpen(true);
+    open();
   };
 
   const handleTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -169,7 +107,7 @@ export default function DatePicker({
     }
     if (event.key === 'Escape') {
       event.preventDefault();
-      setIsOpen(false);
+      close();
       triggerRef.current?.focus({ preventScroll: true });
       return;
     }
@@ -190,7 +128,7 @@ export default function DatePicker({
 
   const handleClear = () => {
     onChange('');
-    setIsOpen(false);
+    close();
     triggerRef.current?.focus({ preventScroll: true });
   };
 
@@ -198,7 +136,7 @@ export default function DatePicker({
     const next = new Date();
     onChange(toIsoDateLocal(next));
     setCurrentMonth(next);
-    setIsOpen(false);
+    close();
     triggerRef.current?.focus({ preventScroll: true });
   };
 
@@ -218,7 +156,7 @@ export default function DatePicker({
         onClick={() => {
           if (disabled) return;
           if (isOpen) {
-            setIsOpen(false);
+            close();
             triggerRef.current?.focus({ preventScroll: true });
           } else {
             openCalendar();

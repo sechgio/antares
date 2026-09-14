@@ -1,4 +1,7 @@
+import json
+
 from backend.core.fichas_tecnicas.database import FichasTecnicasDB
+from backend.core.fichas_tecnicas.models import create_empty_ficha
 from backend.core.informes_v2.database import InformesV2DB
 from backend.core.informes_v2.models import create_empty_report as create_informe
 from backend.core.technical_reports.database import TechnicalReportsDB
@@ -57,11 +60,13 @@ def test_technical_get_preserves_read_normalization(tmp_path) -> None:
     assert db.get("RPT-0001")["header"]["volumen"] == 0
 
 
-def test_ficha_get_preserves_stored_nested_values(tmp_path) -> None:
-    db = FichasTecnicasDB(tmp_path / "fichas.json")
-    created = db.create()
+def test_ficha_load_normalizes_stored_nested_values(tmp_path) -> None:
+    path = tmp_path / "fichas.json"
+    raw = create_empty_ficha(1)
+    raw["servicio"]["desinfeccion"] = "SI"
+    path.write_text(json.dumps({raw["id"]: raw}), encoding="utf-8")
 
-    listed = db.get_all()
-    listed[0]["servicio"]["desinfeccion"] = "SI"
+    db = FichasTecnicasDB(path)
 
-    assert db.get(created["id"])["servicio"]["desinfeccion"] is True
+    assert db.get(raw["id"])["servicio"]["desinfeccion"] is True
+    assert db.get_all()[0]["servicio"]["desinfeccion"] is True

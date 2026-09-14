@@ -5,35 +5,39 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfWriter
 
-import backend.core.ubicaciones as core_ub
 import backend.handlers.ubicaciones as hub
-from backend.core.ubicaciones import (
-    _MAX_CONSOLIDATED_PAGE_BYTES,
-    _REF_LAYOUT,
-    _cap_fetch_size,
-    _clear_ubicaciones_caches,
-    _compose_ubicacion_image,
-    _dimensions_for,
-    _get_cached_map_screenshot,
-    _map_capture_size,
-    _parse_combined_coord_value,
-    _redact_url_for_log,
-    _resolve_api_key,
-    _resolve_provider,
-    _unique_pdf_filename,
-    _write_consolidated_pdf,
-    append_page_to_writer,
-    build_consolidated_pdf,
-    close_consolidated_writer,
-    create_consolidated_writer,
-    fetch_static_map,
-)
 from backend.core.ubicaciones import cache as u_cache
 from backend.core.ubicaciones import client as u_client
 from backend.core.ubicaciones import composer as u_composer
 from backend.core.ubicaciones import consolidator as u_consolidator
+from backend.core.ubicaciones.cache import (
+    _clear_ubicaciones_caches,
+    _get_cached_map_screenshot,
+)
+from backend.core.ubicaciones.client import (
+    _cap_fetch_size,
+    _parse_combined_coord_value,
+    _redact_url_for_log,
+    _resolve_api_key,
+    _resolve_provider,
+    fetch_static_map,
+)
+from backend.core.ubicaciones.composer import (
+    _REF_LAYOUT,
+    _compose_ubicacion_image,
+    _dimensions_for,
+    _map_capture_size,
+    _unique_pdf_filename,
+)
+from backend.core.ubicaciones.consolidator import (
+    _MAX_CONSOLIDATED_PAGE_BYTES,
+    _write_consolidated_pdf,
+    append_page_to_writer,
+    close_consolidated_writer,
+    create_consolidated_writer,
+)
 
 
 def _create_dummy_pdf(path: str) -> None:
@@ -103,28 +107,6 @@ def test_cache_clear_empties_all() -> None:
     assert len(u_cache._footer_cache) == 0
     assert len(u_cache._excel_cache) == 0
     assert len(u_cache._preview_composed_cache) == 0
-
-
-def test_consolidator_build_consolidated_pdf(tmp_path: Path) -> None:
-    p1 = str(tmp_path / "page_1.pdf")
-    p2 = str(tmp_path / "page_2.pdf")
-    p3 = str(tmp_path / "page_3.pdf")
-    _create_dummy_pdf(p1)
-    _create_dummy_pdf(p2)
-    _create_dummy_pdf(p3)
-
-    out_pdf = build_consolidated_pdf([p1, p2, p3], str(tmp_path))
-    assert os.path.isfile(out_pdf)
-    reader = PdfReader(out_pdf)
-    assert len(reader.pages) == 3
-    assert not os.path.exists(p1)
-    assert not os.path.exists(p2)
-    assert not os.path.exists(p3)
-
-
-def test_consolidator_empty_list_raises(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="No hay imágenes"):
-        build_consolidated_pdf([], str(tmp_path))
 
 
 def test_consolidator_append_page_size_exceeded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -237,8 +219,6 @@ def test_module_exports_consistency() -> None:
         assert mod is not None
     assert hub.HANDLERS["generar_ubicaciones"] is hub.handle_generar_ubicaciones
     assert hub.HANDLERS["preview_ubicacion"] is hub.handle_preview_ubicacion
-    assert core_ub.fetch_static_map is u_client.fetch_static_map
-    assert core_ub.create_consolidated_writer is u_consolidator.create_consolidated_writer
 
 
 def test_handler_keeps_legacy_test_surface() -> None:

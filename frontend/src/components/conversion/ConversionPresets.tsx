@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, FolderOpen, ChevronDown, Trash2, Check, Settings2 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 
 export interface ConversionConfig {
   formato: string;
@@ -127,39 +128,32 @@ function savePresets(presets: SavedPreset[]) {
 }
 
 export default function ConversionPresets({ currentConfig, onLoadConfig, className = '' }: ConversionPresetsProps) {
-  const [open, setOpen] = useState(false);
   const [saveMode, setSaveMode] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [customPresets, setCustomPresets] = useState<SavedPreset[]>(loadPresets);
-  const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
-  const anchorRef = useRef<HTMLDivElement>(null);
-
-  const updateMenuPosition = useCallback(() => {
-    const anchor = anchorRef.current;
-    if (!anchor) return;
-    const rect = anchor.getBoundingClientRect();
-    setMenuPosition({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
-  }, []);
+  const {
+    isOpen: open,
+    position: menuPosition,
+    triggerRef: anchorRef,
+    popupRef: menuRef,
+    close,
+    toggle,
+  } = useAnchoredPopover<HTMLDivElement>({
+    estimatedHeight: 400,
+    estimatedWidth: 320,
+    align: 'end',
+    direction: 'down',
+    gap: 8,
+  });
 
   const closeMenu = useCallback(() => {
-    setOpen(false);
+    close();
     setSaveMode(false);
-  }, []);
+  }, [close]);
 
   useEffect(() => {
-    if (!open) {
-      setMenuPosition(null);
-      return undefined;
-    }
-    updateMenuPosition();
-    const onLayoutChange = () => updateMenuPosition();
-    window.addEventListener('resize', onLayoutChange);
-    window.addEventListener('scroll', onLayoutChange, true);
-    return () => {
-      window.removeEventListener('resize', onLayoutChange);
-      window.removeEventListener('scroll', onLayoutChange, true);
-    };
-  }, [open, updateMenuPosition]);
+    if (!open) setSaveMode(false);
+  }, [open]);
 
   const handleSave = () => {
     const name = saveName.trim();
@@ -193,7 +187,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
     <div className={className} ref={anchorRef}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-expanded={open}
         aria-haspopup="menu"
         className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] transition-all"
@@ -204,11 +198,10 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
       </button>
 
       {open && menuPosition && createPortal(
-        <>
-          <div className="fixed inset-0 z-[120]" onClick={closeMenu} aria-hidden="true" />
           <div
+            ref={menuRef}
             role="menu"
-            style={{ top: menuPosition.top, right: menuPosition.right }}
+            style={{ top: menuPosition.top, left: menuPosition.left }}
             className="fixed z-[130] w-80 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-2xl overflow-hidden animate-scale-in"
           >
           <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
@@ -296,8 +289,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
               </>
             )}
           </div>
-          </div>
-        </>,
+          </div>,
         document.body,
       )}
     </div>

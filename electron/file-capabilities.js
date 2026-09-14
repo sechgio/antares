@@ -258,6 +258,9 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
   const allowRawAbsolutePathKeys = options.allowRawAbsolutePathKeys instanceof Set
     ? options.allowRawAbsolutePathKeys
     : EMPTY_PATH_KEY_SET;
+  const writePathKeys = options.writePathKeys instanceof Set
+    ? new Set([...options.writePathKeys].map((k) => String(k).toLowerCase()))
+    : EMPTY_PATH_KEY_SET;
 
   const visit = (value, keyPath, inheritedKey = '') => {
     if (typeof value === 'string') {
@@ -279,14 +282,15 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
         ? inheritedKey
         : (last || inheritedKey);
       const normalizedKey = String(key).toLowerCase();
+      const isWriteKey = WRITE_PATH_KEYS.has(normalizedKey) || writePathKeys.has(normalizedKey);
       const isPathKey = SUSPICIOUS_PATH_KEYS.has(normalizedKey)
         || normalizedKey.includes('path')
         || normalizedKey.includes('folder')
-        || PATH_CONTAINER_KEYS.has(normalizedKey);
+        || PATH_CONTAINER_KEYS.has(normalizedKey)
+        || isWriteKey;
       if (!isPathKey) return;
       if (value.includes('\0')) throw new Error(`invalid path param: ${keyPath.join('.')}`);
 
-      const isWriteKey = WRITE_PATH_KEYS.has(normalizedKey);
       if (!isWriteKey && path.isAbsolute(value)) {
         const isExplicitlyAllowed = allowRawAbsolutePathKeys.has(normalizedKey);
         let isRegisteredReadPath = false;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { api, AntaresAPIError } from '../api';
+import { api, AntaresAPIError, apiRetryAfterMs, _resetBackendReadyForTests } from '../api';
 
 const mockInvoke = vi.fn();
 const mockOnNotify = vi.fn();
@@ -46,7 +46,6 @@ describe('API Client', () => {
       expect(apiErr.message).toBe('Archivo bloqueado');
       expect(apiErr.code).toBe(-32002);
       expect(apiErr.category).toBe('RESOURCE_LOCKED');
-      expect(apiErr.isResourceLockedError()).toBe(true);
       expect(apiErr.details).toEqual({ path: 'C:\\out.jpg' });
     }
   });
@@ -234,6 +233,7 @@ describe('API Client', () => {
   });
 
   it('should use a timeout budget that outlives Electron main startup wait', async () => {
+    _resetBackendReadyForTests();
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     mockInvoke.mockResolvedValue({ version: '1' });
 
@@ -244,6 +244,7 @@ describe('API Client', () => {
   });
 
   it('should use extended timeout budget for long-running methods', async () => {
+    _resetBackendReadyForTests();
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     mockInvoke.mockResolvedValue({ success: true, count: 1 });
 
@@ -251,5 +252,86 @@ describe('API Client', () => {
 
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 370_000);
     setTimeoutSpy.mockRestore();
+  });
+
+  it('drops the startup buffer once the backend answered a backend method', async () => {
+    _resetBackendReadyForTests();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    mockInvoke.mockResolvedValue({ version: '1' });
+
+    await api.version();
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 100_000);
+
+    setTimeoutSpy.mockClear();
+    await api.version();
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 40_000);
+    expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), 100_000);
+    setTimeoutSpy.mockRestore();
+  });
+
+  it('should retry once after a pre-execution retryable rejection', async () => {
+    mockInvoke
+      .mockRejectedValueOnce({
+        message: 'Memoria baja',
+        code: -32003,
+        category: 'MEMORY_PRESSURE',
+        details: { retry_after_ms: 1 },
+      })
+      .mockResolvedValueOnce({ version: '0.3.6' });
+
+    const result = await api.version();
+
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
+    expect(result.version).toBe('0.3.6');
+  });
+
+  it('should not retry non-retryable errors', async () => {
+    mockInvoke.mockRejectedValue({
+      message: 'boom',
+      code: -32000,
+      category: 'INTERNAL_ERROR',
+    });
+
+    await expect(api.version()).rejects.toThrow('boom');
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('should propagate the error when the retry also fails', async () => {
+    mockInvoke.mockRejectedValue({
+      message: 'Backend ocupado',
+      code: -32005,
+      category: 'CAPACITY_EXCEEDED',
+      details: { retryable: true, retry_after_ms: 1 },
+    });
+
+    await expect(api.version()).rejects.toMatchObject({ category: 'CAPACITY_EXCEEDED' });
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('apiRetryAfterMs', () => {
+  it('honors retry_after_ms for memory pressure', () => {
+    expect(
+      apiRetryAfterMs({ category: 'MEMORY_PRESSURE', details: { retry_after_ms: 2500 } }),
+    ).toBe(2500);
+  });
+
+  it('returns a default delay for retryable capacity errors', () => {
+    expect(
+      apiRetryAfterMs({ category: 'CAPACITY_EXCEEDED', details: { retryable: true } }),
+    ).toBe(2000);
+  });
+
+  it('caps the server-provided delay', () => {
+    expect(
+      apiRetryAfterMs({ category: 'MEMORY_PRESSURE', details: { retry_after_ms: 999_999 } }),
+    ).toBe(60_000);
+  });
+
+  it('returns null for non-retryable errors', () => {
+    expect(apiRetryAfterMs(new AntaresAPIError('x'))).toBeNull();
+    expect(apiRetryAfterMs(new Error('x'))).toBeNull();
+    expect(apiRetryAfterMs('x')).toBeNull();
+    expect(apiRetryAfterMs({ category: 'VALIDATION_ERROR' })).toBeNull();
   });
 });

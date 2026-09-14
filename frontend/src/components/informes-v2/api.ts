@@ -1,8 +1,5 @@
 import { api } from '../../api';
-import { downloadBase64Blob, downloadBase64Pdf, fileToBase64, fileToDataUrl } from '../../utils/pdfAssets';
 import type { InformeV2, InformeV2ListItem } from './types';
-
-export { downloadBase64Blob, downloadBase64Pdf, fileToBase64, fileToDataUrl };
 
 const CONSOLIDATED_READ_BATCH_SIZE = 4;
 

@@ -3,12 +3,14 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { ChevronLeft, ChevronRight, Database, Download, Eye, FilePlus2, Files, PenLine, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDialog } from '../../hooks/useDialog';
+import { useOperationCoordinator } from '../../hooks/useOperationCoordinator';
 import { useToast } from '../../hooks/useToast';
 import { saveFeatureHistory } from '../../utils/history';
 import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
-import { downloadBase64Pdf, fileToBase64, fileToDataUrl, fichasTecnicasApi } from './api';
+import { downloadBase64Pdf, fileToBase64, fileToDataUrl } from '../../utils/pdfAssets';
+import { fichasTecnicasApi } from './api';
 import { normalizeFicha, type FichaTecnica, type FichaTecnicaListItem } from './types';
 
 const DRAFT_KEY = 'current_ficha_draft';
@@ -48,11 +50,11 @@ export default function FichasTecnicasApp() {
   const [selectedId, setSelectedId] = useState<string | null>(draft.selectedId);
   const [formData, setFormData] = useState<FichaTecnica | null>(draft.formData);
   const [dirtyCount, setDirtyCount] = useState(0);
-  const [busy, setBusy] = useState(false);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('preview');
   const importInputRef = useRef<HTMLInputElement>(null);
+  const { busy, runOperation } = useOperationCoordinator();
 
   const hasChanges = dirtyCount > 0;
 
@@ -76,23 +78,17 @@ export default function FichasTecnicasApp() {
     applyFicha(null);
   }, [applyFicha]);
 
-  const busyCountRef = useRef(0);
   const selectGenRef = useRef(0);
 
   const withBusy = useCallback(
     async (fn: () => Promise<void>, fallbackError: string) => {
-      busyCountRef.current += 1;
-      setBusy(true);
       try {
-        await fn();
+        await runOperation(fn);
       } catch (error) {
         addToast({ message: formatIpcError(error, fallbackError), type: 'error' });
-      } finally {
-        busyCountRef.current = Math.max(0, busyCountRef.current - 1);
-        if (busyCountRef.current === 0) setBusy(false);
       }
     },
-    [addToast],
+    [addToast, runOperation],
   );
 
   useEffect(() => {

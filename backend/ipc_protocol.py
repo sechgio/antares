@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -65,11 +66,13 @@ def validate_params(params: dict) -> bool:
 class IPCMessage:
 
     def __init__(self, raw: dict[str, Any]) -> None:
-        self.id: str | int = raw.get("id", "")
+        if "id" not in raw or raw["id"] is None:
+            raise InvalidRequestError("Missing request id")
+        self.id: str | int = raw["id"]
         self.method: str = raw.get("method", "")
         self.params: dict[str, Any] = raw.get("params", {})
 
-        if self.id is not None and (isinstance(self.id, bool) or not isinstance(self.id, (str, int))):
+        if isinstance(self.id, bool) or not isinstance(self.id, (str, int)):
             raise InvalidRequestError(f"Invalid request id: {self.id!r}")
         if not validate_method(self.method):
             raise InvalidRequestError(f"Invalid method name: {self.method}")
@@ -89,6 +92,28 @@ def _emit_stdout_line(payload_bytes: bytes) -> None:
             return
         sys.stdout.write(payload_bytes.decode("utf-8") + "\n")
         sys.stdout.flush()
+
+
+def _sanitize_nonfinite(obj: Any) -> Any:
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _sanitize_nonfinite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_nonfinite(v) for v in obj]
+    return obj
+
+
+def _dumps_payload(payload: dict[str, Any]) -> bytes:
+    try:
+        return json.dumps(
+            payload, ensure_ascii=False, default=_json_default, allow_nan=False
+        ).encode("utf-8")
+    except ValueError:
+        logger.warning("Payload con floats no finitos; sanitizados a null antes de serializar")
+        return json.dumps(
+            _sanitize_nonfinite(payload), ensure_ascii=False, default=_json_default, allow_nan=False
+        ).encode("utf-8")
 
 
 def send_response(
@@ -120,9 +145,7 @@ def send_response(
     write_ok = False
     t0 = time.perf_counter()
     try:
-        payload_bytes = json.dumps(
-            payload, ensure_ascii=False, default=_json_default, allow_nan=False
-        ).encode("utf-8")
+        payload_bytes = _dumps_payload(payload)
         if len(payload_bytes) > _MAX_PAYLOAD_SIZE:
             logger.error(
                 "Response payload too large: %d bytes (max: %d)",
@@ -181,9 +204,7 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
         "params": params,
     }
     try:
-        payload_bytes = json.dumps(
-            payload, ensure_ascii=False, default=_json_default, allow_nan=False
-        ).encode("utf-8")
+        payload_bytes = _dumps_payload(payload)
         if len(payload_bytes) > _MAX_PAYLOAD_SIZE:
             logger.error(
                 "Notification payload too large: %d bytes (max: %d), dropping",

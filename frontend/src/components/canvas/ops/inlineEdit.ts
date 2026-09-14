@@ -1,6 +1,18 @@
-import type { CanvasLayer } from '../types';
+import type { CanvasLayer, LayerCssVars } from '../types';
 import { mm, parseMm } from '../types';
 import { MM_TO_PX } from './drawHelpers';
+
+export interface InlineSelectionRange {
+  start: number;
+  end: number;
+}
+
+export interface InlineEditStartOpts {
+  seed?: string;
+  selection?: InlineSelectionRange;
+}
+
+export type InlineTextStyle = 'bold' | 'italic' | 'underline';
 
 export function canInlineEditLayer(layer: CanvasLayer | null | undefined): boolean {
   if (!layer) return false;
@@ -74,6 +86,75 @@ export function isTypeToEditKey(
   const code = key.charCodeAt(0);
   if (code < 32) return false;
   return true;
+}
+
+export function caretIndexFromPoint(
+  root: HTMLElement,
+  clientX: number,
+  clientY: number,
+): number | null {
+  const doc = root.ownerDocument as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  let node: Node | null = null;
+  let offset = 0;
+  const pos = doc.caretPositionFromPoint?.(clientX, clientY);
+  if (pos) {
+    node = pos.offsetNode;
+    offset = pos.offset;
+  } else {
+    const range = doc.caretRangeFromPoint?.(clientX, clientY);
+    if (range) {
+      node = range.startContainer;
+      offset = range.startOffset;
+    }
+  }
+  if (!node || node.nodeType !== Node.TEXT_NODE || !root.contains(node)) return null;
+  return offset;
+}
+
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
+
+function caretCharClass(ch: string): number {
+  if (WORD_CHAR.test(ch)) return 0;
+  return /\s/.test(ch) ? 1 : 2;
+}
+
+export function wordRangeAt(text: string, index: number): InlineSelectionRange {
+  const len = text.length;
+  const i = Math.max(0, Math.min(Math.round(index), len));
+  if (i >= len) return { start: len, end: len };
+  const cls = caretCharClass(text[i]);
+  let start = i;
+  let end = i + 1;
+  while (start > 0 && caretCharClass(text[start - 1]) === cls) start--;
+  while (end < len && caretCharClass(text[end]) === cls) end++;
+  return { start, end };
+}
+
+export function inlineEditLayerChanged(a: CanvasLayer, b: CanvasLayer): boolean {
+  if (a.value !== b.value) return true;
+  for (const k of Object.keys(a.cssVars) as (keyof LayerCssVars)[]) {
+    if (a.cssVars[k] !== b.cssVars[k]) return true;
+  }
+  for (const k of Object.keys(b.cssVars) as (keyof LayerCssVars)[]) {
+    if (b.cssVars[k] !== a.cssVars[k]) return true;
+  }
+  return false;
+}
+
+export function toggleInlineTextStyle(layer: CanvasLayer, style: InlineTextStyle): CanvasLayer {
+  const cssVars = { ...layer.cssVars };
+  if (style === 'bold') {
+    const weight = Number.parseInt(cssVars['--font-weight'] ?? '400', 10);
+    cssVars['--font-weight'] = Number.isFinite(weight) && weight >= 600 ? '400' : '700';
+  } else if (style === 'italic') {
+    cssVars['--font-style'] = cssVars['--font-style'] === 'italic' ? '' : 'italic';
+  } else {
+    cssVars['--text-decoration'] = cssVars['--text-decoration'] === 'underline' ? '' : 'underline';
+  }
+  return { ...layer, cssVars };
 }
 
 export function fitTextHeightMm(

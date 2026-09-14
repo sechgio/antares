@@ -2,10 +2,6 @@ import { expandWithDescendants } from './layerTree';
 import { layerGeometry } from './layerGeometry';
 import type { CanvasLayer } from '../types';
 
-export function layerDomTransform(layer: CanvasLayer, scale = 1): string {
-  return layerGeometry(layer, scale).transform;
-}
-
 function forGestureLayerEls(
   root: HTMLElement,
   layers: CanvasLayer[],

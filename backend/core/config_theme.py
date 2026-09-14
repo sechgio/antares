@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
+from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import cached_config_path, resource_path
 
 logger = logging.getLogger(__name__)
@@ -111,16 +111,7 @@ def save_theme(theme: dict[str, Any]) -> dict[str, str]:
             validated[k] = v
         else:
             validated[k] = str(v)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(validated, f, indent=2, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, path)
-    finally:
-        tmp_path.unlink(missing_ok=True)
+    atomic_write_json(path, validated)
     return validated
 
 

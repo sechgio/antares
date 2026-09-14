@@ -1,7 +1,5 @@
-import { matchesRecordId } from '../canvas/runtime/excel';
+import { matchesRecordId } from '../../utils/recordMatching';
 import type { PhotoAsset } from './types';
-
-export { matchesRecordId };
 
 function photoSortKey(name: string): number {
   const match = name.match(/[-_](\d+)\.[^.]+$/i);

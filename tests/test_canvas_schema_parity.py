@@ -1,9 +1,14 @@
-
 from __future__ import annotations
 
 import json
 import pathlib
-from typing import get_args
+from typing import get_args, get_type_hints
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def _shared_json(name: str) -> dict:
+    return json.loads((ROOT / "shared" / name).read_text(encoding="utf-8"))
 
 
 def test_allowed_layer_types_match_typed_literal() -> None:
@@ -17,37 +22,53 @@ def test_allowed_layer_types_match_typed_literal() -> None:
     )
 
 
-def test_heavy_methods_subset_of_shared_json() -> None:
+def test_heavy_methods_match_ipc_catalog() -> None:
     from backend.main import HEAVY_METHODS
 
-    shared_path = pathlib.Path(__file__).resolve().parent.parent / "shared" / "long-running-methods.json"
-    assert shared_path.exists(), f"shared file missing: {shared_path}"
-    shared_methods = set(json.loads(shared_path.read_text(encoding="utf-8")))
+    catalog = _shared_json("ipc-method-catalog.json")
+    catalog_heavy = {
+        name for name, entry in catalog["methods"].items() if entry.get("lane") == "heavy"
+    }
 
-    extra = HEAVY_METHODS - shared_methods
-    allowed_extra = {"canvas_get", "canvas_save", "canvas_save_history", "canvas_export_cmyk_pdf"}
-    unexpected = extra - allowed_extra
-    assert not unexpected, f"HEAVY_METHODS has methods not in shared/long-running-methods.json: {sorted(unexpected)}"
+    assert catalog_heavy == HEAVY_METHODS, (
+        f"HEAVY_METHODS drift vs catalog: "
+        f"extra={sorted(HEAVY_METHODS - catalog_heavy)} "
+        f"missing={sorted(catalog_heavy - HEAVY_METHODS)}"
+    )
 
     for required in ("db_import", "fichas_tecnicas_import_file", "informes_v2_render_html"):
-        assert required in HEAVY_METHODS or required in shared_methods
+        assert required in HEAVY_METHODS
 
 
 def test_canvas_document_version_matches_frontend() -> None:
-    import json
-
     from backend.core.canvas.models import A4_HEIGHT_MM, A4_WIDTH_MM, ALLOWED_LAYER_TYPES, DOCUMENT_VERSION
 
-    shared_path = pathlib.Path(__file__).resolve().parent.parent / "shared" / "canvas-schema.json"
-    assert shared_path.exists(), f"shared canvas schema missing: {shared_path}"
-    schema = json.loads(shared_path.read_text(encoding="utf-8"))
+    schema = _shared_json("canvas-schema.json")
     assert schema["documentVersion"] == DOCUMENT_VERSION
     assert DOCUMENT_VERSION == 2
     assert schema["a4"]["widthMm"] == A4_WIDTH_MM
     assert schema["a4"]["heightMm"] == A4_HEIGHT_MM
     assert frozenset(schema["layerTypes"]) == ALLOWED_LAYER_TYPES
-    frontend_types = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "canvas" / "types.ts"
+    frontend_types = ROOT / "frontend" / "src" / "components" / "canvas" / "types.ts"
     if frontend_types.exists():
         text = frontend_types.read_text(encoding="utf-8")
         assert "shared/canvas-schema.json" in text, "frontend types.ts must import single source shared/canvas-schema.json"
         assert "DOCUMENT_VERSION = 2" not in text or "schema.documentVersion" in text
+
+
+def test_canvas_guide_axes_match_shared_contract() -> None:
+    from backend.core.canvas.types import CanvasGuide
+
+    schema = _shared_json("canvas-schema.json")
+    typed_axes = frozenset(get_args(get_type_hints(CanvasGuide)["axis"]))
+
+    assert frozenset(schema["guideAxes"]) == typed_axes
+
+
+def test_canvas_normalization_corpus_matches_python() -> None:
+    from backend.core.canvas.models import normalize_document
+
+    corpus = _shared_json("canvas-normalization-cases.json")
+    for case in corpus["guideCases"]:
+        normalized = normalize_document(case["document"])
+        assert normalized["guides"] == case["expectedGuides"], case["name"]

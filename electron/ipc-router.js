@@ -21,8 +21,6 @@ const { appendLogEvent } = require('./app-log');
 const { isTrustedRendererFrame } = require('./renderer-trust');
 const {
   _maybeResolveFileTokens,
-  _collectStagedTokens,
-  _cleanupStagedTokens,
   _validateAndResolveWriteParams,
 } = require('./ipc-file-policy');
 
@@ -44,8 +42,8 @@ function reloadIpcMethods() {
     './ipc-methods',
     './autoimg-ipc-methods',
     './ubicaciones-ipc-methods',
-    '../shared/long-running-methods.json',
-    '../shared/heavy-ipc-methods.json',
+    '../shared/ipc-method-catalog',
+    '../shared/ipc-method-catalog.json',
   ];
   for (const rel of modules) {
     try {
@@ -61,17 +59,10 @@ function _getAllowedMethods() {
   return _loadIpcMethods().ALLOWED_RENDERER_METHODS;
 }
 
-function _getLongRunningMethods() {
-  return _loadIpcMethods().LONG_RUNNING_METHODS;
+function _ipcCatalog() {
+  return require('../shared/ipc-method-catalog');
 }
 
-function _getHeavyMethods() {
-  return _loadIpcMethods().HEAVY_METHODS;
-}
-
-const REQUEST_TIMEOUT_MS = 30_000;
-const LONG_REQUEST_TIMEOUT_MS = 300_000;
-const LONG_REQUEST_TIMEOUT_MS_HEAVY = 900_000;
 const STARTUP_WAIT_MS = 60_000;
 const MID_FLIGHT_RETRIES = 2;
 const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
@@ -108,31 +99,8 @@ function _toRendererIpcError(err) {
   return new Error(ANTARES_IPC_ERROR_PREFIX + JSON.stringify(payload));
 }
 
-const IDEMPOTENT_METHODS = new Set([
-  'version',
-  'formats',
-  'preview',
-  'is_video',
-  'process_status',
-  'db_columns',
-  'db_fields',
-  'db_parse_mapping',
-  'db_validate_mapping',
-  'theme_presets',
-  'theme_preset',
-  'canvas_list',
-  'canvas_bootstrap',
-  'canvas_get',
-  'canvas_get_history',
-  'espacios_list',
-  'espacios_get',
-]);
-
 function _isIdempotentMethod(method) {
-  if (typeof method !== 'string') return false;
-  if (IDEMPOTENT_METHODS.has(method)) return true;
-  if (method.includes('_autocomplete_')) return true;
-  return false;
+  return _ipcCatalog().isIdempotent(method);
 }
 
 let _lastBackendRestartAt = 0;
@@ -167,39 +135,21 @@ function _handleBackendTermination(proc) {
 
 function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-  let bufs;
-  let totalLen;
-  const isObjectPending = pending && typeof pending === 'object' && Array.isArray(pending.bufs);
-  if (isObjectPending) {
-    bufs = pending.bufs;
-    totalLen = pending.len;
-  } else {
-    bufs = !pending || pending.length === 0 ? [] : [pending];
-    totalLen = !pending ? 0 : pending.length;
-  }
+  const bufs = pending.bufs;
+  const totalLen = pending.len + piece.length;
   bufs.push(piece);
-  totalLen += piece.length;
 
   if (piece.indexOf(0x0a) === -1) {
-    const pendingRemLen = totalLen;
-    let dropped = false;
-    if (pendingRemLen > maxPendingBytes) {
-      dropped = true;
-      const empty = isObjectPending ? { bufs: [], len: 0 } : Buffer.alloc(0);
-      return { pending: empty, lines: [], dropped };
+    if (totalLen > maxPendingBytes) {
+      return { pending: { bufs: [], len: 0 }, lines: [], dropped: true };
     }
-    if (isObjectPending) {
-      return { pending: { bufs, len: totalLen }, lines: [], dropped };
-    }
-    if (bufs.length === 1) return { pending: bufs[0], lines: [], dropped };
-    return { pending: Buffer.concat(bufs, totalLen), lines: [], dropped };
+    return { pending: { bufs, len: totalLen }, lines: [], dropped: false };
   }
 
   const lines = [];
   let lineStartPos = 0;
   let globalPos = 0;
-  for (let bi = 0; bi < bufs.length; bi++) {
-    const buf = bufs[bi];
+  for (const buf of bufs) {
     for (let i = 0; i < buf.length; i++) {
       if (buf[i] === 0x0a) {
         const lineLen = globalPos - lineStartPos;
@@ -229,35 +179,23 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
     }
   }
   const pendingRemLen = totalLen - lineStartPos;
-  let dropped = false;
   if (pendingRemLen > maxPendingBytes) {
-    dropped = true;
-    const empty = isObjectPending ? { bufs: [], len: 0 } : Buffer.alloc(0);
-    return { pending: empty, lines, dropped };
+    return { pending: { bufs: [], len: 0 }, lines, dropped: true };
   }
   if (pendingRemLen === 0) {
-    const empty = isObjectPending ? { bufs: [], len: 0 } : Buffer.alloc(0);
-    return { pending: empty, lines, dropped };
+    return { pending: { bufs: [], len: 0 }, lines, dropped: false };
   }
-  if (isObjectPending) {
-    const tailParts = [];
-    let pos = 0;
-    for (const b of bufs) {
-      const nextPos = pos + b.length;
-      if (nextPos <= lineStartPos) { pos = nextPos; continue; }
-      if (pos >= totalLen) break;
-      const s = Math.max(0, lineStartPos - pos);
-      tailParts.push(b.subarray(s));
-      pos = nextPos;
-    }
-    return { pending: { bufs: tailParts, len: pendingRemLen }, lines, dropped };
+  const tailParts = [];
+  let pos = 0;
+  for (const b of bufs) {
+    const nextPos = pos + b.length;
+    if (nextPos <= lineStartPos) { pos = nextPos; continue; }
+    if (pos >= totalLen) break;
+    const s = Math.max(0, lineStartPos - pos);
+    tailParts.push(b.subarray(s));
+    pos = nextPos;
   }
-  if (bufs.length === 1) {
-    return { pending: bufs[0].subarray(lineStartPos), lines, dropped };
-  }
-  const all = Buffer.concat(bufs, totalLen);
-  const tailSlice = all.subarray(lineStartPos);
-  return { pending: Buffer.from(tailSlice), lines, dropped };
+  return { pending: { bufs: tailParts, len: pendingRemLen }, lines, dropped: false };
 }
 
 function _ensureListeners() {
@@ -349,9 +287,7 @@ function _ensureListeners() {
 }
 
 function _getTimeoutForMethod(method) {
-  if (!_getLongRunningMethods().has(method)) return REQUEST_TIMEOUT_MS;
-  if (_getHeavyMethods().has(method)) return LONG_REQUEST_TIMEOUT_MS_HEAVY;
-  return LONG_REQUEST_TIMEOUT_MS;
+  return _ipcCatalog().timeoutMsFor(method);
 }
 
 function _getPendingRequestLimits() {
@@ -688,16 +624,6 @@ function _maybeTokenizeResultPaths(method, result, win) {
   return next;
 }
 
-const _DIALOG_NATIVE_METHODS = new Set(
-  require('./ipc-methods').NATIVE_METHODS.filter((m) => !m.startsWith('dialog_'))
-);
-function _dispatchNative(method) {
-  if (method.startsWith('dialog_') || _DIALOG_NATIVE_METHODS.has(method)) return 'dialog';
-  if (method.startsWith('autoimg_')) return 'autoimg';
-  if (method.startsWith('ubicaciones_keys_')) return 'ubicaciones';
-  return null;
-}
-
 const _NATIVE_CALLS = {
   dialog: (method, params, win, electron) => handleDialogCall(method, params, dialog, win, electron),
   autoimg: (method, params) => {
@@ -710,18 +636,21 @@ const _NATIVE_CALLS = {
   },
 };
 
-function _resolveCachedApiKey(provider, fallbackFromRenderer) {
+function _resolveCachedApiKey(provider) {
   const { resolveProviderApiKey } = require('./ubicaciones-secure-keys');
-  return resolveProviderApiKey(provider, fallbackFromRenderer);
+  return resolveProviderApiKey(provider);
+}
+
+function _isPackaged() {
+  try {
+    return !!require('electron').app.isPackaged;
+  } catch {
+    return false;
+  }
 }
 
 function registerIpcHandlers() {
-  let isPackaged = false;
-  try {
-    isPackaged = require('electron').app.isPackaged;
-  } catch {
-  }
-  if (!isPackaged) reloadIpcMethods();
+  if (!_isPackaged()) reloadIpcMethods();
 
   ipcMain.handle('ipc-call', async (event, method, params) => {
     if (!_isAllowedIpcSender(event)) {
@@ -732,34 +661,60 @@ function registerIpcHandlers() {
       throw new Error(`IPC method not allowed: ${method}.${hint}`);
     }
 
-    const stagedTokens = _collectStagedTokens(method, params);
+    const win = getMainWindow();
+    const { BrowserWindow, session, nativeImage } = require('electron');
     try {
-      const win = getMainWindow();
-      const { BrowserWindow, session, nativeImage } = require('electron');
-      const nativeHandler = _dispatchNative(method);
+      const nativeHandler = _ipcCatalog().nativeDispatchFor(method);
       if (nativeHandler) {
+        let nativeParams = params;
+        try {
+          const { _assertNoRawAbsolutePaths } = require('./file-capabilities');
+          const catalog = _ipcCatalog();
+          _assertNoRawAbsolutePaths(nativeParams, {
+            allowRegisteredReadPaths: true,
+            allowRawAbsolutePathKeys: catalog.RAW_OUTPUT_PATH_METHODS.has(method)
+              ? new Set(['path'])
+              : undefined,
+            writePathKeys: catalog.METHOD_OUTPUT_PATH_KEYS.get(method),
+          });
+          nativeParams = _validateAndResolveWriteParams(nativeParams, win, method);
+        } catch (err) {
+          if (err && typeof err === 'object' && err.category === undefined) {
+            err.code = -32602;
+            err.category = 'VALIDATION_ERROR';
+          }
+          throw err;
+        }
         const nativeCall = _NATIVE_CALLS[nativeHandler];
-        const result = await nativeCall(method, params, win, { BrowserWindow, session, nativeImage });
+        const result = await nativeCall(method, nativeParams, win, { BrowserWindow, session, nativeImage });
         if (result.handled) return result.result;
       }
-      let backendParams = _maybeResolveFileTokens(params, win, method);
+    } catch (err) {
+      throw _toRendererIpcError(err);
+    }
+    let backendParams;
+    try {
+      backendParams = _maybeResolveFileTokens(params, win, method);
       backendParams = _validateAndResolveWriteParams(backendParams, win, method);
-
-      if (method === 'preview_ubicacion' || method === 'generar_ubicaciones') {
-        const provider = backendParams && typeof backendParams === 'object' ? backendParams.provider : '';
-        const fallback = backendParams?.api_key;
-        const injected = _resolveCachedApiKey(provider, fallback);
-        backendParams = { ...backendParams, api_key: injected };
+    } catch (err) {
+      if (err && typeof err === 'object' && err.category === undefined) {
+        err.code = -32602;
+        err.category = 'VALIDATION_ERROR';
       }
+      throw _toRendererIpcError(err);
+    }
 
-      try {
-        const result = await _callBackend(method, backendParams);
-        return _maybeTokenizeResultPaths(method, result, win);
-      } catch (err) {
-        throw _toRendererIpcError(err);
-      }
-    } finally {
-      await _cleanupStagedTokens(stagedTokens, event?.sender?.id ?? null);
+    if (method === 'preview_ubicacion' || method === 'generar_ubicaciones') {
+      const provider = backendParams && typeof backendParams === 'object' ? backendParams.provider : '';
+      const injected = _resolveCachedApiKey(provider);
+      backendParams = { ...backendParams, api_key: injected };
+    }
+
+    try {
+      const result = await _callBackend(method, backendParams);
+      return _maybeTokenizeResultPaths(method, result, win);
+    } catch (err) {
+      throw _toRendererIpcError(err);
     }
   });
 
@@ -767,11 +722,7 @@ function registerIpcHandlers() {
     if (!_isAllowedIpcSender(event)) {
       throw new Error('IPC call rejected: untrusted sender frame');
     }
-    let isPackaged = false;
-    try {
-      isPackaged = require('electron').app.isPackaged;
-    } catch {
-    }
+    const isPackaged = _isPackaged();
     return {
       state: getState(),
       ready: isReady(),
@@ -850,14 +801,11 @@ module.exports = {
   _ensureListeners,
   _consumeStdoutLines,
   _maybeResolveFileTokens,
-  _collectStagedTokens,
-  _cleanupStagedTokens,
   _validateAndResolveWriteParams,
   _isAllowedIpcSender,
   _sendRequest,
   _callBackend,
   _isIdempotentMethod,
-  _DIALOG_NATIVE_METHODS,
   _toRendererIpcError,
   _writeStdinWithBackpressure,
   MAX_PENDING_REQUESTS,

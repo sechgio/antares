@@ -11,6 +11,7 @@ ErrorCategory = Literal[
     "TIMEOUT",
     "AUTHENTICATION_ERROR",
     "RENDERING_ERROR",
+    "CAPACITY_EXCEEDED",
 ]
 
 
@@ -77,3 +78,15 @@ class MemoryPressureError(AntaresBaseException):
 
     def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(message, code=-32003, category="MEMORY_PRESSURE", details=details)
+
+
+class CapacityExceededError(AntaresBaseException):
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, code=-32005, category="CAPACITY_EXCEEDED", details=details)
+
+
+class ResourceLockedError(AntaresBaseException, PermissionError):
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code=-32002, category="RESOURCE_LOCKED")

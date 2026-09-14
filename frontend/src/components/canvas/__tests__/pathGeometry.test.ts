@@ -5,7 +5,6 @@ import {
   bendSegment,
   closestSegmentIndex,
   ensureLinePath,
-  linePathFromLegacy,
   pathBounds,
   pathFromDrag,
   pathToSvgD,
@@ -19,21 +18,6 @@ import {
 } from '../ops/pathGeometry';
 
 describe('pathGeometry', () => {
-  it('builds a horizontal legacy path from width', () => {
-    const layer = createLayer('line', {
-      cssVars: {
-        ...createLayer('line').cssVars,
-        '--width': '80mm',
-        '--height': '0.3mm',
-      },
-    });
-    const path = linePathFromLegacy(layer);
-    expect(path.points).toHaveLength(2);
-    expect(path.points[0].x).toBe(0);
-    expect(path.points[1].x).toBe(80);
-    expect(path.points[0].y).toBeCloseTo(path.points[1].y, 5);
-  });
-
   it('pathFromDrag stores diagonal endpoints in local coords', () => {
     const { path, originX, originY, width, height } = pathFromDrag(10, 20, 40, 50);
     expect(originX).toBe(10);

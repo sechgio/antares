@@ -36,7 +36,13 @@ from typing import Any
 
 from backend.core import ipc_phase_telemetry
 from backend.core.database import init_db
-from backend.core.exceptions import AntaresBaseException, MemoryPressureError, MethodNotFoundError
+from backend.core.exceptions import (
+    AntaresBaseException,
+    CapacityExceededError,
+    MemoryPressureError,
+    MethodNotFoundError,
+)
+from backend.core.ipc_catalog import HEAVY_METHODS, SYNC_METHODS, lane_for
 from backend.core.observability import configure_logging, get_context, request_context
 from backend.core.plugins import load_plugins_from_dir
 from backend.core.repository import close_connection
@@ -45,6 +51,7 @@ from backend.core.scheduler import (
     MEMORY_PRESSURE_THRESHOLD_MB,
     SchedulerBusy,
     get_scheduler,
+    is_memory_pressure,
 )
 from backend.handlers import HANDLERS, WARM_CRITICAL_DONE
 from backend.ipc_protocol import _SKIP, read_message, send_notification, send_response
@@ -71,55 +78,8 @@ if hasattr(signal, "SIGHUP"):
 configure_logging(sys.stderr)
 logger = logging.getLogger(__name__)
 
-HEAVY_METHODS = {
-    "db_import",
-    "db_export",
-    "db_clear",
-    "db_fields_update",
-    "db_fields_reset",
-    "db_parse_mapping",
-    "formatos_generate",
-    "formatos_render_template_page",
-    "image_optimizer_save_files",
-    "sellador_apply",
-    "sellador_inspect_pdf",
-    "sellador_render_page",
-    "technical_reports_import_file",
-    "technical_reports_render_html",
-    "technical_reports_render_consolidated_html",
-    "informes_v2_import_file",
-    "informes_v2_download_template",
-    "informes_v2_render_html",
-    "informes_v2_render_consolidated_html",
-    "fichas_tecnicas_import_file",
-    "fichas_tecnicas_render_html",
-    "fichas_tecnicas_render_consolidated_html",
-    "panel_aviso_corte_parse_excel",
-    "panel_aviso_corte_compute_match",
-    "panel_aviso_corte_render_pdf",
-    "spreadsheet_parse",
-    "spreadsheet_get_rows",
-    "spreadsheet_export_volantes_template",
-    "generar_ubicaciones",
-    "preview_ubicacion",
-    "evidencia_volanteo_render",
-    "canvas_get",
-    "canvas_bootstrap",
-    "canvas_save",
-    "canvas_save_history",
-    "canvas_export_cmyk_pdf",
-}
-
-_WARM_WAIT_METHODS = frozenset(
-    HEAVY_METHODS - {"canvas_get", "canvas_bootstrap", "canvas_save", "canvas_save_history"} | {"preview"}
-)
+_WARM_WAIT_METHODS = frozenset(HEAVY_METHODS | {"preview"})
 _WARM_WAIT_TIMEOUT = 15.0
-
-SYNC_METHODS = frozenset({
-    "version",
-    "process_status",
-    "diagnostics_snapshot",
-})
 
 
 def _utf8_locale_candidates() -> list[str]:
@@ -184,7 +144,7 @@ def _maybe_log_ipc_timing(method_name: str, elapsed_ms: float, *, ok: bool) -> N
 
 
 def _dispatch(handler, params, msg_id, method_name) -> None:
-    lane = "heavy" if method_name in HEAVY_METHODS else "sync" if method_name in SYNC_METHODS else "light"
+    lane = lane_for(method_name)
     with request_context(request_id=msg_id, method=method_name, lane=lane):
         _dispatch_with_context(handler, params, msg_id, method_name)
 
@@ -215,7 +175,7 @@ def _dispatch_with_context(handler, params, msg_id, method_name) -> None:
 def _log_future_exception(future: Future) -> None:
     try:
         future.result()
-    except Exception as handler_exc:
+    except BaseException as handler_exc:
         logger.exception("Handler raised: %s", handler_exc)
 
 
@@ -233,11 +193,14 @@ def _reject_submit(
     send_response(None, msg_id, error=error)
 
 def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
-    lane = "heavy" if method_name in HEAVY_METHODS else "light"
+    lane = lane_for(method_name)
     ipc_phase_telemetry.set_fields(msg_id, method=method_name, lane=lane)
     ipc_phase_telemetry.mark(msg_id, "enqueue")
     scheduler = get_scheduler()
-    if method_name in ("canvas_save", "canvas_save_history"):
+    # El pre-check solo importa handlers.canvas cuando hay presión de memoria
+    # real; sin presión los checks internos no-opean, así que evitamos bloquear
+    # el lector JSON-RPC con el serialized_import del módulo pesado.
+    if method_name in ("canvas_save", "canvas_save_history") and is_memory_pressure():
         request_params = params if isinstance(params, dict) else {}
         try:
             from backend.handlers.canvas import (
@@ -306,7 +269,7 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
             msg_id,
             method_name,
             lane,
-            message,
+            CapacityExceededError(message, details={"retryable": True, "reason": reason}),
             rejected=reason,
         )
         return None
@@ -346,6 +309,7 @@ def main() -> None:
     _consecutive_errors = 0
     _MAX_CONSECUTIVE_ERRORS = 100
 
+    warm_thread: threading.Thread | None = None
     if not _shutdown_requested:
         logger.info(t("info.backend_ready"))
         ready_payload: dict[str, Any] = {
@@ -365,7 +329,8 @@ def main() -> None:
                 HANDLERS.warm_pandas_sync()
             except Exception:
                 logger.exception("warm_pandas_sync post-ready failed")
-        threading.Thread(target=_post_ready_warm, name="post-ready-warm", daemon=True).start()
+        warm_thread = threading.Thread(target=_post_ready_warm, name="post-ready-warm", daemon=True)
+        warm_thread.start()
 
     try:
         while True:
@@ -417,6 +382,8 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
     finally:
+        if warm_thread is not None and warm_thread.is_alive():
+            warm_thread.join(timeout=5.0)
         scheduler.shutdown(wait=True)
         close_connection()
         logger.info(t("info.backend_shutdown"))

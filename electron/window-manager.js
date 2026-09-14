@@ -4,6 +4,7 @@ const { appendLogEvent } = require('./app-log');
 
 let mainWindow = null;
 let _isDev = false;
+let _retryMainWindowLoad = null;
 
 function _resolvePinnedSupabaseHost() {
   const raw = process.env.ANTARES_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -28,7 +29,19 @@ function buildAppMenu(menuIndex = 0) {
     }
   })();
   const viewSubmenu = [
-    { label: 'Recargar', role: 'reload' },
+    {
+      label: 'Recargar',
+      accelerator: 'CmdOrCtrl+R',
+      click: () => {
+        const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+        if (!wc) return;
+        if (String(wc.getURL() || '').startsWith('data:') && _retryMainWindowLoad) {
+          void _retryMainWindowLoad();
+        } else {
+          wc.reload();
+        }
+      },
+    },
     ...(!isPackaged ? [{ label: 'Herramientas de desarrollo', role: 'toggleDevTools' }] : []),
     { type: 'separator' },
     { label: 'Zoom real', role: 'resetZoom' },
@@ -98,6 +111,7 @@ function createWindow(isDev) {
       ? mainWindow.loadURL('http://localhost:5173')
       : mainWindow.loadFile(htmlPath);
   };
+  _retryMainWindowLoad = loadMainWindowContent;
   const showLoadFailurePage = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const html = '<!doctype html><meta charset="utf-8"><title>Antares</title>' +

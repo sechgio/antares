@@ -129,7 +129,7 @@ function buildRenameJobs(nisResults, nisMeta, opts = {}) {
     const files = (result.files || [])
       .map(_fileMeta)
       .filter((f) => f && f.name)
-      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+      .sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }));
 
     if (!files.length) {
       skipped.push({

@@ -6,6 +6,7 @@ import {
   getBlobUrl,
   getThumbnailUrl,
   hydrateDocumentImages,
+  pinImageRefs,
   registerImageBlob,
   releaseImageBlob,
   serializeDocumentImages,
@@ -374,5 +375,90 @@ describe('imageBlobStore', () => {
     expect(saved.layers.find((l) => l.id === 'img')?.value).toMatch(/^data:/);
     const editorImg = forEditor.layers.find((l) => l.id === 'img')?.value ?? '';
     expect(editorImg.startsWith('data:')).toBe(false);
+  });
+
+  it('pinImageRefs keeps blobs alive across sweeps until released', async () => {
+    const reg = await registerImageBlob(new Blob(['x'], { type: 'image/png' }));
+    const unpin = pinImageRefs([reg.url]);
+
+    expect(sweepOrphanBlobs(new Set())).toBe(0);
+    expect(getBlobUrl(reg.blobId)).toBe(reg.url);
+
+    releaseImageBlob(reg.url);
+    expect(getBlobUrl(reg.blobId)).toBe(reg.url);
+
+    unpin();
+    expect(sweepOrphanBlobs(new Set())).toBe(1);
+  });
+
+  it('concurrent pins hold a blob until the last release', async () => {
+    const reg = await registerImageBlob(new Blob(['x'], { type: 'image/png' }));
+    const unpinA = pinImageRefs([reg.url]);
+    const unpinB = pinImageRefs([reg.blobId]);
+
+    unpinA();
+    expect(sweepOrphanBlobs(new Set())).toBe(0);
+    expect(getBlobUrl(reg.blobId)).toBe(reg.url);
+
+    unpinB();
+    expect(sweepOrphanBlobs(new Set())).toBe(1);
+  });
+
+  it('clearBlobStore preserves pinned blobs while a save serializes them', async () => {
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
+    const reg = await registerImageBlob(new Blob(['x'], { type: 'image/png' }));
+    const other = await registerImageBlob(new Blob(['y'], { type: 'image/png' }));
+    const unpin = pinImageRefs([reg.url]);
+
+    clearBlobStore();
+
+    expect(getBlobUrl(reg.blobId)).toBe(reg.url);
+    expect(revokeSpy).not.toHaveBeenCalledWith(reg.url);
+    expect(getBlobUrl(other.blobId)).toBe(other.blobId);
+    expect(revokeSpy).toHaveBeenCalledWith(other.url);
+
+    unpin();
+    expect(sweepOrphanBlobs(new Set())).toBe(1);
+    revokeSpy.mockRestore();
+  });
+
+  it('serializes every pinned layer to canvas-asset even if clearBlobStore runs mid-save', async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const put = vi.fn(async () => {
+      const call = put.mock.calls.length;
+      if (call === 1) await firstGate;
+      return { ref: `canvas-asset:asset-${call}`, asset_id: `asset-${call}`, bytes: 1 };
+    });
+    (window as unknown as { electronAPI: { canvasAssetPut: typeof put } }).electronAPI = {
+      canvasAssetPut: put,
+    };
+
+    const first = await registerImageBlob(new Blob(['first'], { type: 'image/png' }));
+    const second = await registerImageBlob(new Blob(['second'], { type: 'image/png' }));
+    const doc = createEmptyDocument('Save race');
+    const cssVars = {
+      '--width': '10mm',
+      '--height': '10mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    doc.layers = [
+      { id: 'first', type: 'image', name: 'First', value: first.url, cssVars },
+      { id: 'second', type: 'image', name: 'Second', value: second.url, cssVars },
+    ];
+
+    const unpin = pinImageRefs(collectImageRefsFromLayers(doc.layers));
+    const pending = serializeDocumentImages(doc);
+    await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    clearBlobStore();
+    releaseFirst();
+    const serialized = await pending;
+    unpin();
+
+    const values = serialized.layers.map((layer) => layer.value);
+    expect(values[0]).toBe('canvas-asset:asset-1');
+    expect(values[1]).toBe('canvas-asset:asset-2');
+    expect(put).toHaveBeenCalledTimes(2);
   });
 });

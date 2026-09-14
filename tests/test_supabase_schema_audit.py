@@ -396,7 +396,7 @@ def test_service_role_only_functions_gate_on_jwt_role() -> None:
     for (schema, name, _sig), text in STATE.functions.items():
         if schema != "public" or name not in EXPECTED_SERVICE_ROLE_ONLY_RPCS:
             continue
-        assert "request.jwt.claim.role" in text, (
+        assert "request.jwt.claim.role" in text or "auth.role()" in text, (
             f"{name} debe verificar el claim service_role además del GRANT"
         )
 

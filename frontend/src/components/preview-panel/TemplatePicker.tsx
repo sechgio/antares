@@ -1,24 +1,15 @@
 import { Check, ChevronDown } from 'lucide-react';
 import {
-  useCallback,
   useEffect,
   useId,
-  useLayoutEffect,
-  useRef,
-  useState,
   type KeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 
 export interface TemplatePickerOption {
   value: string;
   label: string;
-}
-
-interface MenuPosition {
-  top: number;
-  left: number;
-  width: number;
 }
 
 interface TemplatePickerProps {
@@ -44,84 +35,33 @@ export default function TemplatePicker({
   maxMenuHeight,
   triggerClassName,
 }: TemplatePickerProps) {
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<MenuPosition | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const {
+    isOpen: open,
+    position,
+    triggerRef,
+    popupRef: listRef,
+    close,
+    toggle,
+    updatePosition,
+  } = useAnchoredPopover({
+    estimatedHeight: 280,
+    gap: MENU_GAP,
+    matchTriggerWidth: true,
+    maxHeightCap: maxMenuHeight,
+    stopEscapePropagation: true,
+  });
   const menuId = useId();
 
   const selected = options.find((o) => o.value === value);
   const displayLabel = selected?.label ?? placeholder;
 
-  const close = useCallback(() => setOpen(false), []);
+  useEffect(() => {
+    if (disabled) close();
+  }, [disabled, close]);
 
   useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
-
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-
-    const rect = trigger.getBoundingClientRect();
-    const rawHeight = listRef.current?.offsetHeight ?? 0;
-    const menuHeight = maxMenuHeight != null ? Math.min(rawHeight, maxMenuHeight) : rawHeight;
-    const spaceBelow = window.innerHeight - rect.bottom - 8;
-    const spaceAbove = rect.top - 8;
-    const openUp = menuHeight > spaceBelow && spaceAbove > spaceBelow;
-
-    let top = openUp
-      ? Math.max(8, rect.top - menuHeight - MENU_GAP)
-      : rect.bottom + MENU_GAP;
-
-    if (!openUp && top + menuHeight > window.innerHeight - 8) {
-      top = Math.max(8, window.innerHeight - menuHeight - 8);
-    }
-
-    setPosition({
-      top,
-      left: rect.left,
-      width: rect.width,
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return;
-    }
-    updatePosition();
+    if (open) updatePosition();
   }, [open, options.length, maxMenuHeight, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (listRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        setOpen(false);
-      }
-    };
-    const onLayout = () => updatePosition();
-
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKey, true);
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-    };
-  }, [open, updatePosition]);
 
   useEffect(() => {
     if (!open) return;
@@ -174,7 +114,7 @@ export default function TemplatePicker({
         disabled={disabled}
         onClick={() => {
           if (disabled) return;
-          setOpen((v) => !v);
+          toggle();
         }}
         className={`pp-template-picker-trigger flex h-7 w-full items-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-left text-[10px] text-[var(--text-primary)] outline-none transition-[border-color,transform] duration-100 ease-out focus-visible:border-[var(--accent-primary)] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50${triggerClassName ? ` ${triggerClassName}` : ''}`}
       >
@@ -202,7 +142,7 @@ export default function TemplatePicker({
                     left: position.left,
                     width: position.width,
                     ...(maxMenuHeight != null
-                      ? { maxHeight: maxMenuHeight, overflowY: 'auto' as const }
+                      ? { maxHeight: position.maxHeight ?? maxMenuHeight, overflowY: 'auto' as const }
                       : {}),
                   }
                 : { top: -9999, left: -9999, visibility: 'hidden' }

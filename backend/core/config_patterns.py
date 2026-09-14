@@ -7,7 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from backend.core.config_fields import _atomic_write_json, get_field_names
+from backend.core.config_fields import get_field_names
+from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import cached_config_path
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ def save_patterns(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "label": str(p["label"]),
                 "pattern": pattern,
             })
-    _atomic_write_json(path, {"patterns": validated})
+    atomic_write_json(path, {"patterns": validated})
     _cached_patterns = validated
     return validated
 

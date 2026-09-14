@@ -5,6 +5,7 @@ import contextlib
 import csv
 import io
 import json
+import math
 import os
 import stat
 import tempfile
@@ -117,6 +118,8 @@ def _resolve_cache_path(params: dict[str, Any]) -> Path:
 
 def _serialize_cell(value: Any) -> Any:
     if value is None:
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
         return None
     if isinstance(value, datetime):
         if value.time() == time(0, 0):

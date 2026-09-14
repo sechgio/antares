@@ -28,6 +28,8 @@ import {
   isEditableKeyboardTarget,
   isLayerListKeyboardTarget,
   isTypeToEditKey,
+  type InlineEditStartOpts,
+  type InlineTextStyle,
 } from '../ops/inlineEdit';
 import type {
   CanvasDocument,
@@ -66,9 +68,10 @@ export interface CanvasKeyboardInput {
   setEnteredGroupId: Dispatch<SetStateAction<string | null>>;
   setGestureAbortToken: Dispatch<SetStateAction<number>>;
   commitInlineEdit: () => void;
-  startInlineEdit: (id: string, opts?: { seed?: string }) => void;
+  startInlineEdit: (id: string, opts?: InlineEditStartOpts) => void;
   onInlineEditValue: (id: string, value: string, contentHeightPx?: number, zoom?: number) => void;
-  startContainerOrInlineEdit: (id: string, opts?: { seed?: string }) => void;
+  onInlineEditStyle: (id: string, style: InlineTextStyle) => void;
+  startContainerOrInlineEdit: (id: string, opts?: InlineEditStartOpts) => void;
   runUndo: () => void;
   runRedo: () => void;
   copyLayersToClipboard: (layers: CanvasLayer[]) => unknown;
@@ -120,6 +123,7 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
     commitInlineEdit,
     startInlineEdit,
     onInlineEditValue,
+    onInlineEditStyle,
     startContainerOrInlineEdit,
     runUndo,
     runRedo,
@@ -213,6 +217,22 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
           if (historyChord === 'redo') runRedo();
           else runUndo();
           return;
+        }
+        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitInlineEdit();
+            return;
+          }
+          const styleKey = e.key.toLowerCase();
+          if (styleKey === 'b' || styleKey === 'i' || styleKey === 'u') {
+            e.preventDefault();
+            onInlineEditStyle(
+              editingLayerId,
+              styleKey === 'b' ? 'bold' : styleKey === 'i' ? 'italic' : 'underline',
+            );
+            return;
+          }
         }
         if (isTypeToEditKey(e.key, e) && !e.repeat) {
           e.preventDefault();

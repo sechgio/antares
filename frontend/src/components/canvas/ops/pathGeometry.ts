@@ -14,20 +14,6 @@ export function parseStrokeCap(raw: string | undefined): 'none' | 'round' | 'squ
   return 'none';
 }
 
-export function linePathFromLegacy(layer: Pick<CanvasLayer, 'cssVars' | 'type'>): LayerPath {
-  const w = Math.max(MIN_BBOX_MM, parseMm(layer.cssVars['--width'], 80));
-  const strokeMm = Math.max(0.05, pxToMm(lineStrokeWidthPx(layer as CanvasLayer)));
-  const h = Math.max(strokeMm, parseMm(layer.cssVars['--height'], strokeMm));
-  const y = round2(h / 2);
-  return {
-    points: [
-      { x: 0, y },
-      { x: round2(w), y },
-    ],
-    closed: false,
-  };
-}
-
 export function pathFromDrag(
   x0: number,
   y0: number,

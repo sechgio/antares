@@ -6,6 +6,8 @@ import { api } from '../../api';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useToast } from '../../hooks/useToast';
 import { acquireStagedFile, type StagedFileHandle } from '../../utils/stageFile';
+import { fileToBase64 } from '../../utils/pdfAssets';
+import { formatBytes } from '../../utils/format';
 import { saveFeatureHistory } from '../../utils/history';
 import PositionPanel from './PositionPanel';
 import StampPlacementEditor from './StampPlacementEditor';
@@ -20,7 +22,6 @@ import {
   defaultStampRect,
   effectiveStampCount,
   ensureSlotIndices,
-  fileToBase64,
   groupPlacementsByPage,
   presetStampRect,
   randomSeed,
@@ -36,12 +37,6 @@ import {
 const MAX_IN_MEMORY_BYTES = 8 * 1024 * 1024;
 const MAX_STAMP_BYTES = 10 * 1024 * 1024;
 const READ_FILE_TOKEN_PREFIX = 'antares-read_';
-
-function formatFileSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
 
 function loadImageAspect(url: string): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -188,7 +183,7 @@ export default function SelladorView() {
     }
     const modeLabel = path ? 'desde disco' : 'en memoria';
     addToast({
-      message: `PDF cargado (${nextPageCount} páginas, ${formatFileSize(file.size)}, ${modeLabel}).`,
+      message: `PDF cargado (${nextPageCount} páginas, ${formatBytes(file.size)}, ${modeLabel}).`,
       type: 'success',
     });
   }, [addToast, initializePositions, stampPreviewUrl]);
@@ -497,7 +492,7 @@ export default function SelladorView() {
                     <p className="truncate text-sm">{pdfFile.name}</p>
                     <p className="text-[11px] text-[var(--text-muted)]">
                       {pageCount} páginas
-                      {pdfFile.size > 0 ? ` · ${formatFileSize(pdfFile.size)}` : null}
+                      {pdfFile.size > 0 ? ` · ${formatBytes(pdfFile.size)}` : null}
                       {pdfPath ? ' · lectura directa' : null}
                     </p>
                   </div>

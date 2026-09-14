@@ -59,6 +59,12 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
             if self._target:
                 self._target()
 
+        def is_alive(self) -> bool:
+            return False
+
+        def join(self, timeout: float | None = None) -> None:
+            return None
+
     monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
 
     def fake_notify(method: str, params: dict) -> None:
@@ -248,9 +254,9 @@ def test_heavy_methods_include_fichas_and_evidencia() -> None:
     assert "informes_v2_render_consolidated_html" in backend_main.HEAVY_METHODS
     assert "evidencia_volanteo_render" in backend_main.HEAVY_METHODS
     assert "canvas_export_cmyk_pdf" in backend_main.HEAVY_METHODS
-    assert "canvas_get" in backend_main.HEAVY_METHODS
-    assert "canvas_save" in backend_main.HEAVY_METHODS
-    assert "canvas_save_history" in backend_main.HEAVY_METHODS
+    assert "canvas_get" not in backend_main.HEAVY_METHODS
+    assert "canvas_save" not in backend_main.HEAVY_METHODS
+    assert "canvas_save_history" not in backend_main.HEAVY_METHODS
 
 
 def test_classify_init_db_failure_is_fatal_message() -> None:
@@ -315,6 +321,12 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
             if self._target:
                 self._target()
 
+        def is_alive(self) -> bool:
+            return False
+
+        def join(self, timeout: float | None = None) -> None:
+            return None
+
     monkeypatch.setenv("ANTARES_ENABLE_PLUGINS", "1")
     monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
@@ -378,6 +390,12 @@ def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
         def start(self) -> None:
             if self._target:
                 self._target()
+
+        def is_alive(self) -> bool:
+            return False
+
+        def join(self, timeout: float | None = None) -> None:
+            return None
 
     monkeypatch.delenv("ANTARES_ENABLE_PLUGINS", raising=False)
     monkeypatch.setenv("ANTARES_WARM_DEFERRED", "1")
@@ -504,6 +522,7 @@ def test_submit_handler_rejects_unexpected_memory_guard_failure(monkeypatch) -> 
     def fail_memory_check(*_args: object, **_kwargs: object) -> None:
         raise RuntimeError("spill guard unavailable")
 
+    monkeypatch.setattr(backend_main, "is_memory_pressure", lambda: True)
     monkeypatch.setattr(
         canvas_handlers,
         "_check_memory_pressure_or_spill",

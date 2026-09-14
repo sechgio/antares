@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { matchPhotosForId, matchesRecordId } from './photoMatch';
+import { matchPhotosForId } from './photoMatch';
+import { matchesRecordId } from '../../utils/recordMatching';
 
 describe('informes-v2 photoMatch', () => {
   it('matchesRecordId accepts ID, ID-N and ID_N', () => {

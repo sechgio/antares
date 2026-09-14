@@ -23,63 +23,11 @@ function setsEqual(a, b) {
   return true;
 }
 
-function loadRouter() {
-  const electronPath = require.resolve('electron');
-  require.cache[electronPath] = {
-    id: electronPath,
-    filename: electronPath,
-    loaded: true,
-    exports: {
-      ipcMain: { handle: () => {}, removeHandler: () => {} },
-      dialog: {},
-      app: { isPackaged: true },
-    },
-  };
-
-  const spawnerPath = require.resolve('../electron/backend-spawner');
-  require.cache[spawnerPath] = {
-    id: spawnerPath,
-    filename: spawnerPath,
-    loaded: true,
-    exports: {
-      getProcess: () => null,
-      isReady: () => true,
-      waitForReady: async () => true,
-      getState: () => 'ready',
-      getLastError: () => null,
-      getStderrTail: () => '',
-      manualRestart: async () => true,
-      incrementPendingRequests: () => {},
-      decrementPendingRequests: () => {},
-      noteJobActivity: () => {},
-      clearJobActivity: () => {},
-      STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-    },
-  };
-
-  const wmPath = require.resolve('../electron/window-manager');
-  require.cache[wmPath] = {
-    id: wmPath,
-    filename: wmPath,
-    loaded: true,
-    exports: {
-      getMainWindow: () => null,
-      buildAppMenu: () => ({ popup: () => {} }),
-      getIsDev: () => true,
-    },
-  };
-
-  const routerPath = require.resolve('../electron/ipc-router');
-  delete require.cache[routerPath];
-  return require(routerPath);
-}
-
 function main() {
   console.log('Testing native-method allowlist parity...\n');
 
   const { NATIVE_METHODS: sourceNative, ALLOWED_RENDERER_METHODS } = require('../electron/ipc-methods');
   const { NATIVE_METHODS: dialogNative } = require('../electron/dialog-handlers');
-  const { _DIALOG_NATIVE_METHODS } = loadRouter();
 
   check(
     Array.isArray(sourceNative) && new Set(sourceNative).size === sourceNative.length,
@@ -94,16 +42,6 @@ function main() {
   check(
     setsEqual(dialogNative, source),
     'dialog-handlers.NATIVE_METHODS == ipc-methods.NATIVE_METHODS'
-  );
-
-  const expectedRouterSet = new Set([...source].filter((m) => !m.startsWith('dialog_')));
-  check(
-    _DIALOG_NATIVE_METHODS instanceof Set,
-    'ipc-router exporta _DIALOG_NATIVE_METHODS como Set (derivado, no inline)'
-  );
-  check(
-    setsEqual(_DIALOG_NATIVE_METHODS, expectedRouterSet),
-    'ipc-router._DIALOG_NATIVE_METHODS == NATIVE_METHODS sin dialog_*'
   );
 
   const missingFromAllowlist = [...source].filter((m) => !ALLOWED_RENDERER_METHODS.has(m));

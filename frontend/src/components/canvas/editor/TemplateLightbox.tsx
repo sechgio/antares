@@ -1,9 +1,12 @@
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import type { CanvasDocument } from '../types';
+import { A4_HEIGHT_PX, A4_WIDTH_PX, type CanvasDocument } from '../types';
 import { PRESET_CATEGORY_LABELS, type PresetMeta } from '../presets/presetCategories';
 import PageLayerPreview from './PageLayerPreview';
 
-const LIGHTBOX_SCALE = 0.34;
+const STAGE_PADDING = 48;
+const MIN_SCALE = 0.2;
+const FALLBACK_SCALE = 0.34;
 
 interface TemplateLightboxProps {
   label: string;
@@ -22,6 +25,30 @@ export default function TemplateLightbox({
   onCreate,
   onApply,
 }: TemplateLightboxProps) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(FALLBACK_SCALE);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const update = () => {
+      const next = Math.min(
+        (stage.clientWidth - STAGE_PADDING) / A4_WIDTH_PX,
+        (stage.clientHeight - STAGE_PADDING) / A4_HEIGHT_PX,
+      );
+      if (Number.isFinite(next) && next > 0) setScale(Math.max(MIN_SCALE, next));
+    };
+    update();
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    observer?.observe(stage);
+    window.addEventListener('resize', update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+
   return (
     <div
       className="tpl-lightbox"
@@ -30,8 +57,8 @@ export default function TemplateLightbox({
       aria-label={`Vista previa de ${label}`}
     >
       <div className="tpl-lightbox-card">
-        <div className="tpl-lightbox-stage" aria-hidden="true">
-          <PageLayerPreview document={document} scale={LIGHTBOX_SCALE} />
+        <div ref={stageRef} className="tpl-lightbox-stage" aria-hidden="true">
+          <PageLayerPreview document={document} scale={scale} />
         </div>
         <div className="tpl-lightbox-info">
           <span className="tpl-lightbox-cat">{PRESET_CATEGORY_LABELS[meta.category]}</span>

@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any
 
 from backend.core.repository import _db_schema_lock
+from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import cached_config_path
 
 logger = logging.getLogger(__name__)
@@ -122,21 +122,11 @@ def _load_fields_unlocked() -> list[dict[str, Any]]:
     return defaults
 
 
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as file:
-        json.dump(payload, file, indent=2, ensure_ascii=False)
-        file.flush()
-        os.fsync(file.fileno())
-    os.replace(tmp_path, path)
-
-
 def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     with _db_schema_lock.write():
         path = _config_file()
         validated = sanitize_field_defs(fields)
-        _atomic_write_json(path, {"fields": validated})
+        atomic_write_json(path, {"fields": validated})
         _invalidate_fields_cache()
         return validated
 

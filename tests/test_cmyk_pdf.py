@@ -7,13 +7,8 @@ from pathlib import Path
 import fitz
 
 from backend.core.canvas.models import create_empty_document
-from backend.core.cmyk_pdf import (
-    CanvasCmykRenderer,
-    convert_pdf_bytes_to_cmyk,
-    css_color_to_cmyk,
-    hex_to_rgb,
-    rgb_to_cmyk,
-)
+from backend.core.cmyk_pdf.color import css_color_to_cmyk, hex_to_rgb, rgb_to_cmyk
+from backend.core.cmyk_pdf.renderer import CanvasCmykRenderer
 from backend.handlers.canvas import canvas_export_cmyk_pdf
 
 
@@ -149,15 +144,6 @@ def test_cmyk_renderer_bbox_fallback_for_unsupported_types():
     assert len(pdf_doc) == 1
     assert len(pdf_doc[0].get_drawings()) > 0
     pdf_doc.close()
-
-
-def test_convert_pdf_bytes_to_cmyk():
-    doc = create_empty_document(name="Basic Doc")
-    renderer = CanvasCmykRenderer(document=doc)
-    original_pdf = renderer.render()
-
-    cmyk_pdf = convert_pdf_bytes_to_cmyk(original_pdf, dpi=150)
-    assert cmyk_pdf.startswith(b"%PDF")
 
 
 def test_canvas_export_cmyk_pdf_handler():
