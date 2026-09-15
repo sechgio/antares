@@ -7,6 +7,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.11] — 2026-09-14
+
 ### Added
 - **Canvas / cloud**: tope de 16 MiB por documento, cuota de almacenamiento en la base y retención de versiones (50 por documento / 90 días).
 - **Canvas / PDF**: importación de PDFs externos como capas editables cuando su semántica es reconocible (texto, rectángulos, elipses, líneas, imágenes y checkboxes), con preflight, progreso, cancelación, límites de rendimiento e informe de contenido omitido.
@@ -19,6 +21,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **UI / diálogos**: se quita el halo extra de Dialog, Settings, paleta de comandos y modales equivalentes.
 - **Rendimiento Canvas**: PDF.js se carga de forma diferida y Canvas indexa las capas por página; la apertura inicial no incorpora el vendor pesado.
 - **Canvas / inspector**: paneles al estilo Figma, valores mixed en selección múltiple, lista de capas virtualizada y chrome de selección.
+- **Canvas / edición inline**: doble clic posiciona el caret y selecciona la palabra bajo el cursor (estilo Figma), `Ctrl+B/I/U` alternan negrita/cursiva/subrayado de la capa sin salir de la edición, `Ctrl+Enter` confirma, `Tab` mantiene el foco y el auto-fit de altura incluye el padding de la caja.
 - **UI**: `SegmentedControl` compartido entre Ubicaciones y el resto de vistas; paneles flotantes de volantes extraídos a un hook.
 - **UI / toasts**: píldora compacta bajo la titlebar; Image Optimizer y Apariencia usan el toast global, con copias en es/en.
 - **Informes v2**: la preview muestra la plantilla en blanco si no hay informe seleccionado.
