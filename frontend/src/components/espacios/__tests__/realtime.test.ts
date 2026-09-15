@@ -18,6 +18,8 @@ vi.mock('../../../lib/supabase', () => ({
 import {
   subscribeDueNotifications,
   subscribeEspaciosSync,
+  subscribeMyTasks,
+  subscribeTaskActivity,
   unsubscribeEspaciosSync,
 } from '../api/realtime';
 
@@ -52,6 +54,52 @@ describe('subscribeEspaciosSync', () => {
   it('unsubscribes via removeChannel', () => {
     const ch = subscribeEspaciosSync('e1', 'p1', vi.fn());
     unsubscribeEspaciosSync(ch);
+  });
+});
+
+describe('task activity realtime', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    channel.on.mockImplementation(function (this: unknown) { return this; });
+    subscribe.mockReturnValue(channel);
+  });
+
+  it('subscribes only to comments and activity for the open task', () => {
+    subscribeTaskActivity('task-1', vi.fn());
+    expect(channel.on).toHaveBeenCalledTimes(2);
+    expect(channel.on).toHaveBeenCalledWith(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tarea_comments', filter: 'tarea_id=eq.task-1' },
+      expect.any(Function),
+    );
+    expect(channel.on).toHaveBeenCalledWith(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tarea_activity', filter: 'tarea_id=eq.task-1' },
+      expect.any(Function),
+    );
+  });
+});
+
+describe('my tasks realtime', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    channel.on.mockImplementation(function (this: unknown) { return this; });
+    subscribe.mockReturnValue(channel);
+  });
+
+  it('uses one central channel instead of one subscription per task', () => {
+    subscribeMyTasks('user-1', vi.fn());
+    expect(channel.on).toHaveBeenCalledTimes(4);
+    expect(channel.on).toHaveBeenCalledWith(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tareas' },
+      expect.any(Function),
+    );
+    expect(channel.on).toHaveBeenCalledWith(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'proyectos' },
+      expect.any(Function),
+    );
   });
 });
 

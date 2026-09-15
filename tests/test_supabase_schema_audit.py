@@ -64,6 +64,8 @@ EXPECTED_PUBLICATION_TABLES = {
     "espacios",
     "proyectos",
     "tareas",
+    "tarea_comments",
+    "tarea_activity",
     "board_columns",
     "user_profiles",
 }

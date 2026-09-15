@@ -1,5 +1,6 @@
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { FolderKanban, Plus } from 'lucide-react';
+import Button from '@/components/ui/Button';
+import { FolderKanban, ListChecks, Plus } from 'lucide-react';
 import type { Espacio, Proyecto } from '../types';
 import SidebarNavItem from './SidebarNavItem';
 
@@ -8,6 +9,8 @@ interface SpaceSidebarProps {
   proyectos: Proyecto[];
   activeEspacioId: string | null;
   activeProyectoId: string | null;
+  myTasksActive: boolean;
+  onSelectMyTasks: () => void;
   onSelectEspacio: (id: string) => void;
   onSelectProyecto: (id: string) => void;
   onAddEspacio: () => void;
@@ -25,6 +28,8 @@ export default function SpaceSidebar({
   proyectos,
   activeEspacioId,
   activeProyectoId,
+  myTasksActive,
+  onSelectMyTasks,
   onSelectEspacio,
   onSelectProyecto,
   onAddEspacio,
@@ -38,6 +43,23 @@ export default function SpaceSidebar({
 }: SpaceSidebarProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-[var(--border-subtle)] p-2.5">
+        <Button
+          type="button"
+          variant="nav"
+          size="none"
+          onClick={onSelectMyTasks}
+          aria-current={myTasksActive ? 'page' : undefined}
+          className={
+            myTasksActive
+              ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
+              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]'
+          }
+        >
+          <ListChecks className="h-4 w-4" />
+          Mis tareas
+        </Button>
+      </div>
       <div className="shrink-0 border-b border-[var(--border-subtle)] px-2.5 py-2.5">
         <ul className="flex flex-col gap-1.5">
           {espacios.map((espacio, index) => (
@@ -46,7 +68,7 @@ export default function SpaceSidebar({
               name={espacio.name}
               color={espacio.color}
               colorIndex={index}
-              isActive={activeEspacioId === espacio.id}
+              isActive={!myTasksActive && activeEspacioId === espacio.id}
               onSelect={() => onSelectEspacio(espacio.id)}
               onColorChange={(color) => onEspacioColorChange(espacio.id, color)}
               onRename={(name) => onRenameEspacio(espacio.id, name)}
@@ -107,7 +129,7 @@ export default function SpaceSidebar({
               name={proyecto.name}
               color={proyecto.color}
               colorIndex={index + 2}
-              isActive={activeProyectoId === proyecto.id}
+              isActive={!myTasksActive && activeProyectoId === proyecto.id}
               icon={<FolderKanban className="h-3.5 w-3.5 shrink-0 opacity-70" />}
               isFavorite={proyecto.is_favorite}
               onSelect={() => onSelectProyecto(proyecto.id)}
