@@ -1,5 +1,6 @@
 import type { BoardColumn, Tarea, TareaFilters } from '../types';
 import { localTodayString } from './dates';
+import { tareaPriority } from './priority';
 import { columnIsDone } from './statusConfig';
 
 export function filterTareas(
@@ -10,6 +11,7 @@ export function filterTareas(
   return tareas.filter((t) => {
     if (!filters.showClosed && columnIsDone(columns, t.status)) return false;
     if (filters.status !== 'all' && t.status !== filters.status) return false;
+    if (filters.priority && filters.priority !== 'all' && tareaPriority(t) !== filters.priority) return false;
     if (filters.assigneeId !== 'all' && t.assignee_id !== filters.assigneeId) return false;
     if (filters.search.trim()) {
       const q = filters.search.trim().toLowerCase();
@@ -38,6 +40,7 @@ export function countActiveFilters(filters: TareaFilters): number {
   let count = 0;
   if (filters.search.trim()) count += 1;
   if (filters.status !== 'all') count += 1;
+  if (filters.priority && filters.priority !== 'all') count += 1;
   if (filters.assigneeId !== 'all') count += 1;
   if (filters.showClosed) count += 1;
   return count;

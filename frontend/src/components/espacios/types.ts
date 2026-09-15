@@ -1,4 +1,5 @@
 export type TareaStatus = string;
+export type TareaPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export type VistaType = 'list' | 'board' | 'table' | 'calendar' | 'gantt';
 
@@ -46,6 +47,8 @@ export interface Tarea {
   title: string;
   description: string | null;
   status: TareaStatus;
+  // Optional only for snapshots from clients predating the priority migration.
+  priority?: TareaPriority;
   assignee_id: string | null;
   start_date: string | null;
   due_date: string | null;
@@ -64,6 +67,7 @@ export interface TareaInput {
   title: string;
   description?: string | null;
   status?: TareaStatus;
+  priority?: TareaPriority;
   assignee_id?: string | null;
   start_date?: string | null;
   due_date?: string | null;
@@ -73,6 +77,7 @@ export interface TareaInput {
 export interface TareaFilters {
   search: string;
   status: TareaStatus | 'all';
+  priority?: TareaPriority | 'all';
   assigneeId: string | 'all';
   showClosed: boolean;
 }
@@ -80,6 +85,7 @@ export interface TareaFilters {
 export const DEFAULT_FILTERS: TareaFilters = {
   search: '',
   status: 'all',
+  priority: 'all',
   assigneeId: 'all',
   showClosed: false,
 };

@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react';
 import Button from '../../ui/Button';
 import DatePicker from '../../ui/DatePicker';
 import Input from '../../ui/Input';
-import type { BoardColumn, Tarea, TareaInput, TareaStatus, TeamMember } from '../types';
+import ThemedSelect from '../../ui/ThemedSelect';
+import type { BoardColumn, Tarea, TareaInput, TareaPriority, TareaStatus, TeamMember } from '../types';
+import { isTareaPriority, PRIORITY_OPTIONS, tareaPriority } from '../utils/priority';
 import ModalShell from './ModalShell';
 import StatusPicker from './StatusPicker';
 
@@ -27,6 +29,7 @@ function emptyForm(defaultStatus: TareaStatus = 'todo') {
     title: '',
     description: '',
     status: defaultStatus,
+    priority: 'normal' as TareaPriority,
     assigneeId: '',
     startDate: '',
     dueDate: '',
@@ -38,6 +41,7 @@ function formFromTarea(tarea: Tarea) {
     title: tarea.title,
     description: tarea.description ?? '',
     status: tarea.status,
+    priority: tareaPriority(tarea),
     assigneeId: tarea.assignee_id ?? '',
     startDate: tarea.start_date ?? '',
     dueDate: tarea.due_date ?? '',
@@ -59,6 +63,7 @@ export default function TaskForm({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<TareaStatus>('todo');
+  const [priority, setPriority] = useState<TareaPriority>('normal');
   const [assigneeId, setAssigneeId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -77,6 +82,7 @@ export default function TaskForm({
     setTitle(next.title);
     setDescription(next.description);
     setStatus(next.status);
+    setPriority(next.priority);
     setAssigneeId(next.assigneeId);
     setStartDate(next.startDate);
     setDueDate(next.dueDate);
@@ -107,6 +113,7 @@ export default function TaskForm({
         title: title.trim(),
         description: description.trim() || null,
         status,
+        priority,
         assignee_id: assigneeId || null,
         start_date: start,
         due_date: due,
@@ -125,7 +132,7 @@ export default function TaskForm({
       title={isEdit ? 'Editar tarea' : 'Nueva tarea'}
       description={
         isEdit
-          ? 'Actualiza título, estado, asignado o fechas.'
+          ? 'Actualiza título, estado, prioridad, asignado o fechas.'
           : 'Completa los campos esenciales. Puedes ajustar el rango después en el calendario o Gantt.'
       }
       icon={isEdit ? Pencil : ListTodo}
@@ -201,6 +208,22 @@ export default function TaskForm({
               ))}
             </select>
           </div>
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-[var(--text-secondary)]">Prioridad</p>
+          <ThemedSelect
+            value={priority}
+            options={PRIORITY_OPTIONS}
+            onChange={(value) => { if (isTareaPriority(value)) setPriority(value); }}
+            disabled={saving}
+            aria-label="Prioridad de la tarea"
+          />
+          {status === 'urgent' && (
+            <p className="mt-1.5 text-xs text-[var(--text-muted)]">
+              El estado «Urgente» se conserva por compatibilidad. La prioridad se gestiona por separado; cambiarla no mueve la tarea de columna.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">

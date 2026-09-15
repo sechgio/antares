@@ -341,6 +341,7 @@ export default function EspaciosApp() {
                   title: tarea.title,
                   description: tarea.description,
                   status: tarea.status,
+                  priority: tarea.priority,
                   assignee_id: tarea.assignee_id,
                   start_date: tarea.start_date,
                   due_date: tarea.due_date,

@@ -8,6 +8,7 @@ import type {
   TareaInput,
   TeamMember,
 } from '../types';
+import { isTareaPriority, tareaPriority } from '../utils/priority';
 import {
   fallbackBoardColumns,
   nextColumnColor,
@@ -22,6 +23,9 @@ function requireClient() {
 
 function throwOnError(error: { message?: string; code?: string } | null): void {
   if (!error) return;
+  if ((error.code === '42703' || error.code === 'PGRST204') && /priority/i.test(error.message ?? '')) {
+    throw new Error('Falta aplicar la migración de prioridad de Espacios. Contacta al administrador; no se guardaron los cambios.');
+  }
   const code = error.code ? ` [${error.code}]` : '';
   throw new Error((error.message || 'Error de Supabase') + code);
 }
@@ -108,7 +112,7 @@ export async function fetchTareas(proyectoId: string): Promise<Tarea[]> {
   const { data, error } = await client
     .from('tareas')
     .select(
-      'id, proyecto_id, title, description, status, assignee_id, start_date, due_date, sort_order, created_by, created_at, updated_at',
+      'id, proyecto_id, title, description, status, priority, assignee_id, start_date, due_date, sort_order, created_by, created_at, updated_at',
     )
     .eq('proyecto_id', proyectoId)
     .order('sort_order')
@@ -198,6 +202,9 @@ export async function fetchDueSoonTareas(horizonIso: string): Promise<DueSoonTar
 }
 
 export async function createTarea(proyectoId: string, input: TareaInput, userId: string): Promise<Tarea> {
+  if (input.priority !== undefined && !isTareaPriority(input.priority)) {
+    throw new Error('Prioridad de tarea no válida');
+  }
   const client = requireClient();
   const { data, error } = await client
     .from('tareas')
@@ -206,6 +213,7 @@ export async function createTarea(proyectoId: string, input: TareaInput, userId:
       title: input.title,
       description: input.description ?? null,
       status: input.status ?? 'todo',
+      priority: tareaPriority({ status: input.status ?? 'todo', priority: input.priority }),
       assignee_id: input.assignee_id ?? null,
       start_date: input.start_date ?? null,
       due_date: input.due_date ?? null,
@@ -219,6 +227,9 @@ export async function createTarea(proyectoId: string, input: TareaInput, userId:
 }
 
 export async function updateTarea(id: string, patch: Partial<TareaInput & Pick<Tarea, 'status'>>): Promise<Tarea> {
+  if (patch.priority !== undefined && !isTareaPriority(patch.priority)) {
+    throw new Error('Prioridad de tarea no válida');
+  }
   const client = requireClient();
   const { data, error } = await client.from('tareas').update(patch).eq('id', id).select('*').single();
   throwOnError(error);

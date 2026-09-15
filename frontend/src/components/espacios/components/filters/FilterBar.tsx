@@ -2,8 +2,14 @@ import { Plus, Search, X } from 'lucide-react';
 import { useMemo } from 'react';
 import type { BoardColumn, TeamMember, TareaFilters } from '../../types';
 import { countActiveFilters } from '../../utils/filters';
+import { isTareaPriority, PRIORITY_OPTIONS } from '../../utils/priority';
 import { pickerColumns } from '../../utils/statusConfig';
 import SelectPicker from './SelectPicker';
+
+const PRIORITY_FILTER_OPTIONS = [
+  { value: 'all', label: 'Todas las prioridades' },
+  ...PRIORITY_OPTIONS,
+];
 
 const CTRL =
   'h-8 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-xs text-[var(--text-secondary)] outline-none transition-colors placeholder:text-[var(--text-muted)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] focus:border-[var(--border-medium)] focus:text-[var(--text-primary)]';
@@ -63,6 +69,15 @@ export default function FilterBar({
         options={statusOptions}
         onChange={(status) => onChange({ status: status as TareaFilters['status'] })}
         aria-label="Filtrar por estado"
+      />
+
+      <SelectPicker
+        value={filters.priority ?? 'all'}
+        options={PRIORITY_FILTER_OPTIONS}
+        onChange={(priority) => {
+          if (priority === 'all' || isTareaPriority(priority)) onChange({ priority });
+        }}
+        aria-label="Filtrar por prioridad"
       />
 
       <SelectPicker
