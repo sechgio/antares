@@ -7,7 +7,7 @@ include = ["backend*"]
 
 [project]
 name = "Antares"
-version = "0.11.10"
+version = "0.11.11"
 description = "Backend for Antares"
 authors = [
     {name = "Antares", email = "dev@antares.app"},
