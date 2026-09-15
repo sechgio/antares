@@ -6,8 +6,13 @@ import { resolveBooleanRender } from '../ops/booleanOps';
 import {
   canFocusFieldBinding,
   canInlineEditLayer,
+  caretIndexFromPoint,
   fieldDesignLabel,
   justifyContentForTextAlign,
+  wordRangeAt,
+  type InlineEditStartOpts,
+  type InlineSelectionRange,
+  type InlineTextStyle,
 } from '../ops/inlineEdit';
 import { clipPathForLayer } from '../ops/shapePaths';
 import {
@@ -33,6 +38,7 @@ interface LayerNodeProps {
   data?: Record<string, unknown>;
   editing?: boolean;
   editingSelectAll?: boolean;
+  editingRange?: InlineSelectionRange | null;
   pathEditing?: boolean;
   moving?: boolean;
   offscreen?: boolean;
@@ -40,9 +46,10 @@ interface LayerNodeProps {
   onSelect: (id: string, additive?: boolean) => void;
   onLayerPointerDown: (id: string, e: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
-  onStartEdit?: (id: string) => void;
+  onStartEdit?: (id: string, opts?: InlineEditStartOpts) => void;
   onEditValue?: (id: string, value: string, contentHeightPx?: number) => void;
   onFitTextHeight?: (id: string, contentHeightPx: number) => void;
+  onEditStyle?: (id: string, style: InlineTextStyle) => void;
   onCommitEdit?: () => void;
   onStartPathEdit?: (id: string) => void;
 }
@@ -96,6 +103,7 @@ function LayerNode({
   data,
   editing = false,
   editingSelectAll = true,
+  editingRange = null,
   pathEditing = false,
   moving = false,
   offscreen = false,
@@ -106,6 +114,7 @@ function LayerNode({
   onStartEdit,
   onEditValue,
   onFitTextHeight,
+  onEditStyle,
   onCommitEdit,
   onStartPathEdit,
 }: LayerNodeProps) {
@@ -130,26 +139,38 @@ function LayerNode({
   onEditValueRef.current = onEditValue;
   const onFitTextHeightRef = useRef(onFitTextHeight);
   onFitTextHeightRef.current = onFitTextHeight;
+  const onEditStyleRef = useRef(onEditStyle);
+  onEditStyleRef.current = onEditStyle;
   const onCommitEditRef = useRef(onCommitEdit);
   onCommitEditRef.current = onCommitEdit;
   const onStartPathEditRef = useRef(onStartPathEdit);
   onStartPathEditRef.current = onStartPathEdit;
 
+  const textEditPadY = 4 * scale;
+
   useEffect(() => {
     if (!editing || !editorRef.current) return;
     const el = editorRef.current;
     el.focus();
-    if (editingSelectAll) el.select();
+    if (editingRange) {
+      const len = el.value.length;
+      el.setSelectionRange(Math.min(editingRange.start, len), Math.min(editingRange.end, len));
+    } else if (editingSelectAll) el.select();
     else {
       const len = el.value.length;
       el.setSelectionRange(len, len);
     }
-  }, [editing, editingSelectAll]);
+  }, [editing, editingSelectAll, editingRange]);
+
+  useEffect(() => {
+    if (!editing || !editorRef.current) return;
+    onFitTextHeightRef.current?.(layer.id, editorRef.current.scrollHeight + textEditPadY);
+  }, [editing, layer.id, layer.cssVars, textEditPadY]);
 
   const finishEdit = () => {
     const el = editorRef.current;
     if (el && onFitTextHeightRef.current) {
-      onFitTextHeightRef.current(layer.id, el.scrollHeight);
+      onFitTextHeightRef.current(layer.id, el.scrollHeight + textEditPadY);
     }
     onCommitEditRef.current?.();
   };
@@ -385,6 +406,16 @@ function LayerNode({
         if (!canEditText && !canEditField) return;
         e.stopPropagation();
         e.preventDefault();
+        if (layer.type === 'text') {
+          const caret = caretIndexFromPoint(e.currentTarget, e.clientX, e.clientY);
+          const len = layer.value.length;
+          const selection =
+            caret == null
+              ? { start: len, end: len }
+              : wordRangeAt(layer.value, Math.min(caret, len));
+          onStartEditRef.current?.(layer.id, { selection });
+          return;
+        }
         onStartEditRef.current?.(layer.id);
       }}
       onContextMenu={(e) => {
@@ -425,7 +456,9 @@ function LayerNode({
           value={layer.value}
           aria-label="Editar texto"
           spellCheck={false}
-          onChange={(e) => onEditValueRef.current?.(layer.id, e.target.value, e.target.scrollHeight)}
+          onChange={(e) =>
+            onEditValueRef.current?.(layer.id, e.target.value, e.target.scrollHeight + textEditPadY)
+          }
           onBlur={() => finishEdit()}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
@@ -438,7 +471,25 @@ function LayerNode({
             if (e.key === 'Escape') {
               e.preventDefault();
               finishEdit();
+              return;
             }
+            const mod = (e.ctrlKey || e.metaKey) && !e.altKey;
+            if (mod && e.key === 'Enter') {
+              e.preventDefault();
+              finishEdit();
+              return;
+            }
+            if (mod) {
+              const key = e.key.toLowerCase();
+              const style: InlineTextStyle | null =
+                key === 'b' ? 'bold' : key === 'i' ? 'italic' : key === 'u' ? 'underline' : null;
+              if (style) {
+                e.preventDefault();
+                onEditStyleRef.current?.(layer.id, style);
+                return;
+              }
+            }
+            if (e.key === 'Tab') e.preventDefault();
           }}
           style={{
             width: '100%',
@@ -663,6 +714,7 @@ export default memo(LayerNode, (prev, next) =>
   prev.scale === next.scale &&
   prev.editing === next.editing &&
   prev.editingSelectAll === next.editingSelectAll &&
+  prev.editingRange === next.editingRange &&
   prev.pathEditing === next.pathEditing &&
   prev.moving === next.moving &&
   prev.offscreen === next.offscreen &&

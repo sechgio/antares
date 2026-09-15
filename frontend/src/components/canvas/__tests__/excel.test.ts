@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildImagesByRecordId } from '../runtime/excel';
+import { buildImagesByRecordId } from '../../../utils/recordMatching';
 
 describe('buildImagesByRecordId', () => {
   it('preserves exact and numbered image matches in natural order', () => {

@@ -28,17 +28,24 @@ const {
   getCanvasAsset,
   getCanvasAssetInfo,
   parseAssetRef,
-  gcOrphanCanvasAssets,
 } = require('./canvas-assets');
 const { cleanupSpreadsheetSpillFile, sweepIpcTempDirs } = require('./ipc-temp-cleanup');
 const { embedCanvasManifest } = require('./canvas-pdf-manifest');
 
 const NATIVE_METHODS = new Set(require('./ipc-methods').NATIVE_METHODS);
 
-const REGISTER_LOCAL_PATH_DEPRECATED_MSG = 'register_local_path is deprecated; use file tokens via dialog or staged upload';
-
 const _allowedWriteRoots = new Set();
+const MAX_ALLOWED_WRITE_ROOTS = 500;
 const WRITE_ROOTS_FILE = 'antares-write-roots.json';
+
+function _addWriteRoot(root) {
+  if (_allowedWriteRoots.has(root)) return false;
+  while (_allowedWriteRoots.size >= MAX_ALLOWED_WRITE_ROOTS) {
+    _allowedWriteRoots.delete(_allowedWriteRoots.keys().next().value);
+  }
+  _allowedWriteRoots.add(root);
+  return true;
+}
 
 function _persistedWriteRootsPath() {
   try {
@@ -81,10 +88,11 @@ function _loadPersistedWriteRoots() {
             canonical = resolved;
           }
         }
-        _allowedWriteRoots.add(canonical);
+        _addWriteRoot(canonical);
       } catch {
       }
     }
+    if (_allowedWriteRoots.size >= MAX_ALLOWED_WRITE_ROOTS) _persistWriteRoots();
   } catch {
   }
 }
@@ -99,15 +107,7 @@ function _registerWriteRootFromPath(rawPath) {
   } catch {
     root = path.dirname(resolved);
   }
-  const sizeBefore = _allowedWriteRoots.size;
-  _allowedWriteRoots.add(root);
-  if (_allowedWriteRoots.size > sizeBefore) _persistWriteRoots();
-}
-
-function _registerDialogPaths(paths) {
-  if (!Array.isArray(paths)) return;
-  registerAllowedReadPaths(paths);
-  for (const p of paths) _registerWriteRootFromPath(p);
+  if (_addWriteRoot(root)) _persistWriteRoots();
 }
 
 function _createReadFileTokens(paths, window) {
@@ -381,7 +381,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
         const targetSession = pdfSession || pdfWindow.webContents.session;
         if (targetSession && targetSession.webRequest) {
           targetSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, null);
-          targetSession.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, null);
         }
       } catch {
       }
@@ -401,8 +400,9 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
           callback({ cancel: true });
         }
       };
+      // webRequest keeps a single listener per event: a second registration
+      // would replace this one, so the filter itself covers every scheme.
       pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, filter);
-      pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, filter);
     }
 
     tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-pdf-'));
@@ -491,9 +491,10 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
   };
 
   let renderFailed = false;
+  const bodyPromise = renderBody();
 
   try {
-    return await Promise.race([renderBody(), timeoutPromise]);
+    return await Promise.race([bodyPromise, timeoutPromise]);
   } catch (err) {
     renderFailed = true;
     throw err;
@@ -507,6 +508,16 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
         win.destroy();
         slot.window = null;
       }
+    }
+    if (timedOut || renderFailed) {
+      // El cuerpo del render puede seguir dentro de loadFile/printToPDF: al
+      // destruir la ventana esas llamadas rechazan; espera acotada a que el
+      // body asiente antes de borrar el tempDir para no correr el cleanup en
+      // paralelo con un render vivo.
+      await Promise.race([
+        bodyPromise.catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 5_000)),
+      ]);
     }
     if (tempDir) {
       let attempts = 0;
@@ -551,10 +562,6 @@ function registerFileInputPath(rawPath) {
 async function handleDialogCall(method, params = {}, dialog, window, electronModules = {}) {
   if (!NATIVE_METHODS.has(method)) {
     return { handled: false };
-  }
-
-  if (method === 'register_local_path') {
-    throw new Error(REGISTER_LOCAL_PATH_DEPRECATED_MSG);
   }
 
   if (method === 'file_token_resolve') {
@@ -664,14 +671,13 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     return { handled: true, result: res };
   }
 
-  if (method === 'canvas_asset_gc') {
-    const res = await gcOrphanCanvasAssets();
-    return { handled: true, result: res };
-  }
-
   if (method === 'local_thumbnail') {
     const { nativeImage } = electronModules;
     let resolvedPath = params && params.path;
+    if (typeof resolvedPath === 'string' && resolvedPath.startsWith('antares-read_')) {
+      resolvedPath = _resolveTokenPath(resolvedPath, _webContentsIdFromWindow(window));
+      registerAllowedReadPath(resolvedPath);
+    }
     if (params && params.file_token) {
       resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
       registerAllowedReadPath(resolvedPath);
@@ -686,6 +692,10 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 
   if (method === 'local_image_data_url') {
     let resolvedPath = params && params.path;
+    if (typeof resolvedPath === 'string' && resolvedPath.startsWith('antares-read_')) {
+      resolvedPath = _resolveTokenPath(resolvedPath, _webContentsIdFromWindow(window));
+      registerAllowedReadPath(resolvedPath);
+    }
     if (params && params.file_token) {
       resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
       registerAllowedReadPath(resolvedPath);
@@ -711,7 +721,8 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       ],
     });
     const result = resultFromSaveDialog(response);
-    _registerDialogPaths(result.paths);
+    registerAllowedReadPaths(result.paths);
+    _registerWriteRootFromPath(result.paths[0]);
     return { handled: true, result };
   }
 
@@ -729,7 +740,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       return { handled: true, result: { paths: [], file_tokens: [], folder: folderPath } };
     }
     const files = await _scanFolderRecursive(folderPath, FOLDER_SCAN_EXTENSIONS);
-    _registerDialogPaths(files);
+    registerAllowedReadPaths(files);
     return {
       handled: true,
       result: { paths: files, file_tokens: _createReadFileTokens(files, window) },
@@ -753,7 +764,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   if (method === 'dialog_dest' && result.paths.length > 0) {
     _registerWriteRootFromPath(result.paths[0]);
   }
-  _registerDialogPaths(result.paths);
+  registerAllowedReadPaths(result.paths);
   return {
     handled: true,
     result: {

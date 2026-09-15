@@ -5,6 +5,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -132,7 +133,7 @@ class JobManager:
                 }
 
             if job_id is None:
-                job_id = f"{job_type}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+                job_id = f"{job_type}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:6]}"
 
             if job_id in self._jobs and self._jobs[job_id].state.running:
                 return {"started": False, "reason": "job_already_running", "job_id": job_id}

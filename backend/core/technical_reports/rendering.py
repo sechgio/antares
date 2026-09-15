@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-
+from backend.core.jinja_environment import make_cached_jinja_environment
 from backend.core.technical_reports.diameter_totals import sum_diameter_columns, sum_diameter_row
 from backend.core.technical_reports.models import TechnicalReport
 from backend.utils.paths import resource_path
@@ -17,25 +16,14 @@ def _templates_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "templates" / "technical_reports"
 
 
-_jinja_env: Environment | None = None
-_jinja_template_mtime: float = 0.0
-
-
-def _environment() -> Environment:
-    global _jinja_env, _jinja_template_mtime
-    templates_dir = _templates_dir()
-    template_file = templates_dir / "informe_tecnico.html"
-    template_mtime = template_file.stat().st_mtime if template_file.exists() else 0.0
-    if _jinja_env is None or template_mtime != _jinja_template_mtime:
-        _jinja_env = Environment(
-            loader=FileSystemLoader(str(templates_dir)),
-            autoescape=select_autoescape(("html", "xml")),
-            auto_reload=True,
-        )
-        _jinja_env.globals["sum_diameter_columns"] = sum_diameter_columns
-        _jinja_env.globals["sum_diameter_row"] = sum_diameter_row
-        _jinja_template_mtime = template_mtime
-    return _jinja_env
+_environment = make_cached_jinja_environment(
+    _templates_dir,
+    "informe_tecnico.html",
+    global_values={
+        "sum_diameter_columns": sum_diameter_columns,
+        "sum_diameter_row": sum_diameter_row,
+    },
+)
 
 
 def render_report_html(report: dict[str, Any], logo_left: str | None = None, logo_right: str | None = None) -> str:

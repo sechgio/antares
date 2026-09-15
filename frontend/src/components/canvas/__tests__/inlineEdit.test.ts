@@ -3,14 +3,18 @@ import { createLayer } from '../constants';
 import {
   canFocusFieldBinding,
   canInlineEditLayer,
+  caretIndexFromPoint,
   fieldDesignLabel,
   fitTextHeightMm,
   growTextLayerToContent,
+  inlineEditLayerChanged,
   isButtonLikeKeyboardTarget,
   isEditableKeyboardTarget,
   isLayerListKeyboardTarget,
   isTypeToEditKey,
   justifyContentForTextAlign,
+  toggleInlineTextStyle,
+  wordRangeAt,
 } from '../ops/inlineEdit';
 import { parseMm } from '../types';
 
@@ -106,6 +110,101 @@ describe('canvas chrome keyboard targets', () => {
     expect(isButtonLikeKeyboardTarget(button)).toBe(true);
     expect(isButtonLikeKeyboardTarget(roleButton)).toBe(true);
     expect(isButtonLikeKeyboardTarget(document.createElement('div'))).toBe(false);
+  });
+});
+
+describe('wordRangeAt', () => {
+  it('selects the whole word around the caret', () => {
+    expect(wordRangeAt('hola mundo', 7)).toEqual({ start: 5, end: 10 });
+    expect(wordRangeAt('hola mundo', 5)).toEqual({ start: 5, end: 10 });
+    expect(wordRangeAt('hola mundo', 0)).toEqual({ start: 0, end: 4 });
+  });
+
+  it('selects runs of spaces or punctuation as their own token', () => {
+    expect(wordRangeAt('hola  mundo', 4)).toEqual({ start: 4, end: 6 });
+    expect(wordRangeAt('a-b', 1)).toEqual({ start: 1, end: 2 });
+  });
+
+  it('treats accented letters as word characters', () => {
+    expect(wordRangeAt('señor lópez', 2)).toEqual({ start: 0, end: 5 });
+  });
+
+  it('collapses to a caret at the end or on empty text', () => {
+    expect(wordRangeAt('hola', 4)).toEqual({ start: 4, end: 4 });
+    expect(wordRangeAt('hola', 99)).toEqual({ start: 4, end: 4 });
+    expect(wordRangeAt('', 0)).toEqual({ start: 0, end: 0 });
+    expect(wordRangeAt('hola', -3)).toEqual({ start: 0, end: 4 });
+  });
+});
+
+describe('caretIndexFromPoint', () => {
+  it('returns null when the platform lacks caret hit-testing', () => {
+    const root = document.createElement('div');
+    root.textContent = 'hola';
+    document.body.appendChild(root);
+    try {
+      expect(caretIndexFromPoint(root, 5, 5)).toBeNull();
+    } finally {
+      root.remove();
+    }
+  });
+
+  it('reads the offset from caretPositionFromPoint when the node is a text child', () => {
+    const root = document.createElement('div');
+    const span = document.createElement('span');
+    span.textContent = 'hola';
+    root.appendChild(span);
+    document.body.appendChild(root);
+    const doc = document as Document & {
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    };
+    const prev = doc.caretPositionFromPoint;
+    doc.caretPositionFromPoint = () => ({ offsetNode: span.firstChild as Node, offset: 2 });
+    try {
+      expect(caretIndexFromPoint(root, 1, 1)).toBe(2);
+      doc.caretPositionFromPoint = () => ({ offsetNode: span, offset: 0 });
+      expect(caretIndexFromPoint(root, 1, 1)).toBeNull();
+      doc.caretPositionFromPoint = () => ({ offsetNode: document.body, offset: 0 });
+      expect(caretIndexFromPoint(root, 1, 1)).toBeNull();
+    } finally {
+      doc.caretPositionFromPoint = prev;
+      root.remove();
+    }
+  });
+});
+
+describe('toggleInlineTextStyle', () => {
+  it('toggles bold between 400 and 700', () => {
+    const base = createLayer('text');
+    const bold = toggleInlineTextStyle(base, 'bold');
+    expect(bold.cssVars['--font-weight']).toBe('700');
+    expect(toggleInlineTextStyle(bold, 'bold').cssVars['--font-weight']).toBe('400');
+    const alreadyBold = createLayer('text', { cssVars: { ...base.cssVars, '--font-weight': '700' } });
+    expect(toggleInlineTextStyle(alreadyBold, 'bold').cssVars['--font-weight']).toBe('400');
+  });
+
+  it('toggles italic and underline without touching the other key', () => {
+    const base = createLayer('text');
+    const italic = toggleInlineTextStyle(base, 'italic');
+    expect(italic.cssVars['--font-style']).toBe('italic');
+    expect(toggleInlineTextStyle(italic, 'italic').cssVars['--font-style']).toBe('');
+    const underlined = toggleInlineTextStyle(base, 'underline');
+    expect(underlined.cssVars['--text-decoration']).toBe('underline');
+    const struck = createLayer('text', {
+      cssVars: { ...base.cssVars, '--text-decoration': 'line-through' },
+    });
+    expect(toggleInlineTextStyle(struck, 'underline').cssVars['--text-decoration']).toBe('underline');
+  });
+});
+
+describe('inlineEditLayerChanged', () => {
+  it('detects value and cssVars changes but not clones', () => {
+    const base = createLayer('text', { value: 'Hola' });
+    const clone = { ...base, cssVars: { ...base.cssVars } };
+    expect(inlineEditLayerChanged(base, clone)).toBe(false);
+    expect(inlineEditLayerChanged(base, { ...base, value: 'Otra' })).toBe(true);
+    const styled = toggleInlineTextStyle(base, 'bold');
+    expect(inlineEditLayerChanged(base, styled)).toBe(true);
   });
 });
 

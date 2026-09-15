@@ -66,6 +66,10 @@ function neutralizeUrlAttr(match, attr, quote, urlValue) {
   if (scheme === 'javascript' || scheme === 'vbscript') {
     return `${attr}=${quote}${quote}`;
   }
+  // Protocol-relative (//host/path) hereda http(s) del documento: neutralizar.
+  if (cleaned.startsWith('//')) {
+    return `${attr}=${quote}${quote}`;
+  }
   if (scheme === 'http' || scheme === 'https' || scheme === 'file') {
     return `${attr}=${quote}${quote}`;
   }
@@ -86,6 +90,9 @@ function neutralizeSrcsetAttr(match, attr, quote, urlValue) {
     const schemeMatch = cleaned.match(/^([a-z][a-z0-9+.-]*):/);
     const scheme = schemeMatch ? schemeMatch[1] : '';
     if (scheme === 'javascript' || scheme === 'vbscript' || scheme === 'http' || scheme === 'https' || scheme === 'file') {
+      return `${attr}=${quote}${quote}`;
+    }
+    if (cleaned.startsWith('//')) {
       return `${attr}=${quote}${quote}`;
     }
   }

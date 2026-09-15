@@ -317,12 +317,16 @@ function _abortAutoRestart(reason) {
 function _sleep(ms, signal) {
   if (signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
     if (signal) {
-      signal.addEventListener('abort', () => {
-        clearTimeout(timer);
-        resolve();
-      }, { once: true });
+      signal.addEventListener('abort', onAbort, { once: true });
     }
   });
 }
@@ -606,16 +610,6 @@ async function runHealthCheckOnce() {
     if (hasRecentJobActivity()) {
       _recordHealthSkip('job_active');
       console.log('[backend-spawner] Health probe timed out but a job was recently active — skipping restart (backend is busy, not dead).');
-      return;
-    }
-    if (_pendingRequestCount > 0) {
-      _recordHealthSkip('requests_in_flight_after_probe');
-      console.log(`[backend-spawner] Pending request arrived during probe failure handling — skipping restart.`);
-      return;
-    }
-    if (hasRecentJobActivity()) {
-      _recordHealthSkip('job_active_after_probe');
-      console.log('[backend-spawner] Job activity arrived during probe failure handling — skipping restart.');
       return;
     }
     const message = `Backend no responde al chequeo de salud: ${err.message}`;

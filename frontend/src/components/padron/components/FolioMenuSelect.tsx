@@ -1,13 +1,11 @@
 import {
-  useCallback,
   useEffect,
   useId,
-  useRef,
-  useState,
   type CSSProperties,
   type KeyboardEvent,
 } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
+import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 
 export interface FolioMenuOption {
   value: string;
@@ -31,37 +29,16 @@ export default function FolioMenuSelect({
   'aria-label': ariaLabel,
   variant = 'setting',
 }: FolioMenuSelectProps) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const {
+    isOpen: open,
+    triggerRef,
+    popupRef: listRef,
+    close,
+    toggle,
+  } = useAnchoredPopover({ floating: false, stopEscapePropagation: true });
   const menuId = useId();
 
   const selected = options.find((o) => o.value === value) ?? options[0];
-
-  const close = useCallback(() => setOpen(false), []);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -104,16 +81,16 @@ export default function FolioMenuSelect({
   return (
     <div
       className={`vpad-folio-menu vpad-folio-menu--${variant}${open ? ' is-open' : ''}`}
-      ref={rootRef}
     >
       <button
+        ref={triggerRef}
         type="button"
         className="vpad-folio-menu-trigger"
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
       >
         <span className="vpad-folio-menu-trigger-label" style={selected?.labelStyle}>
           {selected?.label ?? '—'}

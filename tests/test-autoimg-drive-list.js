@@ -5,16 +5,28 @@ function assert(condition, message) {
   }
 }
 
-const sheetsPath = require.resolve('../electron/google-sheets-service');
+const sessionPath = require.resolve('../electron/google-session');
 const drivePath = require.resolve('../electron/google-drive-service');
 const nisPath = require.resolve('../electron/autoimg-nis');
 
-delete require.cache[sheetsPath];
 delete require.cache[drivePath];
 delete require.cache[nisPath];
 
-const sheets = require('../electron/google-sheets-service');
-sheets.getValidTokens = async () => ({ access_token: 'tok', refresh_token: 'r' });
+require.cache[sessionPath] = {
+  id: sessionPath,
+  filename: sessionPath,
+  loaded: true,
+  exports: {
+    getValidTokens: async () => ({ access_token: 'tok', refresh_token: 'r' }),
+    refreshAccessToken: async (tokens) => tokens,
+    assertAuthSessionCurrent: (session) => {
+      const { isActiveUserSnapshotCurrent } = require('../electron/autoimg-user-scope');
+      if (!isActiveUserSnapshotCurrent(session)) {
+        throw new Error('La sesión de Google cambió durante la operación.');
+      }
+    },
+  },
+};
 
 const drive = require('../electron/google-drive-service');
 const { accumulateNisFiles, finalizeNisMap, buildNisMap } = require('../electron/autoimg-nis');

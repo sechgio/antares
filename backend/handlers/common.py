@@ -90,6 +90,24 @@ def require_b64_file_payload(params: dict[str, Any]) -> tuple[str, bytes]:
     return filename, decode_b64_payload(content_b64)
 
 
+def import_into_store(
+    store: Any,
+    params: dict[str, Any],
+    importer: Callable[[str, bytes], list[dict[str, Any]]],
+    imported_label: str,
+) -> dict[str, Any]:
+    filename, content = require_b64_file_payload(params)
+    items = importer(filename, content)
+    imported, deleted_count = store.replace_all_counted(items)
+    return {
+        "success": True,
+        "message": f"{len(imported)} {imported_label}",
+        "deleted_count": deleted_count,
+        "imported_count": len(imported),
+        "total_rows_in_file": len(items),
+    }
+
+
 def filter_by_optional_ids(
     items: list[dict[str, Any]],
     raw_ids: Any,

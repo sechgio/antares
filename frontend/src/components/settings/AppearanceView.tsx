@@ -76,7 +76,6 @@ function toStoredBool(value?: string, fallback = false) {
 
 type ThemeStateFallbacks = {
   mode: ThemeMode;
-  language: string;
   accentFallback?: string;
   pointerCursors?: boolean;
   sidebarTranslucent?: boolean;
@@ -90,7 +89,6 @@ function themeStateFrom(nextTheme: ThemeConfig, fallbacks: ThemeStateFallbacks) 
   return {
     nextMode: (nextTheme.mode as ThemeMode) || fallbacks.mode,
     nextAccent: accentKeyForTheme(nextTheme, fallbacks.accentFallback),
-    nextLanguage: nextTheme.language || fallbacks.language,
     pointerCursors: toStoredBool(nextTheme.pointer_cursors, fallbacks.pointerCursors),
     sidebarTranslucent: toStoredBool(nextTheme.sidebar_translucent, fallbacks.sidebarTranslucent),
     contrast: Number(nextTheme.contrast || fallbacks.contrast),
@@ -113,14 +111,13 @@ function SettingRow({ label, hint, children }: { label: string; hint?: string; c
 }
 
 export default function AppearanceView() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { addToast } = useToast();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [theme, setTheme] = useState<ThemeConfig | null>(null);
   const [presets, setPresets] = useState<string[]>([]);
   const [mode, setMode] = useState<ThemeMode>('dark');
   const [accent, setAccent] = useState(CUSTOM_ACCENT_KEY);
-  const [language, setLanguage] = useState(i18n.language || 'es');
   const [presetOpen, setPresetOpen] = useState(false);
   const [pointerCursors, setPointerCursors] = useState(false);
   const [sidebarTranslucent, setSidebarTranslucent] = useState(false);
@@ -129,14 +126,11 @@ export default function AppearanceView() {
   const [interfaceFontSize, setInterfaceFontSize] = useState(13);
   const [codeFontSize, setCodeFontSize] = useState(12);
 
-  useEffect(() => { setLanguage(i18n.language); }, [i18n.language]);
-
   const commitThemeState = useCallback((nextTheme: ThemeConfig, fallbacks: ThemeStateFallbacks) => {
     const state = themeStateFrom(nextTheme, fallbacks);
     setTheme(nextTheme);
     setMode(state.nextMode);
     setAccent(state.nextAccent);
-    setLanguage(state.nextLanguage);
     setPointerCursors(state.pointerCursors);
     setSidebarTranslucent(state.sidebarTranslucent);
     setContrast(state.contrast);
@@ -157,7 +151,6 @@ export default function AppearanceView() {
     const initialTheme = cachedTheme || backendTheme || DEFAULT_THEME;
     const { nextMode, nextAccent } = commitThemeState(initialTheme, {
       mode: 'dark',
-      language: i18n.language || 'es',
       contrast: 60,
       interfaceFontSize: 13,
       codeFontSize: 12,
@@ -173,7 +166,7 @@ export default function AppearanceView() {
     } catch {
       setPresets([]);
     }
-  }, [commitThemeState, i18n.language]);
+  }, [commitThemeState]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -239,7 +232,6 @@ export default function AppearanceView() {
     const base = theme || ({} as ThemeConfig);
     return {
       ...composeTheme(base, mode, accent),
-      language,
       pointer_cursors: String(pointerCursors),
       sidebar_translucent: String(sidebarTranslucent),
       contrast: String(contrast),
@@ -257,9 +249,6 @@ export default function AppearanceView() {
       const savedTheme = await api.saveTheme(payload);
       setTheme(savedTheme);
       applyThemeToCSS(savedTheme, mode, accent);
-      if (language !== i18n.language) {
-        await i18n.changeLanguage(language);
-      }
       addToast({ message: t('appearance.savedAlert', { defaultValue: 'Tema guardado' }), type: 'success' });
     } catch {
       addToast({ message: t('appearance.saveError', { defaultValue: 'No se pudo guardar el tema' }), type: 'error' });
@@ -269,18 +258,14 @@ export default function AppearanceView() {
   const reset = async () => {
     try {
       const resetTheme = await api.resetTheme();
-      const { nextMode, nextAccent, nextLanguage } = commitThemeState(resetTheme, {
+      const { nextMode, nextAccent } = commitThemeState(resetTheme, {
         mode: 'dark',
-        language: 'es',
         contrast: 60,
         interfaceFontSize: 13,
         codeFontSize: 12,
       });
       applyThemeToCSS(resetTheme, nextMode, nextAccent);
 
-      if (nextLanguage !== i18n.language) {
-        await i18n.changeLanguage(nextLanguage);
-      }
       addToast({ message: t('appearance.resetAlert', { defaultValue: 'Tema restaurado' }), type: 'success' });
     } catch {
       addToast({ message: t('appearance.resetError', { defaultValue: 'No se pudo restaurar el tema' }), type: 'error' });
@@ -291,7 +276,6 @@ export default function AppearanceView() {
     const presetTheme = await api.applyPreset(name);
     const { nextMode, nextAccent } = commitThemeState(presetTheme, {
       mode,
-      language,
       accentFallback: accent,
       pointerCursors,
       sidebarTranslucent,
@@ -312,9 +296,8 @@ export default function AppearanceView() {
   };
 
   const applyImportedTheme = (importedTheme: ThemeConfig) => {
-    const { nextMode, nextAccent, nextLanguage } = commitThemeState(importedTheme, {
+    const { nextMode, nextAccent } = commitThemeState(importedTheme, {
       mode,
-      language,
       accentFallback: accent,
       pointerCursors,
       sidebarTranslucent,
@@ -324,10 +307,6 @@ export default function AppearanceView() {
       codeFontSize,
     });
     applyThemeToCSS(importedTheme, nextMode, nextAccent);
-
-    if (nextLanguage !== i18n.language) {
-      i18n.changeLanguage(nextLanguage);
-    }
   };
 
   const importTheme = async (file?: File) => {
@@ -643,18 +622,6 @@ export default function AppearanceView() {
             <Save size={14} />
             Guardar
           </button>
-          <select
-            aria-label="Idioma"
-            value={language}
-            onChange={(event) => {
-              setLanguage(event.target.value);
-              i18n.changeLanguage(event.target.value);
-            }}
-            className="h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-[12px] text-[var(--text-secondary)] outline-none focus:border-[var(--accent-primary)]"
-          >
-            <option value="es">ES</option>
-            <option value="en">EN</option>
-          </select>
         </div>
 
         <div className="sr-only">

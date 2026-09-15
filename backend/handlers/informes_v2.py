@@ -10,7 +10,7 @@ from backend.handlers.common import (
     filter_by_optional_ids,
     get_item_id,
     get_item_or_raise,
-    require_b64_file_payload,
+    import_into_store,
     require_update_payload,
     resolve_payload_or_store,
     update_item_or_raise,
@@ -94,16 +94,7 @@ def informes_v2_clear(params: dict[str, Any]) -> dict[str, Any]:
 def informes_v2_import_file(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.informes_v2.importer import import_reports_from_bytes
 
-    filename, content = require_b64_file_payload(params)
-    reports = import_reports_from_bytes(filename, content)
-    imported, deleted_count = _db().replace_all_counted(reports)
-    return {
-        "success": True,
-        "message": f"{len(imported)} informes importados",
-        "deleted_count": deleted_count,
-        "imported_count": len(imported),
-        "total_rows_in_file": len(reports),
-    }
+    return import_into_store(_db(), params, import_reports_from_bytes, "informes importados")
 
 
 @with_locale

@@ -1,4 +1,5 @@
-import { CanvasCheckbox } from '../../CanvasControls';
+import { Calendar, FileText, MapPin } from 'lucide-react';
+import { CanvasToggleRow } from '../../CanvasControls';
 import InlineNumField from '../../InlineNumField';
 import { ImageObjectControls, PropRow, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
@@ -31,21 +32,24 @@ export default function ImageSlotSection({
           onCommitLive={onCommitLive}
           ariaPrefix="foto"
         />
-        <div className="canvas-check-list">
-          <CanvasCheckbox
+        <div className="canvas-toggle-list">
+          <CanvasToggleRow
             checked={!!layer.meta?.showDate}
             onChange={(v) => setMeta({ showDate: v })}
             label="Mostrar fecha"
+            icon={<Calendar className="h-3 w-3 canvas-toggle-row-icon" aria-hidden />}
           />
-          <CanvasCheckbox
+          <CanvasToggleRow
             checked={!!layer.meta?.showCoords}
             onChange={(v) => setMeta({ showCoords: v })}
             label="Mostrar coords"
+            icon={<MapPin className="h-3 w-3 canvas-toggle-row-icon" aria-hidden />}
           />
-          <CanvasCheckbox
+          <CanvasToggleRow
             checked={!!layer.meta?.showFilename}
             onChange={(v) => setMeta({ showFilename: v })}
             label="Mostrar nombre archivo"
+            icon={<FileText className="h-3 w-3 canvas-toggle-row-icon" aria-hidden />}
           />
         </div>
       </div>

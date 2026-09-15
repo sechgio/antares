@@ -35,6 +35,7 @@ async function main() {
   let readRangesCalls = 0;
   let readRangeCalls = 0;
   let scanFoldersCalls = 0;
+  let configWriteFails = false;
 
   const bdHeader = ['NIS', 'SGIO', 'DESTINO', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
   const smallBd = [bdHeader, ['4210801', '69656525', 'DVD 03', '', '', '', '', '', '', '', '', '', '']];
@@ -95,7 +96,12 @@ async function main() {
       }
       return out;
     },
-    writeRange: async () => ({ success: true }),
+    writeRange: async (range) => {
+      if (configWriteFails && String(range).startsWith('CONFIG')) {
+        throw new Error('configuración de solo lectura');
+      }
+      return { success: true };
+    },
     appendRow: async () => ({ success: true }),
     batchWriteRanges: async () => ({ success: true }),
   });
@@ -168,10 +174,14 @@ async function main() {
   engine.__resetSheetCacheForTests();
   const scan = await engine.scanAll();
   assert(scan && typeof scan === 'object', 'scanAll responde');
+  configWriteFails = true;
   const sync = await engine.syncToSheet();
   assert(sync.success === true, 'syncToSheet tras scanAll ok');
   assert(typeof sync.updated === 'number', 'syncToSheet expone updated');
   assert(typeof sync.new_rows === 'number', 'syncToSheet expone new_rows');
+  assert(sync.partial === true, 'fallo al persistir CONFIG se reporta como resultado parcial');
+  assert(sync.config_persisted === false, 'resultado parcial identifica CONFIG no persistida');
+  assert(/solo lectura/.test(sync.warning), 'resultado parcial conserva la causa sanitizada');
 
   console.log('[PASS] test-autoimg-sheet-cache-budget');
 }

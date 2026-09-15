@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   abortActivePointerGestureSession,
+  createPointerGestureOwner,
   createPointerGestureSession,
   getActivePointerGestureSession,
 } from '../ops/pointerGestureSession';
@@ -94,5 +95,36 @@ describe('createPointerGestureSession', () => {
     createPointerGestureSession({ onMove: () => {}, onEnd: () => {} });
     expect(firstAbort).toHaveBeenCalledTimes(1);
     expect(firstEnd).not.toHaveBeenCalled();
+  });
+
+  it('a stale owner cannot abort the active session of another artboard', () => {
+    const firstOwner = createPointerGestureOwner();
+    const secondOwner = createPointerGestureOwner();
+    const secondAbort = vi.fn();
+
+    firstOwner.start({ onMove: () => {}, onEnd: () => {} });
+    const secondSession = secondOwner.start({
+      onMove: () => {},
+      onEnd: () => {},
+      onAbort: secondAbort,
+    });
+
+    firstOwner.abort();
+
+    expect(secondAbort).not.toHaveBeenCalled();
+    expect(getActivePointerGestureSession()).toBe(secondSession);
+  });
+
+  it('disposing an owner aborts its active gesture without committing', () => {
+    const owner = createPointerGestureOwner();
+    const onEnd = vi.fn();
+    const onAbort = vi.fn();
+    owner.start({ onMove: () => {}, onEnd, onAbort });
+
+    owner.dispose();
+
+    expect(onAbort).toHaveBeenCalledTimes(1);
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(getActivePointerGestureSession()).toBeNull();
   });
 });

@@ -97,10 +97,13 @@ async function run() {
       sendCalls.some(([channel, value]) => channel === 'register-file-input-path' && value === filePath),
       'getPathForFile should best-effort register the derived path privately',
     );
-    assert(exposedApi.registerFileInputPath(filePath) === true, 'private path registration bridge should report dispatch');
     assert(
-      sendCalls.filter(([channel, value]) => channel === 'register-file-input-path' && value === filePath).length === 2,
-      'explicit private path registration should use the authenticated channel',
+      exposedApi.registerFileInputPath === undefined,
+      'raw path registration should not be exposed to the renderer',
+    );
+    assert(
+      sendCalls.filter(([channel, value]) => channel === 'register-file-input-path' && value === filePath).length === 1,
+      'path registration should only happen through getPathForFile',
     );
     await exposedApi.canvasFlushAck();
     assert(invokeCalls.some(([channel]) => channel === 'canvas-flush-ack'), 'canvas flush ACK should use its private channel');

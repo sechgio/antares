@@ -27,7 +27,9 @@ function assetsDir() {
 }
 
 function assetPath(assetId) {
-  if (typeof assetId !== 'string' || !/^[a-f0-9]{32,128}$/i.test(assetId)) {
+  // Solo ids content-addressed (sha256, 64 hex) pueden resolverse a rutas; ids
+  // más amplios solo se aceptan en scans/GC para limpieza de archivos legados.
+  if (typeof assetId !== 'string' || !/^[a-f0-9]{64}$/i.test(assetId)) {
     throw new Error('invalid canvas asset id');
   }
   return path.join(assetsDir(), assetId);
@@ -83,7 +85,7 @@ async function markAssetPending(assetId) {
     entries.push({ id: assetId, at: Date.now() });
     await writePendingAssets(entries.slice(-MAX_PENDING_ASSET_MARKERS));
   } catch {
-    // A failed marker only weakens GC protection for this asset — never break put.
+    // A failed marker only weakens GC protection for this asset. Never break put.
   }
 }
 
@@ -317,7 +319,7 @@ async function gcOrphanCanvasAssets({ nowMs = Date.now(), graceMs = GC_GRACE_MS 
   const livePending = [];
   for (const entry of await readPendingAssets()) {
     const id = entry.id.toLowerCase();
-    if (referenced.has(id)) continue; // persisted now — the marker did its job
+    if (referenced.has(id)) continue; // persisted now: the marker did its job
     if (nowMs - entry.at > PENDING_ASSET_TTL_MS) continue; // stale marker
     referenced.add(id);
     livePending.push(entry);

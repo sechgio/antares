@@ -18,7 +18,7 @@ describe('LayerNode inline edit', () => {
     expect(screen.queryByTestId('canvas-inline-editor')).toBeNull();
   });
 
-  it('calls onStartEdit on double-click for text layers', () => {
+  it('enters edit on double-click with a caret fallback when hit-testing is unavailable', () => {
     const layer = createLayer('text', { value: 'Hola' });
     const onStartEdit = vi.fn();
     render(
@@ -33,7 +33,41 @@ describe('LayerNode inline edit', () => {
       />,
     );
     fireEvent.doubleClick(screen.getByRole('button'));
-    expect(onStartEdit).toHaveBeenCalledWith(layer.id);
+    expect(onStartEdit).toHaveBeenCalledWith(layer.id, {
+      selection: { start: 4, end: 4 },
+    });
+  });
+
+  it('selects the word under the pointer on double-click (Figma-style)', () => {
+    const layer = createLayer('text', { value: 'hola mundo' });
+    const onStartEdit = vi.fn();
+    const { container } = render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing={false}
+        onStartEdit={onStartEdit}
+        {...baseHandlers}
+      />,
+    );
+    const node = container.querySelector('[data-layer-id]') as HTMLElement;
+    const textNode = node.querySelector('span')?.firstChild;
+    expect(textNode?.nodeType).toBe(3);
+    const doc = node.ownerDocument as Document & {
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    };
+    const prev = doc.caretPositionFromPoint;
+    doc.caretPositionFromPoint = () => ({ offsetNode: textNode as Node, offset: 8 });
+    try {
+      fireEvent.doubleClick(node);
+      expect(onStartEdit).toHaveBeenCalledWith(layer.id, {
+        selection: { start: 5, end: 10 },
+      });
+    } finally {
+      doc.caretPositionFromPoint = prev;
+    }
   });
 
   it('calls onStartEdit on double-click for field layers (binding focus)', () => {
@@ -192,6 +226,111 @@ describe('LayerNode inline edit', () => {
     });
     expect(onFitTextHeight).toHaveBeenCalledWith(layer.id, expect.any(Number));
     expect(onCommitEdit).toHaveBeenCalled();
+  });
+
+  it('commits on Ctrl+Enter', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const onCommitEdit = vi.fn();
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        onCommitEdit={onCommitEdit}
+        {...baseHandlers}
+      />,
+    );
+    fireEvent.keyDown(screen.getByTestId('canvas-inline-editor'), {
+      key: 'Enter',
+      ctrlKey: true,
+    });
+    expect(onCommitEdit).toHaveBeenCalled();
+  });
+
+  it('does not commit on plain Enter (inserts a newline)', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const onCommitEdit = vi.fn();
+    const onEditValue = vi.fn();
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        onCommitEdit={onCommitEdit}
+        onEditValue={onEditValue}
+        {...baseHandlers}
+      />,
+    );
+    const editor = screen.getByTestId('canvas-inline-editor');
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(onCommitEdit).not.toHaveBeenCalled();
+  });
+
+  it('toggles bold / italic / underline with Ctrl+B/I/U without leaving edit mode', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const onEditStyle = vi.fn();
+    const onCommitEdit = vi.fn();
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        onEditStyle={onEditStyle}
+        onCommitEdit={onCommitEdit}
+        {...baseHandlers}
+      />,
+    );
+    const editor = screen.getByTestId('canvas-inline-editor');
+    fireEvent.keyDown(editor, { key: 'b', ctrlKey: true });
+    fireEvent.keyDown(editor, { key: 'i', ctrlKey: true });
+    fireEvent.keyDown(editor, { key: 'u', ctrlKey: true });
+    expect(onEditStyle.mock.calls.map((c) => c[1])).toEqual(['bold', 'italic', 'underline']);
+    expect(onEditStyle.mock.calls.every((c) => c[0] === layer.id)).toBe(true);
+    expect(onCommitEdit).not.toHaveBeenCalled();
+  });
+
+  it('keeps focus in the editor on Tab instead of committing', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const onCommitEdit = vi.fn();
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        onCommitEdit={onCommitEdit}
+        {...baseHandlers}
+      />,
+    );
+    const editor = screen.getByTestId('canvas-inline-editor');
+    fireEvent.keyDown(editor, { key: 'Tab' });
+    expect(onCommitEdit).not.toHaveBeenCalled();
+  });
+
+  it('applies editingRange selection over select-all', () => {
+    const layer = createLayer('text', { value: 'hola mundo' });
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        editingSelectAll
+        editingRange={{ start: 5, end: 10 }}
+        {...baseHandlers}
+      />,
+    );
+    const editor = screen.getByTestId('canvas-inline-editor') as HTMLTextAreaElement;
+    expect(editor.selectionStart).toBe(5);
+    expect(editor.selectionEnd).toBe(10);
   });
 
   it('uses move cursor for text when not editing', () => {

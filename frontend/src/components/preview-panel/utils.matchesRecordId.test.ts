@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { matchesRecordId } from './utils';
+import { matchesRecordId } from '../../utils/recordMatching';
 
-describe('preview-panel matchesRecordId', () => {
+describe('recordMatching matchesRecordId', () => {
   it('matches basename with optional [-_]\\d+ suffix (aligned with canvas excel)', () => {
     expect(matchesRecordId('ABC-1.jpg', 'ABC')).toBe(true);
     expect(matchesRecordId('ABC_2.png', 'ABC')).toBe(true);

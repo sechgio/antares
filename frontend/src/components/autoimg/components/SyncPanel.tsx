@@ -60,6 +60,9 @@ export default function SyncPanel({
     try {
       const res = await api.autoimgAutoSyncToggle(next);
       onAutoSyncChange(res.enabled);
+      if (!res.persisted) {
+        setError(res.error || 'Auto-sync cambió solo para esta sesión; no se pudo guardar la configuración.');
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cambiar auto-sync');
     } finally {

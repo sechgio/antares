@@ -41,7 +41,7 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
             `${res.updated} filas cambiadas`,
             res.unmatched_scan ? `${res.unmatched_scan} fuera del padrón` : null,
           ].filter(Boolean).join(' · ');
-      onStatus?.({ result: detail });
+      onStatus?.(res.partial && res.warning ? { error: res.warning } : { result: detail });
       onSynced?.();
     } catch (e) {
       onStatus?.({ error: e instanceof Error ? e.message : 'Error al escanear y sincronizar' });
@@ -61,7 +61,7 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
             `${res.updated} filas cambiadas`,
             res.unmatched_scan ? `${res.unmatched_scan} fuera del padrón` : null,
           ].filter(Boolean).join(' · ');
-      onStatus?.({ result: detail });
+      onStatus?.(res.partial && res.warning ? { error: res.warning } : { result: detail });
       onSynced?.();
     } catch (e) {
       onStatus?.({ error: e instanceof Error ? e.message : 'Error al sincronizar al Sheet' });

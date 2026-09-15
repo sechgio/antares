@@ -10,7 +10,8 @@ import { saveFeatureHistory } from '../../utils/history';
 import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
-import { downloadBase64Blob, downloadBase64Pdf, fileToDataUrl, informesV2Api } from './api';
+import { downloadBase64Blob, downloadBase64Pdf, fileToDataUrl } from '../../utils/pdfAssets';
+import { informesV2Api } from './api';
 import {
   askPdfSavePath,
   logoToPdfPath,
@@ -27,19 +28,18 @@ export default function InformesV2App() {
     reports,
     selectedId,
     formData,
-    setFormData,
     hasChanges,
     busy,
-    setBusy,
+    runOperation,
     mobileTab,
     setMobileTab,
     importInputRef,
     patchForm,
-    markClean,
     loadReports,
     selectReport,
     createReport,
     saveReport,
+    saveCurrent,
     deleteReport,
     clearReports,
     importFile,
@@ -57,17 +57,16 @@ export default function InformesV2App() {
   }, [formData, photos]);
 
   const downloadTemplate = useCallback(async () => {
-    setBusy(true);
     try {
-      const result = await informesV2Api.downloadTemplate();
-      downloadBase64Blob(result.content_b64, result.filename, result.mime);
-      addToast({ message: 'Plantilla Excel descargada', type: 'success' });
+      await runOperation(async () => {
+        const result = await informesV2Api.downloadTemplate();
+        downloadBase64Blob(result.content_b64, result.filename, result.mime);
+        addToast({ message: 'Plantilla Excel descargada', type: 'success' });
+      });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo descargar la plantilla', type: 'error' });
-    } finally {
-      setBusy(false);
     }
-  }, [addToast, setBusy]);
+  }, [addToast, runOperation]);
 
   const changeLogo = useCallback(async (side: 'left' | 'right', file: File | null) => {
     if (!file) {
@@ -107,60 +106,53 @@ export default function InformesV2App() {
 
   const exportCurrent = useCallback(async () => {
     if (!formData) return;
-    setBusy(true);
     try {
-      const reportForRender = hasChanges
-        ? await informesV2Api.update(formData.id, formData)
-        : formData;
-      if (hasChanges) {
-        setFormData(reportForRender);
-        markClean();
-        await loadReports();
-      }
+      await runOperation(async () => {
+        const reportForRender = hasChanges ? await saveCurrent() : formData;
+        if (!reportForRender) return;
 
-      const localImagePaths: Record<string, string> = {};
-      const [images, pdfLogoLeft, pdfLogoRight] = await Promise.all([
-        preparePhotosForExport(photos, reportForRender.header.photo_id, `iv2-${reportForRender.id}`, localImagePaths),
-        logoToPdfPath(logoLeft, 'logo-left', localImagePaths),
-        logoToPdfPath(logoRight, 'logo-right', localImagePaths),
-      ]);
-      const outputPath = await askPdfSavePath(
-        `informe_v2_${reportForRender.id}.pdf`,
-        'Guardar PDF del informe',
-      );
-      if (!outputPath) return;
+        const localImagePaths: Record<string, string> = {};
+        const [images, pdfLogoLeft, pdfLogoRight] = await Promise.all([
+          preparePhotosForExport(photos, reportForRender.header.photo_id, `iv2-${reportForRender.id}`, localImagePaths),
+          logoToPdfPath(logoLeft, 'logo-left', localImagePaths),
+          logoToPdfPath(logoRight, 'logo-right', localImagePaths),
+        ]);
+        const outputPath = await askPdfSavePath(
+          `informe_v2_${reportForRender.id}.pdf`,
+          'Guardar PDF del informe',
+        );
+        if (!outputPath) return;
 
-      const rendered = await informesV2Api.renderHtml({
-        id: reportForRender.id,
-        report: reportForRender,
-        logo_left: pdfLogoLeft,
-        logo_right: pdfLogoRight,
-        images,
-      });
-      const pdf = await informesV2Api.htmlToPdf({
-        html: rendered.html,
-        filename: rendered.filename,
-        outputPath,
-        return_base64: !outputPath,
-        localImagePaths: Object.keys(localImagePaths).length > 0 ? localImagePaths : undefined,
-      });
-      const savedPath = 'saved_path' in pdf ? pdf.saved_path : undefined;
-      if (!savedPath && pdf.pdf_base64) {
-        downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-      }
-      await saveFeatureHistory('informe_v2', pdf.filename, { type: 'individual', reportId: reportForRender.id });
-      addToast({
-        message: hasChanges
-          ? `Informe guardado y PDF generado${savedPath ? `: ${savedPath}` : ''}`
-          : `PDF generado${savedPath ? `: ${savedPath}` : ''}`,
-        type: 'success',
+        const rendered = await informesV2Api.renderHtml({
+          id: reportForRender.id,
+          report: reportForRender,
+          logo_left: pdfLogoLeft,
+          logo_right: pdfLogoRight,
+          images,
+        });
+        const pdf = await informesV2Api.htmlToPdf({
+          html: rendered.html,
+          filename: rendered.filename,
+          outputPath,
+          return_base64: !outputPath,
+          localImagePaths: Object.keys(localImagePaths).length > 0 ? localImagePaths : undefined,
+        });
+        const savedPath = 'saved_path' in pdf ? pdf.saved_path : undefined;
+        if (!savedPath && pdf.pdf_base64) {
+          downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
+        }
+        await saveFeatureHistory('informe_v2', pdf.filename, { type: 'individual', reportId: reportForRender.id });
+        addToast({
+          message: hasChanges
+            ? `Informe guardado y PDF generado${savedPath ? `: ${savedPath}` : ''}`
+            : `PDF generado${savedPath ? `: ${savedPath}` : ''}`,
+          type: 'success',
+        });
       });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el PDF', type: 'error' });
-    } finally {
-      setBusy(false);
     }
-  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight, markClean, photos, setBusy, setFormData]);
+  }, [addToast, formData, hasChanges, logoLeft, logoRight, photos, runOperation, saveCurrent]);
 
   const exportConsolidated = useCallback(async () => {
     if (reports.length === 0) return;
@@ -180,69 +172,66 @@ export default function InformesV2App() {
     );
     if (!outputPath) return;
 
-    setBusy(true);
     try {
-      if (hasChanges && formData) {
-        const saved = await informesV2Api.update(formData.id, formData);
-        setFormData(saved);
-        markClean();
-      }
-      const list = await informesV2Api.list(true);
-      const items = list.reports || [];
-      if (items.length === 0) throw new Error('No hay informes para exportar');
-      const fullReports = await informesV2Api.getMany(items);
+      await runOperation(async () => {
+        if (hasChanges && formData) {
+          await saveCurrent();
+        }
+        const list = await informesV2Api.list(true);
+        const items = list.reports || [];
+        if (items.length === 0) throw new Error('No hay informes para exportar');
+        const fullReports = await informesV2Api.getMany(items);
 
-      const localImagePaths: Record<string, string> = {};
-      const imagesById: Record<string, Array<{ path: string; name?: string }>> = {};
-      for (const report of fullReports) {
-        imagesById[report.id] = await preparePhotosForExport(
-          photos,
-          report.header.photo_id,
-          `iv2-${report.id}`,
-          localImagePaths,
-          'low',
-        );
-      }
-      const [pdfLogoLeft, pdfLogoRight] = await Promise.all([
-        logoToPdfPath(logoLeft, 'logo-left', localImagePaths),
-        logoToPdfPath(logoRight, 'logo-right', localImagePaths),
-      ]);
-      const embeddedPhotos = Object.values(imagesById)
-        .flat()
-        .filter((img) => String(img.path || '').startsWith('data:'));
-      if (embeddedPhotos.length > 0) {
-        throw new Error(
-          'Las fotos no tienen ruta local (requerido para consolidado). Pulsa «Cargar fotos», vuelve a elegir los archivos desde disco y reintenta.',
-        );
-      }
+        const localImagePaths: Record<string, string> = {};
+        const imagesById: Record<string, Array<{ path: string; name?: string }>> = {};
+        for (const report of fullReports) {
+          imagesById[report.id] = await preparePhotosForExport(
+            photos,
+            report.header.photo_id,
+            `iv2-${report.id}`,
+            localImagePaths,
+            'low',
+          );
+        }
+        const [pdfLogoLeft, pdfLogoRight] = await Promise.all([
+          logoToPdfPath(logoLeft, 'logo-left', localImagePaths),
+          logoToPdfPath(logoRight, 'logo-right', localImagePaths),
+        ]);
+        const embeddedPhotos = Object.values(imagesById)
+          .flat()
+          .filter((img) => String(img.path || '').startsWith('data:'));
+        if (embeddedPhotos.length > 0) {
+          throw new Error(
+            'Las fotos no tienen ruta local (requerido para consolidado). Pulsa «Cargar fotos», vuelve a elegir los archivos desde disco y reintenta.',
+          );
+        }
 
-      const rendered = await informesV2Api.renderConsolidatedHtml({
-        logo_left: pdfLogoLeft,
-        logo_right: pdfLogoRight,
-        images_by_id: imagesById,
-      });
-      const pdf = await informesV2Api.htmlToPdf({
-        html: rendered.html,
-        filename: rendered.filename,
-        outputPath,
-        return_base64: !outputPath,
-        localImagePaths: Object.keys(localImagePaths).length > 0 ? localImagePaths : undefined,
-      });
-      const savedPath = 'saved_path' in pdf ? pdf.saved_path : undefined;
-      if (!savedPath && pdf.pdf_base64) {
-        downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-      }
-      await saveFeatureHistory('informe_v2', pdf.filename, { type: 'consolidado', count: rendered.count }, rendered.count);
-      addToast({
-        message: `PDF consolidado generado (${rendered.count})${savedPath ? `: ${savedPath}` : ''}`,
-        type: 'success',
+        const rendered = await informesV2Api.renderConsolidatedHtml({
+          logo_left: pdfLogoLeft,
+          logo_right: pdfLogoRight,
+          images_by_id: imagesById,
+        });
+        const pdf = await informesV2Api.htmlToPdf({
+          html: rendered.html,
+          filename: rendered.filename,
+          outputPath,
+          return_base64: !outputPath,
+          localImagePaths: Object.keys(localImagePaths).length > 0 ? localImagePaths : undefined,
+        });
+        const savedPath = 'saved_path' in pdf ? pdf.saved_path : undefined;
+        if (!savedPath && pdf.pdf_base64) {
+          downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
+        }
+        await saveFeatureHistory('informe_v2', pdf.filename, { type: 'consolidado', count: rendered.count }, rendered.count);
+        addToast({
+          message: `PDF consolidado generado (${rendered.count})${savedPath ? `: ${savedPath}` : ''}`,
+          type: 'success',
+        });
       });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el consolidado', type: 'error' });
-    } finally {
-      setBusy(false);
     }
-  }, [addToast, dialog, formData, hasChanges, logoLeft, logoRight, markClean, photos, reports, setBusy, setFormData]);
+  }, [addToast, dialog, formData, hasChanges, logoLeft, logoRight, photos, reports, runOperation, saveCurrent]);
 
   return (
     <div className="tr-app iv2-app">

@@ -1,27 +1,19 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
-import { api } from '../../../api';
+import { api, apiRetryAfterMs } from '../../../api';
 import { queueCanvasCloudDelete, queueCanvasCloudPush } from '../sync/cloudQueue';
 import { isNewer } from '../sync/syncCompare';
 import { normalizeDocument, type CanvasDocument, type CanvasDocumentSummary } from '../types';
 import {
   applySavedDocumentKeepingImages,
+  collectImageRefsFromHistory,
+  collectImageRefsFromLayers,
   hydrateDocumentImages,
   hydrateHistorySteps,
+  pinImageRefs,
   serializeDocumentImages,
   serializeHistorySteps,
 } from '../utils/imageBlobStore';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
-
-function retryAfterMsFromError(error: unknown): number | null {
-  if (typeof error !== 'object' || error === null) return null;
-  const rec = error as Record<string, unknown>;
-  if (rec.category !== 'MEMORY_PRESSURE') return null;
-  const details = rec.details;
-  if (typeof details !== 'object' || details === null) return null;
-  const ms = (details as Record<string, unknown>).retry_after_ms;
-  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return null;
-  return Math.min(Math.ceil(ms), 60_000);
-}
 
 function logCloudPersistFailure(error: unknown): void {
   console.warn(
@@ -108,11 +100,19 @@ export function useDocumentLifecycle({
 
   const persistHistoryStacks = useCallback(
     async (docId: string, past: typeof history.past, future: typeof history.future) => {
-      const [serializedPast, serializedFuture] = await Promise.all([
-        serializeHistorySteps(past),
-        serializeHistorySteps(future),
+      const unpin = pinImageRefs([
+        ...collectImageRefsFromHistory(past),
+        ...collectImageRefsFromHistory(future),
       ]);
-      await api.canvasSaveHistory(docId, serializedPast, serializedFuture);
+      try {
+        const [serializedPast, serializedFuture] = await Promise.all([
+          serializeHistorySteps(past),
+          serializeHistorySteps(future),
+        ]);
+        await api.canvasSaveHistory(docId, serializedPast, serializedFuture);
+      } finally {
+        unpin();
+      }
     },
     [],
   );
@@ -143,23 +143,34 @@ export function useDocumentLifecycle({
     const past = history.past;
     const future = history.future;
     const snapshot = captureCurrentSnapshot();
-    const serialized = await serializeDocumentImages(document);
-    const [savedRes, histPersistOk] = await Promise.all([
-      api.canvasSave(serialized),
-      persistHistoryStacks(document.id, past, future)
-        .then(() => true)
-        .catch((err) => {
-          warnHistoryPersistFailed(err);
-          return false;
-        }),
+    const unpin = pinImageRefs([
+      ...collectImageRefsFromLayers(document.layers),
+      ...collectImageRefsFromHistory(past),
+      ...collectImageRefsFromHistory(future),
     ]);
-    const saved = normalizeDocument(savedRes.document as CanvasDocument);
-    const current = isCurrentSnapshot(snapshot);
-    if (current) {
-      void Promise.resolve(queueCanvasCloudPush(saved)).catch(logCloudPersistFailure);
-      if (histPersistOk) markHistoryPersisted(document.id);
+    try {
+      const serialized = await serializeDocumentImages(document);
+      const [savedRes, histPersistOk] = await Promise.all([
+        api.canvasSave(serialized, { slim: true }),
+        persistHistoryStacks(document.id, past, future)
+          .then(() => true)
+          .catch((err) => {
+            warnHistoryPersistFailed(err);
+            return false;
+          }),
+      ]);
+      // Slim responses return only backend-stamped meta; the persisted content
+      // is the serialized document we sent.
+      const saved = normalizeDocument({ ...serialized, ...savedRes.document });
+      const current = isCurrentSnapshot(snapshot);
+      if (current) {
+        void Promise.resolve(queueCanvasCloudPush(saved)).catch(logCloudPersistFailure);
+        if (histPersistOk) markHistoryPersisted(document.id);
+      }
+      return { current, saved, histPersistOk, document, past, future };
+    } finally {
+      unpin();
     }
-    return { current, saved, histPersistOk, document, past, future };
   }, [captureCurrentSnapshot, history.documentRef, history.future, history.past, isCurrentSnapshot, markHistoryPersisted, persistHistoryStacks, warnHistoryPersistFailed]);
 
 
@@ -263,7 +274,7 @@ export function useDocumentLifecycle({
         if (!opts?.silent) flashStatus('Guardado');
         return true;
       } catch (err) {
-        lastSaveRetryAfterMsRef.current = retryAfterMsFromError(err);
+        lastSaveRetryAfterMsRef.current = apiRetryAfterMs(err);
         if (!opts?.silent) flashStatus(err instanceof Error ? err.message : 'Error al guardar');
         return false;
       }

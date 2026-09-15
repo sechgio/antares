@@ -46,6 +46,7 @@ def _load_canvas_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
             "boolean",
         ],
         "a4": {"widthMm": 210, "heightMm": 297},
+        "guideAxes": ["x", "y"],
     }
 
 
@@ -56,8 +57,12 @@ DOCUMENT_VERSION: int = int(_SCHEMA.get("documentVersion", 2))
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 ALLOWED_LAYER_TYPES = frozenset(str(x) for x in _SCHEMA.get("layerTypes", []))
+ALLOWED_GUIDE_AXES = frozenset(str(x) for x in _SCHEMA.get("guideAxes", ["x", "y"]))
 A4_WIDTH_MM = int(_SCHEMA.get("a4", {}).get("widthMm", 210))
 A4_HEIGHT_MM = int(_SCHEMA.get("a4", {}).get("heightMm", 297))
+# Tope para la expansión de páginas al migrar documentos v1 (sin "pages"):
+# un pageIndex corrupto no debe materializar miles de páginas.
+MAX_LEGACY_MIGRATION_PAGES = 100
 
 
 def _new_id() -> str:
@@ -530,7 +535,7 @@ def _normalize_styles(raw: Any) -> list[dict[str, Any]]:  # allowlist: dict[str,
     return styles
 
 
-def _normalize_guides(raw: Any) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
+def _normalize_guides(raw: Any, last_page: int) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
     if not isinstance(raw, list):
         return []
     guides: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
@@ -538,19 +543,27 @@ def _normalize_guides(raw: Any) -> list[dict[str, Any]]:  # allowlist: dict[str,
         if not isinstance(item, dict):
             continue
         axis = item.get("axis")
-        if axis not in ("x", "y"):
+        if axis not in ALLOWED_GUIDE_AXES:
+            continue
+        pos_raw = item.get("posMm", 0)
+        if isinstance(pos_raw, bool) or not isinstance(pos_raw, (int, float, str)):
             continue
         try:
-            pos_mm = float(item.get("posMm", 0))
+            pos_mm = float(pos_raw)
         except (TypeError, ValueError):
+            continue
+        if not math.isfinite(pos_mm):
             continue
         guide_id = str(item.get("id") or "").strip() or _new_id()
-        try:
-            page_index = int(item.get("pageIndex", 0))
-        except (TypeError, ValueError):
+        page_raw = item.get("pageIndex", 0)
+        if isinstance(page_raw, bool):
             page_index = 0
-        if page_index < 0:
-            page_index = 0
+        else:
+            try:
+                page_index = int(page_raw)
+            except (TypeError, ValueError):
+                page_index = 0
+        page_index = max(0, min(page_index, max(0, last_page)))
         guides.append({"id": guide_id, "axis": axis, "posMm": pos_mm, "pageIndex": page_index})
     return guides
 
@@ -592,6 +605,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
             max_idx = max(int(layer.get("pageIndex", 0)) for layer in layers)
         except (TypeError, ValueError):
             max_idx = 0
+        max_idx = min(max_idx, MAX_LEGACY_MIGRATION_PAGES - 1)
         if max_idx >= len(pages):
             for i in range(len(pages), max_idx + 1):
                 pages.append({"id": _new_id(), "name": f"Página {i + 1}"})
@@ -614,7 +628,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
         "page": {"widthMm": max(1, width_mm), "heightMm": max(1, height_mm)},
         "pages": pages,
         "settings": _normalize_settings(raw.get("settings")),
-        "guides": _normalize_guides(raw.get("guides")),
+        "guides": _normalize_guides(raw.get("guides"), last_page),
         "styles": _normalize_styles(raw.get("styles")),
         "layers": layers,
         "fields": _normalize_fields(raw.get("fields")),

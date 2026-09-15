@@ -7,7 +7,7 @@ import json
 import fitz
 
 from backend.core.canvas.models import create_empty_document
-from backend.core.cmyk_pdf import CanvasCmykRenderer
+from backend.core.cmyk_pdf.renderer import CanvasCmykRenderer
 
 
 def test_cmyk_export_embeds_canvas_manifest() -> None:

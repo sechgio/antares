@@ -12,6 +12,12 @@ export type PointerGestureSessionOptions = {
   onAbort?: () => void;
 };
 
+export type PointerGestureOwner = {
+  start: (options: PointerGestureSessionOptions) => PointerGestureSession;
+  abort: () => void;
+  dispose: () => void;
+};
+
 let activeSession: PointerGestureSession | null = null;
 
 export function getActivePointerGestureSession(): PointerGestureSession | null {
@@ -20,6 +26,39 @@ export function getActivePointerGestureSession(): PointerGestureSession | null {
 
 export function abortActivePointerGestureSession(): void {
   activeSession?.abort();
+}
+
+export function createPointerGestureOwner(): PointerGestureOwner {
+  let ownedSession: PointerGestureSession | null = null;
+
+  return {
+    start(options) {
+      let session!: PointerGestureSession;
+      const clearOwnedSession = () => {
+        if (ownedSession === session) ownedSession = null;
+      };
+      session = createPointerGestureSession({
+        ...options,
+        onEnd: (event, reason) => {
+          clearOwnedSession();
+          options.onEnd(event, reason);
+        },
+        onAbort: () => {
+          clearOwnedSession();
+          options.onAbort?.();
+        },
+      });
+      ownedSession = session;
+      return session;
+    },
+    abort() {
+      ownedSession?.abort();
+    },
+    dispose() {
+      ownedSession?.abort();
+      ownedSession = null;
+    },
+  };
 }
 
 export function createPointerGestureSession(

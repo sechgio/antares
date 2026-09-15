@@ -33,7 +33,7 @@ function hasSymlinkAncestor(resolved) {
       if (fs.lstatSync(parent).isSymbolicLink()) return true;
     } catch (err) {
       // Missing ancestors are fine (the tree may not exist yet); anything else
-      // means the path cannot be verified — fail closed.
+      // means the path cannot be verified, so fail closed.
       if (!err || err.code !== 'ENOENT') throw err;
     }
     current = parent;
@@ -75,7 +75,7 @@ function assertAllowedReadPath(rawPath) {
     throw new Error('path not allowed');
   }
   // A swapped symlink ancestor makes a registered lexical path resolve outside
-  // the intended tree — the same policy write paths already enforce.
+  // the intended tree; write paths already enforce the same policy.
   if (hasSymlinkAncestor(resolved)) {
     throw new Error('symbolic links not allowed');
   }

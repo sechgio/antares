@@ -1,0 +1,325 @@
+{
+  "guideCases": [
+    {
+      "name": "normalizes guide values and clamps them to existing pages",
+      "document": {
+        "version": 2,
+        "id": "guide-contract",
+        "name": "Guide contract",
+        "updatedAt": "2026-09-14T00:00:00.000Z",
+        "page": {
+          "widthMm": 210,
+          "heightMm": 297
+        },
+        "pages": [
+          {
+            "id": "page-1",
+            "name": "Página 1"
+          },
+          {
+            "id": "page-2",
+            "name": "Página 2"
+          }
+        ],
+        "settings": {},
+        "styles": [],
+        "fields": [],
+        "layers": [
+          {
+            "id": "layer-1",
+            "type": "rect",
+            "name": "Rectángulo",
+            "value": "",
+            "pageIndex": 0,
+            "cssVars": {
+              "--width": "10mm",
+              "--height": "10mm",
+              "--translate-x": "0mm",
+              "--translate-y": "0mm"
+            }
+          }
+        ],
+        "guides": [
+          {
+            "id": "negative",
+            "axis": "x",
+            "posMm": 10,
+            "pageIndex": -4
+          },
+          {
+            "id": "overflow",
+            "axis": "y",
+            "posMm": 20,
+            "pageIndex": 99
+          },
+          {
+            "id": "coerced",
+            "axis": "x",
+            "posMm": "30.5",
+            "pageIndex": "1"
+          },
+          {
+            "id": "invalid-axis",
+            "axis": "z",
+            "posMm": 40,
+            "pageIndex": 0
+          },
+          {
+            "id": "invalid-position",
+            "axis": "x",
+            "posMm": "not-a-number",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "expectedGuides": [
+        {
+          "id": "negative",
+          "axis": "x",
+          "posMm": 10,
+          "pageIndex": 0
+        },
+        {
+          "id": "overflow",
+          "axis": "y",
+          "posMm": 20,
+          "pageIndex": 1
+        },
+        {
+          "id": "coerced",
+          "axis": "x",
+          "posMm": 30.5,
+          "pageIndex": 1
+        }
+      ]
+    },
+    {
+      "name": "rejects non-finite positions and does not treat booleans as numbers",
+      "document": {
+        "version": 2,
+        "id": "guide-invalid-primitives",
+        "name": "Guide invalid primitives",
+        "updatedAt": "2026-09-14T00:00:00.000Z",
+        "page": {
+          "widthMm": 210,
+          "heightMm": 297
+        },
+        "pages": [
+          {
+            "id": "page-1",
+            "name": "Página 1"
+          },
+          {
+            "id": "page-2",
+            "name": "Página 2"
+          }
+        ],
+        "settings": {},
+        "styles": [],
+        "fields": [],
+        "layers": [
+          {
+            "id": "layer-1",
+            "type": "rect",
+            "name": "Rectángulo",
+            "value": "",
+            "pageIndex": 0,
+            "cssVars": {
+              "--width": "10mm",
+              "--height": "10mm",
+              "--translate-x": "0mm",
+              "--translate-y": "0mm"
+            }
+          }
+        ],
+        "guides": [
+          {
+            "id": "nan-position",
+            "axis": "x",
+            "posMm": "NaN",
+            "pageIndex": 0
+          },
+          {
+            "id": "boolean-position",
+            "axis": "y",
+            "posMm": true,
+            "pageIndex": 0
+          },
+          {
+            "id": "boolean-page",
+            "axis": "x",
+            "posMm": 12,
+            "pageIndex": true
+          },
+          {
+            "id": "fractional-page",
+            "axis": "y",
+            "posMm": 18,
+            "pageIndex": 1.9
+          },
+          {
+            "id": "fractional-page-string",
+            "axis": "x",
+            "posMm": 24,
+            "pageIndex": "1.9"
+          }
+        ]
+      },
+      "expectedGuides": [
+        {
+          "id": "boolean-page",
+          "axis": "x",
+          "posMm": 12,
+          "pageIndex": 0
+        },
+        {
+          "id": "fractional-page",
+          "axis": "y",
+          "posMm": 18,
+          "pageIndex": 1
+        },
+        {
+          "id": "fractional-page-string",
+          "axis": "x",
+          "posMm": 24,
+          "pageIndex": 0
+        }
+      ]
+    },
+    {
+      "name": "follows Python numeric grammar: rejects hex/binary, accepts underscores and decimal forms",
+      "document": {
+        "version": 2,
+        "id": "guide-numeric-grammar",
+        "name": "Guide numeric grammar",
+        "updatedAt": "2026-09-14T00:00:00.000Z",
+        "page": {
+          "widthMm": 210,
+          "heightMm": 297
+        },
+        "pages": [
+          {
+            "id": "page-1",
+            "name": "Página 1"
+          },
+          {
+            "id": "page-2",
+            "name": "Página 2"
+          }
+        ],
+        "settings": {},
+        "styles": [],
+        "fields": [],
+        "layers": [
+          {
+            "id": "layer-1",
+            "type": "rect",
+            "name": "Rectángulo",
+            "value": "",
+            "pageIndex": 0,
+            "cssVars": {
+              "--width": "10mm",
+              "--height": "10mm",
+              "--translate-x": "0mm",
+              "--translate-y": "0mm"
+            }
+          }
+        ],
+        "guides": [
+          {
+            "id": "hex-position",
+            "axis": "x",
+            "posMm": "0x10",
+            "pageIndex": 0
+          },
+          {
+            "id": "binary-position",
+            "axis": "x",
+            "posMm": "0b11",
+            "pageIndex": 0
+          },
+          {
+            "id": "underscored-position",
+            "axis": "x",
+            "posMm": "1_0.5",
+            "pageIndex": 0
+          },
+          {
+            "id": "leading-dot",
+            "axis": "x",
+            "posMm": ".5",
+            "pageIndex": 0
+          },
+          {
+            "id": "trailing-dot",
+            "axis": "x",
+            "posMm": "7.",
+            "pageIndex": 0
+          },
+          {
+            "id": "exponent",
+            "axis": "x",
+            "posMm": "1e2",
+            "pageIndex": 0
+          },
+          {
+            "id": "infinity-word",
+            "axis": "x",
+            "posMm": "inf",
+            "pageIndex": 0
+          },
+          {
+            "id": "underscored-page",
+            "axis": "y",
+            "posMm": 12,
+            "pageIndex": "1_0"
+          },
+          {
+            "id": "hex-page",
+            "axis": "y",
+            "posMm": 12,
+            "pageIndex": "0x1"
+          }
+        ]
+      },
+      "expectedGuides": [
+        {
+          "id": "underscored-position",
+          "axis": "x",
+          "posMm": 10.5,
+          "pageIndex": 0
+        },
+        {
+          "id": "leading-dot",
+          "axis": "x",
+          "posMm": 0.5,
+          "pageIndex": 0
+        },
+        {
+          "id": "trailing-dot",
+          "axis": "x",
+          "posMm": 7,
+          "pageIndex": 0
+        },
+        {
+          "id": "exponent",
+          "axis": "x",
+          "posMm": 100,
+          "pageIndex": 0
+        },
+        {
+          "id": "underscored-page",
+          "axis": "y",
+          "posMm": 12,
+          "pageIndex": 1
+        },
+        {
+          "id": "hex-page",
+          "axis": "y",
+          "posMm": 12,
+          "pageIndex": 0
+        }
+      ]
+    }
+  ]
+}

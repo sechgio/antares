@@ -17,8 +17,8 @@
 .tpl-modal {
   display: flex;
   width: 100%;
-  max-width: 1040px;
-  height: min(84vh, 700px);
+  max-width: 1460px;
+  height: min(93vh, 880px);
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--cv-border-strong);
@@ -493,8 +493,8 @@
 .tpl-lightbox-card {
   position: relative;
   display: flex;
-  width: 680px;
-  max-width: 100%;
+  width: min(940px, 100%);
+  height: min(92vh, 900px);
   max-height: 100%;
   overflow: hidden;
   border: 1px solid var(--cv-border-strong);
@@ -508,8 +508,10 @@
   display: flex;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   background: var(--cv-bg-deep);
   padding: 24px;
 }

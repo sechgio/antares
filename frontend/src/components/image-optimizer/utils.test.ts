@@ -7,7 +7,6 @@ import {
   buildExportNameMap,
   buildZipFilename,
   previewFilenames,
-  resolveExportFilename,
   reorderImageItems,
   SAVE_CHUNK_SIZE,
   saveEntriesInChunks,
@@ -101,7 +100,6 @@ describe('image optimizer export naming', () => {
     expect(fullMap.get('first')).toBe('foto_001.jpg');
     expect(fullMap.get('third')).toBe('foto_003.jpg');
     expect(subsetMap.get('third')).toBe('foto_002.jpg');
-    expect(resolveExportFilename('third', items, renameSettings)).toBe('foto_003.jpg');
   });
 
   it('previewFilenames shows sequential names when rename is enabled', () => {

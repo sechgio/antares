@@ -1,5 +1,3 @@
-import { matchesRecordId as matchesRecordIdCanvas } from '../canvas/runtime/excel';
-
 export function formatDateValue(value: string | number | undefined): string {
   if (!value || value === '-') return '-';
   const text = String(value).trim();
@@ -60,21 +58,6 @@ export function chunkItems<T>(items: T[], size: number): T[][] {
     chunks.push(items.slice(i, i + size));
   }
   return chunks;
-}
-
-export function matchesRecordId(imageName: string, recordId: string | number): boolean {
-  return matchesRecordIdCanvas(imageName, String(recordId));
-}
-
-export function naturalSortByName(a: File, b: File): number {
-  const extractSuffix = (name: string): number => {
-    const match = name.match(/[-_](\d+)\.[^.]+$/i);
-    return match ? parseInt(match[1], 10) : 0;
-  };
-  const numA = extractSuffix(a.name);
-  const numB = extractSuffix(b.name);
-  if (numA !== numB) return numA - numB;
-  return a.name.localeCompare(b.name);
 }
 
 export function validateTemplateStructure(content: string): { valid: boolean; error: string } {

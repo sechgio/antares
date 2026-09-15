@@ -1,9 +1,8 @@
-const { getValidTokens, refreshAccessToken } = require('./google-sheets-service');
+const { getValidTokens, refreshAccessToken, assertAuthSessionCurrent } = require('./google-session');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const nis = require('./autoimg-nis');
 const {
   getActiveUserSnapshot,
-  isActiveUserSnapshotCurrent,
   onActiveUserChange,
 } = require('./autoimg-user-scope');
 
@@ -17,12 +16,6 @@ const DRIVE_SHARED_PARAMS = {
   includeItemsFromAllDrives: 'true',
 };
 
-const SESSION_CHANGED_MESSAGE = 'La sesión de Google cambió durante la operación.';
-
-function _assertSessionCurrent(session) {
-  if (!isActiveUserSnapshotCurrent(session)) throw new Error(SESSION_CHANGED_MESSAGE);
-}
-
 async function _driveRequest(
   path,
   { method = 'GET', params = {}, body } = {},
@@ -31,7 +24,7 @@ async function _driveRequest(
 ) {
   const tokens = await getValidTokens(session);
   if (!tokens) throw new Error('No autenticado con Google');
-  _assertSessionCurrent(session);
+  assertAuthSessionCurrent(session);
   const qs = new URLSearchParams({ ...DRIVE_SHARED_PARAMS, ...params });
   const url = `https://www.googleapis.com/drive/v3/${path}?${qs.toString()}`;
   const headers = { Authorization: `Bearer ${tokens.access_token}` };
@@ -49,16 +42,16 @@ async function _driveRequest(
   }
   if (!res.ok) throw new Error(`Drive API error (${res.status}): ${await res.text()}`);
   if (res.status === 204) {
-    _assertSessionCurrent(session);
+    assertAuthSessionCurrent(session);
     return {};
   }
   const text = await res.text();
   if (!text) {
-    _assertSessionCurrent(session);
+    assertAuthSessionCurrent(session);
     return {};
   }
   const result = JSON.parse(text);
-  _assertSessionCurrent(session);
+  assertAuthSessionCurrent(session);
   return result;
 }
 
@@ -259,12 +252,22 @@ function shrinkThumbnailUrl(url) {
   return `${raw}=s96`;
 }
 
-async function fetchThumbnailDataUrl(thumbnailLink, accessToken) {
+async function fetchThumbnailDataUrl(thumbnailLink, accessToken, session = null) {
   const url = shrinkThumbnailUrl(thumbnailLink);
   let res = await fetchWithRetry(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
+    // Token caducado: refrescar y reintentar autenticado en vez de degradar a anónimo.
+    const refreshed = session ? await getValidTokens(session) : null;
+    if (refreshed?.access_token && refreshed.access_token !== accessToken) {
+      res = await fetchWithRetry(url, {
+        headers: { Authorization: `Bearer ${refreshed.access_token}` },
+      });
+    }
+  }
+  if (res.status === 403) {
+    // Thumbnail accesible sin auth (o sin permiso): intento anónimo.
     res = await fetchWithRetry(url);
   }
   if (!res.ok) throw new Error(`Thumb HTTP ${res.status}`);
@@ -279,7 +282,7 @@ async function previewFolder(input, { limit = PREVIEW_LIMIT, force = false } = {
   const session = getActiveUserSnapshot();
   const tokens = await getValidTokens(session);
   if (!tokens) throw new Error('No autenticado con Google');
-  _assertSessionCurrent(session);
+  assertAuthSessionCurrent(session);
 
   const pageSize = Math.min(Math.max(1, Number(limit) || PREVIEW_LIMIT), PREVIEW_LIMIT);
   const cacheKey = _previewCacheKey(session, folderId, pageSize);
@@ -304,7 +307,7 @@ async function previewFolder(input, { limit = PREVIEW_LIMIT, force = false } = {
     files.map(async (f) => {
       if (!f.thumbnailLink) return { id: f.id, name: f.name || '', dataUrl: null };
       try {
-        const dataUrl = await fetchThumbnailDataUrl(f.thumbnailLink, tokens.access_token);
+        const dataUrl = await fetchThumbnailDataUrl(f.thumbnailLink, tokens.access_token, session);
         return { id: f.id, name: f.name || '', dataUrl };
       } catch {
         return { id: f.id, name: f.name || '', dataUrl: null };
@@ -312,7 +315,7 @@ async function previewFolder(input, { limit = PREVIEW_LIMIT, force = false } = {
     }),
   );
 
-  _assertSessionCurrent(session);
+  assertAuthSessionCurrent(session);
   const result = { folder_id: folderId, thumbs };
   _setPreviewCache(cacheKey, { at: Date.now(), result });
   return result;

@@ -35,17 +35,17 @@ Estas reglas describen el estado real del proyecto auditado. Para valores que ca
 
 - `backend/handlers/__init__.py` usa un `HandlerRegistry` lazy. Los handlers core se calientan antes de emitir `ready`; Canvas y conversión se calientan después, y el resto se carga bajo demanda.
 - `backend/core/scheduler.py` separa lanes `sync`, `light` y `heavy`, con límites de workers, backpressure y reducción dinámica por presión de memoria.
-- La lista `HEAVY_METHODS` de `backend/main.py` es la autoridad para el lane pesado del backend. Actualmente incluye, entre otros, `canvas_get`, `canvas_save`, `canvas_save_history` y `canvas_export_cmyk_pdf`.
-- `shared/heavy-ipc-methods.json` es otra clasificación: controla el timeout pesado del bridge y actualmente contiene `process_start`, `spreadsheet_parse` y `html_to_pdf`. `shared/long-running-methods.json` controla timeouts largos. No confundas estas listas con los lanes del scheduler.
+- `shared/ipc-method-catalog.json` es la fuente de verdad por método: `handler` (`backend:<módulo>` o `native:<dialog|autoimg|ubicaciones>`), `lane` del scheduler (`sync`/`light`/`heavy`), tier de `timeout` (`normal`/`long`/`heavy`), `idempotent`, `fileTokens` y `rawOutputPath`. `shared/ipc-method-catalog.js` proyecta los conjuntos para Electron; `backend/core/ipc_catalog.py` los proyecta para Python; `frontend/src/api.ts` consume los tiers directamente.
+- El lane del scheduler y el timeout del bridge son ejes independientes declarados en el catálogo: `process_start` corre en lane light con timeout de 900 s, y `canvas_export_cmyk_pdf` corre en lane heavy con timeout de 900 s. No reconstruyas listas paralelas fuera del catálogo.
 - `process_start` inicia un trabajo en segundo plano mediante `JobManager`; no lo conviertas en una operación bloqueante del lector IPC.
 - stdout del backend es un protocolo, no un canal de debug. Todo logging debe ir a stderr mediante las utilidades existentes.
 
 ### Electron y bridge
 
 - La ruta normal es `frontend/src/api.ts` → `preload.js`/`window.electronAPI` → `ipc-router.js` → handler nativo o backend Python. No importes Electron, Node ni módulos del proceso principal directamente desde React.
-- Un método nuevo o modificado suele requerir revisar `frontend/src/api.ts`, `electron/ipc-methods.js`, `electron/preload.js`, `electron/ipc-router.js` y el registro de `backend/handlers/`, además de sus pruebas de paridad.
+- Un método nuevo o modificado requiere declararlo en `shared/ipc-method-catalog.json` y revisar `frontend/src/api.ts`, `electron/preload.js` y el handler de `backend/handlers/` o nativo correspondiente, además de las pruebas de paridad (`tests/test-electron-ipc-allowlist.js`, `tests/test_ipc_catalog.py`).
 - El router usa 30 s por defecto, 300 s para métodos largos y 900 s para métodos pesados. Solo reintenta lecturas explícitamente idempotentes; no marques escrituras como reintentables sin demostrar idempotencia.
-- El spawner espera el handshake `ready`, hace health checks y autorrecuperación acotada. En desarrollo ejecuta `backend/main.py` usando primero `venv312` si existe y luego Python del sistema; en producción ejecuta `AntaresBackend.exe` empaquetado.
+- El spawner espera el handshake `ready`, hace health checks y autorrecuperación acotada. En desarrollo ejecuta `backend/main.py` usando primero `.venv` (el entorno de `uv sync --locked`), luego `venv312` si existe y por último Python del sistema; en producción ejecuta `AntaresBackend.exe` empaquetado.
 - La ventana usa `contextIsolation: true`, `nodeIntegration: false`, sandbox y CSP. Mantén la validación del sender, la allowlist de métodos y las restricciones de navegación.
 
 ### Frontend
@@ -53,6 +53,7 @@ Estas reglas describen el estado real del proyecto auditado. Para valores que ca
 - `App.tsx` mantiene un shell con lazy loading, Error Boundaries y providers de toast/dialog. `AuthGate` solo es obligatorio para `espacios`; conversión, informes y demás herramientas locales no deben depender de Supabase.
 - Canvas puede quedar montado hasta 60 s al cambiar de tab para conservar estado; el flush de Canvas participa en el cierre de la aplicación. No desmontes ni cambies ese ciclo de vida sin actualizar sus pruebas.
 - El HTML que viaja a preview/PDF debe pasar por `shared/html-sanitizer.js` y respetar `shared/html-sanitizer-spec.json`. No agregues HTML no sanitizado ni recursos externos que contradigan la CSP.
+- La UI del producto es solo en español. i18n existe como infraestructura dormida: `frontend/src/i18n.ts` (i18next), `locales/es.json` y `locales/en.json` cubren únicamente las áreas adoptadas (auth, settings/appearance/panel, history, image-optimizer, chrome del sidebar). No hay selector de idioma en la UI ni soporte de inglés para el usuario. No agregues claves a los locales sin un consumidor `t()` en el mismo cambio; el catálogo debe reflejar exactamente lo que la UI usa (las claves `optimizer.presets.*` se resuelven dinámicamente por id de preset).
 
 ## Persistencia y seguridad de archivos
 
@@ -68,7 +69,7 @@ Estas reglas describen el estado real del proyecto auditado. Para valores que ca
 Canvas es un editor A4 Figma-style local-first: el JSON local es la fuente inmediata de verdad y Supabase es un espejo best-effort.
 
 - Backend: `backend/core/canvas/` normaliza modelos y mantiene store atómico con locks, recovery e historial. `backend/handlers/canvas.py` expone diez métodos: `canvas_list`, `canvas_bootstrap`, `canvas_get`, `canvas_save`, `canvas_create`, `canvas_delete`, `canvas_duplicate`, `canvas_export_cmyk_pdf`, `canvas_get_history` y `canvas_save_history`.
-- Electron añade `canvas_asset_put`, `canvas_asset_get`, `canvas_asset_info` y `canvas_asset_gc` para assets binarios. Los documentos usan referencias `canvas-asset:`; no vuelvas a embutir blobs grandes en JSON salvo que el contrato lo exija.
+- Electron añade `canvas_asset_put`, `canvas_asset_get` y `canvas_asset_info` para assets binarios. Los documentos usan referencias `canvas-asset:`; no vuelvas a embutir blobs grandes en JSON salvo que el contrato lo exija. El GC de assets huérfanos corre por timer interno en `electron/main.js` (`runCanvasAssetGc`), no es un método IPC.
 - El contrato compartido es `shared/canvas-schema.json`: `DOCUMENT_VERSION = 2`, página A4 de 210 × 297 y 22 tipos (`text`, `image`, `frame`, `component`, `field`, `logo`, `imageSlot`, `rect`, `grid`, `group`, `table`, `checkbox`, `signature`, `line`, `ellipse`, `arrow`, `polygon`, `star`, `diamond`, `hexagon`, `pentagon`, `boolean`). TypeScript y Python mantienen tipos espejo y normalizan en carga; frontend actualiza v1→v2, backend reestampa la versión y ambos acotan `pageIndex`.
 - `useCanvasHistory` distingue `setDocument` (edición discreta), `updateSilent` (preview vivo) y `commitFromBaseline` (una entrada por gesto). `gestureRaf` y `pointerGestureSession` coalescen drag/pointer events y abortan correctamente en undo, cancel o unmount. El historial RAM está limitado a 30 entradas y el historial por documento se persiste en disco.
 - El autosave ocurre por cambios y durante los cambios de documento, duplicado, borrado, pérdida de foco/unmount y cierre; no dependas únicamente de Ctrl+S.
@@ -106,8 +107,8 @@ Variables del cliente cloud, cuando sean necesarias para una tarea, se configura
 - `npm run test:frontend` — Vitest frontend; `npm run test:stress` — `tests/test_stress_conversion.py` con la marca `slow`.
 - `npm run lint:python` / `npm run lint:fix` — Ruff sobre backend, tests y scripts.
 - `npm run typecheck:backend` — mypy; `npm run typecheck:frontend` — `tsc --noEmit`.
-- `npm run check:any` — guard contra nuevas anotaciones `dict[str, Any]` en backend; una excepción debe ser explícita y justificada según el script.
-- `npm run check:ratchet` — trinquete de `# type: ignore`, `any` en frontend y archivos grandes contra `.quality-baseline.json`.
+- `npm run check:any` — falla si `backend/core/canvas` usa `dict[str, Any]` sin allowlist; en el resto del backend solo advierte (el techo lo pone `dictAnyBackend` en el trinquete). Una excepción debe ser explícita y justificada según el script.
+- `npm run check:ratchet` — trinquete de `# type: ignore`, `any` en frontend, `dict[str, Any]` sin allowlist en backend y archivos grandes contra `.quality-baseline.json`.
 - `npm run check:budgets` — valida budgets de chunks y modulepreload; puede construir frontend si faltan artefactos.
 - `npm run audit:python` / `npm run audit:node` — pip-audit y npm audit con severidad alta.
 - `npm run ci` — quality gate completo: lint, typecheck, guard `Any`, trinquete, audits, budgets y `npm test`.
@@ -117,6 +118,7 @@ Variables del cliente cloud, cuando sean necesarias para una tarea, se configura
 
 - Python: indentación de 4 espacios, Ruff (`E,F,W,I,UP,B,SIM,RUF`), line length 120, type hints nuevos, nombres `snake_case` y clases `PascalCase`.
 - TypeScript/React: 2 espacios, strict TypeScript, componentes `PascalCase`, hooks `use*`, utilidades puras cuando sea posible y Tailwind/tokens existentes para estilos. No agregues CSS global ad hoc sin necesidad.
+- UI compartida: los controles de formulario y superficies flotantes deben consumir `frontend/src/components/ui/` (`Button`, `DatePicker`, `ThemedSelect`, `Modal`, `HoverTooltip`, …) y `frontend/src/hooks/useAnchoredPopover.ts`. Antes de crear un botón, select, menú flotante o date picker nuevo, extiende el primitivo existente con una prop o variante; una skin local se hace con overrides CSS con scope (patrón `.vpad-*`/`.vgen-*`), no duplicando el componente.
 - Mantén responsabilidades únicas, nombres descriptivos y la mínima complejidad. No introduzcas abstracciones, dependencias o configuraciones sin una necesidad demostrable.
 - Antes de codificar, explicita supuestos y tradeoffs si hay ambigüedad. Si una interpretación puede cambiar el resultado o permisos, detente y pregunta.
 - Practica cirugía de precisión: no reformatees ni refactorices código adyacente no relacionado. Elimina únicamente imports, variables o funciones que tus cambios hayan dejado huérfanos.

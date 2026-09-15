@@ -52,6 +52,8 @@ function testArtifacts() {
   assert(!!baseline.metrics, 'el baseline tiene métricas');
   eq(baseline.metrics.typeIgnore.direction, 'max', 'typeIgnore se trinqua como techo');
   assert(Number.isFinite(baseline.metrics.typeIgnore.value), 'typeIgnore tiene valor numérico');
+  eq(baseline.metrics.dictAnyBackend.direction, 'max', 'dictAnyBackend se trinqua como techo');
+  assert(Number.isFinite(baseline.metrics.dictAnyBackend.value), 'dictAnyBackend tiene valor numérico');
 }
 
 function testCounters() {
@@ -59,7 +61,9 @@ function testCounters() {
 
   const dir = tmpProject({
     'backend/core/a.py': 'x = 1  # type: ignore\n' + 'y = 2  # type: ignore\n' + 'z = 3\n',
-    'tests/test_b.py': 'w = 4  # type: ignore\n',
+    'backend/core/c.py': 'def f(a: dict[str, Any]) -> dict[str,Any]:\n  b: dict[str, Any] = {}  # noqa\n',
+    'backend/core/canvas/d.py': 'c: dict[str, Any]\n',
+    'tests/test_b.py': 'w = 4  # type: ignore\nt: dict[str, Any] = {}\n',
     'frontend/src/a.ts': 'const a: any = 1;\nconst b = c as any;\nconst d: number = 2;\n',
     'frontend/src/b.tsx': 'function f<T = any>() {}\n',
   });
@@ -67,6 +71,11 @@ function testCounters() {
   const files = ratchet.collectSourceFiles(dir);
   eq(ratchet.countTypeIgnore(files), 2, 'sólo cuenta type: ignore de backend/, no de tests/');
   eq(ratchet.countAny(files), 3, 'cuenta anotaciones, casts y genéricos any');
+  eq(
+    ratchet.countDictAnyBackend(files),
+    3,
+    'cuenta ocurrencias dict[str,Any] sin allowlist en backend/, incl. canvas, no tests/',
+  );
 
   const big = tmpProject({ 'backend/core/big.py': 'l\n'.repeat(600), 'backend/core/small.py': 'l\n'.repeat(10) });
   eq(ratchet.countLargeFiles(ratchet.collectSourceFiles(big)), 1, 'cuenta archivos > 500 líneas');
@@ -74,7 +83,8 @@ function testCounters() {
   const measured = ratchet.measure(dir);
   eq(measured.typeIgnore, 2, 'measure() reporta typeIgnore');
   eq(measured.anyInFrontend, 3, 'measure() reporta anyInFrontend');
-  eq(Object.keys(measured).length, 3, 'measure() sólo expone métricas fiables');
+  eq(measured.dictAnyBackend, 3, 'measure() reporta dictAnyBackend');
+  eq(Object.keys(measured).length, 4, 'measure() sólo expone métricas fiables');
 
   const empty = tmpProject({ 'backend/core/a.py': 'x = 1\n' });
   eq(ratchet.countTypeIgnore(ratchet.collectSourceFiles(empty)), 0, 'sin ocurrencias cuenta 0');
@@ -103,7 +113,7 @@ function testCompare() {
   eq(rows.filter((r) => r.status === 'ok').length, 2, 'las métricas estables quedan en ok');
   eq(
     ratchet.evaluate({ typeIgnore: 1 }, null).filter((r) => r.status === 'nodata').length,
-    3,
+    4,
     'sin baseline ninguna métrica se juzga',
   );
 }

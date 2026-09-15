@@ -61,7 +61,7 @@ async function run() {
     }
 
     // A registered file read through a symlinked/junction ancestor must be
-    // rejected — the lexical allowlist entry must not survive a swapped parent.
+    // rejected: the lexical allowlist entry must not survive a swapped parent.
     const realDir = path.join(tempDir, 'real-dir');
     await fs.promises.mkdir(realDir);
     const nestedFile = path.join(realDir, 'nested.txt');

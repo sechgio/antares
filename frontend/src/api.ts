@@ -10,8 +10,7 @@ import { createAutoimgApi } from './api/autoimgApi';
 
 export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision, AutoImgFolder };
 
-import longRunningMethods from '../../shared/long-running-methods.json';
-import heavyIpcMethods from '../../shared/heavy-ipc-methods.json';
+import ipcMethodCatalog from '../../shared/ipc-method-catalog.json';
 
 declare global {
   interface Window {
@@ -28,7 +27,6 @@ declare global {
       autoUpdateInstall: () => Promise<{ success: boolean; reason?: string }>;
       onAutoUpdateStatus: (callback: (data: { status: string; version: string | null; progress: number; message?: string }) => void) => () => void;
       getPathForFile: (file: File) => string;
-      registerFileInputPath?: (filePath: string) => boolean;
       canvasFlushAck?: () => Promise<unknown>;
       fileStagedCreate?: (name: string, size: number) => Promise<{ token: string }>;
       fileStagedAppend?: (token: string, chunk: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
@@ -39,18 +37,24 @@ declare global {
       canvasAssetPut?: (chunk: ArrayBuffer | Uint8Array) => Promise<{ asset_id: string; ref: string; bytes: number }>;
       canvasAssetGet?: (ref: string) => Promise<{ ref: string; chunk: ArrayBuffer; bytes: number }>;
       canvasAssetInfo?: (ref: string) => Promise<{ ref: string; asset_id: string; bytes: number }>;
-      canvasAssetGc?: () => Promise<{ collected: number; bytes_freed: number }>;
       reportRendererError?: (report: Record<string, unknown>) => Promise<unknown>;
       reportRendererEvent?: (event: string, fields?: Record<string, unknown>, level?: string) => void;
     };
   }
 }
 
-const IPC_TIMEOUT = 30_000;
-const IPC_LONG_TIMEOUT = 300_000;
-const IPC_HEAVY_TIMEOUT = 900_000;
+type IpcTimeoutTier = keyof typeof ipcMethodCatalog.timeouts;
+const IPC_METHOD_TIMEOUTS: Record<IpcTimeoutTier, number> = ipcMethodCatalog.timeouts;
+const IPC_METHOD_ENTRIES = ipcMethodCatalog.methods as Record<string, { timeout?: IpcTimeoutTier; handler?: string }>;
 const FE_STARTUP_BUFFER_MS = 60_000;
 const FE_TIMEOUT_BUFFER_MS = 10_000;
+// El buffer de startup solo cubre el cold-start del backend: tras el primer
+// invoke exitoso deja de aplicar y los tiers del catálogo mandan.
+let _backendSeenReady = false;
+
+export function _resetBackendReadyForTests(): void {
+  _backendSeenReady = false;
+}
 
 export type APIErrorCategory =
   | 'INTERNAL_ERROR'
@@ -59,6 +63,7 @@ export type APIErrorCategory =
   | 'RESOURCE_LOCKED'
   | 'TIMEOUT'
   | 'MEMORY_PRESSURE'
+  | 'CAPACITY_EXCEEDED'
   | 'INVALID_REQUEST'
   | 'METHOD_NOT_FOUND'
   | 'AUTHENTICATION_ERROR'
@@ -76,18 +81,33 @@ export class AntaresAPIError extends Error {
     this.category = category;
     this.details = details;
   }
+}
 
-  isResourceLockedError(): boolean {
-    return this.code === -32002 || this.category === 'RESOURCE_LOCKED';
-  }
+const RETRYABLE_DEFAULT_DELAY_MS = 2_000;
+const RETRY_AFTER_CAP_MS = 60_000;
 
-  isValidationError(): boolean {
-    return this.code === -32602 || this.category === 'VALIDATION_ERROR';
+// Delay hint for rejections the backend/Electron raised before executing the
+// request (memory pressure, queue capacity), so retrying is safe regardless of
+// method idempotency. Duck-typed: mocked errors in tests aren't class instances.
+export function apiRetryAfterMs(err: unknown): number | null {
+  if (typeof err !== 'object' || err === null) return null;
+  const rec = err as { category?: unknown; details?: unknown };
+  const details =
+    rec.details && typeof rec.details === 'object' && !Array.isArray(rec.details)
+      ? (rec.details as Record<string, unknown>)
+      : null;
+  if (
+    rec.category !== 'MEMORY_PRESSURE' &&
+    rec.category !== 'CAPACITY_EXCEEDED' &&
+    details?.retryable !== true
+  ) {
+    return null;
   }
-
-  isMemoryPressureError(): boolean {
-    return this.code === -32003 || this.category === 'MEMORY_PRESSURE';
+  const ms = details?.retry_after_ms;
+  if (typeof ms === 'number' && Number.isFinite(ms) && ms > 0) {
+    return Math.min(Math.ceil(ms), RETRY_AFTER_CAP_MS);
   }
+  return RETRYABLE_DEFAULT_DELAY_MS;
 }
 
 function asNumber(value: unknown, fallback = 0): number {
@@ -132,9 +152,6 @@ function parseProcessStatus(raw: unknown): ProcessStatus {
   };
 }
 
-const LONG_RUNNING_METHODS = new Set<string>(longRunningMethods);
-const HEAVY_IPC_METHODS = new Set<string>(heavyIpcMethods);
-
 const CACHE_TTL_MS = 5 * 60 * 1000;
 type CacheEntry<T> =
   | { status: 'ok'; value: T; expires: number }
@@ -176,6 +193,17 @@ export function invalidateApiCache(key?: string) {
 function invalidateDatabaseCaches() {
   invalidateApiCache('db_fields');
   invalidateApiCache('db_columns');
+}
+
+function _invokeInvalidating<T>(
+  method: string,
+  invalidate: () => void,
+  params?: Record<string, unknown> | object,
+): Promise<T> {
+  return _invoke<T>(method, params).then((v) => {
+    invalidate();
+    return v;
+  });
 }
 
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
@@ -231,17 +259,16 @@ function parseIpcInvokeError(err: unknown): AntaresAPIError | null {
   return null;
 }
 
-const _invoke = async <T>(method: string, params?: Record<string, unknown> | object): Promise<T> => {
+const INVOKE_RETRY_MAX_DELAY_MS = 10_000;
+
+const _invokeOnce = async <T>(method: string, params?: Record<string, unknown> | object): Promise<T> => {
   if (!window.electronAPI) {
     throw new AntaresAPIError('Electron IPC no disponible', -32000, 'INTERNAL_ERROR');
   }
 
-  const baseTimeout = HEAVY_IPC_METHODS.has(method)
-    ? IPC_HEAVY_TIMEOUT
-    : LONG_RUNNING_METHODS.has(method)
-      ? IPC_LONG_TIMEOUT
-      : IPC_TIMEOUT;
-  const timeoutMs = baseTimeout + FE_STARTUP_BUFFER_MS + FE_TIMEOUT_BUFFER_MS;
+  const timeoutTier = IPC_METHOD_ENTRIES[method]?.timeout ?? 'normal';
+  const baseTimeout = IPC_METHOD_TIMEOUTS[timeoutTier] ?? IPC_METHOD_TIMEOUTS.normal;
+  const timeoutMs = baseTimeout + FE_TIMEOUT_BUFFER_MS + (_backendSeenReady ? 0 : FE_STARTUP_BUFFER_MS);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
   const timeoutErr = () => new AntaresAPIError(`IPC timeout: ${method}`, -32001, 'TIMEOUT');
@@ -266,6 +293,9 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
         }, timeoutMs);
       }),
     ]);
+    if (IPC_METHOD_ENTRIES[method]?.handler?.startsWith('backend:')) {
+      _backendSeenReady = true;
+    }
     return result as T;
   } catch (err: unknown) {
     if (timedOut) throw timeoutErr();
@@ -277,6 +307,19 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
     throw new AntaresAPIError(String(err));
   } finally {
     if (timer) clearTimeout(timer);
+  }
+};
+
+const _invoke = async <T>(method: string, params?: Record<string, unknown> | object): Promise<T> => {
+  try {
+    return await _invokeOnce<T>(method, params);
+  } catch (err: unknown) {
+    const retryAfterMs = apiRetryAfterMs(err);
+    if (retryAfterMs === null) throw err;
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, Math.min(retryAfterMs, INVOKE_RETRY_MAX_DELAY_MS)),
+    );
+    return _invokeOnce<T>(method, params);
   }
 };
 
@@ -572,29 +615,17 @@ export const api = {
   isVideo: (path: string) => _invoke<{ is_video: boolean }>('is_video', { path }),
 
   importExcel: (path: string) =>
-    _invoke<{ imported: number; inserted?: number; skipped?: number }>('db_import', { path }).then((v) => {
-      invalidateDatabaseCaches();
-      return v;
-    }),
+    _invokeInvalidating<{ imported: number; inserted?: number; skipped?: number }>('db_import', invalidateDatabaseCaches, { path }),
   dbExport: (path: string) => _invoke<{ exported: number }>('db_export', { path }),
   dbTemplate: (path: string) => _invoke<{ path: string }>('db_template', { path }),
   clearDatabase: () =>
-    _invoke<{ cleared: number }>('db_clear').then((v) => {
-      invalidateApiCache('db_columns');
-      return v;
-    }),
+    _invokeInvalidating<{ cleared: number }>('db_clear', () => invalidateApiCache('db_columns')),
 
   getFields: () => cachedInvoke('db_fields', () => _invoke<{ fields: DBField[] }>('db_fields')),
   updateFields: (fields: DBField[]) =>
-    _invoke<{ fields: DBField[] }>('db_fields_update', { fields }).then((v) => {
-      invalidateDatabaseCaches();
-      return v;
-    }),
+    _invokeInvalidating<{ fields: DBField[] }>('db_fields_update', invalidateDatabaseCaches, { fields }),
   resetFields: () =>
-    _invoke<{ fields: DBField[] }>('db_fields_reset').then((v) => {
-      invalidateDatabaseCaches();
-      return v;
-    }),
+    _invokeInvalidating<{ fields: DBField[] }>('db_fields_reset', invalidateDatabaseCaches),
 
   getDbColumns: () => cachedInvoke('db_columns', () => _invoke<{ columns: string[]; records: DBRecord[]; total: number }>('db_columns')),
   dbParseMapping: (path: string, files?: string[], id_column?: string, rename_column?: string) =>
@@ -604,15 +635,9 @@ export const api = {
 
   getRenamePatterns: () => cachedInvoke('rename_patterns_get', () => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_get')),
   updateRenamePatterns: (patterns: RenamePattern[]) =>
-    _invoke<{ patterns: RenamePattern[] }>('rename_patterns_update', { patterns }).then((v) => {
-      invalidateApiCache('rename_patterns_get');
-      return v;
-    }),
+    _invokeInvalidating<{ patterns: RenamePattern[] }>('rename_patterns_update', () => invalidateApiCache('rename_patterns_get'), { patterns }),
   resetRenamePatterns: () =>
-    _invoke<{ patterns: RenamePattern[] }>('rename_patterns_reset').then((v) => {
-      invalidateApiCache('rename_patterns_get');
-      return v;
-    }),
+    _invokeInvalidating<{ patterns: RenamePattern[] }>('rename_patterns_reset', () => invalidateApiCache('rename_patterns_get')),
 
   getTheme: () => cachedInvoke('theme_get', () => _invoke<ThemeConfig>('theme_get')),
   saveTheme: (theme: ThemeConfig) => {
@@ -620,22 +645,13 @@ export const api = {
     for (const [k, v] of Object.entries(theme)) {
       if (typeof v === 'string') safe[k] = v;
     }
-    return _invoke<ThemeConfig>('theme_save', safe).then((v) => {
-      invalidateApiCache('theme_get');
-      return v;
-    });
+    return _invokeInvalidating<ThemeConfig>('theme_save', () => invalidateApiCache('theme_get'), safe);
   },
   getPresets: () => _invoke<{ presets: string[] }>('theme_presets'),
   applyPreset: (name: string) =>
-    _invoke<ThemeConfig>('theme_preset', { name }).then((v) => {
-      invalidateApiCache('theme_get');
-      return v;
-    }),
+    _invokeInvalidating<ThemeConfig>('theme_preset', () => invalidateApiCache('theme_get'), { name }),
   resetTheme: () =>
-    _invoke<ThemeConfig>('theme_reset').then((v) => {
-      invalidateApiCache('theme_get');
-      return v;
-    }),
+    _invokeInvalidating<ThemeConfig>('theme_reset', () => invalidateApiCache('theme_get')),
 
   historyList: (body?: { limit?: number; offset?: number; run_type?: string; date_from?: string; date_to?: string }) => _invoke<{ runs: HistoryRunRow[] }>('history_list', body),
   historyGet: (id: number) => _invoke<{ run: HistoryRunRow }>('history_get', { id }),
@@ -660,15 +676,9 @@ export const api = {
   formatosGenerate: (body: { format_id: string; desde: number; hasta: number; output_path?: string }) =>
     _invoke<FormatosGenerateResponse>('formatos_generate', body),
   formatosUpload: (body: { nombre: string; filename: string; content_b64: string; persisted?: boolean; filename_pattern?: string }) =>
-    _invoke<{ format: FormatInfo }>('formatos_upload', body).then((v) => {
-      invalidateApiCache('formatos_list');
-      return v;
-    }),
+    _invokeInvalidating<{ format: FormatInfo }>('formatos_upload', () => invalidateApiCache('formatos_list'), body),
   formatosDelete: (format_id: string) =>
-    _invoke<{ deleted: boolean }>('formatos_delete', { format_id }).then((v) => {
-      invalidateApiCache('formatos_list');
-      return v;
-    }),
+    _invokeInvalidating<{ deleted: boolean }>('formatos_delete', () => invalidateApiCache('formatos_list'), { format_id }),
   formatosGetTemplate: (format_id: string) =>
     _invoke<{ pdf_base64: string; filename: string }>('formatos_get_template', { format_id }),
   formatosRenderTemplatePage: (body: { format_id: string; page_num?: number; max_width?: number }) =>
@@ -679,10 +689,7 @@ export const api = {
       mime_type: string;
     }>('formatos_render_template_page', body),
   formatosUpdateMapping: (format_id: string, mapping: VisualMapping) =>
-    _invoke<{ format: FormatInfo }>('formatos_update_mapping', { format_id, mapping }).then((v) => {
-      invalidateApiCache('formatos_list');
-      return v;
-    }),
+    _invokeInvalidating<{ format: FormatInfo }>('formatos_update_mapping', () => invalidateApiCache('formatos_list'), { format_id, mapping }),
 
   selladorInspectPdf: (body: { pdf_path: string }) =>
     _invoke<{
@@ -748,11 +755,20 @@ export const api = {
   canvasGet: (id: string) => _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_get', { id }),
   canvasSave: (
     document: import('./components/canvas/types').CanvasDocument,
-    opts?: { touch?: boolean },
+    opts?: { touch?: boolean; slim?: boolean },
   ) =>
-    _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_save', {
+    _invoke<{
+      document:
+        | import('./components/canvas/types').CanvasDocument
+        | Pick<
+            import('./components/canvas/types').CanvasDocument,
+            'id' | 'name' | 'updatedAt' | 'version' | 'page' | 'pages'
+          >;
+      slim?: boolean;
+    }>('canvas_save', {
       document,
       ...(opts?.touch === false ? { touch: false } : {}),
+      ...(opts?.slim ? { slim: true } : {}),
     }),
   canvasCreate: (name?: string) =>
     _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_create', name ? { name } : {}),

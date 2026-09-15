@@ -4,16 +4,21 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const API_PATH = path.join(ROOT, 'frontend', 'src', 'api.ts');
+const API_EXTRA_SOURCES = [
+  { path: path.join(ROOT, 'frontend', 'src', 'api', 'autoimgApi.ts'), callee: /\binvoke\b/g },
+];
 const PRELOAD_PATH = path.join(ROOT, 'electron', 'preload.js');
 const ALLOWLIST_PATH = path.join(ROOT, 'electron', 'ipc-methods.js');
-const LONG_RUNNING_PATH = path.join(ROOT, 'shared', 'long-running-methods.json');
-const HEAVY_PATH = path.join(ROOT, 'shared', 'heavy-ipc-methods.json');
+const CATALOG_PATH = path.join(ROOT, 'shared', 'ipc-method-catalog.js');
 
-function extractApiMethods(source) {
+const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones))$/;
+const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);
+const VALID_LANES = new Set(['sync', 'light', 'heavy']);
+
+function extractApiMethods(source, calleePattern = /_invoke(?:Invalidating)?\b/g) {
   const methods = new Set();
-  const invokeAt = /_invoke\b/g;
   let at;
-  while ((at = invokeAt.exec(source)) !== null) {
+  while ((at = calleePattern.exec(source)) !== null) {
     let i = at.index + at[0].length;
     while (i < source.length && /\s/.test(source[i])) i++;
 
@@ -66,30 +71,68 @@ function main() {
   const apiSource = fs.readFileSync(API_PATH, 'utf8');
   const preloadSource = fs.readFileSync(PRELOAD_PATH, 'utf8');
   const allowlistModule = require(ALLOWLIST_PATH);
-  const longRunning = new Set(JSON.parse(fs.readFileSync(LONG_RUNNING_PATH, 'utf8')));
-  const heavy = new Set(JSON.parse(fs.readFileSync(HEAVY_PATH, 'utf8')));
+  const catalog = require(CATALOG_PATH);
 
   const apiMethods = extractApiMethods(apiSource);
+  for (const extra of API_EXTRA_SOURCES) {
+    const extraSource = fs.readFileSync(extra.path, 'utf8');
+    for (const m of extractApiMethods(extraSource, extra.callee)) apiMethods.add(m);
+  }
   const preloadMethods = extractPreloadMethods(preloadSource);
-  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'canvas_asset_gc', 'autoimg_scan_all']);
+  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'autoimg_scan_all']);
   const allowed = allowlistModule.ALLOWED_RENDERER_METHODS;
-  const allowlistLongRunning = allowlistModule.LONG_RUNNING_METHODS;
-  const allowlistHeavy = allowlistModule.HEAVY_METHODS;
 
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
   const unexpectedInAllowlist = [...allowed].filter((m) => !knownUsedMethods.has(m));
-  const longRunningNotAllowed = [...longRunning].filter((m) => !allowed.has(m));
-  const longRunningDrift = [
-    ...[...longRunning].filter((m) => !allowlistLongRunning.has(m)),
-    ...[...allowlistLongRunning].filter((m) => !longRunning.has(m)),
-  ];
-  const heavyDrift = [
-    ...[...heavy].filter((m) => !allowlistHeavy.has(m)),
-    ...[...allowlistHeavy].filter((m) => !heavy.has(m)),
-    ...[...heavy].filter((m) => !longRunning.has(m)),
+
+  const invalidEntries = [];
+  for (const [name, entry] of Object.entries(catalog.METHODS)) {
+    if (!/^[a-z0-9_]+$/.test(name)) invalidEntries.push(`${name}: nombre inválido`);
+    if (!entry || typeof entry !== 'object' || !VALID_HANDLERS.test(entry.handler)) {
+      invalidEntries.push(`${name}: handler inválido (${JSON.stringify(entry && entry.handler)})`);
+      continue;
+    }
+    if (entry.timeout !== undefined && !VALID_TIMEOUTS.has(entry.timeout)) {
+      invalidEntries.push(`${name}: timeout inválido (${entry.timeout})`);
+    }
+    if (entry.lane !== undefined) {
+      if (!entry.handler.startsWith('backend:')) {
+        invalidEntries.push(`${name}: lane declarado en método nativo`);
+      } else if (!VALID_LANES.has(entry.lane)) {
+        invalidEntries.push(`${name}: lane inválido (${entry.lane})`);
+      }
+    }
+    if (entry.fileTokens !== undefined && !(
+      Array.isArray(entry.fileTokens)
+      && entry.fileTokens.every((schema) => Array.isArray(schema) && schema.every((s) => typeof s === 'string'))
+    )) {
+      invalidEntries.push(`${name}: fileTokens debe ser una lista de rutas de segmentos`);
+    }
+  }
+
+  const allowlistDrift = [
+    ...[...catalog.METHOD_NAMES].filter((m) => !allowed.has(m)),
+    ...[...allowed].filter((m) => !catalog.METHOD_NAMES.has(m)),
   ];
 
+  const heavyNotLongRunning = [...catalog.HEAVY_TIMEOUT_METHODS].filter((m) => !catalog.LONG_RUNNING_METHODS.has(m));
+
+  const timeoutDrift = [
+    ['version', 30_000],
+    ['db_import', 300_000],
+    ['process_start', 900_000],
+    ['canvas_export_cmyk_pdf', 900_000],
+    ['html_to_pdf', 900_000],
+  ].filter(([m, ms]) => catalog.timeoutMsFor(m) !== ms);
+
   let failed = false;
+
+  if (invalidEntries.length > 0) {
+    console.error(
+      `[FAIL] Entradas inválidas en shared/ipc-method-catalog.json:\n  - ${invalidEntries.join('\n  - ')}`
+    );
+    failed = true;
+  }
 
   if (missingFromAllowlist.length > 0) {
     console.error(
@@ -98,23 +141,23 @@ function main() {
     failed = true;
   }
 
-  if (longRunningNotAllowed.length > 0) {
+  if (allowlistDrift.length > 0) {
     console.error(
-      `[FAIL] Métodos LONG_RUNNING (shared/long-running-methods.json) no presentes en ALLOWED_RENDERER_METHODS:\n  - ${longRunningNotAllowed.join('\n  - ')}`
+      `[FAIL] ALLOWED_RENDERER_METHODS no coincide con las claves del catálogo:\n  - ${allowlistDrift.join('\n  - ')}`
     );
     failed = true;
   }
 
-  if (longRunningDrift.length > 0) {
+  if (heavyNotLongRunning.length > 0) {
     console.error(
-      `[FAIL] LONG_RUNNING_METHODS en electron/ipc-methods.js no coincide con shared/long-running-methods.json:\n  - ${longRunningDrift.join('\n  - ')}`
+      `[FAIL] Métodos con timeout heavy ausentes de la proyección long-running:\n  - ${heavyNotLongRunning.join('\n  - ')}`
     );
     failed = true;
   }
 
-  if (heavyDrift.length > 0) {
+  if (timeoutDrift.length > 0) {
     console.error(
-      `[FAIL] HEAVY_METHODS debe coincidir con shared/heavy-ipc-methods.json y ser long-running:\n  - ${[...new Set(heavyDrift)].join('\n  - ')}`
+      `[FAIL] Timeouts del catálogo divergen del contrato esperado:\n  - ${timeoutDrift.map(([m]) => m).join('\n  - ')}`
     );
     failed = true;
   }
@@ -127,7 +170,9 @@ function main() {
 
   if (!failed) {
     console.log(
-      `[PASS] Allowlist sincronizada: ${apiMethods.size} métodos de api.ts presentes; ${longRunning.size} long-running y ${heavy.size} heavy alineados.`
+      `[PASS] Catálogo IPC sincronizado: ${apiMethods.size} métodos de api.ts presentes; ` +
+      `${catalog.METHOD_NAMES.size} métodos en catálogo (${catalog.BACKEND_METHODS.length} backend, ` +
+      `${catalog.LONG_RUNNING_METHODS.size} long-running, ${catalog.HEAVY_TIMEOUT_METHODS.size} heavy-timeout).`
     );
     process.exit(0);
   }

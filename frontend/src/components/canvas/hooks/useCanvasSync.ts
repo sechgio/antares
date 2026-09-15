@@ -114,27 +114,33 @@ export function useCanvasSync({
         try {
           await refreshList();
           if (result.conflict && onConflictRef.current) {
-            onConflictRef.current(result.conflict);
+            // El sync general solo genera conflictos del documento abierto al
+            // inicio; si el usuario cambió de documento en vuelo, el conflicto
+            // pertenece al doc anterior y no debe alcanzar la UI ni el resolver.
+            if (result.conflict.localDoc.id === historyDocRef.current.id) {
+              onConflictRef.current(result.conflict);
+            }
             setSyncStatus('synced');
             return;
           }
-          if (result.reloadOpenId && result.reloadOpenId === openId) {
-            if (!openDirtyRef.current) {
-              const got = await api.canvasGet(result.reloadOpenId);
-              const doc = normalizeDocument(got.document as CanvasDocument);
-              const hydrated = await hydrateDocumentImages(doc, { strict: true });
-              replaceDocumentRef.current(hydrated);
-              onRemoteDocumentAppliedRef.current?.(hydrated);
-            } else if (onConflictRef.current) {
-              const got = await api.canvasGet(result.reloadOpenId);
-              const remoteDoc = normalizeDocument(got.document as CanvasDocument);
-              const localDoc = historyDocRef.current;
-              onConflictRef.current({
-                localDoc,
-                remoteDoc,
-                remoteUpdatedAt: remoteDoc.updatedAt || '',
-                localUpdatedAt: localDoc.updatedAt || '',
-              });
+          if (result.reloadOpenId && result.reloadOpenId === historyDocRef.current.id) {
+            const got = await api.canvasGet(result.reloadOpenId);
+            const doc = normalizeDocument(got.document as CanvasDocument);
+            const hydrated = await hydrateDocumentImages(doc, { strict: true });
+            // El documento abierto puede cambiar mientras se carga el snapshot remoto.
+            if (result.reloadOpenId === historyDocRef.current.id) {
+              if (!openDirtyRef.current) {
+                replaceDocumentRef.current(hydrated);
+                onRemoteDocumentAppliedRef.current?.(hydrated);
+              } else if (onConflictRef.current) {
+                const localDoc = historyDocRef.current;
+                onConflictRef.current({
+                  localDoc,
+                  remoteDoc: hydrated,
+                  remoteUpdatedAt: hydrated.updatedAt || '',
+                  localUpdatedAt: localDoc.updatedAt || '',
+                });
+              }
             }
           }
           setSyncStatus(result.pushErrors > 0 ? 'error' : 'synced');

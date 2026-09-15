@@ -93,7 +93,7 @@ describe('restoreCanvasVersion', () => {
     );
     expect(api.canvasSave).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Old version-serialized' }),
-      { touch: true },
+      { touch: true, slim: true },
     );
     expect(supabaseMock.chainable.upsert).toHaveBeenCalled();
     const [row] = (supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>).mock.calls[0];

@@ -20,20 +20,24 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
 
 const syncCanvasDocuments = vi.fn();
 
-vi.mock('../../../api', () => ({
-  onNotify: vi.fn(() => () => {}),
-  api: {
-    canvasList: vi.fn(),
-    canvasBootstrap: vi.fn(),
-    canvasGet: vi.fn(),
-    canvasSave: vi.fn(async (doc: CanvasDocument) => ({ document: doc })),
-    canvasCreate: vi.fn(),
-    canvasDelete: vi.fn(async () => ({ success: true })),
-    canvasDuplicate: vi.fn(),
-    canvasGetHistory: vi.fn(async () => ({ past: [], future: [] })),
-    canvasSaveHistory: vi.fn(async () => ({ success: true })),
-  },
-}));
+vi.mock('../../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api')>();
+  return {
+    ...actual,
+    onNotify: vi.fn(() => () => {}),
+    api: {
+      canvasList: vi.fn(),
+      canvasBootstrap: vi.fn(),
+      canvasGet: vi.fn(),
+      canvasSave: vi.fn(async (doc: CanvasDocument) => ({ document: doc })),
+      canvasCreate: vi.fn(),
+      canvasDelete: vi.fn(async () => ({ success: true })),
+      canvasDuplicate: vi.fn(),
+      canvasGetHistory: vi.fn(async () => ({ past: [], future: [] })),
+      canvasSaveHistory: vi.fn(async () => ({ success: true })),
+    },
+  };
+});
 
 vi.mock('../../../lib/supabase', () => ({
   supabase: null,
@@ -74,6 +78,7 @@ vi.mock('../utils/imageBlobStore', () => ({
   })),
   getBlobUrl: vi.fn((v: string) => v),
   getThumbnailUrl: vi.fn((v: string) => v),
+  pinImageRefs: vi.fn(() => () => {}),
 }));
 
 vi.mock('../presets/loadPresets', () => ({
@@ -546,7 +551,7 @@ describe('CanvasView lifecycle', () => {
     await waitFor(() => {
       expect(api.canvasSave).toHaveBeenCalledWith(
         expect.objectContaining({ id: localDoc.id }),
-        { touch: true },
+        { touch: true, slim: true },
       );
     });
     expect(queueCanvasCloudPush).toHaveBeenCalledWith(
@@ -589,7 +594,7 @@ describe('CanvasView lifecycle', () => {
     await waitFor(() => {
       expect(api.canvasSave).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Remote2' }),
-        { touch: false },
+        { touch: false, slim: true },
       );
     });
     expect(screen.queryByTestId('sync-conflict-bar')).toBeNull();
@@ -836,7 +841,7 @@ describe('CanvasView lifecycle', () => {
     }
   });
 
-  it('registers beforeunload and blocks close while the doc is dirty', async () => {
+  it('registers beforeunload and fires a best-effort save while the doc is dirty', async () => {
     await renderReady();
 
     const addSpy = vi.spyOn(window, 'addEventListener');
@@ -852,8 +857,13 @@ describe('CanvasView lifecycle', () => {
 
     const ev = { returnValue: '', preventDefault: vi.fn() } as unknown as BeforeUnloadEvent;
     handler(ev);
-    expect(ev.preventDefault).toHaveBeenCalled();
-    expect(ev.returnValue).toBe('');
+    // Sin bloqueo de cierre: el protocolo quit-flush (app.flush-canvas-before-quit)
+    // es el dueño del flush final; aquí solo dispara un save best-effort.
+    expect(ev.preventDefault).not.toHaveBeenCalled();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.canvasSave).toHaveBeenCalled();
 
     addSpy.mockRestore();
   });

@@ -1,6 +1,5 @@
-const UBICACIONES_METHODS = new Set([
-  'ubicaciones_keys_get',
-  'ubicaciones_keys_set',
-]);
+const { nativeMethods } = require('../shared/ipc-method-catalog');
+
+const UBICACIONES_METHODS = nativeMethods('ubicaciones');
 
 module.exports = { UBICACIONES_METHODS };

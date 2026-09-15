@@ -1,7 +1,10 @@
+import json
+
 import pytest
 
 from backend.core.exceptions import DatabaseError
 from backend.core.fichas_tecnicas.database import FichasTecnicasDB
+from backend.core.fichas_tecnicas.models import create_empty_ficha
 
 
 def test_corrupt_json_is_preserved_and_backed_up(tmp_path) -> None:
@@ -18,11 +21,13 @@ def test_corrupt_json_is_preserved_and_backed_up(tmp_path) -> None:
     assert backups[0].read_text(encoding="utf-8") == original
 
 
-def test_get_renormalizes_stale_satisfaccion(tmp_path) -> None:
-    db = FichasTecnicasDB(tmp_path / "fichas.json")
-    created = db.create({"cliente": "Acme"})
-    db._items[created["id"]]["satisfaccion"] = "no-existe"
-    got = db.get(created["id"])
+def test_load_normalizes_stale_satisfaccion(tmp_path) -> None:
+    path = tmp_path / "fichas.json"
+    raw = create_empty_ficha(1)
+    raw["satisfaccion"] = "no-existe"
+    path.write_text(json.dumps({raw["id"]: raw}), encoding="utf-8")
+    db = FichasTecnicasDB(path)
+    got = db.get(raw["id"])
     assert got is not None
     assert got["satisfaccion"] == ""
 

@@ -7,7 +7,8 @@ import { useToast } from '../../hooks/useToast';
 import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
-import { downloadBase64Pdf, fileToDataUrl, technicalReportsApi } from './api';
+import { downloadBase64Pdf, fileToDataUrl } from '../../utils/pdfAssets';
+import { technicalReportsApi } from './api';
 import { saveFeatureHistory } from '../../utils/history';
 
 export default function TechnicalReportsApp() {
@@ -16,19 +17,18 @@ export default function TechnicalReportsApp() {
     reports,
     selectedId,
     formData,
-    setFormData,
     hasChanges,
     busy,
-    setBusy,
+    runOperation,
     mobileTab,
     setMobileTab,
     importInputRef,
     patchForm,
-    markClean,
     loadReports,
     selectReport,
     createReport,
     saveReport,
+    saveCurrent,
     deleteReport,
     clearReports,
     importFile,
@@ -53,58 +53,50 @@ export default function TechnicalReportsApp() {
 
   const exportCurrent = useCallback(async () => {
     if (!formData) return;
-    setBusy(true);
     try {
-      const reportForRender = hasChanges
-        ? await technicalReportsApi.update(formData.id, formData)
-        : formData;
-      if (hasChanges) {
-        setFormData(reportForRender);
-        markClean();
-        await loadReports();
-      }
-      const rendered = await technicalReportsApi.renderHtml({
-        id: reportForRender.id,
-        report: reportForRender,
-        logo_left: logoLeft,
-        logo_right: logoRight,
+      await runOperation(async () => {
+        const reportForRender = hasChanges ? await saveCurrent() : formData;
+        if (!reportForRender) return;
+        const rendered = await technicalReportsApi.renderHtml({
+          id: reportForRender.id,
+          report: reportForRender,
+          logo_left: logoLeft,
+          logo_right: logoRight,
+        });
+        const pdf = await technicalReportsApi.htmlToPdf({
+          html: rendered.html,
+          filename: rendered.filename,
+          return_base64: true,
+        });
+        if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
+        downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
+        await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'individual', reportId: reportForRender.id });
+        addToast({ message: hasChanges ? 'Informe guardado y PDF generado' : 'PDF generado', type: 'success' });
       });
-      const pdf = await technicalReportsApi.htmlToPdf({
-        html: rendered.html,
-        filename: rendered.filename,
-        return_base64: true,
-      });
-      if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
-      downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-      await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'individual', reportId: reportForRender.id });
-      addToast({ message: hasChanges ? 'Informe guardado y PDF generado' : 'PDF generado', type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el PDF', type: 'error' });
-    } finally {
-      setBusy(false);
     }
-  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight, markClean, setBusy, setFormData]);
+  }, [addToast, formData, hasChanges, logoLeft, logoRight, runOperation, saveCurrent]);
 
   const exportConsolidated = useCallback(async () => {
     if (reports.length === 0) return;
-    setBusy(true);
     try {
-      const rendered = await technicalReportsApi.renderConsolidatedHtml({ logo_left: logoLeft, logo_right: logoRight });
-      const pdf = await technicalReportsApi.htmlToPdf({
-        html: rendered.html,
-        filename: rendered.filename,
-        return_base64: true,
+      await runOperation(async () => {
+        const rendered = await technicalReportsApi.renderConsolidatedHtml({ logo_left: logoLeft, logo_right: logoRight });
+        const pdf = await technicalReportsApi.htmlToPdf({
+          html: rendered.html,
+          filename: rendered.filename,
+          return_base64: true,
+        });
+        if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
+        downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
+        await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'consolidado', count: rendered.count }, rendered.count);
+        addToast({ message: `PDF consolidado generado (${rendered.count})`, type: 'success' });
       });
-      if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
-      downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-      await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'consolidado', count: rendered.count }, rendered.count);
-      addToast({ message: `PDF consolidado generado (${rendered.count})`, type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el consolidado', type: 'error' });
-    } finally {
-      setBusy(false);
     }
-  }, [addToast, logoLeft, logoRight, reports.length, setBusy]);
+  }, [addToast, logoLeft, logoRight, reports.length, runOperation]);
 
   return (
     <div className="tr-app" data-surface="technical-reports">

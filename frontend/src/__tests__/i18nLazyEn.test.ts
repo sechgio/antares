@@ -8,7 +8,7 @@ describe('i18n lazy English bundle', () => {
 
   it('keeps Spanish as the default shell language', () => {
     expect(i18n.language).toMatch(/^es/);
-    expect(i18n.t('app.subtitle')).toContain('Conversor');
+    expect(i18n.t('history.title')).toBe('Historial');
   });
 
   it('loads en.json on first changeLanguage("en")', async () => {
@@ -21,14 +21,14 @@ describe('i18n lazy English bundle', () => {
 
     expect(i18n.hasResourceBundle('en', 'translation')).toBe(true);
     expect(i18n.language).toMatch(/^en/);
-    expect(i18n.t('app.subtitle')).toBe('Professional image converter and renamer');
-    expect(i18n.t('tab.convert')).toBe('Conversion');
+    expect(i18n.t('history.title')).toBe('History');
+    expect(i18n.t('auth.signIn')).toBe('Sign in');
   });
 
   it('does not leave raw keys after switching to English', async () => {
     await i18n.changeLanguage('en');
-    const subtitle = i18n.t('app.subtitle');
-    expect(subtitle).not.toBe('app.subtitle');
-    expect(subtitle.length).toBeGreaterThan(0);
+    const title = i18n.t('history.title');
+    expect(title).not.toBe('history.title');
+    expect(title.length).toBeGreaterThan(0);
   });
 });

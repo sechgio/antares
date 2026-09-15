@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
 from backend.core.import_guard import serialized_import
+from backend.core.ipc_catalog import BACKEND_HANDLER_MODULES, handler_module_for
 from backend.handlers.common import (
     process_state,
     reset_state,
@@ -18,27 +19,7 @@ logger = logging.getLogger(__name__)
 
 WARM_CRITICAL_DONE = threading.Event()
 
-_HANDLER_MODULES: tuple[str, ...] = (
-    "backend.handlers.info",
-    "backend.handlers.diagnostics",
-    "backend.handlers.theme",
-    "backend.handlers.history",
-    "backend.handlers.database",
-    "backend.handlers.templates",
-    "backend.handlers.canvas",
-    "backend.handlers.conversion",
-    "backend.handlers.formatos",
-    "backend.handlers.optimizer",
-    "backend.handlers.sellador",
-    "backend.handlers.technical_reports",
-    "backend.handlers.informes_v2",
-    "backend.handlers.fichas_tecnicas",
-    "backend.handlers.panel_aviso_corte",
-    "backend.handlers.ubicaciones",
-    "backend.handlers.evidencia_volanteo",
-    "backend.handlers.spreadsheet",
-    "backend.handlers.telemetry",
-)
+_HANDLER_MODULES: tuple[str, ...] = tuple(sorted(BACKEND_HANDLER_MODULES))
 
 _CORE_HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.info",
@@ -60,55 +41,13 @@ _DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
     if m not in _CORE_HANDLER_MODULES and m not in _POST_READY_HANDLER_MODULES
 )
 
-_EXACT_MODULE: dict[str, str] = {
-    "version": "backend.handlers.info",
-    "formats": "backend.handlers.info",
-    "diagnostics_snapshot": "backend.handlers.diagnostics",
-    "preview": "backend.handlers.conversion",
-    "is_video": "backend.handlers.conversion",
-    "process_start": "backend.handlers.conversion",
-    "process_status": "backend.handlers.conversion",
-    "process_cancel": "backend.handlers.conversion",
-    "generar_ubicaciones": "backend.handlers.ubicaciones",
-    "preview_ubicacion": "backend.handlers.ubicaciones",
-    "template_get": "backend.handlers.templates",
-    "rename_patterns_get": "backend.handlers.database",
-    "rename_patterns_update": "backend.handlers.database",
-    "rename_patterns_reset": "backend.handlers.database",
-    "telemetry": "backend.handlers.telemetry",
-}
-
-_PREFIX_MODULE: tuple[tuple[str, str], ...] = (
-    ("fichas_tecnicas_", "backend.handlers.fichas_tecnicas"),
-    ("informes_v2_", "backend.handlers.informes_v2"),
-    ("technical_reports_", "backend.handlers.technical_reports"),
-    ("panel_aviso_corte_", "backend.handlers.panel_aviso_corte"),
-    ("evidencia_volanteo_", "backend.handlers.evidencia_volanteo"),
-    ("image_optimizer_", "backend.handlers.optimizer"),
-    ("spreadsheet_", "backend.handlers.spreadsheet"),
-    ("rename_patterns_", "backend.handlers.database"),
-    ("templates_", "backend.handlers.templates"),
-    ("formatos_", "backend.handlers.formatos"),
-    ("sellador_", "backend.handlers.sellador"),
-    ("history_", "backend.handlers.history"),
-    ("canvas_", "backend.handlers.canvas"),
-    ("theme_", "backend.handlers.theme"),
-    ("db_", "backend.handlers.database"),
-)
-
 _RETIRED_METHODS = frozenset(("db_records", "db_detect_key_column", "image_optimizer_zip"))
 
 
 def _module_for_method(method: str) -> str | None:
     if method in _RETIRED_METHODS:
         return None
-    exact = _EXACT_MODULE.get(method)
-    if exact is not None:
-        return exact
-    for prefix, mod_name in _PREFIX_MODULE:
-        if method.startswith(prefix):
-            return mod_name
-    return None
+    return handler_module_for(method)
 
 
 class HandlerRegistry:
@@ -167,9 +106,11 @@ class HandlerRegistry:
             logger.exception("pandas/openpyxl pre-ready warm failed")
 
     def warm_post_ready(self) -> None:
+        # No envolver warm() en serialized_import: _load_module adquiere
+        # module_lock y luego serialized_import, así que retener el lock global
+        # aquí crea un ciclo ABBA con resoluciones lazy concurrentes.
         try:
-            with serialized_import():
-                self.warm(_POST_READY_HANDLER_MODULES)
+            self.warm(_POST_READY_HANDLER_MODULES)
         except Exception:
             logger.exception("canvas/conversion post-ready warm failed")
         try:

@@ -136,12 +136,8 @@ export async function parseWorkbook(
   file: File,
   outputFormat: OutputFormat = 'service-interruption',
 ): Promise<ParseResult> {
-  const { api } = await import('../../api');
-  const { stageFileForIpc } = await import('../../utils/stageFile');
-  const ext = file.name.toLowerCase().split('.').pop() || '';
-  const formatHint = ['xlsx','xls','csv'].includes(ext) ? ext : undefined;
-  const fileToken = await stageFileForIpc(file);
-  const res = await api.spreadsheetParse({ file_token: fileToken, format_hint: formatHint });
+  const { stageAndParseSpreadsheet } = await import('../../utils/spreadsheet');
+  const res = await stageAndParseSpreadsheet(file);
   const sheetMap: Record<string, Record<string, unknown>[]> = {};
   for (const sh of res.sheets) {
     const rows = sh.rows; if (!rows.length) { sheetMap[sh.name]=[]; continue; }

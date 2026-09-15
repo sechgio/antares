@@ -64,8 +64,9 @@ import { CULLING_MARGIN_MM, filterVisibleLayers, visiblePageRectMm } from '../op
 import { compositionHiddenLayerIds } from '../ops/booleanOps';
 import { createGestureRaf, createWheelGestureRaf } from '../ops/gestureRaf';
 import {
-  abortActivePointerGestureSession,
-  createPointerGestureSession,
+  createPointerGestureOwner,
+  type PointerGestureOwner,
+  type PointerGestureSession,
 } from '../ops/pointerGestureSession';
 import {
   applyLayerDomGeometry,
@@ -88,6 +89,11 @@ import {
 } from '../ops/pathEditGestures';
 import { ensureLinePath, lineIntersectsPolygon, rectIntersectsPolygon } from '../ops/pathGeometry';
 import { cornerRadiusPx, type CornerId } from '../ops/layerStyle';
+import type {
+  InlineEditStartOpts,
+  InlineSelectionRange,
+  InlineTextStyle,
+} from '../ops/inlineEdit';
 import CanvasRulers, { GuidePositionChip, MeasurementBadge, RULER_SIZE } from './CanvasRulers';
 import LayerNode from './LayerNode';
 import PathHandlesOverlay from './PathHandlesOverlay';
@@ -127,11 +133,13 @@ interface ArtboardProps {
     clientY: number,
     pointMm?: { x: number; y: number },
   ) => void;
-  onStartEdit?: (id: string) => void;
+  onStartEdit?: (id: string, opts?: InlineEditStartOpts) => void;
   onEditValue?: (id: string, value: string, contentHeightPx?: number) => void;
   onFitTextHeight?: (id: string, contentHeightPx: number) => void;
+  onEditStyle?: (id: string, style: InlineTextStyle) => void;
   onCommitEdit?: () => void;
   editingSelectAll?: boolean;
+  editingRange?: InlineSelectionRange | null;
   onStartPathEdit?: (id: string) => void;
   onUpsertGuide?: (guide: CanvasGuide) => void;
   onCommitGuideCreate?: (guide: CanvasGuide) => void;
@@ -274,8 +282,10 @@ function Artboard({
   onStartEdit,
   onEditValue,
   onFitTextHeight,
+  onEditStyle,
   onCommitEdit,
   editingSelectAll = true,
+  editingRange = null,
   onStartPathEdit,
   onUpsertGuide,
   onCommitGuideCreate,
@@ -372,6 +382,9 @@ function Artboard({
   const gestureLayersRef = useRef<CanvasLayer[] | null>(null);
   const imperativeMoveIdsRef = useRef<string[] | null>(null);
   const layersRef = useRef(document.layers);
+  const pointerGesturesRef = useRef<PointerGestureOwner | null>(null);
+  if (!pointerGesturesRef.current) pointerGesturesRef.current = createPointerGestureOwner();
+  const pointerGestures = pointerGesturesRef.current;
 
   const onPreviewLayersRef = useRef(onPreviewLayers);
   onPreviewLayersRef.current = onPreviewLayers;
@@ -492,7 +505,7 @@ function Artboard({
   useEffect(() => {
     if (gestureAbortToken === prevAbortTokenRef.current) return;
     prevAbortTokenRef.current = gestureAbortToken;
-    abortActivePointerGestureSession();
+    pointerGestures.abort();
     abortGesturePreview();
     setMarquee(null);
     setDraft(null);
@@ -500,9 +513,9 @@ function Artboard({
     setGuideDrag(null);
     setPanning(false);
     setRadiusDrag(null);
-  }, [gestureAbortToken, abortGesturePreview]);
+  }, [gestureAbortToken, abortGesturePreview, pointerGestures]);
 
-  useEffect(() => () => abortActivePointerGestureSession(), []);
+  useEffect(() => () => pointerGestures.dispose(), [pointerGestures]);
 
   useLayoutEffect(() => {
     if (!gestureActive || !imperativeMoveIdsRef.current || !gestureLayersRef.current) return;
@@ -559,7 +572,7 @@ function Artboard({
     activeRef: pinchGestureRef,
     onStart: () => {
       onCancelInertia?.();
-      abortActivePointerGestureSession();
+      pointerGestures.abort();
       setMarquee(null);
       setDraft(null);
       setGuidesIfChanged([]);
@@ -868,7 +881,7 @@ function Artboard({
         y: origin.y + (ev.clientY - startY),
       });
     });
-    createPointerGestureSession({
+    pointerGestures.start({
       onMove: (ev) => {
         if (pinchGestureRef.current) return;
         const now = performance.now();
@@ -1060,8 +1073,8 @@ function Artboard({
           setDistanceLabelsIfChanged([]);
         }
       });
-      let session: ReturnType<typeof createPointerGestureSession>;
-      session = createPointerGestureSession({
+      let session: PointerGestureSession;
+      session = pointerGestures.start({
         onMove: (ev) => raf.schedule(ev),
         onEnd: () => {
           raf.flush();
@@ -1241,8 +1254,8 @@ function Artboard({
       applyImperativePreview(resized, ids);
       setGestureBbox(selectionBounds(resized, ids));
     });
-    let session: ReturnType<typeof createPointerGestureSession>;
-    session = createPointerGestureSession({
+    let session: PointerGestureSession;
+    session = pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
@@ -1282,8 +1295,8 @@ function Artboard({
       applyImperativePreview(rotated, ids);
       setGestureBbox(selectionBounds(rotated, ids));
     });
-    let session: ReturnType<typeof createPointerGestureSession>;
-    session = createPointerGestureSession({
+    let session: PointerGestureSession;
+    session = pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
@@ -1330,8 +1343,8 @@ function Artboard({
       );
       setRadiusDrag({ label: `Radius ${Math.round(nextR)}`, corner });
     });
-    let session: ReturnType<typeof createPointerGestureSession>;
-    session = createPointerGestureSession({
+    let session: PointerGestureSession;
+    session = pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
@@ -1372,8 +1385,8 @@ function Artboard({
         h: Math.abs(cur.yMm - origin.yMm),
       });
     });
-    let session: ReturnType<typeof createPointerGestureSession>;
-    session = createPointerGestureSession({
+    let session: PointerGestureSession;
+    session = pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: (ev) => {
         raf.cancel();
@@ -1457,8 +1470,8 @@ function Artboard({
       const delta = seq.axis === 'x' ? cur.xMm - start.xMm : cur.yMm - start.yMm;
       applyGestureLayers(resizeSmartGap(snapshot, seq, index, originGap + delta));
     });
-    let session: ReturnType<typeof createPointerGestureSession>;
-    session = createPointerGestureSession({
+    let session: PointerGestureSession;
+    session = pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: (ev) => {
         if (!ev) {
@@ -1510,7 +1523,7 @@ function Artboard({
           : dragLineHandle(current, pointIndex, kind, cur.xMm, cur.yMm, !ev.altKey);
       applyGestureLayers(replaceLayerById(layersRef.current, next));
     });
-    createPointerGestureSession({
+    pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
@@ -1543,7 +1556,7 @@ function Artboard({
       const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       applyAt(cur.xMm, cur.yMm);
     });
-    createPointerGestureSession({
+    pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
@@ -1589,7 +1602,7 @@ function Artboard({
       pts.push({ x: cur.xMm, y: cur.yMm });
       setLassoPts([...pts]);
     });
-    createPointerGestureSession({
+    pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
@@ -1645,7 +1658,7 @@ function Artboard({
       }
       setDraft(next);
     });
-    createPointerGestureSession({
+    pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: (ev) => {
         raf.cancel();
@@ -1704,8 +1717,8 @@ function Artboard({
       setGuideDrag({ id: g.id, posMm: lastPos, clientX: ev.clientX, clientY: ev.clientY, willRemove });
     });
 
-    let session: ReturnType<typeof createPointerGestureSession>;
-    session = createPointerGestureSession({
+    let session: PointerGestureSession;
+    session = pointerGestures.start({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
@@ -1909,6 +1922,7 @@ function Artboard({
               editing={editingLayerId === layer.id}
               pathEditing={pathEditingLayerId === layer.id}
               editingSelectAll={editingSelectAll}
+              editingRange={editingRange}
               scale={1}
               onSelect={handleSelect}
               onLayerPointerDown={handleLayerPointerDown}
@@ -1918,6 +1932,7 @@ function Artboard({
               onStartEdit={onStartEdit}
               onEditValue={onEditValue}
               onFitTextHeight={onFitTextHeight}
+              onEditStyle={onEditStyle}
               onCommitEdit={onCommitEdit}
               onStartPathEdit={onStartPathEdit}
             />

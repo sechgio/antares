@@ -4,7 +4,8 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Crop, FileDown, GripVertical, Image as ImageIcon, Loader2, Trash2 } from 'lucide-react';
 import { BatchSettings, ImageItem } from './types';
 import { glassPanelClass } from './ui';
-import { formatBytes, buildExportNameMap, resolveSettingsForItem } from './utils';
+import { buildExportNameMap, resolveSettingsForItem } from './utils';
+import { formatBytes } from '../../utils/format';
 
 interface QueuePanelProps {
   items: ImageItem[];

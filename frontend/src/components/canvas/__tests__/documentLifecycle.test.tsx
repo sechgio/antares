@@ -7,19 +7,23 @@ import { MAX_HISTORY, useCanvasHistory } from '../hooks/useCanvasHistory';
 import { useDocumentLifecycle } from '../hooks/useDocumentLifecycle';
 import { useCanvasBootstrap } from '../hooks/useCanvasBootstrap';
 
-vi.mock('../../../api', () => ({
-  api: {
-    canvasList: vi.fn(),
-    canvasBootstrap: vi.fn(),
-    canvasGet: vi.fn(),
-    canvasSave: vi.fn(),
-    canvasCreate: vi.fn(),
-    canvasDelete: vi.fn(),
-    canvasDuplicate: vi.fn(),
-    canvasGetHistory: vi.fn(),
-    canvasSaveHistory: vi.fn(),
-  },
-}));
+vi.mock('../../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api')>();
+  return {
+    ...actual,
+    api: {
+      canvasList: vi.fn(),
+      canvasBootstrap: vi.fn(),
+      canvasGet: vi.fn(),
+      canvasSave: vi.fn(),
+      canvasCreate: vi.fn(),
+      canvasDelete: vi.fn(),
+      canvasDuplicate: vi.fn(),
+      canvasGetHistory: vi.fn(),
+      canvasSaveHistory: vi.fn(),
+    },
+  };
+});
 
 vi.mock('../sync/cloudQueue', () => ({
   queueCanvasCloudPush: vi.fn(),
@@ -32,6 +36,9 @@ vi.mock('../utils/imageBlobStore', () => ({
   serializeHistorySteps: vi.fn(async (steps: unknown[]) => steps),
   hydrateHistorySteps: vi.fn(async (steps: unknown[]) => steps),
   applySavedDocumentKeepingImages: vi.fn((_editor: CanvasDocument, saved: CanvasDocument) => saved),
+  pinImageRefs: vi.fn(() => () => {}),
+  collectImageRefsFromLayers: vi.fn(() => new Set<string>()),
+  collectImageRefsFromHistory: vi.fn(() => new Set<string>()),
 }));
 
 import { api } from '../../../api';

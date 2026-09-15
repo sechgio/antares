@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from backend.utils.validators import sanitizar_nombre
 
@@ -27,7 +28,7 @@ def atomic_output_file(
 ) -> Iterator[AtomicOutputTarget]:
     resolved = Path(resolved_path)
     if write_token:
-        # A write capability authorizes this exact path — never rename it
+        # A write capability authorizes this exact path. Never rename it
         # through sanitization; only the convenience extension still applies.
         destination = resolved
         if not destination.name.lower().endswith(extension.lower()):
@@ -52,12 +53,34 @@ def atomic_output_file(
         else:
             try:
                 os.link(tmp, destination)
-                os.unlink(tmp)
             except (OSError, NotImplementedError):
                 if destination.exists():
                     raise FileExistsError(exists_message.format(path=destination)) from None
                 os.rename(tmp, destination)
+            else:
+                # Link ya creó destination; un unlink fallido no debe reportar
+                # FileExistsError sobre un archivo que sí se escribió.
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp)
     except BaseException:
         with contextlib.suppress(OSError):
             tmp.unlink(missing_ok=True)
         raise
+
+
+def atomic_write_text(path: str | Path, content: str) -> None:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = destination.with_name(f"{destination.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, destination)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def atomic_write_json(path: str | Path, payload: Any, *, indent: int | None = 2) -> None:
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=indent))

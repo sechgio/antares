@@ -36,14 +36,37 @@ async function createSelladorSmokePdf() {
   }
 }
 
+const SMOKE_METHODS = [
+  'templates_list',
+  'canvas_list',
+  'sellador_inspect_pdf',
+  'sellador_render_page',
+];
+
+function assertSmokeMethodsInCatalog() {
+  const catalog = require('../shared/ipc-method-catalog');
+  for (const method of SMOKE_METHODS) {
+    if (!catalog.BACKEND_METHODS.includes(method)) {
+      throw new Error(
+        `Método smoke '${method}' no está declarado como backend: en shared/ipc-method-catalog.json`,
+      );
+    }
+  }
+}
+
 async function verifyFrozenBackendTemplates(exePath, options = {}) {
+  assertSmokeMethodsInCatalog();
   const timeoutMs = options.timeoutMs || 90_000;
   const minTemplates = options.minTemplates || 5;
   const smokePdf = await createSelladorSmokePdf();
 
   try {
     return await new Promise((resolve, reject) => {
-    const env = frozenBackendEnv();
+    const env = {
+      ...frozenBackendEnv(),
+      LOCALAPPDATA: smokePdf.directory,
+      APPDATA: smokePdf.directory,
+    };
 
     const proc = spawn(exePath, [], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -110,6 +133,17 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
             return;
           }
           templateCount = templates.length;
+          sendRequest('canvas-list', 'canvas_list', {});
+          continue;
+        }
+        if (msg.id === 'canvas-list') {
+          const documents = msg.result && msg.result.documents;
+          if (msg.error || !Array.isArray(documents)) {
+            finish(new Error(
+              `canvas_list smoke failed: ${JSON.stringify(msg.error || msg.result || null)}`,
+            ));
+            return;
+          }
           sendRequest('sellador-inspect', 'sellador_inspect_pdf', { pdf_path: smokePdf.file });
           continue;
         }
@@ -152,7 +186,7 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
           }
           console.log(
             `[build-backend] Post-build smoke OK: templates_list=${templateCount} ` +
-            `sellador_render_page=${result.mime_type}`,
+            `canvas_list=ok sellador_render_page=${result.mime_type}`,
           );
           finish(null, {
             count: templateCount,

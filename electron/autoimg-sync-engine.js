@@ -11,6 +11,7 @@ const {
   loadRenameDest,
 } = require('./autoimg-user-store');
 const { onActiveUserChange } = require('./autoimg-user-scope');
+const { sanitizeErrorMessage } = require('./autoimg-security');
 const {
   BD_IMG_HEADER,
   countSinSgioRows,
@@ -51,6 +52,7 @@ const _sheetCacheState = {
   arrastre: { loadedAt: 0, revision: null },
   folders: { loadedAt: 0, revision: null },
 };
+let _cacheSheetId = null;
 let _renameConcurrencyBias = 0;
 let _sheetCacheBudgetOverride = null;
 
@@ -89,6 +91,10 @@ function _normalizeCacheBlocks(blocks = SHEET_CACHE_BLOCKS) {
 }
 
 function _isCacheFresh(blocks = SHEET_CACHE_BLOCKS) {
+  if (_cacheSheetId !== (sheets.getSheetId?.() || null)) {
+    _clearSheetCaches();
+    return false;
+  }
   const now = Date.now();
   return _normalizeCacheBlocks(blocks).every((block) => {
     const loadedAt = _sheetCacheState[block].loadedAt;
@@ -111,6 +117,7 @@ function _invalidateCache(blocks = SHEET_CACHE_BLOCKS) {
 }
 
 function _clearSheetCaches() {
+  _cacheSheetId = null;
   _cachedBdImg = [];
   _cachedLogs = [];
   _cachedBdArrastre = [];
@@ -130,6 +137,7 @@ function _tryCommitSheetCache(partial = {}) {
     _clearSheetCaches();
     return false;
   }
+  _cacheSheetId = sheets.getSheetId?.() || null;
   _cachedBdImg = next.bdImg;
   _cachedLogs = next.logs;
   _cachedBdArrastre = next.arrastre;
@@ -174,6 +182,10 @@ async function _readSheetRevision() {
 }
 
 async function _canServeUnchangedRevision(blocks = SHEET_CACHE_BLOCKS, knownRevision = null) {
+  if (_cacheSheetId !== (sheets.getSheetId?.() || null)) {
+    _clearSheetCaches();
+    return false;
+  }
   const requested = _normalizeCacheBlocks(blocks);
   if (!requested.length) return false;
   if (!requested.every((block) => {
@@ -307,26 +319,35 @@ async function _readConfigValue(key) {
 async function _upsertConfigValues(entries) {
   const updates = Object.entries(entries).filter(([, value]) => value != null && value !== '');
   if (!updates.length) return;
-  try {
-    const { values } = await sheets.readRange('CONFIG!A:B');
-    const rows = values.length ? [...values] : [['Clave', 'Valor']];
-    for (const [key, value] of updates) {
-      let found = false;
-      for (let i = 1; i < rows.length; i++) {
-        if (String(rows[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
-          rows[i][1] = value;
-          found = true;
-          break;
-        }
+  const { values } = await sheets.readRange('CONFIG!A:B');
+  const rows = values.length ? [...values] : [['Clave', 'Valor']];
+  for (const [key, value] of updates) {
+    let found = false;
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
+        rows[i][1] = value;
+        found = true;
+        break;
       }
-      if (!found) rows.push([key, value]);
     }
-    await sheets.writeRange('CONFIG!A:B', rows);
-  } catch {}
+    if (!found) rows.push([key, value]);
+  }
+  await sheets.writeRange('CONFIG!A:B', rows);
+}
+
+async function _tryUpsertConfigValues(entries) {
+  try {
+    await _upsertConfigValues(entries);
+    return { persisted: true };
+  } catch (error) {
+    const message = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
+    emit('autoimg.error', { code: 'CONFIG_WRITE_FAILED', detail: message });
+    return { persisted: false, error: message };
+  }
 }
 
 function buildFolderErrorSummary(folder, error) {
-  const errMsg = error instanceof Error ? error.message : String(error);
+  const errMsg = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
   return {
     name: folder.name,
     folder_id: folder.folder_id,
@@ -399,9 +420,7 @@ async function _ensureSheetId() {
   }
   if (sheetId) {
     await sheets.openSpreadsheet(sheetId);
-    try {
-      await _upsertConfigValues({ SHEET_ID: sheetId });
-    } catch {}
+    await _tryUpsertConfigValues({ SHEET_ID: sheetId });
     return sheetId;
   }
   throw new Error('No hay Sheet configurado. Abre un Sheet con su ID primero.');
@@ -584,6 +603,9 @@ async function scanAndSync() {
       new_rows: syncResult.new_rows,
       duplicate_nis: syncResult.duplicate_nis,
       logs: syncResult.logs,
+      partial: syncResult.partial,
+      config_persisted: syncResult.config_persisted,
+      warning: syncResult.warning,
       scan: {
         summary: scanResult.summary,
         folders_failed: scanResult.folders_failed,
@@ -731,6 +753,16 @@ async function _syncToSheetCore() {
     updates.push({ range: `BD_IMG!A${startRow}:M${endRow}`, values: chunk });
   }
 
+  // Si la hoja tenía más filas que el resultado actual, limpiar el remanente:
+  // filas viejas de NIS borrados reaparecerían en la próxima lectura.
+  if (bdValues.length > rows.length) {
+    const emptyTail = Array.from(
+      { length: bdValues.length - rows.length },
+      () => new Array(BD_IMG_HEADER.length).fill(''),
+    );
+    updates.push({ range: `BD_IMG!A${rows.length + 1}:M${bdValues.length}`, values: emptyTail });
+  }
+
   let rangesWritten = 0;
   for (let i = 0; i < updates.length; i += RANGES_PER_API_BATCH) {
     _throwIfCancelled({
@@ -791,7 +823,7 @@ async function _syncToSheetCore() {
 
   const syncTime = _now();
   const sheetId = sheets.getSheetId();
-  await _upsertConfigValues({
+  const configPersistence = await _tryUpsertConfigValues({
     ULTIMO_SYNC: syncTime,
     ...(sheetId ? { SHEET_ID: sheetId } : {}),
     ...(auth.email ? { USUARIO: auth.email } : {}),
@@ -817,6 +849,9 @@ async function _syncToSheetCore() {
     new_rows: newRows,
     duplicate_nis: duplicateNis || 0,
     logs: [detail],
+    partial: !configPersistence.persisted,
+    config_persisted: configPersistence.persisted,
+    ...(configPersistence.error ? { warning: configPersistence.error } : {}),
   };
 }
 
@@ -828,6 +863,7 @@ async function getStatus() {
   const auth = await sheets.getAuthStatus();
   const sheetConfig = sheets.getStoredSheetConfig();
   let fields = {};
+  let refreshError = '';
 
   try {
     await _ensureSheetId();
@@ -837,7 +873,10 @@ async function getStatus() {
     const retained = _tryCommitSheetCache({ folders });
     _restoreAutoSyncFromConfig(batch['CONFIG!A:B'] || []);
     if (retained) _touchCache(['folders']);
-  } catch {}
+  } catch (error) {
+    refreshError = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
+    emit('autoimg.error', { code: 'STATUS_REFRESH_FAILED', detail: refreshError });
+  }
 
   return {
     connected: auth.authenticated,
@@ -852,6 +891,7 @@ async function getStatus() {
     sobrantes: fields.sobrantes,
     sinSgio: fields.sinSgio,
     carpetasActivas: fields.carpetasActivas,
+    ...(refreshError ? { stale: true, error: refreshError, error_code: 'STATUS_REFRESH_FAILED' } : {}),
   };
 }
 
@@ -928,7 +968,7 @@ async function bootstrap({ refresh = true } = {}) {
       ...(applied.retained ? {} : { cache_skipped: true }),
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = sanitizeErrorMessage(err instanceof Error ? err.message : String(err));
     emit('autoimg.error', { code: 'BOOTSTRAP', detail: message });
     return {
       ...base,
@@ -942,10 +982,8 @@ async function bootstrap({ refresh = true } = {}) {
 async function setAutoSync(enabled) {
   const next = Boolean(enabled);
   _applyAutoSyncTimer(next);
-  try {
-    await _upsertConfigValues({ [AUTO_SYNC_CONFIG_KEY]: next ? 'true' : 'false' });
-  } catch {}
-  return { enabled: _autoSyncEnabled };
+  const persistence = await _tryUpsertConfigValues({ [AUTO_SYNC_CONFIG_KEY]: next ? 'true' : 'false' });
+  return { enabled: _autoSyncEnabled, ...persistence };
 }
 
 async function _renameExportCore({ dest_folder_id, only_completos = true } = {}) {
@@ -1069,7 +1107,7 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
   if (hitRateLimit) _noteRenameRateLimit();
   else if (failed.length === 0 && jobs.length > 0) _noteRenameBatchClean();
 
-  await _upsertConfigValues({ [RENAME_DEST_CONFIG_KEY]: rootFolderId });
+  const configPersistence = await _tryUpsertConfigValues({ [RENAME_DEST_CONFIG_KEY]: rootFolderId });
   try {
     saveRenameDest(rootFolderId, rootMeta.name);
   } catch {}
@@ -1104,14 +1142,17 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
     skipped,
     planned: jobs.length,
     scan_summary: scan.summary,
+    partial: !configPersistence.persisted,
+    config_persisted: configPersistence.persisted,
+    ...(configPersistence.error ? { warning: configPersistence.error } : {}),
   };
 }
 
 async function persistSheetIdConfig(sheetId) {
   const id = String(sheetId || '').trim();
-  if (!id) return { success: false };
-  await _upsertConfigValues({ SHEET_ID: id });
-  return { success: true };
+  if (!id) return { success: false, persisted: false, error: 'El ID del Sheet está vacío' };
+  const persistence = await _tryUpsertConfigValues({ SHEET_ID: id });
+  return { success: persistence.persisted, ...persistence };
 }
 
 async function renameExport(params = {}) {

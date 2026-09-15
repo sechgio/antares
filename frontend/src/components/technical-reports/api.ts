@@ -1,8 +1,5 @@
 import { api } from '../../api';
-import { downloadBase64Pdf, fileToBase64, fileToDataUrl } from '../../utils/pdfAssets';
 import type { TechnicalReport, TechnicalReportListItem } from './types';
-
-export { downloadBase64Pdf, fileToBase64, fileToDataUrl };
 
 export const technicalReportsApi = {
   list: (summary = true) =>

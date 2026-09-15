@@ -5,17 +5,13 @@ function assert(condition, message) {
   }
 }
 
-const sheetsPath = require.resolve('../electron/google-sheets-service');
+const sessionPath = require.resolve('../electron/google-session');
 const drivePath = require.resolve('../electron/google-drive-service');
 const scopePath = require.resolve('../electron/autoimg-user-scope');
 
-delete require.cache[sheetsPath];
 delete require.cache[drivePath];
 
-const sheets = require('../electron/google-sheets-service');
-const originalGetValidTokens = sheets.getValidTokens;
 let activeTokens = { access_token: 'tok', refresh_token: 'r' };
-sheets.getValidTokens = async () => activeTokens;
 
 let activeUserKey = 'user-a';
 let activeUserGeneration = 1;
@@ -34,6 +30,20 @@ const fakeScope = {
   },
 };
 require.cache[scopePath] = { id: scopePath, filename: scopePath, loaded: true, exports: fakeScope };
+require.cache[sessionPath] = {
+  id: sessionPath,
+  filename: sessionPath,
+  loaded: true,
+  exports: {
+    getValidTokens: async () => activeTokens,
+    refreshAccessToken: async (tokens) => tokens,
+    assertAuthSessionCurrent: (session) => {
+      if (!fakeScope.isActiveUserSnapshotCurrent(session)) {
+        throw new Error('La sesión de Google cambió durante la operación.');
+      }
+    },
+  },
+};
 
 function changeUser(userKey) {
   const previousKey = activeUserKey;
@@ -146,6 +156,5 @@ global.fetch = async (url) => {
     process.exit(1);
   } finally {
     global.fetch = originalFetch;
-    sheets.getValidTokens = originalGetValidTokens;
   }
 })();

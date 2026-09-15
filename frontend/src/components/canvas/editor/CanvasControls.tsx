@@ -1,31 +1,59 @@
+import type { ReactNode } from 'react';
+
 interface CanvasToggleProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label?: string;
   disabled?: boolean;
 }
+
+function SwitchButton({ checked, onChange, label, disabled }: CanvasToggleProps) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className="canvas-switch"
+      data-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="canvas-switch-knob" aria-hidden />
+    </button>
+  );
+}
+
 export function CanvasToggle({ checked, onChange, label, disabled }: CanvasToggleProps) {
   return (
     <label
       className="inline-flex items-center gap-2 select-none"
       style={{ opacity: disabled ? 0.45 : 1, cursor: disabled ? 'default' : 'pointer' }}
     >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        className="canvas-switch"
-        data-checked={checked}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-      >
-        <span className="canvas-switch-knob" aria-hidden />
-      </button>
+      <SwitchButton checked={checked} onChange={onChange} disabled={disabled} />
       {label && (
         <span className="text-[12px]" style={{ color: 'var(--cv-text-secondary)' }}>
           {label}
         </span>
       )}
+    </label>
+  );
+}
+
+interface CanvasToggleRowProps extends CanvasToggleProps {
+  label: string;
+  icon?: ReactNode;
+}
+
+export function CanvasToggleRow({ checked, onChange, label, icon, disabled }: CanvasToggleRowProps) {
+  return (
+    <label
+      className="canvas-toggle-row"
+      style={{ opacity: disabled ? 0.45 : 1, cursor: disabled ? 'default' : 'pointer' }}
+    >
+      {icon}
+      <span className="canvas-toggle-row-label">{label}</span>
+      <SwitchButton checked={checked} onChange={onChange} label={label} disabled={disabled} />
     </label>
   );
 }

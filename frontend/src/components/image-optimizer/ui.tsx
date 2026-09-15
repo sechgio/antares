@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import '../../i18n';
 import { ImageItem } from './types';
-import { formatBytes } from './utils';
+import { formatBytes } from '../../utils/format';
+import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 
 export const glassPanelClass =
   'rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]';
@@ -23,13 +24,6 @@ export type ThemeSelectOption = { value: string; label: string };
 const MENU_ROW_H = 28;
 const MENU_PAD_Y = 8;
 
-type MenuBox = {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-};
-
 export function ThemeSelect({
   value,
   options,
@@ -43,84 +37,25 @@ export function ThemeSelect({
   'aria-label': string;
   disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [menuBox, setMenuBox] = useState<MenuBox | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const sizeRef = useRef<{ width: number; height: number } | null>(null);
   const listId = useId();
   const selected = options.find((o) => o.value === value) ?? options[0];
   const contentHeight = options.length * MENU_ROW_H + MENU_PAD_Y;
 
-  const close = useCallback(() => {
-    setOpen(false);
-    setMenuBox(null);
-    sizeRef.current = null;
-  }, []);
-
-  const placeMenu = useCallback((lockSize: boolean) => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    const gap = 4;
-    const edge = 8;
-    const spaceBelow = window.innerHeight - rect.bottom - gap - edge;
-    const spaceAbove = rect.top - gap - edge;
-    const openUp = spaceBelow < contentHeight && spaceAbove > spaceBelow;
-    const available = openUp ? spaceAbove : spaceBelow;
-
-    let width: number;
-    let height: number;
-    if (lockSize && sizeRef.current) {
-      width = sizeRef.current.width;
-      height = sizeRef.current.height;
-    } else {
-      width = Math.round(rect.width);
-      height = Math.min(contentHeight, Math.max(available, MENU_ROW_H + MENU_PAD_Y));
-      sizeRef.current = { width, height };
-    }
-
-    const top = openUp
-      ? Math.max(edge, rect.top - gap - height)
-      : rect.bottom + gap;
-
-    setMenuBox({
-      top,
-      left: Math.round(rect.left),
-      width,
-      height,
-    });
-  }, [contentHeight]);
-
-  useEffect(() => {
-    if (!open) return;
-    placeMenu(false);
-    const onReposition = () => placeMenu(true);
-    const onPointer = (event: MouseEvent) => {
-      const t = event.target as Node;
-      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t)) return;
-      close();
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close();
-    };
-    window.addEventListener('resize', onReposition);
-    const onScroll = (event: Event) => {
-      if (menuRef.current && event.target instanceof Node && menuRef.current.contains(event.target)) {
-        return;
-      }
-      placeMenu(true);
-    };
-    window.addEventListener('scroll', onScroll, true);
-    document.addEventListener('mousedown', onPointer);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('resize', onReposition);
-      window.removeEventListener('scroll', onScroll, true);
-      document.removeEventListener('mousedown', onPointer);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [open, placeMenu, close]);
+  const {
+    isOpen: open,
+    position: menuBox,
+    triggerRef,
+    popupRef: menuRef,
+    close,
+    toggle,
+  } = useAnchoredPopover({
+    estimatedHeight: contentHeight,
+    matchTriggerWidth: true,
+    gap: 4,
+    maxHeightCap: contentHeight,
+    minHeight: MENU_ROW_H + MENU_PAD_Y,
+    lockSize: true,
+  });
 
   return (
     <>
@@ -132,7 +67,7 @@ export function ThemeSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         className={`flex h-8 w-full items-center gap-2 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 text-left text-[11px] font-medium text-[var(--text-primary)] outline-none transition-[border-color] duration-100 hover:border-[var(--accent-primary)]/45 focus:border-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-40 ${open ? 'border-[var(--accent-primary)]' : ''}`}
       >
         <span className="min-w-0 flex-1 truncate">{selected?.label ?? '—'}</span>
@@ -152,7 +87,7 @@ export function ThemeSelect({
             top: menuBox.top,
             left: menuBox.left,
             width: menuBox.width,
-            height: menuBox.height,
+            height: menuBox.maxHeight,
           }}
           className="fixed z-[200] box-border overflow-y-auto overscroll-contain rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-1 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.45)] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >

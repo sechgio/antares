@@ -846,6 +846,57 @@ select.canvas-input option {
   background: var(--cv-hover);
 }
 
+.canvas-toggle-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  overflow: hidden;
+  border: 1px solid var(--cv-border);
+  border-radius: 8px;
+}
+
+.canvas-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.canvas-toggle-row + .canvas-toggle-row {
+  border-top: 1px solid var(--cv-border);
+}
+
+.canvas-toggle-row:hover {
+  background: var(--cv-hover);
+}
+
+.canvas-toggle-row-icon {
+  flex-shrink: 0;
+  color: var(--cv-text-muted);
+  transition: color 0.12s ease;
+}
+
+.canvas-toggle-row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--cv-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.12s ease;
+}
+
+.canvas-toggle-row:has(.canvas-switch[data-checked='true']) .canvas-toggle-row-label {
+  color: var(--cv-text);
+}
+
+.canvas-toggle-row:has(.canvas-switch[data-checked='true']) .canvas-toggle-row-icon {
+  color: var(--cv-accent);
+}
+
 .canvas-z-order {
   display: flex;
   align-items: center;

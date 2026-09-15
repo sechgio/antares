@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeMappingStats, findMappingCollisions, isMappingSchemaMismatch, lookupMappingValue } from './helpers';
+import { computeMappingStats, findMappingCollisions, isMappingSchemaMismatch } from './helpers';
 
 describe('mapping helpers', () => {
   it('computes matched, unmatched and orphan stats locally', () => {
@@ -29,15 +29,12 @@ describe('mapping helpers', () => {
   });
 
   it('lookup is case insensitive', () => {
-    expect(lookupMappingValue({ 'img_0001.jpg': 'fachada' }, 'IMG_0001.jpg')).toBe('fachada');
+    const stats = computeMappingStats({ 'img_0001.jpg': 'fachada' }, ['IMG_0001.jpg']);
+    expect(stats.matchedFiles).toBe(1);
   });
 
   it('does not last-write-wins on stem conflicts (parity with MappingIndex)', () => {
     const mapping = { '123.jpg': 'a', '123': 'b' };
-    expect(lookupMappingValue(mapping, '123.jpg')).toBe('a');
-    expect(lookupMappingValue(mapping, '123')).toBe('b');
-    expect(lookupMappingValue(mapping, '123.png')).toBeUndefined();
-
     const stats = computeMappingStats(mapping, [
       'C:\\fotos\\123.jpg',
       'C:\\fotos\\123.png',
@@ -48,9 +45,9 @@ describe('mapping helpers', () => {
 
   it('treats case-only stem disagreement as a conflict', () => {
     const mapping = { 'A.jpg': 'uno', 'a.png': 'dos' };
-    expect(lookupMappingValue(mapping, 'A.jpg')).toBe('uno');
-    expect(lookupMappingValue(mapping, 'a.png')).toBe('dos');
-    expect(lookupMappingValue(mapping, 'a.gif')).toBeUndefined();
+    const stats = computeMappingStats(mapping, ['A.jpg', 'a.png', 'a.gif']);
+    expect(stats.matchedFiles).toBe(2);
+    expect(stats.unmatchedFiles).toEqual(['a.gif']);
   });
 
   it('falls back to catalog import only for mapping schema mismatches', () => {

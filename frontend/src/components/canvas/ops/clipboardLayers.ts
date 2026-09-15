@@ -90,7 +90,7 @@ export function pasteToReplaceLayers(
       if (remapped) {
         meta.instanceOf = remapped;
       } else if (!keptMasterKeys.has(meta.instanceOf)) {
-        // Master neither pasted nor present in the target document — drop the
+        // Master neither pasted nor present in the target document: drop the
         // dangling instance binding rather than render a broken component.
         delete meta.instanceOf;
         delete meta.variant;

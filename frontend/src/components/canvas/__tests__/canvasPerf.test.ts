@@ -221,8 +221,8 @@ describe('canvas perf hot path', () => {
     expect(setActivePageLayers(doc, 0, layers)).toBe(doc);
   });
 
-  it('layerDomTransform matches translate + rotate composition', async () => {
-    const { layerDomTransform, applyLayerDomTransforms } = await import('../ops/imperativeLayerDom');
+  it('applyLayerDomTransforms writes translate + rotate composition', async () => {
+    const { applyLayerDomTransforms } = await import('../ops/imperativeLayerDom');
     const layer = createLayer('rect', {
       id: 'r1',
       cssVars: {
@@ -233,15 +233,13 @@ describe('canvas perf hot path', () => {
         '--rotate': '15deg',
       },
     });
-    expect(layerDomTransform(layer)).toContain('translate(');
-    expect(layerDomTransform(layer)).toContain('rotate(15deg)');
-
     const root = document.createElement('div');
     const node = document.createElement('div');
     node.dataset.layerId = 'r1';
     root.appendChild(node);
     applyLayerDomTransforms(root, [layer], ['r1']);
     expect(node.style.transform).toContain('translate(');
+    expect(node.style.transform).toContain('rotate(15deg)');
     expect(node.style.willChange).toBe('transform');
   });
 

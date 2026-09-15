@@ -5,6 +5,7 @@ export const DOCUMENT_VERSION = schema.documentVersion as unknown as 2;
 
 export const A4_WIDTH_MM = schema.a4.widthMm as number;
 export const A4_HEIGHT_MM = schema.a4.heightMm as number;
+const GUIDE_AXES = new Set<CanvasGuide['axis']>(schema.guideAxes as CanvasGuide['axis'][]);
 
 export const DEFAULT_PAGE_MARGIN_MM = 10;
 
@@ -282,6 +283,50 @@ function pageCountFromDoc(doc: CanvasDocument): number {
   return indices.length ? Math.max(...indices) + 1 : 1;
 }
 
+// Mirrors Python's int()/float() string grammar so TS and backend normalization
+// agree: digits with optional single-underscore separators, no hex/octal/binary.
+const PY_INT_STRING_RE = /^[+-]?\d(?:_?\d)*$/;
+const PY_FLOAT_STRING_RE = /^[+-]?(?:\d(?:_?\d)*(?:\.(?:\d(?:_?\d)*)?)?|\.\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?$/;
+
+function pyNumericString(value: string, re: RegExp): number {
+  const trimmed = value.trim();
+  return re.test(trimmed) ? Number(trimmed.replace(/_/g, '')) : NaN;
+}
+
+function normalizeGuidePageIndex(value: unknown, lastPage: number): number {
+  let parsed = 0;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    parsed = Math.trunc(value);
+  } else if (typeof value === 'string') {
+    const parsedString = pyNumericString(value, PY_INT_STRING_RE);
+    if (Number.isFinite(parsedString)) parsed = parsedString;
+  }
+  return Math.min(Math.max(0, parsed), lastPage);
+}
+
+function normalizeGuides(raw: unknown, lastPage: number): CanvasGuide[] {
+  if (!Array.isArray(raw)) return [];
+  const guides: CanvasGuide[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const candidate = item as Record<string, unknown>;
+    const axis = candidate.axis;
+    if (typeof axis !== 'string' || !GUIDE_AXES.has(axis as CanvasGuide['axis'])) continue;
+    const posRaw = candidate.posMm;
+    if (typeof posRaw !== 'number' && typeof posRaw !== 'string') continue;
+    const posMm = typeof posRaw === 'number' ? posRaw : pyNumericString(posRaw, PY_FLOAT_STRING_RE);
+    if (!Number.isFinite(posMm)) continue;
+    const id = String(candidate.id ?? '').trim() || newId();
+    guides.push({
+      id,
+      axis: axis as CanvasGuide['axis'],
+      posMm,
+      pageIndex: normalizeGuidePageIndex(candidate.pageIndex, lastPage),
+    });
+  }
+  return guides;
+}
+
 export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
   const needsUpgrade = doc.version !== DOCUMENT_VERSION;
   const needsRepair =
@@ -296,9 +341,14 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
     const clampNeeded = doc.layers.some(
       (layer) => (layer.pageIndex ?? 0) > lastPage || (layer.pageIndex ?? 0) < 0,
     );
-    if (!clampNeeded) {
+    const layerIds = new Set(doc.layers.map((layer) => layer.id));
+    const treeNeedsRepair = doc.layers.some(
+      (layer) => layer.parentId && (layer.parentId === layer.id || !layerIds.has(layer.parentId)),
+    );
+    if (!clampNeeded && !treeNeedsRepair) {
       return {
         ...doc,
+        guides: normalizeGuides(doc.guides, lastPage),
         styles: doc.styles ?? [],
         updatedAt: doc.updatedAt || new Date().toISOString(),
       };
@@ -344,6 +394,7 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
   return {
     ...upgraded,
     layers,
+    guides: normalizeGuides(upgraded.guides, lastPage),
     styles: upgraded.styles ?? [],
     updatedAt: upgraded.updatedAt || new Date().toISOString(),
   };

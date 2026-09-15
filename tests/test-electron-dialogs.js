@@ -241,13 +241,11 @@ async function run() {
   assert(registerFileInputPath(imageTempDir) === false, 'registerFileInputPath rejects directories');
   assert(registerFileInputPath('') === false, 'registerFileInputPath rejects empty paths');
 
-  let registerDeprecated = false;
-  try {
-    await handleDialogCall('register_local_path', { path: realImagePath }, dialog, win);
-  } catch (err) {
-    registerDeprecated = /deprecated|file tokens/i.test(err.message);
-  }
-  assert(registerDeprecated, 'register_local_path should be rejected as deprecated');
+  const registerLocalRes = await handleDialogCall('register_local_path', { path: realImagePath }, dialog, win);
+  assert(
+    registerLocalRes && registerLocalRes.handled === false,
+    'register_local_path is retired and must not be dispatched',
+  );
 
   const imageCap = createFileCapability({
     filePath: realImagePath,
@@ -289,6 +287,10 @@ async function run() {
   let blockedDecision = null;
   localImageWindow.onBeforeRequest({ url: 'file:///etc/passwd' }, decision => { blockedDecision = decision; });
   assert(blockedDecision.cancel === true, 'html_to_pdf should block unregistered local file URLs');
+
+  let remoteDecision = null;
+  localImageWindow.onBeforeRequest({ url: 'https://evil.example/pixel.png' }, decision => { remoteDecision = decision; });
+  assert(remoteDecision.cancel === true, 'html_to_pdf should block remote URLs');
 
   const stagedImage = createStagedSession({ name: 'staged.jpg', size: 4, webContentsId: null });
   await appendStagedChunk(stagedImage.token, Buffer.from([0xff, 0xd8, 0xff, 0xd9]), null);

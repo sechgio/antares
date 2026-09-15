@@ -6,7 +6,7 @@ import { CheckCircle2, Crop, Download, Eye, Loader2, Sparkles, Trash2 } from 'lu
 import { BatchSettings, CropRectangle, ImageItem, PreviewTab, PresetId } from './types';
 import { BeforeAfterSlider, ItemSummary, ProgressBar, previewStageShellClass } from './ui';
 import ItemOverridesPanel from './ItemOverridesPanel';
-import { formatBytes } from './utils';
+import { formatBytes } from '../../utils/format';
 
 interface PreviewWorkspaceProps {
   items: ImageItem[];

@@ -278,7 +278,7 @@ def test_ubicaciones_preview_uses_csp_safe_data_uri() -> None:
     assert "as_uri()" not in source
 
 
-def test_fichas_get_all_uses_shallow_copy(tmp_path) -> None:
+def test_fichas_get_all_returns_detached_copies(tmp_path) -> None:
     from backend.core.fichas_tecnicas.database import FichasTecnicasDB
 
     db = FichasTecnicasDB(tmp_path / "f.json")
@@ -286,10 +286,26 @@ def test_fichas_get_all_uses_shallow_copy(tmp_path) -> None:
     listed = db.get_all()
     assert len(listed) == 1
     assert listed[0] is not db._items[created["id"]]
-    assert listed[0]["productos"] is db._items[created["id"]]["productos"]
-    got = db.get(created["id"])
-    assert got is not None
-    assert got["productos"] is not db._items[created["id"]]["productos"]
+    listed[0]["productos"][0]["producto"] = "MUTATED"
+    assert db.get(created["id"])["productos"][0]["producto"] == "X"
+
+
+def test_get_all_does_not_renormalize_stored_items(tmp_path) -> None:
+    from backend.core.json_store import JsonDocumentStore
+
+    calls = 0
+
+    def counting(item):
+        nonlocal calls
+        calls += 1
+        return dict(item)
+
+    store = JsonDocumentStore(tmp_path / "s.json", counting)
+    store.insert({"id": "a", "title": "x"})
+    calls = 0
+    store.get_all()
+    store.get("a")
+    assert calls == 0
 
 
 def test_warm_prewarms_history_schema_and_pandas_sync() -> None:
@@ -395,7 +411,7 @@ def test_json_document_store_uses_compact_serialization(tmp_path) -> None:
         "1": {"id": "1", "title": "Doc 1", "data": [1, 2, 3]},
         "2": {"id": "2", "title": "Doc 2", "data": [4, 5, 6]},
     }
-    store._save()
+    store._save(store._items)
 
     raw_text = db_path.read_text(encoding="utf-8")
     assert "\n" not in raw_text

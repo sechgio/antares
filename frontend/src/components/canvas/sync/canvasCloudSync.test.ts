@@ -214,7 +214,7 @@ describe('syncCanvasDocuments', () => {
         name: 'New',
         updatedAt: '2026-07-22T12:00:00Z',
       }),
-      { touch: false },
+      { touch: false, slim: true },
     );
   });
 
@@ -760,7 +760,7 @@ describe('syncCanvasDocuments', () => {
     expect(result.pulled).toBe(1);
     expect(vi.mocked(api.canvasSave)).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'doc-remote' }),
-      { touch: false },
+      { touch: false, slim: true },
     );
   });
 });
@@ -1321,7 +1321,7 @@ describe('pullCanvasDocument', () => {
     expect(result).toMatchObject({ kind: 'applied', remoteUpdatedAt: '2026-07-22T12:00:00Z' });
     expect(vi.mocked(api.canvasSave)).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Remote', updatedAt: '2026-07-22T12:00:00Z' }),
-      { touch: false },
+      { touch: false, slim: true },
     );
   });
 

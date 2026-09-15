@@ -40,7 +40,8 @@ import { applyWheelToViewport, clampZoom, fitZoomForViewport, MAX_ZOOM, MIN_ZOOM
 import { filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { applyAnchoredResize, parseResizeAnchor, resizeLayerAnchored, RESIZE_ANCHORS } from '../ops/resizeConstraints';
 import { clipPathForLayerType, isShapeTool, isSquareConstrainTool } from '../ops/shapePaths';
-import { buildRowData, matchesRecordId } from '../runtime/excel';
+import { buildRowData } from '../runtime/excel';
+import { matchesRecordId } from '../../../utils/recordMatching';
 import { mergeCanvasHtmlDocuments, renderCanvasHtml, type FillContext } from '../runtime/renderHtml';
 import { buildLayerPaintStyle } from '../ops/layerPaint';
 import { ensureLinePath } from '../ops/pathGeometry';
@@ -1296,6 +1297,45 @@ describe('document model', () => {
     const normalized = normalizeDocument(doc);
     expect(normalized.layers[0]!.pageIndex).toBe(1);
     expect(normalized.layers[1]!.pageIndex).toBe(0);
+  });
+
+  it('normalizeDocument repairs invalid parentId on an otherwise complete v2 doc', () => {
+    const doc = createEmptyDocument('V2 tree');
+    const groupId = newId();
+    doc.layers = [
+      {
+        id: groupId,
+        type: 'group',
+        name: 'Grupo',
+        value: '',
+        pageIndex: 0,
+        parentId: groupId,
+        cssVars: {
+          '--width': '10mm',
+          '--height': '5mm',
+          '--translate-x': '0mm',
+          '--translate-y': '0mm',
+        },
+      },
+      {
+        id: newId(),
+        type: 'text',
+        name: 'T',
+        value: 'x',
+        pageIndex: 0,
+        parentId: 'no-existe',
+        cssVars: {
+          '--width': '10mm',
+          '--height': '5mm',
+          '--translate-x': '0mm',
+          '--translate-y': '0mm',
+        },
+      },
+    ];
+
+    const normalized = normalizeDocument(doc);
+    expect(normalized.layers[0]!.parentId).toBeUndefined();
+    expect(normalized.layers[1]!.parentId).toBeUndefined();
   });
 
   it('normalizeDocument preserves legacy multipage layout without pages array', () => {

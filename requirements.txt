@@ -1,5 +1,0 @@
-# Dependencies are now managed in pyproject.toml
-# Install with: pip install -e ".[dev]"
-
-# Keep this file for backwards compatibility
--e .

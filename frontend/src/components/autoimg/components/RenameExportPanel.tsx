@@ -117,6 +117,7 @@ export default function RenameExportPanel({ onDone }: RenameExportPanelProps) {
         failSamples: res.failed.slice(0, 5).map((f) => `${f.to}: ${f.error}`),
         skipSamples: res.skipped.slice(0, 6).map((s) => `${s.nis}: ${s.detail || s.reason}`),
       });
+      if (res.partial && res.warning) setError(res.warning);
       onDone?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al renombrar');

@@ -56,9 +56,11 @@ function directorySizeBytes(dir) {
 }
 
 function resolvePythonCommand() {
-  const venvPy = path.join(projectRoot, 'venv312', 'Scripts', 'python.exe');
-  if (fs.existsSync(venvPy)) {
-    return venvPy;
+  for (const venvName of ['.venv', 'venv312']) {
+    const venvPy = path.join(projectRoot, venvName, 'Scripts', 'python.exe');
+    if (fs.existsSync(venvPy)) {
+      return venvPy;
+    }
   }
   return 'python';
 }

@@ -1,9 +1,14 @@
+"""Fail if backend/core/canvas uses unallowlisted `dict[str, Any]`.
+
+Fuera de canvas solo advierte; el techo de crecimiento lo aplica
+check:ratchet mediante la métrica `dictAnyBackend` de .quality-baseline.json.
+Exención por línea: `# allowlist`, `# type: ignore` o `# noqa`.
+"""
 
 from __future__ import annotations
 
 import pathlib
 import re
-import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "backend"
 PAT_DICT = re.compile(r"dict\[str,\s*Any\]")
@@ -36,15 +41,11 @@ def check() -> int:
         return 1
     if violations:
         print(f"Any guard WARN: {violation_count} `dict[str, Any]` sin allowlist (de {total} total) fuera de canvas.")
+        print("El techo fuera de canvas lo aplica check:ratchet (dictAnyBackend en .quality-baseline.json).")
         print("Canvas OK: 0 violaciones en backend/core/canvas.")
         return 0
     print(f"Any guard: OK: {total} dict[str,Any] all allowlisted.")
     return 0
 
 if __name__ == "__main__":
-    if "--baseline" in sys.argv:
-        c_any = sum(len(re.findall(r"\bAny\b", f.read_text(encoding="utf-8", errors="ignore"))) for f in ROOT.rglob("*.py"))
-        c_dict = sum(len(PAT_DICT.findall(f.read_text(encoding="utf-8", errors="ignore"))) for f in ROOT.rglob("*.py"))
-        print(f"Any: {c_any}, dict[str,Any]: {c_dict}, files: {len(list(ROOT.rglob('*.py')))}")
-        raise SystemExit(0)
     raise SystemExit(check())

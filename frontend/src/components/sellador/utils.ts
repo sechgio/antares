@@ -105,11 +105,6 @@ export function countAssignments(pageAssignments: number[]): Map<number, number>
   return counts;
 }
 
-export async function fileToBase64(file: File): Promise<string> {
-  const { arrayBufferToBase64 } = await import('../../utils/bytesToBase64');
-  return arrayBufferToBase64(await file.arrayBuffer());
-}
-
 export function randomSeed(): number {
   return Math.floor(Math.random() * 2_147_483_647);
 }

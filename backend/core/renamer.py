@@ -112,9 +112,13 @@ class RenamerEngine:
                 default_val = codigo if f == first_field else ""
                 mapping[f] = default_val
 
-        nombre_salida = self.patron
-        for key, val in mapping.items():
-            nombre_salida = nombre_salida.replace(f"{{{key}}}", val)
+        if mapping:
+            token_re = re.compile(
+                "|".join(re.escape(f"{{{k}}}") for k in sorted(mapping, key=len, reverse=True))
+            )
+            nombre_salida = token_re.sub(lambda m: mapping[m.group(0)[1:-1]], self.patron)
+        else:
+            nombre_salida = self.patron
 
         nombre_salida = _RE_MULTIPLE_UNDERSCORES.sub("_", nombre_salida)
         nombre_salida = _RE_TRAILING_SEPARATOR_BEFORE_DOT.sub("", nombre_salida)

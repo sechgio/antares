@@ -5,6 +5,7 @@ import io
 import json
 import logging
 import os
+import shutil
 import sys
 import threading
 import uuid
@@ -13,6 +14,8 @@ from typing import Any
 
 from pypdf import PdfReader
 
+from backend.utils.atomic_write import atomic_write_json
+from backend.utils.paths import resource_path, user_data_path
 from backend.utils.validators import is_safe_user_path, sanitizar_nombre
 
 logger = logging.getLogger(__name__)
@@ -23,13 +26,31 @@ MAX_UPLOAD_PDF_PAGES = 1000
 _FORMATOS_PREVIEW_MIN_DPI = 72
 
 _PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
-_BUILTIN_DIR = _PROJECT_DIR / "formatos"
-_DATA_DIR = _PROJECT_DIR / "data" / "formatos"
+_BUILTIN_DIR = Path(resource_path("formatos"))
+_LEGACY_DATA_DIR = _PROJECT_DIR / "data" / "formatos"
+_DATA_DIR = user_data_path("formatos")
 _UPLOADS_DIR = _DATA_DIR / "uploads"
 _CATALOG_PATH = _DATA_DIR / "catalog.json"
 
-_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+def _migrate_legacy_data_dir() -> None:
+    legacy_catalog = _LEGACY_DATA_DIR / "catalog.json"
+    if _CATALOG_PATH.exists() or not legacy_catalog.is_file():
+        return
+    shutil.copy2(legacy_catalog, _CATALOG_PATH)
+    legacy_uploads = _LEGACY_DATA_DIR / "uploads"
+    if legacy_uploads.is_dir():
+        for src in legacy_uploads.iterdir():
+            if src.is_file():
+                shutil.copy2(src, _UPLOADS_DIR / src.name)
+    logger.info("Catálogo de formatos migrado de %s a %s", _LEGACY_DATA_DIR, _DATA_DIR)
+
+
+try:
+    _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    _migrate_legacy_data_dir()
+except Exception:
+    logger.exception("No se pudo inicializar el directorio de formatos en datos de usuario")
 
 
 LEGACY_XOBJECT = "legacy_xobject"
@@ -135,12 +156,7 @@ def _load_catalog() -> None:
 def _save_catalog() -> None:
     with _formats_lock:
         persistable = [fmt for fmt in _formats.values() if fmt.get("persisted", True)]
-        tmp_path = _CATALOG_PATH.with_suffix(_CATALOG_PATH.suffix + ".tmp")
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(persistable, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, _CATALOG_PATH)
+        atomic_write_json(_CATALOG_PATH, persistable)
 
 
 def _resolve_path(fmt: dict[str, Any]) -> Path:

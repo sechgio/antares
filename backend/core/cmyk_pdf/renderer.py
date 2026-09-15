@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, cast
 
-import fitz
+import pymupdf as fitz
 from PIL import Image, ImageOps
 
 from backend.core.cmyk_pdf.color import convert_pil_to_cmyk_bytes, css_color_to_cmyk
@@ -416,7 +416,7 @@ class CanvasCmykRenderer:
 
     def _flush_shape(self, page: fitz.Page, shape: fitz.Shape) -> fitz.Shape:
         shape.commit()
-        return page.new_shape()
+        return cast(fitz.Shape, page.new_shape())
 
     def _draw_crop_marks(self, page: fitz.Page, trim: fitz.Rect, margin_pt: float) -> None:
         shape = page.new_shape()

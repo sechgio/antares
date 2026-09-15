@@ -4,6 +4,11 @@ import {
   canFocusFieldBinding,
   canInlineEditLayer,
   growTextLayerToContent,
+  inlineEditLayerChanged,
+  toggleInlineTextStyle,
+  type InlineEditStartOpts,
+  type InlineSelectionRange,
+  type InlineTextStyle,
 } from '../ops/inlineEdit';
 import type { CanvasContextMenuState } from '../editor/ContextMenu';
 import type { CanvasDocument, CanvasTool } from '../types';
@@ -25,6 +30,7 @@ export function useInlineEdit({
   const { commitFromBaseline, documentRef, updateSilent } = history;
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingSelectAll, setEditingSelectAll] = useState(true);
+  const [editingRange, setEditingRange] = useState<InlineSelectionRange | null>(null);
   const editBaselineRef = useRef<CanvasDocument | null>(null);
   const previousDocumentIdRef = useRef(history.document.id);
 
@@ -36,21 +42,24 @@ export function useInlineEdit({
     editBaselineRef.current = null;
     setEditingLayerId(null);
     setEditingSelectAll(true);
+    setEditingRange(null);
   }, [history.document.id]);
 
   const commitInlineEdit = useCallback(() => {
     if (!editingLayerId) return;
     const baseline = editBaselineRef.current;
     const layer = documentRef.current.layers.find((l) => l.id === editingLayerId);
-    if (baseline && layer && layer.value !== baseline.layers.find((l) => l.id === editingLayerId)?.value) {
+    const baselineLayer = baseline?.layers.find((l) => l.id === editingLayerId);
+    if (baseline && layer && baselineLayer && inlineEditLayerChanged(layer, baselineLayer)) {
       commitFromBaseline(baseline);
     }
     editBaselineRef.current = null;
     setEditingLayerId(null);
+    setEditingRange(null);
   }, [commitFromBaseline, documentRef, editingLayerId]);
 
   const startInlineEdit = useCallback(
-    (id: string, opts?: { seed?: string }) => {
+    (id: string, opts?: InlineEditStartOpts) => {
       const doc = documentRef.current;
       const layer = doc.layers.find((l) => l.id === id);
       if (canFocusFieldBinding(layer)) {
@@ -70,7 +79,8 @@ export function useInlineEdit({
       editBaselineRef.current = cloneDocument(doc);
       setSelectedIds([id]);
       setTool('select');
-      setEditingSelectAll(seed == null);
+      setEditingSelectAll(seed == null && !opts?.selection);
+      setEditingRange(opts?.selection ?? null);
       if (seed != null) {
         updateSilent({
           ...doc,
@@ -116,10 +126,23 @@ export function useInlineEdit({
     [documentRef, updateSilent],
   );
 
+  const onInlineEditStyle = useCallback(
+    (id: string, style: InlineTextStyle) => {
+      if (id !== editingLayerId) return;
+      const doc = documentRef.current;
+      updateSilent({
+        ...doc,
+        layers: doc.layers.map((l) => (l.id === id ? toggleInlineTextStyle(l, style) : l)),
+      });
+    },
+    [documentRef, editingLayerId, updateSilent],
+  );
+
   const beginEditWithBaseline = useCallback(
     (baseline: CanvasDocument, id: string) => {
       editBaselineRef.current = baseline;
       setEditingSelectAll(true);
+      setEditingRange(null);
       setEditingLayerId(id);
     },
     [],
@@ -128,10 +151,12 @@ export function useInlineEdit({
   return {
     editingLayerId,
     editingSelectAll,
+    editingRange,
     commitInlineEdit,
     startInlineEdit,
     onInlineEditValue,
     onFitTextHeight,
+    onInlineEditStyle,
     beginEditWithBaseline,
   };
 }

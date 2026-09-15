@@ -37,8 +37,8 @@ async function main() {
       'utf8',
     );
 
-    // A pending marker protects an unreferenced asset past the mtime grace —
-    // this is the put-vs-GC window for a doc that has not been saved yet.
+    // A pending marker protects an unreferenced asset past the mtime grace.
+    // This is the put-vs-GC window for a doc that has not been saved yet.
     const pendingAsset = await putCanvasAsset(Buffer.from('pending-asset-eeeeeeee'));
     const pendingAssetPath = path.join(assetsDir(), pendingAsset.asset_id);
     const pendingOld = (Date.now() - GC_GRACE_MS - 60_000) / 1000;

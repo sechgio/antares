@@ -1,7 +1,8 @@
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Check, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId } from 'react';
 import { createPortal } from 'react-dom';
+import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 
 interface TaskCardActionsProps {
   title: string;
@@ -23,45 +24,21 @@ export default function TaskCardActions({
   onEdit,
   onDelete,
 }: TaskCardActionsProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const moreRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const {
+    isOpen: menuOpen,
+    position: menuPos,
+    triggerRef: moreRef,
+    popupRef: menuRef,
+    close,
+    toggle,
+  } = useAnchoredPopover({
+    estimatedHeight: 80,
+    estimatedWidth: 160,
+    align: 'end',
+    direction: 'down',
+    gap: 4,
+  });
   const menuId = useId();
-
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    const place = () => {
-      const btn = moreRef.current;
-      if (!btn) return;
-      const rect = btn.getBoundingClientRect();
-      const width = 160;
-      const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
-      const top = Math.min(rect.bottom + 4, window.innerHeight - 80);
-      setMenuPos({ top, left });
-    };
-    place();
-
-    const onPointer = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (moreRef.current?.contains(t) || menuRef.current?.contains(t)) return;
-      setMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onPointer);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
-    return () => {
-      document.removeEventListener('mousedown', onPointer);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
-    };
-  }, [menuOpen]);
 
   return (
     <div
@@ -108,7 +85,7 @@ export default function TaskCardActions({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-controls={menuOpen ? menuId : undefined}
-          onClick={() => setMenuOpen((v) => !v)}
+          onClick={toggle}
         >
           <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={2.25} />
         </button>
@@ -129,7 +106,7 @@ export default function TaskCardActions({
               role="menuitem"
               className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium text-[var(--accent-red)] transition-colors hover:bg-[var(--bg-base)]"
               onClick={() => {
-                setMenuOpen(false);
+                close();
                 onDelete();
               }}
             >

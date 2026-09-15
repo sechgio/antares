@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useId, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
+import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 
 export interface ThemedSelectOption {
   value: string;
@@ -16,13 +17,6 @@ interface ThemedSelectProps {
   disabled?: boolean;
 }
 
-interface MenuBox {
-  top: number;
-  left: number;
-  width: number;
-  maxHeight: number;
-}
-
 const MENU_GAP = 4;
 const MENU_MAX_H = 224;
 
@@ -34,12 +28,13 @@ export default function ThemedSelect({
   placeholder,
   disabled = false,
 }: ThemedSelectProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [menuBox, setMenuBox] = useState<MenuBox | null>(null);
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const { isOpen, position: menuBox, triggerRef, popupRef: menuRef, open, close, updatePosition } =
+    useAnchoredPopover({
+      estimatedHeight: MENU_MAX_H,
+      gap: MENU_GAP,
+      matchTriggerWidth: true,
+      maxHeightCap: MENU_MAX_H,
+    });
   const menuId = useId();
   const [highlightedIndex, setHighlightedIndex] = useState(() => Math.max(0, options.findIndex((o) => o.value === value)));
 
@@ -50,63 +45,14 @@ export default function ThemedSelect({
     setHighlightedIndex(selectedIndex);
   }, [selectedIndex]);
 
-  const updateMenuBox = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP;
-    const spaceAbove = rect.top - MENU_GAP;
-    const openUp = spaceBelow < Math.min(MENU_MAX_H, 120) && spaceAbove > spaceBelow;
-    const maxHeight = Math.min(MENU_MAX_H, Math.max(80, openUp ? spaceAbove : spaceBelow));
-    const top = openUp
-      ? Math.max(8, rect.top - maxHeight - MENU_GAP)
-      : rect.bottom + MENU_GAP;
-    setMenuBox({
-      top,
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
-      width: rect.width,
-      maxHeight,
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!isOpen) {
-      setMenuBox(null);
-      setPortalRoot(null);
-      return;
-    }
-    setPortalRoot(document.body);
-    updateMenuBox();
-  }, [isOpen, options.length, updateMenuBox]);
-
   useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false);
-    };
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (containerRef.current?.contains(t)) return;
-      if (menuRef.current?.contains(t)) return;
-      setIsOpen(false);
-    };
-    const onLayout = () => updateMenuBox();
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-    };
-  }, [isOpen, updateMenuBox]);
+    if (isOpen) updatePosition();
+  }, [isOpen, options.length, updatePosition]);
 
   const handleSelect = (val: string) => {
     if (disabled) return;
     onChange(val);
-    setIsOpen(false);
+    close();
     triggerRef.current?.focus();
   };
 
@@ -122,7 +68,7 @@ export default function ThemedSelect({
       event.preventDefault();
       if (!isOpen) {
         setHighlightedIndex(selectedIndex);
-        setIsOpen(true);
+        open();
         return;
       }
       moveHighlight(event.key === 'ArrowDown' ? 1 : -1);
@@ -140,7 +86,7 @@ export default function ThemedSelect({
       event.preventDefault();
       if (!isOpen) {
         setHighlightedIndex(selectedIndex);
-        setIsOpen(true);
+        open();
       } else if (options[highlightedIndex]) {
         handleSelect(options[highlightedIndex].value);
       }
@@ -149,16 +95,20 @@ export default function ThemedSelect({
 
     if (event.key === 'Escape' && isOpen) {
       event.preventDefault();
-      setIsOpen(false);
+      close();
     }
   };
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div className="relative w-full">
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => !disabled && setIsOpen((o) => !o)}
+        onClick={() => {
+          if (disabled) return;
+          if (isOpen) close();
+          else open();
+        }}
         onKeyDown={handleTriggerKeyDown}
         disabled={disabled}
         aria-expanded={isOpen}
@@ -183,7 +133,6 @@ export default function ThemedSelect({
       </button>
 
       {isOpen &&
-        portalRoot &&
         createPortal(
           <div
             ref={menuRef}
@@ -228,7 +177,7 @@ export default function ThemedSelect({
               );
             })}
           </div>,
-          portalRoot,
+          document.body,
         )}
     </div>
   );

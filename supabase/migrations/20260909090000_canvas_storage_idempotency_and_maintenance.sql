@@ -375,7 +375,7 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public, private, pg_temp
 AS $$
 BEGIN
-  IF COALESCE(current_setting('request.jwt.claim.role', true), '') <> 'service_role' THEN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
     RAISE EXCEPTION 'Sólo service_role puede reconciliar el almacenamiento Canvas';
   END IF;
 
@@ -415,7 +415,7 @@ DECLARE
   v_deleted_versions integer := 0;
   v_purged_documents integer := 0;
 BEGIN
-  IF COALESCE(current_setting('request.jwt.claim.role', true), '') <> 'service_role' THEN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
     RAISE EXCEPTION 'Sólo service_role puede ejecutar mantenimiento Canvas';
   END IF;
 

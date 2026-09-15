@@ -5,7 +5,8 @@ import { imageToPdfSource, logoToPdfSource } from '../../../utils/pdfAssets';
 import type { CanvasDocument, CanvasDocumentSummary } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX, normalizeDocument } from '../types';
 import { collectDemoFieldKeys } from '../runtime/demoFill';
-import { buildImagesByRecordId, buildRowData, normalizeRecordId, parseSpreadsheetFile } from '../runtime/excel';
+import { buildImagesByRecordId, normalizeRecordId } from '../../../utils/recordMatching';
+import { buildRowData, parseSpreadsheetFile } from '../runtime/excel';
 import { type FillContext } from '../runtime/renderHtml';
 import { planMultiPageDocuments, renderMultiPageHtml } from '../runtime/planning';
 import { exportCanvasPdf } from '../export/exportPdf';
@@ -184,6 +185,8 @@ export default function GeneratePanel({
     ): Promise<{ contexts: FillContext[]; localImagePaths: Record<string, string> }> => {
       const contexts: FillContext[] = [];
       const localImagePaths: Record<string, string> = {};
+      const pendingObjectUrls: string[] = [];
+      try {
       for (const i of indices) {
         const row = rows[i];
         if (!row) continue;
@@ -195,6 +198,7 @@ export default function GeneratePanel({
         let logos: { logoLeft: string | null; logoRight: string | null };
         if (quality === 'preview') {
           urls = matched.map((f) => URL.createObjectURL(f));
+          pendingObjectUrls.push(...urls);
           logos = { logoLeft, logoRight };
         } else {
           const sources: Awaited<ReturnType<typeof imageToPdfSource>>[] = [];
@@ -215,6 +219,12 @@ export default function GeneratePanel({
         }
         const imageMeta = matched.map((f) => ({ name: f.name }));
         contexts.push({ data, images: urls, ...logos, imageMeta });
+      }
+      } catch (err) {
+        // Si la construcción aborta a mitad, las URLs creadas no llegan al ref
+        // de revocación del preview: hay que liberarlas aquí.
+        for (const u of pendingObjectUrls) URL.revokeObjectURL(u);
+        throw err;
       }
       return { contexts, localImagePaths };
     },

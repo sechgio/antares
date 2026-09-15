@@ -5,11 +5,14 @@ function getBackendCommand(isDev, platform, dir) {
     const script = dir ? path.join(dir, '..', 'backend', 'main.py') : null;
 
     if (dir) {
-      const venvPy = platform === 'win32'
-        ? path.join(dir, '..', 'venv312', 'Scripts', 'python.exe')
-        : path.join(dir, '..', 'venv312', 'bin', 'python');
-      if (require('fs').existsSync(venvPy)) {
-        return { cmd: venvPy, args: script ? [script] : [] };
+      const venvBin = platform === 'win32'
+        ? ['Scripts', 'python.exe']
+        : ['bin', 'python'];
+      for (const venvName of ['.venv', 'venv312']) {
+        const venvPy = path.join(dir, '..', venvName, ...venvBin);
+        if (require('fs').existsSync(venvPy)) {
+          return { cmd: venvPy, args: script ? [script] : [] };
+        }
       }
     }
 

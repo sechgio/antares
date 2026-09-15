@@ -16,15 +16,6 @@ import { PRESET_BY_ID, cloneSettings } from './presets';
 import { arrayBufferToBase64 } from '../../utils/bytesToBase64';
 
 export { arrayBufferToBase64 };
-
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -292,16 +283,6 @@ export function buildDownloadNameMap(items: ImageItem[], settings: BatchSettings
 
 export function buildExportNameMap(allItems: ImageItem[], settings: BatchSettings): Map<string, string> {
   return buildDownloadNameMap(getEligibleItems(allItems), settings);
-}
-
-export function resolveExportFilename(
-  itemId: string,
-  allItems: ImageItem[],
-  settings: BatchSettings,
-): string {
-  const nameMap = buildExportNameMap(allItems, settings);
-  const item = allItems.find((entry) => entry.id === itemId);
-  return nameMap.get(itemId) ?? item?.originalName ?? 'archivo';
 }
 
 export function reorderImageItems(items: ImageItem[], draggedId: string, targetId: string): ImageItem[] {

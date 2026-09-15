@@ -432,7 +432,7 @@ def test_normalize_meta_rejects_non_finite_auto_layout_values_and_non_boolean_wr
     }
 
 
-def test_normalize_preserves_guide_page_index() -> None:
+def test_normalize_clamps_guide_page_index() -> None:
     raw = create_empty_document()
     raw["guides"] = [
         {"id": "g-p1", "axis": "x", "posMm": 20, "pageIndex": 1},
@@ -440,7 +440,7 @@ def test_normalize_preserves_guide_page_index() -> None:
     ]
     doc = normalize_document(raw)
     assert doc["guides"] == [
-        {"id": "g-p1", "axis": "x", "posMm": 20.0, "pageIndex": 1},
+        {"id": "g-p1", "axis": "x", "posMm": 20.0, "pageIndex": 0},
         {"id": "g-bad", "axis": "y", "posMm": 5.0, "pageIndex": 0},
     ]
 
@@ -538,8 +538,15 @@ def test_store_crud_roundtrip(tmp_path: Path) -> None:
 
 def test_store_uses_per_document_locks(tmp_path: Path) -> None:
     store = CanvasStore(tmp_path)
-    assert store._doc_lock("doc-a") is store._doc_lock("doc-a")
-    assert store._doc_lock("doc-a") is not store._doc_lock("doc-b")
+    stem_a = store._safe_stem("doc-a")
+    stem_b = store._safe_stem("doc-b")
+    with store._doc_lock("doc-a"):
+        entry_a = store._doc_locks[stem_a]
+        with store._doc_lock("doc-a"):
+            assert store._doc_locks[stem_a] is entry_a
+        with store._doc_lock("doc-b"):
+            assert store._doc_locks[stem_b] is not entry_a
+    assert store._doc_locks == {}
 
 
 def test_store_concurrent_saves_distinct_docs(tmp_path: Path) -> None:
@@ -573,11 +580,67 @@ def test_store_delete_evicts_document_lock(tmp_path: Path) -> None:
     store = CanvasStore(tmp_path)
     created = store.create(name="Lock evict")
     doc_id = str(created["id"])
-    store._doc_lock(doc_id)
     stem = store._safe_stem(doc_id)
-    assert stem in store._doc_locks
+    with store._doc_lock(doc_id):
+        assert stem in store._doc_locks
+    assert stem not in store._doc_locks
 
     assert store.delete(doc_id) is True
+    assert stem not in store._doc_locks
+
+
+def test_store_document_lock_registry_tracks_waiters_and_preserves_one_logical_lock(tmp_path: Path) -> None:
+    import threading
+    import time
+
+    store = CanvasStore(tmp_path)
+    doc_id = "shared-doc"
+    stem = store._safe_stem(doc_id)
+    entered = [threading.Event() for _ in range(3)]
+    releases = [threading.Event() for _ in range(3)]
+    state_guard = threading.Lock()
+    entry_ids: list[int] = []
+    active = 0
+    max_active = 0
+
+    def hold_lock(index: int) -> None:
+        nonlocal active, max_active
+        with store._doc_lock(doc_id):
+            with state_guard:
+                entry_ids.append(id(store._doc_locks[stem]))
+                active += 1
+                max_active = max(max_active, active)
+            entered[index].set()
+            assert releases[index].wait(timeout=2)
+            with state_guard:
+                active -= 1
+
+    threads = [threading.Thread(target=hold_lock, args=(index,)) for index in range(3)]
+    threads[0].start()
+    assert entered[0].wait(timeout=2)
+    threads[1].start()
+    threads[2].start()
+
+    users = 0
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        with store._doc_locks_guard:
+            entry = store._doc_locks.get(stem)
+            users = int(getattr(entry, "users", 0))
+        if users == 3:
+            break
+        time.sleep(0.005)
+
+    for release in releases:
+        release.set()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert users == 3
+    assert all(not thread.is_alive() for thread in threads)
+    assert max_active == 1
+    assert len(entry_ids) == 3
+    assert len(set(entry_ids)) == 1
     assert stem not in store._doc_locks
 
 
@@ -1543,6 +1606,30 @@ def test_canvas_save_handler_serializes_the_document_once(
 
     assert result["document"]["id"] == doc_id
     assert len(calls) == 1, f"canvas_save must serialize the document once, got {len(calls)}"
+
+
+def test_canvas_save_slim_returns_meta_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CanvasStore(tmp_path)
+    monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
+    monkeypatch.setattr(canvas_handlers, "is_memory_pressure", lambda: False)
+    document = create_empty_document(name="Slim save")
+    document["layers"].append({"id": "layer-big", "type": "text", "name": "Big", "value": "x" * 200_000})
+    doc_id = str(document["id"])
+
+    result = canvas_handlers.canvas_save({"document": document, "slim": True})
+
+    assert result["slim"] is True
+    meta = result["document"]
+    assert meta["id"] == doc_id
+    assert meta["name"] == "Slim save"
+    assert meta["updatedAt"]
+    assert "layers" not in meta
+    assert set(meta) <= {"id", "name", "updatedAt", "version", "page", "pages"}
+    persisted = store.get(doc_id)
+    assert persisted is not None and persisted["layers"][-1]["value"] == "x" * 200_000
 
 
 def test_store_save_history_serializes_the_payload_once(

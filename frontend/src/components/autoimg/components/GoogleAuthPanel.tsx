@@ -165,6 +165,9 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
       const res = await api.autoimgSheetsOpen(resolvedSheetId);
       if (res.success) {
         setSheetName(res.name || sheetId);
+        if (!res.config_persisted) {
+          setError(res.config_error || 'El Sheet se abrió, pero no se pudo guardar la configuración.');
+        }
         if (res.created_tabs?.length) {
           setSheetNotice(`Pestañas creadas: ${res.created_tabs.join(', ')}`);
         }

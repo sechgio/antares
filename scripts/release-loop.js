@@ -125,18 +125,25 @@ function validateChangelog(version) {
   }
 }
 
+function _buildFailureMessage(label, result) {
+  const tail = (result.output || '').split('\n').slice(-15).join('\n').trim();
+  return tail
+    ? `Build de ${label} falló (timeout o error). Salida:\n${tail}`
+    : `Build de ${label} falló (timeout o error) sin salida capturada.`;
+}
+
 function runBuild() {
-  const backendBuild = trySh('npm run build:backend 2>&1', { silent: true, timeout: 300000 });
-  if (backendBuild === null) {
-    throw new Error('Build del backend falló (timeout o error).');
+  const backendBuild = shDetailed('npm run build:backend 2>&1', { silent: true, timeout: 300000 });
+  if (!backendBuild.ok) {
+    throw new Error(_buildFailureMessage('backend', backendBuild));
   }
   if (!fs.existsSync(path.join(ROOT, 'dist', 'backend', 'AntaresBackend.exe'))) {
     throw new Error('Build del backend no produjo dist/backend/AntaresBackend.exe');
   }
 
-  const frontendBuild = trySh('npm run build:frontend 2>&1', { silent: true, timeout: 120000 });
-  if (frontendBuild === null) {
-    throw new Error('Build del frontend falló (timeout o error).');
+  const frontendBuild = shDetailed('npm run build:frontend 2>&1', { silent: true, timeout: 120000 });
+  if (!frontendBuild.ok) {
+    throw new Error(_buildFailureMessage('frontend', frontendBuild));
   }
   if (!fs.existsSync(path.join(ROOT, 'frontend', 'dist'))) {
     throw new Error('Build del frontend no produjo dist/');

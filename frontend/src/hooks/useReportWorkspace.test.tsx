@@ -196,6 +196,155 @@ describe('useReportWorkspace', () => {
     expect(mocks.addToast).toHaveBeenCalledWith({ message: 'Informe guardado', type: 'success' });
   });
 
+  it('does not clobber edits made while a save is in flight', async () => {
+    let resolveUpdate!: (report: TestReport) => void;
+    const api = makeApi({
+      update: vi.fn(() => new Promise<TestReport>((resolve) => { resolveUpdate = resolve; })),
+    });
+    const { result } = renderHook(() => useReportWorkspace(api));
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      await result.current.selectReport('TR-0001');
+    });
+    act(() => {
+      result.current.patchForm({ id: 'TR-0001', title: 'sent' });
+    });
+
+    let saveDone: Promise<void> | undefined;
+    act(() => {
+      saveDone = result.current.saveReport();
+    });
+    act(() => {
+      result.current.patchForm({ id: 'TR-0001', title: 'typed-after-save' });
+    });
+    await act(async () => {
+      resolveUpdate({ id: 'TR-0001', title: 'sent' });
+      await saveDone;
+    });
+
+    expect(result.current.formData).toEqual({ id: 'TR-0001', title: 'typed-after-save' });
+    expect(result.current.hasChanges).toBe(true);
+  });
+
+  it('does not apply a stale save after selecting another report', async () => {
+    let resolveUpdate!: (report: TestReport) => void;
+    const api = makeApi({
+      update: vi.fn(() => new Promise<TestReport>((resolve) => { resolveUpdate = resolve; })),
+    });
+    const { result } = renderHook(() => useReportWorkspace(api));
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      await result.current.selectReport('TR-0001');
+    });
+
+    let saveDone: Promise<void> | undefined;
+    act(() => {
+      saveDone = result.current.saveReport();
+    });
+    await act(async () => {
+      await result.current.selectReport('TR-0002');
+    });
+    await act(async () => {
+      resolveUpdate(makeReport('TR-0001'));
+      await saveDone;
+    });
+
+    expect(result.current.selectedId).toBe('TR-0002');
+    expect(result.current.formData).toEqual(makeReport('TR-0002'));
+  });
+
+  it('saveCurrent returns the persisted doc without clobbering newer edits', async () => {
+    let resolveUpdate!: (report: TestReport) => void;
+    const api = makeApi({
+      update: vi.fn(() => new Promise<TestReport>((resolve) => { resolveUpdate = resolve; })),
+    });
+    const { result } = renderHook(() => useReportWorkspace(api));
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      await result.current.selectReport('TR-0001');
+    });
+    act(() => {
+      result.current.patchForm({ id: 'TR-0001', title: 'sent' });
+    });
+
+    let saveDone: Promise<TestReport | null> | undefined;
+    act(() => {
+      saveDone = result.current.saveCurrent();
+    });
+    act(() => {
+      result.current.patchForm({ id: 'TR-0001', title: 'typed-after-save' });
+    });
+    let savedDoc: TestReport | null = null;
+    await act(async () => {
+      resolveUpdate({ id: 'TR-0001', title: 'sent' });
+      savedDoc = await saveDone;
+    });
+
+    expect(savedDoc).toEqual({ id: 'TR-0001', title: 'sent' });
+    expect(result.current.formData).toEqual({ id: 'TR-0001', title: 'typed-after-save' });
+    expect(result.current.hasChanges).toBe(true);
+  });
+
+  it('keeps busy while an outer operation continues after saveCurrent', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useReportWorkspace(api));
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      await result.current.selectReport('TR-0001');
+    });
+    act(() => {
+      result.current.patchForm({ id: 'TR-0001', title: 'editado' });
+    });
+
+    const { runOperation } = result.current;
+
+    let releaseOuter!: () => void;
+    let signalSaveFinished!: () => void;
+    const outerGate = new Promise<void>((resolve) => { releaseOuter = resolve; });
+    const saveFinished = new Promise<void>((resolve) => { signalSaveFinished = resolve; });
+    let operationDone: Promise<void> | undefined;
+    act(() => {
+      operationDone = runOperation(async () => {
+        await result.current.saveCurrent();
+        signalSaveFinished();
+        await outerGate;
+      });
+    });
+
+    await act(async () => {
+      await saveFinished;
+    });
+    expect(result.current.busy).toBe(true);
+
+    await act(async () => {
+      releaseOuter();
+      await operationDone;
+    });
+    expect(result.current.busy).toBe(false);
+  });
+
+  it('resolves the persisted report even when the list refresh fails', async () => {
+    const api = makeApi({
+      list: vi.fn()
+        .mockResolvedValueOnce({ reports: [{ id: 'TR-0001' }] })
+        .mockRejectedValueOnce(new Error('refresh falló')),
+    });
+    const { result } = renderHook(() => useReportWorkspace(api));
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      await result.current.selectReport('TR-0001');
+    });
+    act(() => {
+      result.current.patchForm({ id: 'TR-0001', title: 'editado' });
+    });
+
+    await act(async () => {
+      // El refresh de la lista no es parte de la operación de guardado: su
+      // fallo no debe convertir un guardado exitoso en error.
+      await expect(result.current.saveCurrent()).resolves.toBeTruthy();
+    });
+  });
+
   it('does not save when there is no form data', async () => {
     const api = makeApi();
     const { result } = renderHook(() => useReportWorkspace(api));

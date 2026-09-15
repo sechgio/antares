@@ -21,6 +21,10 @@ vi.mock('./api', () => ({
     renderConsolidatedHtml: vi.fn(),
     htmlToPdf: vi.fn(),
   },
+}));
+
+vi.mock('../../utils/pdfAssets', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/pdfAssets')>()),
   downloadBase64Pdf: vi.fn(),
   fileToBase64: vi.fn(),
   fileToDataUrl: vi.fn(),

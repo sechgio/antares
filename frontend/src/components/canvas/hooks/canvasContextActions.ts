@@ -18,6 +18,7 @@ import { applyAppearanceVars, extractAppearanceVars } from '../ops/clipboardLaye
 import { moveLayersToPage, syncImagesPerPage } from '../ops/pages';
 import { matchGridSlotsToSourceSize } from '../ops/gridLayout';
 import { sameLayerIds, type SelectSameCriterion } from '../ops/selectSame';
+import type { InlineEditStartOpts } from '../ops/inlineEdit';
 import type { CanvasDocument, CanvasLayer, LayerCssVars } from '../types';
 
 export interface CanvasContextActionsInput {
@@ -30,7 +31,7 @@ export interface CanvasContextActionsInput {
   pasteReplaceClipboard: (targetIds?: string[]) => unknown;
   copyLayersToClipboard: (layers: CanvasLayer[]) => unknown;
   sealPanelAndAbortGesture: () => void;
-  startContainerOrInlineEdit: (id: string, opts?: { seed?: string }) => void;
+  startContainerOrInlineEdit: (id: string, opts?: InlineEditStartOpts) => void;
   setSelectedIds: Dispatch<SetStateAction<string[]>>;
   setEyedropperActive: Dispatch<SetStateAction<boolean>>;
   setAllLayers: (layers: CanvasLayer[]) => void;

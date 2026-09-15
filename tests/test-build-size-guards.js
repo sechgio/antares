@@ -33,15 +33,13 @@ assert(spec.includes("'openpyxl'") && spec.includes('collect_submodules'), 'PyIn
 assert(spec.includes("'weasyprint'") && spec.includes('collect_submodules'), 'PyInstaller should collect all weasyprint submodules via collect_submodules');
 assert(spec.includes("'docx'") && spec.includes('collect_submodules'), 'PyInstaller should collect all python-docx submodules via collect_submodules');
 assert(
-  (spec.includes("'fitz'") || spec.includes("'pymupdf'")) && spec.includes('collect_submodules'),
-  'PyInstaller should collect pymupdf/fitz for sellador page raster previews',
+  spec.includes("'pymupdf'") && spec.includes('collect_submodules'),
+  'PyInstaller should collect pymupdf for sellador page raster previews',
 );
 assert(spec.includes("'ssl'"), 'PyInstaller should include ssl for WeasyPrint HTTPSHandler');
 assert(spec.includes("strip=False"), 'PyInstaller must not strip binaries (corrupts ssl DLLs on Windows)');
-assert(spec.includes("'backend.handlers.templates'"), 'PyInstaller must hide-import lazy templates handler');
-assert(spec.includes("'backend.handlers.canvas'"), 'PyInstaller must hide-import lazy canvas handler');
 assert(spec.includes("collect_submodules('backend.handlers')") || spec.includes('collect_submodules("backend.handlers")'),
-  'PyInstaller should collect_submodules(backend.handlers) as safety net for lazy registry');
+  'PyInstaller should collect every lazy handler module through one package-level guarantee');
 assert(spec.includes("backend/templates"), 'PyInstaller should bundle backend HTML templates for report generator');
 
 const builderConfig = readProjectFile('electron-builder.yml');
@@ -61,7 +59,8 @@ for (const staleName of ['AntaresBackend.exe', 'HidroConvertBackend.exe']) {
   assert(backendBuild.includes(staleName), `backend build should guard against stale ${staleName}`);
 }
 assert(backendBuild.includes('removeInsideProject'), 'backend build should clean stale PyInstaller output before rebuilding');
-assert(backendBuild.includes('venv312'), 'backend build should prefer the local venv312 Python over PATH');
+assert(backendBuild.includes("'.venv'"), 'backend build should prefer the project .venv Python over PATH');
+assert(backendBuild.includes('venv312'), 'backend build should keep venv312 as a fallback before PATH');
 assert(backendBuild.includes('resolvePythonCommand'), 'backend build should resolve Python before invoking PyInstaller');
 assert(backendBuild.includes('onedir') || backendBuild.includes('copyDirFlat'), 'backend build should produce an onedir layout (not onefile)');
 assert(backendBuild.includes("path.join(distDir, 'backend')") || backendBuild.includes('distBackendDir'), 'backend build should stage under dist/backend');
@@ -71,6 +70,7 @@ assert(spec.includes('COLLECT(') || spec.includes('exclude_binaries=True'), 'PyI
 const frozenBackendSmoke = readProjectFile('scripts', 'verify-frozen-backend.js');
 assert(frozenBackendSmoke.includes('sellador_inspect_pdf'), 'frozen backend smoke should probe sellador PDF inspection');
 assert(frozenBackendSmoke.includes('sellador_render_page'), 'frozen backend smoke should probe sellador page rendering');
+assert(frozenBackendSmoke.includes('canvas_list'), 'frozen backend smoke should probe the lazy Canvas handler');
 assert(frozenBackendSmoke.includes("image/jpeg"), 'frozen backend smoke should assert JPEG preview output');
 assert(frozenBackendSmoke.includes('PDFDocument.create'), 'frozen backend smoke should create an isolated PDF fixture');
 

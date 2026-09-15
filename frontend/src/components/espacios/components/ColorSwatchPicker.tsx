@@ -1,6 +1,7 @@
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId } from 'react';
 import { createPortal } from 'react-dom';
+import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import { ESPACIOS_COLORS, toColorInputValue } from '../utils/colors';
 
 interface ColorSwatchPickerProps {
@@ -12,76 +13,25 @@ interface ColorSwatchPickerProps {
 const PANEL_WIDTH = 148;
 const PANEL_GAP = 6;
 
-interface PanelPosition {
-  top: number;
-  left: number;
-}
-
 export default function ColorSwatchPicker({ color, label, onChange }: ColorSwatchPickerProps) {
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<PanelPosition | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const {
+    isOpen: open,
+    position,
+    triggerRef,
+    popupRef: panelRef,
+    close,
+    toggle,
+  } = useAnchoredPopover({
+    estimatedHeight: 120,
+    estimatedWidth: PANEL_WIDTH,
+    gap: PANEL_GAP,
+  });
   const panelId = useId();
   const safeColor = toColorInputValue(color);
 
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-
-    const rect = trigger.getBoundingClientRect();
-    const panelHeight = panelRef.current?.offsetHeight ?? 120;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openUp = spaceBelow < panelHeight + PANEL_GAP && rect.top > spaceBelow;
-
-    let left = rect.left;
-    left = Math.max(8, Math.min(left, window.innerWidth - PANEL_WIDTH - 8));
-
-    const top = openUp
-      ? Math.max(8, rect.top - panelHeight - PANEL_GAP)
-      : Math.min(rect.bottom + PANEL_GAP, window.innerHeight - panelHeight - 8);
-
-    setPosition({ top, left });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return;
-    }
-    updatePosition();
-  }, [open, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (panelRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    const handleLayout = () => updatePosition();
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape);
-    window.addEventListener('resize', handleLayout);
-    window.addEventListener('scroll', handleLayout, true);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape);
-      window.removeEventListener('resize', handleLayout);
-      window.removeEventListener('scroll', handleLayout, true);
-    };
-  }, [open, updatePosition]);
-
   const selectColor = (next: string) => {
     onChange(next);
-    setOpen(false);
+    close();
   };
 
   return (
@@ -96,7 +46,7 @@ export default function ColorSwatchPicker({ color, label, onChange }: ColorSwatc
           aria-controls={open ? panelId : undefined}
           onClick={(e) => {
             e.stopPropagation();
-            setOpen((value) => !value);
+            toggle();
           }}
           className="flex h-6 w-6 items-center justify-center rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]/40"
         >
