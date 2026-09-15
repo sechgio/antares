@@ -3,11 +3,17 @@ import type {
   BoardColumn,
   BoardColumnInput,
   Espacio,
+  MyTask,
+  MyTaskOrigin,
+  MyTasksFilters,
   Proyecto,
   Tarea,
+  TaskActivity,
+  TaskComment,
   TareaInput,
   TeamMember,
 } from '../types';
+import { DEFAULT_MY_TASKS_FILTERS } from '../types';
 import { isTareaPriority, tareaPriority } from '../utils/priority';
 import {
   fallbackBoardColumns,
@@ -240,6 +246,109 @@ export async function deleteTarea(id: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.from('tareas').delete().eq('id', id);
   throwOnError(error);
+}
+
+export async function fetchTaskComments(tareaId: string): Promise<TaskComment[]> {
+  const client = requireClient();
+  const { data, error } = await client
+    .from('tarea_comments')
+    .select('id, tarea_id, author_id, author_name, body, created_at, updated_at')
+    .eq('tarea_id', tareaId)
+    .order('created_at', { ascending: true });
+  throwOnError(error);
+  return (data ?? []) as TaskComment[];
+}
+
+export async function createTaskComment(
+  tareaId: string,
+  body: string,
+  userId: string,
+): Promise<TaskComment> {
+  const trimmed = body.trim();
+  if (!trimmed) throw new Error('No puedes enviar un comentario vacío');
+  const client = requireClient();
+  const { data, error } = await client
+    .from('tarea_comments')
+    .insert({ tarea_id: tareaId, body: trimmed, author_id: userId })
+    .select('id, tarea_id, author_id, author_name, body, created_at, updated_at')
+    .single();
+  throwOnError(error);
+  return requireData(data as TaskComment | null, 'Crear comentario');
+}
+
+export async function updateTaskComment(id: string, body: string): Promise<TaskComment> {
+  const trimmed = body.trim();
+  if (!trimmed) throw new Error('No puedes guardar un comentario vacío');
+  const client = requireClient();
+  const { data, error } = await client
+    .from('tarea_comments')
+    .update({ body: trimmed })
+    .eq('id', id)
+    .select('id, tarea_id, author_id, author_name, body, created_at, updated_at')
+    .single();
+  throwOnError(error);
+  return requireData(data as TaskComment | null, 'Actualizar comentario');
+}
+
+export async function deleteTaskComment(id: string): Promise<void> {
+  const client = requireClient();
+  const { error } = await client.from('tarea_comments').delete().eq('id', id);
+  throwOnError(error);
+}
+
+export async function fetchTaskActivity(tareaId: string): Promise<TaskActivity[]> {
+  const client = requireClient();
+  const { data, error } = await client
+    .from('tarea_activity')
+    .select('id, tarea_id, actor_id, actor_name, event_type, field_name, old_value, new_value, created_at')
+    .eq('tarea_id', tareaId)
+    .order('created_at', { ascending: true });
+  throwOnError(error);
+  return (data ?? []) as TaskActivity[];
+}
+
+function safeSearchTerm(value: string): string {
+  return value.trim().replace(/[(),"%_]/g, ' ');
+}
+
+export const MY_TASKS_PAGE_SIZE = 100;
+
+export async function fetchMyTasks(
+  filters: Partial<MyTasksFilters> = {},
+  offset = 0,
+  limit = MY_TASKS_PAGE_SIZE,
+): Promise<MyTask[]> {
+  const client = requireClient();
+  const resolved = { ...DEFAULT_MY_TASKS_FILTERS, ...filters };
+  let query = client.from('mis_tareas').select(
+    'id, proyecto_id, title, description, status, priority, assignee_id, start_date, due_date, sort_order, created_by, created_at, updated_at, proyecto_name, espacio_id, espacio_name, status_name, status_is_done',
+  );
+
+  const search = safeSearchTerm(resolved.search);
+  if (search) query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+  if (resolved.priority !== 'all') query = query.eq('priority', resolved.priority);
+  if (resolved.completion !== 'all') query = query.eq('status_is_done', resolved.completion === 'completed');
+  if (resolved.espacioId !== 'all') query = query.eq('espacio_id', resolved.espacioId);
+  if (resolved.proyectoId !== 'all') query = query.eq('proyecto_id', resolved.proyectoId);
+
+  const { data, error } = await query
+    .order('due_date', { ascending: true, nullsFirst: false })
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: true })
+    .range(offset, offset + limit - 1);
+  throwOnError(error);
+  return (data ?? []) as MyTask[];
+}
+
+export async function fetchMyTaskOrigins(): Promise<MyTaskOrigin[]> {
+  const client = requireClient();
+  const { data, error } = await client
+    .from('mis_tareas_origenes')
+    .select('proyecto_id, proyecto_name, espacio_id, espacio_name')
+    .order('espacio_name', { ascending: true })
+    .order('proyecto_name', { ascending: true });
+  throwOnError(error);
+  return (data ?? []) as MyTaskOrigin[];
 }
 
 export async function fetchTeamMembers(): Promise<TeamMember[]> {

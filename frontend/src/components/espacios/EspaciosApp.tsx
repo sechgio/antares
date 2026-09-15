@@ -9,6 +9,7 @@ import CreateNameModal from './components/CreateNameModal';
 import EmptyState from './components/EmptyState';
 import EspaciosWelcome from './components/EspaciosWelcome';
 import FilterBar from './components/filters/FilterBar';
+import MyTasksView from './components/MyTasksView';
 import ProjectHeader from './components/ProjectHeader';
 import SpaceSidebar from './components/SpaceSidebar';
 import TareasLoadingSkeleton from './components/TareasLoadingSkeleton';
@@ -21,21 +22,27 @@ import TableView from './components/views/TableView';
 
 const CalendarView = lazy(() => import('./components/views/CalendarView'));
 import { useEspaciosSync } from './hooks/useEspaciosSync';
+import { useMyTasks } from './hooks/useMyTasks';
 import { useTeamMembers } from './hooks/useTeamMembers';
 import {
   DEFAULT_FILTERS,
+  DEFAULT_MY_TASKS_FILTERS,
+  type MyTask,
+  type MyTasksFilters,
   type Tarea,
   type TareaFilters,
   type TareaInput,
   type TareaStatus,
   type VistaType,
 } from './types';
+import { fetchBoardColumns } from './api/espaciosApi';
 import { computeTaskStats, countActiveFilters, filterTareas } from './utils/filters';
 import {
   consumeEspaciosFocusTarget,
   ESPACIOS_FOCUS_EVENT,
 } from './utils/focusTarget';
 import { readEspaciosPrefs, writeEspaciosPrefs } from './utils/sessionPrefs';
+import { fallbackBoardColumns } from './utils/statusConfig';
 import {
   clampSidebarWidth,
   ESPACIOS_SIDEBAR_DEFAULT_WIDTH,
@@ -55,8 +62,12 @@ export default function EspaciosApp() {
   const { members, error: membersError } = useTeamMembers();
   const [activeView, setActiveView] = useState<VistaType>(() => readEspaciosPrefs().activeView);
   const [filters, setFilters] = useState<TareaFilters>(DEFAULT_FILTERS);
+  const [myTasksFilters, setMyTasksFilters] = useState<MyTasksFilters>(DEFAULT_MY_TASKS_FILTERS);
+  const [showMyTasks, setShowMyTasks] = useState(false);
+  const myTasks = useMyTasks(showMyTasks ? user?.id : undefined, myTasksFilters);
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   const [editingTarea, setEditingTarea] = useState<Tarea | null>(null);
+  const [editingColumns, setEditingColumns] = useState<typeof sync.boardColumns | null>(null);
   const [createStartDate, setCreateStartDate] = useState<string | null>(null);
   const [createDueDate, setCreateDueDate] = useState<string | null>(null);
   const [createStatus, setCreateStatus] = useState<string | null>(null);
@@ -70,6 +81,7 @@ export default function EspaciosApp() {
   const pendingProyectoIdRef = useRef<string | null>(null);
   const pendingTareaIdRef = useRef<string | null>(null);
   const membersErrorToastedRef = useRef(false);
+  const editingTareaIdRef = useRef<string | null>(null);
   type PendingDelete = {
     tarea: Tarea;
     timer: ReturnType<typeof setTimeout>;
@@ -182,6 +194,8 @@ export default function EspaciosApp() {
   const openTaskForm = useCallback(
     (opts?: { dueDate?: string; startDate?: string; status?: string }) => {
       setEditingTarea(null);
+      editingTareaIdRef.current = null;
+      setEditingColumns(null);
       const due = opts?.dueDate ?? null;
       const start = opts?.startDate ?? due;
       setCreateStartDate(start);
@@ -194,15 +208,37 @@ export default function EspaciosApp() {
 
   const openEditTask = useCallback((tarea: Tarea) => {
     setEditingTarea(tarea);
+    editingTareaIdRef.current = tarea.id;
+    setEditingColumns(null);
     setCreateStartDate(null);
     setCreateDueDate(null);
     setCreateStatus(null);
     setTaskFormOpen(true);
   }, []);
 
+  const openMyTask = useCallback((tarea: MyTask) => {
+    setEditingTarea(tarea);
+    editingTareaIdRef.current = tarea.id;
+    setEditingColumns(fallbackBoardColumns(tarea.proyecto_id));
+    setCreateStartDate(null);
+    setCreateDueDate(null);
+    setCreateStatus(null);
+    setTaskFormOpen(true);
+    void fetchBoardColumns(tarea.proyecto_id).then((columns) => {
+      if (editingTareaIdRef.current === tarea.id) setEditingColumns(columns);
+    }).catch((error) => {
+      addToast({
+        message: error instanceof Error ? error.message : 'No se pudieron cargar los estados de la tarea',
+        type: 'error',
+      });
+    });
+  }, [addToast]);
+
   const closeTaskForm = useCallback(() => {
     setTaskFormOpen(false);
+    editingTareaIdRef.current = null;
     setEditingTarea(null);
+    setEditingColumns(null);
     setCreateStartDate(null);
     setCreateDueDate(null);
     setCreateStatus(null);
@@ -212,13 +248,14 @@ export default function EspaciosApp() {
     async (input: TareaInput) => {
       if (editingTarea) {
         await sync.patchTarea(editingTarea.id, input);
+        if (showMyTasks) await myTasks.reload();
         addToast({ message: 'Tarea actualizada', type: 'success' });
       } else {
         await sync.addTarea(input);
         addToast({ message: 'Tarea creada', type: 'success' });
       }
     },
-    [editingTarea, sync, addToast],
+    [editingTarea, sync, showMyTasks, myTasks.reload, addToast],
   );
 
   const handleCompleteTask = useCallback(
@@ -727,8 +764,19 @@ export default function EspaciosApp() {
           proyectos={sync.proyectos}
           activeEspacioId={sync.activeEspacioId}
           activeProyectoId={sync.activeProyectoId}
-          onSelectEspacio={sync.setActiveEspacioId}
-          onSelectProyecto={sync.setActiveProyectoId}
+          myTasksActive={showMyTasks}
+          onSelectMyTasks={() => {
+            setShowMyTasks(true);
+            setSelectedIds(new Set());
+          }}
+          onSelectEspacio={(id) => {
+            setShowMyTasks(false);
+            sync.setActiveEspacioId(id);
+          }}
+          onSelectProyecto={(id) => {
+            setShowMyTasks(false);
+            sync.setActiveProyectoId(id);
+          }}
           onAddEspacio={() => setCreateModal('espacio')}
           onAddProyecto={() => setCreateModal('proyecto')}
           onDeleteEspacio={(id) => void handleDeleteEspacio(id)}
@@ -768,12 +816,14 @@ export default function EspaciosApp() {
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex h-11 shrink-0 items-center border-b border-[var(--border-subtle)] px-6">
-          {hasEspacios && !sync.activeProyecto && (
+          {showMyTasks ? (
+            <span className="text-xs font-medium text-[var(--text-secondary)]">Mis tareas</span>
+          ) : hasEspacios && !sync.activeProyecto ? (
             <p className="text-sm text-[var(--text-muted)]">
               Selecciona un espacio y un proyecto para gestionar tareas.
             </p>
-          )}
-          {sync.activeEspacio && sync.activeProyecto && (
+          ) : null}
+          {!showMyTasks && sync.activeEspacio && sync.activeProyecto && (
             <nav className="flex min-w-0 items-center gap-1 text-xs text-[var(--text-muted)]" aria-label="Ruta">
               <span className="truncate">{sync.activeEspacio.name}</span>
               <ChevronRight className="h-3 w-3 shrink-0" />
@@ -785,7 +835,22 @@ export default function EspaciosApp() {
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {!hasEspacios ? (
+          {showMyTasks ? (
+            <MyTasksView
+              tasks={myTasks.tasks}
+              origins={myTasks.origins}
+              filters={myTasksFilters}
+              loading={myTasks.loading}
+              loadingMore={myTasks.loadingMore}
+              error={myTasks.error}
+              hasMore={myTasks.hasMore}
+              hasAssignments={myTasks.hasAssignments}
+              onFiltersChange={(patch) => setMyTasksFilters((current) => ({ ...current, ...patch }))}
+              onRetry={() => void myTasks.reload()}
+              onLoadMore={() => void myTasks.loadMore()}
+              onOpenTask={openMyTask}
+            />
+          ) : !hasEspacios ? (
             <EspaciosWelcome onCreateEspacio={() => setCreateModal('espacio')} />
           ) : (
             <>
@@ -976,11 +1041,12 @@ export default function EspaciosApp() {
       <TaskForm
         open={taskFormOpen}
         members={members}
-        columns={sync.boardColumns}
+        columns={editingTarea ? (editingColumns ?? sync.boardColumns) : sync.boardColumns}
         initial={editingTarea}
         defaultStartDate={createStartDate}
         defaultDueDate={createDueDate}
         defaultStatus={createStatus}
+        currentUserId={user?.id}
         onClose={closeTaskForm}
         onSubmit={handleTaskSubmit}
       />

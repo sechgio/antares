@@ -8,6 +8,7 @@ import type { BoardColumn, Tarea, TareaInput, TareaPriority, TareaStatus, TeamMe
 import { isTareaPriority, PRIORITY_OPTIONS, tareaPriority } from '../utils/priority';
 import ModalShell from './ModalShell';
 import StatusPicker from './StatusPicker';
+import TaskActivityFeed from './TaskActivityFeed';
 
 const FIELD_CLASS =
   'w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:shadow-[0_0_0_3px_var(--accent-primary-glow)]';
@@ -20,6 +21,7 @@ interface TaskFormProps {
   defaultStartDate?: string | null;
   defaultDueDate?: string | null;
   defaultStatus?: TareaStatus | null;
+  currentUserId?: string;
   onClose: () => void;
   onSubmit: (input: TareaInput) => Promise<void>;
 }
@@ -60,6 +62,7 @@ function TaskEditor({
   defaultStartDate = null,
   defaultDueDate = null,
   defaultStatus = null,
+  currentUserId,
   onClose,
   onSubmit,
 }: Omit<TaskFormProps, 'open'>) {
@@ -260,6 +263,14 @@ function TaskEditor({
           </div>
         </div>
       </form>
+      {initial && currentUserId && (
+        <TaskActivityFeed
+          tareaId={initial.id}
+          userId={currentUserId}
+          members={members}
+          columns={columns ?? []}
+        />
+      )}
     </ModalShell>
   );
 }
