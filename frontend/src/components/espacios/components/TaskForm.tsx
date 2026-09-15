@@ -1,5 +1,5 @@
 import { ListTodo, Pencil } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import Button from '../../ui/Button';
 import DatePicker from '../../ui/DatePicker';
 import Input from '../../ui/Input';
@@ -26,13 +26,8 @@ interface TaskFormProps {
 
 function emptyForm(defaultStatus: TareaStatus = 'todo') {
   return {
-    title: '',
-    description: '',
-    status: defaultStatus,
-    priority: 'normal' as TareaPriority,
-    assigneeId: '',
-    startDate: '',
-    dueDate: '',
+    title: '', description: '', status: defaultStatus,
+    priority: 'normal' as TareaPriority, assigneeId: '', startDate: '', dueDate: '',
   };
 }
 
@@ -48,8 +43,17 @@ function formFromTarea(tarea: Tarea) {
   };
 }
 
-export default function TaskForm({
-  open,
+// A session belongs to a task, not to the identity of a realtime snapshot.
+// Closing or selecting a different task resets the editor, never the project view.
+export default function TaskForm({ open, ...props }: TaskFormProps) {
+  if (!open) return null;
+  const key = props.initial
+    ? `edit:${props.initial.id}`
+    : `new:${JSON.stringify([props.defaultStatus, props.defaultStartDate, props.defaultDueDate])}`;
+  return <TaskEditor key={key} {...props} />;
+}
+
+function TaskEditor({
   members,
   columns,
   initial = null,
@@ -58,47 +62,45 @@ export default function TaskForm({
   defaultStatus = null,
   onClose,
   onSubmit,
-}: TaskFormProps) {
+}: Omit<TaskFormProps, 'open'>) {
   const isEdit = Boolean(initial);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [status, setStatus] = useState<TareaStatus>('todo');
-  const [priority, setPriority] = useState<TareaPriority>('normal');
-  const [assigneeId, setAssigneeId] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [baseline] = useState(() => initial ? formFromTarea(initial) : {
+    ...emptyForm(defaultStatus ?? 'todo'),
+    startDate: defaultStartDate ?? '',
+    dueDate: defaultDueDate ?? '',
+  });
+  const [draft, setDraft] = useState(baseline);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [discardRequested, setDiscardRequested] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const discardRef = useRef<HTMLDivElement>(null);
+  const mountedRef = useRef(false);
+  const submittingRef = useRef(false);
+  const formId = useId();
+  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
+  const disabled = saving || discardRequested;
+  const { title, description, status, priority, assigneeId, startDate, dueDate } = draft;
+  const change = (patch: Partial<typeof draft>) => setDraft((current) => ({ ...current, ...patch }));
 
   useEffect(() => {
-    if (!open) return;
-    const next = initial
-      ? formFromTarea(initial)
-      : {
-          ...emptyForm(defaultStatus ?? 'todo'),
-          startDate: defaultStartDate ?? '',
-          dueDate: defaultDueDate ?? '',
-        };
-    setTitle(next.title);
-    setDescription(next.description);
-    setStatus(next.status);
-    setPriority(next.priority);
-    setAssigneeId(next.assigneeId);
-    setStartDate(next.startDate);
-    setDueDate(next.dueDate);
-    setError(null);
-    setSaving(false);
-  }, [open, initial, defaultStartDate, defaultDueDate, defaultStatus]);
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (discardRequested) discardRef.current?.querySelector('button')?.focus({ preventScroll: true });
+  }, [discardRequested]);
 
   const handleClose = () => {
-    if (saving) return;
-    onClose();
+    if (submittingRef.current) return;
+    if (dirty) setDiscardRequested(true);
+    else onClose();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
-
+    if (submittingRef.current || discardRequested || !title.trim()) return;
     const start = startDate || null;
     const due = dueDate || null;
     if (start && due && start > due) {
@@ -106,117 +108,123 @@ export default function TaskForm({
       return;
     }
 
+    submittingRef.current = true;
     setSaving(true);
     setError(null);
     try {
       await onSubmit({
-        title: title.trim(),
-        description: description.trim() || null,
-        status,
-        priority,
-        assignee_id: assigneeId || null,
-        start_date: start,
-        due_date: due,
+        title: title.trim(), description: description.trim() || null,
+        status, priority, assignee_id: assigneeId || null,
+        start_date: start, due_date: due,
       });
-      onClose();
+      if (mountedRef.current) onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar');
+      if (mountedRef.current) setError(err instanceof Error ? err.message : 'Error al guardar');
     } finally {
-      setSaving(false);
+      submittingRef.current = false;
+      if (mountedRef.current) setSaving(false);
     }
   };
 
   return (
     <ModalShell
-      open={open}
-      title={isEdit ? 'Editar tarea' : 'Nueva tarea'}
-      description={
-        isEdit
-          ? 'Actualiza título, estado, prioridad, asignado o fechas.'
-          : 'Completa los campos esenciales. Puedes ajustar el rango después en el calendario o Gantt.'
-      }
+      open
+      placement={isEdit ? 'right' : 'center'}
+      title={isEdit ? 'Detalle de tarea' : 'Nueva tarea'}
+      description={isEdit
+        ? 'Edita la tarea sin salir del proyecto. Los cambios se aplican al guardar.'
+        : 'Completa los campos esenciales. Puedes ajustar el rango después en el calendario o Gantt.'}
       icon={isEdit ? Pencil : ListTodo}
       iconColor={isEdit ? 'var(--accent-primary)' : 'var(--accent-blue)'}
+      initialFocusRef={titleRef}
       onClose={handleClose}
+      closeDisabled={saving}
       size="md"
-      footer={
+      footer={discardRequested ? (
+        <div ref={discardRef} className="w-full" role="alert">
+          <p className="mb-3 text-sm text-[var(--text-primary)]">Tienes cambios sin guardar. ¿Descartarlos?</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => {
+              setDiscardRequested(false);
+              requestAnimationFrame(() => titleRef.current?.focus({ preventScroll: true }));
+            }}>Seguir editando</Button>
+            <Button type="button" size="sm" onClick={onClose}>Descartar cambios</Button>
+          </div>
+        </div>
+      ) : (
         <>
+          {dirty && <span className="mr-auto text-xs text-[var(--text-muted)]">Cambios sin guardar</span>}
           <Button type="button" variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
-            Cancelar
+            {isEdit ? 'Cerrar' : 'Cancelar'}
           </Button>
-          <Button type="submit" form="task-form" size="sm" disabled={saving || !title.trim()}>
+          <Button type="submit" form={formId} size="sm" disabled={saving || !title.trim()}>
             {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear tarea'}
           </Button>
         </>
-      }
+      )}
     >
-      <form id="task-form" onSubmit={handleSubmit} noValidate className="space-y-3.5">
-        {error && <p className="text-xs text-[var(--accent-red)]">{error}</p>}
-
+      <form id={formId} onSubmit={handleSubmit} noValidate aria-busy={saving} className="space-y-3.5">
+        {error && <p role="alert" className="text-xs text-[var(--accent-red)]">{error}</p>}
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Título</label>
+          <label htmlFor={`${formId}-title`} className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Título</label>
           <Input
+            ref={titleRef}
+            id={`${formId}-title`}
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => change({ title: e.target.value })}
             placeholder="¿Qué hay que hacer?"
             required
-            autoFocus
-            disabled={saving}
+            disabled={disabled}
             className="w-full bg-[var(--bg-input)]"
           />
         </div>
-
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Descripción</label>
+          <label htmlFor={`${formId}-description`} className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Descripción</label>
           <textarea
+            id={`${formId}-description`}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => change({ description: e.target.value })}
             placeholder="Detalles opcionales..."
-            rows={3}
-            disabled={saving}
+            rows={isEdit ? 6 : 3}
+            disabled={disabled}
             className={FIELD_CLASS}
           />
         </div>
-
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Estado</label>
+            <p className="mb-1.5 text-xs font-medium text-[var(--text-secondary)]">Estado</p>
             <StatusPicker
               value={status}
               columns={columns}
-              onChange={setStatus}
-              disabled={saving}
+              onChange={(value) => change({ status: value })}
+              disabled={disabled}
               size="md"
               label="Estado"
               className="w-full [&_button]:w-full [&_button]:justify-between"
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Asignado</label>
+            <label htmlFor={`${formId}-assignee`} className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Asignado</label>
             <select
+              id={`${formId}-assignee`}
               value={assigneeId}
-              onChange={(e) => setAssigneeId(e.target.value)}
-              disabled={saving}
+              onChange={(e) => change({ assigneeId: e.target.value })}
+              disabled={disabled}
               className={FIELD_CLASS}
               aria-label="Persona asignada"
             >
               <option value="">Sin asignar</option>
-              {members.map((m) => (
-                <option key={m.user_id} value={m.user_id}>
-                  {m.display_name}
-                </option>
-              ))}
+              {members.map((m) => <option key={m.user_id} value={m.user_id}>{m.display_name}</option>)}
             </select>
           </div>
         </div>
-
         <div>
           <p className="mb-1.5 text-xs font-medium text-[var(--text-secondary)]">Prioridad</p>
           <ThemedSelect
             value={priority}
             options={PRIORITY_OPTIONS}
-            onChange={(value) => { if (isTareaPriority(value)) setPriority(value); }}
-            disabled={saving}
+            onChange={(value) => { if (isTareaPriority(value)) change({ priority: value }); }}
+            disabled={disabled}
             aria-label="Prioridad de la tarea"
           />
           {status === 'urgent' && (
@@ -225,27 +233,26 @@ export default function TaskForm({
             </p>
           )}
         </div>
-
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Inicio</label>
+            <p className="mb-1.5 text-xs font-medium text-[var(--text-secondary)]">Inicio</p>
             <DatePicker
               value={startDate}
-              onChange={setStartDate}
+              onChange={(value) => change({ startDate: value })}
               placeholder="Sin fecha"
-              disabled={saving}
+              disabled={disabled}
               clearable
               size="lg"
               aria-label="Fecha de inicio"
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Vencimiento</label>
+            <p className="mb-1.5 text-xs font-medium text-[var(--text-secondary)]">Vencimiento</p>
             <DatePicker
               value={dueDate}
-              onChange={setDueDate}
+              onChange={(value) => change({ dueDate: value })}
               placeholder="Sin fecha"
-              disabled={saving}
+              disabled={disabled}
               clearable
               size="lg"
               aria-label="Fecha de vencimiento"
