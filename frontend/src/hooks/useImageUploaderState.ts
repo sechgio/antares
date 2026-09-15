@@ -20,9 +20,11 @@ export function useImageUploaderState<TImage extends ImageAsset>({
   const [expanded, setExpanded] = useState(false);
 
   const handleFiles = useCallback(async (files: FileList | null) => {
+    // Snapshot the live FileList before resetting the native file input.
+    const selectedFiles = files ? Array.from(files) : [];
     if (inputRef.current) inputRef.current.value = '';
     if (!files) return;
-    const fileList = acceptFile ? Array.from(files).filter(acceptFile) : Array.from(files);
+    const fileList = acceptFile ? selectedFiles.filter(acceptFile) : selectedFiles;
     const nextErrors = await onAdd(fileList);
     setErrors(nextErrors);
   }, [acceptFile, onAdd]);
