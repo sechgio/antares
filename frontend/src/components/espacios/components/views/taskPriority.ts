@@ -1,18 +1,11 @@
 import type { BoardColumn, Tarea } from '../../types';
-import { isOverdue } from '../../utils/filters';
+import { priorityDetails } from '../../utils/priority';
 
-export function priorityMeta(tarea: Tarea, columns: BoardColumn[] = []): { label: string; color: string } | null {
-  if (tarea.status === 'urgent') return { label: 'Urgente', color: 'var(--accent-red)' };
-  if (isOverdue(tarea, columns)) return { label: 'Alta', color: 'var(--accent-yellow)' };
-  if (tarea.status === 'in_progress' || tarea.status === 'todo') {
-    return { label: 'Normal', color: '#87909E' };
-  }
-  return null;
+export function priorityMeta(tarea: Tarea, _columns: BoardColumn[] = []): { label: string; color: string } {
+  const { label, color } = priorityDetails(tarea);
+  return { label, color };
 }
 
-export function priorityRank(tarea: Tarea, columns: BoardColumn[] = []): number {
-  if (tarea.status === 'urgent') return 3;
-  if (isOverdue(tarea, columns)) return 2;
-  if (tarea.status === 'in_progress' || tarea.status === 'todo') return 1;
-  return 0;
+export function priorityRank(tarea: Tarea, _columns: BoardColumn[] = []): number {
+  return priorityDetails(tarea).rank;
 }
