@@ -7,6 +7,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.12] — 2026-09-16
+
 ### Added
 - **Canvas / guías**: las guías creadas desde las reglas hacen snap a los rieles de alineación; `Alt` durante la creación o el arrastre muestra distancias a la página y a los objetos cercanos; `Alt+arrastrar` sobre una guía la duplica; las guías se mueven con flechas (⇧ = 10 mm, Alt = 0.1 mm) y se eliminan con `Supr` o el menú contextual.
 - **Canvas / presets**: nueva plantilla «Informe limpieza reservorios» (formulario tabulado, categoría reservorios).
