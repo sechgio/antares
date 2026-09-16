@@ -46,7 +46,7 @@ function firstReviewSignal(pr) {
     if (r.submittedAt) stamps.push(r.submittedAt);
   }
   for (const c of pr.comments || []) {
-    if (isBot(c.author)) continue;
+    if (isBot(c.author) || (c.author && c.author.login === authorLogin)) continue;
     if (c.createdAt) stamps.push(c.createdAt);
   }
   if (stamps.length === 0) return null;

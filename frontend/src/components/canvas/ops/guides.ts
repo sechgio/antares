@@ -8,7 +8,7 @@ import {
   type DistanceLabel,
 } from './guideMeasurements';
 
-export { measureHoverGap, measureSelectionGaps } from './guideMeasurements';
+export { measureGuideDistances, measureHoverGap, measureSelectionGaps } from './guideMeasurements';
 export type { DistanceLabel } from './guideMeasurements';
 
 export function createGuide(axis: 'x' | 'y', posMm: number, pageIndex = 0): CanvasGuide {

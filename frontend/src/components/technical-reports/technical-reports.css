@@ -238,7 +238,6 @@
 }
 
 .tr-search input,
-.tr-filter-block select,
 .tr-field input,
 .tr-field select {
   width: 100%;
@@ -250,8 +249,7 @@
   font-size: 12px;
 }
 
-.tr-search input,
-.tr-filter-block select {
+.tr-search input {
   height: 32px;
 }
 
@@ -1500,8 +1498,7 @@
 }
 
 .tr-field input,
-.tr-field select,
-.tr-filter-block select {
+.tr-field select {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--bg-elevated);

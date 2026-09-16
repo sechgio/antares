@@ -11,7 +11,6 @@ import {
   distributeLayers,
   duplicateLayers,
   groupLayers,
-  nudgeLayers,
   sendBackward,
   sendToBack,
   setLayersLocked,
@@ -56,6 +55,7 @@ export interface CanvasKeyboardInput {
   document: CanvasDocument;
   setDocument: (doc: CanvasDocument) => void;
   setAllLayers: (layers: CanvasLayer[]) => void;
+  nudgeLayersLive: (ids: string[], dx: number, dy: number) => void;
   setSelectedIds: (ids: string[]) => void;
   setTool: Dispatch<SetStateAction<CanvasTool>>;
   setRenameRequest: Dispatch<SetStateAction<{ layerId: string; nonce: number } | null>>;
@@ -109,6 +109,7 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
     document: historyDoc,
     setDocument: setHistoryDoc,
     setAllLayers,
+    nudgeLayersLive,
     setSelectedIds,
     setTool,
     setRenameRequest,
@@ -426,11 +427,10 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
         if (e.defaultPrevented || isLayerListKeyboardTarget(e.target)) return;
         if (!editableIds.length) return;
         e.preventDefault();
-        sealPanelAndAbortGesture();
         const step = e.altKey ? 0.1 : e.shiftKey ? 10 : 1;
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-        setAllLayers(nudgeLayers(historyDoc.layers, editableIds, dx, dy));
+        nudgeLayersLive(editableIds, dx, dy);
       }
 
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'r' || e.key === 'R')) {

@@ -30,10 +30,11 @@ describe('CanvasRulers guide creation', () => {
     queued.forEach((cb) => cb(now));
   };
 
-  const setup = () => {
+  const setup = (snapRails?: { xs: number[]; ys: number[] }) => {
     const onCreateGuide = vi.fn();
     const onCommitGuideCreate = vi.fn();
     const onCancelCreate = vi.fn();
+    const onGuideMeasure = vi.fn();
     render(
       <CanvasRulers
         zoom={1}
@@ -41,12 +42,14 @@ describe('CanvasRulers guide creation', () => {
         pageWidthMm={210}
         pageHeightMm={297}
         pageIndex={2}
+        snapRails={snapRails}
         onCreateGuide={onCreateGuide}
         onCommitGuideCreate={onCommitGuideCreate}
         onCancelCreate={onCancelCreate}
+        onGuideMeasure={onGuideMeasure}
       />,
     );
-    return { onCreateGuide, onCommitGuideCreate, onCancelCreate };
+    return { onCreateGuide, onCommitGuideCreate, onCancelCreate, onGuideMeasure };
   };
 
   it('aligns tick origin with the page edge despite the ruler strip offset', () => {
@@ -108,6 +111,43 @@ describe('CanvasRulers guide creation', () => {
     expect(guide.axis).toBe('x');
     expect(guide.posMm).toBe(210);
     expect(onCancelCreate).not.toHaveBeenCalled();
+  });
+
+  it('snaps a new guide to geometry and allows Control to bypass it', () => {
+    const snapped = setup({ xs: [], ys: [180] });
+    const top = screen.getByTestId('canvas-ruler-top');
+    fireEvent.pointerDown(top, { button: 0, clientX: 200, clientY: 5 });
+    act(() => {
+      fireEvent.pointerMove(window, { clientX: 200, clientY: 120 });
+      tick();
+      fireEvent.pointerUp(window, { clientX: 200, clientY: 120 });
+    });
+    expect(snapped.onCommitGuideCreate.mock.calls[0][0].posMm).toBe(180);
+
+    snapped.onCommitGuideCreate.mockClear();
+    fireEvent.pointerDown(top, { button: 0, clientX: 200, clientY: 5 });
+    act(() => {
+      fireEvent.pointerMove(window, { clientX: 200, clientY: 120, ctrlKey: true });
+      tick();
+      fireEvent.pointerUp(window, { clientX: 200, clientY: 120, ctrlKey: true });
+    });
+    expect(snapped.onCommitGuideCreate.mock.calls[0][0].posMm).not.toBe(180);
+  });
+
+  it('requests redline measurements while Alt-dragging a guide from a ruler', () => {
+    const { onGuideMeasure } = setup();
+    const top = screen.getByTestId('canvas-ruler-top');
+    fireEvent.pointerDown(top, { button: 0, clientX: 200, clientY: 5, altKey: true });
+    act(() => {
+      fireEvent.pointerMove(window, { clientX: 200, clientY: 120, altKey: true });
+      tick();
+    });
+
+    expect(onGuideMeasure).toHaveBeenLastCalledWith({ axis: 'y', posMm: expect.any(Number) });
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 200, clientY: 120, altKey: true });
+    });
+    expect(onGuideMeasure).toHaveBeenLastCalledWith(null);
   });
 
   it('cancels creation when released back onto the ruler', () => {

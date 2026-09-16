@@ -16,6 +16,7 @@ interface SelectPickerProps {
   'aria-label': string;
   className?: string;
   disabled?: boolean;
+  size?: 'sm' | 'md';
 }
 
 export default function SelectPicker({
@@ -25,6 +26,7 @@ export default function SelectPicker({
   'aria-label': ariaLabel,
   className = '',
   disabled = false,
+  size = 'sm',
 }: SelectPickerProps) {
   const menuId = useId();
   const finishedRef = useRef(false);
@@ -39,6 +41,7 @@ export default function SelectPicker({
 
   const selected = options.find((o) => o.value === value) ?? options[0];
   const isFiltered = selected && selected.value !== options[0]?.value;
+  const isSm = size === 'sm';
 
   useLayoutEffect(() => {
     if (open) finishedRef.current = false;
@@ -62,7 +65,9 @@ export default function SelectPicker({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => !disabled && toggle()}
-        className={`group inline-flex h-8 max-w-[200px] items-center gap-1.5 rounded-full border bg-[var(--bg-elevated)] pl-2.5 pr-2 text-xs outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
+        className={`group inline-flex items-center gap-1.5 rounded-full border bg-[var(--bg-elevated)] outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
+          isSm ? 'h-8 max-w-[200px] pl-2.5 pr-2 text-xs' : 'px-3 py-1.5 text-sm'
+        } ${
           open
             ? 'border-[var(--accent-primary)] text-[var(--text-primary)] shadow-[0_0_0_3px_var(--accent-primary-glow)]'
             : isFiltered

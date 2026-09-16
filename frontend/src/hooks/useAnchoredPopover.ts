@@ -93,7 +93,7 @@ export function useAnchoredPopover<
 
       let maxHeight: number | undefined;
       if (maxHeightCap != null) {
-        const available = (openUp ? spaceAbove : spaceBelow) - gap;
+        const available = (openUp ? spaceAbove : spaceBelow) - gap - VIEWPORT_EDGE;
         maxHeight = Math.min(maxHeightCap, Math.max(minHeight, available));
       }
 

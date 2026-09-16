@@ -7,6 +7,21 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Canvas / guías**: las guías creadas desde las reglas hacen snap a los rieles de alineación; `Alt` durante la creación o el arrastre muestra distancias a la página y a los objetos cercanos; `Alt+arrastrar` sobre una guía la duplica; las guías se mueven con flechas (⇧ = 10 mm, Alt = 0.1 mm) y se eliminan con `Supr` o el menú contextual.
+- **Canvas / presets**: nueva plantilla «Informe limpieza reservorios» (formulario tabulado, categoría reservorios).
+
+### Changed
+- **UI**: se retira la paleta de comandos (`Ctrl+K`); los atajos de navegación siguen activos y `navigation.ts` deja de publicar metadatos de atajos sin consumidor.
+- **Espacios**: el selector de persona asignada usa el picker temático compartido; `SelectPicker` gana la variante `md`.
+- **Informes técnicos**: el filtro por C.S. usa `ThemedSelect`.
+- **CI**: `review-policy` audita intención del cuerpo, tamaño efectivo y archivos nuevos con un único comentario auto-actualizado; también se dispara al editar la descripción o las etiquetas del PR.
+
+### Fixed
+- **Canvas / historial**: los nudges de teclado (capas y guías) se coalescen en una sola entrada de undo por gesto, como drags y resizes.
+- **Preview de reportes**: las object URLs de imágenes se regeneran solo cuando cambia la entrada; la vista previa ya no puede renderizar URLs revocadas.
+- **Popovers**: `useAnchoredPopover` descuenta el margen del viewport en `maxHeight`; `TemplatePicker` admite `direction="down"` para no voltear el menú cuando hay espacio.
+
 ## [0.11.11] — 2026-09-14
 
 ### Added

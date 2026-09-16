@@ -44,7 +44,11 @@ function testArtifacts() {
     refs.every((r) => /^[0-9a-f]{40}$/.test(r)),
     'el workflow fija cada acción a un SHA completo',
   );
-  assert(/permissions:/.test(wf) && /contents:\s+read/.test(wf), 'el workflow es de solo lectura');
+  assert(/permissions:/.test(wf) && /contents:\s+read/.test(wf), 'el workflow limita contents a solo lectura');
+  assert(/issues:\s+write/.test(wf), 'el workflow puede publicar y editar comentarios del PR');
+  assert(wf.includes('edited'), 'el workflow reacciona a ediciones de la descripción');
+  assert(wf.includes('labeled'), 'el workflow reacciona a cambios de etiquetas');
+  assert(wf.includes('^[1-9][0-9]*$'), 'el workflow valida pr_number en dispatch');
   assert(wf.includes('timeout-minutes:'), 'el workflow acota su tiempo de ejecución');
   assert(wf.includes('persist-credentials: false'), 'el checkout no persiste credenciales');
 }
@@ -134,6 +138,123 @@ function goodPrBody() {
     '',
     '- [x] Toca concurrencia',
   ].join('\n');
+}
+
+function testEffectiveBody() {
+  console.log('\nCuerpo efectivo de la descripción:');
+
+  const template = fs.readFileSync(path.join(ROOT, '.github', 'pull_request_template.md'), 'utf8');
+  assert(
+    policy.effectiveBodyLength(template) < policy.MIN_BODY_CHARS,
+    'la plantilla sin rellenar no satisface la intención',
+  );
+  const templateOnly = policy.evaluatePolicy({
+    number: 10,
+    body: template,
+    additions: 5,
+    deletions: 0,
+    files: [{ path: 'backend/core/converter.py', additions: 5, deletions: 0 }],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  eq(templateOnly.verdict, 'blocked', 'un PR con la plantilla intacta queda bloqueado');
+  assert(
+    templateOnly.checks.some((c) => c.id === 'intencion' && c.status === 'fail'),
+    'bloquea por falta de intención real',
+  );
+  assert(
+    policy.effectiveBodyLength(goodPrBody()) >= policy.MIN_BODY_CHARS,
+    'la prosa real sí cuenta como intención',
+  );
+}
+
+function testGeneratedPaths() {
+  console.log('\nRutas generadas:');
+
+  assert(policy.isGeneratedPath('uv.lock'), 'uv.lock es generado');
+  assert(policy.isGeneratedPath('frontend/package-lock.json'), 'package-lock anidado es generado');
+  assert(policy.isGeneratedPath('frontend/src/x/__snapshots__/a.snap'), 'los snapshots son generados');
+  assert(policy.isGeneratedPath('assets/app.min.js'), 'los minificados son generados');
+  assert(!policy.isGeneratedPath('backend/core/converter.py'), 'el código real no es generado');
+
+  const lockBump = policy.evaluatePolicy({
+    number: 11,
+    body: goodPrBody(),
+    additions: 1210,
+    deletions: 40,
+    files: [
+      { path: 'uv.lock', additions: 1150, deletions: 35 },
+      { path: 'backend/core/converter.py', additions: 50, deletions: 5 },
+      { path: 'tests/test_converter.py', additions: 10, deletions: 0 },
+    ],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  eq(lockBump.stats.effectiveLines, 65, 'las líneas de lockfile no cuentan para el tamaño');
+  eq(lockBump.stats.generatedLines, 1185, 'las líneas generadas se contabilizan aparte');
+  assert(
+    lockBump.checks.some((c) => c.id === 'tamano' && c.status === 'pass'),
+    'un bump de dependencias no bloquea por tamaño',
+  );
+
+  const bigGenerated = policy.evaluatePolicy({
+    number: 12,
+    body: goodPrBody(),
+    additions: 1600,
+    deletions: 0,
+    files: [
+      { path: 'assets/bundle.min.js', additions: 900, deletions: 0 },
+      { path: 'tests/test_big.py', additions: 700, deletions: 0 },
+    ],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    labels: [{ name: 'size/exempt' }],
+    author: { login: 'sechgio' },
+  });
+  assert(
+    bigGenerated.checks.some((c) => c.id === 'archivos' && c.status === 'pass'),
+    'archivos nuevos grandes generados o de test no bloquean',
+  );
+}
+
+function testDraftDowngrade() {
+  console.log('\nBorradores:');
+
+  const draft = policy.evaluatePolicy({
+    number: 13,
+    body: 'wip',
+    additions: 1400,
+    deletions: 20,
+    files: [{ path: 'backend/handlers/nuevo.py', additions: 1400, deletions: 0 }],
+    reviews: [],
+    comments: [],
+    isDraft: true,
+    author: { login: 'sechgio' },
+  });
+  assert(
+    draft.checks.every((c) => c.status !== 'fail'),
+    'un borrador nunca produce checks en fail',
+  );
+  eq(draft.verdict, 'warning', 'un borrador con problemas avisa sin bloquear');
+}
+
+function testSelectPolicyComment() {
+  console.log('\nUpsert del comentario de política:');
+
+  const sel = policy.selectPolicyComment([
+    { id: 5, body: 'informe viejo <!-- antares-review-policy:pr=1 -->' },
+    { id: 7, body: 'comentario humano' },
+    { id: 9, body: '<!-- antares-review-policy:pr=1 --> informe nuevo' },
+  ]);
+  eq(sel.update && sel.update.id, 9, 'actualiza el comentario marcado más reciente');
+  eq(sel.remove.length, 1, 'marca los duplicados para borrado');
+  eq(sel.remove[0].id, 5, 'el duplicado viejo se borra');
+
+  const none = policy.selectPolicyComment([{ id: 1, body: 'hola' }]);
+  eq(none.update, null, 'sin marca previa se crea un comentario nuevo');
+  eq(none.remove.length, 0, 'sin duplicados no se borra nada');
 }
 
 function testEvaluatePolicy() {
@@ -335,6 +456,24 @@ function testMetrics() {
     'ignora la auto-revisión al medir la primera señal',
   );
 
+  const authorPing = metrics.computeMetrics([
+    {
+      author: { login: 'sechgio' },
+      createdAt: '2026-08-01T10:00:00Z',
+      additions: 10,
+      deletions: 0,
+      reviews: [
+        { author: { login: 'revisora' }, state: 'APPROVED', submittedAt: '2026-08-01T14:00:00Z' },
+      ],
+      comments: [{ author: { login: 'sechgio' }, createdAt: '2026-08-01T10:05:00Z', body: 'ping' }],
+    },
+  ]);
+  eq(
+    Object.fromEntries(authorPing.map((m) => [m.id, m])).firstReviewHours.value,
+    4,
+    'ignora comentarios del propio autor al medir la primera señal',
+  );
+
   const empty = metrics.computeMetrics([]);
   eq(empty.length, 7, 'devuelve las siete métricas incluso sin datos');
   assert(
@@ -355,6 +494,10 @@ function run() {
   testIsTestPath();
   testApproval();
   testTaxonomy();
+  testEffectiveBody();
+  testGeneratedPaths();
+  testDraftDowngrade();
+  testSelectPolicyComment();
   testEvaluatePolicy();
   testMetrics();
 

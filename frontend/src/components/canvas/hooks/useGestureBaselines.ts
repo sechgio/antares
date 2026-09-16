@@ -94,13 +94,18 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
     panelRafRef.current.schedule(layer);
   }, []);
 
-  const onPanelChangeLayersLive = useCallback((layers: CanvasLayer[]) => {
+  const onDocumentChangeLive = useCallback((document: CanvasDocument) => {
     const hist = historyRef.current;
     if (!panelBaselineRef.current) {
       panelBaselineRef.current = cloneDocumentBaseline(hist.document, pageIndexRef.current);
     }
-    hist.updateSilent(syncImagesPerPage({ ...hist.document, layers }));
+    hist.updateSilent(document);
   }, []);
+
+  const onPanelChangeLayersLive = useCallback((layers: CanvasLayer[]) => {
+    const hist = historyRef.current;
+    onDocumentChangeLive(syncImagesPerPage({ ...hist.document, layers }));
+  }, [onDocumentChangeLive]);
 
   const onPanelCommitLive = useCallback(() => {
     panelRafRef.current.flush();
@@ -125,6 +130,7 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
     commitPageLayersGesture,
     cancelPageLayersGesture,
     onPanelChangeLive,
+    onDocumentChangeLive,
     onPanelChangeLayersLive,
     onPanelCommitLive,
   };

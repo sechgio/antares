@@ -125,6 +125,12 @@ const PRESET_META: Record<string, PresetMeta> = {
     layout: 'Panel + tabla',
     description: 'Reservorios Villa / SUNASS.',
   },
+  'informe-tecnico-limpieza': {
+    category: 'reservorios',
+    district: 'Villa / SUNASS',
+    layout: 'Formulario tabulado',
+    description: 'Informe técnico de limpieza y desinfección de reservorios y cisternas.',
+  },
 };
 
 export const DEFAULT_PRESET_META: PresetMeta = {

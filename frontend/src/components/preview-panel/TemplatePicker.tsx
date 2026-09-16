@@ -20,6 +20,7 @@ interface TemplatePickerProps {
   'aria-label'?: string;
   disabled?: boolean;
   maxMenuHeight?: number;
+  direction?: 'auto' | 'up' | 'down';
   triggerClassName?: string;
 }
 
@@ -33,6 +34,7 @@ export default function TemplatePicker({
   'aria-label': ariaLabel = 'Elegir plantilla',
   disabled = false,
   maxMenuHeight,
+  direction = 'auto',
   triggerClassName,
 }: TemplatePickerProps) {
   const {
@@ -45,6 +47,7 @@ export default function TemplatePicker({
     updatePosition,
   } = useAnchoredPopover({
     estimatedHeight: 280,
+    direction,
     gap: MENU_GAP,
     matchTriggerWidth: true,
     maxHeightCap: maxMenuHeight,

@@ -12,6 +12,7 @@ import {
   rotateSelection,
   selectionBounds,
   SNAP_THRESHOLD_MAX_MM,
+  snapUnalignedAxesToGrid,
   snapMoveWithGuides,
   snapRectToGrid,
   snapThresholdMm,
@@ -38,6 +39,23 @@ describe('selectionTransform', () => {
       y: 10,
       w: 15,
       h: 5,
+    });
+  });
+
+  it('snapUnalignedAxesToGrid preserves guide-aligned axes in both transform modes', () => {
+    const box = { x: 43, y: 22, w: 12, h: 13 };
+
+    expect(snapUnalignedAxesToGrid(box, 5, 'position', [{ axis: 'x', pos: 43 }])).toEqual({
+      x: 43,
+      y: 20,
+      w: 12,
+      h: 13,
+    });
+    expect(snapUnalignedAxesToGrid(box, 5, 'bounds', [{ axis: 'y', pos: 35 }])).toEqual({
+      x: 45,
+      y: 22,
+      w: 10,
+      h: 13,
     });
   });
 

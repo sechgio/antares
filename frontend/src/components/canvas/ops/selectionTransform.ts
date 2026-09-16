@@ -47,6 +47,24 @@ export function snapRectToGrid(box: RectMm, gridMm: number): RectMm {
   };
 }
 
+export function snapUnalignedAxesToGrid(
+  box: RectMm,
+  gridMm: number,
+  mode: 'position' | 'bounds',
+  aligned: ReadonlyArray<{ axis: SmartGuide['axis'] }>,
+): RectMm {
+  const gridBox = mode === 'bounds'
+    ? snapRectToGrid(box, gridMm)
+    : { ...box, x: snapToGridMm(box.x, gridMm), y: snapToGridMm(box.y, gridMm) };
+  const alignedAxes = new Set(aligned.map((item) => item.axis));
+  return {
+    x: alignedAxes.has('x') ? box.x : gridBox.x,
+    y: alignedAxes.has('y') ? box.y : gridBox.y,
+    w: alignedAxes.has('x') ? box.w : gridBox.w,
+    h: alignedAxes.has('y') ? box.h : gridBox.h,
+  };
+}
+
 export function isPointerClick(dxPx: number, dyPx: number, thresholdPx = POINTER_CLICK_PX): boolean {
   return dxPx * dxPx + dyPx * dyPx <= thresholdPx * thresholdPx;
 }
@@ -400,6 +418,16 @@ export function computeResizeBox(
 }
 
 export type SnapRails = { xs: number[]; ys: number[] };
+
+export function snapGuidePosition(
+  axis: 'x' | 'y',
+  posMm: number,
+  rails: SnapRails,
+  thresholdMm: number,
+): { posMm: number; snapped: boolean } {
+  const hit = nearestRailInRange(axis === 'x' ? rails.xs : rails.ys, posMm, thresholdMm);
+  return hit ? { posMm: hit.rail, snapped: true } : { posMm, snapped: false };
+}
 
 function collectGuidePositions(
   layers: CanvasLayer[],

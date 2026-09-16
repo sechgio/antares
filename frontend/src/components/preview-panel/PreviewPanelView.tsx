@@ -1026,6 +1026,7 @@ export default function PreviewPanelView() {
                 onChange={setSelectedIndex}
                 disabled={exportScope === 'all'}
                 maxMenuHeight={280}
+                direction="down"
                 triggerClassName="font-semibold"
               />
 

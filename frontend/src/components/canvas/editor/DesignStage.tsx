@@ -58,6 +58,7 @@ interface DesignStageProps {
   onUpsertGuide?: (guide: CanvasGuide) => void;
   onCommitGuideCreate?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
+  onNudgeGuide?: (id: string, deltaMm: number) => void;
   onRemoveGuide?: (id: string) => void;
   onCancelGuideCreate?: (id: string) => void;
   showRulers?: boolean;
@@ -107,6 +108,7 @@ export default function DesignStage({
   onUpsertGuide,
   onCommitGuideCreate,
   onMoveGuide,
+  onNudgeGuide,
   onRemoveGuide,
   onCancelGuideCreate,
   showRulers = false,
@@ -228,6 +230,7 @@ export default function DesignStage({
         onUpsertGuide={onUpsertGuide}
         onCommitGuideCreate={onCommitGuideCreate}
         onMoveGuide={onMoveGuide}
+        onNudgeGuide={onNudgeGuide}
         onRemoveGuide={onRemoveGuide}
         onCancelGuideCreate={onCancelGuideCreate}
         showRulers={showRulers}

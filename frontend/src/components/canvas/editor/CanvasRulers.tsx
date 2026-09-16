@@ -5,6 +5,7 @@ import { screenChromePx } from '../ops/textTypography';
 import { clampGuidePos, createGuide, formatGapMm, isGuideRemovalPoint } from '../ops/guides';
 import { createGestureRaf } from '../ops/gestureRaf';
 import { createPointerGestureSession } from '../ops/pointerGestureSession';
+import { snapGuidePosition, snapThresholdMm, type SnapRails } from '../ops/selectionTransform';
 
 const RULER = 20;
 
@@ -17,9 +18,11 @@ interface CanvasRulersProps {
   pageWidthMm: number;
   pageHeightMm: number;
   pageIndex: number;
+  snapRails?: SnapRails;
   onCreateGuide: (guide: CanvasGuide) => void;
   onCommitGuideCreate?: (guide: CanvasGuide) => void;
   onCancelCreate?: (id: string) => void;
+  onGuideMeasure?: (measurement: { axis: CanvasGuide['axis']; posMm: number } | null) => void;
 }
 
 export function MeasurementBadge({
@@ -93,9 +96,11 @@ function CanvasRulers({
   pageWidthMm,
   pageHeightMm,
   pageIndex,
+  snapRails,
   onCreateGuide,
   onCommitGuideCreate,
   onCancelCreate,
+  onGuideMeasure,
 }: CanvasRulersProps) {
   const frameW = Math.round(pageWidthMm * MM_TO_PX * zoom);
   const frameH = Math.round(pageHeightMm * MM_TO_PX * zoom);
@@ -166,18 +171,22 @@ function CanvasRulers({
 
     const raf = createGestureRaf((ev: PointerEvent) => {
       if (cancelled) return;
-      const pos = toMm(axis === 'x' ? ev.clientX : ev.clientY);
+      const rawPos = clampGuidePos(toMm(axis === 'x' ? ev.clientX : ev.clientY), maxMm);
+      const pos = ev.ctrlKey || ev.metaKey || !snapRails
+        ? rawPos
+        : snapGuidePosition(axis, rawPos, snapRails, snapThresholdMm(zoom)).posMm;
       if (!created) {
         const delta = Math.abs((axis === 'x' ? ev.clientX : ev.clientY) - startClient);
         if (delta < 4) return;
-        created = createGuide(axis, clampGuidePos(pos, maxMm), pageIndex);
+        created = createGuide(axis, pos, pageIndex);
         onCreateGuide(created);
       } else {
-        created = { ...created, posMm: clampGuidePos(pos, maxMm) };
+        created = { ...created, posMm: pos };
         onCreateGuide(created);
       }
       setCreatePreview(created);
       setCreateChip({ posMm: created.posMm, x: ev.clientX, y: ev.clientY });
+      onGuideMeasure?.(ev.altKey ? { axis, posMm: created.posMm } : null);
     });
 
     let session: ReturnType<typeof createPointerGestureSession>;
@@ -187,6 +196,7 @@ function CanvasRulers({
         raf.flush();
         setCreateChip(null);
         setCreatePreview(null);
+        onGuideMeasure?.(null);
         if (!ev || cancelled || !created) return;
         const rect = viewportEl?.getBoundingClientRect();
         if (rect && isGuideRemovalPoint(axis, ev.clientX, ev.clientY, rect, RULER)) {
@@ -206,6 +216,7 @@ function CanvasRulers({
         raf.cancel();
         setCreateChip(null);
         setCreatePreview(null);
+        onGuideMeasure?.(null);
       },
     });
   };

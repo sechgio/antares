@@ -7,8 +7,10 @@ import {
   useState,
   memo,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { CanvasDocument, CanvasGuide, CanvasLayer, CanvasTool } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX, parseMm, resolvePageMarginMm } from '../types';
 import {
@@ -32,10 +34,10 @@ import {
   selectionBounds,
   prepareSnapRails,
   smartGuidesEqual,
+  snapUnalignedAxesToGrid,
   snapMoveWithGuides,
+  snapGuidePosition,
   snapResizeBox,
-  snapRectToGrid,
-  snapToGridMm,
   snapThresholdMm,
   constrainMoveToAxis,
   type HandlePos,
@@ -49,9 +51,11 @@ import { replaceLayerById } from '../ops/patchLayers';
 import {
   clampGuidePos,
   collectReferenceGaps,
+  createGuide,
   formatGapMm,
   guidesForPage,
   isGuideRemovalPoint,
+  measureGuideDistances,
   measureHoverGap,
   measureSelectionGaps,
   snapEqualGaps,
@@ -95,6 +99,7 @@ import type {
   InlineTextStyle,
 } from '../ops/inlineEdit';
 import CanvasRulers, { GuidePositionChip, MeasurementBadge, RULER_SIZE } from './CanvasRulers';
+import GuideContextMenu, { type GuideContextMenuState } from './GuideContextMenu';
 import LayerNode from './LayerNode';
 import PathHandlesOverlay from './PathHandlesOverlay';
 import { SelectionChromeOverlay } from './SelectionChromeOverlay';
@@ -144,6 +149,7 @@ interface ArtboardProps {
   onUpsertGuide?: (guide: CanvasGuide) => void;
   onCommitGuideCreate?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
+  onNudgeGuide?: (id: string, deltaMm: number) => void;
   onRemoveGuide?: (id: string) => void;
   onCancelGuideCreate?: (id: string) => void;
   showRulers?: boolean;
@@ -290,6 +296,7 @@ function Artboard({
   onUpsertGuide,
   onCommitGuideCreate,
   onMoveGuide,
+  onNudgeGuide,
   onRemoveGuide,
   onCancelGuideCreate,
   showRulers = false,
@@ -319,6 +326,7 @@ function Artboard({
   distanceLabelsRef.current = distanceLabels;
   const [hoverLabels, setHoverLabels] = useState<DistanceLabel[]>([]);
   const hoverLabelsRef = useRef<DistanceLabel[]>([]);
+  const [guideDistanceLabels, setGuideDistanceLabels] = useState<DistanceLabel[]>([]);
   const enteredGroupIdRef = useRef<string | null>(enteredGroupId);
   enteredGroupIdRef.current = enteredGroupId;
   const eyedropperActiveRef = useRef(eyedropperActive);
@@ -408,8 +416,12 @@ function Artboard({
   const pageMarginRef = useRef(pageMarginMm);
   pageMarginRef.current = pageMarginMm;
   const pageGuides = useMemo(() => guidesForPage(document, pageIndex), [document, pageIndex]);
+  const [selectedGuideId, setSelectedGuideId] = useState<string | null>(null);
+  const [guideMenu, setGuideMenu] = useState<GuideContextMenuState | null>(null);
   const [guideDrag, setGuideDrag] = useState<{
     id: string;
+    axis: CanvasGuide['axis'];
+    pageIndex: number;
     posMm: number;
     clientX: number;
     clientY: number;
@@ -417,14 +429,61 @@ function Artboard({
   } | null>(null);
   const displayGuides = useMemo(() => {
     if (!guideDrag) return pageGuides;
-    return pageGuides.map((g) => (g.id === guideDrag.id ? { ...g, posMm: guideDrag.posMm } : g));
+    let found = false;
+    const next = pageGuides.map((g) => {
+      if (g.id !== guideDrag.id) return g;
+      found = true;
+      return { ...g, posMm: guideDrag.posMm };
+    });
+    if (!found) {
+      next.push({
+        id: guideDrag.id,
+        axis: guideDrag.axis,
+        posMm: guideDrag.posMm,
+        pageIndex: guideDrag.pageIndex,
+      });
+    }
+    return next;
   }, [pageGuides, guideDrag]);
   const manualGuidesRef = useRef(displayGuides);
   manualGuidesRef.current = displayGuides;
+  const guideSnapRails = useMemo(
+    () => prepareSnapRails(document.layers, [], document.page, pageGuides, pageMarginMm),
+    [document.layers, document.page, pageGuides, pageMarginMm],
+  );
   const snapToGridRef = useRef(snapToGrid);
   snapToGridRef.current = snapToGrid;
   const gridSizeMmRef = useRef(gridSizeMm);
   gridSizeMmRef.current = gridSizeMm > 0 ? gridSizeMm : DEFAULT_GRID_MM;
+
+  const updateGuideMeasurements = useCallback(
+    (measurement: { axis: CanvasGuide['axis']; posMm: number } | null) => {
+      if (!measurement) {
+        setGuideDistanceLabels([]);
+        return;
+      }
+      const rects = layersRef.current
+        .filter((layer) => layer.type !== 'frame' && layer.visible !== false)
+        .map((layer) => {
+          const bounds = layerBounds(layer);
+          return { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h };
+        });
+      setGuideDistanceLabels(
+        measureGuideDistances(measurement.axis, measurement.posMm, rects, pageSizeRef.current),
+      );
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      selectedGuideId &&
+      guideDrag?.id !== selectedGuideId &&
+      !pageGuides.some((guide) => guide.id === selectedGuideId)
+    ) {
+      setSelectedGuideId(null);
+    }
+  }, [guideDrag?.id, pageGuides, selectedGuideId]);
 
   const applyGestureLayers = useCallback((layers: CanvasLayer[]) => {
     if (pinchGestureRef.current) return;
@@ -511,6 +570,7 @@ function Artboard({
     setDraft(null);
     setLassoPts(null);
     setGuideDrag(null);
+    setGuideDistanceLabels([]);
     setPanning(false);
     setRadiusDrag(null);
   }, [gestureAbortToken, abortGesturePreview, pointerGestures]);
@@ -1041,13 +1101,20 @@ function Artboard({
             dx = equal.dx;
             dy = equal.dy;
             equalGapLabels = equal.labels;
+            const equalAxes = new Set(equal.labels.map((label) => label.axis));
+            if (equalAxes.size) {
+              nextGuides = nextGuides.filter((guide) => !equalAxes.has(guide.axis));
+            }
           }
           if (snapToGridRef.current && originBounds) {
-            const grid = gridSizeMmRef.current;
-            const nx = snapToGridMm(originBounds.x + dx, grid);
-            const ny = snapToGridMm(originBounds.y + dy, grid);
-            dx = nx - originBounds.x;
-            dy = ny - originBounds.y;
+            const gridBox = snapUnalignedAxesToGrid(
+              { x: originBounds.x + dx, y: originBounds.y + dy, w: originBounds.w, h: originBounds.h },
+              gridSizeMmRef.current,
+              'position',
+              [...nextGuides, ...equalGapLabels],
+            );
+            dx = gridBox.x - originBounds.x;
+            dy = gridBox.y - originBounds.y;
           }
         }
         if (lockHorizontal) {
@@ -1245,7 +1312,7 @@ function Artboard({
         nextBox = snapped.box;
         setGuidesIfChanged(snapped.guides);
         if (snapToGridRef.current) {
-          nextBox = snapRectToGrid(nextBox, gridSizeMmRef.current);
+          nextBox = snapUnalignedAxesToGrid(nextBox, gridSizeMmRef.current, 'bounds', snapped.guides);
         }
       } else {
         setGuidesIfChanged([]);
@@ -1696,25 +1763,72 @@ function Artboard({
     if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
+    e.currentTarget.focus();
     onCancelInertia?.();
     if (!frameRef.current) return;
+    setGuideMenu(null);
+    setSelectedGuideId(g.id);
+    onSelectIdsRef.current([]);
     const original = g.posMm;
     let lastPos = g.posMm;
     let willRemove = false;
     let cancelled = false;
+    let dragging = false;
+    const duplicate = e.altKey;
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
+    let activeGuide = g;
     const frameRect = createFrameRectCache(frameRef.current, zoomRef);
     const viewportRect = viewportRef.current?.getBoundingClientRect() ?? null;
-    setGuideDrag({ id: g.id, posMm: g.posMm, clientX: e.clientX, clientY: e.clientY, willRemove: false });
+    const guideRails = prepareSnapRails(
+      layersRef.current,
+      [],
+      pageSizeRef.current,
+      manualGuidesRef.current.filter((guide) => duplicate || guide.id !== g.id),
+      pageMarginRef.current,
+    );
+    if (!duplicate) {
+      setGuideDrag({
+        id: g.id,
+        axis: g.axis,
+        pageIndex: g.pageIndex ?? pageIndex,
+        posMm: g.posMm,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        willRemove: false,
+      });
+    }
 
     const raf = createGestureRaf((ev: PointerEvent) => {
       if (cancelled) return;
+      if (!dragging) {
+        if (isPointerClick(ev.clientX - startClientX, ev.clientY - startClientY)) return;
+        dragging = true;
+        if (duplicate) {
+          activeGuide = createGuide(g.axis, g.posMm, g.pageIndex ?? pageIndex);
+          setSelectedGuideId(activeGuide.id);
+        }
+      }
       const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       const max = g.axis === 'x' ? pageSizeRef.current.widthMm : pageSizeRef.current.heightMm;
-      lastPos = clampGuidePos(g.axis === 'x' ? cur.xMm : cur.yMm, max);
+      const rawPos = clampGuidePos(g.axis === 'x' ? cur.xMm : cur.yMm, max);
+      lastPos = ev.ctrlKey || ev.metaKey
+        ? rawPos
+        : snapGuidePosition(g.axis, rawPos, guideRails, snapThresholdMm(zoomRef.current)).posMm;
+      activeGuide = { ...activeGuide, posMm: lastPos };
       willRemove = viewportRect
         ? isGuideRemovalPoint(g.axis, ev.clientX, ev.clientY, viewportRect, RULER_SIZE)
         : false;
-      setGuideDrag({ id: g.id, posMm: lastPos, clientX: ev.clientX, clientY: ev.clientY, willRemove });
+      setGuideDrag({
+        id: activeGuide.id,
+        axis: activeGuide.axis,
+        pageIndex: activeGuide.pageIndex ?? pageIndex,
+        posMm: lastPos,
+        clientX: ev.clientX,
+        clientY: ev.clientY,
+        willRemove,
+      });
+      updateGuideMeasurements(ev.altKey ? { axis: activeGuide.axis, posMm: lastPos } : null);
     });
 
     let session: PointerGestureSession;
@@ -1723,8 +1837,12 @@ function Artboard({
       onEnd: () => {
         raf.flush();
         setGuideDrag(null);
+        setGuideDistanceLabels([]);
         if (cancelled) return;
-        if (willRemove) onRemoveGuide?.(g.id);
+        if (duplicate) {
+          if (dragging && !willRemove) handleCommitGuideCreate(activeGuide);
+          if (!dragging || willRemove) setSelectedGuideId(g.id);
+        } else if (willRemove) onRemoveGuide?.(g.id);
         else if (lastPos !== original) onMoveGuide?.(g.id, lastPos);
       },
       onKeyDown: (ev) => {
@@ -1735,8 +1853,42 @@ function Artboard({
       onAbort: () => {
         raf.cancel();
         setGuideDrag(null);
+        setGuideDistanceLabels([]);
+        if (duplicate) setSelectedGuideId(g.id);
       },
     });
+  };
+
+  const onGuideKeyDown = (guide: CanvasGuide, e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.currentTarget.blur();
+      return;
+    }
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const movesOnAxis =
+        guide.axis === 'x'
+          ? e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+          : e.key === 'ArrowUp' || e.key === 'ArrowDown';
+      if (!movesOnAxis) return;
+      const stepMm = e.altKey ? 0.1 : e.shiftKey ? 10 : 1;
+      const direction = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1;
+      if (onNudgeGuide) {
+        onNudgeGuide(guide.id, direction * stepMm);
+      } else {
+        const maxMm = guide.axis === 'x' ? pageSizeRef.current.widthMm : pageSizeRef.current.heightMm;
+        const nextPos = clampGuidePos(guide.posMm + direction * stepMm, maxMm);
+        if (nextPos !== guide.posMm) onMoveGuide?.(guide.id, nextPos);
+      }
+      return;
+    }
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedGuideId(null);
+    onRemoveGuide?.(guide.id);
   };
 
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1790,9 +1942,11 @@ function Artboard({
           pageWidthMm={document.page.widthMm}
           pageHeightMm={document.page.heightMm}
           pageIndex={pageIndex}
+          snapRails={guideSnapRails}
           onCreateGuide={handleCreateGuide}
           onCommitGuideCreate={handleCommitGuideCreate}
           onCancelCreate={handleCancelGuideCreate}
+          onGuideMeasure={updateGuideMeasurements}
         />
       )}
 
@@ -1973,12 +2127,27 @@ function Artboard({
 
           {displayGuides.map((g) => {
             const removing = guideDrag?.id === g.id && guideDrag.willRemove;
+            const selected = selectedGuideId === g.id;
             return (
               <div
                 key={g.id}
                 data-testid="canvas-manual-guide"
                 data-axis={g.axis}
+                data-selected={selected ? 'true' : undefined}
+                role="button"
+                tabIndex={0}
+                aria-label={`Guía ${g.axis === 'x' ? 'vertical' : 'horizontal'} en ${formatGapMm(g.posMm)}`}
                 onPointerDown={(e) => beginGuideDrag(g, e)}
+                onKeyDown={(e) => onGuideKeyDown(g, e)}
+                onFocus={() => setSelectedGuideId(g.id)}
+                onBlur={() => setSelectedGuideId((current) => (current === g.id ? null : current))}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSelectedGuideId(g.id);
+                  onSelectIdsRef.current([]);
+                  setGuideMenu({ id: g.id, x: e.clientX, y: e.clientY });
+                }}
                 style={
                   g.axis === 'x'
                     ? {
@@ -2010,9 +2179,9 @@ function Artboard({
                           position: 'absolute',
                           left: '50%',
                           top: 0,
-                          width: guideLine,
+                          width: selected ? guideLine : guideLine / 2,
                           height: '100%',
-                          marginLeft: -guideLine / 2,
+                          marginLeft: -(selected ? guideLine : guideLine / 2) / 2,
                           background: removing ? 'var(--cv-danger)' : 'var(--cv-accent)',
                           pointerEvents: 'none',
                         }
@@ -2020,9 +2189,9 @@ function Artboard({
                           position: 'absolute',
                           top: '50%',
                           left: 0,
-                          height: guideLine,
+                          height: selected ? guideLine : guideLine / 2,
                           width: '100%',
-                          marginTop: -guideLine / 2,
+                          marginTop: -(selected ? guideLine : guideLine / 2) / 2,
                           background: removing ? 'var(--cv-danger)' : 'var(--cv-accent)',
                           pointerEvents: 'none',
                         }
@@ -2041,7 +2210,20 @@ function Artboard({
             />
           )}
 
-          {[...distanceLabels, ...hoverLabels].map((d) => (
+          {guideMenu &&
+            createPortal(
+              <GuideContextMenu
+                menu={guideMenu}
+                onRemove={(id) => {
+                  setSelectedGuideId(null);
+                  onRemoveGuide?.(id);
+                }}
+                onClose={() => setGuideMenu(null)}
+              />,
+              globalThis.document.body,
+            )}
+
+          {[...distanceLabels, ...hoverLabels, ...guideDistanceLabels].map((d) => (
             <div key={d.id} data-testid="canvas-distance-label" style={{ pointerEvents: 'none', zIndex: 46 }}>
               <div
                 style={{

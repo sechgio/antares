@@ -4,6 +4,7 @@ import Artboard from '../editor/Artboard';
 import { MM_TO_PX } from '../ops/drawHelpers';
 import { createGuide } from '../ops/guides';
 import { createEmptyDocument } from '../types';
+import { createLayer } from '../constants';
 
 describe('Artboard guide dragging', () => {
   let frames: Map<number, FrameRequestCallback>;
@@ -32,12 +33,25 @@ describe('Artboard guide dragging', () => {
     queued.forEach((cb) => cb(now));
   };
 
-  const setup = () => {
+  const setup = (onNudgeGuide?: (id: string, deltaMm: number) => void) => {
     const document = createEmptyDocument('Test');
     const guide = createGuide('x', 50, 0);
     document.guides = [guide];
+    document.layers.push(
+      createLayer('rect', {
+        pageIndex: 0,
+        cssVars: {
+          '--translate-x': '80mm',
+          '--translate-y': '40mm',
+          '--width': '20mm',
+          '--height': '10mm',
+        },
+      }),
+    );
     const onMoveGuide = vi.fn();
     const onRemoveGuide = vi.fn();
+    const onCommitGuideCreate = vi.fn();
+    const onSelectIds = vi.fn();
     render(
       <Artboard
         document={document}
@@ -47,13 +61,15 @@ describe('Artboard guide dragging', () => {
         pan={{ x: 0, y: 0 }}
         onPan={() => {}}
         onSelect={() => {}}
-        onSelectIds={() => {}}
+        onSelectIds={onSelectIds}
         onChangeLayers={() => {}}
+        onCommitGuideCreate={onCommitGuideCreate}
         onMoveGuide={onMoveGuide}
+        onNudgeGuide={onNudgeGuide}
         onRemoveGuide={onRemoveGuide}
       />,
     );
-    return { guide, onMoveGuide, onRemoveGuide };
+    return { guide, onCommitGuideCreate, onMoveGuide, onRemoveGuide, onSelectIds };
   };
 
   it('drags a guide with live preview and commits once on release', () => {
@@ -171,6 +187,124 @@ describe('Artboard guide dragging', () => {
     );
     const atHalf = screen.getByTestId('canvas-manual-guide') as HTMLElement;
     expect(atHalf.style.width).toBe('20px');
+  });
+
+  it('snaps a dragged guide to object edges and centers', () => {
+    const { onMoveGuide } = setup();
+    fireEvent.pointerDown(screen.getByTestId('canvas-manual-guide'), {
+      button: 0,
+      clientX: 50 * MM_TO_PX,
+      clientY: 300,
+    });
+
+    act(() => {
+      fireEvent.pointerMove(window, { clientX: 79.4 * MM_TO_PX, clientY: 300 });
+      tick();
+      fireEvent.pointerUp(window, { clientX: 79.4 * MM_TO_PX, clientY: 300 });
+    });
+
+    expect(onMoveGuide).toHaveBeenCalledWith(expect.any(String), 80);
+  });
+
+  it('temporarily disables guide snapping while Control is held', () => {
+    const { onMoveGuide } = setup();
+    fireEvent.pointerDown(screen.getByTestId('canvas-manual-guide'), {
+      button: 0,
+      clientX: 50 * MM_TO_PX,
+      clientY: 300,
+    });
+
+    act(() => {
+      fireEvent.pointerMove(window, {
+        clientX: 79.4 * MM_TO_PX,
+        clientY: 300,
+        ctrlKey: true,
+      });
+      tick();
+      fireEvent.pointerUp(window, {
+        clientX: 79.4 * MM_TO_PX,
+        clientY: 300,
+        ctrlKey: true,
+      });
+    });
+
+    expect(onMoveGuide.mock.calls[0][1]).toBeCloseTo(79.4, 1);
+  });
+
+  it('duplicates a guide with Alt-drag and leaves the source in place', () => {
+    const { guide, onCommitGuideCreate, onMoveGuide } = setup();
+    fireEvent.pointerDown(screen.getByTestId('canvas-manual-guide'), {
+      button: 0,
+      clientX: 50 * MM_TO_PX,
+      clientY: 300,
+      altKey: true,
+    });
+
+    act(() => {
+      fireEvent.pointerMove(window, { clientX: 110 * MM_TO_PX, clientY: 300, altKey: true });
+      tick();
+    });
+    const guides = screen.getAllByTestId('canvas-manual-guide');
+    expect(guides).toHaveLength(2);
+    expect(guides[1]).toHaveAttribute('data-selected', 'true');
+    expect(screen.queryAllByTestId('canvas-distance-label').length).toBeGreaterThan(0);
+
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 110 * MM_TO_PX, clientY: 300, altKey: true });
+    });
+    expect(onMoveGuide).not.toHaveBeenCalled();
+    expect(onCommitGuideCreate).toHaveBeenCalledTimes(1);
+    expect(onCommitGuideCreate.mock.calls[0][0]).toMatchObject({ axis: 'x', posMm: 110, pageIndex: 0 });
+    expect(onCommitGuideCreate.mock.calls[0][0].id).not.toBe(guide.id);
+  });
+
+  it('selects a guide and removes it with Delete', () => {
+    const { guide, onRemoveGuide, onSelectIds } = setup();
+    const manualGuide = screen.getByTestId('canvas-manual-guide');
+    fireEvent.pointerDown(manualGuide, { button: 0, clientX: 50 * MM_TO_PX, clientY: 300 });
+    fireEvent.pointerUp(window, { clientX: 50 * MM_TO_PX, clientY: 300 });
+
+    expect(manualGuide).toHaveAttribute('data-selected', 'true');
+    expect(onSelectIds).toHaveBeenCalledWith([]);
+    fireEvent.keyDown(manualGuide, { key: 'Delete' });
+    expect(onRemoveGuide).toHaveBeenCalledWith(guide.id);
+  });
+
+  it('nudges a selected guide on its axis with precision modifiers', () => {
+    const { guide, onMoveGuide } = setup();
+    const manualGuide = screen.getByTestId('canvas-manual-guide');
+
+    fireEvent.keyDown(manualGuide, { key: 'ArrowRight', shiftKey: true });
+    expect(onMoveGuide).toHaveBeenLastCalledWith(guide.id, 60);
+
+    fireEvent.keyDown(manualGuide, { key: 'ArrowLeft', altKey: true });
+    expect(onMoveGuide).toHaveBeenLastCalledWith(guide.id, 49.9);
+
+    onMoveGuide.mockClear();
+    fireEvent.keyDown(manualGuide, { key: 'ArrowDown' });
+    expect(onMoveGuide).not.toHaveBeenCalled();
+  });
+
+  it('delegates repeated keyboard nudges as deltas for history coalescing', () => {
+    const onNudgeGuide = vi.fn();
+    const { guide, onMoveGuide } = setup(onNudgeGuide);
+    const manualGuide = screen.getByTestId('canvas-manual-guide');
+
+    fireEvent.keyDown(manualGuide, { key: 'ArrowRight' });
+    fireEvent.keyDown(manualGuide, { key: 'ArrowRight', shiftKey: true });
+
+    expect(onNudgeGuide).toHaveBeenNthCalledWith(1, guide.id, 1);
+    expect(onNudgeGuide).toHaveBeenNthCalledWith(2, guide.id, 10);
+    expect(onMoveGuide).not.toHaveBeenCalled();
+  });
+
+  it('offers guide removal from its context menu', () => {
+    const { guide, onRemoveGuide } = setup();
+    fireEvent.contextMenu(screen.getByTestId('canvas-manual-guide'), { clientX: 320, clientY: 240 });
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Eliminar guía' }));
+    expect(onRemoveGuide).toHaveBeenCalledWith(guide.id);
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('does not render rulers by default', () => {

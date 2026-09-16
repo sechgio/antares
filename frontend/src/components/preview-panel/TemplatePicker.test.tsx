@@ -95,4 +95,38 @@ describe('TemplatePicker', () => {
       }
     }
   });
+
+  it('keeps a downward picker below the trigger when space is tight', () => {
+    const origGetRect = Element.prototype.getBoundingClientRect;
+    const offsetHeightDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    Element.prototype.getBoundingClientRect = function () {
+      return { top: 600, bottom: 624, left: 20, right: 220, width: 200, height: 24, x: 20, y: 600, toJSON: () => ({}) };
+    };
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => 1500 });
+
+    try {
+      render(
+        <TemplatePicker
+          value=""
+          options={OPTIONS}
+          onChange={vi.fn()}
+          placeholder="-- Seleccionar Fila --"
+          aria-label="Elegir fila"
+          maxMenuHeight={280}
+          direction="down"
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /elegir fila/i }));
+      const listbox = screen.getByRole('listbox');
+      expect(listbox.style.top).toBe('628px');
+      expect(listbox.style.maxHeight).toBe('132px');
+    } finally {
+      Element.prototype.getBoundingClientRect = origGetRect;
+      if (offsetHeightDesc) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeightDesc);
+      } else {
+        delete (HTMLElement.prototype as unknown as { offsetHeight?: unknown }).offsetHeight;
+      }
+    }
+  });
 });

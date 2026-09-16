@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { useCanvasHistory } from '../hooks/useCanvasHistory';
 import { useGestureBaselines } from '../hooks/useGestureBaselines';
+import { createGuide, moveGuide } from '../ops/guides';
 import { createEmptyDocument } from '../types';
 
-describe('useGestureBaselines setPageLayersLive', () => {
+describe('useGestureBaselines', () => {
   it('captures baseline without changing document when layers are referentially unchanged', () => {
     const base = createEmptyDocument('Test');
     base.layers.push(createLayer('rect', { pageIndex: 0 }));
@@ -47,6 +48,38 @@ describe('useGestureBaselines setPageLayersLive', () => {
     });
 
     expect(result.current.history.document.layers[0]?.cssVars['--translate-x']).toBe('40mm');
+  });
+
+  it('onDocumentChangeLive coalesces repeated guide nudges into one undo entry', () => {
+    const base = createEmptyDocument('Test');
+    const guide = createGuide('x', 10, 0);
+    base.guides = [guide];
+
+    const { result } = renderHook(() => {
+      const history = useCanvasHistory(base);
+      const gesture = useGestureBaselines({ history, pageIndex: 0 });
+      return { history, gesture };
+    });
+
+    act(() => {
+      result.current.gesture.onDocumentChangeLive(moveGuide(result.current.history.document, guide.id, 11));
+    });
+    act(() => {
+      result.current.gesture.onDocumentChangeLive(moveGuide(result.current.history.document, guide.id, 12));
+    });
+    expect(result.current.history.document.guides?.[0]?.posMm).toBe(12);
+    expect(result.current.history.canUndo).toBe(false);
+
+    act(() => {
+      result.current.gesture.onPanelCommitLive();
+    });
+    expect(result.current.history.canUndo).toBe(true);
+
+    act(() => {
+      result.current.history.undo();
+    });
+    expect(result.current.history.document.guides?.[0]?.posMm).toBe(10);
+    expect(result.current.history.canUndo).toBe(false);
   });
 
   it('onPanelChangeLayersLive keeps one undo entry until commit', () => {

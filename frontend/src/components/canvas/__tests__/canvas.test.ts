@@ -1782,6 +1782,7 @@ describe('preset WYSIWYG parity (design vs renderHtml)', () => {
     const reservorios = await import('../presets/reservorios');
     const etapas = await import('../presets/etapas');
     const certificates = await import('../presets/certificates');
+    const informe = await import('../presets/informeTecnico');
     return [
       panels.createReportPreset(),
       panels.createEmergenciasPreset(),
@@ -1800,6 +1801,7 @@ describe('preset WYSIWYG parity (design vs renderHtml)', () => {
       certificates.createCertLugoPreset(),
       certificates.createCertSjlBlancoPreset(),
       certificates.createCertSjlGuardaminoPreset(),
+      informe.createInformeTecnicoPreset(),
     ];
   }
 

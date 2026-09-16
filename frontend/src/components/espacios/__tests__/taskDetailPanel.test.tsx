@@ -35,7 +35,7 @@ describe('task detail panel', () => {
     expect(screen.getByLabelText('Título')).toHaveValue('Informe');
     expect(screen.getByLabelText('Descripción')).toHaveValue('Revisar evidencias');
     expect(screen.getByLabelText('Descripción')).toHaveAttribute('rows', '6');
-    expect(screen.getByLabelText('Persona asignada')).toHaveValue('user-1');
+    expect(screen.getByLabelText('Persona asignada')).toHaveTextContent('Ana');
     expect(screen.getByLabelText('Prioridad de la tarea')).toHaveTextContent('Alta');
     expect(panel.querySelector('form')?.parentElement).toHaveClass('overflow-y-auto', 'min-h-0');
   });
@@ -64,6 +64,19 @@ describe('task detail panel', () => {
       priority: task.priority, assignee_id: task.assignee_id,
       start_date: task.start_date, due_date: task.due_date,
     });
+  });
+
+  it('uses the custom picker to change the assignee', async () => {
+    const p = props();
+    render(<TaskForm {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Persona asignada' }));
+    const listbox = screen.getByRole('listbox', { name: 'Persona asignada' });
+    expect(listbox.parentElement).toBe(document.body);
+    fireEvent.click(within(listbox).getByRole('option', { name: 'Sin asignar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(p.onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      assignee_id: null,
+    })));
   });
 
   it('retains the draft and shows a recoverable error when saving fails', async () => {

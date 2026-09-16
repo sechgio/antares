@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import EspaciosApp from '../EspaciosApp';
@@ -65,7 +65,9 @@ describe('my tasks routing', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir Tarea transversal' }));
     expect(screen.getByRole('dialog', { name: 'Detalle de tarea' })).toHaveAttribute('data-placement', 'right');
     expect(screen.getByText('Actividad compartida')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Persona asignada'), { target: { value: 'user-2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Persona asignada' }));
+    const listbox = screen.getByRole('listbox', { name: 'Persona asignada' });
+    fireEvent.click(within(listbox).getByRole('option', { name: 'María' }));
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(mocks.patchTarea).toHaveBeenCalledWith('global-task', expect.objectContaining({ assignee_id: 'user-2' })));
     expect(mocks.reloadMyTasks).toHaveBeenCalled();

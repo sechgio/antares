@@ -2,6 +2,7 @@
 /**
  * Intención, tamaño, tests, aprobación, taxonomía.
  * Sin gh o sin PR: sale 0. --enforce sale 1 si algún check bloquea.
+ * En borrador los checks de bloqueo degradan a aviso.
  *
  *   node scripts/review-policy-check.js --pr 42 [--enforce] [--comment] [--json]
  */
@@ -17,6 +18,13 @@ const EXEMPT_LABEL = 'size/exempt';
 const COMMENT_PREFIXES = ['blocking', 'suggestion', 'nit', 'question', 'praise'];
 const TAXONOMY_TARGET = 0.8;
 const REVIEW_TIMEOUT_MS = 20000;
+const COMMENT_MARKER = 'antares-review-policy:';
+const GENERATED_PATHS = [
+  /(^|\/)(package-lock\.json|uv\.lock|pnpm-lock\.yaml|yarn\.lock|poetry\.lock|Cargo\.lock|composer\.lock|Gemfile\.lock)$/,
+  /(^|\/)__snapshots__\//,
+  /\.snap$/,
+  /\.min\.(js|css)$/,
+];
 const ICON = { pass: '✅', warn: '⚠️', fail: '❌', skip: '⏭️' };
 
 function classifySize(changedLines) {
@@ -34,6 +42,29 @@ function isTestPath(filePath) {
     /\.spec\.[cm]?[jt]sx?$/.test(p) ||
     /(^|\/)test_[a-z0-9_]+\.py$/.test(p)
   );
+}
+
+function isGeneratedPath(filePath) {
+  const p = (filePath || '').replace(/\\/g, '/');
+  return GENERATED_PATHS.some((re) => re.test(p));
+}
+
+function effectiveBodyLength(body) {
+  return String(body || '')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      return (
+        t.length > 0 &&
+        !/^#{1,6}\s/.test(t) &&
+        !/^- \[[ xX]\]/.test(t) &&
+        !/^([-*_]\s*){3,}$/.test(t) &&
+        !/^>/.test(t)
+      );
+    })
+    .join('')
+    .replace(/\s+/g, '').length;
 }
 
 function isBot(user) {
@@ -69,39 +100,53 @@ function evaluatePolicy(pr) {
   const body = String(data.body || '').trim();
   const labels = (data.labels || []).map((l) => (l && l.name) || l).filter(Boolean);
   const changedLines = (Number(data.additions) || 0) + (Number(data.deletions) || 0);
+  const generatedLines = files.reduce(
+    (acc, f) => acc + (isGeneratedPath(f.path) ? (Number(f.additions) || 0) + (Number(f.deletions) || 0) : 0),
+    0,
+  );
+  const effectiveLines = files.length > 0 ? Math.max(0, changedLines - generatedLines) : changedLines;
   const sizeExempt = labels.includes(EXEMPT_LABEL);
   const checks = [];
   const add = (id, label, status, detail) => checks.push({ id, label, status, detail });
+  const block = (status) => (data.isDraft && status === 'fail' ? 'warn' : status);
 
+  const intentLen = effectiveBodyLength(body);
   add(
     'intencion',
     'Intención declarada',
-    body.length >= MIN_BODY_CHARS ? 'pass' : 'fail',
-    body.length >= MIN_BODY_CHARS
-      ? `${body.length} caracteres`
-      : `Descripción de ${body.length} caracteres (mínimo ${MIN_BODY_CHARS}). Explica el *por qué*.`,
+    block(intentLen >= MIN_BODY_CHARS ? 'pass' : 'fail'),
+    intentLen >= MIN_BODY_CHARS
+      ? `${intentLen} caracteres de contenido`
+      : `Descripción efectiva de ${intentLen} caracteres (mínimo ${MIN_BODY_CHARS}; la plantilla sin rellenar no cuenta). Explica el *por qué*.`,
   );
 
-  const size = classifySize(changedLines);
+  const sizeDetail = generatedLines > 0
+    ? `${effectiveLines} líneas efectivas (${generatedLines} generadas excluidas)`
+    : `${effectiveLines} líneas`;
+  const size = classifySize(effectiveLines);
   if (size === 'ok') {
-    add('tamano', 'Tamaño del PR', 'pass', `${changedLines} líneas`);
+    add('tamano', 'Tamaño del PR', 'pass', sizeDetail);
   } else if (size === 'warn') {
-    add('tamano', 'Tamaño del PR', 'warn', `${changedLines} líneas (>${SIZE_WARN}). Considera partirlo en PRs apilados.`);
+    add('tamano', 'Tamaño del PR', 'warn', `${sizeDetail} (>${SIZE_WARN}). Considera partirlo en PRs apilados.`);
   } else if (sizeExempt) {
-    add('tamano', 'Tamaño del PR', 'warn', `${changedLines} líneas (≥${SIZE_BLOCK}) con exención \`${EXEMPT_LABEL}\`.`);
+    add('tamano', 'Tamaño del PR', 'warn', `${sizeDetail} (≥${SIZE_BLOCK}) con exención \`${EXEMPT_LABEL}\`.`);
   } else {
-    add('tamano', 'Tamaño del PR', 'fail', `${changedLines} líneas (≥${SIZE_BLOCK}). Parte el cambio o aplica la etiqueta \`${EXEMPT_LABEL}\`.`);
+    add('tamano', 'Tamaño del PR', block('fail'), `${sizeDetail} (≥${SIZE_BLOCK}). Parte el cambio o aplica la etiqueta \`${EXEMPT_LABEL}\`.`);
   }
 
   const bigNew = files.filter(
-    (f) => (Number(f.additions) || 0) > MAX_NEW_FILE_LINES && (Number(f.deletions) || 0) === 0,
+    (f) =>
+      (Number(f.additions) || 0) > MAX_NEW_FILE_LINES &&
+      (Number(f.deletions) || 0) === 0 &&
+      !isGeneratedPath(f.path) &&
+      !isTestPath(f.path),
   );
   if (bigNew.length === 0) {
     add('archivos', 'Sin archivos nuevos > 500 líneas', 'pass', 'OK');
   } else if (sizeExempt) {
     add('archivos', 'Sin archivos nuevos > 500 líneas', 'warn', `${bigNew.map((f) => f.path).join(', ')} (exentos)`);
   } else {
-    add('archivos', 'Sin archivos nuevos > 500 líneas', 'fail', bigNew.map((f) => `${f.path} (+${f.additions})`).join(', '));
+    add('archivos', 'Sin archivos nuevos > 500 líneas', block('fail'), bigNew.map((f) => `${f.path} (+${f.additions})`).join(', '));
   }
 
   const gate = (id, label, pass, passDetail, warnDetail) => {
@@ -154,7 +199,14 @@ function evaluatePolicy(pr) {
     verdict: failed.length > 0 ? 'blocked' : warned.length > 0 ? 'warning' : 'ok',
     changedLines,
     checks,
-    stats: { files: files.length, testsTouched: touchedTests.length, taxonomy: tax, sizeExempt },
+    stats: {
+      files: files.length,
+      testsTouched: touchedTests.length,
+      taxonomy: tax,
+      sizeExempt,
+      effectiveLines,
+      generatedLines,
+    },
   };
 }
 
@@ -162,7 +214,9 @@ function renderReport(pr, result) {
   return [
     '## Revisión de código — política automática',
     '',
-    `**Veredicto:** \`${result.verdict}\` · **${result.changedLines}** líneas cambiadas en **${result.stats.files}** archivo(s)`,
+    `**Veredicto:** \`${result.verdict}\` · **${result.changedLines}** líneas cambiadas${
+      result.stats.generatedLines > 0 ? ` (**${result.stats.effectiveLines}** efectivas tras excluir generadas)` : ''
+    } en **${result.stats.files}** archivo(s)`,
     '',
     '| Check | Estado | Detalle |',
     '| --- | --- | --- |',
@@ -170,7 +224,7 @@ function renderReport(pr, result) {
     '',
     '> Un check automático que nadie puede esquivar vale más que una norma escrita.',
     '',
-    `<!-- antares-review-policy:pr=${pr ? pr.number : 'n/a'} -->`,
+    `<!-- ${COMMENT_MARKER}pr=${pr ? pr.number : 'n/a'} -->`,
   ].join('\n');
 }
 
@@ -201,13 +255,51 @@ function currentBranchPr(repo) {
 }
 
 function fetchPr(number, repo) {
-  const fields = 'number,title,body,additions,deletions,files,reviews,comments,labels,author,isDraft,state';
+  const fields = 'number,title,body,additions,deletions,reviews,comments,labels,author,isDraft,state';
   const out = execFileSync(
     'gh',
     ['pr', 'view', String(number), '--json', fields, ...(repo ? ['--repo', repo] : [])],
     { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', timeout: REVIEW_TIMEOUT_MS, maxBuffer: 20 * 1024 * 1024 },
   );
   return JSON.parse(out);
+}
+
+function ghApi(args) {
+  return execFileSync('gh', ['api', ...args], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    timeout: REVIEW_TIMEOUT_MS,
+    maxBuffer: 40 * 1024 * 1024,
+  });
+}
+
+function fetchPrFiles(number, repo) {
+  const out = ghApi([`repos/${repo}/pulls/${number}/files?per_page=100`, '--paginate', '--slurp']);
+  return JSON.parse(out || '[]')
+    .flat()
+    .map((f) => ({ path: f.filename, additions: Number(f.additions) || 0, deletions: Number(f.deletions) || 0 }));
+}
+
+function selectPolicyComment(comments) {
+  const marked = (comments || [])
+    .filter((c) => c && c.id && String(c.body || '').includes(COMMENT_MARKER))
+    .sort((a, b) => Number(a.id) - Number(b.id));
+  return { update: marked[marked.length - 1] || null, remove: marked.slice(0, -1) };
+}
+
+function upsertPolicyComment(repo, prNumber, report) {
+  const out = ghApi([`repos/${repo}/issues/${prNumber}/comments?per_page=100`, '--paginate', '--slurp']);
+  const { update, remove } = selectPolicyComment(JSON.parse(out || '[]').flat());
+  for (const stale of remove) {
+    ghApi(['-X', 'DELETE', `repos/${repo}/issues/comments/${stale.id}`]);
+  }
+  if (update) {
+    ghApi(['-X', 'PATCH', `repos/${repo}/issues/comments/${update.id}`, '-f', `body=${report}`]);
+    return 'actualizado';
+  }
+  ghApi(['-X', 'POST', `repos/${repo}/issues/${prNumber}/comments`, '-f', `body=${report}`]);
+  return 'creado';
 }
 
 function run() {
@@ -228,6 +320,7 @@ function run() {
   let pr;
   try {
     pr = fetchPr(number, repo);
+    pr.files = fetchPrFiles(number, repo);
   } catch (err) {
     const msg = String(err && err.message ? err.message : err);
     if (/command failed|ENOENT|not found|Could not resolve/i.test(msg)) {
@@ -251,13 +344,8 @@ function run() {
 
   if (args.comment) {
     try {
-      execFileSync('gh', ['pr', 'comment', String(pr.number), '--repo', repo, '--body', report], {
-        cwd: ROOT,
-        encoding: 'utf8',
-        stdio: 'pipe',
-        timeout: REVIEW_TIMEOUT_MS,
-      });
-      console.log('Informe publicado en el PR.');
+      const action = upsertPolicyComment(repo, pr.number, report);
+      console.log(`Informe ${action} en el PR.`);
     } catch (err) {
       console.warn(`⚠️  No se pudo comentar en el PR: ${String(err.message).split('\n')[0]}`);
     }
@@ -279,15 +367,20 @@ module.exports = {
   MIN_BODY_CHARS,
   EXEMPT_LABEL,
   COMMENT_PREFIXES,
+  COMMENT_MARKER,
+  GENERATED_PATHS,
   TAXONOMY_TARGET,
   classifySize,
   isTestPath,
+  isGeneratedPath,
+  effectiveBodyLength,
   isBot,
   hasThirdPartyApproval,
   humanComments,
   taxonomyCompliance,
   evaluatePolicy,
   renderReport,
+  selectPolicyComment,
 };
 
 if (require.main === module) run();

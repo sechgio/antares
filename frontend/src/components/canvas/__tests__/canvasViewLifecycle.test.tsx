@@ -85,10 +85,13 @@ vi.mock('../presets/loadPresets', () => ({
   loadCanvasPresets: vi.fn(async () => []),
 }));
 
+let latestStageDocument: CanvasDocument | null = null;
+
 vi.mock('../editor/DesignStage', () => ({
-  default: ({ children }: { children?: React.ReactNode }) => (
-    <div data-testid="mock-design-stage">{children}</div>
-  ),
+  default: ({ children, document }: { children?: React.ReactNode; document: CanvasDocument }) => {
+    latestStageDocument = document;
+    return <div data-testid="mock-design-stage">{children}</div>;
+  },
 }));
 
 vi.mock('../editor/RightPanel', () => ({
@@ -130,6 +133,11 @@ function makeDoc(id: string, name = id): CanvasDocument {
   doc.id = id;
   doc.updatedAt = '2026-07-31T10:00:00.000Z';
   return doc;
+}
+
+function currentStageDocument(): CanvasDocument {
+  if (!latestStageDocument) throw new Error('DesignStage no está montado');
+  return latestStageDocument;
 }
 
 describe('CanvasView lifecycle', () => {
@@ -956,7 +964,11 @@ describe('CanvasView shortcuts (F2, Ctrl+Shift+L/H) y punto dirty', () => {
 
   async function renderReadyWithRect() {
     const doc = makeDoc('doc-kbd', 'Kbd');
-    doc.layers.push(createLayer('rect', { id: 'r1', name: 'Caja' }));
+    doc.layers.push(createLayer('rect', {
+      id: 'r1',
+      name: 'Caja',
+      cssVars: { '--translate-x': '10mm' },
+    }));
     vi.mocked(api.canvasBootstrap).mockResolvedValue({
       documents: [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt! }],
       document: doc,
@@ -971,6 +983,23 @@ describe('CanvasView shortcuts (F2, Ctrl+Shift+L/H) y punto dirty', () => {
     fireEvent.keyDown(window, { key: 'F2' });
     const input = await screen.findByLabelText('Nombre de capa');
     expect(input.value).toBe('Caja');
+  });
+
+  it('agrupa una repetición de flecha en una sola entrada de undo', async () => {
+    await renderReadyWithRect();
+    fireEvent.click(screen.getByText('Caja'));
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowRight', repeat: true });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
+    await waitFor(() => {
+      expect(currentStageDocument().layers.find((layer) => layer.id === 'r1')?.cssVars['--translate-x']).toBe('12mm');
+    });
+
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true });
+    await waitFor(() => {
+      expect(currentStageDocument().layers.find((layer) => layer.id === 'r1')?.cssVars['--translate-x']).toBe('10mm');
+    });
   });
 
   it('Ctrl+Shift+L bloquea/desbloquea y Ctrl+Shift+H oculta/muestra la selección', async () => {
