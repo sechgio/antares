@@ -1,5 +1,6 @@
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import ThemedSelect from '@/components/ui/ThemedSelect';
 import ReportListItem from '../report-workspace/ReportListItem';
 import type { TechnicalReportListItem } from './types';
 
@@ -16,6 +17,14 @@ export default function DatabasePanel({ reports, selectedId, onSelect }: Props) 
   const csOptions = useMemo(() => {
     return [...new Set(reports.map((report) => report.header.cs).filter(Boolean))].sort();
   }, [reports]);
+
+  const csSelectOptions = useMemo(
+    () => [
+      { value: '', label: 'Todos los C.S.' },
+      ...csOptions.map((option) => ({ value: option, label: option })),
+    ],
+    [csOptions],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -44,10 +53,12 @@ export default function DatabasePanel({ reports, selectedId, onSelect }: Props) 
           <Search size={15} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar informe" />
         </label>
-        <select value={cs} onChange={(event) => setCs(event.target.value)}>
-          <option value="">Todos los C.S.</option>
-          {csOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-        </select>
+        <ThemedSelect
+          value={cs}
+          onChange={setCs}
+          options={csSelectOptions}
+          aria-label="Filtrar por C.S."
+        />
       </div>
 
       <div className="tr-list">

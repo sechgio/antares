@@ -48,4 +48,8 @@ export const CANVAS_SHORTCUTS: Array<{ keys: string; action: string }> = [
   { keys: 'Alt+X/Y', action: 'Distribuir horizontal / vertical' },
   { keys: 'Ctrl + arrastrar', action: 'Desactivar snap' },
   { keys: 'Reglas', action: 'Arrastrar para crear guías' },
+  { keys: 'Alt + arrastrar guía', action: 'Duplicar y mostrar distancias' },
+  { keys: 'Alt + arrastrar desde regla', action: 'Mostrar distancias a página y objetos' },
+  { keys: 'Flechas (guía)', action: 'Mover 1 mm (⇧ = 10 mm, Alt = 0.1 mm)' },
+  { keys: 'Supr / clic derecho', action: 'Eliminar guía seleccionada' },
 ];

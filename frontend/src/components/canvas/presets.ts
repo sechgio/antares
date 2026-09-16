@@ -2,6 +2,7 @@ export type { FieldSpec } from './presets/helpers';
 
 import { createCertLugoPreset, createCertSjlBlancoPreset, createCertSjlGuardaminoPreset } from './presets/certificates';
 import { createFormatEtapasPreset } from './presets/etapas';
+import { createInformeTecnicoPreset } from './presets/informeTecnico';
 import {
   createAniegosChorrillosPreset,
   createEmergenciasPreset,
@@ -30,6 +31,7 @@ export {
   createEvidenciaVolanteoPreset,
   createFormatEtapasPreset,
   createFormatReservoriosPreset,
+  createInformeTecnicoPreset,
   createMaquinaBaldePreset,
   createPanelAvisoCortePreset,
   createPanelReservoriosPreset,
@@ -63,4 +65,5 @@ export const CANVAS_PRESETS: ReadonlyArray<{
   { id: 'reservorios-lurigancho-v2', label: 'Reservorios Lurigancho v2', create: createReservoriosLuriganchoV2Preset },
   { id: 'reservorios-lurigancho-sgio', label: 'Reservorios Lurigancho SGIO', create: createReservoriosLuriganchoSgioPreset },
   { id: 'reservorios-villa-sunass', label: 'Reservorios Villa SUNASS', create: createReservoriosVillaSunassPreset },
+  { id: 'informe-tecnico-limpieza', label: 'Informe limpieza reservorios', create: createInformeTecnicoPreset },
 ];

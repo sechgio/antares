@@ -53,7 +53,6 @@ const THEMED_UI_FILES = [
 ];
 
 const MODAL_SURFACE_FILES = [
-  'components/ui/CommandPalette.tsx',
   'components/espacios/components/ModalShell.tsx',
   'components/settings/SettingsModal.tsx',
   'components/formatos/FormatosView.tsx',
@@ -108,7 +107,6 @@ describe('global appearance coverage', () => {
   it('does not use fixed black modal scrims in shared dialogs', () => {
     for (const file of [
       'components/ui/Dialog.tsx',
-      'components/ui/CommandPalette.tsx',
       'components/espacios/components/ModalShell.tsx',
       'components/settings/SettingsModal.tsx',
     ]) {

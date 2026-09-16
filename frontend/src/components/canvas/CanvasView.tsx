@@ -91,7 +91,7 @@ import {
 import { applyGridToImageSlots, applyLivePanelLayerChange } from './ops/gridLayout';
 import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from './ops/logoSide';
 import { isClickPlace, placeRectCssVars, type DrawRect } from './ops/drawHelpers';
-import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
+import { clampGuidePos, moveGuide, removeGuide, upsertGuide } from './ops/guides';
 import { selectionBounds } from './ops/selectionTransform';
 import { instantiateComponent, bakeInstanceOverrides, findComponentMaster, syncComponentFromLayer } from './ops/components';
 import { buildSpatialIndex } from './ops/spatialIndex';
@@ -345,6 +345,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     commitPageLayersGesture,
     cancelPageLayersGesture,
     onPanelChangeLive,
+    onDocumentChangeLive,
     onPanelChangeLayersLive,
     onPanelCommitLive,
   } = useGestureBaselines({ history, pageIndex });
@@ -624,6 +625,40 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     return cancelled;
   }, [cancelPageLayersGesture, onPanelCommitLive, panelBaselineRef]);
 
+  const keyboardNudgeActiveRef = useRef(false);
+  const startKeyboardNudge = useCallback(() => {
+    if (keyboardNudgeActiveRef.current) return;
+    sealPanelAndAbortGesture();
+    keyboardNudgeActiveRef.current = true;
+  }, [sealPanelAndAbortGesture]);
+  const onKeyboardNudgeLayers = useCallback(
+    (ids: string[], dx: number, dy: number) => {
+      startKeyboardNudge();
+      const doc = history.documentRef.current;
+      onPanelChangeLayersLive(nudgeLayers(doc.layers, ids, dx, dy));
+    },
+    [history.documentRef, onPanelChangeLayersLive, startKeyboardNudge],
+  );
+  const onKeyboardNudgeGuide = useCallback(
+    (id: string, deltaMm: number) => {
+      const doc = history.documentRef.current;
+      const guide = doc.guides?.find((item) => item.id === id);
+      if (!guide) return;
+      const maxMm = guide.axis === 'x' ? doc.page.widthMm : doc.page.heightMm;
+      const posMm = clampGuidePos(guide.posMm + deltaMm, maxMm);
+      if (posMm === guide.posMm) return;
+      startKeyboardNudge();
+      onDocumentChangeLive(moveGuide(doc, id, posMm));
+    },
+    [history.documentRef, onDocumentChangeLive, startKeyboardNudge],
+  );
+  const finishKeyboardNudgeRef = useRef<() => void>(() => {});
+  finishKeyboardNudgeRef.current = () => {
+    if (!keyboardNudgeActiveRef.current) return;
+    keyboardNudgeActiveRef.current = false;
+    onPanelCommitLive();
+  };
+
   const runHistoryOp = useCallback(
     (op: 'undo' | 'redo') => {
       if (gestureBaselineRef.current) {
@@ -857,17 +892,22 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const onKeyDown = (e: KeyboardEvent) => onKeyDownRef.current(e);
     const onKeyUp = (e: KeyboardEvent) => {
       if (mode !== 'design') return;
+      if (e.key.startsWith('Arrow')) finishKeyboardNudgeRef.current();
       if (e.code === 'Space') {
         const prev = toolBeforeSpaceRef.current;
         toolBeforeSpaceRef.current = null;
         if (prev) setTool(prev);
       }
     };
+    const onBlur = () => finishKeyboardNudgeRef.current();
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      finishKeyboardNudgeRef.current();
     };
   }, [mode, active]);
 
@@ -1252,6 +1292,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     document: history.document,
     setDocument: history.setDocument,
     setAllLayers,
+    nudgeLayersLive: onKeyboardNudgeLayers,
     setSelectedIds,
     setTool,
     setRenameRequest,
@@ -1668,6 +1709,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             onUpsertGuide={onStageUpsertGuide}
             onCommitGuideCreate={onStageCommitGuideCreate}
             onMoveGuide={onStageMoveGuide}
+            onNudgeGuide={onKeyboardNudgeGuide}
             onRemoveGuide={onStageRemoveGuide}
             onCancelGuideCreate={onStageCancelGuideCreate}
             showRulers={history.document.settings?.showRulers !== false}

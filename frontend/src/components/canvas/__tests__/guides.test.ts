@@ -8,13 +8,19 @@ import {
   guidesForPage,
   isGuideRemovalPoint,
   measureHoverGap,
+  measureGuideDistances,
   measureSelectionGaps,
   moveGuide,
   removeGuide,
   snapEqualGaps,
   upsertGuide,
 } from '../ops/guides';
-import { prepareSnapRails, snapMoveWithGuides, snapThresholdMm } from '../ops/selectionTransform';
+import {
+  prepareSnapRails,
+  snapGuidePosition,
+  snapMoveWithGuides,
+  snapThresholdMm,
+} from '../ops/selectionTransform';
 import { createEmptyDocument, resolvePageMarginMm, DEFAULT_PAGE_MARGIN_MM } from '../types';
 import { createLayer } from '../constants';
 import { MM_TO_PX } from '../ops/drawHelpers';
@@ -54,6 +60,23 @@ describe('guides', () => {
     const labels = measureSelectionGaps(selection, [other], { widthMm: 210, heightMm: 297 });
     expect(labels.some((l) => l.id === 'page-left')).toBe(true);
     expect(labels.some((l) => l.id === 'obj-right' && Math.abs(l.valueMm - 20) < 0.01)).toBe(true);
+  });
+
+  it('measureGuideDistances reports page edges and the nearest object edges', () => {
+    const labels = measureGuideDistances(
+      'x',
+      45,
+      [
+        { x: 20, y: 30, w: 10, h: 10 },
+        { x: 60, y: 50, w: 20, h: 10 },
+      ],
+      { widthMm: 210, heightMm: 297 },
+    );
+
+    expect(labels.find((label) => label.id === 'guide-page-left')?.valueMm).toBe(45);
+    expect(labels.find((label) => label.id === 'guide-page-right')?.valueMm).toBe(165);
+    expect(labels.find((label) => label.id === 'guide-object-left')?.valueMm).toBe(15);
+    expect(labels.find((label) => label.id === 'guide-object-right')?.valueMm).toBe(15);
   });
 
   it('formatGapMm', () => {
@@ -133,6 +156,22 @@ describe('guides', () => {
     expect(rails.xs).toContain(200);
     expect(rails.ys).toContain(10);
     expect(rails.ys).toContain(287);
+  });
+
+  it('snapGuidePosition aligns a manual guide to the nearest object rail', () => {
+    const layer = createLayer('rect', {
+      cssVars: {
+        '--translate-x': '50mm',
+        '--translate-y': '70mm',
+        '--width': '20mm',
+        '--height': '10mm',
+      },
+    });
+    const rails = prepareSnapRails([layer], [], { widthMm: 210, heightMm: 297 });
+
+    expect(snapGuidePosition('x', 49.4, rails, 1)).toEqual({ posMm: 50, snapped: true });
+    expect(snapGuidePosition('y', 74.3, rails, 1)).toEqual({ posMm: 75, snapped: true });
+    expect(snapGuidePosition('x', 47, rails, 1)).toEqual({ posMm: 47, snapped: false });
   });
 
   it('snapEqualGaps snaps a third rect to match an 8mm sibling gap', () => {

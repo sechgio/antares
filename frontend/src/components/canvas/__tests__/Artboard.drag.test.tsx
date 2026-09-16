@@ -164,6 +164,56 @@ describe('Artboard drag gestures', () => {
     expect(committed.find((l) => l.id === b.id)!.cssVars['--translate-x']).toBe('40mm');
   });
 
+  it('keeps object-guide alignment when grid snapping is also enabled', () => {
+    const moving = createLayer('rect', {
+      cssVars: {
+        '--translate-x': '20mm',
+        '--translate-y': '20mm',
+        '--width': '10mm',
+        '--height': '10mm',
+      },
+    });
+    const fixed = createLayer('rect', {
+      cssVars: {
+        '--translate-x': '43mm',
+        '--translate-y': '20mm',
+        '--width': '10mm',
+        '--height': '10mm',
+      },
+    });
+    const document = createEmptyDocument('Snap priority');
+    document.layers.push(moving, fixed);
+    const onChangeLayers = vi.fn();
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[moving.id]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        snapToGrid
+        gridSizeMm={5}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={onChangeLayers}
+      />,
+    );
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${moving.id}"]`)!;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 22.6 * mm, clientY: 100 });
+    act(() => tick());
+    expect(
+      screen.queryAllByTestId('canvas-smart-guide').length + screen.queryAllByTestId('canvas-distance-label').length,
+    ).toBeGreaterThan(0);
+    fireEvent.pointerUp(window, { clientX: 100 + 22.6 * mm, clientY: 100 });
+
+    const committed = onChangeLayers.mock.calls[0][0] as CanvasLayer[];
+    expect(committed.find((layer) => layer.id === moving.id)!.cssVars['--translate-x']).toBe('43mm');
+  });
+
   it('Alt+drag duplicates then moves the copy in one commit (Figma)', () => {
     const layer = createLayer('rect');
     const document = createEmptyDocument('Test');

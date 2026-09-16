@@ -1,5 +1,5 @@
 import { ListTodo, Pencil } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import Button from '../../ui/Button';
 import DatePicker from '../../ui/DatePicker';
 import Input from '../../ui/Input';
@@ -9,6 +9,7 @@ import { isTareaPriority, PRIORITY_OPTIONS, tareaPriority } from '../utils/prior
 import ModalShell from './ModalShell';
 import StatusPicker from './StatusPicker';
 import TaskActivityFeed from './TaskActivityFeed';
+import SelectPicker from './filters/SelectPicker';
 
 const FIELD_CLASS =
   'w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:shadow-[0_0_0_3px_var(--accent-primary-glow)]';
@@ -85,6 +86,13 @@ function TaskEditor({
   const disabled = saving || discardRequested;
   const { title, description, status, priority, assigneeId, startDate, dueDate } = draft;
   const change = (patch: Partial<typeof draft>) => setDraft((current) => ({ ...current, ...patch }));
+  const assigneeOptions = useMemo(
+    () => [
+      { value: '', label: 'Sin asignar' },
+      ...members.map((member) => ({ value: member.user_id, label: member.display_name })),
+    ],
+    [members],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -207,18 +215,16 @@ function TaskEditor({
             />
           </div>
           <div>
-            <label htmlFor={`${formId}-assignee`} className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Asignado</label>
-            <select
-              id={`${formId}-assignee`}
+            <p className="mb-1.5 text-xs font-medium text-[var(--text-secondary)]">Asignado</p>
+            <SelectPicker
               value={assigneeId}
-              onChange={(e) => change({ assigneeId: e.target.value })}
+              options={assigneeOptions}
+              onChange={(value) => change({ assigneeId: value })}
               disabled={disabled}
-              className={FIELD_CLASS}
               aria-label="Persona asignada"
-            >
-              <option value="">Sin asignar</option>
-              {members.map((m) => <option key={m.user_id} value={m.user_id}>{m.display_name}</option>)}
-            </select>
+              size="md"
+              className="w-full [&_button]:w-full [&_button]:justify-between"
+            />
           </div>
         </div>
         <div>

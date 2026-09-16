@@ -19,15 +19,17 @@ const EXPECTED_PRESETS = [
   { id: 'reservorios-lurigancho-v2', label: 'Reservorios Lurigancho v2' },
   { id: 'reservorios-lurigancho-sgio', label: 'Reservorios Lurigancho SGIO' },
   { id: 'reservorios-villa-sunass', label: 'Reservorios Villa SUNASS' },
+  { id: 'informe-tecnico-limpieza', label: 'Informe limpieza reservorios', form: true },
 ] as const;
 
 describe('CANVAS_PRESETS from backend/templates root', () => {
-  it('lists exactly the 17 root-template presets (no ficha/informe)', () => {
+  it('lists exactly the 18 root-template presets (no ficha)', () => {
     expect(CANVAS_PRESETS.map((p) => p.id)).toEqual(EXPECTED_PRESETS.map((p) => p.id));
     expect(CANVAS_PRESETS.map((p) => p.label)).toEqual(EXPECTED_PRESETS.map((p) => p.label));
   });
 
-  it.each(EXPECTED_PRESETS)('$id creates A4 doc with frame and expected structure', ({ id }) => {
+  it.each(EXPECTED_PRESETS)('$id creates A4 doc with frame and expected structure', (entry) => {
+    const { id } = entry;
     const preset = CANVAS_PRESETS.find((p) => p.id === id);
     expect(preset).toBeTruthy();
     const doc = preset!.create();
@@ -36,7 +38,11 @@ describe('CANVAS_PRESETS from backend/templates root', () => {
     expect(doc.layers.some((l) => l.type === 'frame')).toBe(true);
 
     const isCert = id.startsWith('cert-');
-    if (isCert) {
+    if ('form' in entry && entry.form) {
+      expect(doc.layers.some((l) => l.type === 'field')).toBe(true);
+      expect(doc.layers.some((l) => l.type === 'checkbox')).toBe(true);
+      expect(doc.layers.filter((l) => l.type === 'imageSlot')).toHaveLength(0);
+    } else if (isCert) {
       expect(doc.layers.some((l) => l.type === 'signature')).toBe(true);
       expect(doc.layers.some((l) => l.type === 'logo')).toBe(true);
       expect(doc.layers.filter((l) => l.type === 'imageSlot')).toHaveLength(0);

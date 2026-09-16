@@ -18,6 +18,73 @@ export function boxesOverlapOnAxis(a0: number, a1: number, b0: number, b1: numbe
   return Math.max(a0, b0) < Math.min(a1, b1);
 }
 
+export function measureGuideDistances(
+  axis: 'x' | 'y',
+  posMm: number,
+  others: RectMm[],
+  page: { widthMm: number; heightMm: number },
+): DistanceLabel[] {
+  const labels: DistanceLabel[] = [];
+  const extent = axis === 'x' ? page.widthMm : page.heightMm;
+  const crossExtent = axis === 'x' ? page.heightMm : page.widthMm;
+  const pageCross = Math.min(5, crossExtent / 2);
+
+  const addLabel = (id: string, start: number, end: number, cross: number) => {
+    const valueMm = Math.abs(end - start);
+    if (valueMm <= MIN_GUIDE_GAP_MM) return;
+    if (axis === 'x') {
+      labels.push({
+        id,
+        axis,
+        x: (start + end) / 2,
+        y: cross,
+        valueMm,
+        x1: start,
+        y1: cross,
+        x2: end,
+        y2: cross,
+      });
+      return;
+    }
+    labels.push({
+      id,
+      axis,
+      x: cross,
+      y: (start + end) / 2,
+      valueMm,
+      x1: cross,
+      y1: start,
+      x2: cross,
+      y2: end,
+    });
+  };
+
+  addLabel(axis === 'x' ? 'guide-page-left' : 'guide-page-top', 0, posMm, pageCross);
+  addLabel(axis === 'x' ? 'guide-page-right' : 'guide-page-bottom', posMm, extent, pageCross);
+
+  type EdgeCandidate = { pos: number; cross: number };
+  let before: EdgeCandidate | null = null;
+  let after: EdgeCandidate | null = null;
+  for (const box of others) {
+    const start = axis === 'x' ? box.x : box.y;
+    const end = start + (axis === 'x' ? box.w : box.h);
+    const cross = axis === 'x' ? box.y + box.h / 2 : box.x + box.w / 2;
+    for (const edge of [start, end]) {
+      if (edge <= posMm && (!before || edge > before.pos)) before = { pos: edge, cross };
+      if (edge >= posMm && (!after || edge < after.pos)) after = { pos: edge, cross };
+    }
+  }
+
+  if (before) {
+    addLabel(axis === 'x' ? 'guide-object-left' : 'guide-object-top', before.pos, posMm, before.cross);
+  }
+  if (after) {
+    addLabel(axis === 'x' ? 'guide-object-right' : 'guide-object-bottom', posMm, after.pos, after.cross);
+  }
+
+  return labels;
+}
+
 export function measureSelectionGaps(
   selection: RectMm,
   others: RectMm[],

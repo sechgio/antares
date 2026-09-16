@@ -1,4 +1,4 @@
-import React, { useState, Suspense, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, Suspense, useCallback, useEffect } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import TitleBar from './components/layout/TitleBar';
 import { ToastProvider } from './hooks/useToast';
@@ -6,9 +6,8 @@ import { DialogProvider } from './hooks/useDialog';
 import { useKeyboardShortcut } from './hooks/useKeyboardShortcut';
 import ToastContainer from './components/ui/Toast';
 import Dialog from './components/ui/Dialog';
-import CommandPalette from './components/ui/CommandPalette';
 import ErrorBoundary from './components/ui/ErrorBoundary';
-import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, CONFIG_SECTION_DEFINITIONS, type TabId, type ConfigSectionId } from './navigation';
+import { DEFAULT_TAB, FULL_BLEED_TABS, type TabId, type ConfigSectionId } from './navigation';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthSkeleton';
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
@@ -143,12 +142,10 @@ function AppContent() {
   const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_TAB);
   const [canvasMounted, setCanvasMounted] = useState(false);
-  const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<ConfigSectionId>('appearance');
   const [petEnabled, setPetEnabled] = useState(isPetMascotEnabled);
 
-  const openCommandPalette = useCallback(() => setCommandOpen(true), []);
   const handleTabChange = useCallback((tab: TabId) => {
     if (tab === 'canvas') {
       prefetchCanvasView();
@@ -163,7 +160,6 @@ function AppContent() {
   }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openAppearanceSettings = useCallback(() => openSettings('appearance'), [openSettings]);
-  const closeCommandPalette = useCallback(() => setCommandOpen(false), []);
 
   useEffect(() => {
     if (!canvasMounted || activeTab === 'canvas') return;
@@ -204,7 +200,6 @@ function AppContent() {
     return () => window.removeEventListener('petdex-config-changed', sync);
   }, []);
 
-  useKeyboardShortcut('k', openCommandPalette, { ctrl: true, preventDefault: true });
   useKeyboardShortcut('e', () => handleTabChange('espacios'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('1', () => handleTabChange('convert'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('3', () => handleTabChange('formatos'), { ctrl: true, preventDefault: true });
@@ -232,26 +227,6 @@ function AppContent() {
       setSettingsOpen(false);
     });
   }, []);
-
-  const commandItems = useMemo(
-    () => [
-      ...TAB_DEFINITIONS.map((tab) => ({
-        id: `tab-${tab.id}`,
-        label: `Ir a ${'commandLabel' in tab ? tab.commandLabel : tab.label}`,
-        shortcut: tab.shortcut,
-        action: () => handleTabChange(tab.id),
-      })),
-      ...CONFIG_SECTION_DEFINITIONS
-        .filter((section) => section.id !== 'panel' || user?.isAdmin)
-        .map((section) => ({
-          id: `settings-${section.id}`,
-          label: `Configuración: ${section.label}`,
-          shortcut: section.shortcut,
-          action: () => openSettings(section.id),
-        })),
-    ],
-    [handleTabChange, openSettings, user?.isAdmin],
-  );
 
   const needsCloudAuth = CLOUD_AUTH_TABS.has(activeTab);
   const cloudAuthBlocked = needsCloudAuth && !user;
@@ -321,7 +296,6 @@ function AppContent() {
           />
         </Suspense>
       )}
-      <CommandPalette isOpen={commandOpen} onClose={closeCommandPalette} items={commandItems} />
       <Dialog />
       <ToastContainer />
       {petEnabled && (

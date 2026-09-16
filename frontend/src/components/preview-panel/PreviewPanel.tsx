@@ -610,25 +610,33 @@ export function renderPreviewHtml({
 const PreviewPanel = forwardRef<HTMLIFrameElement, PreviewPanelProps>(
   ({ data, images = [], mappings = {}, logoLeft = null, logoRight = null, customTemplate = null, customColumns = [], isFocusMode = false }, ref) => {
     const [renderedHtml, setRenderedHtml] = useState('');
-    const [imageUrls, setImageUrls] = useState<string[]>([]);
+    const [imageUrlState, setImageUrlState] = useState<{ images: File[] | null; urls: string[] }>({
+      images: null,
+      urls: [],
+    });
     const templateObjUrlsRef = useRef<string[]>([]);
 
     useEffect(() => {
       if (!images || images.length === 0) {
-        setImageUrls([]);
+        setImageUrlState(current => (
+          current.images === null && current.urls.length === 0 ? current : { images: null, urls: [] }
+        ));
         return;
       }
       const urls = images.map(img => URL.createObjectURL(img));
-      setImageUrls(urls);
+      setImageUrlState({ images, urls });
       return () => urls.forEach(url => URL.revokeObjectURL(url));
     }, [images]);
 
     useEffect(() => {
+      if (images.length > 0 && imageUrlState.images !== images) return;
+
       templateObjUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
       templateObjUrlsRef.current = [];
 
       const leftLogo = logoLeft || '';
       const rightLogo = logoRight || '';
+      const imageUrls = imageUrlState.images === images ? imageUrlState.urls : [];
 
       setRenderedHtml(sanitizeHtmlForPreview(renderPreviewHtml({
         data,
@@ -645,7 +653,7 @@ const PreviewPanel = forwardRef<HTMLIFrameElement, PreviewPanelProps>(
         templateObjUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
         templateObjUrlsRef.current = [];
       };
-    }, [customTemplate, data, images, imageUrls, logoLeft, logoRight, mappings, customColumns]);
+    }, [customTemplate, data, images, imageUrlState, logoLeft, logoRight, mappings, customColumns]);
 
     const handleIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement>) => {
       const iframe = e.currentTarget;

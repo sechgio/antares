@@ -166,13 +166,4 @@ describe('App', () => {
     fireEvent.click(screen.getByTestId('titlebar-settings-button'));
     expect(await screen.findByTestId('settings-modal', {}, { timeout: 8000 })).toBeInTheDocument();
   });
-
-  it('opens search from Ctrl+K without rendering a header search button', async () => {
-    render(<App />);
-
-    expect(screen.queryByRole('button', { name: 'Buscar' })).not.toBeInTheDocument();
-
-    fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
-    expect(screen.getByPlaceholderText('Buscar acción...')).toBeInTheDocument();
-  });
 });
