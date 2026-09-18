@@ -1432,15 +1432,6 @@
 }
 
 @media (max-width: 768px) {
-    .vpad-form-grid {
-        grid-template-columns: 1fr;
-    }
-    .vpad-form-grid .wide {
-        grid-column: auto;
-    }
-    .vpad-field-row {
-        grid-template-columns: 1fr;
-    }
     .vpad-preview-toolbar {
         flex-wrap: wrap;
         gap: 8px;
@@ -1474,9 +1465,6 @@
 }
 
 @media (max-width: 480px) {
-    .vpad-sidebar-header {
-        padding: 0 16px;
-    }
     .vpad-preview-toolbar {
         padding: 8px;
     }

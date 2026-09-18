@@ -36,7 +36,6 @@ function loadRouter({ documentsDir, downloadsDir, userDataDir }) {
 
   stubModule('electron/window-manager', {
     getMainWindow: () => null,
-    buildAppMenu: () => ({ popup: () => {} }),
     getIsDev: () => true,
   });
 

@@ -118,7 +118,6 @@ class IPCProcess:
                 "LOCALAPPDATA": str(self.profile_dir),
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONUTF8": "1",
-                "ANTARES_ENABLE_PLUGINS": "0",
                 "ANTARES_MAP_PROVIDER": "google",
             }
         )

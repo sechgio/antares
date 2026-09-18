@@ -15,11 +15,7 @@ export const VECTOR_SHAPE_LAYER_TYPES = [
   'pentagon',
 ] as const satisfies readonly CanvasLayerType[];
 
-export type TextualLayerType = (typeof TEXTUAL_LAYER_TYPES)[number];
 export type AutoLayoutContainerType = (typeof AUTO_LAYOUT_CONTAINER_TYPES)[number];
-export type NestingLayerType = (typeof NESTING_LAYER_TYPES)[number];
-export type ImageLayerType = (typeof IMAGE_LAYER_TYPES)[number];
-export type VectorShapeLayerType = (typeof VECTOR_SHAPE_LAYER_TYPES)[number];
 
 const TEXTUAL_SET: ReadonlySet<string> = new Set(TEXTUAL_LAYER_TYPES);
 const AUTO_LAYOUT_SET: ReadonlySet<string> = new Set(AUTO_LAYOUT_CONTAINER_TYPES);

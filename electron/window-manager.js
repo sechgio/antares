@@ -1,10 +1,9 @@
-const { BrowserWindow, screen, Menu } = require('electron');
+const { BrowserWindow, screen } = require('electron');
 const path = require('path');
 const { appendLogEvent } = require('./app-log');
 
 let mainWindow = null;
 let _isDev = false;
-let _retryMainWindowLoad = null;
 
 function _resolvePinnedSupabaseHost() {
   const raw = process.env.ANTARES_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -18,67 +17,6 @@ function _resolvePinnedSupabaseHost() {
   } catch {
   }
   return null;
-}
-
-function buildAppMenu(menuIndex = 0) {
-  const isPackaged = (() => {
-    try {
-      return !!require('electron').app.isPackaged;
-    } catch {
-      return false;
-    }
-  })();
-  const viewSubmenu = [
-    {
-      label: 'Recargar',
-      accelerator: 'CmdOrCtrl+R',
-      click: () => {
-        const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
-        if (!wc) return;
-        if (String(wc.getURL() || '').startsWith('data:') && _retryMainWindowLoad) {
-          void _retryMainWindowLoad();
-        } else {
-          wc.reload();
-        }
-      },
-    },
-    ...(!isPackaged ? [{ label: 'Herramientas de desarrollo', role: 'toggleDevTools' }] : []),
-    { type: 'separator' },
-    { label: 'Zoom real', role: 'resetZoom' },
-    { label: 'Acercar', role: 'zoomIn' },
-    { label: 'Alejar', role: 'zoomOut' },
-    { type: 'separator' },
-    { label: 'Pantalla completa', role: 'togglefullscreen' },
-  ];
-  const menus = [
-    { label: 'Archivo', submenu: [{ label: 'Cerrar ventana', role: 'close' }, { type: 'separator' }, { label: 'Salir', role: 'quit' }] },
-    { label: 'Editar', submenu: [{ label: 'Deshacer', role: 'undo' }, { label: 'Rehacer', role: 'redo' }, { type: 'separator' }, { label: 'Cortar', role: 'cut' }, { label: 'Copiar', role: 'copy' }, { label: 'Pegar', role: 'paste' }, { label: 'Seleccionar todo', role: 'selectAll' }] },
-    { label: 'Ver', submenu: viewSubmenu },
-    { label: 'Ventana', submenu: [{ label: 'Minimizar', role: 'minimize' }, { label: 'Maximizar', click: () => mainWindow?.maximize() }, { label: 'Restaurar', click: () => mainWindow?.unmaximize() }, { type: 'separator' }, { label: 'Cerrar', role: 'close' }] },
-    {
-      label: 'Ayuda',
-      submenu: [
-        { label: 'Acerca de Antares', role: 'about' },
-        { type: 'separator' },
-        {
-          label: 'Abrir carpeta de registros',
-          click: async () => {
-            try {
-              const { shell } = require('electron');
-              const { getLogsDir } = require('./app-log');
-              const fs = require('fs');
-              const dir = getLogsDir();
-              fs.mkdirSync(dir, { recursive: true });
-              await shell.openPath(dir);
-            } catch (err) {
-              console.error('No se pudo abrir la carpeta de registros:', err);
-            }
-          },
-        },
-      ],
-    },
-  ];
-  return Menu.buildFromTemplate([menus[menuIndex] || menus[0]]);
 }
 
 function createWindow(isDev) {
@@ -132,12 +70,11 @@ function createWindow(isDev) {
       ? mainWindow.loadURL('http://localhost:5173')
       : mainWindow.loadFile(htmlPath);
   };
-  _retryMainWindowLoad = loadMainWindowContent;
   const showLoadFailurePage = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const html = '<!doctype html><meta charset="utf-8"><title>Antares</title>' +
       '<style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:grid;place-items:center;height:100vh;margin:0;text-align:center}main{max-width:34rem;padding:2rem}h1{font-size:1.35rem}p{color:#94a3b8}</style>' +
-      '<main><h1>Antares no pudo cargar la aplicación</h1><p>Usa Ver → Recargar para reintentar.</p></main>';
+      '<main><h1>Antares no pudo cargar la aplicación</h1><p>Pulsa Ctrl+R para reintentar o reinicia Antares.</p></main>';
     void mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {});
   };
 
@@ -185,6 +122,18 @@ function createWindow(isDev) {
     } else {
       showLoadFailurePage();
     }
+  });
+
+  // La CSP de producción fija `script-src 'self'` y renderer-trust rechaza el frame
+  // `data:`, así que la página de fallo no puede tener un botón: el único disparador
+  // alcanzable es una tecla capturada en el proceso principal.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (input.type !== 'keyDown') return;
+    if (String(input.key || '').toLowerCase() !== 'r' || !(input.control || input.meta)) return;
+    if (!String(mainWindow.webContents.getURL() || '').startsWith('data:')) return;
+    event.preventDefault();
+    void loadMainWindowContent().catch(() => showLoadFailurePage());
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -240,4 +189,4 @@ function createWindow(isDev) {
 function getMainWindow() { return mainWindow; }
 function getIsDev() { return _isDev; }
 
-module.exports = { createWindow, getMainWindow, getIsDev, buildAppMenu };
+module.exports = { createWindow, getMainWindow, getIsDev };

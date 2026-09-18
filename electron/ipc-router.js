@@ -16,7 +16,7 @@ const {
   clearJobActivity,
   STATE,
 } = require('./backend-spawner');
-const { getMainWindow, buildAppMenu } = require('./window-manager');
+const { getMainWindow } = require('./window-manager');
 const { appendLogEvent } = require('./app-log');
 const { isTrustedRendererFrame } = require('./renderer-trust');
 const {
@@ -839,23 +839,6 @@ function registerIpcHandlers() {
     if (action === 'maximize') { win.isMaximized() ? win.unmaximize() : win.maximize(); return { handled: true, maximized: win.isMaximized() }; }
     if (action === 'close') { win.close(); return { handled: true }; }
     return { handled: false };
-  });
-
-  ipcMain.handle('app-menu-popup', async (event, menuIndex, position) => {
-    if (!_isAllowedIpcSender(event)) {
-      _logSecurityRejection('untrusted_sender', 'app-menu-popup');
-      throw new Error('IPC call rejected: untrusted sender frame');
-    }
-    const win = getMainWindow();
-    if (!win || win.isDestroyed()) return { handled: false };
-    const menu = buildAppMenu(Number(menuIndex));
-    const x = Number(position?.x);
-    const y = Number(position?.y);
-    menu.popup({
-      window: win,
-      ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
-    });
-    return { handled: true };
   });
 }
 

@@ -27,7 +27,6 @@ function stubElectronAndDeps() {
 
   stubModule('electron/window-manager', {
     getMainWindow: () => null,
-    buildAppMenu: () => ({ popup: () => {} }),
     getIsDev: () => true,
   });
 

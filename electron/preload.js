@@ -86,7 +86,6 @@ try {
     minimizeWindow: () => ipcRenderer.invoke('window-control', 'minimize'),
     maximizeWindow: () => ipcRenderer.invoke('window-control', 'maximize'),
     closeWindow: () => ipcRenderer.invoke('window-control', 'close'),
-    showAppMenu: (menuIndex, position) => ipcRenderer.invoke('app-menu-popup', menuIndex, position),
     autoUpdateCheck: () => ipcRenderer.invoke('auto-update-check'),
     autoUpdateInstall: () => ipcRenderer.invoke('auto-update-install'),
     onAutoUpdateStatus: (callback) => {
@@ -115,7 +114,6 @@ try {
     },
     fileStagedComplete: (token) => ipcRenderer.invoke('ipc-call', 'file_staged_complete', { token }),
     fileStagedAbort: (token) => ipcRenderer.invoke('ipc-call', 'file_staged_abort', { token }),
-    ...(isDev ? { resolveFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_resolve', { token }) } : {}),
     cleanupFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_cleanup', { token }),
     canvasAssetPut: (chunk) => ipcRenderer.invoke('ipc-call', 'canvas_asset_put', { chunk }),
     canvasAssetGet: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_get', { ref }),

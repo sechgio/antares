@@ -59,12 +59,6 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     return { handled: false };
   }
 
-  if (method === 'file_token_resolve') {
-    const token = params && params.token;
-    const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
-    return { handled: true, result: { path: filePath } };
-  }
-
   if (method === 'file_token_read_json') {
     const token = params && params.token;
     const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
