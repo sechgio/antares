@@ -59,16 +59,18 @@ describe('createPointerGestureSession', () => {
     expect(onEnd).toHaveBeenCalledTimes(1);
   });
 
-  it('aborts the active gesture when the window loses focus', () => {
+  it('losing window focus does not abort the gesture (parity with pre-refactor)', () => {
     const onEnd = vi.fn();
     const onAbort = vi.fn();
-    createPointerGestureSession({ onMove: () => {}, onEnd, onAbort });
+    const session = createPointerGestureSession({ onMove: () => {}, onEnd, onAbort });
 
     window.dispatchEvent(new Event('blur'));
 
-    expect(onAbort).toHaveBeenCalledTimes(1);
-    expect(onEnd).not.toHaveBeenCalled();
-    expect(getActivePointerGestureSession()).toBeNull();
+    expect(onAbort).not.toHaveBeenCalled();
+    expect(session.aborted).toBe(false);
+
+    window.dispatchEvent(new PointerEvent('pointerup'));
+    expect(onEnd).toHaveBeenCalledTimes(1);
   });
 
   it('Escape via onKeyDown can abort without onEnd', () => {

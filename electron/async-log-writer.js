@@ -126,8 +126,61 @@ function createAsyncLogWriter({
       flushScheduled = false;
       const entries = pendingEntries;
       pendingEntries = [];
-      drainPromise = drainPromise.then(() => writeBatch(entries));
+      // El .catch impide que un rechazo envenene la cadena y desactive el logging.
+      drainPromise = drainPromise.then(() => writeBatch(entries)).catch(() => {});
     });
+  }
+
+  function safePathSync(filePath) {
+    try {
+      if (fs.lstatSync(filePath).isSymbolicLink()) {
+        fs.unlinkSync(filePath);
+        fileSizes.delete(filePath);
+      }
+    } catch {}
+    return filePath;
+  }
+
+  function knownSizeSync(filePath) {
+    const cached = fileSizes.get(filePath);
+    if (cached !== undefined) return cached;
+    let size = 0;
+    try {
+      size = fs.statSync(filePath).size;
+    } catch {}
+    fileSizes.set(filePath, size);
+    return size;
+  }
+
+  function selectPathSync(basePath, lineBytes) {
+    const safeBasePath = safePathSync(basePath);
+    for (let index = 0; index < 1000; index += 1) {
+      const candidate = safePathSync(index === 0 ? safeBasePath : rotatedPath(safeBasePath, index));
+      if (knownSizeSync(candidate) + lineBytes <= getMaxFileBytes()) return candidate;
+    }
+    return safeBasePath;
+  }
+
+  // Ultimo recurso en cierre/crash: persiste solo lo aun no capturado por la cola
+  // asincrona (los lotes en vuelo se pierden; mejor que perder todo el pending).
+  function flushSync() {
+    const entries = pendingEntries;
+    pendingEntries = [];
+    if (entries.length === 0) return;
+    try {
+      fs.mkdirSync(getLogsDir(), { recursive: true });
+    } catch {}
+    for (const entry of entries) {
+      const lineBytes = Buffer.byteLength(entry.line, 'utf8');
+      try {
+        const target = selectPathSync(entry.basePath, lineBytes);
+        fs.appendFileSync(target, entry.line, 'utf8');
+        fileSizes.set(target, (fileSizes.get(target) || 0) + lineBytes);
+        entry.onSuccess?.();
+      } catch {
+        onDrop();
+      }
+    }
   }
 
   function append(basePath, line, onSuccess = undefined) {
@@ -139,13 +192,15 @@ function createAsyncLogWriter({
     scheduleDrain();
   }
 
-  async function flush() {
-    await Promise.resolve();
-    await drainPromise;
-    if (flushScheduled || pendingEntries.length > 0) await flush();
+  async function flush(maxRounds = 100) {
+    for (let round = 0; round < maxRounds; round += 1) {
+      await Promise.resolve();
+      await drainPromise;
+      if (!flushScheduled && pendingEntries.length === 0) return;
+    }
   }
 
-  return { append, flush };
+  return { append, flush, flushSync };
 }
 
 module.exports = { createAsyncLogWriter };

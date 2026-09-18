@@ -71,14 +71,12 @@ export function createPointerGestureSession(
   let onMove!: (ev: PointerEvent) => void;
   let onUp!: (ev: PointerEvent) => void;
   let onCancel!: (ev: PointerEvent) => void;
-  let onBlur!: () => void;
   let onKey: ((ev: KeyboardEvent) => void) | null = null;
 
   const detach = () => {
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onCancel);
-    window.removeEventListener('blur', onBlur);
     if (onKey) window.removeEventListener('keydown', onKey);
   };
 
@@ -123,7 +121,6 @@ export function createPointerGestureSession(
     if (options.pointerId != null && ev.pointerId !== options.pointerId) return;
     session.abort();
   };
-  onBlur = () => session.abort();
   onKey = options.onKeyDown
     ? (ev: KeyboardEvent) => {
         if (finished) return;
@@ -134,7 +131,6 @@ export function createPointerGestureSession(
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onCancel);
-  window.addEventListener('blur', onBlur);
   if (onKey) window.addEventListener('keydown', onKey);
 
   activeSession = session;

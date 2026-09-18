@@ -9,6 +9,7 @@ const {
   appendLogLine,
   cleanStaleTempDirs,
   flushLogQueue,
+  flushLogQueueSync,
   initAppLogs,
   installConsoleLogTee,
   setAppContext,
@@ -41,6 +42,9 @@ process.on('uncaughtException', async (err) => {
     });
   } catch {}
   await raceTimeout(flushLogQueue(), 1_000, () => {});
+  try {
+    flushLogQueueSync();
+  } catch {}
   process.exit(1);
 });
 
@@ -124,6 +128,11 @@ function _shutdownOnce() {
   } catch (err) {
     console.warn('[main] killPython threw during shutdown:', err && err.message);
   }
+  // Las rutas will-quit/exit/SIGINT no pueden awaitear la cola asincrona; sin este
+  // respaldo sincrono se perderian los logs encolados aqui (regresion vs appendFileSync).
+  try {
+    flushLogQueueSync();
+  } catch {}
 }
 
 function _installWindowCloseGuard() {
@@ -235,7 +244,7 @@ async function _flushCanvasAndQuit(win) {
   }
   await _cleanupStagedFiles();
   _shutdownOnce();
-  await flushLogQueue();
+  await raceTimeout(flushLogQueue(), 5_000, () => {});
   _allowQuit = true;
   if (win && !win.isDestroyed()) {
     try { win.destroy(); } catch {}

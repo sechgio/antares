@@ -60,6 +60,7 @@ async function run() {
       appendLogLine: () => {},
       cleanStaleTempDirs: () => 0,
       flushLogQueue: async () => {},
+      flushLogQueueSync: () => {},
       initAppLogs: () => 'test-logs',
       installConsoleLogTee: () => {},
       setAppContext: () => {},

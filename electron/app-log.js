@@ -244,6 +244,10 @@ function flushLogQueue() {
   return _logWriter.flush();
 }
 
+function flushLogQueueSync() {
+  _logWriter.flushSync();
+}
+
 function appendLogLine(level, text) {
   try {
     const safeLevel = _normaliseLevel(level);
@@ -391,6 +395,7 @@ module.exports = {
   getLogsDir,
   getSessionId,
   flushLogQueue,
+  flushLogQueueSync,
   initAppLogs,
   installConsoleLogTee,
   logInfo,
