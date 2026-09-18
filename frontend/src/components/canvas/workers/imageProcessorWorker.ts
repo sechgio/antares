@@ -1,3 +1,4 @@
+import { errorMessage } from '@/utils/errors';
 
 export interface ImageProcessingTask {
   id: string;
@@ -74,7 +75,7 @@ self.onmessage = async (e: MessageEvent<ImageProcessingTask[]>) => {
         name: task.file.name,
         type: task.file.type,
         blob: task.file,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err, String(err)),
       });
     }
   }

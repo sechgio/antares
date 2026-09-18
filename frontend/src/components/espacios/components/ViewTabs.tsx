@@ -1,5 +1,6 @@
 import { Calendar, ChartGantt, LayoutGrid, List, Table2 } from 'lucide-react';
 import type { VistaType } from '../types';
+import Button from '@/components/ui/Button';
 
 const VIEWS: { id: VistaType; label: string; icon: typeof List; color: string }[] = [
   { id: 'list', label: 'Lista', icon: List, color: '#87909E' },
@@ -21,9 +22,8 @@ export default function ViewTabs({ active, onChange }: ViewTabsProps) {
         const Icon = view.icon;
         const isActive = active === view.id;
         return (
-          <button
+          <Button variant="none" size="none"
             key={view.id}
-            type="button"
             onClick={() => onChange(view.id)}
             className={`relative flex items-center gap-1.5 px-3 py-2.5 text-[13px] font-medium transition-colors ${
               isActive
@@ -43,7 +43,7 @@ export default function ViewTabs({ active, onChange }: ViewTabsProps) {
                 style={{ background: view.color }}
               />
             )}
-          </button>
+          </Button>
         );
       })}
     </div>

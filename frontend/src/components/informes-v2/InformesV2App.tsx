@@ -1,12 +1,14 @@
 import '../technical-reports/technical-reports.css';
 import './informes-v2.css';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { Database, Download, Eye, FileDown, FilePlus2, Files, PenLine, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Download, FileDown, FilePlus2, Files, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useReportWorkspace } from '../../hooks/useReportWorkspace';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import { saveFeatureHistory } from '../../utils/history';
+import ReportWorkspaceShell from '../report-workspace/ReportWorkspaceShell';
+import Button from '../ui/Button';
 import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
@@ -20,6 +22,7 @@ import {
 } from './exportPdf';
 import { matchPhotosForId } from './photoMatch';
 import type { PhotoAsset } from './types';
+import { errorMessage } from '@/utils/errors';
 
 export default function InformesV2App() {
   const { addToast } = useToast();
@@ -64,7 +67,7 @@ export default function InformesV2App() {
         addToast({ message: 'Plantilla Excel descargada', type: 'success' });
       });
     } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo descargar la plantilla', type: 'error' });
+      addToast({ message: errorMessage(error, 'No se pudo descargar la plantilla'), type: 'error' });
     }
   }, [addToast, runOperation]);
 
@@ -80,7 +83,7 @@ export default function InformesV2App() {
       if (side === 'left') setLogoLeft(asset);
       else setLogoRight(asset);
     } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo cargar el logo', type: 'error' });
+      addToast({ message: errorMessage(error, 'No se pudo cargar el logo'), type: 'error' });
     }
   }, [addToast]);
 
@@ -100,7 +103,7 @@ export default function InformesV2App() {
       });
       addToast({ message: `${next.length} fotos cargadas`, type: 'success' });
     } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudieron cargar las fotos', type: 'error' });
+      addToast({ message: errorMessage(error, 'No se pudieron cargar las fotos'), type: 'error' });
     }
   }, [addToast]);
 
@@ -150,7 +153,7 @@ export default function InformesV2App() {
         });
       });
     } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el PDF', type: 'error' });
+      addToast({ message: errorMessage(error, 'No se pudo generar el PDF'), type: 'error' });
     }
   }, [addToast, formData, hasChanges, logoLeft, logoRight, photos, runOperation, saveCurrent]);
 
@@ -180,11 +183,10 @@ export default function InformesV2App() {
         const list = await informesV2Api.list(true);
         const items = list.reports || [];
         if (items.length === 0) throw new Error('No hay informes para exportar');
-        const fullReports = await informesV2Api.getMany(items);
 
         const localImagePaths: Record<string, string> = {};
         const imagesById: Record<string, Array<{ path: string; name?: string }>> = {};
-        for (const report of fullReports) {
+        for (const report of items) {
           imagesById[report.id] = await preparePhotosForExport(
             photos,
             report.header.photo_id,
@@ -229,94 +231,71 @@ export default function InformesV2App() {
         });
       });
     } catch (error) {
-      addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el consolidado', type: 'error' });
+      addToast({ message: errorMessage(error, 'No se pudo generar el consolidado'), type: 'error' });
     }
   }, [addToast, dialog, formData, hasChanges, logoLeft, logoRight, photos, reports, runOperation, saveCurrent]);
 
   return (
-    <div className="tr-app iv2-app">
-      <header className="tr-header">
-        <h1>INFORMES V2</h1>
-        <div className="tr-header-toolbar">
-          <div className="tr-header-actions">
-            <button type="button" className="tr-secondary" disabled={busy} onClick={() => importInputRef.current?.click()}>
-              <Upload size={16} />
-              Importar
-            </button>
-            <button type="button" className="tr-secondary" disabled={busy} onClick={() => void downloadTemplate()}>
-              <FileDown size={16} />
-              Plantilla
-            </button>
-            <WithHoverTooltip label="Recargar" placement="bottom">
-              <button type="button" className="tr-secondary tr-icon-button" disabled={busy} onClick={() => void loadReports()}>
-                <RefreshCw size={16} />
-              </button>
-            </WithHoverTooltip>
-            <WithHoverTooltip label="Eliminar todos" placement="bottom">
-              <button type="button" className="tr-danger tr-icon-button" disabled={busy || reports.length === 0} onClick={() => void clearReports()}>
-                <Trash2 size={16} />
-              </button>
-            </WithHoverTooltip>
-            <button type="button" className="tr-secondary" onClick={() => void createReport()} disabled={busy}>
-              <FilePlus2 size={16} />
-              Nuevo
-            </button>
-            <button type="button" className="tr-primary" onClick={() => void exportCurrent()} disabled={!formData || busy}>
-              <Download size={16} />
-              PDF
-            </button>
-            <button type="button" className="tr-secondary" onClick={() => void exportConsolidated()} disabled={reports.length === 0 || busy}>
-              <Files size={16} />
-              Consolidado
-            </button>
-          </div>
-        </div>
-        <input
-          ref={importInputRef}
-          className="hidden"
-          type="file"
-          accept=".csv,.xlsx"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (file) void importFile(file);
-          }}
-        />
-      </header>
-
-      <nav className="tr-mobile-tabs">
-        <button type="button" className={`tr-mobile-tab${mobileTab === 'db' ? ' is-active' : ''}`} onClick={() => setMobileTab('db')}>
-          <Database size={14} />
-          <span>Informes</span>
-        </button>
-        <button type="button" className={`tr-mobile-tab${mobileTab === 'preview' ? ' is-active' : ''}`} onClick={() => setMobileTab('preview')}>
-          <Eye size={14} />
-          <span>Vista previa</span>
-        </button>
-        <button type="button" className={`tr-mobile-tab${mobileTab === 'form' ? ' is-active' : ''}`} onClick={() => setMobileTab('form')}>
-          <PenLine size={14} />
-          <span>Editar</span>
-        </button>
-      </nav>
-
-      <div className="tr-workspace" data-mobile-tab={mobileTab}>
-        <DatabasePanel reports={reports} selectedId={selectedId} onSelect={(id) => void selectReport(id)} />
-        <PreviewPanel report={formData} logoLeft={logoLeftSrc} logoRight={logoRightSrc} photos={matchedPhotos} />
-        <FormPanel
-          report={formData}
-          hasChanges={hasChanges}
-          busy={busy}
-          logoLeft={logoLeftSrc}
-          logoRight={logoRightSrc}
-          photoCount={photos.length}
-          onChange={patchForm}
-          onSave={() => void saveReport()}
-          onDelete={() => void deleteReport()}
-          onLogoChange={(side, file) => void changeLogo(side, file)}
-          onPhotosChange={(files) => void loadPhotos(files)}
-          onClearPhotos={() => setPhotos([])}
-        />
-      </div>
-    </div>
+    <ReportWorkspaceShell
+      title="INFORMES V2"
+      appClassName="iv2-app"
+      importInputRef={importInputRef}
+      onImportFile={importFile}
+      mobileTab={mobileTab}
+      onMobileTabChange={setMobileTab}
+      dbTabLabel="Informes"
+      tabsAriaLabel="Vista de informes v2"
+      actions={
+        <>
+          <Button variant="none" size="none" className="tr-secondary" disabled={busy} onClick={() => importInputRef.current?.click()}>
+            <Upload size={16} />
+            Importar
+          </Button>
+          <Button variant="none" size="none" className="tr-secondary" disabled={busy} onClick={() => void downloadTemplate()}>
+            <FileDown size={16} />
+            Plantilla
+          </Button>
+          <WithHoverTooltip label="Recargar" placement="bottom">
+            <Button variant="none" size="none" className="tr-secondary tr-icon-button" disabled={busy} onClick={() => void loadReports()}>
+              <RefreshCw size={16} />
+            </Button>
+          </WithHoverTooltip>
+          <WithHoverTooltip label="Eliminar todos" placement="bottom">
+            <Button variant="none" size="none" className="tr-danger tr-icon-button" disabled={busy || reports.length === 0} onClick={() => void clearReports()}>
+              <Trash2 size={16} />
+            </Button>
+          </WithHoverTooltip>
+          <Button variant="none" size="none" className="tr-secondary" onClick={() => void createReport()} disabled={busy}>
+            <FilePlus2 size={16} />
+            Nuevo
+          </Button>
+          <Button variant="none" size="none" className="tr-primary" onClick={() => void exportCurrent()} disabled={!formData || busy}>
+            <Download size={16} />
+            PDF
+          </Button>
+          <Button variant="none" size="none" className="tr-secondary" onClick={() => void exportConsolidated()} disabled={reports.length === 0 || busy}>
+            <Files size={16} />
+            Consolidado
+          </Button>
+        </>
+      }
+    >
+      <DatabasePanel reports={reports} selectedId={selectedId} onSelect={(id) => void selectReport(id)} />
+      <PreviewPanel report={formData} logoLeft={logoLeftSrc} logoRight={logoRightSrc} photos={matchedPhotos} />
+      <FormPanel
+        report={formData}
+        hasChanges={hasChanges}
+        busy={busy}
+        logoLeft={logoLeftSrc}
+        logoRight={logoRightSrc}
+        photoCount={photos.length}
+        onChange={patchForm}
+        onSave={() => void saveReport()}
+        onDelete={() => void deleteReport()}
+        onLogoChange={(side, file) => void changeLogo(side, file)}
+        onPhotosChange={(files) => void loadPhotos(files)}
+        onClearPhotos={() => setPhotos([])}
+      />
+    </ReportWorkspaceShell>
   );
 }

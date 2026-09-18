@@ -1,4 +1,5 @@
 import type { CanvasLayer, LayerCssVars } from '../types';
+import { isTextualLayerType } from '../layerKinds';
 
 export type SelectSameCriterion = 'fill' | 'stroke' | 'font';
 
@@ -8,10 +9,8 @@ const CRITERION_VAR: Record<SelectSameCriterion, keyof LayerCssVars> = {
   font: '--font-family',
 };
 
-const FONT_TYPES = new Set(['text', 'field']);
-
 export function selectSameApplicable(layer: CanvasLayer, criterion: SelectSameCriterion): boolean {
-  if (criterion === 'font') return FONT_TYPES.has(layer.type);
+  if (criterion === 'font') return isTextualLayerType(layer.type);
   return layer.type !== 'frame';
 }
 

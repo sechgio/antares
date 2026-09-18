@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { A4_HEIGHT_PX, A4_WIDTH_PX, type CanvasDocument } from '../types';
 import { PRESET_CATEGORY_LABELS, type PresetMeta } from '../presets/presetCategories';
 import PageLayerPreview from './PageLayerPreview';
+import Button from '@/components/ui/Button';
 
 const STAGE_PADDING = 48;
 const MIN_SCALE = 0.2;
@@ -79,22 +80,21 @@ export default function TemplateLightbox({
             </div>
           </dl>
           <div className="tpl-lightbox-actions">
-            <button type="button" className="canvas-btn-primary" onClick={onCreate}>
+            <Button variant="none" size="none" className="canvas-btn-primary" onClick={onCreate}>
               Crear documento
-            </button>
-            <button type="button" className="canvas-btn-ghost" onClick={onApply}>
+            </Button>
+            <Button variant="none" size="none" className="canvas-btn-ghost" onClick={onApply}>
               Aplicar al lienzo actual
-            </button>
+            </Button>
           </div>
         </div>
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="canvas-icon-btn tpl-lightbox-close"
           onClick={onClose}
           aria-label="Cerrar vista previa"
         >
           <X className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useAuth } from '../../auth/AuthContext';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
+import { useToastAction } from '../../hooks/useToastAction';
 import BulkActionBar from './components/BulkActionBar';
 import CreateNameModal from './components/CreateNameModal';
 import EmptyState from './components/EmptyState';
@@ -51,6 +52,8 @@ import {
   readStoredSidebarWidth,
   writeStoredSidebarWidth,
 } from './utils/sidebarWidth';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 type CreateModal = 'espacio' | 'proyecto' | null;
 
@@ -58,6 +61,7 @@ export default function EspaciosApp() {
   const { user } = useAuth();
   const { confirm } = useDialog();
   const { addToast } = useToast();
+  const toastAction = useToastAction();
   const sync = useEspaciosSync(user?.id);
   const { members, error: membersError } = useTeamMembers();
   const [activeView, setActiveView] = useState<VistaType>(() => readEspaciosPrefs().activeView);
@@ -115,7 +119,7 @@ export default function EspaciosApp() {
         clearTimeout(entry.timer);
         entry.cancelled = true;
         void commitDeleteRef.current(entry.tarea.id).catch((err) => {
-          const message = err instanceof Error ? err.message : 'No se pudo eliminar la tarea';
+          const message = errorMessage(err, 'No se pudo eliminar la tarea');
           queueMicrotask(() => addToastRef.current({ message, type: 'error' }));
         });
       }
@@ -224,15 +228,14 @@ export default function EspaciosApp() {
     setCreateDueDate(null);
     setCreateStatus(null);
     setTaskFormOpen(true);
-    void fetchBoardColumns(tarea.proyecto_id).then((columns) => {
-      if (editingTareaIdRef.current === tarea.id) setEditingColumns(columns);
-    }).catch((error) => {
-      addToast({
-        message: error instanceof Error ? error.message : 'No se pudieron cargar los estados de la tarea',
-        type: 'error',
-      });
-    });
-  }, [addToast]);
+    void toastAction(
+      () =>
+        fetchBoardColumns(tarea.proyecto_id).then((columns) => {
+          if (editingTareaIdRef.current === tarea.id) setEditingColumns(columns);
+        }),
+      { error: 'No se pudieron cargar los estados de la tarea', rethrow: false },
+    );
+  }, [toastAction]);
 
   const closeTaskForm = useCallback(() => {
     setTaskFormOpen(false);
@@ -271,46 +274,45 @@ export default function EspaciosApp() {
       const isDone = sync.boardColumns.find((c) => c.key === tarea.status)?.is_done
         ?? (tarea.status === 'done' || tarea.status === 'closed');
       const nextStatus = isDone ? openKey : doneKey;
-      void sync.patchTarea(tarea.id, { status: nextStatus }).catch((err) => {
-        addToast({
-          message: err instanceof Error ? err.message : 'No se pudo actualizar la tarea',
-          type: 'error',
-        });
+      void toastAction(() => sync.patchTarea(tarea.id, { status: nextStatus }), {
+        error: 'No se pudo actualizar la tarea',
+        rethrow: false,
       });
     },
-    [sync, addToast],
+    [sync, toastAction],
   );
 
   const handleAddBoardColumn = useCallback(
     async (name: string) => {
-      try {
-        await sync.addBoardColumn({ name });
-        addToast({ message: 'Columna creada', type: 'success' });
-      } catch (err) {
-        addToast({
-          message: err instanceof Error ? err.message : 'Error al crear columna',
-          type: 'error',
-        });
-        throw err;
-      }
+      await toastAction(() => sync.addBoardColumn({ name }), {
+        success: 'Columna creada',
+        error: 'Error al crear columna',
+      });
     },
-    [sync, addToast],
+    [sync, toastAction],
   );
 
   const handleRenameBoardColumn = useCallback(
     async (id: string, name: string) => {
-      try {
-        await sync.patchBoardColumn(id, { name });
-        addToast({ message: 'Columna renombrada', type: 'success' });
-      } catch (err) {
-        addToast({
-          message: err instanceof Error ? err.message : 'Error al renombrar columna',
-          type: 'error',
-        });
-        throw err;
-      }
+      await toastAction(() => sync.patchBoardColumn(id, { name }), {
+        success: 'Columna renombrada',
+        error: 'Error al renombrar columna',
+      });
     },
-    [sync, addToast],
+    [sync, toastAction],
+  );
+
+  const patchTareaToast = useCallback(
+    (
+      id: string,
+      patch: Partial<TareaInput & Pick<Tarea, 'status'>>,
+      error: string,
+    ) =>
+      void toastAction(() => sync.patchTarea(id, patch), {
+        error,
+        rethrow: false,
+      }),
+    [sync, toastAction],
   );
 
   const handleDeleteBoardColumn = useCallback(
@@ -325,18 +327,12 @@ export default function EspaciosApp() {
         type: 'destructive',
       });
       if (!ok) return;
-      try {
-        await sync.removeBoardColumn(id);
-        addToast({ message: 'Columna eliminada', type: 'success' });
-      } catch (err) {
-        addToast({
-          message: err instanceof Error ? err.message : 'Error al eliminar columna',
-          type: 'error',
-        });
-        throw err;
-      }
+      await toastAction(() => sync.removeBoardColumn(id), {
+        success: 'Columna eliminada',
+        error: 'Error al eliminar columna',
+      });
     },
-    [sync, confirm, addToast],
+    [sync, confirm, toastAction],
   );
 
   const scheduleDeleteWithUndo = useCallback(
@@ -384,8 +380,8 @@ export default function EspaciosApp() {
                   due_date: tarea.due_date,
                   sort_order: tarea.sort_order,
                 }).catch((err) => {
-                  addToast({
-                    message: err instanceof Error ? err.message : 'No se pudo restaurar la tarea',
+                  addToastRef.current({
+                    message: errorMessage(err, 'No se pudo restaurar la tarea'),
                     type: 'error',
                   });
                 });
@@ -397,7 +393,7 @@ export default function EspaciosApp() {
               if (!still || still.cancelled) return;
               sync.restoreTarea(tarea);
               addToast({
-                message: err instanceof Error ? err.message : 'No se pudo eliminar la tarea',
+                message: errorMessage(err, 'No se pudo eliminar la tarea'),
                 type: 'error',
               });
             });
@@ -475,11 +471,9 @@ export default function EspaciosApp() {
       const ids = [...selectedIds];
       if (ids.length === 0) return;
       for (const id of ids) {
-        void sync.patchTarea(id, { status }).catch((err) => {
-          addToast({
-            message: err instanceof Error ? err.message : 'No se pudo actualizar el estado',
-            type: 'error',
-          });
+        void toastAction(() => sync.patchTarea(id, { status }), {
+          error: 'No se pudo actualizar el estado',
+          rethrow: false,
         });
       }
       setSelectedIds(new Set());
@@ -545,23 +539,23 @@ export default function EspaciosApp() {
 
   const handleCreate = useCallback(
     async (name: string) => {
-      try {
-        if (createModal === 'espacio') {
-          await sync.addEspacio(name);
-          addToast({ message: 'Espacio creado', type: 'success' });
-        } else if (createModal === 'proyecto') {
-          await sync.addProyecto(name);
-          addToast({ message: 'Proyecto creado', type: 'success' });
-        }
-      } catch (err) {
-        addToast({
-          message: err instanceof Error ? err.message : 'Error al crear',
-          type: 'error',
-        });
-        throw err;
-      }
+      await toastAction(
+        async () => {
+          if (createModal === 'espacio') await sync.addEspacio(name);
+          else if (createModal === 'proyecto') await sync.addProyecto(name);
+        },
+        {
+          success:
+            createModal === 'espacio'
+              ? 'Espacio creado'
+              : createModal === 'proyecto'
+                ? 'Proyecto creado'
+                : undefined,
+          error: 'Error al crear',
+        },
+      );
     },
-    [createModal, sync, addToast],
+    [createModal, sync, toastAction],
   );
 
   const handleDeleteEspacio = useCallback(
@@ -578,17 +572,13 @@ export default function EspaciosApp() {
       });
       if (!ok) return;
 
-      try {
-        await sync.removeEspacio(id);
-        addToast({ message: 'Espacio eliminado', type: 'success' });
-      } catch (err) {
-        addToast({
-          message: err instanceof Error ? err.message : 'Error al eliminar espacio',
-          type: 'error',
-        });
-      }
+      await toastAction(() => sync.removeEspacio(id), {
+        success: 'Espacio eliminado',
+        error: 'Error al eliminar espacio',
+        rethrow: false,
+      });
     },
-    [sync, confirm, addToast],
+    [sync, confirm, toastAction],
   );
 
   const handleDeleteProyecto = useCallback(
@@ -605,72 +595,64 @@ export default function EspaciosApp() {
       });
       if (!ok) return;
 
-      try {
-        await sync.removeProyecto(id);
-        addToast({ message: 'Proyecto eliminado', type: 'success' });
-      } catch (err) {
-        addToast({
-          message: err instanceof Error ? err.message : 'Error al eliminar proyecto',
-          type: 'error',
-        });
-      }
+      await toastAction(() => sync.removeProyecto(id), {
+        success: 'Proyecto eliminado',
+        error: 'Error al eliminar proyecto',
+        rethrow: false,
+      });
     },
-    [sync, confirm, addToast],
+    [sync, confirm, toastAction],
   );
 
   const handleToggleFavorite = useCallback(async () => {
-    if (!sync.activeProyecto) return;
-    try {
-      await sync.patchProyecto(sync.activeProyecto.id, { is_favorite: !sync.activeProyecto.is_favorite });
-    } catch (err) {
-      addToast({ message: err instanceof Error ? err.message : 'Error al actualizar', type: 'error' });
-    }
-  }, [sync, addToast]);
+    const proyecto = sync.activeProyecto;
+    if (!proyecto) return;
+    await toastAction(
+      () => sync.patchProyecto(proyecto.id, { is_favorite: !proyecto.is_favorite }),
+      { error: 'Error al actualizar', rethrow: false },
+    );
+  }, [sync, toastAction]);
 
   const handleEspacioColorChange = useCallback(
     async (id: string, color: string) => {
-      try {
-        await sync.patchEspacio(id, { color });
-      } catch (err) {
-        addToast({ message: err instanceof Error ? err.message : 'Error al actualizar color', type: 'error' });
-      }
+      await toastAction(() => sync.patchEspacio(id, { color }), {
+        error: 'Error al actualizar color',
+        rethrow: false,
+      });
     },
-    [sync, addToast],
+    [sync, toastAction],
   );
 
   const handleProyectoColorChange = useCallback(
     async (id: string, color: string) => {
-      try {
-        await sync.patchProyecto(id, { color });
-      } catch (err) {
-        addToast({ message: err instanceof Error ? err.message : 'Error al actualizar color', type: 'error' });
-      }
+      await toastAction(() => sync.patchProyecto(id, { color }), {
+        error: 'Error al actualizar color',
+        rethrow: false,
+      });
     },
-    [sync, addToast],
+    [sync, toastAction],
   );
 
   const handleRenameEspacio = useCallback(
     async (id: string, name: string) => {
-      try {
-        await sync.patchEspacio(id, { name });
-        addToast({ message: 'Espacio renombrado', type: 'success' });
-      } catch (err) {
-        addToast({ message: err instanceof Error ? err.message : 'Error al renombrar espacio', type: 'error' });
-      }
+      await toastAction(() => sync.patchEspacio(id, { name }), {
+        success: 'Espacio renombrado',
+        error: 'Error al renombrar espacio',
+        rethrow: false,
+      });
     },
-    [sync, addToast],
+    [sync, toastAction],
   );
 
   const handleRenameProyecto = useCallback(
     async (id: string, name: string) => {
-      try {
-        await sync.patchProyecto(id, { name });
-        addToast({ message: 'Proyecto renombrado', type: 'success' });
-      } catch (err) {
-        addToast({ message: err instanceof Error ? err.message : 'Error al renombrar proyecto', type: 'error' });
-      }
+      await toastAction(() => sync.patchProyecto(id, { name }), {
+        success: 'Proyecto renombrado',
+        error: 'Error al renombrar proyecto',
+        rethrow: false,
+      });
     },
-    [sync, addToast],
+    [sync, toastAction],
   );
 
   const handleSidebarPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -724,14 +706,13 @@ export default function EspaciosApp() {
           <code className="text-[var(--text-secondary)]">0007_board_columns</code>
           {' '}estén aplicadas (<code className="text-[var(--text-secondary)]">pwsh scripts/supabase-db-push.ps1</code>).
         </p>
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={() => void sync.reloadAll()}
           className="inline-flex items-center gap-2 rounded-full bg-[var(--accent-primary)] px-4 py-2 text-sm text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)]"
         >
           <RefreshCw className="h-4 w-4" />
           Reintentar
-        </button>
+        </Button>
       </div>
     );
   }
@@ -749,14 +730,13 @@ export default function EspaciosApp() {
             Espacios
           </span>
           <WithHoverTooltip label="Nuevo espacio" placement="right">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={() => setCreateModal('espacio')}
               className="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]"
               aria-label="Nuevo espacio"
             >
               <Plus className="h-4 w-4" />
-            </button>
+            </Button>
           </WithHoverTooltip>
         </div>
         <SpaceSidebar
@@ -920,14 +900,9 @@ export default function EspaciosApp() {
                     selectedIds={selectedIds}
                     onToggleSelect={handleToggleSelect}
                     onToggleSelectAll={handleToggleSelectAll}
-                    onStatusChange={(id, status) => {
-                      void sync.patchTarea(id, { status }).catch((err) => {
-                        addToast({
-                          message: err instanceof Error ? err.message : 'No se pudo actualizar el estado',
-                          type: 'error',
-                        });
-                      });
-                    }}
+                    onStatusChange={(id, status) =>
+                      patchTareaToast(id, { status }, 'No se pudo actualizar el estado')
+                    }
                     onEdit={openEditTask}
                     onDelete={(id) => {
                       const tarea = sync.tareas.find((t) => t.id === id);
@@ -942,14 +917,9 @@ export default function EspaciosApp() {
                     columns={sync.boardColumns}
                     showClosed={filters.showClosed}
                     projectName={sync.activeProyecto?.name}
-                    onStatusChange={(id, status, sortOrder) => {
-                      void sync.patchTarea(id, { status, sort_order: sortOrder }).catch((err) => {
-                        addToast({
-                          message: err instanceof Error ? err.message : 'No se pudo mover la tarea',
-                          type: 'error',
-                        });
-                      });
-                    }}
+                    onStatusChange={(id, status, sortOrder) =>
+                      patchTareaToast(id, { status, sort_order: sortOrder }, 'No se pudo mover la tarea')
+                    }
                     onEditTask={openEditTask}
                     onCompleteTask={handleCompleteTask}
                     onDeleteTask={(tarea) => void handleDeleteTask(tarea)}
@@ -966,14 +936,9 @@ export default function EspaciosApp() {
                     selectedIds={selectedIds}
                     onToggleSelect={handleToggleSelect}
                     onToggleSelectAll={handleToggleSelectAll}
-                    onStatusChange={(id, status) => {
-                      void sync.patchTarea(id, { status }).catch((err) => {
-                        addToast({
-                          message: err instanceof Error ? err.message : 'No se pudo actualizar el estado',
-                          type: 'error',
-                        });
-                      });
-                    }}
+                    onStatusChange={(id, status) =>
+                      patchTareaToast(id, { status }, 'No se pudo actualizar el estado')
+                    }
                     onComplete={handleCompleteTask}
                     onEdit={openEditTask}
                     onDelete={(id) => {
@@ -994,22 +959,16 @@ export default function EspaciosApp() {
                     <CalendarView
                       tareas={filteredTareas}
                       columns={sync.boardColumns}
-                      onDateChange={(id, dueDate) => {
-                        void sync.patchTarea(id, { due_date: dueDate }).catch((err) => {
-                          addToast({
-                            message: err instanceof Error ? err.message : 'No se pudo actualizar la fecha',
-                            type: 'error',
-                          });
-                        });
-                      }}
-                      onDatesChange={(id, startDate, dueDate) => {
-                        void sync.patchTarea(id, { start_date: startDate, due_date: dueDate }).catch((err) => {
-                          addToast({
-                            message: err instanceof Error ? err.message : 'No se pudo actualizar la fecha',
-                            type: 'error',
-                          });
-                        });
-                      }}
+                      onDateChange={(id, dueDate) =>
+                        patchTareaToast(id, { due_date: dueDate }, 'No se pudo actualizar la fecha')
+                      }
+                      onDatesChange={(id, startDate, dueDate) =>
+                        patchTareaToast(
+                          id,
+                          { start_date: startDate, due_date: dueDate },
+                          'No se pudo actualizar la fecha',
+                        )
+                      }
                       onAddTask={() => openTaskForm()}
                       onAddTaskOnDate={(dueDate) => openTaskForm({ dueDate })}
                       onEditTask={openEditTask}
@@ -1019,14 +978,13 @@ export default function EspaciosApp() {
                   <GanttView
                     tareas={filteredTareas}
                     columns={sync.boardColumns}
-                    onDatesChange={(id, startDate, dueDate) => {
-                      void sync.patchTarea(id, { start_date: startDate, due_date: dueDate }).catch((err) => {
-                        addToast({
-                          message: err instanceof Error ? err.message : 'No se pudo actualizar la fecha',
-                          type: 'error',
-                        });
-                      });
-                    }}
+                    onDatesChange={(id, startDate, dueDate) =>
+                      patchTareaToast(
+                        id,
+                        { start_date: startDate, due_date: dueDate },
+                        'No se pudo actualizar la fecha',
+                      )
+                    }
                     onAddTask={() => openTaskForm()}
                     onAddTaskOnDate={(dueDate) => openTaskForm({ dueDate })}
                     onEditTask={openEditTask}

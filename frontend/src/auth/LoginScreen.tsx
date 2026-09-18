@@ -13,6 +13,7 @@ import {
 import { useAuth } from './AuthContext';
 import AntaresScene from './AntaresScene';
 import './login.css';
+import Button from '@/components/ui/Button';
 
 type AppearanceMode = 'dark' | 'light';
 const HC_LOGIN_APPEARANCE_KEY = 'hc_login_appearance_mode';
@@ -146,20 +147,18 @@ export default function LoginScreen() {
 
         <div className="at-nav__right">
           <div className="at-mode-toggle" role="group" aria-label={t('auth.appearanceLabel')}>
-            <button
-              type="button"
+            <Button variant="none" size="none"
               aria-pressed={appearanceMode === 'dark'}
               onClick={() => setAppearanceMode('dark')}
             >
               {t('auth.modeDark')}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button variant="none" size="none"
               aria-pressed={appearanceMode === 'light'}
               onClick={() => setAppearanceMode('light')}
             >
               {t('auth.modeLight')}
-            </button>
+            </Button>
           </div>
 
         </div>
@@ -209,23 +208,22 @@ export default function LoginScreen() {
                   placeholder={t('auth.passwordPlaceholder')}
                   required
                 />
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   className="at-field__reveal"
                   onClick={() => setShowPassword((current) => !current)}
                   aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
+                </Button>
               </div>
             </div>
 
-            <button type="submit" className="at-submit" disabled={loading}>
+            <Button variant="none" size="none" type="submit" className="at-submit" disabled={loading}>
               <span>{loading ? t('auth.working') : t('auth.signIn')}</span>
               <span className="at-submit__icon" aria-hidden="true">
                 {loading ? <Loader2 size={16} className="at-spinner" /> : <ArrowRight size={16} />}
               </span>
-            </button>
+            </Button>
           </form>
         </motion.div>
       </main>

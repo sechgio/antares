@@ -1,5 +1,6 @@
 import { api } from '../../../api';
-import { buildTimestampedFilename, downloadBase64Blob, fileToBase64 } from '../../../utils/pdfAssets';
+import { renderAndDeliverDocument } from '../../../utils/deliverRenderedDocument';
+import { buildTimestampedFilename, fileToBase64 } from '../../../utils/pdfAssets';
 import { stageFileForIpc } from '../../../utils/stageFile';
 import { DEFAULT_PANEL_TEMPLATE, type PanelTemplateId } from '../constants';
 import { normalizePanelDateStr } from './excelPreview';
@@ -50,33 +51,9 @@ export async function exportPanelDocument(
     source_row_index: p.sourceRowIndex,
   }));
 
-  const ext = format === 'docx' ? 'docx' : 'pdf';
   const defaultName = buildTimestampedFilename('panel_aviso_corte', format);
 
-  if (window.electronAPI?.invoke) {
-    const dialogResp = await api.dialogSave({
-      title: 'Guardar documento',
-      defaultPath: defaultName,
-      filters: [{ name: format === 'docx' ? 'Word' : 'PDF', extensions: [ext] }],
-    });
-    if (dialogResp.paths && dialogResp.paths.length > 0) {
-      const outputPath = dialogResp.paths[0];
-      const resp = await api.panelAvisoCorteRenderPdf({
-        panels: panelsPayload,
-        logos,
-        images: imagesBase64,
-        image_paths: imagePaths,
-        format,
-        template_id: templateId,
-        output_path: outputPath,
-        export_mode: exportMode,
-      });
-      return { filename: resp.filename || outputPath };
-    }
-    return { filename: '' };
-  }
-
-  const resp = await api.panelAvisoCorteRenderPdf({
+  const payload = {
     panels: panelsPayload,
     logos,
     images: imagesBase64,
@@ -84,15 +61,10 @@ export async function exportPanelDocument(
     format,
     template_id: templateId,
     export_mode: exportMode,
-  });
-
-  const content = resp.content_base64 || resp.pdf_base64;
-
-  const mimeType = format === 'docx'
-    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    : 'application/pdf';
-
-  downloadBase64Blob(content, resp.filename, mimeType);
-
-  return { filename: resp.filename };
+  };
+  return renderAndDeliverDocument(
+    payload,
+    (body, outputPath) => api.panelAvisoCorteRenderPdf({ ...body, output_path: outputPath }),
+    { defaultName, format },
+  );
 }

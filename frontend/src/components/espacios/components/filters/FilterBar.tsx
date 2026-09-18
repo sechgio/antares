@@ -5,6 +5,7 @@ import { countActiveFilters } from '../../utils/filters';
 import { isTareaPriority, PRIORITY_OPTIONS } from '../../utils/priority';
 import { pickerColumns } from '../../utils/statusConfig';
 import SelectPicker from './SelectPicker';
+import Button from '@/components/ui/Button';
 
 const PRIORITY_FILTER_OPTIONS = [
   { value: 'all', label: 'Todas las prioridades' },
@@ -98,15 +99,14 @@ export default function FilterBar({
       </label>
 
       {activeCount > 0 && (
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={onClear}
           className={`${CTRL} inline-flex items-center gap-1 px-2.5 hover:bg-[var(--bg-base)]`}
         >
           <X className="h-3 w-3" />
           Limpiar
           <span className="text-[var(--text-muted)]">({activeCount})</span>
-        </button>
+        </Button>
       )}
 
       <span
@@ -117,14 +117,13 @@ export default function FilterBar({
       </span>
 
       <div className="ml-auto">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={onAddTask}
           className="inline-flex h-8 items-center gap-1 rounded-full border border-[var(--text-primary)] bg-[var(--text-primary)] px-3 text-xs font-medium text-[var(--bg-elevated)] transition-opacity hover:opacity-90"
         >
           <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
           Nueva tarea
-        </button>
+        </Button>
       </div>
     </div>
   );

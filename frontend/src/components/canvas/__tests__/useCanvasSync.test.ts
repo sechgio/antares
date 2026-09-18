@@ -120,7 +120,7 @@ describe('useCanvasSync conflict handling', () => {
       const openDirtyRef = useRef(true);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList,
         replaceDocument,
         onConflict,
@@ -174,7 +174,7 @@ describe('useCanvasSync conflict handling', () => {
       const historyDocRef = useRef(localDoc);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList: vi.fn().mockResolvedValue(undefined),
         replaceDocument,
         onConflict,
@@ -222,7 +222,7 @@ describe('useCanvasSync conflict handling', () => {
       const openDirtyRef = useRef(false);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList: vi.fn().mockResolvedValue(undefined),
         replaceDocument: vi.fn(),
       });
@@ -276,7 +276,7 @@ describe('useCanvasSync conflict handling', () => {
       const openDirtyRef = useRef(false);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList,
         replaceDocument: vi.fn(),
       });
@@ -319,7 +319,7 @@ describe('useCanvasSync conflict handling', () => {
         const openDirtyRef = useRef(false);
         return useCanvasSync({
           historyDocRef,
-          openDirtyRef,
+          isOpenDirty: () => openDirtyRef.current,
           refreshList: vi.fn(),
           replaceDocument: vi.fn(),
           active,
@@ -351,7 +351,7 @@ describe('useCanvasSync conflict handling', () => {
         const openDirtyRef = useRef(false);
         return useCanvasSync({
           historyDocRef,
-          openDirtyRef,
+          isOpenDirty: () => openDirtyRef.current,
           refreshList: vi.fn().mockResolvedValue(undefined),
           replaceDocument: vi.fn(),
           documentId: 'doc-1',
@@ -389,7 +389,7 @@ describe('useCanvasSync conflict handling', () => {
       const openDirtyRef = useRef(false);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList: vi.fn().mockResolvedValue(undefined),
         replaceDocument,
         documentId: 'doc-1',
@@ -450,7 +450,7 @@ describe('useCanvasSync conflict handling', () => {
       const openDirtyRef = useRef(true);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList: vi.fn().mockResolvedValue(undefined),
         replaceDocument: vi.fn(),
         onConflict,
@@ -480,7 +480,7 @@ describe('useCanvasSync conflict handling', () => {
       const openDirtyRef = useRef(false);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList: vi.fn().mockResolvedValue(undefined),
         replaceDocument: vi.fn(),
         documentId: 'doc-1',
@@ -510,7 +510,7 @@ describe('useCanvasSync conflict handling', () => {
         openDirtyRef.current = dirty;
         return useCanvasSync({
           historyDocRef,
-          openDirtyRef,
+          isOpenDirty: () => openDirtyRef.current,
           refreshList: vi.fn().mockResolvedValue(undefined),
           replaceDocument: vi.fn(),
           documentId: 'doc-1',
@@ -548,7 +548,7 @@ describe('useCanvasSync conflict handling', () => {
       const openDirtyRef = useRef(false);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList: vi.fn().mockResolvedValue(undefined),
         replaceDocument: vi.fn(),
         documentId: 'doc-1',
@@ -577,7 +577,7 @@ describe('useCanvasSync conflict handling', () => {
       const openDirtyRef = useRef(false);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList: vi.fn().mockResolvedValue(undefined),
         replaceDocument: vi.fn(),
         documentId: 'doc-1',
@@ -617,7 +617,7 @@ describe('useCanvasSync conflict handling', () => {
         const openDirtyRef = useRef(true);
         return useCanvasSync({
           historyDocRef,
-          openDirtyRef,
+          isOpenDirty: () => openDirtyRef.current,
           refreshList: vi.fn().mockResolvedValue(undefined),
           replaceDocument: vi.fn(),
           onConflict,
@@ -666,7 +666,7 @@ describe('useCanvasSync conflict handling', () => {
       const openDirtyRef = useRef(false);
       return useCanvasSync({
         historyDocRef,
-        openDirtyRef,
+        isOpenDirty: () => openDirtyRef.current,
         refreshList: vi.fn().mockResolvedValue(undefined),
         replaceDocument: vi.fn(),
         documentId: 'doc-1',
@@ -706,7 +706,7 @@ describe('useCanvasSync conflict handling', () => {
 
     const { result } = renderHook(() => useCanvasSync({
       historyDocRef,
-      openDirtyRef,
+      isOpenDirty: () => openDirtyRef.current,
       refreshList: vi.fn().mockResolvedValue(undefined),
       replaceDocument,
     }));
@@ -741,7 +741,7 @@ describe('useCanvasSync conflict handling', () => {
 
     const { result } = renderHook(() => useCanvasSync({
       historyDocRef,
-      openDirtyRef,
+      isOpenDirty: () => openDirtyRef.current,
       refreshList: vi.fn().mockResolvedValue(undefined),
       replaceDocument,
       onConflict,
@@ -801,7 +801,7 @@ describe('useCanvasSync conflict handling', () => {
 
     const { result } = renderHook(() => useCanvasSync({
       historyDocRef,
-      openDirtyRef,
+      isOpenDirty: () => openDirtyRef.current,
       refreshList: vi.fn().mockResolvedValue(undefined),
       replaceDocument: vi.fn(),
       onConflict,
@@ -841,7 +841,7 @@ describe('useCanvasSync conflict handling', () => {
 
     const { result } = renderHook(() => useCanvasSync({
       historyDocRef,
-      openDirtyRef,
+      isOpenDirty: () => openDirtyRef.current,
       refreshList: vi.fn().mockResolvedValue(undefined),
       replaceDocument,
       onConflict,

@@ -1,6 +1,7 @@
 import { MappingCollision, MappingResult, RenamePattern } from '../../types';
+import { errorMessage } from '@/utils/errors';
 
-export const VIDEO_EXTENSIONS = new Set(['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mpg', '.mpeg']);
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mpg', '.mpeg']);
 
 export type RenameSource = 'none' | 'catalog' | 'mapping';
 
@@ -34,7 +35,7 @@ type MappingLookupIndex = {
   conflictedStemsLower: Set<string>;
 };
 
-export const buildMappingLookupIndex = (mapping: Record<string, string>): MappingLookupIndex => {
+const buildMappingLookupIndex = (mapping: Record<string, string>): MappingLookupIndex => {
   const exact = new Map<string, string>();
   const lower = new Map<string, string>();
   const conflictedStems = new Set<string>();
@@ -179,7 +180,7 @@ const normalizeColumnName = (name: string) => {
 };
 
 export const isMappingSchemaMismatch = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error, String(error));
   const normalized = normalizeColumnName(message);
   return [
     'al menos 2 columnas',

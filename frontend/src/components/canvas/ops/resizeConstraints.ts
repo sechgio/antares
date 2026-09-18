@@ -17,7 +17,7 @@ export const RESIZE_ANCHORS: readonly ResizeAnchor[] = [
   'br',
 ];
 
-export const DEFAULT_RESIZE_ANCHOR: ResizeAnchor = 'tl';
+const DEFAULT_RESIZE_ANCHOR: ResizeAnchor = 'tl';
 
 export function parseResizeAnchor(raw: string | undefined): ResizeAnchor {
   return (RESIZE_ANCHORS as readonly string[]).includes(raw ?? '')

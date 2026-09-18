@@ -5,9 +5,9 @@ import { clipPathForOperandLayer } from './shapePaths';
 
 export type BooleanOpKind = 'union' | 'subtract' | 'intersect' | 'exclude';
 
-export type BooleanOperandRef = { op: BooleanOpKind; layerId: string };
+type BooleanOperandRef = { op: BooleanOpKind; layerId: string };
 
-export type BooleanRenderItem = {
+type BooleanRenderItem = {
   layerId: string;
   clipPath?: string;
   blendMode?: string;

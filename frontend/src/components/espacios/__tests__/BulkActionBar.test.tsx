@@ -60,9 +60,8 @@ describe('BulkActionBar', () => {
 
     expect(screen.getByText(/3 seleccionadas/i)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/Cambiar estado de seleccionadas/i), {
-      target: { value: 'done' },
-    });
+    fireEvent.click(screen.getByLabelText(/Cambiar estado de seleccionadas/i));
+    fireEvent.click(screen.getByRole('option', { name: 'Completados' }));
     expect(onBulkStatus).toHaveBeenCalledWith('done');
 
     fireEvent.click(screen.getByRole('button', { name: /Eliminar/i }));

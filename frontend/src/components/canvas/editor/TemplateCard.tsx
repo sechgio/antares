@@ -2,6 +2,7 @@ import { Layers, Plus } from 'lucide-react';
 import { A4_HEIGHT_PX, type CanvasDocument } from '../types';
 import type { PresetMeta } from '../presets/presetCategories';
 import PageLayerPreview from './PageLayerPreview';
+import Button from '@/components/ui/Button';
 
 const THUMB_SCALE = 140 / A4_HEIGHT_PX;
 
@@ -27,8 +28,7 @@ export default function TemplateCard({
   return (
     <article className="tpl-card" data-preset={presetId}>
       <div className="tpl-thumb">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="tpl-thumb-hit"
           onClick={onInspect}
           aria-label={`Vista previa de ${label}`}
@@ -38,19 +38,18 @@ export default function TemplateCard({
         </div>
         {meta.district ? <span className="tpl-badge">{meta.district}</span> : null}
         <div className="tpl-thumb-actions">
-          <button type="button" className="tpl-action tpl-action--primary" onClick={onCreate}>
+          <Button variant="none" size="none" className="tpl-action tpl-action--primary" onClick={onCreate}>
             <Plus className="h-3 w-3" />
             Crear
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button variant="none" size="none"
             className="tpl-action tpl-action--icon"
             onClick={onApply}
             aria-label={`Aplicar ${label} al lienzo actual`}
             title="Aplicar al lienzo actual"
           >
             <Layers className="h-3 w-3" />
-          </button>
+          </Button>
         </div>
       </div>
       <div className="tpl-card-body">

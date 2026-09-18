@@ -1,6 +1,8 @@
 import { CheckSquare, Trash2, X } from 'lucide-react';
+import ThemedSelect from '../../ui/ThemedSelect';
 import type { BoardColumn, TareaStatus } from '../types';
 import { pickerColumns } from '../utils/statusConfig';
+import Button from '@/components/ui/Button';
 
 interface BulkActionBarProps {
   count: number;
@@ -32,48 +34,36 @@ export default function BulkActionBar({
         {count} {count === 1 ? 'seleccionada' : 'seleccionadas'}
       </span>
 
-      <label className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
         <span className="sr-only">Cambiar estado</span>
-        <select
-          className="h-8 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 text-xs text-[var(--text-secondary)] outline-none hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]"
-          defaultValue=""
-          onChange={(e) => {
-            const value = e.target.value;
-            if (!value) return;
-            onBulkStatus(value);
-            e.target.value = '';
+        <ThemedSelect
+          value=""
+          onChange={(value) => {
+            if (value) onBulkStatus(value as TareaStatus);
           }}
+          options={statuses.map((col) => ({ value: col.key, label: col.name }))}
+          placeholder="Mover a estado…"
           aria-label="Cambiar estado de seleccionadas"
-        >
-          <option value="" disabled>
-            Mover a estado…
-          </option>
-          {statuses.map((col) => (
-            <option key={col.key} value={col.key}>
-              {col.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          className="w-auto min-w-32"
+        />
+      </span>
 
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={onBulkDelete}
         className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--accent-red)]/30 bg-[var(--accent-red)]/8 px-3 text-xs font-medium text-[var(--accent-red)] transition-colors hover:bg-[var(--accent-red)]/15"
       >
         <Trash2 className="h-3.5 w-3.5" />
         Eliminar
-      </button>
+      </Button>
 
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={onClear}
         className="ml-auto inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-secondary)]"
         aria-label="Limpiar selección"
       >
         <X className="h-3.5 w-3.5" />
         Quitar selección
-      </button>
+      </Button>
     </div>
   );
 }

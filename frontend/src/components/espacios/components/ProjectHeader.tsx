@@ -3,6 +3,7 @@ import type { RealtimeStatus } from '../api/realtime';
 import type { Proyecto } from '../types';
 import type { TaskStats } from '../utils/filters';
 import StatsPanel from './StatsPanel';
+import Button from '@/components/ui/Button';
 
 interface ProjectHeaderProps {
   proyecto: Proyecto | null;
@@ -52,14 +53,13 @@ export default function ProjectHeader({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex min-w-0 items-center gap-2">
           <h1 className="truncate text-xl font-semibold text-[var(--text-primary)]">{proyecto.name}</h1>
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={onToggleFavorite}
             className="shrink-0 rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-amber-400"
             aria-label={proyecto.is_favorite ? 'Quitar favorito' : 'Marcar favorito'}
           >
             <Star className={`h-4 w-4 ${proyecto.is_favorite ? 'fill-amber-400 text-amber-400' : ''}`} />
-          </button>
+          </Button>
           <RealtimeBadge status={realtimeStatus} />
         </div>
 

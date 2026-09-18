@@ -1,6 +1,8 @@
 const fsForDialog = require('fs');
 const osForDialog = require('os');
 const pathForDialog = require('path');
+const { assert, finish } = require('./helpers/harness');
+
 const {
   handleDialogCall,
   _clearAllowedWriteRoots,
@@ -8,19 +10,6 @@ const {
   registerFileInputPath,
 } = require('../electron/dialog-handlers.js');
 const { clearAllowedReadPaths, isAllowedReadPath } = require('../electron/path-allowlist.js');
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
 
 async function run() {
   console.log('Testing dialog handlers...\n');
@@ -753,11 +742,58 @@ async function run() {
     }
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
+  // Test logs_open_folder
+  {
+    let openedPath = null;
+    const fakeShell = {
+      async openPath(p) {
+        openedPath = p;
+        return '';
+      },
+    };
+    const res = await handleDialogCall('logs_open_folder', {}, dialog, win, { shell: fakeShell });
+    assert(res.handled === true, 'logs_open_folder debe ser manejado');
+    assert(res.result.opened === true, 'logs_open_folder debe retornar opened: true');
+    assert(typeof res.result.path === 'string' && res.result.path.length > 0, 'logs_open_folder retorna path');
+    assert(openedPath === res.result.path, 'shell.openPath debe ser llamado con el path de logs');
+  }
 
-  if (failed > 0) process.exit(1);
+  // Test diagnostics_export
+  {
+    const cancelDialog = {
+      async showSaveDialog() {
+        return { canceled: true };
+      },
+    };
+    const cancelRes = await handleDialogCall('diagnostics_export', {}, cancelDialog, win);
+    assert(cancelRes.handled === true, 'diagnostics_export con cancel debe ser manejado');
+    assert(cancelRes.result.canceled === true, 'diagnostics_export cancelado debe retornar canceled: true');
+    assert(cancelRes.result.exported === false, 'diagnostics_export cancelado debe retornar exported: false');
+
+    const diagOutDir = await fsForDialog.promises.mkdtemp(pathForDialog.join(osForDialog.tmpdir(), 'antares-diag-test-'));
+    const diagOutFile = pathForDialog.join(diagOutDir, 'diag.json');
+    try {
+      const saveDiagDialog = {
+        async showSaveDialog() {
+          return { canceled: false, filePath: diagOutFile };
+        },
+      };
+      const exportRes = await handleDialogCall('diagnostics_export', {}, saveDiagDialog, win);
+      assert(exportRes.handled === true, 'diagnostics_export exitoso debe ser manejado');
+      assert(exportRes.result.exported === true, 'diagnostics_export debe retornar exported: true');
+      assert(exportRes.result.path === diagOutFile, 'diagnostics_export debe retornar la ruta guardada');
+
+      const fileContent = JSON.parse(await fsForDialog.promises.readFile(diagOutFile, 'utf8'));
+      assert(fileContent.app !== undefined, 'diagnostics_export debe incluir objeto app');
+      assert(fileContent.system !== undefined, 'diagnostics_export debe incluir objeto system');
+      assert(fileContent.backend !== undefined, 'diagnostics_export debe incluir objeto backend');
+      assert(Array.isArray(fileContent.recent_logs), 'diagnostics_export debe incluir recent_logs array');
+    } finally {
+      await fsForDialog.promises.rm(diagOutDir, { recursive: true, force: true });
+    }
+  }
+
+  finish();
 }
 
 run().catch((err) => {

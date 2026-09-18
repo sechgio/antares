@@ -1,6 +1,13 @@
-import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { List } from 'react-window';
-import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import {
+  useState,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useCallback,
+} from "react";
+import { List } from "react-window";
+import { WithHoverTooltip } from "@/components/ui/HoverTooltip";
 import {
   Table2,
   Search,
@@ -23,10 +30,26 @@ import {
   CheckCheck,
   Maximize2,
   Minimize2,
-} from 'lucide-react';
-import { useDebouncedValue } from '../../hooks/useDebouncedValue';
-import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { buildImagesByRecordId, normalizeRecordId } from '../../utils/recordMatching';
+} from "lucide-react";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { buildImagesByRecordId } from "../../utils/recordMatching";
+import {
+  buildCsvContent,
+  buildRowPhotoMap,
+  computePhotoStats,
+  cycleSort,
+  filterAndSortRows,
+  toggleHiddenColumn,
+} from "./utils/modalRows";
+import Button from "@/components/ui/Button";
+import {
+  getColumnWidthClass,
+  isMonospaceColumn,
+  HighlightMatch,
+  renderStatusBadge,
+} from "./dataPreviewFormat";
+import PreviewVirtualRow, { type VirtualRowData } from "./PreviewVirtualRow";
 
 export interface DataPreviewModalProps {
   open: boolean;
@@ -40,102 +63,9 @@ export interface DataPreviewModalProps {
   sheetName?: string;
 }
 
-type SortDirection = 'asc' | 'desc';
-type FilterPhotoType = 'all' | 'with-photos' | 'without-photos';
-type RowDensity = 'compact' | 'normal' | 'spacious';
-
-function getColumnWidthClass(header: string): string {
-  const h = header.toUpperCase().trim();
-  if (h === 'ID' || h === 'NIS' || h === 'OT' || h.includes('NRO') || h === 'SECTOR' || h === 'CUADRILLA') {
-    return 'min-w-[96px]';
-  }
-  if (h.includes('OBSERVACION') || h.includes('OBS') || h.includes('DETALLE') || h.includes('DESCRIPCION')) {
-    return 'min-w-[200px] max-w-[360px]';
-  }
-  if (h.includes('DIRECCION') || h.includes('UBICACION')) {
-    return 'min-w-[180px] max-w-[300px]';
-  }
-  if (h.includes('ACTIVIDAD') || h.includes('TRABAJO')) {
-    return 'min-w-[180px] max-w-[280px]';
-  }
-  if (h.includes('ESTADO') || h.includes('STATUS')) {
-    return 'min-w-[120px]';
-  }
-  if (h.includes('CONTRATA') || h.includes('LOCALIDAD') || h.includes('DISTRITO') || h.includes('CENTRO') || h.includes('RED')) {
-    return 'min-w-[120px]';
-  }
-  if (h.includes('FECHA') || h.includes('DATE') || h.includes('CORTE')) {
-    return 'min-w-[104px]';
-  }
-  return h.length > 15 ? 'min-w-[150px]' : 'min-w-[110px]';
-}
-
-function isMonospaceColumn(header: string): boolean {
-  const h = header.toUpperCase();
-  return h === 'ID' || h === 'NIS' || h === 'OT' || h.includes('NRO') || h.includes('CODIGO') || h === 'SECTOR' || h === 'CUADRILLA';
-}
-
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  const cleanQuery = query.trim();
-  if (!cleanQuery || !text) return <span>{text}</span>;
-
-  try {
-    const escaped = cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${escaped})`, 'gi');
-    const parts = text.split(regex);
-    return (
-      <span>
-        {parts.map((part, i) =>
-          part.toLowerCase() === cleanQuery.toLowerCase() ? (
-            <mark
-              key={i}
-              className="rounded-[2px] bg-[var(--accent-primary)]/30 text-[var(--text-primary)] px-0.5 font-semibold"
-            >
-              {part}
-            </mark>
-          ) : (
-            <span key={i}>{part}</span>
-          )
-        )}
-      </span>
-    );
-  } catch {
-    return <span>{text}</span>;
-  }
-}
-
-function renderStatusBadge(value: string, query = '') {
-  const normalized = value.trim().toUpperCase();
-  if (['ATENDIDO', 'COMPLETO', 'COMPLETADO', 'EJECUTADO', 'FINALIZADO', 'OK', 'APROBADO', 'ACTIVO'].includes(normalized)) {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-green)]/15 text-[var(--accent-green)] whitespace-nowrap">
-        <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
-        <HighlightMatch text={value} query={query} />
-      </span>
-    );
-  }
-  if (['PENDIENTE', 'EN PROCESO', 'EN CURSO', 'INICIADO', 'ASIGNADO', 'REVISION', 'EN ESPERA'].includes(normalized)) {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-yellow)]/15 text-[var(--accent-yellow)] whitespace-nowrap">
-        <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-yellow)]" />
-        <HighlightMatch text={value} query={query} />
-      </span>
-    );
-  }
-  if (['CANCELADO', 'ANULADO', 'RECHAZADO', 'NO ATENDIDO', 'URGENTE', 'ERROR', 'BAJA'].includes(normalized)) {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-red)]/15 text-[var(--accent-red)] whitespace-nowrap">
-        <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-red)]" />
-        <HighlightMatch text={value} query={query} />
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium bg-[var(--bg-elevated)] text-[var(--text-secondary)] whitespace-nowrap">
-      <HighlightMatch text={value} query={query} />
-    </span>
-  );
-}
+type SortDirection = "asc" | "desc";
+type FilterPhotoType = "all" | "with-photos" | "without-photos";
+type RowDensity = "compact" | "normal" | "spacious";
 
 export default function DataPreviewModal({
   open,
@@ -148,18 +78,20 @@ export default function DataPreviewModal({
   onSelectRow,
   sheetName,
 }: DataPreviewModalProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebouncedValue(searchQuery, 200);
   const [sortCol, setSortCol] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<SortDirection>('asc');
-  const [photoFilter, setPhotoFilter] = useState<FilterPhotoType>('all');
+  const [sortDir, setSortDir] = useState<SortDirection>("asc");
+  const [photoFilter, setPhotoFilter] = useState<FilterPhotoType>("all");
   const [wrapText, setWrapText] = useState(false);
-  const [density, setDensity] = useState<RowDensity>('normal');
+  const [density, setDensity] = useState<RowDensity>("normal");
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const [showDetailPane, setShowDetailPane] = useState(false);
-  const [columnFilterQuery, setColumnFilterQuery] = useState('');
-  const [copiedNotification, setCopiedNotification] = useState<string | null>(null);
+  const [columnFilterQuery, setColumnFilterQuery] = useState("");
+  const [copiedNotification, setCopiedNotification] = useState<string | null>(
+    null,
+  );
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   const [focusedRowIndex, setFocusedRowIndex] = useState<number>(() => {
@@ -184,112 +116,55 @@ export default function DataPreviewModal({
   useEffect(() => {
     if (!showColumnDropdown) return;
     const onClickOutside = (e: MouseEvent) => {
-      if (columnMenuRef.current && !columnMenuRef.current.contains(e.target as Node)) {
+      if (
+        columnMenuRef.current &&
+        !columnMenuRef.current.contains(e.target as Node)
+      ) {
         setShowColumnDropdown(false);
       }
     };
-    window.addEventListener('mousedown', onClickOutside);
-    return () => window.removeEventListener('mousedown', onClickOutside);
+    window.addEventListener("mousedown", onClickOutside);
+    return () => window.removeEventListener("mousedown", onClickOutside);
   }, [showColumnDropdown]);
 
   const imagesByRecordId = useMemo(
-    () => buildImagesByRecordId(data as Record<string, string>[], idColumn, images),
+    () =>
+      buildImagesByRecordId(data as Record<string, string>[], idColumn, images),
     [data, idColumn, images],
   );
 
-  const rowPhotoMap = useMemo(() => {
-    const map = new Map<number, { count: number; files: File[] }>();
-    data.forEach((row, idx) => {
-      const normalized = normalizeRecordId(String(row[idColumn] ?? '').trim());
-      if (!normalized) {
-        map.set(idx, { count: 0, files: [] });
-        return;
-      }
-      const files = imagesByRecordId.get(normalized) ?? [];
-      map.set(idx, { count: files.length, files });
-    });
-    return map;
-  }, [data, idColumn, imagesByRecordId]);
+  const rowPhotoMap = useMemo(
+    () => buildRowPhotoMap(data, idColumn, imagesByRecordId),
+    [data, idColumn, imagesByRecordId],
+  );
 
-  const photoStats = useMemo(() => {
-    let withPhotos = 0;
-    let withoutPhotos = 0;
-    data.forEach((_, idx) => {
-      const count = rowPhotoMap.get(idx)?.count ?? 0;
-      if (count > 0) withPhotos++;
-      else withoutPhotos++;
-    });
-    return { total: data.length, withPhotos, withoutPhotos };
-  }, [data, rowPhotoMap]);
+  const photoStats = useMemo(
+    () => computePhotoStats(data, rowPhotoMap),
+    [data, rowPhotoMap],
+  );
 
   const visibleHeaders = useMemo(() => {
     return headers.filter((h) => !hiddenColumns.has(h));
   }, [headers, hiddenColumns]);
 
-  const filteredAndSortedRows = useMemo(() => {
-    const query = debouncedQuery.trim().toLowerCase();
-
-    let items = data.map((row, originalIndex) => ({
-      row,
-      originalIndex,
-      photoInfo: rowPhotoMap.get(originalIndex) ?? { count: 0, files: [] },
-    }));
-
-    if (photoFilter === 'with-photos') {
-      items = items.filter((item) => item.photoInfo.count > 0);
-    } else if (photoFilter === 'without-photos') {
-      items = items.filter((item) => item.photoInfo.count === 0);
-    }
-
-    if (query) {
-      items = items.filter(({ row }) => {
-        return headers.some((h) => {
-          const val = String(row[h] ?? '').toLowerCase();
-          return val.includes(query);
-        });
-      });
-    }
-
-    if (sortCol) {
-      items.sort((a, b) => {
-        if (sortCol === '#') {
-          return sortDir === 'asc' ? a.originalIndex - b.originalIndex : b.originalIndex - a.originalIndex;
-        }
-        if (sortCol === '__fotos__') {
-          return sortDir === 'asc'
-            ? a.photoInfo.count - b.photoInfo.count
-            : b.photoInfo.count - a.photoInfo.count;
-        }
-        const valA = String(a.row[sortCol] ?? '').trim();
-        const valB = String(b.row[sortCol] ?? '').trim();
-
-        const numA = Number(valA);
-        const numB = Number(valB);
-        if (!isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '') {
-          return sortDir === 'asc' ? numA - numB : numB - numA;
-        }
-
-        return sortDir === 'asc'
-          ? valA.localeCompare(valB, 'es', { numeric: true, sensitivity: 'base' })
-          : valB.localeCompare(valA, 'es', { numeric: true, sensitivity: 'base' });
-      });
-    }
-
-    return items;
-  }, [data, headers, rowPhotoMap, photoFilter, debouncedQuery, sortCol, sortDir]);
+  const filteredAndSortedRows = useMemo(
+    () =>
+      filterAndSortRows({
+        data,
+        headers,
+        rowPhotoMap,
+        photoFilter,
+        query: debouncedQuery,
+        sortCol,
+        sortDir,
+      }),
+    [data, headers, rowPhotoMap, photoFilter, debouncedQuery, sortCol, sortDir],
+  );
 
   const handleHeaderClick = (colKey: string) => {
-    if (sortCol === colKey) {
-      if (sortDir === 'asc') {
-        setSortDir('desc');
-      } else {
-        setSortCol(null);
-        setSortDir('asc');
-      }
-    } else {
-      setSortCol(colKey);
-      setSortDir('asc');
-    }
+    const next = cycleSort(sortCol, sortDir, colKey);
+    setSortCol(next.sortCol);
+    setSortDir(next.sortDir);
   };
 
   const handleRowClick = useCallback(
@@ -298,14 +173,14 @@ export default function DataPreviewModal({
       onSelectRow(originalIdx);
       onClose();
     },
-    [onSelectRow, onClose]
+    [onSelectRow, onClose],
   );
 
   useEffect(() => {
     if (!open) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.preventDefault();
         if (showColumnDropdown) {
           setShowColumnDropdown(false);
@@ -315,29 +190,41 @@ export default function DataPreviewModal({
         return;
       }
 
-      if (document.activeElement === searchInputRef.current && !['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) {
+      if (
+        document.activeElement === searchInputRef.current &&
+        !["ArrowDown", "ArrowUp", "Enter"].includes(e.key)
+      ) {
         return;
       }
 
       if (filteredAndSortedRows.length === 0) return;
 
-      if (e.key === 'ArrowDown') {
+      if (e.key === "ArrowDown") {
         e.preventDefault();
         setFocusedRowIndex((prev) => {
-          const currentPos = filteredAndSortedRows.findIndex((r) => r.originalIndex === prev);
-          const nextPos = currentPos === -1 ? 0 : Math.min(currentPos + 1, filteredAndSortedRows.length - 1);
+          const currentPos = filteredAndSortedRows.findIndex(
+            (r) => r.originalIndex === prev,
+          );
+          const nextPos =
+            currentPos === -1
+              ? 0
+              : Math.min(currentPos + 1, filteredAndSortedRows.length - 1);
           return filteredAndSortedRows[nextPos].originalIndex;
         });
-      } else if (e.key === 'ArrowUp') {
+      } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setFocusedRowIndex((prev) => {
-          const currentPos = filteredAndSortedRows.findIndex((r) => r.originalIndex === prev);
+          const currentPos = filteredAndSortedRows.findIndex(
+            (r) => r.originalIndex === prev,
+          );
           const prevPos = currentPos === -1 ? 0 : Math.max(currentPos - 1, 0);
           return filteredAndSortedRows[prevPos].originalIndex;
         });
-      } else if (e.key === 'Enter') {
+      } else if (e.key === "Enter") {
         e.preventDefault();
-        const activeItem = filteredAndSortedRows.find((r) => r.originalIndex === focusedRowIndex);
+        const activeItem = filteredAndSortedRows.find(
+          (r) => r.originalIndex === focusedRowIndex,
+        );
         if (activeItem) {
           onSelectRow(activeItem.originalIndex);
           onClose();
@@ -348,21 +235,21 @@ export default function DataPreviewModal({
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose, filteredAndSortedRows, focusedRowIndex, onSelectRow, showColumnDropdown]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    open,
+    onClose,
+    filteredAndSortedRows,
+    focusedRowIndex,
+    onSelectRow,
+    showColumnDropdown,
+  ]);
 
   const toggleColumnVisibility = (header: string) => {
-    setHiddenColumns((prev) => {
-      const next = new Set(prev);
-      if (next.has(header)) next.delete(header);
-      else {
-        if (headers.length - next.size > 1) {
-          next.add(header);
-        }
-      }
-      return next;
-    });
+    setHiddenColumns((prev) =>
+      toggleHiddenColumn(prev, header, headers.length),
+    );
   };
 
   const copyToClipboard = async (text: string, label: string) => {
@@ -372,31 +259,17 @@ export default function DataPreviewModal({
         setCopiedNotification(`${label} copiado`);
         setTimeout(() => setCopiedNotification(null), 2000);
       }
-    } catch {
-    }
+    } catch {}
   };
 
   const exportFilteredToCsv = () => {
     if (filteredAndSortedRows.length === 0) return;
-    const csvHeaders = ['#', ...visibleHeaders, 'Fotos'];
-    const csvRows = filteredAndSortedRows.map(({ row, originalIndex, photoInfo }) => {
-      const values = [
-        String(originalIndex + 1),
-        ...visibleHeaders.map((h) => {
-          const raw = String(row[h] ?? '');
-          return `"${raw.replace(/"/g, '""')}"`;
-        }),
-        String(photoInfo.count),
-      ];
-      return values.join(',');
-    });
-
-    const csvContent = '\uFEFF' + [csvHeaders.join(','), ...csvRows].join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const csvContent = buildCsvContent(visibleHeaders, filteredAndSortedRows);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `datos_vista_previa_${sheetName || 'export'}_${Date.now()}.csv`;
+    a.download = `datos_vista_previa_${sheetName || "export"}_${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -423,136 +296,27 @@ export default function DataPreviewModal({
 
   const currentSelectedOriginalIdx = parseInt(selectedIndex, 10);
   const selectedRecordId =
-    idColumn && !isNaN(currentSelectedOriginalIdx) && data[currentSelectedOriginalIdx]
-      ? String(data[currentSelectedOriginalIdx][idColumn] ?? '')
-      : '';
+    idColumn &&
+    !isNaN(currentSelectedOriginalIdx) &&
+    data[currentSelectedOriginalIdx]
+      ? String(data[currentSelectedOriginalIdx][idColumn] ?? "")
+      : "";
 
   const focusedRowData =
-    focusedRowIndex >= 0 && focusedRowIndex < data.length ? data[focusedRowIndex] : null;
-  const focusedRowPhotoInfo = rowPhotoMap.get(focusedRowIndex) ?? { count: 0, files: [] };
-
-  const densityPadding =
-    density === 'compact' ? 'px-3 py-1 text-[11px]' : density === 'spacious' ? 'px-4 py-3 text-[13px]' : 'px-3.5 py-2 text-[12px]';
-
-  type VirtualRowData = {
-    rows: typeof filteredAndSortedRows;
-    visibleHeaders: string[];
-    selectedIndex: string;
-    focusedRowIndex: number;
-    densityPadding: string;
-    wrapText: boolean;
-    query: string;
-    onSetFocused: (idx: number) => void;
-    onHandleRowClick: (idx: number) => void;
+    focusedRowIndex >= 0 && focusedRowIndex < data.length
+      ? data[focusedRowIndex]
+      : null;
+  const focusedRowPhotoInfo = rowPhotoMap.get(focusedRowIndex) ?? {
+    count: 0,
+    files: [],
   };
 
-  type VirtualRowProps = {
-    index: number;
-    style: React.CSSProperties;
-    ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
-  } & VirtualRowData;
-
-  const PreviewVirtualRow = useMemo(
-    () =>
-      React.memo(function PreviewVirtualRowInner({
-        index,
-        style,
-        rows,
-        visibleHeaders: vHeaders,
-        selectedIndex: selIdx,
-        focusedRowIndex: focIdx,
-        densityPadding: dPad,
-        wrapText: wText,
-        query,
-        onSetFocused,
-        onHandleRowClick,
-      }: VirtualRowProps) {
-        const item = rows[index];
-        if (!item) return <div style={style} />;
-        const { row, originalIndex, photoInfo } = item;
-        const isSelected = selIdx === String(originalIndex);
-        const isFocused = focIdx === originalIndex;
-        return (
-          <div
-            style={style}
-            onClick={() => onSetFocused(originalIndex)}
-            onDoubleClick={() => onHandleRowClick(originalIndex)}
-            className={`flex items-center border-b border-[var(--border-subtle)] cursor-pointer transition-colors ${
-              isSelected
-                ? 'bg-[color-mix(in_srgb,var(--accent-primary)_15%,transparent)] font-medium'
-                : isFocused
-                  ? 'bg-[color-mix(in_srgb,var(--bg-elevated)_75%,transparent)]'
-                  : 'bg-transparent hover:bg-[color-mix(in_srgb,var(--accent-primary)_8%,transparent)]'
-            }`}
-          >
-            <div
-              className={`flex h-full w-12 shrink-0 items-center justify-center border-r border-[var(--border-subtle)] font-mono text-[11px] tabular-nums ${
-                isSelected
-                  ? 'bg-[var(--bg-base)] font-bold text-[var(--accent-primary)] shadow-[inset_2px_0_0_var(--accent-primary)]'
-                  : isFocused
-                    ? 'bg-[var(--bg-elevated)]'
-                    : 'bg-[var(--bg-base)] text-[var(--text-muted)]'
-              }`}
-            >
-              <span
-                className={`inline-flex h-5 w-5 items-center justify-center rounded tabular-nums ${
-                  isSelected
-                    ? 'font-bold text-[var(--accent-primary)]'
-                    : isFocused
-                      ? 'text-[var(--text-primary)]'
-                      : 'text-[var(--text-muted)]'
-                }`}
-              >
-                {originalIndex + 1}
-              </span>
-            </div>
-            {vHeaders.map((header) => {
-              const rawValue = row[header];
-              const cellText = rawValue !== null && rawValue !== undefined ? String(rawValue).trim() : '';
-              const isStatusCol =
-                header.toUpperCase().includes('ESTADO') || header.toUpperCase().includes('STATUS');
-              const isMono = isMonospaceColumn(header);
-              return (
-                <div
-                  key={header}
-                  className={`flex h-full min-w-0 flex-1 items-center ${dPad} ${
-                    isSelected ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'
-                  } ${getColumnWidthClass(header)}`}
-                  title={cellText}
-                >
-                  {isStatusCol && cellText ? (
-                    renderStatusBadge(cellText, query)
-                  ) : (
-                    <div
-                      className={`${isMono ? 'font-mono text-[11.5px] tabular-nums text-[var(--text-primary)]' : ''} ${
-                        wText ? 'whitespace-normal break-words leading-snug' : 'truncate max-w-xs'
-                      } w-full`}
-                    >
-                      {cellText ? <HighlightMatch text={cellText} query={query} /> : <span className="text-[var(--text-muted)] opacity-50">—</span>}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            <div
-              className={`flex h-full w-28 shrink-0 items-center justify-center border-l border-[var(--border-subtle)] ${
-                isSelected ? 'bg-[var(--bg-base)]' : isFocused ? 'bg-[var(--bg-elevated)]' : 'bg-[var(--bg-base)]'
-              }`}
-            >
-              {photoInfo.count > 0 ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap">
-                  <ImageIcon size={11} />
-                  {photoInfo.count}
-                </span>
-              ) : (
-                <span className="text-[11px] text-[var(--text-muted)] opacity-50">—</span>
-              )}
-            </div>
-          </div>
-        );
-      }),
-    [],
-  );
+  const densityPadding =
+    density === "compact"
+      ? "px-3 py-1 text-[11px]"
+      : density === "spacious"
+        ? "px-4 py-3 text-[13px]"
+        : "px-3.5 py-2 text-[12px]";
 
   const virtualRowProps = useMemo<VirtualRowData>(
     () => ({
@@ -566,7 +330,16 @@ export default function DataPreviewModal({
       onSetFocused: setFocusedRowIndex,
       onHandleRowClick: handleRowClick,
     }),
-    [filteredAndSortedRows, visibleHeaders, selectedIndex, focusedRowIndex, densityPadding, wrapText, debouncedQuery, handleRowClick],
+    [
+      filteredAndSortedRows,
+      visibleHeaders,
+      selectedIndex,
+      focusedRowIndex,
+      densityPadding,
+      wrapText,
+      debouncedQuery,
+      handleRowClick,
+    ],
   );
 
   if (!open || data.length === 0) return null;
@@ -575,8 +348,8 @@ export default function DataPreviewModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 animate-fade-in"
       style={{
-        backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)',
-        backdropFilter: 'blur(8px)',
+        backgroundColor: "color-mix(in srgb, var(--bg-base) 85%, transparent)",
+        backdropFilter: "blur(8px)",
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -588,7 +361,9 @@ export default function DataPreviewModal({
       <div
         ref={modalRef}
         className={`w-full flex flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] transition-all duration-200 animate-scale-in ${
-          isFullScreen ? 'h-[96vh] max-w-[98vw]' : 'h-[90vh] max-h-[940px] max-w-[1500px]'
+          isFullScreen
+            ? "h-[96vh] max-w-[98vw]"
+            : "h-[90vh] max-h-[940px] max-w-[1500px]"
         }`}
         tabIndex={-1}
       >
@@ -599,11 +374,14 @@ export default function DataPreviewModal({
             </div>
             <div>
               <div className="flex items-center gap-2.5">
-                <h3 id="data-preview-modal-title" className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
+                <h3
+                  id="data-preview-modal-title"
+                  className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]"
+                >
                   Vista previa de datos
                 </h3>
                 <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]">
-                  {data.length} {data.length === 1 ? 'registro' : 'registros'}
+                  {data.length} {data.length === 1 ? "registro" : "registros"}
                 </span>
                 {sheetName && (
                   <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)]">
@@ -619,7 +397,10 @@ export default function DataPreviewModal({
 
           <div className="flex items-center gap-2 ml-auto">
             <div className="relative flex items-center min-w-[210px] sm:min-w-[280px]">
-              <Search size={14} className="pointer-events-none absolute left-2.5 text-[var(--text-muted)]" />
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-2.5 text-[var(--text-muted)]"
+              />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -629,26 +410,31 @@ export default function DataPreviewModal({
                 className="h-8 w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-all focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary-glow)]"
               />
               {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
+                <Button
+                  variant="none"
+                  size="none"
+                  onClick={() => setSearchQuery("")}
                   className="absolute right-2 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                   aria-label="Limpiar búsqueda"
                 >
                   <X size={13} />
-                </button>
+                </Button>
               )}
             </div>
 
             <div className="relative" ref={columnMenuRef}>
-              <WithHoverTooltip label="Configurar columnas visibles" placement="bottom">
-                <button
-                  type="button"
+              <WithHoverTooltip
+                label="Configurar columnas visibles"
+                placement="bottom"
+              >
+                <Button
+                  variant="none"
+                  size="none"
                   onClick={() => setShowColumnDropdown((v) => !v)}
                   className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
                     showColumnDropdown || hiddenColumns.size > 0
-                      ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
-                      : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
+                      ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]"
+                      : "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]"
                   }`}
                   aria-label="Gestionar columnas"
                 >
@@ -659,34 +445,38 @@ export default function DataPreviewModal({
                       {visibleHeaders.length}
                     </span>
                   )}
-                </button>
+                </Button>
               </WithHoverTooltip>
 
               {showColumnDropdown && (
-                <div
-                  className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 shadow-xl animate-fade-in"
-                >
+                <div className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 shadow-xl animate-fade-in">
                   <div className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
-                    <span className="text-[12px] font-semibold text-[var(--text-primary)]">Columnas ({visibleHeaders.length}/{headers.length})</span>
+                    <span className="text-[12px] font-semibold text-[var(--text-primary)]">
+                      Columnas ({visibleHeaders.length}/{headers.length})
+                    </span>
                     <div className="flex gap-1 text-[10px]">
-                      <button
-                        type="button"
+                      <Button
+                        variant="none"
+                        size="none"
                         onClick={() => setHiddenColumns(new Set())}
                         className="text-[var(--accent-primary)] hover:underline"
                       >
                         Todas
-                      </button>
+                      </Button>
                       <span className="text-[var(--text-muted)]">·</span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="none"
+                        size="none"
                         onClick={() => {
                           const keep = headers.slice(0, 4);
-                          setHiddenColumns(new Set(headers.filter((h) => !keep.includes(h))));
+                          setHiddenColumns(
+                            new Set(headers.filter((h) => !keep.includes(h))),
+                          );
                         }}
                         className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                       >
                         Básicas
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
@@ -702,7 +492,11 @@ export default function DataPreviewModal({
 
                   <div className="max-h-52 overflow-y-auto space-y-1 pr-1 pp-data-table-scroll">
                     {headers
-                      .filter((h) => h.toLowerCase().includes(columnFilterQuery.toLowerCase()))
+                      .filter((h) =>
+                        h
+                          .toLowerCase()
+                          .includes(columnFilterQuery.toLowerCase()),
+                      )
                       .map((header) => {
                         const isVisible = !hiddenColumns.has(header);
                         return (
@@ -732,25 +526,26 @@ export default function DataPreviewModal({
             >
               {(
                 [
-                  { d: 'compact', label: 'Compacta' },
-                  { d: 'normal', label: 'Normal' },
-                  { d: 'spacious', label: 'Espaciosa' },
+                  { d: "compact", label: "Compacta" },
+                  { d: "normal", label: "Normal" },
+                  { d: "spacious", label: "Espaciosa" },
                 ] as const
               ).map((opt) => (
-                <button
+                <Button
+                  variant="none"
+                  size="none"
                   key={opt.d}
-                  type="button"
                   onClick={() => setDensity(opt.d)}
                   className={`h-7 rounded-md px-2.5 text-[11px] font-medium transition-colors ${
                     density === opt.d
-                      ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      ? "bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                   }`}
                   aria-label={`Densidad ${opt.label}`}
                   aria-pressed={density === opt.d}
                 >
                   {opt.label}
-                </button>
+                </Button>
               ))}
             </div>
 
@@ -759,87 +554,121 @@ export default function DataPreviewModal({
               role="group"
               aria-label="Ajuste de texto"
             >
-              <WithHoverTooltip label="Texto ajustado a la columna" placement="bottom">
-                <button
-                  type="button"
+              <WithHoverTooltip
+                label="Texto ajustado a la columna"
+                placement="bottom"
+              >
+                <Button
+                  variant="none"
+                  size="none"
                   onClick={() => setWrapText(true)}
                   className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors ${
                     wrapText
-                      ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      ? "bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                   }`}
                   aria-label="Modo ajustado"
                   aria-pressed={wrapText}
                 >
                   <WrapText size={13} />
                   <span className="hidden lg:inline">Ajustado</span>
-                </button>
+                </Button>
               </WithHoverTooltip>
               <WithHoverTooltip label="Una línea por celda" placement="bottom">
-                <button
-                  type="button"
+                <Button
+                  variant="none"
+                  size="none"
                   onClick={() => setWrapText(false)}
                   className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors ${
                     !wrapText
-                      ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      ? "bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                   }`}
                   aria-label="Modo una línea"
                   aria-pressed={!wrapText}
                 >
                   <AlignLeft size={13} />
                   <span className="hidden lg:inline">Una línea</span>
-                </button>
+                </Button>
               </WithHoverTooltip>
             </div>
 
-            <WithHoverTooltip label={showDetailPane ? 'Ocultar panel de detalle' : 'Ver detalle del registro'} placement="bottom">
-              <button
-                type="button"
+            <WithHoverTooltip
+              label={
+                showDetailPane
+                  ? "Ocultar panel de detalle"
+                  : "Ver detalle del registro"
+              }
+              placement="bottom"
+            >
+              <Button
+                variant="none"
+                size="none"
                 onClick={() => setShowDetailPane((v) => !v)}
                 className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
                   showDetailPane
-                    ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
-                    : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
+                    ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]"
+                    : "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]"
                 }`}
                 aria-label="Alternar panel de detalle"
               >
-                {showDetailPane ? <PanelRightClose size={13} /> : <PanelRight size={13} />}
+                {showDetailPane ? (
+                  <PanelRightClose size={13} />
+                ) : (
+                  <PanelRight size={13} />
+                )}
                 <span className="hidden lg:inline">Detalle</span>
-              </button>
+              </Button>
             </WithHoverTooltip>
 
-            <WithHoverTooltip label="Descargar tabla filtrada como CSV" placement="bottom">
-              <button
-                type="button"
+            <WithHoverTooltip
+              label="Descargar tabla filtrada como CSV"
+              placement="bottom"
+            >
+              <Button
+                variant="none"
+                size="none"
                 onClick={exportFilteredToCsv}
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] transition-colors"
                 aria-label="Exportar a CSV"
               >
                 <Download size={14} />
-              </button>
+              </Button>
             </WithHoverTooltip>
 
-            <WithHoverTooltip label={isFullScreen ? 'Reducir tamaño' : 'Pantalla completa'} placement="bottom">
-              <button
-                type="button"
+            <WithHoverTooltip
+              label={isFullScreen ? "Reducir tamaño" : "Pantalla completa"}
+              placement="bottom"
+            >
+              <Button
+                variant="none"
+                size="none"
                 onClick={() => setIsFullScreen((v) => !v)}
                 className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] transition-colors"
                 aria-label="Alternar pantalla completa"
               >
-                {isFullScreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              </button>
+                {isFullScreen ? (
+                  <Minimize2 size={14} />
+                ) : (
+                  <Maximize2 size={14} />
+                )}
+              </Button>
             </WithHoverTooltip>
 
-            <WithHoverTooltip label="Cerrar vista previa" placement="bottom" shortcut="Esc">
-              <button
-                type="button"
+            <WithHoverTooltip
+              label="Cerrar vista previa"
+              placement="bottom"
+              shortcut="Esc"
+            >
+              <Button
+                variant="none"
+                size="none"
                 onClick={onClose}
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] transition-all"
                 aria-label="Cerrar vista previa"
               >
                 <X size={16} />
-              </button>
+              </Button>
             </WithHoverTooltip>
           </div>
         </div>
@@ -852,20 +681,36 @@ export default function DataPreviewModal({
           >
             {(
               [
-                { f: 'all', label: 'Todos', count: photoStats.total, icon: null },
-                { f: 'with-photos', label: 'Con fotos', count: photoStats.withPhotos, icon: ImageIcon },
-                { f: 'without-photos', label: 'Sin fotos', count: photoStats.withoutPhotos, icon: null },
+                {
+                  f: "all",
+                  label: "Todos",
+                  count: photoStats.total,
+                  icon: null,
+                },
+                {
+                  f: "with-photos",
+                  label: "Con fotos",
+                  count: photoStats.withPhotos,
+                  icon: ImageIcon,
+                },
+                {
+                  f: "without-photos",
+                  label: "Sin fotos",
+                  count: photoStats.withoutPhotos,
+                  icon: null,
+                },
               ] as const
             ).map((opt) => (
-              <button
+              <Button
+                variant="none"
+                size="none"
                 key={opt.f}
-                type="button"
                 onClick={() => setPhotoFilter(opt.f)}
                 aria-pressed={photoFilter === opt.f}
                 className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors ${
                   photoFilter === opt.f
-                    ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    ? "bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                 }`}
               >
                 {opt.icon && <opt.icon size={12} />}
@@ -873,13 +718,13 @@ export default function DataPreviewModal({
                 <span
                   className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
                     photoFilter === opt.f
-                      ? 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]'
-                      : 'bg-[var(--bg-input)] text-[var(--text-muted)]'
+                      ? "bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]"
+                      : "bg-[var(--bg-input)] text-[var(--text-muted)]"
                   }`}
                 >
                   {opt.count}
                 </span>
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -892,56 +737,72 @@ export default function DataPreviewModal({
 
             {searchQuery && (
               <span>
-                Mostrando <strong className="text-[var(--text-primary)]">{filteredAndSortedRows.length}</strong> de{' '}
-                {data.length} registros
+                Mostrando{" "}
+                <strong className="text-[var(--text-primary)]">
+                  {filteredAndSortedRows.length}
+                </strong>{" "}
+                de {data.length} registros
               </span>
             )}
 
             {sortCol && (
-              <button
-                type="button"
+              <Button
+                variant="none"
+                size="none"
                 onClick={() => {
                   setSortCol(null);
-                  setSortDir('asc');
+                  setSortDir("asc");
                 }}
                 className="flex items-center gap-1 text-[var(--accent-primary)] hover:underline"
               >
                 <RotateCcw size={10} /> Quitar orden ({sortCol})
-              </button>
+              </Button>
             )}
           </div>
         </div>
 
         <div className="flex flex-1 min-h-0 overflow-hidden bg-[var(--bg-base)]">
-          <div ref={tableContainerRef} className="pp-data-table-scroll flex-1 overflow-auto select-text relative pb-1">
+          <div
+            ref={tableContainerRef}
+            className="pp-data-table-scroll flex-1 overflow-auto select-text relative pb-1"
+          >
             {filteredAndSortedRows.length === 0 ? (
               <div className="flex h-64 flex-col items-center justify-center p-6 text-center">
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
                   <Search size={22} />
                 </div>
-                <h4 className="text-[14px] font-semibold text-[var(--text-primary)]">No se encontraron resultados</h4>
+                <h4 className="text-[14px] font-semibold text-[var(--text-primary)]">
+                  No se encontraron resultados
+                </h4>
                 <p className="mt-1 max-w-sm text-[12px] text-[var(--text-muted)]">
-                  No hay ningún registro que coincida con los filtros aplicados{' '}
-                  {searchQuery && <span className="font-medium text-[var(--text-primary)]">"{searchQuery}"</span>}.
+                  No hay ningún registro que coincida con los filtros aplicados{" "}
+                  {searchQuery && (
+                    <span className="font-medium text-[var(--text-primary)]">
+                      "{searchQuery}"
+                    </span>
+                  )}
+                  .
                 </p>
                 <div className="mt-4 flex gap-2">
                   {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
+                    <Button
+                      variant="none"
+                      size="none"
+                      onClick={() => setSearchQuery("")}
                       className="rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-primary)] transition-colors"
                     >
                       Limpiar búsqueda
-                    </button>
+                    </Button>
                   )}
-                  {photoFilter !== 'all' && (
-                    <button
-                      type="button"
-                      onClick={() => setPhotoFilter('all')}
+                  {photoFilter !== "all" && (
+                    <Button
+                      variant="none"
+                      size="none"
+                      onClick={() => setPhotoFilter("all")}
                       className="rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-primary)] transition-colors"
                     >
                       Ver todos
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -951,16 +812,22 @@ export default function DataPreviewModal({
                   <tr className="sticky top-0 z-20 border-b border-[var(--border-medium)] bg-[var(--bg-elevated)]/95 backdrop-blur-md shadow-sm">
                     <th
                       className="sticky left-0 z-30 w-12 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-r border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
-                      onClick={() => handleHeaderClick('#')}
+                      onClick={() => handleHeaderClick("#")}
                       title="Ordenar por número de fila"
                     >
                       <div className="flex items-center justify-center gap-1">
                         <span>#</span>
-                        {sortCol === '#' &&
-                          (sortDir === 'asc' ? (
-                            <ChevronUp size={12} className="text-[var(--accent-primary)]" />
+                        {sortCol === "#" &&
+                          (sortDir === "asc" ? (
+                            <ChevronUp
+                              size={12}
+                              className="text-[var(--accent-primary)]"
+                            />
                           ) : (
-                            <ChevronDown size={12} className="text-[var(--accent-primary)]" />
+                            <ChevronDown
+                              size={12}
+                              className="text-[var(--accent-primary)]"
+                            />
                           ))}
                       </div>
                     </th>
@@ -972,21 +839,32 @@ export default function DataPreviewModal({
                           key={header}
                           onClick={() => handleHeaderClick(header)}
                           className={`group/th px-3.5 py-2.5 font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none transition-colors ${getColumnWidthClass(
-                            header
+                            header,
                           )}`}
                           title={`Ordenar por ${header}`}
                         >
                           <div className="flex items-center justify-between gap-1.5">
-                            <span className="truncate leading-tight">{header}</span>
+                            <span className="truncate leading-tight">
+                              {header}
+                            </span>
                             <span className="shrink-0 text-[var(--text-muted)]">
                               {isSorted ? (
-                                sortDir === 'asc' ? (
-                                  <ChevronUp size={13} className="font-bold text-[var(--accent-primary)]" />
+                                sortDir === "asc" ? (
+                                  <ChevronUp
+                                    size={13}
+                                    className="font-bold text-[var(--accent-primary)]"
+                                  />
                                 ) : (
-                                  <ChevronDown size={13} className="font-bold text-[var(--accent-primary)]" />
+                                  <ChevronDown
+                                    size={13}
+                                    className="font-bold text-[var(--accent-primary)]"
+                                  />
                                 )
                               ) : (
-                                <ArrowUpDown size={11} className="opacity-0 group-hover/th:opacity-60 transition-opacity" />
+                                <ArrowUpDown
+                                  size={11}
+                                  className="opacity-0 group-hover/th:opacity-60 transition-opacity"
+                                />
                               )}
                             </span>
                           </div>
@@ -995,18 +873,24 @@ export default function DataPreviewModal({
                     })}
 
                     <th
-                      onClick={() => handleHeaderClick('__fotos__')}
+                      onClick={() => handleHeaderClick("__fotos__")}
                       className="sticky right-0 z-20 w-28 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-l border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
                       title="Ordenar por cantidad de fotos vinculadas"
                     >
                       <div className="flex items-center justify-center gap-1.5">
                         <ImageIcon size={13} />
                         <span>Fotos</span>
-                        {sortCol === '__fotos__' &&
-                          (sortDir === 'asc' ? (
-                            <ChevronUp size={12} className="text-[var(--accent-primary)]" />
+                        {sortCol === "__fotos__" &&
+                          (sortDir === "asc" ? (
+                            <ChevronUp
+                              size={12}
+                              className="text-[var(--accent-primary)]"
+                            />
                           ) : (
-                            <ChevronDown size={12} className="text-[var(--accent-primary)]" />
+                            <ChevronDown
+                              size={12}
+                              className="text-[var(--accent-primary)]"
+                            />
                           ))}
                       </div>
                     </th>
@@ -1024,109 +908,127 @@ export default function DataPreviewModal({
                           overscanCount={5}
                           rowComponent={PreviewVirtualRow as never}
                           rowProps={virtualRowProps}
-                          style={{ height: listHeight, width: '100%' }}
+                          style={{ height: listHeight, width: "100%" }}
                         />
                       </td>
                     </tr>
                   ) : (
-                    filteredAndSortedRows.map(({ row, originalIndex, photoInfo }) => {
-                    const isSelected = selectedIndex === String(originalIndex);
-                    const isFocused = focusedRowIndex === originalIndex;
+                    filteredAndSortedRows.map(
+                      ({ row, originalIndex, photoInfo }) => {
+                        const isSelected =
+                          selectedIndex === String(originalIndex);
+                        const isFocused = focusedRowIndex === originalIndex;
 
-                    return (
-                      <tr
-                        key={originalIndex}
-                        onClick={() => setFocusedRowIndex(originalIndex)}
-                        onDoubleClick={() => handleRowClick(originalIndex)}
-                        className={`group cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'bg-[var(--accent-primary)]/15 font-medium'
-                            : isFocused
-                            ? 'bg-[var(--bg-elevated)]/75'
-                            : 'hover:bg-[var(--accent-primary)]/8'
-                        }`}
-                      >
-                        <td
-                          className={`sticky left-0 z-10 px-2 py-2 text-center font-mono text-[11px] tabular-nums border-r border-[var(--border-subtle)] transition-colors ${
-                            isSelected
-                              ? 'bg-[var(--bg-base)] font-bold text-[var(--accent-primary)] shadow-[inset_2px_0_0_var(--accent-primary)]'
-                              : isFocused
-                              ? 'bg-[var(--bg-elevated)]'
-                              : 'bg-[var(--bg-base)] group-hover:bg-[var(--bg-surface)] text-[var(--text-muted)]'
-                          }`}
-                        >
-                          <span
-                            className={`inline-flex h-5 w-5 items-center justify-center rounded tabular-nums ${
+                        return (
+                          <tr
+                            key={originalIndex}
+                            onClick={() => setFocusedRowIndex(originalIndex)}
+                            onDoubleClick={() => handleRowClick(originalIndex)}
+                            className={`group cursor-pointer transition-colors ${
                               isSelected
-                                ? 'font-bold text-[var(--accent-primary)]'
+                                ? "bg-[var(--accent-primary)]/15 font-medium"
                                 : isFocused
-                                ? 'text-[var(--text-primary)]'
-                                : 'text-[var(--text-muted)]'
+                                  ? "bg-[var(--bg-elevated)]/75"
+                                  : "hover:bg-[var(--accent-primary)]/8"
                             }`}
                           >
-                            {originalIndex + 1}
-                          </span>
-                        </td>
-
-                        {visibleHeaders.map((header) => {
-                          const rawValue = row[header];
-                          const cellText = rawValue !== null && rawValue !== undefined ? String(rawValue).trim() : '';
-                          const isStatusCol =
-                            header.toUpperCase().includes('ESTADO') || header.toUpperCase().includes('STATUS');
-                          const isMono = isMonospaceColumn(header);
-
-                          return (
                             <td
-                              key={header}
-                              className={`align-top ${densityPadding} ${
-                                isSelected ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'
-                              } ${getColumnWidthClass(header)}`}
-                              title={cellText}
+                              className={`sticky left-0 z-10 px-2 py-2 text-center font-mono text-[11px] tabular-nums border-r border-[var(--border-subtle)] transition-colors ${
+                                isSelected
+                                  ? "bg-[var(--bg-base)] font-bold text-[var(--accent-primary)] shadow-[inset_2px_0_0_var(--accent-primary)]"
+                                  : isFocused
+                                    ? "bg-[var(--bg-elevated)]"
+                                    : "bg-[var(--bg-base)] group-hover:bg-[var(--bg-surface)] text-[var(--text-muted)]"
+                              }`}
                             >
-                              {isStatusCol && cellText ? (
-                                renderStatusBadge(cellText, debouncedQuery)
-                              ) : (
-                                <div
-                                  className={`${
-                                    isMono ? 'font-mono text-[11.5px] tabular-nums text-[var(--text-primary)]' : ''
-                                  } ${
-                                    wrapText
-                                      ? 'whitespace-normal break-words leading-snug'
-                                      : 'truncate max-w-xs'
-                                  }`}
+                              <span
+                                className={`inline-flex h-5 w-5 items-center justify-center rounded tabular-nums ${
+                                  isSelected
+                                    ? "font-bold text-[var(--accent-primary)]"
+                                    : isFocused
+                                      ? "text-[var(--text-primary)]"
+                                      : "text-[var(--text-muted)]"
+                                }`}
+                              >
+                                {originalIndex + 1}
+                              </span>
+                            </td>
+
+                            {visibleHeaders.map((header) => {
+                              const rawValue = row[header];
+                              const cellText =
+                                rawValue !== null && rawValue !== undefined
+                                  ? String(rawValue).trim()
+                                  : "";
+                              const isStatusCol =
+                                header.toUpperCase().includes("ESTADO") ||
+                                header.toUpperCase().includes("STATUS");
+                              const isMono = isMonospaceColumn(header);
+
+                              return (
+                                <td
+                                  key={header}
+                                  className={`align-top ${densityPadding} ${
+                                    isSelected
+                                      ? "text-[var(--text-primary)] font-medium"
+                                      : "text-[var(--text-secondary)]"
+                                  } ${getColumnWidthClass(header)}`}
+                                  title={cellText}
                                 >
-                                  {cellText ? (
-                                    <HighlightMatch text={cellText} query={debouncedQuery} />
+                                  {isStatusCol && cellText ? (
+                                    renderStatusBadge(cellText, debouncedQuery)
                                   ) : (
-                                    <span className="text-[var(--text-muted)] opacity-50">—</span>
+                                    <div
+                                      className={`${
+                                        isMono
+                                          ? "font-mono text-[11.5px] tabular-nums text-[var(--text-primary)]"
+                                          : ""
+                                      } ${
+                                        wrapText
+                                          ? "whitespace-normal break-words leading-snug"
+                                          : "truncate max-w-xs"
+                                      }`}
+                                    >
+                                      {cellText ? (
+                                        <HighlightMatch
+                                          text={cellText}
+                                          query={debouncedQuery}
+                                        />
+                                      ) : (
+                                        <span className="text-[var(--text-muted)] opacity-50">
+                                          —
+                                        </span>
+                                      )}
+                                    </div>
                                   )}
-                                </div>
+                                </td>
+                              );
+                            })}
+
+                            <td
+                              className={`sticky right-0 z-10 px-3 py-2.5 text-center align-middle border-l border-[var(--border-subtle)] transition-colors ${
+                                isSelected
+                                  ? "bg-[var(--bg-base)]"
+                                  : isFocused
+                                    ? "bg-[var(--bg-elevated)]"
+                                    : "bg-[var(--bg-base)] group-hover:bg-[var(--bg-surface)]"
+                              }`}
+                            >
+                              {photoInfo.count > 0 ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap">
+                                  <ImageIcon size={11} />
+                                  {photoInfo.count}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-[var(--text-muted)] opacity-50">
+                                  —
+                                </span>
                               )}
                             </td>
-                          );
-                        })}
-
-                        <td
-                          className={`sticky right-0 z-10 px-3 py-2.5 text-center align-middle border-l border-[var(--border-subtle)] transition-colors ${
-                            isSelected
-                              ? 'bg-[var(--bg-base)]'
-                              : isFocused
-                              ? 'bg-[var(--bg-elevated)]'
-                              : 'bg-[var(--bg-base)] group-hover:bg-[var(--bg-surface)]'
-                          }`}
-                        >
-                          {photoInfo.count > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap">
-                              <ImageIcon size={11} />
-                              {photoInfo.count}
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-[var(--text-muted)] opacity-50">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
+                          </tr>
+                        );
+                      },
+                    )
                   )}
                 </tbody>
               </table>
@@ -1140,25 +1042,34 @@ export default function DataPreviewModal({
                   <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--accent-primary)] font-mono text-xs font-bold text-[var(--text-on-accent)]">
                     #{focusedRowIndex + 1}
                   </span>
-                  <span className="text-[13px] font-semibold text-[var(--text-primary)]">Detalle del Registro</span>
+                  <span className="text-[13px] font-semibold text-[var(--text-primary)]">
+                    Detalle del Registro
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(JSON.stringify(focusedRowData, null, 2), 'Registro JSON')}
+                  <Button
+                    variant="none"
+                    size="none"
+                    onClick={() =>
+                      copyToClipboard(
+                        JSON.stringify(focusedRowData, null, 2),
+                        "Registro JSON",
+                      )
+                    }
                     className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
                     title="Copiar JSON del registro"
                   >
                     <Copy size={14} />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="none"
+                    size="none"
                     onClick={() => setShowDetailPane(false)}
                     className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
                     aria-label="Cerrar panel de detalle"
                   >
                     <X size={15} />
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -1166,17 +1077,21 @@ export default function DataPreviewModal({
                 <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
-                      <ImageIcon size={13} className="text-[var(--accent-primary)]" />
+                      <ImageIcon
+                        size={13}
+                        className="text-[var(--accent-primary)]"
+                      />
                       Fotos Vinculadas
                     </span>
                     <span
                       className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                         focusedRowPhotoInfo.count > 0
-                          ? 'bg-[var(--accent-green)]/15 text-[var(--accent-green)]'
-                          : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'
+                          ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]"
+                          : "bg-[var(--bg-elevated)] text-[var(--text-muted)]"
                       }`}
                     >
-                      {focusedRowPhotoInfo.count} {focusedRowPhotoInfo.count === 1 ? 'foto' : 'fotos'}
+                      {focusedRowPhotoInfo.count}{" "}
+                      {focusedRowPhotoInfo.count === 1 ? "foto" : "fotos"}
                     </span>
                   </div>
 
@@ -1187,7 +1102,9 @@ export default function DataPreviewModal({
                           key={i}
                           className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] bg-[var(--bg-elevated)]/60 px-2 py-1 rounded"
                         >
-                          <span className="truncate font-mono">{file.name}</span>
+                          <span className="truncate font-mono">
+                            {file.name}
+                          </span>
                           <span className="text-[9px] text-[var(--text-muted)] shrink-0 font-mono ml-2">
                             {(file.size / 1024).toFixed(0)} KB
                           </span>
@@ -1196,7 +1113,8 @@ export default function DataPreviewModal({
                     </div>
                   ) : (
                     <p className="text-[11px] text-[var(--text-muted)] italic">
-                      No se encontraron fotos que coincidan con el ID de este registro.
+                      No se encontraron fotos que coincidan con el ID de este
+                      registro.
                     </p>
                   )}
                 </div>
@@ -1207,7 +1125,10 @@ export default function DataPreviewModal({
                   </span>
                   {headers.map((header) => {
                     const val = focusedRowData[header];
-                    const text = val !== null && val !== undefined ? String(val).trim() : '';
+                    const text =
+                      val !== null && val !== undefined
+                        ? String(val).trim()
+                        : "";
                     return (
                       <div
                         key={header}
@@ -1216,18 +1137,23 @@ export default function DataPreviewModal({
                         <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">
                           <span className="font-semibold">{header}</span>
                           {text && (
-                            <button
-                              type="button"
+                            <Button
+                              variant="none"
+                              size="none"
                               onClick={() => copyToClipboard(text, header)}
                               className="opacity-0 group-hover/field:opacity-100 p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all"
                               title={`Copiar ${header}`}
                             >
                               <Copy size={11} />
-                            </button>
+                            </Button>
                           )}
                         </div>
                         <div className="text-[12px] text-[var(--text-primary)] font-medium break-words leading-snug">
-                          {text || <span className="text-[var(--text-muted)] opacity-50 italic">Vacío</span>}
+                          {text || (
+                            <span className="text-[var(--text-muted)] opacity-50 italic">
+                              Vacío
+                            </span>
+                          )}
                         </div>
                       </div>
                     );
@@ -1236,13 +1162,14 @@ export default function DataPreviewModal({
               </div>
 
               <div className="p-3 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-                <button
-                  type="button"
+                <Button
+                  variant="none"
+                  size="none"
                   onClick={() => handleRowClick(focusedRowIndex)}
                   className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-[var(--text-on-accent)] text-[12px] font-semibold transition-colors shadow-sm"
                 >
                   <Check size={13} /> Cargar este registro en el visor
-                </button>
+                </Button>
               </div>
             </aside>
           )}
@@ -1252,27 +1179,36 @@ export default function DataPreviewModal({
           <div className="flex items-center gap-3 text-[var(--text-secondary)]">
             <span className="flex items-center gap-1.5 font-medium text-[var(--text-secondary)]">
               <Info size={13} className="text-[var(--accent-primary)]" />
-              <span>Doble clic en una fila o presiona <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] font-mono text-[10px]">Enter</kbd> para seleccionarla</span>
+              <span>
+                Doble clic en una fila o presiona{" "}
+                <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] font-mono text-[10px]">
+                  Enter
+                </kbd>{" "}
+                para seleccionarla
+              </span>
             </span>
 
             {selectedRecordId && (
               <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-indigo-500/30 bg-[var(--accent-primary)]/10 px-2 py-0.5 font-medium text-[var(--accent-primary)]">
                 <Check size={11} />
-                Seleccionado: #{currentSelectedOriginalIdx + 1} ({selectedRecordId})
+                Seleccionado: #{currentSelectedOriginalIdx + 1} (
+                {selectedRecordId})
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="none"
+              size="none"
               onClick={onClose}
               className="rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-4 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:border-[var(--border-active)] hover:text-[var(--text-primary)] transition-colors"
             >
               Cerrar
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="none"
+              size="none"
               onClick={() => {
                 if (focusedRowIndex >= 0 && focusedRowIndex < data.length) {
                   onSelectRow(focusedRowIndex);
@@ -1283,7 +1219,7 @@ export default function DataPreviewModal({
             >
               <Check size={13} />
               Cargar registro #{focusedRowIndex + 1}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

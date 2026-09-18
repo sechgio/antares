@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from backend.core import conversion_probe
 from backend.handlers import conversion
 
 
@@ -23,12 +24,12 @@ def test_preview_empty_key_uses_lote_not_auto_column(monkeypatch) -> None:
         lambda: ["codigo", "nis"],
     )
     monkeypatch.setattr(
-        conversion,
+        conversion_probe,
         "_preview_detect_fields",
         lambda files, cols: ({"detected_key_column": "nis"}, {"nis": 10, "codigo": 1}),
     )
     monkeypatch.setattr(
-        conversion,
+        conversion_probe,
         "_resolve_key_column",
         lambda *a, **k: "nis",
     )
@@ -65,11 +66,11 @@ def test_preview_explicit_key_column_still_uses_column(monkeypatch) -> None:
     )
     monkeypatch.setattr("backend.core.config_fields.get_field_names", lambda: ["codigo", "nis"])
     monkeypatch.setattr(
-        conversion,
+        conversion_probe,
         "_preview_detect_fields",
         lambda files, cols: ({}, {"codigo": 0, "nis": 0}),
     )
-    monkeypatch.setattr(conversion, "_resolve_key_column", lambda key, *a, **k: key or "codigo")
+    monkeypatch.setattr(conversion_probe, "_resolve_key_column", lambda key, *a, **k: key or "codigo")
 
     conversion.preview(
         {

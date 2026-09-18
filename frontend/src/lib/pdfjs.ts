@@ -1,5 +1,3 @@
-import type { PDFDocumentProxy } from 'pdfjs-dist';
-
 let pdfjsLib: typeof import('pdfjs-dist') | null = null;
 let pdfWorkerUrl: string | null = null;
 let loadPromise: Promise<typeof import('pdfjs-dist')> | null = null;
@@ -33,5 +31,3 @@ export async function ensurePdfJs(): Promise<typeof import('pdfjs-dist')> {
     loadPromise = null;
   }
 }
-
-export type { PDFDocumentProxy };

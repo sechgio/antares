@@ -81,7 +81,6 @@ function resolveProviderApiKey(provider) {
 module.exports = {
   FILE,
   NS,
-  ALLOWED_KEYS,
   getUbicacionesApiKeys,
   getMaskedUbicacionesApiKeys,
   setUbicacionesApiKeys,

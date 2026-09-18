@@ -4,6 +4,7 @@ import InlineNumField from '../../InlineNumField';
 import { PropRow, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 import CanvasSelect from '../../CanvasSelect';
+import Button from '@/components/ui/Button';
 
 export default function FillSection({
   layer,
@@ -17,8 +18,7 @@ export default function FillSection({
   return (
     <div className="canvas-section">
       <SectionHeader title="Relleno">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="canvas-paint-icon"
           aria-label="Añadir relleno"
           disabled={hasFill}
@@ -31,7 +31,7 @@ export default function FillSection({
           }
         >
           <Plus className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </SectionHeader>
       {hasFill ? (
         <div className="canvas-inspector-stack">

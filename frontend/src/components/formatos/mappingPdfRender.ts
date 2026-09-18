@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { PdfPageSize } from './mappingCoords';
+import { errorMessage } from '@/utils/errors';
 
 export const MAPPING_RENDER_SCALE_CAP = 2.5;
 export const MAPPING_RENDER_DPR_CAP = 1.5;
@@ -38,13 +39,13 @@ export async function renderMappingPageToDataUrl(
   };
 }
 
-export const MAPPING_LOAD_TIMEOUT_MS = 25_000;
+const MAPPING_LOAD_TIMEOUT_MS = 25_000;
 
 const RESTART_HINT =
   'Cierra y reinicia la aplicación por completo (npm run dev) para aplicar los nuevos métodos del backend.';
 
 export function isStaleBackendError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err, String(err));
   return (
     message.includes('IPC method not allowed: formatos_render_template_page') ||
     message.includes('IPC method not allowed: formatos_get_template') ||
@@ -54,7 +55,7 @@ export function isStaleBackendError(err: unknown): boolean {
 }
 
 export function formatMappingLoadError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err, String(err));
   if (isStaleBackendError(err)) {
     return RESTART_HINT;
   }

@@ -11,6 +11,16 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from backend.core.docx_helpers import (
+    cm_to_twips,
+    format_run,
+    set_cell_margins_dxa,
+    set_cell_width,
+    set_no_wrap,
+    set_normal_font,
+    set_row_height,
+    set_vertical_align,
+)
 from backend.utils.image_data import (
     build_image_uris,
     contain_fit_cm,
@@ -185,78 +195,13 @@ def render_docx(
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         from docx.oxml import parse_xml
         from docx.oxml.ns import qn
-        from docx.shared import Cm, Pt, RGBColor
+        from docx.shared import Cm
     except ImportError as exc:
         msg = "python-docx no est\u00e1 instalado"
         raise RenderingError(msg) from exc
 
     doc = Document()
-    doc.styles["Normal"].font.name = DOC_FONT
-    doc.styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), DOC_FONT)
-
-    def cm_to_twips(value: float) -> int:
-        return round(value * 567)
-
-    def set_row_height(row: Any, height_cm: float) -> None:
-        trPr = row._tr.get_or_add_trPr()
-        for node in trPr.findall(qn("w:trHeight")):
-            trPr.remove(node)
-        trPr.append(parse_xml(
-            '<w:trHeight xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:val="{cm_to_twips(height_cm)}" w:hRule="exact"/>',
-        ))
-
-    def set_cell_width(cell: Any, width_cm: float) -> None:
-        tcPr = cell._tc.get_or_add_tcPr()
-        tcW = tcPr.find(qn("w:tcW"))
-        if tcW is None:
-            tcW = parse_xml(
-                '<w:tcW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
-            )
-            tcPr.append(tcW)
-        tcW.set(qn("w:w"), str(cm_to_twips(width_cm)))
-        tcW.set(qn("w:type"), "dxa")
-
-    def set_cell_margins(cell: Any, top: int = 0, left: int = CELL_MARGIN_TWIPS,
-                         bottom: int = 0, right: int = CELL_MARGIN_TWIPS) -> None:
-        tcPr = cell._tc.get_or_add_tcPr()
-        old = tcPr.find(qn("w:tcMar"))
-        if old is not None:
-            tcPr.remove(old)
-        tcPr.append(parse_xml(
-            '<w:tcMar xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            f'<w:top w:w="{top}" w:type="dxa"/>'
-            f'<w:start w:w="{left}" w:type="dxa"/>'
-            f'<w:bottom w:w="{bottom}" w:type="dxa"/>'
-            f'<w:end w:w="{right}" w:type="dxa"/>'
-            '</w:tcMar>',
-        ))
-
-    def set_vertical_align(cell: Any, value: str = "top") -> None:
-        tcPr = cell._tc.get_or_add_tcPr()
-        old = tcPr.find(qn("w:vAlign"))
-        if old is not None:
-            tcPr.remove(old)
-        tcPr.append(parse_xml(
-            '<w:vAlign xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:val="{value}"/>',
-        ))
-
-    def set_no_wrap(cell: Any) -> None:
-        tcPr = cell._tc.get_or_add_tcPr()
-        if tcPr.find(qn("w:noWrap")) is None:
-            tcPr.append(parse_xml(
-                '<w:noWrap xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
-            ))
-
-    def format_run(run: Any, size_pt: float, *, bold: bool = False,
-                   color: tuple[int, int, int] | None = None) -> None:
-        run.bold = bold
-        run.font.size = Pt(size_pt)
-        run.font.name = DOC_FONT
-        run._element.rPr.rFonts.set(qn("w:eastAsia"), DOC_FONT)
-        if color:
-            run.font.color.rgb = RGBColor(*color)
+    set_normal_font(doc, DOC_FONT)
 
     def cover_image_size_cm(
         content: bytes, max_width_cm: float, max_height_cm: float,
@@ -399,7 +344,7 @@ def render_docx(
             for ci, cell in enumerate(row.cells):
                 cell.width = widths[ci]
                 set_cell_width(cell, COL_WIDTHS_CM[ci])
-                set_cell_margins(cell)
+                set_cell_margins_dxa(cell, start=CELL_MARGIN_TWIPS, end=CELL_MARGIN_TWIPS)
                 set_vertical_align(cell, "center")
 
         row_keys = (
@@ -418,7 +363,7 @@ def render_docx(
             "AVISO DE CORTE DEL SERVICIO DE AGUA POTABLE, "
             "POR TRABAJOS DE MEJORAMIENTO EN EL SISTEMA",
         )
-        format_run(run, 12, bold=True)
+        format_run(run, 12, bold=True, font_name=DOC_FONT)
 
         logo_cell = table.cell(0, 3).merge(table.cell(3, 3))
         logo_cell.paragraphs[0].clear()
@@ -437,17 +382,19 @@ def render_docx(
         for ri, label, value in data_items:
             lbl_cell = table.cell(ri, 0)
             lbl_cell.paragraphs[0].clear()
-            set_cell_margins(lbl_cell, top=40, right=0, bottom=40)
+            set_cell_margins_dxa(lbl_cell, top=40, start=CELL_MARGIN_TWIPS, bottom=40, end=0)
             set_no_wrap(lbl_cell)
             run = lbl_cell.paragraphs[0].add_run(label)
-            format_run(run, 9, bold=True)
+            format_run(run, 9, bold=True, font_name=DOC_FONT)
 
             table.cell(ri, 1).merge(table.cell(ri, 2))
             val_cell = table.cell(ri, 1)
             val_cell.paragraphs[0].clear()
-            set_cell_margins(val_cell, top=40, bottom=40)
+            set_cell_margins_dxa(
+                val_cell, top=40, start=CELL_MARGIN_TWIPS, bottom=40, end=CELL_MARGIN_TWIPS,
+            )
             run = val_cell.paragraphs[0].add_run(value)
-            format_run(run, 9.5, bold=True, color=TEAL_RGB)
+            format_run(run, 9.5, bold=True, color=TEAL_RGB, font_name=DOC_FONT)
 
         table.cell(4, 0).merge(table.cell(4, 3))
         sec_cell = table.cell(4, 0)
@@ -455,7 +402,7 @@ def render_docx(
         p = sec_cell.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.add_run("PANEL FOTOGRAFICO")
-        format_run(run, 12, bold=True)
+        format_run(run, 12, bold=True, font_name=DOC_FONT)
 
         photo_rows = [(5, 6, 1, 2), (7, 8, 3, 4)]
 
@@ -474,8 +421,8 @@ def render_docx(
             for pos, (img_cell, cap_cell) in merged_cells.items():
                 img_cell.paragraphs[0].clear()
                 cap_cell.paragraphs[0].clear()
-                set_cell_margins(img_cell, left=0, right=0)
-                set_cell_margins(cap_cell)
+                set_cell_margins_dxa(img_cell)
+                set_cell_margins_dxa(cap_cell, start=CELL_MARGIN_TWIPS, end=CELL_MARGIN_TWIPS)
 
                 img_ref = next(
                     (im for im in panel.imagenes if im.position == pos), None,
@@ -506,7 +453,7 @@ def render_docx(
                 else:
                     run = p.add_run("Sin imagen")
                     run.italic = True
-                    format_run(run, 9)
+                    format_run(run, 9, font_name=DOC_FONT)
 
                 p = cap_cell.paragraphs[0]
                 p.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -518,7 +465,7 @@ def render_docx(
                         "(Indicar direcci\u00f3n seg\u00fan lista de usuarios)"
                     )
                 run = p.add_run(cap_text)
-                format_run(run, 12)
+                format_run(run, 12, font_name=DOC_FONT)
 
     out = BytesIO()
     doc.save(out)

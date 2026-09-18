@@ -209,6 +209,36 @@ describe('saveEntriesInChunks', () => {
     expect(result).toEqual({ saved_count: 3, skipped_count: 1, cancelled: false });
   });
 
+  it('stages blobs as file tokens and cleans them after each IPC call', async () => {
+    const stageBlob = vi.fn(async (_blob: Blob, filename: string) => `token-${filename}`);
+    const cleanupToken = vi.fn(async () => undefined);
+    const encodeBuffer = vi.fn(() => 'unexpected-base64');
+    const saveFiles = vi.fn(async ({ files }) => ({
+      saved_count: files.length,
+      skipped_count: 0,
+    }));
+
+    const result = await saveEntriesInChunks({
+      entries: makeEntries(2),
+      outputFolder: '/tmp/out',
+      saveFiles,
+      stageBlob,
+      cleanupToken,
+      encodeBuffer,
+    });
+
+    expect(saveFiles).toHaveBeenCalledWith({
+      output_folder: '/tmp/out',
+      files: [
+        { filename: 'foto_001.jpg', file_token: 'token-foto_001.jpg' },
+        { filename: 'foto_002.jpg', file_token: 'token-foto_002.jpg' },
+      ],
+    });
+    expect(encodeBuffer).not.toHaveBeenCalled();
+    expect(cleanupToken).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ saved_count: 2, skipped_count: 0, cancelled: false });
+  });
+
   it('stops before the next IPC call when shouldCancel becomes true', async () => {
     let cancelAfterFirstChunk = false;
     const saveFiles = vi.fn(async ({ files }) => {

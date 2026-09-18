@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from backend.utils.atomic_write import atomic_write_json
+from backend.core.config_store import JsonConfigStore
 from backend.utils.paths import cached_config_path, resource_path
 
 logger = logging.getLogger(__name__)
@@ -88,30 +88,38 @@ def _config_file() -> Path:
     return _CONFIG_PATH
 
 
+def _parse_theme_payload(data: Any) -> dict[str, str] | None:
+    if isinstance(data, dict) and "bg" in data:
+        theme = dict(DEFAULT_THEME)
+        theme.update(data)
+        return theme
+    return None
+
+
+# El tema se re-lee en cada llamada (sin cache): el archivo puede cambiar por
+# fuera del proceso y load_theme siempre debe reflejar el disco.
+_store: JsonConfigStore[dict[str, str]] = JsonConfigStore(
+    lambda: _config_file(),
+    default=lambda: dict(DEFAULT_THEME),
+    parse=_parse_theme_payload,
+    serialize=lambda theme: theme,
+    label="configuración de tema",
+    cached=False,
+)
+
+
 def load_theme() -> dict[str, str]:
-    path = _config_file()
-    if path.exists():
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict) and "bg" in data:
-                theme = dict(DEFAULT_THEME)
-                theme.update(data)
-                return theme
-        except (json.JSONDecodeError, OSError, TypeError) as exc:
-            logger.warning("Error leyendo configuración de tema, usando default: %s", exc)
-    return dict(DEFAULT_THEME)
+    return _store.load()
 
 
 def save_theme(theme: dict[str, Any]) -> dict[str, str]:
-    path = _config_file()
     validated: dict[str, str] = {}
     for k, v in theme.items():
         if isinstance(v, str) and v.startswith("#"):
             validated[k] = v
         else:
             validated[k] = str(v)
-    atomic_write_json(path, validated)
+    _store.save(validated)
     return validated
 
 

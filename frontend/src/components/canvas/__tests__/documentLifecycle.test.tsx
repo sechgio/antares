@@ -30,6 +30,11 @@ vi.mock('../sync/cloudQueue', () => ({
   queueCanvasCloudDelete: vi.fn(),
 }));
 
+vi.mock('../../../utils/observability', () => ({
+  reportFrontendEvent: vi.fn(),
+  reportFrontendError: vi.fn(),
+}));
+
 vi.mock('../utils/imageBlobStore', () => ({
   serializeDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
   hydrateDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
@@ -42,6 +47,7 @@ vi.mock('../utils/imageBlobStore', () => ({
 }));
 
 import { api } from '../../../api';
+import { reportFrontendEvent } from '../../../utils/observability';
 import { queueCanvasCloudDelete, queueCanvasCloudPush } from '../sync/cloudQueue';
 import { hydrateHistorySteps } from '../utils/imageBlobStore';
 
@@ -281,7 +287,6 @@ describe('useDocumentLifecycle', () => {
   });
 
   it('lifecycle: consumes cloud push and delete failures without an unhandled rejection', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.mocked(queueCanvasCloudPush).mockRejectedValue(new Error('cloud unavailable'));
     vi.mocked(queueCanvasCloudDelete).mockRejectedValue(new Error('cloud delete unavailable'));
     vi.mocked(api.canvasCreate).mockResolvedValue({ document: makeDoc('doc-new', 'Sin título') });
@@ -293,10 +298,15 @@ describe('useDocumentLifecycle', () => {
       await result.current.onDeleteDoc();
     });
     await waitFor(() => {
-      expect(warn).toHaveBeenCalledWith('[canvas] No se pudo sincronizar con cloud:', 'cloud unavailable');
+      expect(reportFrontendEvent).toHaveBeenCalledTimes(4);
     });
-    expect(warn).toHaveBeenCalledWith('[canvas] No se pudo sincronizar con cloud:', 'cloud delete unavailable');
-    warn.mockRestore();
+    expect(reportFrontendEvent).toHaveBeenCalledWith({
+      event: 'canvas.push',
+      level: 'WARN',
+      outcome: 'failed',
+      reason: 'cloud_push_failed',
+      view: 'canvas',
+    });
   });
 
   it('save: leaves newer edits dirty when a stale save response resolves', async () => {

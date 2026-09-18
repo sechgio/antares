@@ -15,6 +15,7 @@ import { Minus, Plus } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { sanitizeHtmlForCanvasPreview } from '../../../../../shared/html-sanitizer.js';
 import { clampZoom, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
+import Button from '@/components/ui/Button';
 
 type PreviewChild = ReactNode | ((scale: number) => ReactNode);
 
@@ -249,14 +250,13 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
           }}
         >
           <WithHoverTooltip label="Alejar" shortcut="Ctrl+-" placement="top" variant="dark">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               className="canvas-icon-btn shrink-0"
               aria-label="Alejar"
               onClick={() => zoomByStep(-1)}
             >
               <Minus className="h-4 w-4" strokeWidth={1.75} />
-            </button>
+            </Button>
           </WithHoverTooltip>
           <span
             className="min-w-[3rem] text-center text-[11px] font-medium tabular-nums"
@@ -265,14 +265,13 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
             {Math.round(zoom * 100)}%
           </span>
           <WithHoverTooltip label="Acercar" shortcut="Ctrl++" placement="top" variant="dark">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               className="canvas-icon-btn shrink-0"
               aria-label="Acercar"
               onClick={() => zoomByStep(1)}
             >
               <Plus className="h-4 w-4" strokeWidth={1.75} />
-            </button>
+            </Button>
           </WithHoverTooltip>
         </div>
       </div>

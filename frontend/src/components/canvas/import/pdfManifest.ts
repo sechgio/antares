@@ -233,5 +233,3 @@ export function canvasManifestToFragment(document: CanvasDocument): PdfCanvasFra
     },
   };
 }
-
-export { base64ToBytes as decodeBase64 } from '../../../utils/bytesToBase64';

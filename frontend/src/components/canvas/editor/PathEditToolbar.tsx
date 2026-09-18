@@ -8,8 +8,9 @@ import {
 import type { CanvasToolbarPosition } from '../ops/panelChrome';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasTool } from '../types';
+import Button from '@/components/ui/Button';
 
-export type PathEditTool = Extract<CanvasTool, 'select' | 'lasso' | 'bend' | 'cut'>;
+type PathEditTool = Extract<CanvasTool, 'select' | 'lasso' | 'bend' | 'cut'>;
 
 interface PathEditToolbarProps {
   tool: CanvasTool;
@@ -50,15 +51,14 @@ export default function PathEditToolbar({
         const isActive = active === id;
         return (
           <WithHoverTooltip key={id} label={title} variant="dark">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               className={`canvas-path-edit-btn${isActive ? ' is-active' : ''}`}
               aria-label={title}
               aria-pressed={isActive}
               onClick={() => onTool(id)}
             >
               <Icon className="h-4 w-4" />
-            </button>
+            </Button>
           </WithHoverTooltip>
         );
       })}
@@ -66,15 +66,14 @@ export default function PathEditToolbar({
         <>
           <span className="canvas-path-edit-sep" aria-hidden />
           <WithHoverTooltip label={pathClosed ? 'Abrir trazo' : 'Cerrar trazo'} variant="dark">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               className={`canvas-path-edit-btn${pathClosed ? ' is-active' : ''}`}
               aria-label={pathClosed ? 'Abrir trazo' : 'Cerrar trazo'}
               aria-pressed={pathClosed}
               onClick={onToggleClosed}
             >
               <MoreHorizontal className="h-4 w-4" />
-            </button>
+            </Button>
           </WithHoverTooltip>
         </>
       )}

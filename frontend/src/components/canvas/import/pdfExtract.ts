@@ -508,7 +508,7 @@ function bytesFromAttachment(value: unknown): Uint8Array | undefined {
   return bytes ? new Uint8Array(bytes) : undefined;
 }
 
-export function readCanvasManifestAttachment(
+function readCanvasManifestAttachment(
   attachments: unknown,
   maxBytes = DEFAULT_PDF_IMPORT_LIMITS.maxManifestBytes,
 ): Uint8Array | undefined {

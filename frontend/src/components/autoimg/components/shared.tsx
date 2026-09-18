@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import Button from '@/components/ui/Button';
 
 export function SectionCard({
   title,
@@ -306,12 +307,11 @@ export function ActionButton({
       'border border-[color-mix(in_srgb,var(--accent-red)_25%,transparent)] text-[var(--accent-red)] hover:bg-[color-mix(in_srgb,var(--accent-red)_8%,transparent)] disabled:opacity-40',
   };
   return (
-    <button
-      type="button"
+    <Button variant="none" size="none"
       className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-base)] ${variants[variant]} ${className}`}
       {...props}
     >
       {children}
-    </button>
+    </Button>
   );
 }

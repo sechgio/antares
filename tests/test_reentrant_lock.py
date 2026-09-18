@@ -1,8 +1,7 @@
 
 import threading
 
-from backend.core.state import ProcessState
-from backend.handlers.common import log_message
+from backend.core.state import ProcessState, log_message
 
 
 def test_state_lock_is_reentrant() -> None:

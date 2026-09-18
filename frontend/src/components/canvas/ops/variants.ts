@@ -2,7 +2,7 @@ import type { CanvasLayer, LayerCssVars } from '../types';
 
 type VariantCatalog = Record<string, Partial<LayerCssVars>>;
 
-export type PreparedVariant = {
+type PreparedVariant = {
   key: string;
   patch: Partial<LayerCssVars>;
   parsedEntries: Array<[string, string]>;

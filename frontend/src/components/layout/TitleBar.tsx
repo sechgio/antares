@@ -2,6 +2,7 @@ import { Minus, Square, X, Settings } from 'lucide-react';
 import TaskNotificationsBell from './TaskNotificationsBell';
 import UpdateButton from './UpdateButton';
 import { HoverTooltip } from '@/components/ui/HoverTooltip';
+import Button from '@/components/ui/Button';
 
 function handleWindowAction(action: 'minimizeWindow' | 'maximizeWindow' | 'closeWindow') {
   window.electronAPI?.[action]?.();
@@ -24,8 +25,7 @@ export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEsp
         <UpdateButton />
         {onOpenSettings && (
           <div className="group relative flex h-full">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               data-testid="titlebar-settings-button"
               aria-label="Configuración"
               onClick={onOpenSettings}
@@ -34,41 +34,38 @@ export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEsp
               className="app-titlebar-button flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <Settings size={14} strokeWidth={1.8} className="transition-transform duration-300 group-hover:rotate-45" />
-            </button>
+            </Button>
             <HoverTooltip label="Configuración" placement="bottom" />
           </div>
         )}
         <div className="relative flex h-full">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             aria-label="Minimizar"
             onClick={() => handleWindowAction('minimizeWindow')}
             className="app-titlebar-button flex h-full w-12 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
             <Minus size={14} strokeWidth={1.8} />
-          </button>
+          </Button>
           <HoverTooltip label="Minimizar" placement="bottom" />
         </div>
         <div className="relative flex h-full">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             aria-label="Maximizar"
             onClick={() => handleWindowAction('maximizeWindow')}
             className="app-titlebar-button flex h-full w-12 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
             <Square size={11} strokeWidth={1.8} />
-          </button>
+          </Button>
           <HoverTooltip label="Maximizar" placement="bottom" />
         </div>
         <div className="relative flex h-full">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             aria-label="Cerrar"
             onClick={() => handleWindowAction('closeWindow')}
             className="app-titlebar-button flex h-full w-12 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)]"
           >
             <X size={15} strokeWidth={1.8} />
-          </button>
+          </Button>
           <HoverTooltip label="Cerrar" placement="bottom" />
         </div>
       </div>

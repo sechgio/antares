@@ -6,6 +6,8 @@ import { parseDriveFolderId } from '../utils/parseDriveFolderId';
 import { ActionButton, INPUT_CLASS } from './shared';
 import { FolderPreviewStrip, useFolderPreviews } from './FolderPreviewStrip';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 interface FolderMgmtProps {
   folders?: AutoImgFolder[];
@@ -29,8 +31,7 @@ function Switch({
 }) {
   return (
     <WithHoverTooltip label={title} placement="bottom">
-      <button
-        type="button"
+      <Button variant="none" size="none"
         role="switch"
         aria-checked={checked}
         aria-label={label}
@@ -45,7 +46,7 @@ function Switch({
             checked ? 'translate-x-4' : 'translate-x-0.5'
           }`}
         />
-      </button>
+      </Button>
     </WithHoverTooltip>
   );
 }
@@ -191,7 +192,7 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
         setFolders((await api.autoimgFoldersList(force)).folders);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar');
+      setError(errorMessage(e, 'Error al cargar'));
     } finally {
       setLoading(false);
     }
@@ -237,7 +238,7 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
       const folderIdNow =
         parseDriveFolderId(folderIdInputRef.current) || folderIdInputRef.current.trim();
       if (requestId !== verifyRequestRef.current || folderIdAtStart !== folderIdNow) return;
-      setError(e instanceof Error ? e.message : 'No se pudo verificar la carpeta');
+      setError(errorMessage(e, 'No se pudo verificar la carpeta'));
     } finally {
       setVerifying(false);
     }
@@ -262,7 +263,7 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
       setVerified(null);
       await reconcileMutation(result);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al agregar carpeta');
+      setError(errorMessage(e, 'Error al agregar carpeta'));
     } finally {
       setLoading(false);
     }
@@ -395,15 +396,14 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
                   </p>
                   <p className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">archivos</p>
                 </div>
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   onClick={() => handleRemove(f.folder_id)}
                   disabled={loading}
                   className="shrink-0 rounded-lg p-1.5 text-[var(--text-muted)] transition-colors duration-150 active:scale-[0.97] hover:bg-[color-mix(in_srgb,var(--accent-red)_10%,transparent)] hover:text-[var(--accent-red)] disabled:opacity-40"
                   aria-label={`Eliminar ${f.name}`}
                 >
                   <Trash2 size={14} />
-                </button>
+                </Button>
               </div>
               <div className="pl-[5.75rem]">
                 <FolderPreviewStrip state={previews[f.folder_id]} folderName={f.name} />

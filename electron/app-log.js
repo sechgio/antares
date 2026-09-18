@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const OBSERVABILITY_CONTRACT = require('../shared/observability-contract.json');
+const { createAsyncLogWriter } = require('./async-log-writer');
 
 const APP_NAME = 'Antares';
 const LOG_RETENTION_DAYS = 14;
@@ -42,6 +43,7 @@ const EVENT_FIELDS = new Set([
   'request_id',
   'status_class',
   'stream',
+  'timeout_ms',
   'attempt',
   'component',
   'view',
@@ -141,10 +143,6 @@ function _todayObservabilityLogPath() {
   return path.join(getLogsDir(), `antares-${yyyy}-${mm}-${dd}.jsonl`);
 }
 
-function getObservabilityLogPath() {
-  return _todayObservabilityLogPath();
-}
-
 function _fmtArg(arg) {
   if (typeof arg === 'string') return arg;
   if (arg instanceof Error) return arg.stack || arg.message || String(arg);
@@ -153,17 +151,6 @@ function _fmtArg(arg) {
   } catch {
     return String(arg);
   }
-}
-
-function _safePathFor(p) {
-  try {
-    const st = fs.lstatSync(p);
-    if (st.isSymbolicLink()) {
-      fs.unlinkSync(p);
-    }
-  } catch {
-  }
-  return p;
 }
 
 function _redactText(text) {
@@ -220,7 +207,7 @@ function _normaliseEventField(key, value) {
     const text = String(value ?? '').trim().toLowerCase();
     return RUM_NAV_TYPES.has(text) ? text : undefined;
   }
-  if (['pid', 'backend_pid', 'bytes', 'attempt', 'count'].includes(key)) {
+  if (['pid', 'backend_pid', 'bytes', 'attempt', 'count', 'timeout_ms'].includes(key)) {
     return Number.isInteger(value) && value >= 0 ? value : undefined;
   }
   if (key === 'duration_ms') {
@@ -236,73 +223,29 @@ function _maxLogFileBytes() {
     : DEFAULT_MAX_LOG_FILE_BYTES;
 }
 
-function _ensureLogsDir() {
-  if (_logsDirReady) return;
-  fs.mkdirSync(getLogsDir(), { recursive: true });
-  _logsDirReady = true;
-}
-
-function _rotatedPath(basePath, index) {
-  const ext = path.extname(basePath);
-  return `${basePath.slice(0, -ext.length)}.${index}${ext}`;
-}
-
-function _selectLogPath(basePath, line) {
-  const safeBasePath = _safePathFor(basePath);
-  const lineBytes = Buffer.byteLength(line, 'utf8');
-  let target = safeBasePath;
-  try {
-    const baseSize = fs.existsSync(safeBasePath) ? fs.statSync(safeBasePath).size : 0;
-    if (baseSize + lineBytes <= _maxLogFileBytes()) return target;
-    for (let index = 1; index < 1000; index += 1) {
-      const candidate = _rotatedPath(safeBasePath, index);
-      const candidateSize = fs.existsSync(candidate) ? fs.statSync(candidate).size : 0;
-      if (candidateSize + lineBytes <= _maxLogFileBytes()) return _safePathFor(candidate);
-    }
-  } catch {
-  }
-  return target;
-}
-
-function _enforceLogBudget() {
-  try {
-    const entries = fs.readdirSync(getLogsDir())
-      .filter((name) => MANAGED_LOG_RE.test(name))
-      .map((name) => {
-        const filePath = path.join(getLogsDir(), name);
-        const stat = fs.statSync(filePath);
-        return { filePath, size: stat.size, mtimeMs: stat.mtimeMs };
-      })
-      .sort((a, b) => a.mtimeMs - b.mtimeMs);
-    let total = entries.reduce((sum, entry) => sum + entry.size, 0);
-    for (const entry of entries) {
-      if (total <= MAX_LOG_DIR_BYTES) break;
-      fs.unlinkSync(entry.filePath);
-      total -= entry.size;
-    }
-  } catch {
-  }
-}
-
-const _BUDGET_ENFORCE_INTERVAL = 200;
-let _budgetEnforceCounter = 0;
-
-function _enforceLogBudgetThrottled() {
-  _budgetEnforceCounter += 1;
-  if (_budgetEnforceCounter < _BUDGET_ENFORCE_INTERVAL) return;
-  _budgetEnforceCounter = 0;
-  _enforceLogBudget();
-}
-
-function _appendManagedLine(basePath, line) {
-  _ensureLogsDir();
-  fs.appendFileSync(_selectLogPath(basePath, line), line, 'utf8');
-  _enforceLogBudgetThrottled();
-}
-
 function _markDroppedEvent() {
   _logsDirReady = false;
   _droppedEventCount += 1;
+}
+
+const _logWriter = createAsyncLogWriter({
+  getLogsDir,
+  getMaxFileBytes: _maxLogFileBytes,
+  managedLogPattern: MANAGED_LOG_RE,
+  maxDirectoryBytes: MAX_LOG_DIR_BYTES,
+  onDrop: _markDroppedEvent,
+});
+
+function _appendManagedLine(basePath, line, onSuccess = undefined) {
+  _logWriter.append(basePath, line, onSuccess);
+}
+
+function flushLogQueue() {
+  return _logWriter.flush();
+}
+
+function flushLogQueueSync() {
+  _logWriter.flushSync();
 }
 
 function appendLogLine(level, text) {
@@ -336,8 +279,15 @@ function appendLogEvent(level, event, fields = {}) {
   }
   if (pendingDrops > 0) record.dropped_events = pendingDrops;
   try {
-    _appendManagedLine(_todayObservabilityLogPath(), `${JSON.stringify(record)}\n`);
-    _droppedEventCount = 0;
+    _appendManagedLine(
+      _todayObservabilityLogPath(),
+      `${JSON.stringify(record)}\n`,
+      () => {
+        if (pendingDrops > 0) {
+          _droppedEventCount = Math.max(0, _droppedEventCount - pendingDrops);
+        }
+      },
+    );
   } catch {
     _markDroppedEvent();
   }
@@ -363,6 +313,11 @@ function initAppLogs() {
     }
   } catch {}
   return dir;
+}
+
+function logInfo(...args) {
+  _originalConsole.log(...args);
+  appendLogLine('INFO', args.map(_fmtArg).join(' '));
 }
 
 function installConsoleLogTee() {
@@ -438,11 +393,12 @@ module.exports = {
   getAppContext,
   getDroppedEventCount,
   getLogsDir,
-  getObservabilityLogPath,
   getSessionId,
+  flushLogQueue,
+  flushLogQueueSync,
   initAppLogs,
   installConsoleLogTee,
+  logInfo,
   redactText: _redactText,
-  resolveAppDataDir,
   setAppContext,
 };

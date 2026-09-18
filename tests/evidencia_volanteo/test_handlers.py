@@ -100,7 +100,6 @@ def test_render_pdf_writes_output_path(tmp_path, monkeypatch) -> None:
     assert resp["filename"] == "salida.pdf"
     assert out.read_bytes() == b"%PDF-disk-test"
     assert resp["content_base64"] == ""
-    assert resp["pdf_base64"] == ""
 
 
 def test_render_pdf_uses_preview_html_when_provided(monkeypatch) -> None:

@@ -107,7 +107,7 @@ def test_history_export_csv_skips_missing_ids(seeded_db) -> None:
 def test_history_delete_many(seeded_db) -> None:
     _db_file, _runs = seeded_db
     result = HANDLERS["history_delete_many"]({"ids": [1, 2]})
-    assert result == {"deleted": 2, "requested": 2}
+    assert result == {"deleted_count": 2, "requested": 2}
     remaining = HANDLERS["history_list"]({})["runs"]
     assert len(remaining) == 1
 

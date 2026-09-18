@@ -10,6 +10,7 @@ import {
   fallbackBoardColumns,
   pickerColumns,
 } from '../utils/statusConfig';
+import Button from '@/components/ui/Button';
 
 interface StatusPickerProps {
   value: TareaStatus;
@@ -66,9 +67,8 @@ export default function StatusPicker({
 
   return (
     <div className={`relative inline-flex ${className}`}>
-      <button
+      <Button variant="none" size="none"
         ref={triggerRef}
-        type="button"
         disabled={disabled}
         aria-label={label ?? `Estado: ${displayLabel}`}
         aria-haspopup="listbox"
@@ -96,7 +96,7 @@ export default function StatusPicker({
           }`}
           aria-hidden
         />
-      </button>
+      </Button>
 
       {open &&
         createPortal(
@@ -116,9 +116,8 @@ export default function StatusPicker({
             {options.map((col) => {
               const selected = col.key === value;
               return (
-                <button
+                <Button variant="none" size="none"
                   key={col.key}
-                  type="button"
                   role="option"
                   aria-selected={selected}
                   onClick={() => pick(col.key)}
@@ -142,7 +141,7 @@ export default function StatusPicker({
                   {selected && (
                     <Check className="h-3.5 w-3.5 shrink-0 text-[var(--text-primary)]" strokeWidth={2.5} aria-hidden />
                   )}
-                </button>
+                </Button>
               );
             })}
           </div>,

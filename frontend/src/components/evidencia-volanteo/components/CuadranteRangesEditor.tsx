@@ -1,6 +1,7 @@
 import { Plus, Trash2, MapPin } from 'lucide-react';
 import { DEFAULT_CUADRANTE_LABEL } from '../constants';
 import type { CuadranteRange } from '../types';
+import Button from '@/components/ui/Button';
 
 interface Props {
   ranges: CuadranteRange[];
@@ -42,14 +43,13 @@ export default function CuadranteRangesEditor({
             Cuadrantes por hojas
           </span>
         </div>
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={onAdd}
           className="flex items-center gap-1 text-[10px] font-medium text-[var(--accent-primary)] hover:opacity-80 transition-opacity"
         >
           <Plus size={12} />
           Agregar
-        </button>
+        </Button>
       </div>
 
       <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col gap-2.5">
@@ -88,14 +88,13 @@ export default function CuadranteRangesEditor({
                 Rango {index + 1}
               </span>
               {ranges.length > 1 && (
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   onClick={() => onChange(ranges.filter((r) => r.id !== range.id))}
                   className="p-1 text-[var(--text-muted)] hover:text-[var(--accent-red)] opacity-0 group-hover:opacity-100 transition-opacity"
                   aria-label="Eliminar rango"
                 >
                   <Trash2 size={13} />
-                </button>
+                </Button>
               )}
             </div>
 

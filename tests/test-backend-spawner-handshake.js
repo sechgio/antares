@@ -1,79 +1,27 @@
-const { EventEmitter } = require('events');
-const childProcess = require('child_process');
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const {
+  assert, finish, stubBackendCommand, evictModule, makeFakeProc, patchSpawn, installInertTimers,
+} = require('./helpers/harness');
 
 async function run() {
   console.log('Testing backend spawner handshake cleanup...\n');
 
-  const backendCommandPath = require.resolve('../electron/backend-command.js');
-  require.cache[backendCommandPath] = {
-    id: backendCommandPath,
-    filename: backendCommandPath,
-    loaded: true,
-    exports: {
-      getBackendCommand: () => ({ cmd: 'python', args: [] }),
-    },
-  };
+  stubBackendCommand();
 
-  const originalSpawn = childProcess.spawn;
-  const originalSetTimeout = global.setTimeout;
-  const originalClearTimeout = global.clearTimeout;
-  const inertTimers = new Set();
   let handshakeTimer = null;
   let clearedHandshakeTimer = null;
   let fakeProcess = null;
 
-  childProcess.spawn = () => {
-    fakeProcess = new EventEmitter();
-    fakeProcess.stdout = new EventEmitter();
-    fakeProcess.stderr = new EventEmitter();
-    fakeProcess.stdin = new EventEmitter();
-    fakeProcess.stdin.end = () => {};
-    fakeProcess.killed = false;
-    fakeProcess.pid = 12345;
-    fakeProcess.kill = () => {
-      fakeProcess.killed = true;
-    };
-    process.nextTick(() => {
-      fakeProcess.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","method":"ready","params":{"status":"ok"}}\n'));
-    });
+  const spawn = patchSpawn(() => {
+    fakeProcess = makeFakeProc({ closeOnKill: false });
     return fakeProcess;
-  };
+  });
+  const timers = installInertTimers({
+    fastForward: false,
+    onInert: (timer) => { if (!handshakeTimer) handshakeTimer = timer; },
+    onClear: (timer) => { if (timer === handshakeTimer) clearedHandshakeTimer = timer; },
+  });
 
-  global.setTimeout = (fn, delay, ...args) => {
-    if (delay === 30_000 || delay === 60_000) {
-      const timer = { fn, delay, args };
-      inertTimers.add(timer);
-      if (!handshakeTimer) handshakeTimer = timer;
-      return timer;
-    }
-    return originalSetTimeout(fn, delay, ...args);
-  };
-  global.clearTimeout = (timer) => {
-    if (inertTimers.has(timer)) {
-      inertTimers.delete(timer);
-      if (timer === handshakeTimer) {
-        clearedHandshakeTimer = timer;
-      }
-      return undefined;
-    }
-    return originalClearTimeout(timer);
-  };
-
-  const backendSpawnerPath = require.resolve('../electron/backend-spawner.js');
-  delete require.cache[backendSpawnerPath];
+  evictModule('electron/backend-spawner.js');
   const { startPythonBackend, killPython } = require('../electron/backend-spawner.js');
 
   try {
@@ -83,16 +31,11 @@ async function run() {
   } finally {
     if (fakeProcess) fakeProcess.killed = true;
     killPython();
-    childProcess.spawn = originalSpawn;
-    global.setTimeout = originalSetTimeout;
-    global.clearTimeout = originalClearTimeout;
+    spawn.restore();
+    timers.restore();
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

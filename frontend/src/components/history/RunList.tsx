@@ -5,6 +5,7 @@ import {
   safeJsonParse,
   type HistoryRunRow,
 } from './runTypes';
+import Button from '@/components/ui/Button';
 
 export type HistoryRun = HistoryRunRow;
 
@@ -83,8 +84,7 @@ const MemoizedRunListItem = React.memo(function RunListItem({
           className="mt-1 h-3.5 w-3.5 accent-[var(--accent-primary)]"
         />
       )}
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={() => onSelect(run)}
         className="flex-1 min-w-0 text-left"
       >
@@ -125,7 +125,7 @@ const MemoizedRunListItem = React.memo(function RunListItem({
             <span>{t('history.list.files', { count: fileCount })}</span>
           )}
         </div>
-      </button>
+      </Button>
     </div>
   );
 });

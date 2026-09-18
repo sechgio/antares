@@ -1,5 +1,7 @@
 import ReportFormEmptyState from '../report-workspace/ReportFormEmptyState';
 import ReportFormHeader from '../report-workspace/ReportFormHeader';
+import Button from '../ui/Button';
+import ThemedSelect from '../ui/ThemedSelect';
 import { RESERVOIR_TYPES } from '../../types/reports';
 import { Field, LogoInput, Section } from './trFormControls';
 import {
@@ -131,11 +133,12 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
           </div>
           <label className="tr-field">
             <span>Tipo</span>
-            <select value={report.header.tipo} onChange={(event) => patchHeader('tipo', event.target.value)}>
-              {RESERVOIR_TYPES.map((tipo) => (
-                <option key={tipo} value={tipo}>{tipo}</option>
-              ))}
-            </select>
+            <ThemedSelect
+              value={report.header.tipo}
+              onChange={(value) => patchHeader('tipo', value)}
+              options={RESERVOIR_TYPES.map((tipo) => ({ value: tipo, label: tipo }))}
+              aria-label="Tipo"
+            />
           </label>
         </Section>
 
@@ -146,14 +149,15 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
                 <strong>{label}</strong>
                 <div className="tr-segment">
                   {(['unchecked', 'normal', 'critico'] as CheckState[]).map((state) => (
-                    <button
+                    <Button
                       key={state}
+                      variant="none"
+                      size="none"
                       className={report.inspeccion[key] === state ? 'active' : ''}
                       onClick={() => patchInspection(String(key), state)}
-                      type="button"
                     >
                       {state === 'unchecked' ? '-' : state === 'normal' ? 'Normal' : 'Crítico'}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>

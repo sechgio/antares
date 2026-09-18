@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Save, FolderOpen, ChevronDown, Trash2, Check, Settings2 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import Button from '@/components/ui/Button';
 
 export interface ConversionConfig {
   formato: string;
@@ -185,8 +186,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
 
   return (
     <div className={className} ref={anchorRef}>
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={toggle}
         aria-expanded={open}
         aria-haspopup="menu"
@@ -195,7 +195,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
         <Settings2 className="h-4 w-4" />
         <span>Configuración</span>
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
+      </Button>
 
       {open && menuPosition && createPortal(
           <div
@@ -206,12 +206,12 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
           >
           <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">Presets</span>
-            <button
+            <Button variant="none" size="none"
               onClick={() => setSaveMode((v) => !v)}
               className="text-[11px] font-semibold text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] transition-colors"
             >
               {saveMode ? 'Cancelar' : '+ Guardar actual'}
-            </button>
+            </Button>
           </div>
 
           {saveMode && (
@@ -225,14 +225,14 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
                 autoFocus
               />
-              <button
+              <Button variant="none" size="none"
                 onClick={handleSave}
                 disabled={!saveName.trim()}
                 className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-[var(--accent-primary)] text-[var(--text-on-accent)] disabled:opacity-40 hover:bg-[var(--accent-primary-hover)] transition-colors"
               >
                 <Save className="h-3.5 w-3.5" />
                 Guardar configuración
-              </button>
+              </Button>
             </div>
           )}
 
@@ -241,7 +241,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Predeterminados</span>
             </div>
             {DEFAULT_PRESETS.map((preset) => (
-              <button
+              <Button variant="none" size="none"
                 key={preset.id}
                 onClick={() => handleLoad(preset)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[var(--bg-elevated)] transition-colors group"
@@ -253,7 +253,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
                     {preset.config.formato} · {preset.config.calidad}% · {preset.config.resizeEnabled ? `${preset.config.resizeAncho}×${preset.config.resizeAlto}` : 'Original'}
                   </span>
                 </div>
-              </button>
+              </Button>
             ))}
 
             {customPresets.length > 0 && (
@@ -262,7 +262,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Personalizados</span>
                 </div>
                 {customPresets.map((preset) => (
-                  <button
+                  <Button variant="none" size="none"
                     key={preset.id}
                     onClick={() => handleLoad(preset)}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[var(--bg-elevated)] transition-colors group"
@@ -275,16 +275,15 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
                       </span>
                     </div>
                     <WithHoverTooltip label="Eliminar" placement="bottom">
-                      <button
-                        type="button"
+                      <Button variant="none" size="none"
                         onClick={(e) => handleDelete(preset.id, e)}
                         aria-label="Eliminar"
                         className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 transition-all"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     </WithHoverTooltip>
-                  </button>
+                  </Button>
                 ))}
               </>
             )}

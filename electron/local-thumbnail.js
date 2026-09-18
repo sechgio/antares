@@ -260,9 +260,7 @@ module.exports = {
   createLocalThumbnail,
   createLocalImageDataUrl,
   setThumbnailCacheDir,
-  getThumbnailCacheDir,
   _trimDiskCache,
   DISK_CACHE_MAX_FILES,
   DISK_CACHE_MAX_BYTES,
-  MAX_LOCAL_IMAGE_BYTES,
 };

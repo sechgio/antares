@@ -1,5 +1,6 @@
 const { app, ipcMain } = require('electron');
 const { getMainWindow } = require('./window-manager');
+const { logInfo } = require('./app-log');
 
 let _autoUpdater = null;
 let _updateInProgress = false;
@@ -44,7 +45,7 @@ function _loadAutoUpdater() {
   _autoUpdater.autoInstallOnAppQuit = false;
 
   _autoUpdater.logger = {
-    info: (...a) => console.log('[auto-updater]', ...a),
+    info: (...a) => logInfo('[auto-updater]', ...a),
     warn: (...a) => console.warn('[auto-updater]', ...a),
     error: (...a) => console.error('[auto-updater]', ...a),
     debug: () => {},
@@ -62,14 +63,14 @@ function _broadcastToRenderer(channel, data) {
 
 function setupAutoUpdater(isDev) {
   if (isDev || !app.isPackaged) {
-    console.log('[auto-updater] desactivado (modo dev / app no empaquetada). Registrando manejadores mock.');
+    logInfo('[auto-updater] desactivado (modo dev / app no empaquetada). Registrando manejadores mock.');
 
     ipcMain.handle('auto-update-check', async (event) => {
       const { _isAllowedIpcSender } = require('./ipc-router');
       if (!_isAllowedIpcSender(event)) {
         return { success: false, reason: 'untrusted sender' };
       }
-      console.log('[auto-updater] (dev) Manual check requested. Mocking up-to-date.');
+      logInfo('[auto-updater] (dev) Manual check requested. Mocking up-to-date.');
       setTimeout(() => {
         _broadcastToRenderer('auto-update-status', {
           status: 'up-to-date',
@@ -95,7 +96,7 @@ function setupAutoUpdater(isDev) {
   if (!updater) return;
 
   updater.on('checking-for-update', () => {
-    console.log('[auto-updater] buscando actualizaciones...');
+    logInfo('[auto-updater] buscando actualizaciones...');
   });
 
   updater.on('update-available', (info) => {
@@ -104,7 +105,7 @@ function setupAutoUpdater(isDev) {
     _downloadProgress = 0;
     _lastLoggedPercent = -1;
     _availableVersion = info?.version || 'unknown';
-    console.log('[auto-updater] versión disponible:', info?.version);
+    logInfo('[auto-updater] versión disponible:', info?.version);
     _broadcastToRenderer('auto-update-status', {
       status: 'available',
       version: _availableVersion,
@@ -113,7 +114,7 @@ function setupAutoUpdater(isDev) {
   });
 
   updater.on('update-not-available', () => {
-    console.log('[auto-updater] no hay actualizaciones.');
+    logInfo('[auto-updater] no hay actualizaciones.');
     if (_manualCheckRequested) {
       _manualCheckRequested = false;
       _broadcastToRenderer('auto-update-status', {
@@ -130,7 +131,7 @@ function setupAutoUpdater(isDev) {
       const rounded = Math.round(p.percent);
       if (rounded !== _lastLoggedPercent) {
         _lastLoggedPercent = rounded;
-        console.log(`[auto-updater] descargando ${p.percent.toFixed(1)}%`);
+        logInfo(`[auto-updater] descargando ${p.percent.toFixed(1)}%`);
       }
       _broadcastToRenderer('auto-update-status', {
         status: 'downloading',
@@ -145,7 +146,7 @@ function setupAutoUpdater(isDev) {
     _updateDownloaded = true;
     _downloadProgress = 100;
     _availableVersion = info?.version || _availableVersion;
-    console.log('[auto-updater] descarga lista.');
+    logInfo('[auto-updater] descarga lista.');
     _broadcastToRenderer('auto-update-status', {
       status: 'ready',
       version: _availableVersion,
@@ -183,17 +184,17 @@ function setupAutoUpdater(isDev) {
     if (!_isAllowedIpcSender(event)) {
       return { success: false, reason: 'untrusted sender' };
     }
-    console.log('[auto-updater] Manual check requested. In progress:', _updateInProgress);
+    logInfo('[auto-updater] Manual check requested. In progress:', _updateInProgress);
     if (!updater || _updateInProgress) {
       const reason = !updater ? 'updater not loaded' : 'update in progress';
-      console.log('[auto-updater] Check rejected:', reason);
+      logInfo('[auto-updater] Check rejected:', reason);
       return { success: false, reason };
     }
     _manualCheckRequested = true;
-    console.log('[auto-updater] Calling checkForUpdates...');
+    logInfo('[auto-updater] Calling checkForUpdates...');
     try {
       const result = await updater.checkForUpdates();
-      console.log('[auto-updater] checkForUpdates result:', result?.version || 'no update');
+      logInfo('[auto-updater] checkForUpdates result:', result?.version || 'no update');
       return { success: true };
     } catch (err) {
       console.warn('[auto-updater] checkForUpdates error:', err.message);

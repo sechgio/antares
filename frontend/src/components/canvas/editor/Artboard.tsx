@@ -7,10 +7,10 @@ import {
   useState,
   memo,
   type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useLiveRef } from '../../../hooks/useLiveRef';
 import type { CanvasDocument, CanvasGuide, CanvasLayer, CanvasTool } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX, parseMm, resolvePageMarginMm } from '../types';
 import {
@@ -23,6 +23,7 @@ import {
   type DrawRect,
 } from '../ops/drawHelpers';
 import { clipPathForLayerType, isSquareConstrainTool } from '../ops/shapePaths';
+import { isTextualLayerType } from '../layerKinds';
 import {
   angleFromCenter,
   computeResizeBox,
@@ -36,7 +37,6 @@ import {
   smartGuidesEqual,
   snapUnalignedAxesToGrid,
   snapMoveWithGuides,
-  snapGuidePosition,
   snapResizeBox,
   snapThresholdMm,
   constrainMoveToAxis,
@@ -49,13 +49,9 @@ import { buildSpatialIndex } from '../ops/spatialIndex';
 import { layerBounds } from '../ops/layerBounds';
 import { replaceLayerById } from '../ops/patchLayers';
 import {
-  clampGuidePos,
   collectReferenceGaps,
-  createGuide,
   formatGapMm,
   guidesForPage,
-  isGuideRemovalPoint,
-  measureGuideDistances,
   measureHoverGap,
   measureSelectionGaps,
   snapEqualGaps,
@@ -98,8 +94,10 @@ import type {
   InlineSelectionRange,
   InlineTextStyle,
 } from '../ops/inlineEdit';
-import CanvasRulers, { GuidePositionChip, MeasurementBadge, RULER_SIZE } from './CanvasRulers';
-import GuideContextMenu, { type GuideContextMenuState } from './GuideContextMenu';
+import CanvasRulers, { GuidePositionChip, MeasurementBadge } from './CanvasRulers';
+import GuideContextMenu from './GuideContextMenu';
+import { createFrameRectCache } from './frameRectCache';
+import { useArtboardGuideInteraction } from './useArtboardGuideInteraction';
 import LayerNode from './LayerNode';
 import PathHandlesOverlay from './PathHandlesOverlay';
 import { SelectionChromeOverlay } from './SelectionChromeOverlay';
@@ -114,6 +112,7 @@ import {
 
 const GUIDE_HIT_PX = 10;
 const GUIDE_LINE_PX = 2;
+const PAN_INERTIA_FRESH_MS = 80;
 
 interface ArtboardProps {
   document: CanvasDocument;
@@ -172,7 +171,7 @@ interface ArtboardProps {
 function sampleLayerColor(layer: CanvasLayer | undefined | null): string | null {
   if (!layer) return null;
   const v = layer.cssVars;
-  if (layer.type === 'text' || layer.type === 'field') {
+  if (isTextualLayerType(layer.type)) {
     if (v['--color']) return v['--color'];
   }
   if (v['--fill-visible'] !== '0' && v['--background-color']) return v['--background-color'];
@@ -199,22 +198,7 @@ function cloneLayers(layers: CanvasLayer[], deepIds?: ReadonlySet<string>): Canv
   );
 }
 
-export function createFrameRectCache(
-  frame: HTMLElement,
-  zoomRef: { current: number },
-): { read: () => DOMRect } {
-  let zoom = zoomRef.current;
-  let rect = frame.getBoundingClientRect();
-  return {
-    read() {
-      if (zoomRef.current !== zoom) {
-        zoom = zoomRef.current;
-        rect = frame.getBoundingClientRect();
-      }
-      return rect;
-    },
-  };
-}
+export { createFrameRectCache };
 
 const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
   guides,
@@ -326,7 +310,7 @@ function Artboard({
   distanceLabelsRef.current = distanceLabels;
   const [hoverLabels, setHoverLabels] = useState<DistanceLabel[]>([]);
   const hoverLabelsRef = useRef<DistanceLabel[]>([]);
-  const [guideDistanceLabels, setGuideDistanceLabels] = useState<DistanceLabel[]>([]);
+
   const enteredGroupIdRef = useRef<string | null>(enteredGroupId);
   enteredGroupIdRef.current = enteredGroupId;
   const eyedropperActiveRef = useRef(eyedropperActive);
@@ -416,37 +400,41 @@ function Artboard({
   const pageMarginRef = useRef(pageMarginMm);
   pageMarginRef.current = pageMarginMm;
   const pageGuides = useMemo(() => guidesForPage(document, pageIndex), [document, pageIndex]);
-  const [selectedGuideId, setSelectedGuideId] = useState<string | null>(null);
-  const [guideMenu, setGuideMenu] = useState<GuideContextMenuState | null>(null);
-  const [guideDrag, setGuideDrag] = useState<{
-    id: string;
-    axis: CanvasGuide['axis'];
-    pageIndex: number;
-    posMm: number;
-    clientX: number;
-    clientY: number;
-    willRemove: boolean;
-  } | null>(null);
-  const displayGuides = useMemo(() => {
-    if (!guideDrag) return pageGuides;
-    let found = false;
-    const next = pageGuides.map((g) => {
-      if (g.id !== guideDrag.id) return g;
-      found = true;
-      return { ...g, posMm: guideDrag.posMm };
-    });
-    if (!found) {
-      next.push({
-        id: guideDrag.id,
-        axis: guideDrag.axis,
-        posMm: guideDrag.posMm,
-        pageIndex: guideDrag.pageIndex,
-      });
-    }
-    return next;
-  }, [pageGuides, guideDrag]);
-  const manualGuidesRef = useRef(displayGuides);
-  manualGuidesRef.current = displayGuides;
+  const {
+    guideDrag,
+    displayGuides,
+    guideDistanceLabels,
+    selectedGuideId,
+    setSelectedGuideId,
+    guideMenu,
+    setGuideMenu,
+    manualGuidesRef,
+    updateGuideMeasurements,
+    resetGuideDrag,
+    handleCreateGuide,
+    handleCommitGuideCreate,
+    handleCancelGuideCreate,
+    beginGuideDrag,
+    onGuideKeyDown,
+  } = useArtboardGuideInteraction({
+    frameRef,
+    viewportRef,
+    zoomRef,
+    layersRef,
+    pageSizeRef,
+    pageMarginRef,
+    onSelectIdsRef,
+    pointerGestures,
+    pageIndex,
+    pageGuides,
+    onCancelInertia,
+    onMoveGuide,
+    onRemoveGuide,
+    onNudgeGuide,
+    onUpsertGuide,
+    onCommitGuideCreate,
+    onCancelGuideCreate,
+  });
   const guideSnapRails = useMemo(
     () => prepareSnapRails(document.layers, [], document.page, pageGuides, pageMarginMm),
     [document.layers, document.page, pageGuides, pageMarginMm],
@@ -455,35 +443,6 @@ function Artboard({
   snapToGridRef.current = snapToGrid;
   const gridSizeMmRef = useRef(gridSizeMm);
   gridSizeMmRef.current = gridSizeMm > 0 ? gridSizeMm : DEFAULT_GRID_MM;
-
-  const updateGuideMeasurements = useCallback(
-    (measurement: { axis: CanvasGuide['axis']; posMm: number } | null) => {
-      if (!measurement) {
-        setGuideDistanceLabels([]);
-        return;
-      }
-      const rects = layersRef.current
-        .filter((layer) => layer.type !== 'frame' && layer.visible !== false)
-        .map((layer) => {
-          const bounds = layerBounds(layer);
-          return { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h };
-        });
-      setGuideDistanceLabels(
-        measureGuideDistances(measurement.axis, measurement.posMm, rects, pageSizeRef.current),
-      );
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (
-      selectedGuideId &&
-      guideDrag?.id !== selectedGuideId &&
-      !pageGuides.some((guide) => guide.id === selectedGuideId)
-    ) {
-      setSelectedGuideId(null);
-    }
-  }, [guideDrag?.id, pageGuides, selectedGuideId]);
 
   const applyGestureLayers = useCallback((layers: CanvasLayer[]) => {
     if (pinchGestureRef.current) return;
@@ -569,11 +528,10 @@ function Artboard({
     setMarquee(null);
     setDraft(null);
     setLassoPts(null);
-    setGuideDrag(null);
-    setGuideDistanceLabels([]);
+    resetGuideDrag();
     setPanning(false);
     setRadiusDrag(null);
-  }, [gestureAbortToken, abortGesturePreview, pointerGestures]);
+  }, [gestureAbortToken, abortGesturePreview, pointerGestures, resetGuideDrag]);
 
   useEffect(() => () => pointerGestures.dispose(), [pointerGestures]);
 
@@ -597,7 +555,7 @@ function Artboard({
       navRef.current.pan = p;
       const panLayer = panLayerRef.current;
       if (panLayer) {
-        panLayer.style.transform = `translate3d(calc(-50% + ${Math.round(p.x)}px), calc(-50% + ${Math.round(p.y)}px), 0)`;
+        panLayer.style.transform = `translate3d(calc(-50% + ${p.x}px), calc(-50% + ${p.y}px), 0)`;
       }
       const frame = frameRef.current;
       if (frame) {
@@ -641,8 +599,7 @@ function Artboard({
       setPanning(false);
     },
   });
-  const selectedIdsRef = useRef(selectedIds);
-  selectedIdsRef.current = selectedIds;
+  const selectedIdsRef = useLiveRef(selectedIds);
 
   const displayLayers = gestureLayers ?? document.layers;
   if (gestureDirtyRef.current && gestureLayersRef.current) {
@@ -827,21 +784,7 @@ function Artboard({
     if (hoverLabelsRef.current.length) setHoverLabelsIfChanged([]);
   }, [setHoverLabelsIfChanged]);
 
-  const onUpsertGuideRef = useRef(onUpsertGuide);
-  onUpsertGuideRef.current = onUpsertGuide;
-  const onCommitGuideCreateRef = useRef(onCommitGuideCreate);
-  onCommitGuideCreateRef.current = onCommitGuideCreate;
-  const onCancelGuideCreateRef = useRef(onCancelGuideCreate);
-  onCancelGuideCreateRef.current = onCancelGuideCreate;
-  const handleCreateGuide = useCallback((guide: CanvasGuide) => {
-    onUpsertGuideRef.current?.(guide);
-  }, []);
-  const handleCommitGuideCreate = useCallback((guide: CanvasGuide) => {
-    (onCommitGuideCreateRef.current ?? onUpsertGuideRef.current)?.(guide);
-  }, []);
-  const handleCancelGuideCreate = useCallback((id: string) => {
-    onCancelGuideCreateRef.current?.(id);
-  }, []);
+
 
   useLayoutEffect(() => {
     const el = viewportRef.current;
@@ -934,6 +877,26 @@ function Artboard({
     let lastT = performance.now();
     let vx = 0;
     let vy = 0;
+    const pointerId = e.pointerId;
+    const captureTarget = e.currentTarget as HTMLElement;
+    let captured = false;
+    if (typeof captureTarget.setPointerCapture === 'function') {
+      try {
+        captureTarget.setPointerCapture(pointerId);
+        captured = true;
+      } catch {
+        captured = false;
+      }
+    }
+    const releaseCapture = () => {
+      if (!captured || typeof captureTarget.releasePointerCapture !== 'function') return;
+      captured = false;
+      try {
+        captureTarget.releasePointerCapture(pointerId);
+      } catch {
+        // The browser may release capture before pointercancel/blur reaches React.
+      }
+    };
 
     const raf = createGestureRaf((ev: PointerEvent) => {
       navRef.current.onPan({
@@ -942,6 +905,7 @@ function Artboard({
       });
     });
     pointerGestures.start({
+      pointerId,
       onMove: (ev) => {
         if (pinchGestureRef.current) return;
         const now = performance.now();
@@ -956,13 +920,21 @@ function Artboard({
         raf.schedule(ev);
       },
       onEnd: () => {
+        releaseCapture();
         raf.flush();
         setPanning(false);
-        if (!pinchGestureRef.current && onStartInertia && (Math.abs(vx) > 1 || Math.abs(vy) > 1)) {
+        const velocityIsFresh = performance.now() - lastT <= PAN_INERTIA_FRESH_MS;
+        if (
+          !pinchGestureRef.current
+          && velocityIsFresh
+          && onStartInertia
+          && (Math.abs(vx) > 1 || Math.abs(vy) > 1)
+        ) {
           onStartInertia({ vx, vy });
         }
       },
       onAbort: () => {
+        releaseCapture();
         raf.cancel();
         setPanning(false);
       },
@@ -1759,138 +1731,6 @@ function Artboard({
     });
   };
 
-  const beginGuideDrag = (g: CanvasGuide, e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    e.preventDefault();
-    e.currentTarget.focus();
-    onCancelInertia?.();
-    if (!frameRef.current) return;
-    setGuideMenu(null);
-    setSelectedGuideId(g.id);
-    onSelectIdsRef.current([]);
-    const original = g.posMm;
-    let lastPos = g.posMm;
-    let willRemove = false;
-    let cancelled = false;
-    let dragging = false;
-    const duplicate = e.altKey;
-    const startClientX = e.clientX;
-    const startClientY = e.clientY;
-    let activeGuide = g;
-    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const viewportRect = viewportRef.current?.getBoundingClientRect() ?? null;
-    const guideRails = prepareSnapRails(
-      layersRef.current,
-      [],
-      pageSizeRef.current,
-      manualGuidesRef.current.filter((guide) => duplicate || guide.id !== g.id),
-      pageMarginRef.current,
-    );
-    if (!duplicate) {
-      setGuideDrag({
-        id: g.id,
-        axis: g.axis,
-        pageIndex: g.pageIndex ?? pageIndex,
-        posMm: g.posMm,
-        clientX: e.clientX,
-        clientY: e.clientY,
-        willRemove: false,
-      });
-    }
-
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      if (cancelled) return;
-      if (!dragging) {
-        if (isPointerClick(ev.clientX - startClientX, ev.clientY - startClientY)) return;
-        dragging = true;
-        if (duplicate) {
-          activeGuide = createGuide(g.axis, g.posMm, g.pageIndex ?? pageIndex);
-          setSelectedGuideId(activeGuide.id);
-        }
-      }
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      const max = g.axis === 'x' ? pageSizeRef.current.widthMm : pageSizeRef.current.heightMm;
-      const rawPos = clampGuidePos(g.axis === 'x' ? cur.xMm : cur.yMm, max);
-      lastPos = ev.ctrlKey || ev.metaKey
-        ? rawPos
-        : snapGuidePosition(g.axis, rawPos, guideRails, snapThresholdMm(zoomRef.current)).posMm;
-      activeGuide = { ...activeGuide, posMm: lastPos };
-      willRemove = viewportRect
-        ? isGuideRemovalPoint(g.axis, ev.clientX, ev.clientY, viewportRect, RULER_SIZE)
-        : false;
-      setGuideDrag({
-        id: activeGuide.id,
-        axis: activeGuide.axis,
-        pageIndex: activeGuide.pageIndex ?? pageIndex,
-        posMm: lastPos,
-        clientX: ev.clientX,
-        clientY: ev.clientY,
-        willRemove,
-      });
-      updateGuideMeasurements(ev.altKey ? { axis: activeGuide.axis, posMm: lastPos } : null);
-    });
-
-    let session: PointerGestureSession;
-    session = pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: () => {
-        raf.flush();
-        setGuideDrag(null);
-        setGuideDistanceLabels([]);
-        if (cancelled) return;
-        if (duplicate) {
-          if (dragging && !willRemove) handleCommitGuideCreate(activeGuide);
-          if (!dragging || willRemove) setSelectedGuideId(g.id);
-        } else if (willRemove) onRemoveGuide?.(g.id);
-        else if (lastPos !== original) onMoveGuide?.(g.id, lastPos);
-      },
-      onKeyDown: (ev) => {
-        if (ev.key !== 'Escape') return;
-        cancelled = true;
-        session.abort();
-      },
-      onAbort: () => {
-        raf.cancel();
-        setGuideDrag(null);
-        setGuideDistanceLabels([]);
-        if (duplicate) setSelectedGuideId(g.id);
-      },
-    });
-  };
-
-  const onGuideKeyDown = (guide: CanvasGuide, e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.currentTarget.blur();
-      return;
-    }
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
-      e.preventDefault();
-      e.stopPropagation();
-      const movesOnAxis =
-        guide.axis === 'x'
-          ? e.key === 'ArrowLeft' || e.key === 'ArrowRight'
-          : e.key === 'ArrowUp' || e.key === 'ArrowDown';
-      if (!movesOnAxis) return;
-      const stepMm = e.altKey ? 0.1 : e.shiftKey ? 10 : 1;
-      const direction = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1;
-      if (onNudgeGuide) {
-        onNudgeGuide(guide.id, direction * stepMm);
-      } else {
-        const maxMm = guide.axis === 'x' ? pageSizeRef.current.widthMm : pageSizeRef.current.heightMm;
-        const nextPos = clampGuidePos(guide.posMm + direction * stepMm, maxMm);
-        if (nextPos !== guide.posMm) onMoveGuide?.(guide.id, nextPos);
-      }
-      return;
-    }
-    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-    e.preventDefault();
-    e.stopPropagation();
-    setSelectedGuideId(null);
-    onRemoveGuide?.(guide.id);
-  };
-
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button === 1) {
       startPanDrag(e);
@@ -1906,8 +1746,8 @@ function Artboard({
 
   const designW = A4_WIDTH_PX;
   const designH = A4_HEIGHT_PX;
-  const panX = Math.round(pan.x);
-  const panY = Math.round(pan.y);
+  const panX = pan.x;
+  const panY = pan.y;
   const guideHit = screenChromePx(GUIDE_HIT_PX, zoom);
   const guideLine = screenChromePx(GUIDE_LINE_PX, zoom);
 

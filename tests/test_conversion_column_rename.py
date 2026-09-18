@@ -7,7 +7,7 @@ from typing import Any
 from backend.core.jobs import Job
 from backend.core.naming import record_group_key
 from backend.core.renamer import RenamerEngine
-from backend.handlers import conversion
+from backend.handlers import conversion, conversion_job
 from backend.utils.validators import parse_filename_parts
 
 
@@ -298,7 +298,7 @@ def test_prepare_chunk_tasks_column_rename_mapea_por_indice(monkeypatch, tmp_pat
     )
     engine = RenamerEngine("{sgio}_{seq}{ext}", 1, sequence_mode="global")
 
-    tasks = conversion._prepare_chunk_tasks(
+    tasks = conversion_job._prepare_chunk_tasks(
         files,
         destino=str(tmp_path / "out"),
         engine=engine,
@@ -333,7 +333,7 @@ def test_prepare_chunk_tasks_column_rename_codigos_duplicados_por_indice(
     )
     engine = RenamerEngine("{sgio}_{seq}{ext}", 1, sequence_mode="global")
 
-    tasks = conversion._prepare_chunk_tasks(
+    tasks = conversion_job._prepare_chunk_tasks(
         files,
         destino=str(tmp_path / "out"),
         engine=engine,
@@ -367,11 +367,11 @@ def test_conversion_column_rename_tercer_archivo_sin_fila(monkeypatch, tmp_path)
         {"nis": "ROW1", "sgio": "SGIO_B"},
     ]
     scheduler = _RecordingScheduler()
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 10)
+    monkeypatch.setattr(conversion_job, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
     monkeypatch.setattr(
         "backend.core.database.obtener_todos",
@@ -414,11 +414,11 @@ def test_conversion_column_rename_tercer_archivo_sin_fila_entre_chunks(monkeypat
         {"nis": "ROW1", "sgio": "SGIO_B"},
     ]
     scheduler = _RecordingScheduler()
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 2)
-    monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 2)
+    monkeypatch.setattr(conversion_job, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
     monkeypatch.setattr(
         "backend.core.database.obtener_todos",

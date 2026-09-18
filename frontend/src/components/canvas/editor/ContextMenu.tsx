@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Eye, EyeSlash } from './VisibilityIcon';
 import { useContextMenuSurface } from '../hooks/useContextMenuSurface';
+import Button from '@/components/ui/Button';
 
 export type CanvasContextAction =
   | 'edit'
@@ -285,8 +286,7 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
           {item.sepBefore ? <div className="canvas-context-sep" role="separator" /> : null}
           {item.children?.length ? (
             <div className="canvas-context-subwrap" data-testid={`canvas-context-sub-${item.id}`}>
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 role="menuitem"
                 aria-haspopup="menu"
                 className="canvas-context-item"
@@ -296,12 +296,11 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
                 <item.icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 text-left">{item.label}</span>
                 <ChevronDown className="h-3 w-3 -rotate-90 opacity-70" aria-hidden />
-              </button>
+              </Button>
               <div className="canvas-context-sub" role="menu">
                 {item.children.map((child) => (
-                  <button
+                  <Button variant="none" size="none"
                     key={`${item.id}:${String(child.arg)}`}
-                    type="button"
                     role="menuitem"
                     className="canvas-context-item"
                     disabled={child.disabled}
@@ -312,13 +311,12 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
                     }}
                   >
                     <span className="min-w-0 flex-1 truncate text-left">{child.label}</span>
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
           ) : (
-            <button
-              type="button"
+            <Button variant="none" size="none"
               role="menuitem"
               className="canvas-context-item"
               data-danger={item.danger || undefined}
@@ -332,7 +330,7 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
               <item.icon className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 flex-1 text-left">{item.label}</span>
               {item.tip && <kbd className="canvas-kbd">{item.tip}</kbd>}
-            </button>
+            </Button>
           )}
         </Fragment>
       ))}

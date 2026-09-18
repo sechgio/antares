@@ -2,6 +2,7 @@ import { Crop, Download, FileImage, Gauge, Maximize2, Tag } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ASPECT_RATIO_OPTIONS, BatchSettings, ImageItem } from './types';
 import { OperationSection, SegmentedControl, ThemeSelect, formControlClassName } from './ui';
+import Button from '@/components/ui/Button';
 
 interface SettingsPanelProps {
   settings: BatchSettings;
@@ -71,15 +72,14 @@ export default function SettingsPanel({
             />
           </label>
         )}
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={onOpenCropEditor}
           disabled={!activeItem || !settings.operations.cropEnabled || settings.crop.aspectRatio === 'original'}
           className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2 text-[11px] font-medium text-[var(--text-primary)] transition-[background-color,transform] duration-100 hover:border-[var(--accent-primary)]/40 active:scale-[0.96] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-40"
         >
           <Crop size={12} />
           {t('optimizer.fields.adjustCrop')}
-        </button>
+        </Button>
       </OperationSection>
 
       <OperationSection

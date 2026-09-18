@@ -1,17 +1,6 @@
 const Module = require('module');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish, evictModule } = require('./helpers/harness');
 
 function loadPreload({ packaged = false, allowedMethods, filePath = '' } = {}) {
   const originalLoad = Module._load;
@@ -52,7 +41,7 @@ function loadPreload({ packaged = false, allowedMethods, filePath = '' } = {}) {
   process.argv = [process.argv[0], allowedArg, packagedArg];
 
   try {
-    delete require.cache[require.resolve('../electron/preload.js')];
+    evictModule('electron/preload.js');
     require('../electron/preload.js');
     return { exposedApi, invokeCalls, sendCalls };
   } finally {
@@ -121,11 +110,7 @@ async function run() {
     assert(invokeCalls.length === 0, 'rejected methods should not reach ipcRenderer.invoke');
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

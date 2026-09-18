@@ -3,18 +3,18 @@ import { AlertTriangle, RotateCcw, RefreshCw } from 'lucide-react';
 import Button from './Button';
 import { reportFrontendError } from '../../utils/observability';
 
-export interface ErrorBoundaryProps {
+interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
   view?: string;
 }
 
-export interface ErrorBoundaryState {
+interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public override state: ErrorBoundaryState = {
     hasError: false,
     error: null,

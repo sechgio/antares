@@ -1,5 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
+const { evictModule } = require('./helpers/harness');
+
 const fsp = fs.promises;
 const os = require('os');
 const path = require('path');
@@ -14,7 +16,7 @@ async function main() {
   process.env.XDG_DATA_HOME = fakeHome;
 
   try {
-    delete require.cache[require.resolve('../electron/canvas-assets.js')];
+    evictModule('electron/canvas-assets.js');
     const {
       putCanvasAsset,
       getCanvasAsset,

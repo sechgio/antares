@@ -1,3 +1,4 @@
+import ThemedSelect from '../../ui/ThemedSelect';
 import type { MatchResult } from '../types';
 
 interface Props {
@@ -29,15 +30,16 @@ export default function SummaryPanel({ result, exportMode, onExportModeChange }:
     <div className="pac-summary">
       <div className="pac-summary__header">
         <span className="pac-summary__title">Emparejamiento</span>
-        <select
+        <ThemedSelect
           aria-label="Modo de exportación"
-          className="pac-summary__select"
+          triggerClassName="pac-summary__select"
           value={exportMode}
-          onChange={(e) => onExportModeChange(e.target.value as 'skip_empty' | 'include_empty')}
-        >
-          <option value="skip_empty">Omitir vacíos</option>
-          <option value="include_empty">Incluir vacíos</option>
-        </select>
+          onChange={(value) => onExportModeChange(value as 'skip_empty' | 'include_empty')}
+          options={[
+            { value: 'skip_empty', label: 'Omitir vacíos' },
+            { value: 'include_empty', label: 'Incluir vacíos' },
+          ]}
+        />
       </div>
       <div className="pac-summary-stats">
         <Stat label="Filas" value={s.totalRows} />

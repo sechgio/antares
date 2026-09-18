@@ -9,6 +9,7 @@ import { columnIsDone } from '../../utils/statusConfig';
 import TableTaskRowContent from './TableTaskRowContent';
 import { priorityRank } from './taskPriority';
 import { ESPACIOS_VIRTUALIZE_THRESHOLD, TABLE_ROW_HEIGHT } from './virtualizeConfig';
+import Button from '@/components/ui/Button';
 
 interface TableViewProps {
   tareas: Tarea[];
@@ -219,44 +220,44 @@ export default function TableView({
               <th className="w-10 px-2 py-2.5 text-center font-medium text-[var(--text-muted)]">#</th>
               <th className="w-10 px-2 py-2.5" aria-label="Completar" />
               <th className="min-w-[220px] px-3 py-2.5">
-                <button type="button" className={thBtn} onClick={() => toggleSort('title')}>
+                <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('title')}>
                   Name
                   {sortKey === 'title' && (
                     <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
                   )}
-                </button>
+                </Button>
               </th>
               <th className="min-w-[160px] px-3 py-2.5">
-                <button type="button" className={thBtn} onClick={() => toggleSort('assignee')}>
+                <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('assignee')}>
                   Persona asignada
                   {sortKey === 'assignee' && (
                     <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
                   )}
-                </button>
+                </Button>
               </th>
               <th className="min-w-[140px] px-3 py-2.5">
-                <button type="button" className={thBtn} onClick={() => toggleSort('status')}>
+                <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('status')}>
                   Estado
                   {sortKey === 'status' && (
                     <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
                   )}
-                </button>
+                </Button>
               </th>
               <th className="min-w-[120px] px-3 py-2.5">
-                <button type="button" className={thBtn} onClick={() => toggleSort('due_date')}>
+                <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('due_date')}>
                   Fecha límite
                   {sortKey === 'due_date' && (
                     <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
                   )}
-                </button>
+                </Button>
               </th>
               <th className="min-w-[110px] px-3 py-2.5">
-                <button type="button" className={thBtn} onClick={() => toggleSort('priority')}>
+                <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('priority')}>
                   Prioridad
                   {sortKey === 'priority' && (
                     <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
                   )}
-                </button>
+                </Button>
               </th>
               <th className="w-24 px-3 py-2.5 text-right font-medium text-[var(--text-muted)]">
                 <span className="sr-only">Acciones</span>
@@ -316,26 +317,26 @@ export default function TableView({
               )}
               <span className="text-center font-medium text-[var(--text-muted)]">#</span>
               <span />
-              <button type="button" className={thBtn} onClick={() => toggleSort('title')}>
+              <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('title')}>
                 Name
                 {sortKey === 'title' && <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-              </button>
-              <button type="button" className={thBtn} onClick={() => toggleSort('assignee')}>
+              </Button>
+              <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('assignee')}>
                 Persona asignada
                 {sortKey === 'assignee' && <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-              </button>
-              <button type="button" className={thBtn} onClick={() => toggleSort('status')}>
+              </Button>
+              <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('status')}>
                 Estado
                 {sortKey === 'status' && <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-              </button>
-              <button type="button" className={thBtn} onClick={() => toggleSort('due_date')}>
+              </Button>
+              <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('due_date')}>
                 Fecha límite
                 {sortKey === 'due_date' && <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-              </button>
-              <button type="button" className={thBtn} onClick={() => toggleSort('priority')}>
+              </Button>
+              <Button variant="none" size="none" className={thBtn} onClick={() => toggleSort('priority')}>
                 Prioridad
                 {sortKey === 'priority' && <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-              </button>
+              </Button>
               <span className="sr-only">Acciones</span>
             </div>
             <div ref={containerRef} className="min-h-0 flex-1">
@@ -356,14 +357,13 @@ export default function TableView({
       </div>
 
       {onAddTask && (
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={onAddTask}
           className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
         >
           <Plus className="h-3.5 w-3.5" />
           Añadir tarea
-        </button>
+        </Button>
       )}
     </div>
   );

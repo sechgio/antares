@@ -1,1 +1,1 @@
-export { DIAMETERS, createEmptyInforme as createEmptyClientReport } from './types';
+export { createEmptyInforme as createEmptyClientReport } from './types';

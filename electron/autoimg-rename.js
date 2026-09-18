@@ -230,5 +230,4 @@ module.exports = {
   buildNisMetaMap,
   buildRenameJobs,
   uniqueDestinos,
-  extensionOf,
 };

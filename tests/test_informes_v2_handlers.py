@@ -9,7 +9,7 @@ def _reset_db(monkeypatch, tmp_path):
     from backend.core.informes_v2 import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "informes_v2.json")
-    db_module._db_instance = None
+    db_module._db_singleton.reset()
 
 
 def test_informes_v2_handlers_are_registered() -> None:
@@ -23,24 +23,24 @@ def test_informes_v2_handlers_are_registered() -> None:
 def test_create_list_update_delete_clear(monkeypatch, tmp_path) -> None:
     _reset_db(monkeypatch, tmp_path)
 
-    created = HANDLERS["informes_v2_create"]({})["report"]
+    created = HANDLERS["informes_v2_create"]({})["item"]
     assert created["id"].startswith("IV2-")
 
     listed = HANDLERS["informes_v2_list"]({"summary": True})
-    assert len(listed["reports"]) == 1
-    assert listed["reports"][0]["id"] == created["id"]
+    assert len(listed["items"]) == 1
+    assert listed["items"][0]["id"] == created["id"]
 
     created["header"]["estacion"] = "R-900"
     created["header"]["photo_id"] = "R-900"
-    updated = HANDLERS["informes_v2_update"]({"id": created["id"], "report": created})["report"]
+    updated = HANDLERS["informes_v2_update"]({"id": created["id"], "report": created})["item"]
     assert updated["header"]["estacion"] == "R-900"
 
-    got = HANDLERS["informes_v2_get"]({"id": created["id"]})["report"]
+    got = HANDLERS["informes_v2_get"]({"id": created["id"]})["item"]
     assert got["header"]["photo_id"] == "R-900"
 
     deleted = HANDLERS["informes_v2_delete"]({"id": created["id"]})
     assert deleted["deleted_id"] == created["id"]
-    assert HANDLERS["informes_v2_list"]({})["reports"] == []
+    assert HANDLERS["informes_v2_list"]({})["items"] == []
 
     HANDLERS["informes_v2_create"]({})
     cleared = HANDLERS["informes_v2_clear"]({})
@@ -69,7 +69,7 @@ def test_import_file_and_download_template(monkeypatch, tmp_path) -> None:
 
     result = HANDLERS["informes_v2_import_file"]({"filename": "datos.csv", "content_b64": content})
     assert result["imported_count"] == 1
-    assert HANDLERS["informes_v2_list"]({"summary": True})["reports"][0]["header"]["photo_id"] == "R-1"
+    assert HANDLERS["informes_v2_list"]({"summary": True})["items"][0]["header"]["photo_id"] == "R-1"
 
     template = HANDLERS["informes_v2_download_template"]({})
     assert template["filename"] == "informes_v2_plantilla.xlsx"
@@ -80,7 +80,7 @@ def test_import_file_and_download_template(monkeypatch, tmp_path) -> None:
 
 def test_render_html_includes_photo_grid(monkeypatch, tmp_path) -> None:
     _reset_db(monkeypatch, tmp_path)
-    report = HANDLERS["informes_v2_create"]({})["report"]
+    report = HANDLERS["informes_v2_create"]({})["item"]
     report["header"]["estacion"] = "Demo"
     result = HANDLERS["informes_v2_render_html"](
         {
@@ -92,3 +92,40 @@ def test_render_html_includes_photo_grid(monkeypatch, tmp_path) -> None:
     assert "Demo" in result["html"]
     assert "data:image/png;base64,aaa" in result["html"]
     assert result["filename"].startswith("informe_v2_")
+
+
+def test_summary_list_does_not_copy_full_reports(monkeypatch, tmp_path) -> None:
+    from backend.core.informes_v2.database import get_informes_v2_db
+
+    _reset_db(monkeypatch, tmp_path)
+    created = HANDLERS["informes_v2_create"]({})["item"]
+    created["header"]["estacion"] = "Estación filtrada"
+    HANDLERS["informes_v2_update"]({"id": created["id"], "report": created})
+    db = get_informes_v2_db()
+
+    def fail_get_all():
+        raise AssertionError("summary listing must not copy complete reports")
+
+    monkeypatch.setattr(db, "get_all", fail_get_all)
+
+    listed = HANDLERS["informes_v2_list"]({"summary": True, "q": "filtrada"})
+
+    assert [item["id"] for item in listed["items"]] == [created["id"]]
+
+
+def test_selected_consolidated_export_reads_only_selected_reports(monkeypatch, tmp_path) -> None:
+    from backend.core.informes_v2.database import get_informes_v2_db
+
+    _reset_db(monkeypatch, tmp_path)
+    selected = HANDLERS["informes_v2_create"]({})["item"]
+    HANDLERS["informes_v2_create"]({})
+    db = get_informes_v2_db()
+
+    def fail_get_all():
+        raise AssertionError("selected export must not copy every report")
+
+    monkeypatch.setattr(db, "get_all", fail_get_all)
+
+    rendered = HANDLERS["informes_v2_render_consolidated_html"]({"report_ids": [selected["id"]]})
+
+    assert rendered["count"] == 1

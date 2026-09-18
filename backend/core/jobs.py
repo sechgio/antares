@@ -14,6 +14,7 @@ from typing import Any
 from backend.core.canvas.models import utc_now_iso as _utc_now
 from backend.core.observability import get_context, log_event, request_context
 from backend.core.state import ProcessState
+from backend.utils.lazy import LazySingleton
 
 logger = logging.getLogger(__name__)
 
@@ -286,14 +287,8 @@ class JobManager:
             return len(to_remove)
 
 
-_job_manager: JobManager | None = None
-_job_manager_lock = threading.Lock()
+_job_manager_singleton = LazySingleton(JobManager)
 
 
 def get_job_manager() -> JobManager:
-    global _job_manager
-    if _job_manager is None:
-        with _job_manager_lock:
-            if _job_manager is None:
-                _job_manager = JobManager()
-    return _job_manager
+    return _job_manager_singleton.get()

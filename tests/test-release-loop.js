@@ -2,21 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+const { assert, finish } = require('./helpers/harness');
+
 const ROOT = path.join(__dirname, '..');
 const scriptPath = path.join(ROOT, 'scripts', 'release-loop.js');
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
 
 function run() {
   console.log('Testing release-loop quality gate...\n');
@@ -64,11 +53,7 @@ function run() {
     assert(false, 'release-loop.js parses without syntax errors');
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run();

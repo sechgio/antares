@@ -40,6 +40,64 @@ function shDetailed(command, opts = {}) {
   }
 }
 
+function git(args) {
+  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' }).trim();
+}
+
+function gh(args, opts = {}) {
+  const out = execFileSync('gh', args, { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', ...opts });
+  return out == null ? '' : out.trim();
+}
+
+function ghApi(args, opts = {}) {
+  return gh(['api', ...args], { timeout: 60_000, maxBuffer: 40 * 1024 * 1024, ...opts });
+}
+
+// spec: { defaults: {...}, flags: { '--flag': { key } } booleano,
+// '--flag': { key, value: true, coerce?: fn } con valor }
+function parseCliArgs(argv, { defaults = {}, flags = {} } = {}) {
+  const out = { ...defaults };
+  for (let i = 0; i < argv.length; i++) {
+    const spec = flags[argv[i]];
+    if (!spec) continue;
+    if (spec.value) {
+      const raw = argv[++i];
+      out[spec.key] = spec.coerce ? spec.coerce(raw) : raw;
+    } else {
+      out[spec.key] = true;
+    }
+  }
+  return out;
+}
+
+function parseLoopArgs(argv) {
+  const args = argv.slice(2);
+  return {
+    isShip: args.includes('--ship'),
+    doMerge: args.includes('--merge'),
+    has: (flag) => args.includes(flag),
+    value: (flag) => {
+      const idx = args.indexOf(flag);
+      if (idx === -1) return null;
+      const v = args[idx + 1];
+      return v && !v.startsWith('--') ? v : null;
+    },
+  };
+}
+
+function printLoopBanner(title, isShip, shipLabel) {
+  const mode = isShip ? `🚀 SHIP MODE (${shipLabel})` : '🔍 DRY-RUN (sin side effects)';
+  console.log('\n════════════════════════════════════════════');
+  console.log(`  ${title}`);
+  console.log(`  ${mode}`);
+  console.log('════════════════════════════════════════════\n');
+}
+
+function shipStep(label, enabled, fn, skipReason) {
+  if (enabled) return step(label, fn);
+  return skip(label, skipReason);
+}
+
 function step(label, fn) {
   process.stdout.write(`  ${label} ... `);
   try {
@@ -102,6 +160,22 @@ function workingTreeDirty() {
   return Boolean(sh('git status --porcelain'));
 }
 
+function commitAll(message) {
+  git(['add', '-A']);
+  git(['commit', '-m', message]);
+  console.log(`    Commit creado: ${message}`);
+}
+
+function pushBranch(branch) {
+  const upstream = trySh(`git rev-parse --abbrev-ref "${branch}@{upstream}" 2>&1`);
+  if (upstream && !upstream.includes('fatal')) {
+    sh(`git push origin "${branch}"`);
+  } else {
+    sh(`git push -u origin "${branch}"`);
+  }
+  console.log(`    Branch ${branch} pusheada a origin.`);
+}
+
 function findOpenPrNumber(branch) {
   const json = trySh(
     `gh pr list --head "${branch}" --base "${BASE_BRANCH}" --state open --json number --jq ".[0].number" 2>&1`,
@@ -158,9 +232,18 @@ module.exports = {
   sh,
   trySh,
   shDetailed,
+  git,
+  gh,
+  ghApi,
+  parseCliArgs,
+  parseLoopArgs,
+  printLoopBanner,
+  shipStep,
   step,
   skip,
   die,
+  commitAll,
+  pushBranch,
   detectRepo,
   requireGhAuth,
   requireOriginRepo,

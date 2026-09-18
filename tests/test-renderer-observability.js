@@ -10,7 +10,7 @@ process.env.LOCALAPPDATA = testRoot;
 process.env.XDG_DATA_HOME = testRoot;
 fs.rmSync(testRoot, { recursive: true, force: true });
 
-const { getLogsDir } = require('../electron/app-log');
+const { flushLogQueue, getLogsDir } = require('../electron/app-log');
 const {
   recordRendererError,
   recordRendererEvent,
@@ -18,6 +18,7 @@ const {
   sanitizeRendererEvent,
 } = require('../electron/renderer-observability');
 
+async function main() {
 try {
   const raw = {
     kind: 'react_error',
@@ -36,6 +37,7 @@ try {
   assert(safe.message.length <= 4000, 'renderer payload is bounded');
 
   recordRendererError(raw);
+  await flushLogQueue();
   const jsonl = fs.readdirSync(getLogsDir()).find((name) => name.endsWith('.jsonl'));
   assert(jsonl, 'renderer event creates a structured log');
   const events = fs.readFileSync(path.join(getLogsDir(), jsonl), 'utf8')
@@ -69,6 +71,7 @@ try {
     level: 'INFO',
     fields: { view: 'canvas', status_class: 'live', count: 2 },
   });
+  await flushLogQueue();
   const realtimeEvent = events
     .concat(fs.readFileSync(path.join(getLogsDir(), jsonl), 'utf8').trim().split(/\r?\n/).map((line) => JSON.parse(line)))
     .find((entry) => entry.event === 'canvas.realtime');
@@ -80,13 +83,82 @@ try {
     level: 'ERROR',
     fields: { outcome: 'failed', reason: 'canvas_save_failed', duration_ms: 8123 },
   });
+  await flushLogQueue();
     const allNow = fs.readFileSync(path.join(getLogsDir(), jsonl), 'utf8').trim().split(/\r?\n/)
     .map((line) => JSON.parse(line));
   const quitEvent = allNow.find((entry) => entry.event === 'canvas.quit_flush');
   assert(quitEvent, 'canvas.quit_flush pasa la allowlist y se persiste');
   assert.strictEqual(quitEvent.outcome, 'failed');
   assert.strictEqual(quitEvent.reason, 'canvas_save_failed');
-  assert.strictEqual(quitEvent.duration_ms, 8123);
+  recordRendererError({
+    kind: 'toast_error',
+    view: 'toast',
+    name: 'ToastError',
+    message: 'No se pudo exportar el informe',
+  });
+  recordRendererError({
+    kind: 'api_error',
+    view: 'api:process_start',
+    name: 'AntaresAPIError[TIMEOUT]',
+    message: 'IPC timeout: process_start',
+    request_id: 'req-frontend-correlation-1',
+  });
+
+  recordRendererEvent({
+    event: 'canvas.push',
+    level: 'WARN',
+    fields: { outcome: 'degraded', reason: 'lww_rpc_v2_missing' },
+  });
+  recordRendererEvent({
+    event: 'espacios.sync',
+    level: 'ERROR',
+    fields: { outcome: 'failed', reason: 'load_failed', view: 'espacios' },
+  });
+  recordRendererEvent({
+    event: 'storage.local',
+    level: 'WARN',
+    fields: { outcome: 'degraded', reason: 'canvas_asset_put_failed' },
+  });
+  recordRendererEvent({
+    event: 'worker.error',
+    level: 'WARN',
+    fields: { outcome: 'failed', reason: 'worker_timeout', view: 'image-optimizer' },
+  });
+  const rejectedUnknown = recordRendererEvent({
+    event: 'not.in.allowlist',
+    level: 'INFO',
+    fields: { outcome: 'failed' },
+  });
+  assert.strictEqual(rejectedUnknown, null, 'eventos fuera de la allowlist se descartan');
+  await flushLogQueue();
+
+  const updatedEvents = fs.readFileSync(path.join(getLogsDir(), jsonl), 'utf8')
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => JSON.parse(line));
+  const toastEvent = updatedEvents.find((entry) => entry.event === 'renderer.error' && entry.reason === 'toast_error');
+  assert(toastEvent, 'toast_error renderer event is persisted');
+  assert.strictEqual(toastEvent.reason, 'toast_error');
+  assert.strictEqual(toastEvent.view, 'toast');
+  assert(toastEvent.message.includes('No se pudo exportar el informe'));
+
+  const apiEvent = updatedEvents.find((entry) => entry.event === 'renderer.error' && entry.reason === 'api_error');
+  assert(apiEvent, 'api_error renderer event is persisted');
+  assert.strictEqual(apiEvent.reason, 'api_error');
+  assert.strictEqual(apiEvent.view, 'api:process_start');
+  assert.strictEqual(apiEvent.request_id, 'req-frontend-correlation-1', 'api_error conserva request_id para correlación con ipc.request');
+  assert(apiEvent.message.includes('AntaresAPIError[TIMEOUT]'));
+
+  const pushEvent = updatedEvents.find((entry) => entry.event === 'canvas.push');
+  assert(pushEvent, 'canvas.push pasa la allowlist y se persiste');
+  assert.strictEqual(pushEvent.outcome, 'degraded');
+  const espaciosEvent = updatedEvents.find((entry) => entry.event === 'espacios.sync');
+  assert(espaciosEvent, 'espacios.sync pasa la allowlist y se persiste');
+  assert.strictEqual(espaciosEvent.view, 'espacios');
+  const storageEvent = updatedEvents.find((entry) => entry.event === 'storage.local');
+  assert(storageEvent, 'storage.local pasa la allowlist y se persiste');
+  const workerEvent = updatedEvents.find((entry) => entry.event === 'worker.error');
+  assert(workerEvent, 'worker.error pasa la allowlist y se persiste');
 
   console.log('renderer observability: OK');
 } finally {
@@ -96,3 +168,9 @@ try {
   if (previousXdgDataHome === undefined) delete process.env.XDG_DATA_HOME;
   else process.env.XDG_DATA_HOME = previousXdgDataHome;
 }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

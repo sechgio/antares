@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, onNotify } from '../../../api';
 import { CoverageRail } from './shared';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 interface SyncPanelProps {
   autoSync: boolean;
@@ -64,7 +66,7 @@ export default function SyncPanel({
         setError(res.error || 'Auto-sync cambió solo para esta sesión; no se pudo guardar la configuración.');
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cambiar auto-sync');
+      setError(errorMessage(e, 'Error al cambiar auto-sync'));
     } finally {
       setTogglingAuto(false);
     }
@@ -129,8 +131,7 @@ export default function SyncPanel({
         <label className="flex cursor-pointer items-center gap-1.5 active:opacity-80">
           <span className="text-[10px] tracking-wide text-[var(--text-muted)]">Auto</span>
           <WithHoverTooltip label="Lee el Sheet cada 5 min (no re-escanea Drive)" placement="bottom">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               role="switch"
               aria-checked={autoSync}
               aria-label="Actualizar desde Sheet cada 5 minutos"
@@ -145,7 +146,7 @@ export default function SyncPanel({
                   autoSync ? 'translate-x-3.5' : 'translate-x-0.5'
                 }`}
               />
-            </button>
+            </Button>
           </WithHoverTooltip>
         </label>
       </div>

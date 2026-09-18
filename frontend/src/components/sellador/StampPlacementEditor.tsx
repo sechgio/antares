@@ -3,6 +3,12 @@ import { Move, ZoomIn } from 'lucide-react';
 import PdfPagePreview from './PdfPagePreview';
 import type { PdfPageSize, StampDragMode, StampPosition, StampRect } from './types';
 import { clampStampRect } from './utils';
+import {
+  clientPointToPdfPoint,
+  computeDragRect,
+  computeDropRect,
+  rectToOverlayPercent,
+} from './stampPlacementMath';
 
 const POSITION_COLORS = [
   'var(--accent-primary)',
@@ -56,13 +62,8 @@ export default function StampPlacementEditor({
   const toPdfPoint = useCallback((clientX: number, clientY: number) => {
     const img = document.querySelector('[data-stamp-page-image]') as HTMLImageElement | null;
     if (!img) return { x: 0, y: 0 };
-    const bounds = img.getBoundingClientRect();
-    if (bounds.width <= 0 || bounds.height <= 0) return { x: 0, y: 0 };
-    return {
-      x: ((clientX - bounds.left) / bounds.width) * pageSize.width,
-      y: ((clientY - bounds.top) / bounds.height) * pageSize.height,
-    };
-  }, [pageSize.height, pageSize.width]);
+    return clientPointToPdfPoint(clientX, clientY, img.getBoundingClientRect(), pageSize);
+  }, [pageSize]);
 
   const finishDrag = useCallback((nextRect: StampRect) => {
     const clamped = clampStampRect(nextRect, pageSize);
@@ -78,22 +79,7 @@ export default function StampPlacementEditor({
     const start = dragRef.current;
     const origin = start.origin;
 
-    if (dragMode === 'move') {
-      setLiveRect(clampStampRect({
-        ...origin,
-        x: origin.x + (point.x - start.startX),
-        y: origin.y + (point.y - start.startY),
-      }, pageSize));
-      return;
-    }
-
-    const aspect = origin.width / origin.height;
-    const nextWidth = Math.max(24, point.x - origin.x);
-    setLiveRect(clampStampRect({
-      ...origin,
-      width: nextWidth,
-      height: nextWidth / aspect,
-    }, pageSize));
+    setLiveRect(computeDragRect(dragMode, origin, { x: start.startX, y: start.startY }, point, pageSize));
   }, [dragMode, pageSize, toPdfPoint]);
 
   const handleMouseUp = useCallback(() => {
@@ -130,33 +116,18 @@ export default function StampPlacementEditor({
   const handleDrop = (event: React.DragEvent) => {
     event.preventDefault();
     const point = toPdfPoint(event.clientX, event.clientY);
-    const aspect = liveRectRef.current.width / liveRectRef.current.height;
-    finishDrag(clampStampRect({
-      ...liveRectRef.current,
-      x: point.x - liveRectRef.current.width / 2,
-      y: point.y - liveRectRef.current.height / 2,
-      width: liveRectRef.current.width,
-      height: liveRectRef.current.width / aspect,
-    }, pageSize));
+    finishDrag(computeDropRect(liveRectRef.current, point, pageSize));
   };
 
-  const overlayStyle = useMemo(() => ({
-    left: `${(liveRect.x / pageSize.width) * 100}%`,
-    top: `${(liveRect.y / pageSize.height) * 100}%`,
-    width: `${(liveRect.width / pageSize.width) * 100}%`,
-    height: `${(liveRect.height / pageSize.height) * 100}%`,
-  }), [liveRect, pageSize.height, pageSize.width]);
+  const overlayStyle = useMemo(
+    () => (liveRect ? rectToOverlayPercent(liveRect, pageSize) : {}),
+    [liveRect, pageSize],
+  );
 
   const inactiveOverlays = useMemo(() => positions.map((pos, index) => {
     if (index === activeIndex) return null;
     const color = POSITION_COLORS[index % POSITION_COLORS.length];
-    const style = {
-      left: `${(pos.rect.x / pageSize.width) * 100}%`,
-      top: `${(pos.rect.y / pageSize.height) * 100}%`,
-      width: `${(pos.rect.width / pageSize.width) * 100}%`,
-      height: `${(pos.rect.height / pageSize.height) * 100}%`,
-      borderColor: color,
-    };
+    const style = { ...rectToOverlayPercent(pos.rect, pageSize), borderColor: color };
     return (
       <div
         key={pos.id}

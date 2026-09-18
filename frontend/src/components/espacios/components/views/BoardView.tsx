@@ -52,6 +52,8 @@ import {
   visibleBoardColumns,
 } from '../../utils/statusConfig';
 import { BOARD_CARD_ROW_HEIGHT, ESPACIOS_VIRTUALIZE_THRESHOLD } from './virtualizeConfig';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 interface BoardViewProps {
   tareas: Tarea[];
@@ -285,15 +287,14 @@ function SortableTaskCard({
         onAdd={onAdd}
         dragHandle={
           <WithHoverTooltip label="Arrastrar a otra columna" placement="bottom">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               className="mt-0.5 shrink-0 cursor-grab rounded-md p-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)] active:cursor-grabbing"
               aria-label={`Arrastrar «${tarea.title}»`}
               {...attributes}
               {...listeners}
             >
               <GripVertical className="h-4 w-4" strokeWidth={2} />
-            </button>
+            </Button>
           </WithHoverTooltip>
         }
       />
@@ -398,7 +399,7 @@ function ColumnMenu({
       setRenaming(false);
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo renombrar');
+      setError(errorMessage(err, 'No se pudo renombrar'));
     } finally {
       setBusy(false);
     }
@@ -412,7 +413,7 @@ function ColumnMenu({
       await onDelete(column.id);
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo eliminar');
+      setError(errorMessage(err, 'No se pudo eliminar'));
     } finally {
       setBusy(false);
     }
@@ -420,8 +421,7 @@ function ColumnMenu({
 
   return (
     <div ref={rootRef} className="relative shrink-0">
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={() => {
           setOpen((v) => !v);
           setRenaming(false);
@@ -433,7 +433,7 @@ function ColumnMenu({
         aria-expanded={open}
       >
         <MoreHorizontal className="h-4 w-4" />
-      </button>
+      </Button>
       {open && (
         <div
           className="absolute right-0 top-full z-30 mt-1 min-w-[180px] rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 shadow-lg"
@@ -456,16 +456,14 @@ function ColumnMenu({
                 autoFocus
               />
               <div className="flex gap-1">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   disabled={busy || !name.trim()}
                   onClick={() => void submitRename()}
                   className="rounded-md bg-[var(--accent-primary)] px-2 py-1 text-[11px] font-medium text-[var(--text-on-accent)] disabled:opacity-50"
                 >
                   Guardar
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button variant="none" size="none"
                   disabled={busy}
                   onClick={() => {
                     setRenaming(false);
@@ -475,21 +473,20 @@ function ColumnMenu({
                   className="rounded-md px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-input)]"
                 >
                   Cancelar
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
             <>
               {onRename && (
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   role="menuitem"
                   onClick={() => setRenaming(true)}
                   className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   Renombrar
-                </button>
+                </Button>
               )}
               {onDelete && !column.is_system && (
                 <WithHoverTooltip
@@ -501,8 +498,7 @@ function ColumnMenu({
                   placement="bottom"
                   className="w-full"
                 >
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     role="menuitem"
                     disabled={busy || taskCount > 0}
                     onClick={() => void submitDelete()}
@@ -510,7 +506,7 @@ function ColumnMenu({
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Eliminar{taskCount > 0 ? ' (vacía primero)' : ''}
-                  </button>
+                  </Button>
                 </WithHoverTooltip>
               )}
               {column.is_system && (
@@ -717,15 +713,14 @@ function Column({
       </div>
 
       {onAddTask && (
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={() => onAddTask(column.key)}
           className="mt-2 flex items-center gap-1 rounded-lg px-2 py-1.5 text-left text-[12px] font-medium transition-colors hover:bg-[var(--bg-elevated)]/70"
           style={{ color }}
         >
           <Plus className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
           Añadir Tarea
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -755,7 +750,7 @@ function AddColumnCard({ onAdd }: { onAdd: (name: string) => Promise<void> }) {
       setName('');
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo crear la columna');
+      setError(errorMessage(err, 'No se pudo crear la columna'));
     } finally {
       setSaving(false);
     }
@@ -763,14 +758,13 @@ function AddColumnCard({ onAdd }: { onAdd: (name: string) => Promise<void> }) {
 
   if (!open) {
     return (
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={() => setOpen(true)}
         className="flex h-fit w-[260px] shrink-0 items-center gap-2 rounded-2xl border border-dashed border-[var(--border-medium)] bg-[var(--bg-surface)]/60 px-4 py-3 text-left text-[13px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent-primary)]/40 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]"
       >
         <Plus className="h-4 w-4 shrink-0" strokeWidth={2.25} />
         Agregar tablero
-      </button>
+      </Button>
     );
   }
 
@@ -801,16 +795,14 @@ function AddColumnCard({ onAdd }: { onAdd: (name: string) => Promise<void> }) {
       />
       {error && <p className="text-[11px] text-[var(--accent-red)]">{error}</p>}
       <div className="flex items-center gap-2">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           disabled={saving || !name.trim()}
           onClick={() => void submit()}
           className="rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-50"
         >
           {saving ? 'Creando…' : 'Crear'}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button variant="none" size="none"
           disabled={saving}
           onClick={() => {
             setOpen(false);
@@ -820,7 +812,7 @@ function AddColumnCard({ onAdd }: { onAdd: (name: string) => Promise<void> }) {
           className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]"
         >
           Cancelar
-        </button>
+        </Button>
       </div>
     </div>
   );

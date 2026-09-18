@@ -29,6 +29,7 @@ import { TAB_DEFINITIONS, type TabId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../hooks/useToast';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
+import Button from '@/components/ui/Button';
 
 const SIDEBAR_STORAGE_KEY = 'antares_sidebar_expanded';
 const SIDEBAR_WIDTH_EXPANDED = 200;
@@ -139,8 +140,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
     >
       <div className="flex h-11 shrink-0 items-center gap-1.5 px-1.5">
         <div className="relative shrink-0">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             data-testid="sidebar-toggle"
             aria-label="Alternar barra lateral"
             aria-expanded={expanded}
@@ -148,7 +148,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
             className="flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] active:scale-[0.97] motion-reduce:active:scale-100"
           >
             <PanelLeft className="size-4" strokeWidth={1.75} />
-          </button>
+          </Button>
           <HoverTooltip label={expanded ? 'Hide Sidebar' : 'Show Sidebar'} />
         </div>
         <div
@@ -181,8 +181,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
               const Icon = ICONS[tabId];
               return (
                 <div key={tabId} className={cn('relative', !expanded && 'flex size-8 items-center')}>
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     onClick={() => onTabChange(tabId)}
                     onMouseEnter={() => onPrefetchTab?.(tabId)}
                     onFocus={() => onPrefetchTab?.(tabId)}
@@ -214,7 +213,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
                     >
                       {tab.label}
                     </span>
-                  </button>
+                  </Button>
                   {!expanded && (
                     <HoverTooltip label={tab.label} />
                   )}
@@ -230,8 +229,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
       {user && (
         <div className="shrink-0 px-1.5 py-1.5">
           <div className={cn('relative', !expanded && 'flex size-8 items-start')}>
-            <button
-              type="button"
+            <Button variant="none" size="none"
               data-testid="sidebar-signout-button"
               aria-label={t('auth.signOut')}
               disabled={signingOut}
@@ -253,7 +251,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
               >
                 {t('auth.signOut')}
               </span>
-            </button>
+            </Button>
             {!expanded && (
               <HoverTooltip label={t('auth.signOut')} />
             )}

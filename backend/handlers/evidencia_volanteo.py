@@ -44,7 +44,6 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
                 target.tmp_path.write_bytes(docx_bytes)
             out = target.destination
             return {
-                "pdf_base64": "",
                 "content_base64": "",
                 "saved_path": str(out),
                 "filename": out.name,
@@ -53,7 +52,6 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
             }
         encoded = base64.b64encode(docx_bytes).decode("ascii")
         return {
-            "pdf_base64": encoded,
             "content_base64": encoded,
             "filename": filename,
             "format": "docx",
@@ -70,7 +68,6 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
             target.tmp_path.write_bytes(pdf_bytes)
         out = target.destination
         return {
-            "pdf_base64": "",
             "content_base64": "",
             "saved_path": str(out),
             "filename": out.name,
@@ -79,7 +76,6 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
         }
     encoded = base64.b64encode(pdf_bytes).decode("ascii")
     return {
-        "pdf_base64": encoded,
         "content_base64": encoded,
         "filename": filename,
         "format": "pdf",

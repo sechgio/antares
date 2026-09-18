@@ -1,17 +1,6 @@
 const { EventEmitter } = require('events');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed += 1;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed += 1;
-  }
-}
+const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
 
 function makeProc(pid) {
   const proc = new EventEmitter();
@@ -31,53 +20,35 @@ function loadRouter({ currentProc, incrementPendingRequests, decrementPendingReq
     else process.env[key] = value;
   }
 
-  const electronPath = require.resolve('electron');
-  require.cache[electronPath] = {
-    id: electronPath,
-    filename: electronPath,
-    loaded: true,
-    exports: {
-      ipcMain: { handle: () => {}, removeHandler: () => {} },
-      dialog: {},
-      app: { isPackaged: !isDev },
-    },
-  };
+  stubModule('electron', {
+    ipcMain: { handle: () => {}, removeHandler: () => {} },
+    dialog: {},
+    app: { isPackaged: !isDev },
+  });
 
-  const spawnerPath = require.resolve('../electron/backend-spawner');
-  require.cache[spawnerPath] = {
-    id: spawnerPath,
-    filename: spawnerPath,
-    loaded: true,
-    exports: {
-      getProcess: () => currentProc.ref,
-      isReady: () => true,
-      waitForReady: async () => true,
-      getState: () => 'ready',
-      getLastError: () => null,
-      getStderrTail: () => '',
-      manualRestart: async () => true,
-      incrementPendingRequests,
-      decrementPendingRequests,
-      noteJobActivity: () => {},
-      clearJobActivity: () => {},
-      STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-    },
-  };
+  stubModule('electron/backend-spawner', {
+    getProcess: () => currentProc.ref,
+    isReady: () => true,
+    waitForReady: async () => true,
+    getState: () => 'ready',
+    getLastError: () => null,
+    getStderrTail: () => '',
+    manualRestart: async () => true,
+    incrementPendingRequests,
+    decrementPendingRequests,
+    noteJobActivity: () => {},
+    clearJobActivity: () => {},
+    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
+  });
 
-  const wmPath = require.resolve('../electron/window-manager');
-  require.cache[wmPath] = {
-    id: wmPath,
-    filename: wmPath,
-    loaded: true,
-    exports: {
-      getMainWindow: () => mainWindow,
-      buildAppMenu: () => ({ popup: () => {} }),
-      getIsDev: () => isDev,
-    },
-  };
+  stubModule('electron/window-manager', {
+    getMainWindow: () => mainWindow,
+    buildAppMenu: () => ({ popup: () => {} }),
+    getIsDev: () => isDev,
+  });
 
   const routerPath = require.resolve('../electron/ipc-router');
-  delete require.cache[routerPath];
+  evictModule('electron/ipc-router');
   const router = require(routerPath);
 
   for (const [key, value] of oldEnv) {
@@ -369,8 +340,7 @@ async function run() {
     assert(negativeLimits.maxPendingPerMethod === 8, 'negative per-method pending environment value uses default');
   }
 
-  console.log(`\n${passed} passed, ${failed} failed`);
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

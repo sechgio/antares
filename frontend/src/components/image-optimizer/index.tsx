@@ -19,7 +19,6 @@ import {
 import { DEFAULT_BATCH_SETTINGS, IMAGE_OPTIMIZER_PRESETS, cloneSettings } from './presets';
 import { BatchSettings, CropOffset, ImageItem, PresetId } from './types';
 import {
-  arrayBufferToBase64,
   buildExportNameMap,
   buildZipFilename,
   getCropRectangle,
@@ -41,6 +40,10 @@ import { createStoredZipBlob } from './zip';
 import { saveFeatureHistory } from '../../utils/history';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import { api } from '../../api';
+import { stageFileForIpc } from '../../utils/stageFile';
+import Button from '@/components/ui/Button';
+import { FileImportInput } from '@/components/ui/FileImportInput';
+import { errorMessage } from '@/utils/errors';
 
 export default function ImageOptimizer() {
   const { t } = useTranslation();
@@ -234,13 +237,6 @@ export default function ImageOptimizer() {
     }
   }, [processInputFiles]);
 
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      processInputFiles(e.target.files);
-    }
-    e.target.value = '';
-  }, [processInputFiles]);
-
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const files = Array.from(e.clipboardData?.files || []).filter((file) => file.type.startsWith('image/'));
@@ -410,7 +406,10 @@ export default function ImageOptimizer() {
         saveFiles: (body) => api.imageOptimizerSaveFiles(body),
         shouldCancel: () => saveCancelledRef.current,
         onProgress: (current, total) => setProcessingProgress({ current, total }),
-        encodeBuffer: arrayBufferToBase64,
+        stageBlob: (blob, filename) => stageFileForIpc(
+          new File([blob], filename, { type: blob.type }),
+        ),
+        cleanupToken: (token) => api.fileTokenCleanup(token),
       });
 
       const saved = result.saved_count;
@@ -437,7 +436,7 @@ export default function ImageOptimizer() {
       }
     } catch (error) {
       console.error('Save to folder failed', error);
-      const message = error instanceof Error ? error.message : t('optimizer.errors.unknown');
+      const message = errorMessage(error, t('optimizer.errors.unknown'));
       addToast(t('optimizer.toast.saveFailed', { message }), 'error', 4600);
     } finally {
       saveCancelledRef.current = false;
@@ -474,7 +473,7 @@ export default function ImageOptimizer() {
       addToast(t('optimizer.toast.zipGenerated', { count: entries.length }), 'success', 2400);
     } catch (error) {
       console.error('ZIP creation failed', error);
-      const message = error instanceof Error ? error.message : t('optimizer.errors.unknown');
+      const message = errorMessage(error, t('optimizer.errors.unknown'));
       addToast(t('optimizer.toast.zipFailed', { message }), 'error', 4200);
     }
   }, [addToast, collectDownloadEntries, getExportNameMap, t]);
@@ -602,7 +601,7 @@ export default function ImageOptimizer() {
             return true;
           } catch (error) {
             if (signal.aborted) throwIfAborted(signal);
-            const message = error instanceof Error ? error.message : t('optimizer.errors.unknown');
+            const message = errorMessage(error, t('optimizer.errors.unknown'));
             commitItems((prev) => prev.map((item) => (item.id === target.id ? { ...item, status: 'error', error: message } : item)));
             return false;
           } finally {
@@ -669,13 +668,14 @@ export default function ImageOptimizer() {
       onDragOver={handleDrag}
       onDrop={handleDrop}
     >
-      <input
+      <FileImportInput
         ref={fileInputRef}
-        type="file"
         multiple
         accept="image/jpeg,image/png,image/webp,image/avif,image/bmp,.jpg,.jpeg,.png,.webp,.avif,.bmp"
         className="hidden"
-        onChange={handleFileInput}
+        onFiles={(files) => {
+          if (files && files.length > 0) processInputFiles(files);
+        }}
       />
 
       <div className="flex h-full w-full flex-col gap-2 overflow-hidden">
@@ -695,8 +695,7 @@ export default function ImageOptimizer() {
 
             <div className="flex w-full flex-wrap items-center justify-end gap-1.5 xl:w-auto xl:flex-nowrap">
               <div className="flex flex-wrap items-center gap-1">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   aria-label={t('optimizer.actions.chooseFolder')}
                   onClick={handlePickOutputFolder}
                   disabled={isProcessing}
@@ -707,21 +706,20 @@ export default function ImageOptimizer() {
                   {!settings.export.outputFolder.trim() && (
                     <AlertCircle size={11} className="shrink-0 text-[var(--accent-yellow)]" />
                   )}
-                </button>
+                </Button>
               </div>
 
               <div className="mx-0.5 hidden h-4 w-px bg-[var(--border-medium)] xl:block" aria-hidden="true" />
 
               <div className="flex flex-wrap items-center gap-1">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   onClick={() => handleProcessScope(activeScope)}
                   disabled={isProcessing || stats.includedCount === 0}
                   className={`${toolbarBtn} bg-[var(--text-primary)] text-[var(--bg-base)] hover:opacity-90 disabled:opacity-30`}
                 >
                   {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                   {primaryActionLabel}
-                </button>
+                </Button>
                 <div
                   ref={downloadMenuAnchorRef}
                   className={`relative flex h-7 items-stretch overflow-hidden rounded-full border ${downloadableItems.length > 0 && !isProcessing
@@ -729,18 +727,16 @@ export default function ImageOptimizer() {
                     : 'border-[var(--border-medium)] bg-[var(--bg-input)]'
                     }`}
                 >
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     onClick={() => { downloadItems(downloadableItems); closeDownloadMenu(); }}
                     disabled={isProcessing || downloadableItems.length === 0}
                     className={`inline-flex h-full items-center gap-1.5 px-2.5 text-[10px] font-medium transition-[opacity,transform] duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 ${downloadableItems.length > 0 && !isProcessing ? 'text-[var(--accent-green)]' : 'text-[var(--text-secondary)]'}`}
                   >
                     <FileDown size={12} />
                     {downloadableItems.length > 1 ? 'ZIP' : t('optimizer.actions.download')}
-                  </button>
+                  </Button>
                   {downloadableItems.length > 0 && (
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       onClick={toggleDownloadMenu}
                       disabled={isProcessing || downloadableItems.length === 0}
                       aria-expanded={downloadMenuOpen}
@@ -749,7 +745,7 @@ export default function ImageOptimizer() {
                       className="inline-flex h-full items-center border-l border-[var(--accent-green)]/30 px-1.5 text-[var(--accent-green)] transition-transform duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <ChevronDown size={11} className={`transition-transform duration-100 ${downloadMenuOpen ? 'rotate-180' : ''}`} />
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {downloadMenuOpen && downloadMenuPosition && createPortal(
@@ -760,8 +756,7 @@ export default function ImageOptimizer() {
                       className="fixed z-[130] w-52 overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-0.5 shadow-lg"
                     >
                       {downloadableItems.length > 1 && (
-                        <button
-                          type="button"
+                        <Button variant="none" size="none"
                           role="menuitem"
                           onClick={() => { downloadItemsAsZip(downloadableItems); closeDownloadMenu(); }}
                           className="flex h-8 w-full items-center gap-2 px-3 text-left text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
@@ -769,10 +764,9 @@ export default function ImageOptimizer() {
                           <FileDown size={12} className="shrink-0 text-[var(--accent-green)]" />
                           {t('optimizer.actions.downloadZip')}
                           <span className="ml-auto font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{downloadableItems.length}</span>
-                        </button>
+                        </Button>
                       )}
-                      <button
-                        type="button"
+                      <Button variant="none" size="none"
                         role="menuitem"
                         onClick={() => { downloadItemsIndividually(downloadableItems); closeDownloadMenu(); }}
                         className="flex h-8 w-full items-center gap-2 px-3 text-left text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
@@ -780,19 +774,18 @@ export default function ImageOptimizer() {
                         <FileDown size={12} className="shrink-0 text-sky-500" />
                         {t('optimizer.actions.downloadIndividual')}
                         <span className="ml-auto font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{downloadableItems.length}</span>
-                      </button>
+                      </Button>
                     </div>,
                   document.body,
                 )}
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   onClick={handleClearAll}
                   disabled={isProcessing || items.length === 0}
                   className={`${toolbarBtn} border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:border-[var(--accent-red)]/40 hover:text-[var(--accent-red)] disabled:opacity-30`}
                 >
                   <Trash2 size={12} />
                   {t('optimizer.actions.clear')}
-                </button>
+                </Button>
               </div>
             </div>
           </div>

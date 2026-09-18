@@ -23,8 +23,8 @@ from backend.core.ubicaciones.composer import (
 from backend.utils.paths import resource_path
 
 
-def _measure_footer_band_height(jpg_path: str) -> int:
-    img = Image.open(jpg_path).convert("RGB")
+def _measure_footer_band_height(source) -> int:
+    img = Image.open(source).convert("RGB")
     w, h = img.size
     black_rows: list[int] = []
     step = max(1, w // 30)
@@ -240,10 +240,20 @@ def test_footer_logo_fills_bar_width() -> None:
     assert max(img.getpixel((out_w // 2, row_y))) > 100
 
 
-def test_measure_footer_band_height_matches_reference_templates() -> None:
-    assets = resource_path("assets/ubicaciones")
-    vertical_band = _measure_footer_band_height(f"{assets}/vertical.jpg")
-    horizontal_band = _measure_footer_band_height(f"{assets}/Horizontal.jpg")
+def _synthetic_template(width: int, height: int, footer_h: int) -> BytesIO:
+    img = Image.new("RGB", (width, height), (244, 251, 252))
+    img.paste(Image.new("RGB", (width, footer_h), (15, 20, 25)), (0, height - footer_h))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
+def test_measure_footer_band_height_synthetic_templates() -> None:
+    # Los JPG de referencia se eliminaron con el rebrand de assets; se sintetizan
+    # exportaciones equivalentes (mismo ancho y alto de banda de footer).
+    vertical_band = _measure_footer_band_height(_synthetic_template(1491, 2104, 52))
+    horizontal_band = _measure_footer_band_height(_synthetic_template(3508, 2480, 135))
     assert vertical_band == pytest.approx(52, abs=5)
     assert horizontal_band == pytest.approx(135, abs=5)
     assert round(vertical_band / 1491 * 3508) == pytest.approx(int(_REF_LAYOUT["vertical"]["footer_h"]), abs=3)

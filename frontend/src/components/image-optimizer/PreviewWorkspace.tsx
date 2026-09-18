@@ -7,6 +7,7 @@ import { BatchSettings, CropRectangle, ImageItem, PreviewTab, PresetId } from '.
 import { BeforeAfterSlider, ItemSummary, ProgressBar, previewStageShellClass } from './ui';
 import ItemOverridesPanel from './ItemOverridesPanel';
 import { formatBytes } from '../../utils/format';
+import Button from '@/components/ui/Button';
 
 interface PreviewWorkspaceProps {
   items: ImageItem[];
@@ -183,8 +184,7 @@ export default function PreviewWorkspace({
 
           <div className="absolute inset-0 flex items-start justify-end p-1.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
             <WithHoverTooltip label={t('optimizer.preview.adjustCrop')} placement="bottom">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 aria-label={t('optimizer.preview.adjustCrop')}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -194,7 +194,7 @@ export default function PreviewWorkspace({
                 style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }}
               >
                 <Crop size={12} />
-              </button>
+              </Button>
             </WithHoverTooltip>
           </div>
 
@@ -341,15 +341,15 @@ export default function PreviewWorkspace({
             {activeItem.overrides.presetId && <span className="shrink-0 text-[9px] font-medium text-[var(--text-secondary)]">{t('optimizer.item.localPreset')}</span>}
           </div>
           <div className="flex shrink-0 items-center">
-            <button type="button" onClick={() => onViewModeChange('grid')} className={chromeBtn}>{t('optimizer.preview.backToGrid')}</button>
-            <button type="button" onClick={() => onDownloadSingle(activeItem)} disabled={!activeItemDownloadable} className={chromeBtn}>
+            <Button variant="none" size="none" onClick={() => onViewModeChange('grid')} className={chromeBtn}>{t('optimizer.preview.backToGrid')}</Button>
+            <Button variant="none" size="none" onClick={() => onDownloadSingle(activeItem)} disabled={!activeItemDownloadable} className={chromeBtn}>
               <Download size={11} />
               {t('optimizer.preview.download')}
-            </button>
-            <button type="button" onClick={() => onRemoveItem(activeItem.id)} className={`${chromeBtn} hover:text-[var(--accent-red)]`}>
+            </Button>
+            <Button variant="none" size="none" onClick={() => onRemoveItem(activeItem.id)} className={`${chromeBtn} hover:text-[var(--accent-red)]`}>
               <Trash2 size={11} />
               {t('optimizer.preview.remove')}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -361,9 +361,8 @@ export default function PreviewWorkspace({
               { value: 'result', label: t('optimizer.preview.result') },
               { value: 'compare', label: t('optimizer.preview.compareShort') },
             ] as const).map((tab) => (
-              <button
+              <Button variant="none" size="none"
                 key={tab.value}
-                type="button"
                 onClick={() => onChangePreviewTab(tab.value)}
                 className={`h-6 rounded-md px-2 text-[10px] font-medium transition-[color,background-color,transform] duration-100 active:scale-[0.96] motion-reduce:active:scale-100 ${previewTab === tab.value
                   ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-sm'
@@ -371,7 +370,7 @@ export default function PreviewWorkspace({
                   }`}
               >
                 {tab.label}
-              </button>
+              </Button>
             ))}
           </div>
           {processing && (
@@ -414,13 +413,12 @@ export default function PreviewWorkspace({
                   <p className="font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">
                     {t('optimizer.preview.cropSize', { width: activeCropPreview.width, height: activeCropPreview.height })}
                   </p>
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     onClick={() => onOpenCropEditor()}
                     className="text-[10px] font-medium text-[var(--accent-primary)] transition-colors hover:text-[var(--accent-primary-hover)]"
                   >
                     {t('optimizer.preview.adjust')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (

@@ -6,6 +6,7 @@ export type PointerGestureSession = {
 };
 
 export type PointerGestureSessionOptions = {
+  pointerId?: number;
   onMove: (ev: PointerEvent) => void;
   onEnd: (ev: PointerEvent | null, reason: 'up') => void;
   onKeyDown?: (ev: KeyboardEvent) => void;
@@ -100,6 +101,7 @@ export function createPointerGestureSession(
 
   onMove = (ev: PointerEvent) => {
     if (finished) return;
+    if (options.pointerId != null && ev.pointerId !== options.pointerId) return;
     options.onMove(ev);
   };
 
@@ -111,8 +113,14 @@ export function createPointerGestureSession(
     options.onEnd(ev, 'up');
   };
 
-  onUp = (ev: PointerEvent) => finish(ev);
-  onCancel = () => session.abort();
+  onUp = (ev: PointerEvent) => {
+    if (options.pointerId != null && ev.pointerId !== options.pointerId) return;
+    finish(ev);
+  };
+  onCancel = (ev: PointerEvent) => {
+    if (options.pointerId != null && ev.pointerId !== options.pointerId) return;
+    session.abort();
+  };
   onKey = options.onKeyDown
     ? (ev: KeyboardEvent) => {
         if (finished) return;

@@ -21,6 +21,7 @@ from backend.core.canvas.models import (
     normalize_document,
     utc_now_iso,
 )
+from backend.utils.lazy import LazySingleton
 from backend.utils.paths import resource_path, user_data_path
 from backend.utils.validators import _WINDOWS_RESERVED_NAMES
 
@@ -71,8 +72,7 @@ def _write_atomic(path: Path, encoded: bytes) -> None:
             tmp.unlink(missing_ok=True)
         raise
 
-_store_instance: CanvasStore | None = None
-_store_lock = threading.Lock()
+_store_singleton = LazySingleton(lambda docs_dir=None: CanvasStore(docs_dir))
 
 
 def _default_docs_dir() -> Path:
@@ -84,12 +84,7 @@ def _legacy_docs_dir() -> Path:
 
 
 def get_canvas_store(docs_dir: str | Path | None = None) -> CanvasStore:
-    global _store_instance
-    if _store_instance is None:
-        with _store_lock:
-            if _store_instance is None:
-                _store_instance = CanvasStore(docs_dir)
-    return _store_instance
+    return _store_singleton.get(docs_dir)
 
 
 def migrate_legacy_canvas_documents(*, source: Path, dest: Path) -> int:
@@ -421,6 +416,46 @@ class CanvasStore:
             _write_atomic(path, encoded)
             self._history_digests[str(doc_id)] = digest
             return True
+
+    def get_history_digest(self, doc_id: str) -> str | None:
+        with self._doc_lock(str(doc_id)):
+            cached = self._history_digests.get(str(doc_id))
+            if cached is not None:
+                return cached
+            path = self._history_path_for(str(doc_id))
+            try:
+                encoded = path.read_bytes()
+            except OSError:
+                return None
+            digest = hashlib.sha256(encoded).hexdigest()
+            self._history_digests[str(doc_id)] = digest
+            return digest
+
+    def save_history_delta(
+        self,
+        doc_id: str,
+        *,
+        past_prefix: int,
+        past_suffix: list[dict[str, Any]],  # allowlist: dict[str, Any]
+        future_prefix: int,
+        future_suffix: list[dict[str, Any]],  # allowlist: dict[str, Any]
+        base_digest: str,
+        max_history: int = 30,
+    ) -> bool:
+        with self._doc_lock(str(doc_id)):
+            if not base_digest or self.get_history_digest(str(doc_id)) != base_digest:
+                raise ValueError("La base del historial Canvas cambió")
+            current = self.get_history(str(doc_id))
+            current_past = current["past"]
+            current_future = current["future"]
+            if not 0 <= past_prefix <= len(current_past) or not 0 <= future_prefix <= len(current_future):
+                raise ValueError("El prefijo del historial Canvas no coincide")
+            return self.save_history(
+                str(doc_id),
+                [*current_past[:past_prefix], *past_suffix],
+                [*current_future[:future_prefix], *future_suffix],
+                max_history=max_history,
+            )
 
     def save(self, document: dict[str, Any], *, touch: bool = True) -> dict[str, Any]:  # allowlist: dict[str, Any]
         doc = normalize_document(document)

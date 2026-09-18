@@ -148,7 +148,7 @@ export function writeClipboardLayersText(layers: CanvasLayer[]): void {
   }
 }
 
-export interface ClipboardCopyResult {
+interface ClipboardCopyResult {
   layers: CanvasLayer[];
   createdUrls: string[];
 }

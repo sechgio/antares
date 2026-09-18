@@ -1,4 +1,5 @@
 import { registerImageBlob, releaseImageBlob } from '../../../utils/imageBlobStore';
+import { fileToDataUrl } from '../../../../../utils/pdfAssets';
 import { ImageObjectControls, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
@@ -21,12 +22,12 @@ export default function ImageSection({ layer, onChange, setVar, setVarLive, onCo
                 onChange({ ...layer, value: registered.url });
               })
               .catch(() => {
-                const reader = new FileReader();
-                reader.onload = () => {
-                  releaseImageBlob(previous);
-                  onChange({ ...layer, value: String(reader.result || '') });
-                };
-                reader.readAsDataURL(file);
+                fileToDataUrl(file)
+                  .then((dataUrl) => {
+                    releaseImageBlob(previous);
+                    onChange({ ...layer, value: dataUrl });
+                  })
+                  .catch(() => {});
               });
           }}
         />

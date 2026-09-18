@@ -119,10 +119,6 @@ function computeImgFlags(cantidad) {
 }
 
 module.exports = {
-  NIS_FILE_RE,
-  NIS_SLOT_RE,
-  IMAGE_EXT_RE,
-  stripExtension,
   extractNis,
   extractSlot,
   accumulateNisFiles,

@@ -2,12 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
+const { assertOrExit:assert } = require('./helpers/harness');
 
 const {
   userKeyFromEmail,
@@ -103,9 +98,10 @@ assert(sheetsSrc.includes('onActiveUserChange'), 'sheets registra listener de ca
 assert(sheetsSrc.includes('_sheetId = null'), 'cambio de usuario limpia _sheetId');
 
 const engineSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'autoimg-sync-engine.js'), 'utf8');
+const scanSyncSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'autoimg-scan-sync.js'), 'utf8');
 assert(engineSrc.includes('clearSessionCaches'), 'engine expone clearSessionCaches');
 assert(engineSrc.includes('onActiveUserChange'), 'engine limpia caché al cambiar usuario');
-assert(engineSrc.includes('fuera_padron'), 'scan summary usa fuera_padron');
+assert(scanSyncSrc.includes('fuera_padron'), 'scan summary usa fuera_padron');
 
 const { onActiveUserChange, setActiveUser: setUser, clearActiveUser: clearUser } = require('../electron/autoimg-user-scope');
 let notified = 0;

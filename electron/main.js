@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, ipcMain } = require('electron');
 const { createWindow } = require('./window-manager');
+const { raceTimeout } = require('./async-utils');
 const { startPythonBackend, killPython } = require('./backend-spawner');
 const { registerIpcHandlers } = require('./ipc-router');
 const { registerRendererObservability } = require('./renderer-observability');
@@ -7,6 +8,8 @@ const {
   appendLogEvent,
   appendLogLine,
   cleanStaleTempDirs,
+  flushLogQueue,
+  flushLogQueueSync,
   initAppLogs,
   installConsoleLogTee,
   setAppContext,
@@ -27,8 +30,7 @@ process.on('unhandledRejection', (reason) => {
   } catch {}
 });
 
-// appendFileSync deja el JSONL en disco antes de exit(1).
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', async (err) => {
   const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
   console.error('[main] Uncaught exception:', message);
   try {
@@ -38,6 +40,10 @@ process.on('uncaughtException', (err) => {
       reason: err instanceof Error && err.name ? err.name : 'uncaught_exception',
       message,
     });
+  } catch {}
+  await raceTimeout(flushLogQueue(), 1_000, () => {});
+  try {
+    flushLogQueueSync();
   } catch {}
   process.exit(1);
 });
@@ -122,6 +128,11 @@ function _shutdownOnce() {
   } catch (err) {
     console.warn('[main] killPython threw during shutdown:', err && err.message);
   }
+  // Las rutas will-quit/exit/SIGINT no pueden awaitear la cola asincrona; sin este
+  // respaldo sincrono se perderian los logs encolados aqui (regresion vs appendFileSync).
+  try {
+    flushLogQueueSync();
+  } catch {}
 }
 
 function _installWindowCloseGuard() {
@@ -163,7 +174,15 @@ if (typeof ipcMain.on === 'function') {
     try {
       const { getMainWindow } = require('./window-manager');
       const win = getMainWindow();
-      if (!isTrustedRendererFrame(event, win, isDev)) return;
+      if (!isTrustedRendererFrame(event, win, isDev)) {
+        appendLogEvent('WARN', 'security.rejected', {
+          component: 'electron',
+          outcome: 'rejected',
+          reason: 'untrusted_sender',
+          method: 'register-file-input-path',
+        });
+        return;
+      }
       const { registerFileInputPath } = require('./dialog-handlers');
       registerFileInputPath(rawPath);
     } catch (err) {
@@ -225,6 +244,7 @@ async function _flushCanvasAndQuit(win) {
   }
   await _cleanupStagedFiles();
   _shutdownOnce();
+  await raceTimeout(flushLogQueue(), 5_000, () => {});
   _allowQuit = true;
   if (win && !win.isDestroyed()) {
     try { win.destroy(); } catch {}

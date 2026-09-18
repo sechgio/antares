@@ -175,11 +175,9 @@ module.exports = {
   captureAuthSession,
   isAuthSessionCurrent,
   sessionStoreKey,
-  clearSessionTokens,
   assertAuthSessionCurrent,
   getValidTokens,
   refreshAccessToken,
   isInvalidGrantResponse,
   REAUTH_REQUIRED_MESSAGE,
-  SESSION_CHANGED_MESSAGE,
 };

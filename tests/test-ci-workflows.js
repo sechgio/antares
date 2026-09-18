@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const { assert, finish } = require('./helpers/harness');
+
 const ROOT = path.join(__dirname, '..');
 const CI_PATH = path.join(ROOT, '.github', 'workflows', 'ci.yml');
 const RELEASE_PATH = path.join(ROOT, '.github', 'workflows', 'release.yml');
@@ -11,19 +13,6 @@ const UV_LOCK_PATH = path.join(ROOT, 'uv.lock');
 const NODE_VERSION_PATH = path.join(ROOT, '.node-version');
 const VITE_CONFIG_PATH = path.join(ROOT, 'frontend', 'vite.config.ts');
 const STATIC_VITEST_CONFIG_PATH = path.join(ROOT, 'frontend', 'vitest.static.config.ts');
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
 
 function assertActionsPinned(source, label) {
   const actionRefs = [...source.matchAll(/uses:\s+actions\/[^@\s]+@([^\s#]+)/g)].map((match) => match[1]);
@@ -119,11 +108,7 @@ function run() {
   assert(release.includes('environment: production'), 'Release publication uses the production environment');
   assertActionsPinned(release, 'Release');
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run();

@@ -672,6 +672,86 @@ describe('Artboard drag gestures', () => {
     expect(panLayer.style.top).toBe('50%');
   });
 
+  it('preserves fractional pan coordinates for high-resolution trackpads', () => {
+    const document = createEmptyDocument('Test');
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0.25, y: -0.75 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const panLayer = container.querySelector<HTMLElement>('[data-testid="canvas-pan-layer"]')!;
+    expect(panLayer.style.transform).toContain('0.25px');
+    expect(panLayer.style.transform).toContain('-0.75px');
+  });
+
+  it('captures and releases the pointer used for hand-tool panning', () => {
+    const document = createEmptyDocument('Test');
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1}
+        tool="hand"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const viewport = container.querySelector<HTMLElement>('[data-testid="canvas-viewport"]')!;
+    viewport.setPointerCapture = vi.fn();
+    viewport.releasePointerCapture = vi.fn();
+
+    fireEvent.pointerDown(viewport, { pointerId: 7, button: 0, clientX: 100, clientY: 100 });
+    expect(viewport.setPointerCapture).toHaveBeenCalledWith(7);
+
+    fireEvent.pointerUp(window, { pointerId: 7, clientX: 120, clientY: 120 });
+    expect(viewport.releasePointerCapture).toHaveBeenCalledWith(7);
+  });
+
+  it('does not start inertia from stale velocity after the pointer pauses', () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      const document = createEmptyDocument('Test');
+      const onStartInertia = vi.fn();
+      const { container } = render(
+        <Artboard
+          document={document}
+          selectedIds={[]}
+          zoom={1}
+          tool="hand"
+          pan={{ x: 0, y: 0 }}
+          onPan={() => {}}
+          onSelect={() => {}}
+          onSelectIds={() => {}}
+          onChangeLayers={() => {}}
+          onStartInertia={onStartInertia}
+        />,
+      );
+      const viewport = container.querySelector<HTMLElement>('[data-testid="canvas-viewport"]')!;
+
+      fireEvent.pointerDown(viewport, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+      now.mockReturnValue(16);
+      fireEvent.pointerMove(window, { pointerId: 1, clientX: 160, clientY: 100 });
+      act(() => tick());
+      now.mockReturnValue(1000);
+      fireEvent.pointerUp(window, { pointerId: 1, clientX: 160, clientY: 100 });
+
+      expect(onStartInertia).not.toHaveBeenCalled();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('zooms with a compositor transform, not CSS zoom (pinch/zoom jank)', () => {
     const layer = createLayer('rect');
     const document = createEmptyDocument('Test');

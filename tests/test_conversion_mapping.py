@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from backend.core.jobs import Job
-from backend.handlers import conversion
+from backend.handlers import conversion, conversion_job
 
 
 class _ImmediateFuture:
@@ -100,8 +100,8 @@ def test_run_conversion_job_aborts_on_collision(monkeypatch, tmp_path) -> None:
     file_b.write_text("b")
 
     scheduler = _RecordingScheduler()
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
-    monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
+    monkeypatch.setattr(conversion_job, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
 
     job = Job(
@@ -195,11 +195,11 @@ def test_run_conversion_job_resolves_sep_placeholder(monkeypatch, tmp_path) -> N
     scheduler = _RecordingScheduler()
     copied: list[tuple[str, str]] = []
 
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
-    monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 10)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion_job, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
     monkeypatch.setattr(
         "backend.core.database.buscar_por_columna",
@@ -235,7 +235,7 @@ def test_prepare_chunk_renames_windows_parenthesized_sequence(monkeypatch, tmp_p
     source_file = tmp_path / "4210502 (3).jpg"
     source_file.write_text("data")
 
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
     monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["nis", "sgio"])
 
     def buscar_por_nis(codigos, columna):
@@ -246,7 +246,7 @@ def test_prepare_chunk_renames_windows_parenthesized_sequence(monkeypatch, tmp_p
 
     monkeypatch.setattr("backend.core.database.buscar_por_columna", buscar_por_nis)
     engine = conversion.RenamerEngine("{sgio}_{seq}{ext}", 1, sequence_mode="filename")
-    tasks = conversion._prepare_chunk_tasks(
+    tasks = conversion_job._prepare_chunk_tasks(
         [str(source_file)],
         destino=str(tmp_path / "out"),
         engine=engine,
@@ -262,11 +262,11 @@ def test_prepare_chunk_renames_windows_parenthesized_sequence(monkeypatch, tmp_p
 def test_prepare_chunk_unmapped_sanitizes_invalid_chars(monkeypatch, tmp_path) -> None:
     source_file = tmp_path / "bad<>name.jpg"
 
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
     from backend.core.mapping_index import MappingIndex
 
     engine = conversion.RenamerEngine("{renombre}{ext}", 1)
-    tasks = conversion._prepare_chunk_tasks(
+    tasks = conversion_job._prepare_chunk_tasks(
         [str(source_file)],
         destino=str(tmp_path / "out"),
         engine=engine,
@@ -290,11 +290,11 @@ def test_run_conversion_job_with_mapping_rename_only(monkeypatch, tmp_path) -> N
     scheduler = _RecordingScheduler()
     copied: list[tuple[str, str]] = []
 
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
-    monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 10)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion_job, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
 
     job = Job(
@@ -338,11 +338,11 @@ def test_run_conversion_job_with_mapping_path_and_columns(monkeypatch, tmp_path)
     scheduler = _RecordingScheduler()
     copied: list[tuple[str, str]] = []
 
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
-    monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 10)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion_job, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
 
     job = Job(

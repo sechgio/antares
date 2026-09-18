@@ -1,15 +1,70 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { api, AntaresAPIError, apiRetryAfterMs, _resetBackendReadyForTests } from '../api';
+import {
+  api,
+  AntaresAPIError,
+  apiRetryAfterMs,
+  restartBackend,
+  _resetBackendReadyForTests,
+  _resetCanvasHistoryTransportForTests,
+} from '../api';
 
 const mockInvoke = vi.fn();
 const mockOnNotify = vi.fn();
+const mockReportRendererError = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _resetCanvasHistoryTransportForTests();
   window.electronAPI = {
     invoke: mockInvoke,
     onNotify: mockOnNotify,
+    reportRendererError: mockReportRendererError,
   } as any;
+});
+
+it('sends only the changed Canvas history suffix after a successful full save', async () => {
+  const firstStep = { type: 'diff' as const, undoDiff: {}, redoDiff: {} };
+  const secondStep = { type: 'diff' as const, undoDiff: { name: 'A' }, redoDiff: { name: 'B' } };
+  mockInvoke
+    .mockResolvedValueOnce({ success: true, digest: 'digest-1' })
+    .mockResolvedValueOnce({ success: true, digest: 'digest-2' });
+
+  await api.canvasSaveHistory('doc-a', [firstStep], []);
+  await api.canvasSaveHistory('doc-a', [firstStep, secondStep], []);
+
+  expect(mockInvoke).toHaveBeenNthCalledWith(1, 'canvas_save_history', {
+    id: 'doc-a',
+    past: [firstStep],
+    future: [],
+    include_digest: true,
+  });
+  expect(mockInvoke).toHaveBeenNthCalledWith(2, 'canvas_save_history', {
+    id: 'doc-a',
+    past_prefix: 1,
+    past: [secondStep],
+    future_prefix: 0,
+    future: [],
+    base_digest: 'digest-1',
+  });
+});
+
+it('falls back to a full Canvas history save when the persisted base changed', async () => {
+  const firstStep = { type: 'diff' as const, undoDiff: {}, redoDiff: {} };
+  const secondStep = { type: 'diff' as const, undoDiff: {}, redoDiff: {} };
+  mockInvoke
+    .mockResolvedValueOnce({ success: true, digest: 'digest-1' })
+    .mockRejectedValueOnce(new Error('history base changed'))
+    .mockResolvedValueOnce({ success: true, digest: 'digest-2' });
+
+  await api.canvasSaveHistory('doc-a', [firstStep], []);
+  await api.canvasSaveHistory('doc-a', [firstStep, secondStep], []);
+
+  expect(mockInvoke).toHaveBeenLastCalledWith('canvas_save_history', {
+    id: 'doc-a',
+    past: [firstStep, secondStep],
+    future: [],
+    include_digest: true,
+  });
 });
 
 describe('API Client', () => {
@@ -27,6 +82,14 @@ describe('API Client', () => {
 
     await expect(api.version()).rejects.toThrow('Backend no disponible');
     expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(mockReportRendererError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'api_error',
+        view: 'api:version',
+        name: 'AntaresAPIError[INTERNAL_ERROR]',
+        message: 'Backend no disponible',
+      }),
+    );
   }, 30000);
 
   it('should preserve code and category from structured IPC errors', async () => {
@@ -47,6 +110,14 @@ describe('API Client', () => {
       expect(apiErr.code).toBe(-32002);
       expect(apiErr.category).toBe('RESOURCE_LOCKED');
       expect(apiErr.details).toEqual({ path: 'C:\\out.jpg' });
+      expect(mockReportRendererError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'api_error',
+          view: 'api:version',
+          name: 'AntaresAPIError[RESOURCE_LOCKED]',
+          message: 'Archivo bloqueado',
+        }),
+      );
     }
   });
 
@@ -143,12 +214,12 @@ describe('API Client', () => {
   });
 
   it('should call technical reports list with correct method', async () => {
-    mockInvoke.mockResolvedValue({ reports: [] });
+    mockInvoke.mockResolvedValue({ items: [] });
 
     const result = await api.technicalReportsList({ summary: true });
 
     expect(mockInvoke).toHaveBeenCalledWith('technical_reports_list', { summary: true });
-    expect(result.reports).toEqual([]);
+    expect(result.items).toEqual([]);
   });
 
   it('should call technical reports import with base64 payload', async () => {
@@ -201,23 +272,28 @@ describe('API Client', () => {
     expect(result.started).toBe(true);
   });
 
-  it('should hydrate spreadsheet_parse spill via file_token_read_json', async () => {
-    mockInvoke.mockImplementation(async (method: string) => {
+  it('should hydrate spreadsheet_parse spill through paged reads and release it', async () => {
+    mockInvoke.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'spreadsheet_parse') {
         return {
           workbookName: 'big.xlsx',
           sheets: [],
           warnings: ['spilled'],
           result_file_token: 'antares-read_spill1',
+          sheet_meta: [{ name: 'Hoja1', rowCount: 2 }],
         };
       }
-      if (method === 'file_token_read_json') {
+      if (method === 'spreadsheet_get_rows') {
         return {
-          workbookName: 'big.xlsx',
-          sheets: [{ name: 'Hoja1', rows: [['A'], ['1']] }],
-          warnings: [],
+          name: 'Hoja1',
+          rows: [['A'], ['1']],
+          offset: params?.offset,
+          limit: params?.limit,
+          total: 2,
+          has_more: false,
         };
       }
+      if (method === 'file_token_cleanup') return { cleaned: true };
       throw new Error(`unexpected method ${method}`);
     });
 
@@ -227,9 +303,16 @@ describe('API Client', () => {
       'spreadsheet_parse',
       expect.objectContaining({ file_token: 'antares-read_file1', format_hint: 'xlsx' }),
     );
-    expect(mockInvoke).toHaveBeenCalledWith('file_token_read_json', { token: 'antares-read_spill1' });
+    expect(mockInvoke).toHaveBeenCalledWith('spreadsheet_get_rows', {
+      result_file_token: 'antares-read_spill1',
+      sheet_index: 0,
+      offset: 0,
+      limit: 5000,
+    });
+    expect(mockInvoke).toHaveBeenCalledWith('file_token_cleanup', { token: 'antares-read_spill1' });
     expect(result.sheets[0]?.rows).toEqual([['A'], ['1']]);
     expect(result.warnings).toContain('spilled');
+    expect('result_file_token' in result).toBe(false);
   });
 
   it('should use a timeout budget that outlives Electron main startup wait', async () => {
@@ -306,6 +389,23 @@ describe('API Client', () => {
 
     await expect(api.version()).rejects.toMatchObject({ category: 'CAPACITY_EXCEEDED' });
     expect(mockInvoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports error to telemetry when restartBackend fails', async () => {
+    const mockBackendRestart = vi.fn().mockRejectedValue(new Error('Process crash on restart'));
+    window.electronAPI = {
+      ...window.electronAPI!,
+      backendRestart: mockBackendRestart,
+    };
+
+    await expect(restartBackend()).rejects.toThrow('Process crash on restart');
+    expect(mockReportRendererError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'api_error',
+        view: 'api:backend_restart',
+        message: 'Process crash on restart',
+      }),
+    );
   });
 });
 

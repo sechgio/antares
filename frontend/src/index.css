@@ -547,69 +547,6 @@
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-@keyframes lg-orb-spin {
-  0% { transform: translate(-50%, -50%) rotate(0deg) scale(1.4); }
-  100% { transform: translate(-50%, -50%) rotate(360deg) scale(1.4); }
-}
-.lg-orb {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 120vmin;
-  height: 120vmin;
-  border-radius: 50%;
-  will-change: transform;
-  animation: lg-orb-spin 40s linear infinite;
-  pointer-events: none;
-  opacity: 0.6;
-}
-
-@keyframes lg-sparkle-twinkle {
-  0%, 100% { opacity: 0; transform: scale(0.5); }
-  50% { opacity: 0.7; transform: scale(1); }
-}
-.lg-sparkle {
-  border-radius: 50%;
-  background: var(--accent-primary);
-  will-change: transform, opacity;
-  animation: lg-sparkle-twinkle ease-in-out infinite;
-}
-
-@keyframes lg-card-in {
-  0% { opacity: 0; transform: translateY(24px) scale(0.96); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-.lg-card-enter { animation: lg-card-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-@keyframes lg-shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-6px); }
-  40% { transform: translateX(6px); }
-  60% { transform: translateX(-4px); }
-  80% { transform: translateX(4px); }
-}
-.lg-shake { animation: lg-shake 0.4s ease-in-out; }
-
-@keyframes lg-logo-pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.05); opacity: 0.9; }
-}
-.lg-logo-glow {
-  will-change: transform, opacity;
-  animation: lg-logo-pulse 3s ease-in-out infinite;
-  box-shadow: 0 4px 24px color-mix(in srgb, var(--accent-primary) 30%, transparent);
-}
-
-.lg-input { transition: border-color 0.3s, box-shadow 0.3s; }
-.lg-input:focus {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent);
-}
-
-.lg-btn { transition: transform 0.2s, box-shadow 0.3s, background-color 0.2s; }
-.lg-btn:hover:not(:disabled) {
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent-primary) 30%, transparent);
-}
-
 @keyframes lg-aurora-drift {
   0%, 100% { transform: translate(0, 0) scale(1); }
   33% { transform: translate(8%, -6%) scale(1.08); }
@@ -639,15 +576,6 @@
   animation-delay: -9s;
   animation-duration: 32s;
 }
-.lg-aurora-blob--magenta {
-  width: 40%;
-  height: 40%;
-  top: 40%;
-  left: 35%;
-  background: color-mix(in srgb, #B026FF 30%, transparent);
-  animation-delay: -18s;
-  animation-duration: 24s;
-}
 
 @keyframes lg-shimmer {
   0% { background-position: 200% center; }
@@ -666,38 +594,6 @@
   color: transparent;
   animation: lg-shimmer 6s linear infinite;
 }
-
-.lg-spotlight {
-  background: radial-gradient(
-    300px circle at calc(var(--mx, 0.5) * 100%) calc(var(--my, 0.5) * 100%),
-    color-mix(in srgb, var(--accent-primary) 8%, transparent),
-    transparent 70%
-  );
-}
-
-.lg-form-card {
-  transform-style: preserve-3d;
-  perspective: 1000px;
-}
-.lg-depth-logo { transform: translateZ(30px); }
-.lg-depth-input { transform: translateZ(15px); }
-
-.lg-btn-ripple {
-  position: absolute;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--text-on-accent) 35%, transparent);
-  transform: scale(0);
-  animation: lg-ripple 0.6s ease-out forwards;
-  pointer-events: none;
-}
-@keyframes lg-ripple {
-  to { transform: scale(4); opacity: 0; }
-}
-
-.lg-depth-logo, .lg-depth-input {
-  animation: lg-card-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
 @media (prefers-reduced-motion: reduce) {
   [data-surface="autoimg"] *,
   [data-surface="autoimg"] *::before,

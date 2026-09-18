@@ -1,22 +1,11 @@
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
 
-const sessionPath = require.resolve('../electron/google-session');
-const drivePath = require.resolve('../electron/google-drive-service');
-const nisPath = require.resolve('../electron/autoimg-nis');
 
-delete require.cache[drivePath];
-delete require.cache[nisPath];
+const { assertOrExit:assert, stubModule, evictModule } = require('./helpers/harness');
 
-require.cache[sessionPath] = {
-  id: sessionPath,
-  filename: sessionPath,
-  loaded: true,
-  exports: {
+evictModule('electron/google-drive-service');
+evictModule('electron/autoimg-nis');
+
+stubModule('electron/google-session', {
     getValidTokens: async () => ({ access_token: 'tok', refresh_token: 'r' }),
     refreshAccessToken: async (tokens) => tokens,
     assertAuthSessionCurrent: (session) => {
@@ -25,8 +14,7 @@ require.cache[sessionPath] = {
         throw new Error('La sesión de Google cambió durante la operación.');
       }
     },
-  },
-};
+  });
 
 const drive = require('../electron/google-drive-service');
 const { accumulateNisFiles, finalizeNisMap, buildNisMap } = require('../electron/autoimg-nis');

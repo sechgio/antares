@@ -2,7 +2,7 @@ import type { MyTask, MyTasksFilters } from '../types';
 import { DEFAULT_MY_TASKS_FILTERS } from '../types';
 import { addDaysToIsoDate } from './dates';
 
-export type MyTasksGroupKey = 'overdue' | 'today' | 'week' | 'later' | 'undated' | 'completed';
+type MyTasksGroupKey = 'overdue' | 'today' | 'week' | 'later' | 'undated' | 'completed';
 
 export interface MyTasksGroup {
   key: MyTasksGroupKey;

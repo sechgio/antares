@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
+import Button from '@/components/ui/Button';
 
 export interface CanvasCommand {
   id: string;
@@ -96,9 +97,8 @@ export default memo(function CommandPalette({ commands, onRun, onClose }: Comman
         {filtered.map((command) => {
           const isActive = !command.disabled && active?.id === command.id;
           return (
-            <button
+            <Button variant="none" size="none"
               key={command.id}
-              type="button"
               role="option"
               aria-selected={isActive}
               data-active={isActive || undefined}
@@ -113,7 +113,7 @@ export default memo(function CommandPalette({ commands, onRun, onClose }: Comman
               <span className="min-w-0 flex-1 truncate text-left">{command.label}</span>
               {command.group && <span className="canvas-command-group">{command.group}</span>}
               {command.hint && <kbd className="canvas-kbd">{command.hint}</kbd>}
-            </button>
+            </Button>
           );
         })}
         {!filtered.length && (

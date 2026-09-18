@@ -20,17 +20,7 @@ export function formatDateValue(value: string | number | undefined): string {
   return text;
 }
 
-export function excelSerialToDate(serial: number): string {
-  const epoch = new Date(1899, 11, 30);
-  const days = Math.floor(serial);
-  const msPerDay = 24 * 60 * 60 * 1000;
-  const date = new Date(epoch.getTime() + days * msPerDay);
-
-  const d = String(date.getDate()).padStart(2, '0');
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const y = String(date.getFullYear()).slice(-2);
-  return `${d}/${m}/${y}`;
-}
+export { formatExcelSerialDMY as excelSerialToDate } from '../../utils/excel';
 
 export function isDateColumn(header: string): boolean {
   const h = header.toLowerCase();

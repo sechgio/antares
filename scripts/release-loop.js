@@ -10,8 +10,10 @@ const {
   sh,
   trySh,
   shDetailed,
+  parseLoopArgs,
+  printLoopBanner,
+  shipStep,
   step,
-  skip,
   die,
   requireGhAuth,
   requireOriginRepo,
@@ -161,15 +163,10 @@ function pushTag(version) {
 }
 
 function main() {
-  const args = process.argv.slice(2);
-  const isShip = args.includes('--ship');
-  const doBuild = args.includes('--build');
-
-  const mode = isShip ? '🚀 SHIP MODE (real)' : '🔍 DRY-RUN (sin side effects)';
-  console.log(`\n════════════════════════════════════════════`);
-  console.log(`  Antares Release Pipeline Loop`);
-  console.log(`  ${mode}`);
-  console.log(`════════════════════════════════════════════\n`);
+  const parsed = parseLoopArgs(process.argv);
+  const isShip = parsed.isShip;
+  const doBuild = parsed.has('--build');
+  printLoopBanner('Antares Release Pipeline Loop', isShip, 'real');
 
   try {
     runReleaseLoop(isShip, doBuild);
@@ -194,23 +191,10 @@ function runReleaseLoop(isShip, doBuild) {
 
   step('④ Quality Gate (lint + typecheck + test + audit)', runQualityGate);
 
-  if (doBuild) {
-    step('⑤ Build local (backend + frontend)', runBuild);
-  } else {
-    skip('⑤ Build local', 'omitido, usa --build para incluir');
-  }
+  shipStep('⑤ Build local (backend + frontend)', doBuild, runBuild, 'omitido, usa --build para incluir');
 
-  if (isShip) {
-    step('⑥ Crear git tag', () => createGitTag(version));
-  } else {
-    skip('⑥ Crear git tag', 'dry-run, usa --ship para ejecutar');
-  }
-
-  if (isShip) {
-    step('⑦ Push tag a origin', () => pushTag(version));
-  } else {
-    skip('⑦ Push tag a origin', 'dry-run, usa --ship para ejecutar');
-  }
+  shipStep('⑥ Crear git tag', isShip, () => createGitTag(version), 'dry-run, usa --ship para ejecutar');
+  shipStep('⑦ Push tag a origin', isShip, () => pushTag(version), 'dry-run, usa --ship para ejecutar');
 
   console.log(`\n════════════════════════════════════════════`);
   if (isShip) {

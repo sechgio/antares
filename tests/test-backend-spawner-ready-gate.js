@@ -1,106 +1,24 @@
-const { EventEmitter } = require('events');
-const childProcess = require('child_process');
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
-
-async function flushAsyncTurns(turns = 1) {
-  for (let i = 0; i < turns; i++) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-}
-
-async function waitFor(predicate, maxTurns = 5000) {
-  for (let i = 0; i < maxTurns; i++) {
-    if (predicate()) return true;
-    await flushAsyncTurns();
-  }
-  return false;
-}
+const {
+  assert, finish, flushAsyncTurns, waitFor, stubBackendCommand, evictModule,
+  makeFakeProc, patchSpawn, installInertTimers,
+} = require('./helpers/harness');
 
 const INERT_DELAYS = new Set([1_000, 5_000, 30_000, 60_000]);
 
 async function run() {
   console.log('Testing readiness gate across auto-restart backoff...\n');
 
-  const backendCommandPath = require.resolve('../electron/backend-command.js');
-  require.cache[backendCommandPath] = {
-    id: backendCommandPath,
-    filename: backendCommandPath,
-    loaded: true,
-    exports: {
-      getBackendCommand: () => ({ cmd: 'python', args: [] }),
-    },
-  };
+  stubBackendCommand();
 
-  const originalSpawn = childProcess.spawn;
-  const originalSetTimeout = global.setTimeout;
-  const originalClearTimeout = global.clearTimeout;
-  const originalSetInterval = global.setInterval;
-  const originalClearInterval = global.clearInterval;
-  let spawnCount = 0;
-  let activeInterval = null;
-  const inertTimers = new Set();
+  const spawn = patchSpawn(() => {
+    const proc = makeFakeProc({ pid: 20000 + spawn.count, closeOnKill: false });
+    if (spawn.count === 1) setImmediate(() => proc.emit('close', 1, null));
+    return proc;
+  });
+  const timers = installInertTimers({ isInert: (delay) => INERT_DELAYS.has(delay) });
+  const { inertTimers } = timers;
 
-  childProcess.spawn = () => {
-    spawnCount++;
-    const fakeProcess = new EventEmitter();
-    fakeProcess.stdout = new EventEmitter();
-    fakeProcess.stderr = new EventEmitter();
-    fakeProcess.stdin = new EventEmitter();
-    fakeProcess.stdin.end = () => {};
-    fakeProcess.stdin.write = () => {};
-    fakeProcess.killed = false;
-    fakeProcess.pid = 20000 + spawnCount;
-    fakeProcess.kill = () => {
-      fakeProcess.killed = true;
-    };
-
-    process.nextTick(() => {
-      fakeProcess.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","method":"ready","params":{"status":"ok"}}\n'));
-      if (spawnCount === 1) {
-        setImmediate(() => fakeProcess.emit('close', 1, null));
-      }
-    });
-
-    return fakeProcess;
-  };
-  global.setTimeout = (fn, delay, ...args) => {
-    if (INERT_DELAYS.has(delay)) {
-      const timer = { fn, delay, args };
-      inertTimers.add(timer);
-      return timer;
-    }
-    return originalSetTimeout(fn, 0, ...args);
-  };
-  global.clearTimeout = (timer) => {
-    if (inertTimers.has(timer)) {
-      inertTimers.delete(timer);
-      return undefined;
-    }
-    return originalClearTimeout(timer);
-  };
-  global.setInterval = (fn, delay, ...args) => {
-    activeInterval = originalSetInterval(fn, delay, ...args);
-    return activeInterval;
-  };
-  global.clearInterval = (timer) => {
-    if (timer === activeInterval) activeInterval = null;
-    return originalClearInterval(timer);
-  };
-
-  const backendSpawnerPath = require.resolve('../electron/backend-spawner.js');
-  delete require.cache[backendSpawnerPath];
+  evictModule('electron/backend-spawner.js');
   const {
     startPythonBackend,
     waitForReady,
@@ -116,7 +34,7 @@ async function run() {
       () => getState() === 'starting' && [...inertTimers].some((t) => t.delay === 1_000),
     );
     assert(inBackoff, 'Crash should trigger auto-restart backoff (state=starting, backoff pending)');
-    assert(spawnCount === 1, 'No replacement spawn should happen before the backoff elapses');
+    assert(spawn.count === 1, 'No replacement spawn should happen before the backoff elapses');
 
     let waiterResult = null;
     waitForReady(5_000).then((result) => { waiterResult = result; });
@@ -130,23 +48,16 @@ async function run() {
     const waiterSettled = await waitFor(() => waiterResult !== null);
     assert(waiterSettled, 'waitForReady registered during backoff must settle after respawn (gate not orphaned)');
     assert(waiterResult === true, 'waitForReady should resolve true once the replacement backend is ready');
-    assert(spawnCount === 2, 'Exactly one replacement backend should spawn');
+    assert(spawn.count === 2, 'Exactly one replacement backend should spawn');
     assert(getState() === 'ready', 'Spawner should be ready after the auto-restart');
   } finally {
     killPython();
-    childProcess.spawn = originalSpawn;
-    global.setTimeout = originalSetTimeout;
-    global.clearTimeout = originalClearTimeout;
-    global.setInterval = originalSetInterval;
-    global.clearInterval = originalClearInterval;
-    if (activeInterval) clearInterval(activeInterval);
+    spawn.restore();
+    timers.restore();
+    if (timers.activeInterval) clearInterval(timers.activeInterval);
   }
 
-  console.log('\n' + '='.repeat(50));
-  console.log('Results: ' + passed + ' passed, ' + failed + ' failed');
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

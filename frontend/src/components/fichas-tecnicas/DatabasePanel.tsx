@@ -1,5 +1,6 @@
 import { FileText, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import Button from '../ui/Button';
 import type { FichaTecnicaListItem } from './types';
 
 type StatusFilter = 'all' | 'draft' | 'completed';
@@ -92,9 +93,10 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
           {filterOptions.map((option) => {
             const active = statusFilter === option.id;
             return (
-              <button
+              <Button
                 key={option.id}
-                type="button"
+                variant="none"
+                size="none"
                 role="tab"
                 aria-selected={active}
                 className={`ft-db-filter${active ? ' is-active' : ''}`}
@@ -102,7 +104,7 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
               >
                 <span className="ft-db-filter-label">{option.label}</span>
                 <span className="ft-db-filter-count tabular-nums">{option.count}</span>
-              </button>
+              </Button>
             );
           })}
         </div>
@@ -121,9 +123,10 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
           const statusLabel = isDone ? 'Lista' : 'Borrador';
 
           return (
-            <button
+            <Button
               key={ficha.id}
-              type="button"
+              variant="none"
+              size="none"
               role="listitem"
               className={`ft-db-card ${isActive ? 'is-active' : ''} ${isDone ? 'is-done' : 'is-draft'}`}
               onClick={() => onSelect(ficha.id)}
@@ -151,7 +154,7 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
                   {fecha ? <span className="ft-db-date">{fecha}</span> : null}
                 </span>
               </span>
-            </button>
+            </Button>
           );
         })}
 

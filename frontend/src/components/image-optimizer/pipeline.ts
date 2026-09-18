@@ -28,7 +28,7 @@ async function loadImageElement(file: Blob): Promise<HTMLImageElement> {
   });
 }
 
-export async function loadImageDimensions(file: Blob): Promise<{ width: number; height: number }> {
+async function loadImageDimensions(file: Blob): Promise<{ width: number; height: number }> {
   try {
     const img = await loadImageElement(file);
     return { width: img.naturalWidth, height: img.naturalHeight };

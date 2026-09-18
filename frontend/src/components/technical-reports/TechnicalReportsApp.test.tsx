@@ -115,10 +115,10 @@ describe('TechnicalReportsApp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.confirm.mockResolvedValue(true);
-    mocks.api.technicalReportsList.mockResolvedValue({ reports: [listItem] });
-    mocks.api.technicalReportsGet.mockResolvedValue({ report });
-    mocks.api.technicalReportsUpdate.mockResolvedValue({ success: true, report });
-    mocks.api.technicalReportsDelete.mockResolvedValue({ deleted: true });
+    mocks.api.technicalReportsList.mockResolvedValue({ items: [listItem] });
+    mocks.api.technicalReportsGet.mockResolvedValue({ item: report });
+    mocks.api.technicalReportsUpdate.mockResolvedValue({ success: true, item: report });
+    mocks.api.technicalReportsDelete.mockResolvedValue({ deleted_id: 'RPT-0001' });
     mocks.api.technicalReportsClear.mockResolvedValue({});
     mocks.api.technicalReportsImportFile.mockResolvedValue({ imported_count: 2 });
   });

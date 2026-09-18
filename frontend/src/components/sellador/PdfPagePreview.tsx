@@ -11,6 +11,8 @@ import {
 import type { PdfPageSize } from './utils';
 import { loadPdfDocument, renderPdfPageToDataUrl } from './pdfjs';
 import { selladorPreviewDpr, selladorPreviewPixelWidth } from './previewDpi';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 interface PdfPagePreviewProps {
   pdfBase64?: string | null;
@@ -167,7 +169,7 @@ export default function PdfPagePreview({
       if (!renderCache.get(cacheKey)) {
         setPageImageUrl(null);
       }
-      setError(err instanceof Error ? err.message : 'No se pudo renderizar el PDF.');
+      setError(errorMessage(err, 'No se pudo renderizar el PDF.'));
     });
 
     return () => { cancelled = true; };
@@ -206,14 +208,13 @@ export default function PdfPagePreview({
         <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 px-6 text-center text-[var(--text-muted)]">
           <AlertCircle size={24} className="text-[var(--accent-primary)] opacity-70" />
           <p className="text-sm">{error}</p>
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={retry}
             className="inline-flex items-center gap-2 rounded-full border border-[var(--border-medium)] px-4 py-2 text-[10px] font-mono uppercase tracking-widest hover:bg-[var(--bg-elevated)]"
           >
             <RefreshCw size={12} />
             Reintentar
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>

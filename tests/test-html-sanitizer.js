@@ -1,17 +1,6 @@
 const { sanitizeHtmlForPdf } = require('../shared/html-sanitizer');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish } = require('./helpers/harness');
 
 function run() {
   console.log('Testing shared html sanitizer...\n');
@@ -94,11 +83,7 @@ function run() {
   assert(!spoofedOut.includes('default-src *'), 'C2: strips pre-existing spoofed CSP meta tags');
   assert(spoofedOut.includes("default-src 'none'"), 'C2: enforces official strict CSP');
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run();

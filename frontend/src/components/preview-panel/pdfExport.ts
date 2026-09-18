@@ -1,4 +1,6 @@
 import { matchesRecordId, naturalSortFilesByName } from '../../utils/recordMatching';
+import { safeFilenamePart } from '../../utils/filename';
+import { isoDateStamp } from '../../utils/dates';
 import { sanitizeHtmlForPdf } from '../../../../shared/html-sanitizer.js';
 export {
   buildLocalImageToken,
@@ -15,11 +17,6 @@ export interface PdfExportRow {
   images: File[];
 }
 
-export function safeFilenamePart(value: unknown): string {
-  const text = String(value ?? '').trim();
-  return text.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_') || 'reporte';
-}
-
 export function buildPdfFilename({
   exportScope,
   templateName,
@@ -33,9 +30,9 @@ export function buildPdfFilename({
 }): string {
   const baseName = templateName ? templateName.replace(/\.html?$/i, '') : 'panel_fotografico';
   if (exportScope === 'all') {
-    return `${safeFilenamePart(baseName)}_consolidado_${date.toISOString().slice(0, 10)}.pdf`;
+    return `${safeFilenamePart(baseName, 'reporte')}_consolidado_${isoDateStamp(date)}.pdf`;
   }
-  return `${safeFilenamePart(baseName)}_${safeFilenamePart(idValue)}.pdf`;
+  return `${safeFilenamePart(baseName, 'reporte')}_${safeFilenamePart(idValue, 'reporte')}.pdf`;
 }
 
 export function selectRowsForPdfExport({

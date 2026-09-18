@@ -79,7 +79,6 @@ DESIGN.md
 .github/skills/
 .devin/
 .factory/
-.hypothesis/
 .kiro/
 .agents/
 .openclaude-profile.json
@@ -98,6 +97,7 @@ docs/superpowers/
 
 # Ruff cache
 .ruff_cache/
+.mypy_cache/
 
 # Temp files
 _temp_*

@@ -3,8 +3,9 @@ import { useState } from 'react';
 import Button from '../../ui/Button';
 import Input from '../../ui/Input';
 import ModalShell from './ModalShell';
+import { errorMessage } from '@/utils/errors';
 
-export type CreateNameModalVariant = 'espacio' | 'proyecto';
+type CreateNameModalVariant = 'espacio' | 'proyecto';
 
 const VARIANT_CONFIG = {
   espacio: {
@@ -49,7 +50,7 @@ export default function CreateNameModal({ open, variant, onClose, onSubmit }: Cr
       setName('');
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al crear');
+      setError(errorMessage(err, 'Error al crear'));
     } finally {
       setSaving(false);
     }

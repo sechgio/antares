@@ -5,9 +5,9 @@ from typing import Any
 from backend.handlers.common import (
     clear_store,
     delete_item_or_raise,
-    filter_by_optional_ids,
     get_item_id,
     get_item_or_raise,
+    get_items_by_optional_ids,
     import_into_store,
     require_update_payload,
     resolve_payload_or_store,
@@ -26,39 +26,43 @@ def _db():
 def fichas_tecnicas_list(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.fichas_tecnicas.models import FichaTecnica
 
-    fichas = _db().get_all()
     cliente = str(params.get("cliente") or "").strip().lower()
     distrito = str(params.get("distrito") or "").strip().lower()
     status = str(params.get("status") or "").strip()
-    if cliente:
-        fichas = [f for f in fichas if cliente in str(f.get("cliente", "")).lower()]
-    if distrito:
-        fichas = [f for f in fichas if distrito in str(f.get("distrito", "")).lower()]
-    if status:
-        fichas = [f for f in fichas if f.get("status") == status]
-    fichas.sort(key=lambda f: str(f.get("id", "")))
+
+    def matches(ficha: dict[str, Any]) -> bool:  # allowlist: dict[str, Any]
+        return (
+            (not cliente or cliente in str(ficha.get("cliente", "")).lower())
+            and (not distrito or distrito in str(ficha.get("distrito", "")).lower())
+            and (not status or ficha.get("status") == status)
+        )
+
+    store = _db()
     if params.get("summary"):
-        fichas = [FichaTecnica.summary(f) for f in fichas]
-    return {"fichas": fichas, "total": len(fichas)}
+        fichas = store.project_all(FichaTecnica.summary, matches)
+    else:
+        fichas = [ficha for ficha in store.get_all() if matches(ficha)]
+    fichas.sort(key=lambda f: str(f.get("id", "")))
+    return {"items": fichas, "total": len(fichas)}
 
 
 @with_locale
 def fichas_tecnicas_get(params: dict[str, Any]) -> dict[str, Any]:
     ficha_id = get_item_id(params)
-    return {"ficha": get_item_or_raise(_db(), ficha_id, "Ficha no encontrada")}
+    return {"item": get_item_or_raise(_db(), ficha_id, "Ficha no encontrada")}
 
 
 @with_locale
 def fichas_tecnicas_create(params: dict[str, Any]) -> dict[str, Any]:
     ficha = params.get("ficha")
     created = _db().create(ficha if isinstance(ficha, dict) else None)
-    return {"success": True, "ficha": created}
+    return {"success": True, "item": created}
 
 
 @with_locale
 def fichas_tecnicas_update(params: dict[str, Any]) -> dict[str, Any]:
     ficha_id, ficha = require_update_payload(params, "ficha")
-    return {"success": True, "ficha": update_item_or_raise(_db(), ficha_id, ficha)}
+    return {"success": True, "item": update_item_or_raise(_db(), ficha_id, ficha)}
 
 
 @with_locale
@@ -99,8 +103,8 @@ def fichas_tecnicas_render_html(params: dict[str, Any]) -> dict[str, Any]:
 def fichas_tecnicas_render_consolidated_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.fichas_tecnicas.rendering import render_consolidated_html
 
-    fichas = filter_by_optional_ids(
-        _db().get_all(), params.get("ficha_ids"), "No hay fichas para exportar"
+    fichas = get_items_by_optional_ids(
+        _db(), params.get("ficha_ids"), "No hay fichas para exportar"
     )
     fichas.sort(key=lambda f: str(f.get("id", "")))
     html = render_consolidated_html(fichas, params.get("logo_left"), params.get("logo_right"))

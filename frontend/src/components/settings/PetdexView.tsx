@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { Search, Check, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, PawPrint } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import Toggle from '../ui/Toggle';
+import { reportFrontendError } from '../../utils/observability';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 interface Pet {
   slug: string;
@@ -205,6 +208,12 @@ export default function PetdexView() {
       applyCatalog(apiPets, 'live');
     } catch (err) {
       console.warn('Petdex manifest fetch failed', err);
+      reportFrontendError({
+        kind: 'app_error',
+        view: 'petdex',
+        name: err instanceof Error ? err.name : 'FetchError',
+        message: errorMessage(err, String(err)),
+      });
       const cached = readManifestCache();
       if (cached) {
         applyCatalog(cached, 'cache');
@@ -315,9 +324,8 @@ export default function PetdexView() {
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)] mr-1">Mov.</span>
             {(['static', 'walk'] as const).map((mode) => (
-              <button
+              <Button variant="none" size="none"
                 key={mode}
-                type="button"
                 onClick={() => handleChangeMovement(mode)}
                 className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
                   movement === mode
@@ -326,7 +334,7 @@ export default function PetdexView() {
                 }`}
               >
                 {mode === 'static' ? 'Fijo' : 'Caminar'}
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -358,8 +366,7 @@ export default function PetdexView() {
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto max-w-full">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={() => setSelectedKind('all')}
             className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
               selectedKind === 'all'
@@ -368,11 +375,10 @@ export default function PetdexView() {
             }`}
           >
             Todos
-          </button>
+          </Button>
           {kinds.map((k) => (
-            <button
+            <Button variant="none" size="none"
               key={k}
-              type="button"
               onClick={() => setSelectedKind(k)}
               className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium capitalize transition-colors ${
                 selectedKind === k
@@ -381,20 +387,19 @@ export default function PetdexView() {
               }`}
             >
               {k}
-            </button>
+            </Button>
           ))}
         </div>
 
         <WithHoverTooltip label="Recargar catálogo" placement="bottom">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={fetchManifest}
             aria-label="Recargar catálogo"
             disabled={loading}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-40"
           >
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          </button>
+          </Button>
         </WithHoverTooltip>
 
         {!loading && pets.length > 0 && (
@@ -421,9 +426,8 @@ export default function PetdexView() {
             {paginatedPets.map((pet) => {
               const isSelected = activePet === pet.slug;
               return (
-                <button
+                <Button variant="none" size="none"
                   key={pet.slug}
-                  type="button"
                   onClick={() => handleSelectPet(pet)}
                   title={`${pet.displayName} · ${pet.kind}`}
                   className={`group relative flex flex-col items-center rounded-md border p-2 transition-all ${
@@ -462,7 +466,7 @@ export default function PetdexView() {
                   <span className="mt-1 rounded px-1 py-px text-[8px] font-semibold uppercase tracking-wide text-[var(--text-muted)] bg-[var(--bg-elevated)] group-hover:text-[var(--text-secondary)]">
                     {pet.kind}
                   </span>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -501,25 +505,23 @@ export default function PetdexView() {
 
           {totalPages > 1 && (
             <div className="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
                 className="flex h-6 w-6 items-center justify-center rounded border border-[var(--border-medium)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30"
               >
                 <ChevronLeft size={12} />
-              </button>
+              </Button>
               <span className="min-w-[48px] text-center font-mono text-[10px] text-[var(--text-muted)]">
                 {currentPage}/{totalPages}
               </span>
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
                 className="flex h-6 w-6 items-center justify-center rounded border border-[var(--border-medium)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30"
               >
                 <ChevronRight size={12} />
-              </button>
+              </Button>
             </div>
           )}
         </div>

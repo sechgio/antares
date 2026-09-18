@@ -97,6 +97,5 @@ async function scanActiveFolders(activeFolders, {
 }
 
 module.exports = {
-  DEFAULT_SCAN_CONCURRENCY,
   scanActiveFolders,
 };

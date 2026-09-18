@@ -14,7 +14,7 @@ import {
 } from './pathGeometry';
 
 export const BEND_HIT_MM = 20;
-export const CUT_HIT_MM = 8;
+const CUT_HIT_MM = 8;
 
 function lineOrigin(layer: CanvasLayer): { ensured: CanvasLayer; path: LayerPath; ox: number; oy: number } | null {
   const ensured = ensureLinePath(layer);
@@ -28,7 +28,7 @@ function lineOrigin(layer: CanvasLayer): { ensured: CanvasLayer; path: LayerPath
   };
 }
 
-export function updateLinePath(layer: CanvasLayer, nextPath: LayerPath): CanvasLayer {
+function updateLinePath(layer: CanvasLayer, nextPath: LayerPath): CanvasLayer {
   const ctx = lineOrigin(layer);
   if (!ctx) return layer;
   const norm = normalizePathOrigin(nextPath);

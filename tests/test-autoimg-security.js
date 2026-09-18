@@ -3,14 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const ROOT = path.resolve(__dirname, '..');
+const { assertOrExit:assert } = require('./helpers/harness');
 
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
+const ROOT = path.resolve(__dirname, '..');
 
 function gitLsFiles() {
   try {

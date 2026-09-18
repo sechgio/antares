@@ -27,7 +27,7 @@ class TestResolveJobId:
 
 class TestProcessState:
     def test_reset_state_with_explicit_state(self):
-        from backend.handlers.common import reset_state
+        from backend.core.state import reset_state
         state = ProcessState(running=True, progress=50, ok_count=10, err_count=2)
         reset_state(state)
         assert state.running is False

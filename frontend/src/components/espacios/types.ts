@@ -68,7 +68,7 @@ export interface TaskComment {
   updated_at: string;
 }
 
-export type TaskActivityEventType = 'task_created' | 'field_changed' | 'comment_created';
+type TaskActivityEventType = 'task_created' | 'field_changed' | 'comment_created';
 export type TaskActivityFieldName =
   | 'title'
   | 'description'
@@ -105,7 +105,7 @@ export interface MyTaskOrigin {
   espacio_name: string;
 }
 
-export type MyTasksCompletionFilter = 'open' | 'completed' | 'all';
+type MyTasksCompletionFilter = 'open' | 'completed' | 'all';
 
 export interface MyTasksFilters {
   search: string;

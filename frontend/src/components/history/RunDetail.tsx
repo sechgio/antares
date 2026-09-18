@@ -7,6 +7,7 @@ import {
   schemaOptionKeys,
   type HistoryRunRow,
 } from './runTypes';
+import Button from '@/components/ui/Button';
 
 interface RunDetailProps {
   run: HistoryRunRow;
@@ -45,23 +46,21 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
         </div>
         <div className="flex shrink-0 gap-2">
           {meta.reexecute && (
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={onReexecute}
               className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent-primary)] px-3 py-1.5 text-[11px] font-semibold text-[var(--text-on-accent)] transition-all hover:bg-[var(--accent-primary-hover)] active:scale-[0.98]"
             >
               <RotateCw size={12} strokeWidth={2} />
               {t('history.reexecute')}
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={onDelete}
             className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--accent-red)]/30 bg-transparent px-3 py-1.5 text-[11px] font-medium text-[var(--accent-red)] transition-all hover:bg-[color:var(--accent-red)]/10 active:scale-[0.98]"
           >
             <Trash2 size={12} strokeWidth={2} />
             {t('history.delete')}
-          </button>
+          </Button>
         </div>
       </div>
 

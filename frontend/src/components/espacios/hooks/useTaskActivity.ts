@@ -3,10 +3,9 @@ import { createTaskComment, fetchTaskActivity, fetchTaskComments } from '../api/
 import { subscribeTaskActivity, unsubscribeEspaciosSync } from '../api/realtime';
 import type { TaskActivity, TaskComment } from '../types';
 import { mergeTaskTimeline } from '../utils/taskActivity';
+import { errorMessage } from '../../../utils/errors';
 
-function message(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
+const message = errorMessage;
 
 function mergeById<T extends { id: string }>(current: T[], incoming: T[]): T[] {
   const rows = new Map(current.map((row) => [row.id, row]));

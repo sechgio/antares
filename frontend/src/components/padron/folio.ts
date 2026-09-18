@@ -39,7 +39,7 @@ export const PAGE_NUMBER_FONT_STYLE_OPTIONS: ReadonlyArray<{
   { value: 'bold_italic', label: 'Negrita cursiva' },
 ];
 
-export const PAGE_NUMBER_SIZE_PX: Record<Exclude<PageNumberSize, 'auto'>, number> = {
+const PAGE_NUMBER_SIZE_PX: Record<Exclude<PageNumberSize, 'auto'>, number> = {
   sm: 8,
   md: 10,
   lg: 14,

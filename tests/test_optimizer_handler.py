@@ -38,6 +38,24 @@ def test_image_optimizer_save_files_writes_safe_basenames_to_chosen_folder(tmp_p
     assert (tmp_path / "icono.webp").read_bytes() == b"webp"
 
 
+def test_image_optimizer_save_files_streams_resolved_file_tokens(tmp_path) -> None:
+    staged = tmp_path / "staged-input.jpg"
+    staged.write_bytes(b"staged-jpg")
+    output = tmp_path / "output"
+
+    result = image_optimizer_save_files(
+        {
+            "output_folder": str(output),
+            "files": [{"filename": "foto.jpg", "file_token": str(staged)}],
+        }
+    )
+
+    assert result["saved_count"] == 1
+    assert result["skipped_count"] == 0
+    assert (output / "foto.jpg").read_bytes() == b"staged-jpg"
+    assert staged.read_bytes() == b"staged-jpg"
+
+
 def test_image_optimizer_save_files_never_overwrites_existing_files(tmp_path) -> None:
     (tmp_path / "foto.jpg").write_bytes(b"old")
 

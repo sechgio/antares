@@ -4,6 +4,7 @@ import { api, onNotify } from '../../../api';
 import type { DriveVerifyResult } from '../types';
 import { parseDriveFolderId } from '../utils/parseDriveFolderId';
 import { ActionButton, INPUT_CLASS, InlineMessage, SectionCard } from './shared';
+import { errorMessage } from '@/utils/errors';
 
 interface RenameExportPanelProps {
   onDone?: () => void;
@@ -38,7 +39,7 @@ export default function RenameExportPanel({ onDone }: RenameExportPanelProps) {
         if (cfg.folder_id) setFolderInput(cfg.folder_id);
       })
       .catch((err) => {
-        const message = err instanceof Error ? err.message : 'No se pudo cargar la carpeta destino';
+        const message = errorMessage(err, 'No se pudo cargar la carpeta destino');
         setError(message);
       });
   }, []);
@@ -85,7 +86,7 @@ export default function RenameExportPanel({ onDone }: RenameExportPanelProps) {
       const folderIdNow =
         parseDriveFolderId(folderInputRef.current) || folderInputRef.current.trim();
       if (requestId !== verifyRequestRef.current || folderIdAtStart !== folderIdNow) return;
-      setError(e instanceof Error ? e.message : 'No se pudo verificar la carpeta');
+      setError(errorMessage(e, 'No se pudo verificar la carpeta'));
     } finally {
       setVerifying(false);
     }
@@ -120,7 +121,7 @@ export default function RenameExportPanel({ onDone }: RenameExportPanelProps) {
       if (res.partial && res.warning) setError(res.warning);
       onDone?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al renombrar');
+      setError(errorMessage(e, 'Error al renombrar'));
     } finally {
       setRunning(false);
       setProgress(null);
@@ -132,7 +133,7 @@ export default function RenameExportPanel({ onDone }: RenameExportPanelProps) {
       const res = await api.autoimgCancelOperation();
       if (!res.success) setError('No hay operación activa para cancelar');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo cancelar');
+      setError(errorMessage(e, 'No se pudo cancelar'));
     }
   }, []);
 

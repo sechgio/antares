@@ -8,6 +8,7 @@ import {
   parseTimeString,
   snapTimeToStep,
 } from "../utils/timeStep";
+import Button from '@/components/ui/Button';
 
 interface TimePickerProps {
   value: string;
@@ -57,15 +58,14 @@ function ScrollList({
       {items.map((item) => {
         const selected = item === value;
         return (
-          <button
+          <Button variant="none" size="none"
             key={item}
-            type="button"
             data-selected={selected ? "true" : "false"}
             className={`vgen-time-list-item${selected ? " is-selected" : ""}`}
             onClick={() => onChange(item)}
           >
             {String(item).padStart(2, "0")}
-          </button>
+          </Button>
         );
       })}
     </div>
@@ -111,9 +111,8 @@ export default function TimePicker({
   return (
     <div className={`vgen-time-picker ${className}`}>
       {label && <label className="vgen-label-sm">{label}</label>}
-      <button
+      <Button variant="none" size="none"
         ref={triggerRef}
-        type="button"
         className={`vgen-time-picker-trigger${isOpen ? " is-open" : ""}`}
         onClick={toggle}
         aria-expanded={isOpen}
@@ -122,7 +121,7 @@ export default function TimePicker({
         <span className="vgen-time-picker-trigger-value">
           {formatDisplayTime(value)}
         </span>
-      </button>
+      </Button>
 
       {isOpen &&
         position &&
@@ -155,13 +154,12 @@ export default function TimePicker({
                 ariaLabel="Minutos"
               />
             </div>
-            <button
-              type="button"
+            <Button variant="none" size="none"
               className="vgen-time-picker-now"
               onClick={handleNow}
             >
               Ahora
-            </button>
+            </Button>
           </div>,
           document.body,
         )}

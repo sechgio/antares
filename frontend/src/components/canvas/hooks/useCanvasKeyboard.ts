@@ -21,6 +21,7 @@ import { assignUniqueLogoSides } from '../ops/logoSide';
 import { applyAppearanceVars, extractAppearanceVars } from '../ops/clipboardLayers';
 import { nextZoomPreset } from '../ops/viewportNav';
 import { matchHistoryShortcut } from '../ops/historyShortcuts';
+import { abortActivePointerGestureSession } from '../ops/pointerGestureSession';
 import {
   canInlineEditLayer,
   isButtonLikeKeyboardTarget,
@@ -372,6 +373,7 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
 
       if (e.code === 'Space' && !e.repeat && !isButtonLikeKeyboardTarget(e.target)) {
         e.preventDefault();
+        abortActivePointerGestureSession();
         if (toolBeforeSpaceRef.current == null) toolBeforeSpaceRef.current = tool;
         setTool('hand');
       }

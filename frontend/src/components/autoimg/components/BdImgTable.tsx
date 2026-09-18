@@ -9,6 +9,7 @@ import {
   type EstadoFilter,
 } from '../utils/bdImgTableUtils';
 import { EmptyState, EstadoBadge, ImgSlot, PanelHeader, PanelShell } from './shared';
+import Button from '@/components/ui/Button';
 
 const ROW_HEIGHT = 42;
 const ROW_GRID =
@@ -132,9 +133,8 @@ export default function BdImgTable({ rows, showTitle = true }: BdImgTableProps) 
         {filters.map((f) => {
           const active = filter === f.id;
           return (
-            <button
+            <Button variant="none" size="none"
               key={f.id}
-              type="button"
               onClick={() => setFilter(f.id)}
               className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
                 active
@@ -158,7 +158,7 @@ export default function BdImgTable({ rows, showTitle = true }: BdImgTableProps) 
                   {f.count}
                 </span>
               )}
-            </button>
+            </Button>
           );
         })}
       </div>

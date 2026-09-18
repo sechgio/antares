@@ -68,7 +68,7 @@ export function parsePdfColor(value: unknown, fallback?: string): string | undef
   return fallback;
 }
 
-export function normalizeRotationDeg(degrees: number): number {
+function normalizeRotationDeg(degrees: number): number {
   if (!Number.isFinite(degrees)) return 0;
   let normalized = degrees % 360;
   if (normalized > 180) normalized -= 360;

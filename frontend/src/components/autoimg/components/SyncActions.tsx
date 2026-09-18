@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowDownToLine, ArrowUpFromLine, Loader2, RefreshCw, Square } from 'lucide-react';
 import { api, onNotify } from '../../../api';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 type SyncAction = 'scan-sync' | 'to' | 'from' | null;
 
@@ -44,7 +46,7 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
       onStatus?.(res.partial && res.warning ? { error: res.warning } : { result: detail });
       onSynced?.();
     } catch (e) {
-      onStatus?.({ error: e instanceof Error ? e.message : 'Error al escanear y sincronizar' });
+      onStatus?.({ error: errorMessage(e, 'Error al escanear y sincronizar' )});
     } finally {
       setSyncing(null);
     }
@@ -64,7 +66,7 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
       onStatus?.(res.partial && res.warning ? { error: res.warning } : { result: detail });
       onSynced?.();
     } catch (e) {
-      onStatus?.({ error: e instanceof Error ? e.message : 'Error al sincronizar al Sheet' });
+      onStatus?.({ error: errorMessage(e, 'Error al sincronizar al Sheet' )});
     } finally {
       setSyncing(null);
     }
@@ -77,7 +79,7 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
       await api.autoimgSyncFromSheet();
       onStatus?.({ result: 'Datos cargados desde el Sheet' });
     } catch (e) {
-      onStatus?.({ error: e instanceof Error ? e.message : 'Error al leer el Sheet' });
+      onStatus?.({ error: errorMessage(e, 'Error al leer el Sheet' )});
     } finally {
       setSyncing(null);
     }
@@ -88,7 +90,7 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
       const res = await api.autoimgCancelOperation();
       if (!res.success) onStatus?.({ error: 'No hay operación activa para cancelar' });
     } catch (e) {
-      onStatus?.({ error: e instanceof Error ? e.message : 'No se pudo cancelar' });
+      onStatus?.({ error: errorMessage(e, 'No se pudo cancelar' )});
     }
   }, [onStatus]);
 
@@ -101,8 +103,7 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
   return (
     <div className="flex shrink-0 items-center gap-1 px-3" role="toolbar" aria-label="Operaciones de sincronización">
       <WithHoverTooltip label="Escanear Drive y escribir al Sheet" placement="bottom">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={handleScanAndSync}
           disabled={busy}
           className={`${btn} bg-[var(--accent-primary)] font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-hover)]`}
@@ -116,43 +117,40 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
             {syncing === 'scan-sync' ? 'Escaneando…' : 'Escanear'}
           </span>
           <span className="xl:hidden">{syncing === 'scan-sync' ? '…' : 'Escanear'}</span>
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       <WithHoverTooltip label="Escribir al Sheet" placement="bottom">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={handleSyncTo}
           disabled={busy}
           className={`${btn} text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]`}
         >
           {syncing === 'to' ? <Loader2 size={12} className="animate-spin" /> : <ArrowUpFromLine size={12} />}
           {syncing === 'to' ? '…' : 'Escribir'}
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       <WithHoverTooltip label="Leer del Sheet" placement="bottom">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={handleSyncFrom}
           disabled={busy}
           className={`${btn} text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]`}
         >
           {syncing === 'from' ? <Loader2 size={12} className="animate-spin" /> : <ArrowDownToLine size={12} />}
           {syncing === 'from' ? '…' : 'Leer'}
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       {canCancel && (
         <WithHoverTooltip label="Cancelar operación" placement="bottom">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={handleCancel}
             className={`${btn} text-[var(--accent-red)] hover:bg-[color-mix(in_srgb,var(--accent-red)_10%,transparent)]`}
           >
             <Square size={11} />
             Cancelar
-          </button>
+          </Button>
         </WithHoverTooltip>
       )}
     </div>

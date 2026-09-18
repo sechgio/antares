@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CheckCircle, ChevronDown } from 'lucide-react';
 import { CanvasSegmented } from './CanvasControls';
+import Button from '@/components/ui/Button';
 
 interface StepProps {
   number: string;
@@ -42,8 +43,7 @@ export function GenerateStep({
         background: isOpen ? 'var(--cv-panel-elevated)' : 'transparent',
       }}
     >
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={() => setIsOpen((v) => !v)}
         aria-expanded={isOpen}
         className="flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-2 py-2"
@@ -74,7 +74,7 @@ export function GenerateStep({
           className={`shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-0' : '-rotate-90'}`}
           style={{ color: 'var(--cv-text-muted)' }}
         />
-      </button>
+      </Button>
       <div
         className="grid transition-[grid-template-rows,opacity] duration-200 ease-in-out"
         style={{

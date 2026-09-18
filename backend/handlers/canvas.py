@@ -17,6 +17,7 @@ from backend.core.canvas.store import (
     encode_canvas_json,
 )
 from backend.core.exceptions import MemoryPressureError, NotFoundError, ValidationError
+from backend.core.observability import log_event
 from backend.core.scheduler import (
     MEMORY_PRESSURE_RETRY_AFTER_MS,
     MEMORY_PRESSURE_THRESHOLD_MB,
@@ -53,12 +54,13 @@ def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") 
         max_bytes = MAX_CANVAS_HISTORY_BYTES if suffix == "_history.json" else MAX_CANVAS_DOCUMENT_BYTES
         encoded = encode_canvas_json(payload)
         if len(encoded) > max_bytes:
-            logger.warning(
-                "canvas spill rejected above storage budget: doc_id=%s suffix=%s bytes=%s max=%s",
-                Path(str(doc_id)).name,
-                suffix,
-                len(encoded),
-                max_bytes,
+            log_event(
+                logger,
+                logging.WARNING,
+                "canvas.spill_rejected",
+                outcome="rejected",
+                bytes=len(encoded),
+                message=f"canvas spill rejected above storage budget: doc_id={Path(str(doc_id)).name} suffix={suffix} bytes={len(encoded)} max={max_bytes}",
             )
             return None
         final = _spill_file_path(doc_id, suffix)
@@ -74,7 +76,13 @@ def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") 
         if tmp is not None:
             with contextlib.suppress(OSError):
                 tmp.unlink(missing_ok=True)
-        logger.warning("canvas spill failed for %s: %s", doc_id, exc)
+        log_event(
+            logger,
+            logging.WARNING,
+            "canvas.spill_failed",
+            outcome="failed",
+            message=f"canvas spill failed for {doc_id}: {exc}",
+        )
         return None
 
 
@@ -83,7 +91,13 @@ def _cleanup_spill(doc_id: str, suffix: str = ".json") -> None:
         try:
             path.unlink(missing_ok=True)
         except OSError as exc:
-            logger.warning("canvas spill cleanup failed for %s%s: %s", doc_id, suffix, exc)
+            log_event(
+                logger,
+                logging.WARNING,
+                "canvas.spill_cleanup_failed",
+                outcome="failed",
+                message=f"canvas spill cleanup failed for {doc_id}{suffix}: {exc}",
+            )
 
 
 def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, context: str = "canvas_save") -> None:
@@ -96,19 +110,20 @@ def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, c
         doc_id = str(document.get("id") or "unknown")
         spill_path = _spill_payload(doc_id, document, suffix=".json")
         if spill_path:
-            logger.warning(
-                "canvas memory_pressure spill: context=%s doc_id=%s available_mb=%s spill=%s",
-                context,
-                Path(doc_id).name,
-                available_mb,
-                spill_path,
+            log_event(
+                logger,
+                logging.WARNING,
+                "canvas.memory_pressure_spill",
+                outcome="degraded",
+                message=f"canvas memory_pressure spill: context={context} doc_id={Path(doc_id).name} available_mb={available_mb}",
             )
     if spill_path is None:
-        logger.warning(
-            "canvas memory_pressure: context=%s available_mb=%s < %s — rejecting with retry_after",
-            context,
-            available_mb,
-            MEMORY_PRESSURE_THRESHOLD_MB,
+        log_event(
+            logger,
+            logging.WARNING,
+            "canvas.memory_pressure_rejected",
+            outcome="rejected",
+            message=f"canvas memory_pressure: context={context} available_mb={available_mb} < {MEMORY_PRESSURE_THRESHOLD_MB}",
         )
     raise MemoryPressureError(
         f"Memoria baja ({available_mb}MB < {MEMORY_PRESSURE_THRESHOLD_MB}MB): "
@@ -130,11 +145,12 @@ def _check_history_memory_pressure(doc_id: str, past: Any, future: Any) -> None:
     available_mb = available // (1024 * 1024)
     spill_path = _spill_payload(str(doc_id), {"past": past, "future": future}, suffix="_history.json")
     if spill_path:
-        logger.warning(
-            "canvas history memory_pressure spill: doc_id=%s available_mb=%s spill=%s",
-            Path(str(doc_id)).name,
-            available_mb,
-            spill_path,
+        log_event(
+            logger,
+            logging.WARNING,
+            "canvas.history_memory_pressure_spill",
+            outcome="degraded",
+            message=f"canvas history memory_pressure spill: doc_id={Path(str(doc_id)).name} available_mb={available_mb}",
         )
     raise MemoryPressureError(
         f"Memoria baja ({available_mb}MB < {MEMORY_PRESSURE_THRESHOLD_MB}MB): "
@@ -342,12 +358,31 @@ def canvas_save_history(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(msg)
     # CanvasStore validates retained history without encoding it twice.
     _check_history_memory_pressure(doc_id, past, future)
+    store = _canvas_core.get_canvas_store()
     try:
-        _canvas_core.get_canvas_store().save_history(doc_id, past, future)
+        if "base_digest" in params or "past_prefix" in params or "future_prefix" in params:
+            past_prefix = params.get("past_prefix")
+            future_prefix = params.get("future_prefix")
+            base_digest = params.get("base_digest")
+            if not isinstance(past_prefix, int) or not isinstance(future_prefix, int) or not isinstance(base_digest, str):
+                raise ValueError("Delta de historial Canvas inválido")
+            store.save_history_delta(
+                doc_id,
+                past_prefix=past_prefix,
+                past_suffix=past,
+                future_prefix=future_prefix,
+                future_suffix=future,
+                base_digest=base_digest,
+            )
+        else:
+            store.save_history(doc_id, past, future)
     except ValueError as exc:
         raise ValidationError(str(exc), details={"limit_bytes": MAX_CANVAS_HISTORY_BYTES}) from exc
     _cleanup_spill(doc_id, "_history.json")
-    return {"success": True}
+    result: dict[str, Any] = {"success": True}  # allowlist: dict[str, Any]
+    if params.get("include_digest") is True or "base_digest" in params:
+        result["digest"] = store.get_history_digest(doc_id)
+    return result
 
 HANDLERS = {
     "canvas_list": canvas_list,

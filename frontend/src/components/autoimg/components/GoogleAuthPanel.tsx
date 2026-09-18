@@ -8,6 +8,8 @@ import {
   SidebarSection,
   StatusChip,
 } from './shared';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 interface GoogleAuthPanelProps {
   onAuthChange?: (connected: boolean) => void;
@@ -105,7 +107,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
       setClientSecret('');
       await refreshOAuthConfig();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al guardar credenciales');
+      setError(errorMessage(e, 'Error al guardar credenciales'));
     } finally {
       setLoading(false);
     }
@@ -120,7 +122,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
       setAuthUrl(url);
       setAwaitingAuth(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error de autenticación');
+      setError(errorMessage(e, 'Error de autenticación'));
       setAwaitingAuth(false);
     } finally {
       setLoading(false);
@@ -174,7 +176,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
         onSheetLinked?.();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al abrir Sheet');
+      setError(errorMessage(e, 'Error al abrir Sheet'));
     } finally {
       setLoading(false);
     }
@@ -192,8 +194,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
             <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--text-muted)]">
               {savedClientIdMasked}
             </p>
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={() => {
                 setEditingOAuth(true);
                 setClientSecret('');
@@ -202,7 +203,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
             >
               <Pencil size={10} />
               Editar
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="space-y-2">
@@ -221,22 +222,20 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
               className={`${INPUT_SM_CLASS} font-mono`}
             />
             <div className="flex gap-2">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={handleSaveOAuth}
                 disabled={loading || !clientId.trim() || !clientSecret.trim()}
                 className="flex-1 rounded-md bg-[var(--accent-primary)] py-1.5 text-[11px] font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
               >
                 {loading ? 'Guardando…' : 'Guardar'}
-              </button>
+              </Button>
               {oauthConfigured && (
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   onClick={() => setEditingOAuth(false)}
                   className="rounded-md px-2.5 py-1.5 text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
                 >
                   Cancelar
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -256,15 +255,14 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
             <p className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-primary)]">
               {email || 'Conectado'}
             </p>
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={handleDisconnect}
               disabled={loading}
               className="inline-flex shrink-0 items-center gap-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)] disabled:opacity-50"
             >
               {loading ? <Loader2 size={10} className="animate-spin" /> : <LogOut size={10} />}
               Salir
-            </button>
+            </Button>
           </div>
         ) : awaitingAuth ? (
           <div className="space-y-2">
@@ -283,25 +281,23 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
                 Reabrir enlace
               </a>
             )}
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={handleCancelAuth}
               disabled={loading}
               className="text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)] disabled:opacity-50"
             >
               Cancelar
-            </button>
+            </Button>
           </div>
         ) : (
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={handleStartAuth}
             disabled={loading}
             className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] py-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-50"
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
             Conectar con Google
-          </button>
+          </Button>
         )}
       </SidebarSection>
 
@@ -319,14 +315,13 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
               placeholder="URL o ID del Sheet"
               className={`${INPUT_SM_CLASS} min-w-0 flex-1 font-mono`}
             />
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={handleOpenSheet}
               disabled={loading || !resolvedSheetId}
               className="shrink-0 rounded-md border border-[var(--border-medium)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
             >
               Vincular
-            </button>
+            </Button>
           </div>
           {sheetName && (
             <p className="mt-1.5 truncate text-[10px] text-[var(--text-muted)]" title={sheetName}>

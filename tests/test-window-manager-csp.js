@@ -1,18 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish, counters } = require('./helpers/harness');
 
 function run() {
   console.log('Testing window-manager CSP for Google Fonts...\n');
@@ -47,8 +36,8 @@ function run() {
     'CSP supports optional Supabase host pinning via env',
   );
 
-  console.log(`\n${passed} passed, ${failed} failed`);
-  process.exit(failed > 0 ? 1 : 0);
+  console.log(`\n${counters.passed} passed, ${counters.failed} failed`);
+  finish();
 }
 
 run();

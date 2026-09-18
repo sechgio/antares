@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import type { AppUser } from './types';
+import { reportFrontendError } from '../utils/observability';
+import { errorMessage } from '@/utils/errors';
 
-export const DISABLED_ACCOUNT_MESSAGE =
+const DISABLED_ACCOUNT_MESSAGE =
   'Tu cuenta ha sido desactivada. Contacta al administrador.';
 
 type AuthClient = import('@supabase/supabase-js').SupabaseClient | null;
@@ -122,6 +124,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await applyAuthenticatedUser(session.user, gen);
     } catch (err) {
       console.warn('[auth] refreshUser error:', err);
+      reportFrontendError({
+        kind: 'app_error',
+        view: 'auth',
+        name: err instanceof Error ? err.name : 'AuthError',
+        message: errorMessage(err, String(err)),
+      });
       if (gen === authGenRef.current && mountedRef.current) {
         setUser(null);
         setLoading(false);
@@ -143,6 +151,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (cancelled || !mountedRef.current || gen !== authGenRef.current) return;
         applyAuthenticatedUser(supabaseUser, gen).catch((err) => {
           console.warn('[auth] onAuthStateChange profile fetch failed:', err);
+          reportFrontendError({
+            kind: 'app_error',
+            view: 'auth',
+            name: err instanceof Error ? err.name : 'AuthError',
+            message: errorMessage(err, String(err)),
+          });
           if (mountedRef.current && gen === authGenRef.current) {
             setUser(null);
             setLoading(false);
@@ -154,6 +168,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const timeout = setTimeout(() => {
       if (mountedRef.current && loadingRef.current) {
         console.warn('[auth] Session check timed out, showing login screen');
+        reportFrontendError({
+          kind: 'app_error',
+          view: 'auth',
+          name: 'AuthTimeout',
+          message: 'Session check timed out, showing login screen',
+        });
         setLoading(false);
       }
     }, 5000);

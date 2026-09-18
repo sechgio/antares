@@ -3,18 +3,7 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const path = require('path');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish, evictModule } = require('./helpers/harness');
 
 function installStub(modulePath, exports) {
   const resolved = require.resolve(modulePath);
@@ -70,6 +59,8 @@ async function run() {
       appendLogEvent: () => {},
       appendLogLine: () => {},
       cleanStaleTempDirs: () => 0,
+      flushLogQueue: async () => {},
+      flushLogQueueSync: () => {},
       initAppLogs: () => 'test-logs',
       installConsoleLogTee: () => {},
       setAppContext: () => {},
@@ -95,7 +86,7 @@ async function run() {
   };
 
   try {
-    delete require.cache[mainPath];
+    evictModule('electron/main.js');
     require('../electron/main.js');
 
     const flushAck = ipcHandlers.get('canvas-flush-ack');
@@ -141,7 +132,7 @@ async function run() {
   } finally {
     Module._load = originalLoad;
     if (previousMain) require.cache[mainPath] = previousMain;
-    else delete require.cache[mainPath];
+    else evictModule('electron/main.js');
     for (const { resolved, previous } of stubs) {
       if (previous) require.cache[resolved] = previous;
       else delete require.cache[resolved];
@@ -154,11 +145,7 @@ async function run() {
     }
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

@@ -1,24 +1,19 @@
 import { api } from '../../api';
+import { createReportApi } from '../../api/reportApi';
 import type { TechnicalReport, TechnicalReportListItem } from './types';
 
 export const technicalReportsApi = {
-  list: (summary = true) =>
-    api.technicalReportsList({ summary }) as Promise<{ reports: TechnicalReportListItem[] }>,
-  get: async (id: string) => {
-    const result = await api.technicalReportsGet(id) as { report: TechnicalReport };
-    return result.report;
-  },
-  create: async () => {
-    const result = await api.technicalReportsCreate() as { report: TechnicalReport };
-    return result.report;
-  },
-  update: async (id: string, report: TechnicalReport) => {
-    const result = await api.technicalReportsUpdate(id, report) as { success: boolean; report: TechnicalReport };
-    return result.report;
-  },
-  delete: (id: string) => api.technicalReportsDelete(id),
-  clear: () => api.technicalReportsClear(),
-  importFile: (filename: string, content_b64: string) => api.technicalReportsImportFile({ filename, content_b64 }),
+  ...createReportApi<TechnicalReport, TechnicalReportListItem>(
+    {
+      list: api.technicalReportsList,
+      get: api.technicalReportsGet,
+      create: api.technicalReportsCreate,
+      update: api.technicalReportsUpdate,
+      delete: api.technicalReportsDelete,
+      clear: api.technicalReportsClear,
+      importFile: api.technicalReportsImportFile,
+    },
+  ),
   renderHtml: (body: { id?: string; report?: TechnicalReport; logo_left?: string | null; logo_right?: string | null }) =>
     api.technicalReportsRenderHtml(body),
   renderConsolidatedHtml: (body: { report_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>

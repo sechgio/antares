@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Pipette, X } from 'lucide-react';
 import { clampOpacity, normalizeHex } from '../ops/layerStyle';
+import Button from '@/components/ui/Button';
 
 interface ColorPickerProps {
   color: string;
@@ -183,13 +184,13 @@ export default function ColorPicker({
       aria-label="Selector de color"
     >
       <div className="canvas-color-picker-tabs">
-        <button type="button" className="canvas-color-picker-tab" data-active="true">
+        <Button variant="none" size="none" className="canvas-color-picker-tab" data-active="true">
           Personalizado
-        </button>
+        </Button>
         <div className="canvas-color-picker-tabs-actions">
-          <button type="button" className="canvas-paint-icon" aria-label="Cerrar" onClick={onClose}>
+          <Button variant="none" size="none" className="canvas-paint-icon" aria-label="Cerrar" onClick={onClose}>
             <X className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -278,14 +279,13 @@ export default function ColorPicker({
       </div>
 
       <div className="canvas-color-row">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="canvas-paint-icon"
           aria-label="Cuentagotas"
           onClick={() => void eyeDrop()}
         >
           <Pipette className="h-3.5 w-3.5" />
-        </button>
+        </Button>
         <div className="canvas-color-hex-group">
           <span className="canvas-color-hex-label">Hex</span>
           <input
@@ -322,15 +322,14 @@ export default function ColorPicker({
 
       {pageColors.length > 0 && (
         <div className="canvas-color-page">
-          <button type="button" className="canvas-color-page-label" tabIndex={-1}>
+          <Button variant="none" size="none" className="canvas-color-page-label" tabIndex={-1}>
             En esta página
             <ChevronDown className="h-3 w-3" />
-          </button>
+          </Button>
           <div className="canvas-color-swatches">
             {pageColors.map((c) => (
-              <button
+              <Button variant="none" size="none"
                 key={c}
-                type="button"
                 className="canvas-color-swatch-chip"
                 style={{ background: c }}
                 aria-label={c}

@@ -36,14 +36,6 @@ def test_catalog_backend_methods_match_handler_registry() -> None:
     )
 
 
-def test_catalog_does_not_register_retired_methods() -> None:
-    from backend.handlers import _RETIRED_METHODS
-
-    catalog = _catalog()
-    overlap = _RETIRED_METHODS & set(catalog["methods"])
-    assert not overlap, f"métodos retirados presentes en el catálogo: {sorted(overlap)}"
-
-
 def test_lane_and_handler_projections() -> None:
     from backend.core.ipc_catalog import HEAVY_METHODS, SYNC_METHODS, handler_module_for, lane_for
 

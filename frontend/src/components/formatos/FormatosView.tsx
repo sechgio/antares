@@ -1,997 +1,1522 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
-    FileDown, Loader2, ScanLine, ChevronRight, AlertCircle, RefreshCw, Layers,
-    Upload, Trash2, Settings2, Check, X, Plus, FileText, Move, Eye,
-} from 'lucide-react';
-import { api } from '../../api';
-import { saveFeatureHistory } from '../../utils/history';
-import { useToast } from '../../hooks/useToast';
-import { useDialog } from '../../hooks/useDialog';
-import type { FormatInfo, VisualMapping } from '../../types';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
-import MappingPreviewPanel from './MappingPreviewPanel';
-import MappingColorField from './MappingColorField';
-import { mappingColorCss, mappingFontNameToCss, mappingFontWeight } from './mappingCoords';
-import { safeBase64ToBytes } from './base64';
-import { ensurePdfJs } from '../../lib/pdfjs';
+  FileDown,
+  Loader2,
+  ScanLine,
+  ChevronRight,
+  AlertCircle,
+  RefreshCw,
+  Layers,
+  Upload,
+  Trash2,
+  Settings2,
+  Check,
+  X,
+  Plus,
+  FileText,
+  Move,
+  Eye,
+} from "lucide-react";
+import { api } from "../../api";
+import { saveFeatureHistory } from "../../utils/history";
+import { useToast } from "../../hooks/useToast";
+import { useDialog } from "../../hooks/useDialog";
+import type { FormatInfo, VisualMapping } from "../../types";
+import type { PDFDocumentProxy } from "pdfjs-dist";
+import MappingPreviewPanel from "./MappingPreviewPanel";
+import MappingColorField from "./MappingColorField";
+import {
+  mappingColorCss,
+  mappingFontNameToCss,
+  mappingFontWeight,
+} from "./mappingCoords";
+import {
+  MAX_PREVIEW_PAGES,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  buildGeneratedPdfName,
+  clampZoom,
+  fetchPreviewPdf,
+  formatCanPreview,
+  isPdfFile,
+  pad,
+} from "./formatHelpers";
+import { ensurePdfJs } from "../../lib/pdfjs";
+import ThemedSelect from "../ui/ThemedSelect";
+import Button from "@/components/ui/Button";
+import { errorMessage } from "@/utils/errors";
 
-const MAX_PREVIEW_PAGES = 30;
 const PREVIEW_DEBOUNCE_MS = 400;
 const SIMPLE_OVERLAY_DEFAULT_MAPPING: VisualMapping = {
-    page: 0,
-    x: 500,
-    y: 30,
-    width: 140,
-    height: 20,
-    font_size: 12,
-    font_name: 'Helvetica-Bold',
-    color_r: 0,
-    color_g: 0,
-    color_b: 0,
-    padding: 7,
-    blank_x: null,
-    blank_y: null,
-    blank_width: null,
-    blank_height: null,
-    redraw_top_border: false,
-    redraw_ot_badge: false,
-    blank_mcids: null,
+  page: 0,
+  x: 500,
+  y: 30,
+  width: 140,
+  height: 20,
+  font_size: 12,
+  font_name: "Helvetica-Bold",
+  color_r: 0,
+  color_g: 0,
+  color_b: 0,
+  padding: 7,
+  blank_x: null,
+  blank_y: null,
+  blank_width: null,
+  blank_height: null,
+  redraw_top_border: false,
+  redraw_ot_badge: false,
+  blank_mcids: null,
 };
 
-function pad(n: number, len = 7) {
-    return String(n).padStart(len, '0');
+interface PageImg {
+  url: string;
+  pageNum: number;
 }
-
-interface PageImg { url: string; pageNum: number; }
 
 async function renderPageToUrl(
-    pdf: PDFDocumentProxy,
-    pageNum: number,
-    containerW: number,
-    dpr: number,
+  pdf: PDFDocumentProxy,
+  pageNum: number,
+  containerW: number,
+  dpr: number,
 ): Promise<string> {
-    const page = await pdf.getPage(pageNum);
-    const unscaled = page.getViewport({ scale: 1 });
-    const scale = Math.min((containerW / unscaled.width) * dpr, 2.5);
-    const viewport = page.getViewport({ scale });
+  const page = await pdf.getPage(pageNum);
+  const unscaled = page.getViewport({ scale: 1 });
+  const scale = Math.min((containerW / unscaled.width) * dpr, 2.5);
+  const viewport = page.getViewport({ scale });
 
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, viewport.width, viewport.height);
-    const renderTask = page.render({ canvasContext: ctx, viewport });
-    await renderTask.promise;
-    return canvas.toDataURL('image/jpeg', 0.88);
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, viewport.width, viewport.height);
+  const renderTask = page.render({ canvasContext: ctx, viewport });
+  await renderTask.promise;
+  return canvas.toDataURL("image/jpeg", 0.88);
 }
 
-function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | null; desde: number; total: number; padLen: number; zoom: number }) {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [pageImgs, setPageImgs] = useState<PageImg[]>([]);
-    const [renderingPage, setRenderingPage] = useState(0);
-    const [renderError, setRenderError] = useState<string | null>(null);
-    const [renderKey, setRenderKey] = useState(0);
-    const rafId = useRef(0);
+function PdfMultiViewer({
+  blob,
+  desde,
+  total,
+  padLen,
+  zoom,
+}: {
+  blob: Blob | null;
+  desde: number;
+  total: number;
+  padLen: number;
+  zoom: number;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [pageImgs, setPageImgs] = useState<PageImg[]>([]);
+  const [renderingPage, setRenderingPage] = useState(0);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [renderKey, setRenderKey] = useState(0);
+  const rafId = useRef(0);
 
-    useEffect(() => {
-        if (!blob) { setPageImgs([]); setRenderingPage(0); setRenderError(null); return; }
-        let cancelled = false;
-        setPageImgs([]);
-        setRenderError(null);
+  useEffect(() => {
+    if (!blob) {
+      setPageImgs([]);
+      setRenderingPage(0);
+      setRenderError(null);
+      return;
+    }
+    let cancelled = false;
+    setPageImgs([]);
+    setRenderError(null);
 
-        async function renderAll() {
-            const pdfjs = await ensurePdfJs();
-            const ab = await blob!.arrayBuffer();
-            if (cancelled) return;
+    async function renderAll() {
+      const pdfjs = await ensurePdfJs();
+      const ab = await blob!.arrayBuffer();
+      if (cancelled) return;
 
-            const pdf = await pdfjs.getDocument({ data: new Uint8Array(ab) }).promise;
-            if (cancelled) return;
-            const numPages = pdf.numPages;
-            const rawContainerW = (containerRef.current?.clientWidth ?? 1100) - 32;
-            const containerW = Math.max(rawContainerW, 200);
-            const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const pdf = await pdfjs.getDocument({ data: new Uint8Array(ab) }).promise;
+      if (cancelled) return;
+      const numPages = pdf.numPages;
+      const rawContainerW = (containerRef.current?.clientWidth ?? 1100) - 32;
+      const containerW = Math.max(rawContainerW, 200);
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
-            for (let i = 1; i <= numPages; i++) {
-                if (cancelled) break;
-                setRenderingPage(i);
+      for (let i = 1; i <= numPages; i++) {
+        if (cancelled) break;
+        setRenderingPage(i);
 
-                await new Promise<void>(r => { rafId.current = requestAnimationFrame(() => r()); });
-
-                const url = await renderPageToUrl(pdf, i, containerW, dpr);
-                if (cancelled) break;
-                setPageImgs(prev => [...prev, { url, pageNum: i }]);
-            }
-
-            if (!cancelled) setRenderingPage(0);
-        }
-
-        renderAll().catch(e => {
-            if (e?.name !== 'RenderingCancelledException') {
-                console.warn('render error', e);
-                if (!cancelled) setRenderError('No se pudo renderizar. Intenta reintentar o descargar el PDF.');
-            }
-            if (!cancelled) setRenderingPage(0);
+        await new Promise<void>((r) => {
+          rafId.current = requestAnimationFrame(() => r());
         });
 
-        return () => {
-            cancelled = true;
-            cancelAnimationFrame(rafId.current);
-            setPageImgs([]);
-        };
-    }, [blob, renderKey]);
+        const url = await renderPageToUrl(pdf, i, containerW, dpr);
+        if (cancelled) break;
+        setPageImgs((prev) => [...prev, { url, pageNum: i }]);
+      }
 
-    const isCapped = total > MAX_PREVIEW_PAGES;
-    const previewCount = Math.min(total, MAX_PREVIEW_PAGES);
-
-    if (renderError && blob) {
-        return (
-            <div ref={containerRef} className="w-full h-full flex flex-col items-center justify-center gap-5 px-8">
-                <div className="w-16 h-16 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex items-center justify-center">
-                    <AlertCircle size={28} className="text-[var(--accent-primary)] opacity-60" />
-                </div>
-                <div className="text-center space-y-1.5">
-                    <p className="text-[12px] font-medium text-[var(--text-primary)]">No se pudo renderizar la vista previa</p>
-                    <p className="text-[10px] text-[var(--text-muted)] max-w-[280px] leading-relaxed" style={{ fontFamily: "'Roboto Mono', monospace" }}>{renderError}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => setRenderKey((value) => value + 1)}
-                        className="flex items-center gap-1.5 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] rounded-md px-4 py-2 text-[10px] tracking-wider transition-colors"
-                        style={{ fontFamily: "'Roboto Mono', monospace" }}
-                    >
-                        <RefreshCw size={11} />Reintentar
-                    </button>
-                    <button
-                        onClick={() => {
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = 'preview.pdf';
-                            a.click();
-                            setTimeout(() => URL.revokeObjectURL(url), 5000);
-                        }}
-                        className="flex items-center gap-1.5 bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md px-4 py-2 text-[10px] tracking-wider transition-colors"
-                        style={{ fontFamily: "'Roboto Mono', monospace" }}
-                    >
-                        <FileDown size={11} />Descargar PDF
-                    </button>
-                </div>
-            </div>
-        );
+      if (!cancelled) setRenderingPage(0);
     }
 
+    renderAll().catch((e) => {
+      if (e?.name !== "RenderingCancelledException") {
+        console.warn("render error", e);
+        if (!cancelled)
+          setRenderError(
+            "No se pudo renderizar. Intenta reintentar o descargar el PDF.",
+          );
+      }
+      if (!cancelled) setRenderingPage(0);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId.current);
+      setPageImgs([]);
+    };
+  }, [blob, renderKey]);
+
+  const isCapped = total > MAX_PREVIEW_PAGES;
+  const previewCount = Math.min(total, MAX_PREVIEW_PAGES);
+
+  if (renderError && blob) {
     return (
-        <div ref={containerRef} className="w-full h-full overflow-y-auto flex flex-col" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--scrollbar-thumb) transparent' }}>
-            <div className="px-4 pt-2 pb-6 space-y-6 flex flex-col items-center flex-1">
-                {pageImgs.map((p) => (
-                    <div key={p.pageNum} className="relative mx-auto bg-white rounded-xl shadow-2xl shadow-black/50" style={{ width: `${(zoom / 100) * 100}%`, maxWidth: '100%' }}>
-                        <img src={p.url} alt={`Página ${p.pageNum}`} className="w-full object-contain rounded-lg block" draggable={false} style={{ imageRendering: 'auto' }} loading="lazy" />
-                        <div className="absolute bottom-3 right-3 flex items-center gap-1.5 border border-[var(--accent-primary)]/25 rounded px-2 py-1" style={{ fontFamily: "'Roboto Mono', monospace", backgroundColor: 'color-mix(in srgb, var(--bg-base) 80%, transparent)' }}>
-                            <span className="text-[8px] text-[var(--text-muted)]">N°</span>
-                            <span className="text-[10px] font-medium text-[var(--accent-primary)] tracking-widest">{pad(desde + p.pageNum - 1, padLen)}</span>
-                        </div>
-                    </div>
-                ))}
-                {renderingPage > 0 && (
-                    <div className="flex items-center gap-2.5 py-4 text-[var(--text-muted)]">
-                        <RefreshCw size={11} className="animate-spin text-[var(--accent-primary)]/40 flex-shrink-0" />
-                        <span className="text-[10px] tracking-widest" style={{ fontFamily: "'Roboto Mono', monospace" }}>renderizando {renderingPage} / {previewCount}…</span>
-                    </div>
-                )}
-                {isCapped && renderingPage === 0 && pageImgs.length > 0 && (
-                    <div className="w-full border border-[var(--accent-primary)]/10 bg-[var(--accent-primary)]/[0.03] rounded-md px-4 py-3 text-center">
-                        <p className="text-[10px] text-[var(--accent-primary)]/50 tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>vista previa: {MAX_PREVIEW_PAGES} de {total} páginas</p>
-                    </div>
-                )}
-                <div className="h-2" />
-            </div>
+      <div
+        ref={containerRef}
+        className="w-full h-full flex flex-col items-center justify-center gap-5 px-8"
+      >
+        <div className="w-16 h-16 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex items-center justify-center">
+          <AlertCircle
+            size={28}
+            className="text-[var(--accent-primary)] opacity-60"
+          />
         </div>
+        <div className="text-center space-y-1.5">
+          <p className="text-[12px] font-medium text-[var(--text-primary)]">
+            No se pudo renderizar la vista previa
+          </p>
+          <p
+            className="text-[10px] text-[var(--text-muted)] max-w-[280px] leading-relaxed"
+            style={{ fontFamily: "'Roboto Mono', monospace" }}
+          >
+            {renderError}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="none"
+            size="none"
+            onClick={() => setRenderKey((value) => value + 1)}
+            className="flex items-center gap-1.5 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] rounded-md px-4 py-2 text-[10px] tracking-wider transition-colors"
+            style={{ fontFamily: "'Roboto Mono', monospace" }}
+          >
+            <RefreshCw size={11} />
+            Reintentar
+          </Button>
+          <Button
+            variant="none"
+            size="none"
+            onClick={() => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "preview.pdf";
+              a.click();
+              setTimeout(() => URL.revokeObjectURL(url), 5000);
+            }}
+            className="flex items-center gap-1.5 bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md px-4 py-2 text-[10px] tracking-wider transition-colors"
+            style={{ fontFamily: "'Roboto Mono', monospace" }}
+          >
+            <FileDown size={11} />
+            Descargar PDF
+          </Button>
+        </div>
+      </div>
     );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="w-full h-full overflow-y-auto flex flex-col"
+      style={{
+        scrollbarWidth: "thin",
+        scrollbarColor: "var(--scrollbar-thumb) transparent",
+      }}
+    >
+      <div className="px-4 pt-2 pb-6 space-y-6 flex flex-col items-center flex-1">
+        {pageImgs.map((p) => (
+          <div
+            key={p.pageNum}
+            className="relative mx-auto bg-white rounded-xl shadow-2xl shadow-black/50"
+            style={{ width: `${(zoom / 100) * 100}%`, maxWidth: "100%" }}
+          >
+            <img
+              src={p.url}
+              alt={`Página ${p.pageNum}`}
+              className="w-full object-contain rounded-lg block"
+              draggable={false}
+              style={{ imageRendering: "auto" }}
+              loading="lazy"
+            />
+            <div
+              className="absolute bottom-3 right-3 flex items-center gap-1.5 border border-[var(--accent-primary)]/25 rounded px-2 py-1"
+              style={{
+                fontFamily: "'Roboto Mono', monospace",
+                backgroundColor:
+                  "color-mix(in srgb, var(--bg-base) 80%, transparent)",
+              }}
+            >
+              <span className="text-[8px] text-[var(--text-muted)]">N°</span>
+              <span className="text-[10px] font-medium text-[var(--accent-primary)] tracking-widest">
+                {pad(desde + p.pageNum - 1, padLen)}
+              </span>
+            </div>
+          </div>
+        ))}
+        {renderingPage > 0 && (
+          <div className="flex items-center gap-2.5 py-4 text-[var(--text-muted)]">
+            <RefreshCw
+              size={11}
+              className="animate-spin text-[var(--accent-primary)]/40 flex-shrink-0"
+            />
+            <span
+              className="text-[10px] tracking-widest"
+              style={{ fontFamily: "'Roboto Mono', monospace" }}
+            >
+              renderizando {renderingPage} / {previewCount}…
+            </span>
+          </div>
+        )}
+        {isCapped && renderingPage === 0 && pageImgs.length > 0 && (
+          <div className="w-full border border-[var(--accent-primary)]/10 bg-[var(--accent-primary)]/[0.03] rounded-md px-4 py-3 text-center">
+            <p
+              className="text-[10px] text-[var(--accent-primary)]/50 tracking-wider"
+              style={{ fontFamily: "'Roboto Mono', monospace" }}
+            >
+              vista previa: {MAX_PREVIEW_PAGES} de {total} páginas
+            </p>
+          </div>
+        )}
+        <div className="h-2" />
+      </div>
+    </div>
+  );
 }
 
 function EmptyPreview({ loading }: { loading: boolean }) {
-    return (
-        <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-[var(--text-muted)]">
-            {loading ? (
-                <>
-                    <Loader2 size={22} className="animate-spin text-[var(--accent-primary)]/40" />
-                    <span className="text-[11px] tracking-widest" style={{ fontFamily: "'Roboto Mono', monospace" }}>cargando formatos…</span>
-                </>
-            ) : (
-                <>
-                    <div className="w-20 h-20 border border-[var(--border-subtle)] rounded-lg flex items-center justify-center">
-                        <ScanLine size={28} className="text-[var(--text-muted)] opacity-70" />
-                    </div>
-                    <span className="text-[11px] tracking-widest text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>sin vista previa</span>
-                </>
-            )}
-        </div>
-    );
-}
-
-function MappingEditor({ mapping, originalMapping, showColorReset, onChange, onSave, onCancel }: {
-    mapping: VisualMapping;
-    originalMapping: VisualMapping;
-    showColorReset: boolean;
-    onChange: (m: VisualMapping) => void;
-    onSave: () => void;
-    onCancel: () => void;
-}) {
-    const set = (key: keyof VisualMapping, value: number | string) => {
-        onChange({ ...mapping, [key]: value });
-    };
-
-    return (
-        <div className="space-y-3">
-            <div className="flex items-center justify-between mb-2">
-                <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--accent-primary)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                    <Move size={10} className="inline mr-1.5" />Mapping Visual
-                </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-                {[
-                    { label: 'X (pts)', key: 'x' as const, step: 1 },
-                    { label: 'Y (pts)', key: 'y' as const, step: 1 },
-                    { label: 'Ancho', key: 'width' as const, step: 5 },
-                    { label: 'Alto', key: 'height' as const, step: 5 },
-                    { label: 'Font Size', key: 'font_size' as const, step: 0.5 },
-                    { label: 'Padding', key: 'padding' as const, step: 1 },
-                    { label: 'Página', key: 'page' as const, step: 1 },
-                ].map(({ label, key, step }) => (
-                    <div key={key}>
-                        <div className="text-[8px] text-[var(--text-muted)] tracking-widest mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>{label}</div>
-                        <input
-                            type="number"
-                            step={step}
-                            value={mapping[key] as number}
-                            onChange={e => set(key, parseFloat(e.target.value) || 0)}
-                            className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded px-2 py-1.5 text-[var(--text-primary)] text-[11px] focus:outline-none transition-colors"
-                            style={{ fontFamily: "'Roboto Mono', monospace" }}
-                        />
-                    </div>
-                ))}
-                <div>
-                    <div className="text-[8px] text-[var(--text-muted)] tracking-widest mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>Fuente</div>
-                    <select
-                        value={mapping.font_name}
-                        onChange={e => set('font_name', e.target.value)}
-                        className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded px-2 py-1.5 text-[var(--text-primary)] text-[11px] focus:outline-none transition-colors"
-                        style={{ fontFamily: "'Roboto Mono', monospace" }}
-                    >
-                        <option value="Courier-Bold">Courier-Bold</option>
-                        <option value="Courier">Courier</option>
-                        <option value="Helvetica-Bold">Helvetica-Bold</option>
-                        <option value="Helvetica">Helvetica</option>
-                    </select>
-                </div>
-            </div>
-
-            <MappingColorField
-                mapping={mapping}
-                originalMapping={originalMapping}
-                showReset={showColorReset}
-                onChange={colors => onChange({ ...mapping, ...colors })}
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-[var(--text-muted)]">
+      {loading ? (
+        <>
+          <Loader2
+            size={22}
+            className="animate-spin text-[var(--accent-primary)]/40"
+          />
+          <span
+            className="text-[11px] tracking-widest"
+            style={{ fontFamily: "'Roboto Mono', monospace" }}
+          >
+            cargando formatos…
+          </span>
+        </>
+      ) : (
+        <>
+          <div className="w-20 h-20 border border-[var(--border-subtle)] rounded-lg flex items-center justify-center">
+            <ScanLine
+              size={28}
+              className="text-[var(--text-muted)] opacity-70"
             />
-
-            <div className="border border-[var(--border-subtle)] bg-[var(--bg-elevated)] rounded-md p-3 text-center">
-                <span className="text-[9px] text-[var(--text-muted)] block mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>Ejemplo</span>
-                <span
-                    className="font-bold"
-                    style={{
-                        fontFamily: mappingFontNameToCss(mapping.font_name),
-                        fontWeight: mappingFontWeight(mapping.font_name),
-                        fontSize: `${Math.min(mapping.font_size * 1.2, 24)}px`,
-                        color: mappingColorCss(mapping.color_r, mapping.color_g, mapping.color_b),
-                    }}
-                >
-                    {pad(1234, mapping.padding)}
-                </span>
-            </div>
-
-            <div className="flex gap-2">
-                <button
-                    onClick={onSave}
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] rounded-md py-2 text-[10px] tracking-wider transition-colors"
-                    style={{ fontFamily: "'Roboto Mono', monospace" }}
-                >
-                    <Check size={11} />Guardar
-                </button>
-                <button
-                    onClick={onCancel}
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md py-2 text-[10px] tracking-wider transition-colors"
-                    style={{ fontFamily: "'Roboto Mono', monospace" }}
-                >
-                    <X size={11} />Cancelar
-                </button>
-            </div>
-        </div>
-    );
+          </div>
+          <span
+            className="text-[11px] tracking-widest text-[var(--text-muted)]"
+            style={{ fontFamily: "'Roboto Mono', monospace" }}
+          >
+            sin vista previa
+          </span>
+        </>
+      )}
+    </div>
+  );
 }
 
-function isPdfFile(file: File): boolean {
-    const name = file.name.toLowerCase();
-    return name.endsWith('.pdf') || file.type === 'application/pdf';
-}
+function MappingEditor({
+  mapping,
+  originalMapping,
+  showColorReset,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  mapping: VisualMapping;
+  originalMapping: VisualMapping;
+  showColorReset: boolean;
+  onChange: (m: VisualMapping) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const set = (key: keyof VisualMapping, value: number | string) => {
+    onChange({ ...mapping, [key]: value });
+  };
 
-function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded: (f: FormatInfo) => void }) {
-    const [file, setFile] = useState<File | null>(null);
-    const [nombre, setNombre] = useState('');
-    const [persisted, setPersisted] = useState(true);
-    const [uploading, setUploading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [dragOver, setDragOver] = useState(false);
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between mb-2">
+        <p
+          className="text-[9px] tracking-[0.25em] uppercase text-[var(--accent-primary)]"
+          style={{ fontFamily: "'Roboto Mono', monospace" }}
+        >
+          <Move size={10} className="inline mr-1.5" />
+          Mapping Visual
+        </p>
+      </div>
 
-    const acceptPdfFile = useCallback((candidate: File | null | undefined) => {
-        if (!candidate) return;
-        if (!isPdfFile(candidate)) {
-            setError('Solo se permiten archivos PDF');
-            return;
-        }
-        setError(null);
-        setFile(candidate);
-    }, []);
-
-    const handleUpload = async () => {
-        if (!file || !nombre.trim()) return;
-        setUploading(true);
-        setError(null);
-        try {
-            const { arrayBufferToBase64 } = await import('../../utils/bytesToBase64');
-            const content_b64 = arrayBufferToBase64(await file.arrayBuffer());
-            const res = await api.formatosUpload({
-                nombre: nombre.trim(),
-                filename: file.name,
-                content_b64,
-                persisted,
-            });
-            onUploaded(res.format);
-            onClose();
-        } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : 'Error al subir');
-        } finally {
-            setUploading(false);
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)' }} onClick={onClose}>
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { label: "X (pts)", key: "x" as const, step: 1 },
+          { label: "Y (pts)", key: "y" as const, step: 1 },
+          { label: "Ancho", key: "width" as const, step: 5 },
+          { label: "Alto", key: "height" as const, step: 5 },
+          { label: "Font Size", key: "font_size" as const, step: 0.5 },
+          { label: "Padding", key: "padding" as const, step: 1 },
+          { label: "Página", key: "page" as const, step: 1 },
+        ].map(({ label, key, step }) => (
+          <div key={key}>
             <div
-              className="w-[min(380px,calc(100vw-2rem))] space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-6"
-              onClick={e => e.stopPropagation()}
+              className="text-[8px] text-[var(--text-muted)] tracking-widest mb-1"
+              style={{ fontFamily: "'Roboto Mono', monospace" }}
             >
-                <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">Subir Formato PDF</h3>
-                    <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={16} /></button>
-                </div>
-
-                <div>
-                    <label className="text-[9px] text-[var(--text-muted)] tracking-widest uppercase block mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>Nombre</label>
-                    <input
-                        type="text"
-                        value={nombre}
-                        onChange={e => setNombre(e.target.value)}
-                        placeholder="Ej: Formato Inspección"
-                        className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded-md px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none transition-colors"
-                    />
-                </div>
-
-                <div>
-                    <label className="text-[9px] text-[var(--text-muted)] tracking-widest uppercase block mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>Archivo PDF</label>
-                    <label
-                        className={`flex items-center gap-2.5 cursor-pointer border border-dashed rounded-md px-3 py-3 transition-colors ${
-                            dragOver
-                                ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/50'
-                                : 'bg-[var(--bg-elevated)] border-[var(--border-medium)] hover:border-[var(--accent-primary)]/30'
-                        }`}
-                        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-                        onDragEnter={e => { e.preventDefault(); setDragOver(true); }}
-                        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }}
-                        onDrop={e => {
-                            e.preventDefault();
-                            setDragOver(false);
-                            acceptPdfFile(e.dataTransfer.files?.[0]);
-                        }}
-                    >
-                        <Upload size={14} className={dragOver ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'} />
-                        <span
-                            className={`text-[11px] truncate ${dragOver ? 'text-[var(--accent-primary)]' : 'text-[var(--text-secondary)]'}`}
-                            style={{ fontFamily: "'Roboto Mono', monospace" }}
-                        >
-                            {dragOver ? 'Suelta el PDF aquí' : file ? file.name : 'Arrastra un PDF o selecciona archivo…'}
-                        </span>
-                        <input
-                            type="file"
-                            accept=".pdf,application/pdf"
-                            className="hidden"
-                            onChange={e => acceptPdfFile(e.target.files?.[0])}
-                        />
-                    </label>
-                </div>
-
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => setPersisted(!persisted)}
-                        className={`relative w-9 h-5 rounded-full transition-colors ${persisted ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-medium)]'}`}
-                    >
-                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-[var(--text-on-accent)] shadow transition-transform ${persisted ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </button>
-                    <span className="text-[11px] text-[var(--text-secondary)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                        {persisted ? 'Persistente' : 'Temporal (se pierde al cerrar)'}
-                    </span>
-                </div>
-
-                {error && (
-                    <div className="flex items-start gap-2 bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/30 rounded-md p-2.5">
-                        <AlertCircle size={11} className="text-[var(--accent-red)] mt-0.5 flex-shrink-0" />
-                        <p className="text-[11px] text-[var(--accent-red)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>{error}</p>
-                    </div>
-                )}
-
-                <button
-                    onClick={handleUpload}
-                    disabled={!file || !nombre.trim() || uploading}
-                    className="w-full flex items-center justify-center gap-2 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] disabled:opacity-30 disabled:pointer-events-none rounded-lg py-2.5 text-[11px] tracking-wider transition-colors"
-                    style={{ fontFamily: "'Roboto Mono', monospace" }}
-                >
-                    {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                    {uploading ? 'Subiendo…' : 'Subir Formato'}
-                </button>
+              {label}
             </div>
+            <input
+              type="number"
+              step={step}
+              value={mapping[key] as number}
+              onChange={(e) => set(key, parseFloat(e.target.value) || 0)}
+              className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded px-2 py-1.5 text-[var(--text-primary)] text-[11px] focus:outline-none transition-colors"
+              style={{ fontFamily: "'Roboto Mono', monospace" }}
+            />
+          </div>
+        ))}
+        <div>
+          <div
+            className="text-[8px] text-[var(--text-muted)] tracking-widest mb-1"
+            style={{ fontFamily: "'Roboto Mono', monospace" }}
+          >
+            Fuente
+          </div>
+          <ThemedSelect
+            value={mapping.font_name}
+            onChange={(value) => set("font_name", value)}
+            options={[
+              "Courier-Bold",
+              "Courier",
+              "Helvetica-Bold",
+              "Helvetica",
+            ].map((f) => ({ value: f, label: f }))}
+            aria-label="Fuente"
+            triggerClassName="bg-[var(--bg-base)] font-mono"
+          />
         </div>
-    );
+      </div>
+
+      <MappingColorField
+        mapping={mapping}
+        originalMapping={originalMapping}
+        showReset={showColorReset}
+        onChange={(colors) => onChange({ ...mapping, ...colors })}
+      />
+
+      <div className="border border-[var(--border-subtle)] bg-[var(--bg-elevated)] rounded-md p-3 text-center">
+        <span
+          className="text-[9px] text-[var(--text-muted)] block mb-1"
+          style={{ fontFamily: "'Roboto Mono', monospace" }}
+        >
+          Ejemplo
+        </span>
+        <span
+          className="font-bold"
+          style={{
+            fontFamily: mappingFontNameToCss(mapping.font_name),
+            fontWeight: mappingFontWeight(mapping.font_name),
+            fontSize: `${Math.min(mapping.font_size * 1.2, 24)}px`,
+            color: mappingColorCss(
+              mapping.color_r,
+              mapping.color_g,
+              mapping.color_b,
+            ),
+          }}
+        >
+          {pad(1234, mapping.padding)}
+        </span>
+      </div>
+
+      <div className="flex gap-2">
+        <Button
+          variant="none"
+          size="none"
+          onClick={onSave}
+          className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] rounded-md py-2 text-[10px] tracking-wider transition-colors"
+          style={{ fontFamily: "'Roboto Mono', monospace" }}
+        >
+          <Check size={11} />
+          Guardar
+        </Button>
+        <Button
+          variant="none"
+          size="none"
+          onClick={onCancel}
+          className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md py-2 text-[10px] tracking-wider transition-colors"
+          style={{ fontFamily: "'Roboto Mono', monospace" }}
+        >
+          <X size={11} />
+          Cancelar
+        </Button>
+      </div>
+    </div>
+  );
 }
 
-function Row({ label, value, valueClass = 'text-[var(--text-primary)]' }: { label: string; value: string; valueClass?: string }) {
-    return (
-        <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-[10px] text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>{label}</span>
-            <span className={`text-[10px] font-medium ${valueClass}`} style={{ fontFamily: "'Roboto Mono', monospace" }}>{value}</span>
+function UploadModal({
+  onClose,
+  onUploaded,
+}: {
+  onClose: () => void;
+  onUploaded: (f: FormatInfo) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [nombre, setNombre] = useState("");
+  const [persisted, setPersisted] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const acceptPdfFile = useCallback((candidate: File | null | undefined) => {
+    if (!candidate) return;
+    if (!isPdfFile(candidate)) {
+      setError("Solo se permiten archivos PDF");
+      return;
+    }
+    setError(null);
+    setFile(candidate);
+  }, []);
+
+  const handleUpload = async () => {
+    if (!file || !nombre.trim()) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const { arrayBufferToBase64 } = await import("../../utils/bytesToBase64");
+      const content_b64 = arrayBufferToBase64(await file.arrayBuffer());
+      const res = await api.formatosUpload({
+        nombre: nombre.trim(),
+        filename: file.name,
+        content_b64,
+        persisted,
+      });
+      onUploaded(res.format);
+      onClose();
+    } catch (e: unknown) {
+      setError(errorMessage(e, "Error al subir"));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"
+      style={{
+        backgroundColor: "color-mix(in srgb, var(--bg-base) 85%, transparent)",
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="w-[min(380px,calc(100vw-2rem))] space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+            Subir Formato PDF
+          </h3>
+          <Button
+            variant="none"
+            size="none"
+            onClick={onClose}
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            <X size={16} />
+          </Button>
         </div>
-    );
+
+        <div>
+          <label
+            className="text-[9px] text-[var(--text-muted)] tracking-widest uppercase block mb-1.5"
+            style={{ fontFamily: "'Roboto Mono', monospace" }}
+          >
+            Nombre
+          </label>
+          <input
+            type="text"
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            placeholder="Ej: Formato Inspección"
+            className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded-md px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none transition-colors"
+          />
+        </div>
+
+        <div>
+          <label
+            className="text-[9px] text-[var(--text-muted)] tracking-widest uppercase block mb-1.5"
+            style={{ fontFamily: "'Roboto Mono', monospace" }}
+          >
+            Archivo PDF
+          </label>
+          <label
+            className={`flex items-center gap-2.5 cursor-pointer border border-dashed rounded-md px-3 py-3 transition-colors ${
+              dragOver
+                ? "bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/50"
+                : "bg-[var(--bg-elevated)] border-[var(--border-medium)] hover:border-[var(--accent-primary)]/30"
+            }`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node))
+                setDragOver(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              acceptPdfFile(e.dataTransfer.files?.[0]);
+            }}
+          >
+            <Upload
+              size={14}
+              className={
+                dragOver
+                  ? "text-[var(--accent-primary)]"
+                  : "text-[var(--text-muted)]"
+              }
+            />
+            <span
+              className={`text-[11px] truncate ${dragOver ? "text-[var(--accent-primary)]" : "text-[var(--text-secondary)]"}`}
+              style={{ fontFamily: "'Roboto Mono', monospace" }}
+            >
+              {dragOver
+                ? "Suelta el PDF aquí"
+                : file
+                  ? file.name
+                  : "Arrastra un PDF o selecciona archivo…"}
+            </span>
+            <input
+              type="file"
+              accept=".pdf,application/pdf"
+              className="hidden"
+              onChange={(e) => acceptPdfFile(e.target.files?.[0])}
+            />
+          </label>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            variant="none"
+            size="none"
+            onClick={() => setPersisted(!persisted)}
+            className={`relative w-9 h-5 rounded-full transition-colors ${persisted ? "bg-[var(--accent-primary)]" : "bg-[var(--border-medium)]"}`}
+          >
+            <div
+              className={`absolute top-0.5 w-4 h-4 rounded-full bg-[var(--text-on-accent)] shadow transition-transform ${persisted ? "translate-x-4" : "translate-x-0.5"}`}
+            />
+          </Button>
+          <span
+            className="text-[11px] text-[var(--text-secondary)]"
+            style={{ fontFamily: "'Roboto Mono', monospace" }}
+          >
+            {persisted ? "Persistente" : "Temporal (se pierde al cerrar)"}
+          </span>
+        </div>
+
+        {error && (
+          <div className="flex items-start gap-2 bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/30 rounded-md p-2.5">
+            <AlertCircle
+              size={11}
+              className="text-[var(--accent-red)] mt-0.5 flex-shrink-0"
+            />
+            <p
+              className="text-[11px] text-[var(--accent-red)]"
+              style={{ fontFamily: "'Roboto Mono', monospace" }}
+            >
+              {error}
+            </p>
+          </div>
+        )}
+
+        <Button
+          variant="none"
+          size="none"
+          onClick={handleUpload}
+          disabled={!file || !nombre.trim() || uploading}
+          className="w-full flex items-center justify-center gap-2 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] disabled:opacity-30 disabled:pointer-events-none rounded-lg py-2.5 text-[11px] tracking-wider transition-colors"
+          style={{ fontFamily: "'Roboto Mono', monospace" }}
+        >
+          {uploading ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <Upload size={13} />
+          )}
+          {uploading ? "Subiendo…" : "Subir Formato"}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
-function buildGeneratedPdfName(selected: FormatInfo, desde: number, hasta: number): string {
-    const p = selected.mapping?.padding ?? 7;
-    const desdeS = pad(desde, p);
-    const hastaS = pad(hasta, p);
-    return desde === hasta
-        ? `${selected.id}_${desdeS}.pdf`
-        : `${selected.id}_${desdeS}-${hastaS}.pdf`;
-}
-
-function formatCanPreview(format: FormatInfo, desde: number, hasta: number): boolean {
-    const total = Math.max(0, hasta - desde + 1);
-    const maxPages = format.max_pages ?? 500;
-    const numMin = format.number_min ?? 1;
-    const numMax = format.number_max ?? 9999999;
-    const isValid = desde >= numMin && hasta >= desde && total <= maxPages && hasta <= numMax;
-    return isValid && (format.strategy === 'legacy_xobject' || format.strategy === 'simple_overlay' || format.has_mapping);
-}
-
-async function fetchPreviewPdf(formatId: string, desde: number, hasta: number) {
-    const previewTotal = hasta - desde + 1;
-    const previewHasta = Math.min(hasta, desde + MAX_PREVIEW_PAGES - 1);
-    const res = await api.formatosGenerate({
-        format_id: formatId,
-        desde,
-        hasta: previewHasta,
-    });
-    if (!res.pdf_base64) throw new Error('No se recibio el contenido de vista previa.');
-    const binary = safeBase64ToBytes(res.pdf_base64);
-    return {
-        blob: new Blob([binary], { type: 'application/pdf' }),
-        previewDesde: desde,
-        previewTotal,
-    };
+function Row({
+  label,
+  value,
+  valueClass = "text-[var(--text-primary)]",
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2">
+      <span
+        className="text-[10px] text-[var(--text-muted)]"
+        style={{ fontFamily: "'Roboto Mono', monospace" }}
+      >
+        {label}
+      </span>
+      <span
+        className={`text-[10px] font-medium ${valueClass}`}
+        style={{ fontFamily: "'Roboto Mono', monospace" }}
+      >
+        {value}
+      </span>
+    </div>
+  );
 }
 
 export default function FormatosView() {
-    const { addToast } = useToast();
-    const { confirm } = useDialog();
-    const [formats, setFormats] = useState<FormatInfo[]>([]);
-    const [loadingFormats, setLoadingFormats] = useState(true);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
-    const [desde, setDesde] = useState<number>(1);
-    const [hasta, setHasta] = useState<number>(1);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+  const { addToast } = useToast();
+  const { confirm } = useDialog();
+  const [formats, setFormats] = useState<FormatInfo[]>([]);
+  const [loadingFormats, setLoadingFormats] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [desde, setDesde] = useState<number>(1);
+  const [hasta, setHasta] = useState<number>(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
-    const [previewLoading, setPreviewLoading] = useState(false);
-    const [previewDesde, setPreviewDesde] = useState<number>(1);
-    const [previewTotal, setPreviewTotal] = useState<number>(0);
-    const previewToken = useRef(0);
-    const previewSkipEffectRef = useRef(false);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewDesde, setPreviewDesde] = useState<number>(1);
+  const [previewTotal, setPreviewTotal] = useState<number>(0);
+  const previewToken = useRef(0);
+  const previewSkipEffectRef = useRef(false);
 
-    useEffect(() => () => { previewToken.current += 1; }, []);
+  useEffect(
+    () => () => {
+      previewToken.current += 1;
+    },
+    [],
+  );
 
-    const [showUpload, setShowUpload] = useState(false);
-    const [mappingMode, setMappingMode] = useState(false);
-    const [editMapping, setEditMapping] = useState<VisualMapping | null>(null);
-    const [mappingBaseline, setMappingBaseline] = useState<VisualMapping | null>(null);
-    const [zoom, setZoom] = useState(100);
-    const zoomStep = 10;
-    const ZOOM_MIN = 25;
-    const ZOOM_MAX = 300;
-    const clampZoom = (v: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(v)));
+  const [showUpload, setShowUpload] = useState(false);
+  const [mappingMode, setMappingMode] = useState(false);
+  const [editMapping, setEditMapping] = useState<VisualMapping | null>(null);
+  const [mappingBaseline, setMappingBaseline] = useState<VisualMapping | null>(
+    null,
+  );
+  const [zoom, setZoom] = useState(100);
+  const zoomStep = 10;
 
-    const selected = formats.find(f => f.id === selectedId) ?? null;
-    const padLen = selected?.mapping?.padding ?? 7;
-    const maxPages = selected?.max_pages ?? 500;
-    const numMin = selected?.number_min ?? 1;
-    const numMax = selected?.number_max ?? 9999999;
-    const total = Math.max(0, hasta - desde + 1);
-    const isValid = selected !== null && desde >= numMin && hasta >= desde && total <= maxPages && hasta <= numMax;
-    const canGenerate = isValid && (selected?.strategy === 'legacy_xobject' || selected?.strategy === 'simple_overlay' || selected?.has_mapping);
+  const selected = formats.find((f) => f.id === selectedId) ?? null;
+  const padLen = selected?.mapping?.padding ?? 7;
+  const maxPages = selected?.max_pages ?? 500;
+  const numMin = selected?.number_min ?? 1;
+  const numMax = selected?.number_max ?? 9999999;
+  const total = Math.max(0, hasta - desde + 1);
+  const isValid =
+    selected !== null &&
+    desde >= numMin &&
+    hasta >= desde &&
+    total <= maxPages &&
+    hasta <= numMax;
+  const canGenerate =
+    isValid &&
+    (selected?.strategy === "legacy_xobject" ||
+      selected?.strategy === "simple_overlay" ||
+      selected?.has_mapping);
 
-    const fetchFormats = useCallback(async () => {
-        setLoadingFormats(true);
-        try {
-            const res = await api.formatosList();
-            setFormats(res.formats ?? []);
-            if (res.formats.length > 0) {
-                setSelectedId(prev => prev || res.formats[0].id);
-            }
-        } catch (err: unknown) {
-            addToast({ message: 'Error cargando formatos: ' + (err instanceof Error ? err.message : String(err)), type: 'error' });
-        } finally {
-            setLoadingFormats(false);
+  const fetchFormats = useCallback(async () => {
+    setLoadingFormats(true);
+    try {
+      const res = await api.formatosList();
+      setFormats(res.formats ?? []);
+      if (res.formats.length > 0) {
+        setSelectedId((prev) => prev || res.formats[0].id);
+      }
+    } catch (err: unknown) {
+      addToast({
+        message: "Error cargando formatos: " + errorMessage(err, String(err)),
+        type: "error",
+      });
+    } finally {
+      setLoadingFormats(false);
+    }
+  }, [addToast]);
+
+  useEffect(() => {
+    fetchFormats();
+  }, [fetchFormats]);
+
+  useEffect(() => {
+    if (mappingMode) return;
+    if (previewSkipEffectRef.current) {
+      previewSkipEffectRef.current = false;
+      return;
+    }
+    if (!selected || !canGenerate) {
+      setPreviewBlob(null);
+      setPreviewLoading(false);
+      return;
+    }
+    const capturedDesde = desde;
+    const capturedHasta = hasta;
+    const token = ++previewToken.current;
+
+    const t = setTimeout(async () => {
+      if (token !== previewToken.current) return;
+      if (capturedDesde < numMin || capturedHasta < capturedDesde) return;
+      setPreviewLoading(true);
+      setError(null);
+      try {
+        const preview = await fetchPreviewPdf(
+          selected.id,
+          capturedDesde,
+          capturedHasta,
+        );
+        if (token !== previewToken.current) return;
+        setPreviewBlob(preview.blob);
+        setPreviewDesde(preview.previewDesde);
+        setPreviewTotal(preview.previewTotal);
+      } catch (err: unknown) {
+        const msg = errorMessage(err, String(err));
+        console.warn("Preview error:", msg);
+        if (token === previewToken.current) {
+          setError("Error en vista previa: " + msg);
         }
-    }, [addToast]);
+      } finally {
+        if (token === previewToken.current) setPreviewLoading(false);
+      }
+    }, PREVIEW_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(t);
+      previewToken.current += 1;
+    };
+  }, [
+    desde,
+    hasta,
+    selectedId,
+    selected?.has_mapping,
+    selected?.strategy,
+    selected?.id,
+    mappingMode,
+    canGenerate,
+    numMin,
+  ]);
 
-    useEffect(() => { fetchFormats(); }, [fetchFormats]);
+  const handleGenerate = async () => {
+    if (!canGenerate || !selected) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const defaultName = buildGeneratedPdfName(selected, desde, hasta);
+      const saveTarget = await api.dialogSave({
+        title: "Guardar PDF",
+        defaultPath: defaultName,
+        filters: [
+          { name: "PDF", extensions: ["pdf"] },
+          { name: "Todos los archivos", extensions: ["*"] },
+        ],
+      });
+      const outputPath = saveTarget.paths[0];
+      if (!outputPath) {
+        setLoading(false);
+        return;
+      }
+      const res = await api.formatosGenerate({
+        format_id: selected.id,
+        desde,
+        hasta,
+        output_path: outputPath,
+      });
+      addToast({
+        message: res.saved_path
+          ? `PDF guardado: ${res.filename || defaultName}`
+          : "PDF generado correctamente",
+        type: "success",
+      });
+      await saveFeatureHistory(
+        "formato",
+        selected.nombre,
+        { format_id: selected.id, desde, hasta },
+        hasta - desde + 1,
+      );
+    } catch (e: unknown) {
+      const msg = errorMessage(e, String(e));
+      setError(msg);
+      addToast({ message: "Error generando PDF: " + msg, type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    useEffect(() => {
-        if (mappingMode) return;
-        if (previewSkipEffectRef.current) {
-            previewSkipEffectRef.current = false;
-            return;
-        }
-        if (!selected || !canGenerate) { setPreviewBlob(null); setPreviewLoading(false); return; }
-        const capturedDesde = desde;
-        const capturedHasta = hasta;
-        const token = ++previewToken.current;
+  const handleDelete = async (fid: string) => {
+    const ok = await confirm({
+      title: "¿Eliminar este formato?",
+      description: "Esta acción quitará el formato de la lista disponible.",
+      type: "destructive",
+      confirmLabel: "Eliminar",
+    });
+    if (!ok) return;
 
-        const t = setTimeout(async () => {
-            if (token !== previewToken.current) return;
-            if (capturedDesde < numMin || capturedHasta < capturedDesde) return;
-            setPreviewLoading(true);
-            setError(null);
-            try {
-                const preview = await fetchPreviewPdf(selected.id, capturedDesde, capturedHasta);
-                if (token !== previewToken.current) return;
-                setPreviewBlob(preview.blob);
-                setPreviewDesde(preview.previewDesde);
-                setPreviewTotal(preview.previewTotal);
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : String(err);
-                console.warn('Preview error:', msg);
-                if (token === previewToken.current) {
-                    setError('Error en vista previa: ' + msg);
-                }
-            } finally {
-                if (token === previewToken.current) setPreviewLoading(false);
-            }
-        }, PREVIEW_DEBOUNCE_MS);
-        return () => {
-            clearTimeout(t);
-            previewToken.current += 1;
-        };
-    }, [desde, hasta, selectedId, selected?.has_mapping, selected?.strategy, selected?.id, mappingMode, canGenerate, numMin]);
+    try {
+      await api.formatosDelete(fid);
+      setFormats((prev) => prev.filter((f) => f.id !== fid));
+      if (selectedId === fid) {
+        setSelectedId(formats.find((f) => f.id !== fid)?.id ?? null);
+      }
+      addToast({ message: "Formato eliminado", type: "success" });
+    } catch (e: unknown) {
+      addToast({
+        message: "Error eliminando: " + errorMessage(e, String(e)),
+        type: "error",
+      });
+    }
+  };
 
-    const handleGenerate = async () => {
-        if (!canGenerate || !selected) return;
-        setLoading(true);
+  const handleSaveMapping = async () => {
+    if (!selected || !editMapping) return;
+    try {
+      const res = await api.formatosUpdateMapping(selected.id, editMapping);
+      const updatedFormat = res.format;
+      setFormats((prev) =>
+        prev.map((f) => (f.id === selected.id ? updatedFormat : f)),
+      );
+
+      if (formatCanPreview(updatedFormat, desde, hasta)) {
+        setPreviewLoading(true);
         setError(null);
         try {
-            const defaultName = buildGeneratedPdfName(selected, desde, hasta);
-            const saveTarget = await api.dialogSave({
-                title: 'Guardar PDF',
-                defaultPath: defaultName,
-                filters: [
-                    { name: 'PDF', extensions: ['pdf'] },
-                    { name: 'Todos los archivos', extensions: ['*'] },
-                ],
-            });
-            const outputPath = saveTarget.paths[0];
-            if (!outputPath) {
-                setLoading(false);
-                return;
-            }
-            const res = await api.formatosGenerate({
-                format_id: selected.id,
-                desde,
-                hasta,
-                output_path: outputPath,
-            });
-            addToast({
-                message: res.saved_path
-                    ? `PDF guardado: ${res.filename || defaultName}`
-                    : 'PDF generado correctamente',
-                type: 'success',
-            });
-            await saveFeatureHistory('formato', selected.nombre, { format_id: selected.id, desde, hasta }, hasta - desde + 1);
-        } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
-            setError(msg);
-            addToast({ message: 'Error generando PDF: ' + msg, type: 'error' });
+          const preview = await fetchPreviewPdf(updatedFormat.id, desde, hasta);
+          previewSkipEffectRef.current = true;
+          setPreviewBlob(preview.blob);
+          setPreviewDesde(preview.previewDesde);
+          setPreviewTotal(preview.previewTotal);
+        } catch (err: unknown) {
+          const msg = errorMessage(err, String(err));
+          console.warn("Preview error after mapping save:", msg);
+          setError("Error en vista previa: " + msg);
         } finally {
-            setLoading(false);
+          setPreviewLoading(false);
         }
-    };
+      } else {
+        previewSkipEffectRef.current = true;
+      }
 
-    const handleDelete = async (fid: string) => {
-        const ok = await confirm({
-            title: '¿Eliminar este formato?',
-            description: 'Esta acción quitará el formato de la lista disponible.',
-            type: 'destructive',
-            confirmLabel: 'Eliminar',
-        });
-        if (!ok) return;
+      setMappingMode(false);
+      setEditMapping(null);
+      setMappingBaseline(null);
+      addToast({ message: "Mapping guardado", type: "success" });
+    } catch (e: unknown) {
+      addToast({
+        message: "Error guardando mapping: " + errorMessage(e, String(e)),
+        type: "error",
+      });
+    }
+  };
 
-        try {
-            await api.formatosDelete(fid);
-            setFormats(prev => prev.filter(f => f.id !== fid));
-            if (selectedId === fid) {
-                setSelectedId(formats.find(f => f.id !== fid)?.id ?? null);
-            }
-            addToast({ message: 'Formato eliminado', type: 'success' });
-        } catch (e: unknown) {
-            addToast({ message: 'Error eliminando: ' + (e instanceof Error ? e.message : String(e)), type: 'error' });
-        }
-    };
+  const handleUploaded = (f: FormatInfo) => {
+    setFormats((prev) => [...prev, f]);
+    setSelectedId(f.id);
+  };
 
-    const handleSaveMapping = async () => {
-        if (!selected || !editMapping) return;
-        try {
-            const res = await api.formatosUpdateMapping(selected.id, editMapping);
-            const updatedFormat = res.format;
-            setFormats(prev => prev.map(f => f.id === selected.id ? updatedFormat : f));
+  const previewPagesShown = Math.min(previewTotal, MAX_PREVIEW_PAGES);
+  const isCapped = previewTotal > MAX_PREVIEW_PAGES;
 
-            if (formatCanPreview(updatedFormat, desde, hasta)) {
-                setPreviewLoading(true);
-                setError(null);
-                try {
-                    const preview = await fetchPreviewPdf(updatedFormat.id, desde, hasta);
-                    previewSkipEffectRef.current = true;
-                    setPreviewBlob(preview.blob);
-                    setPreviewDesde(preview.previewDesde);
-                    setPreviewTotal(preview.previewTotal);
-                } catch (err: unknown) {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    console.warn('Preview error after mapping save:', msg);
-                    setError('Error en vista previa: ' + msg);
-                } finally {
-                    setPreviewLoading(false);
-                }
-            } else {
-                previewSkipEffectRef.current = true;
-            }
+  return (
+    <div
+      data-surface="formatos"
+      className="flex h-full min-h-0 overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]"
+      style={{ fontFamily: "'Outfit', sans-serif" }}
+    >
+      <div
+        data-surface-part="preview"
+        className="flex-1 flex flex-col min-w-0 relative"
+      >
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, color-mix(in srgb, var(--border-medium) 70%, transparent) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+        />
 
-            setMappingMode(false);
-            setEditMapping(null);
-            setMappingBaseline(null);
-            addToast({ message: 'Mapping guardado', type: 'success' });
-        } catch (e: unknown) {
-            addToast({ message: 'Error guardando mapping: ' + (e instanceof Error ? e.message : String(e)), type: 'error' });
-        }
-    };
-
-    const handleUploaded = (f: FormatInfo) => {
-        setFormats(prev => [...prev, f]);
-        setSelectedId(f.id);
-    };
-
-    const previewPagesShown = Math.min(previewTotal, MAX_PREVIEW_PAGES);
-    const isCapped = previewTotal > MAX_PREVIEW_PAGES;
-
-    return (
-        <div data-surface="formatos" className="flex h-full min-h-0 overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]" style={{ fontFamily: "'Outfit', sans-serif" }}>
-            <div data-surface-part="preview" className="flex-1 flex flex-col min-w-0 relative">
-                <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--border-medium) 70%, transparent) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
-
-                <div className="relative z-10 flex h-11 items-center justify-between px-6 border-b border-[var(--border-subtle)]">
-                    <div className="flex items-center gap-2.5">
-                        <ScanLine size={13} className="text-[var(--accent-primary)]" />
-                        <span className="text-[10px] tracking-[0.22em] uppercase text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                            {mappingMode ? 'Vista template · arrastra el recuadro' : 'Vista Previa'}
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <div
-                            data-testid="formatos-context-title"
-                            className="flex items-center gap-1.5 border border-[var(--border-subtle)] rounded px-2.5 py-1 bg-[var(--bg-elevated)]"
-                            style={{ fontFamily: "'Roboto Mono', monospace" }}
-                        >
-                            <FileText size={9} className="text-[var(--accent-primary)]/60" />
-                            <span className="text-[9px] font-medium tracking-[0.22em] uppercase text-[var(--text-secondary)]">FORMATOS PDF</span>
-                            {(mappingMode || previewBlob) && (
-                                <>
-                                    <div className="w-px h-3 bg-[var(--border-subtle)] mx-0.5" />
-                                    <button onClick={() => setZoom(z => clampZoom(z - zoomStep))} className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none">−</button>
-                                    <input
-                                        type="range"
-                                        min={ZOOM_MIN}
-                                        max={ZOOM_MAX}
-                                        step={1}
-                                        value={zoom}
-                                        onChange={e => setZoom(Number(e.target.value))}
-                                        className="zoom-slider"
-                                        title={`Zoom: ${zoom}%`}
-                                    />
-                                    <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        value={`${zoom}%`}
-                                        onChange={e => {
-                                            const raw = e.target.value.replace(/[^0-9]/g, '');
-                                            if (raw) setZoom(clampZoom(Number(raw)));
-                                        }}
-                                        onBlur={() => setZoom(clampZoom(zoom))}
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                                            if (e.key === 'ArrowUp') { e.preventDefault(); setZoom(z => clampZoom(z + zoomStep)); }
-                                            if (e.key === 'ArrowDown') { e.preventDefault(); setZoom(z => clampZoom(z - zoomStep)); }
-                                        }}
-                                        className="w-[38px] text-center text-[9px] text-[var(--accent-primary)] font-medium bg-transparent outline-none border-b border-transparent hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)] transition-colors"
-                                        title={`Zoom (${ZOOM_MIN}–${ZOOM_MAX}%)`}
-                                    />
-                                    <button onClick={() => setZoom(z => clampZoom(z + zoomStep))} className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none">+</button>
-                                    <button onClick={() => setZoom(100)} className="text-[8px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">reset</button>
-                                </>
-                            )}
-                        </div>
-
-                        {previewBlob && previewPagesShown > 0 && (
-                            <div className="flex items-center gap-1.5 border border-[var(--border-subtle)] rounded px-2.5 py-1 bg-[var(--bg-elevated)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                                <span className="text-[9px] tracking-wider text-[var(--text-muted)]">N°</span>
-                                <span className="text-[10px] font-medium text-[var(--text-primary)] tracking-wider">
-                                    {pad(previewDesde, padLen)}
-                                    {previewTotal > 1 ? ` → ${pad(previewDesde + previewTotal - 1, padLen)}` : ''}
-                                </span>
-                            </div>
-                        )}
-                        {previewLoading && (
-                            <div className="flex items-center gap-1.5">
-                                <RefreshCw size={9} className="animate-spin text-[var(--accent-primary)]/40" />
-                                <span className="text-[9px] tracking-wider text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>actualizando…</span>
-                            </div>
-                        )}
-                        {previewBlob && previewPagesShown > 0 && (
-                            <div className="flex items-center gap-1.5 border border-[var(--accent-primary)]/25 rounded px-2.5 py-1 bg-[var(--accent-primary)]/[0.04]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                                <Layers size={9} className="text-[var(--accent-primary)]/60" />
-                                <span className="text-[10px] font-medium text-[var(--accent-primary)] tracking-wider">
-                                    {isCapped ? `${MAX_PREVIEW_PAGES} / ${previewTotal}` : previewPagesShown} {previewPagesShown === 1 ? 'pág.' : 'págs.'}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="relative flex-1 overflow-hidden">
-                    {previewBlob ? (
-                        <div
-                            className={mappingMode ? 'absolute inset-0 invisible pointer-events-none' : 'h-full w-full'}
-                            aria-hidden={mappingMode}
-                        >
-                            <PdfMultiViewer blob={previewBlob} desde={previewDesde} total={previewTotal} padLen={padLen} zoom={zoom} />
-                        </div>
-                    ) : null}
-                    {mappingMode && editMapping && selected ? (
-                        <MappingPreviewPanel
-                            formatId={selected.id}
-                            mapping={editMapping}
-                            onChange={setEditMapping}
-                            zoom={zoom}
-                            previewBlob={previewBlob}
-                            sampleNumber={desde}
-                        />
-                    ) : !previewBlob ? (
-                        <EmptyPreview loading={previewLoading || loadingFormats} />
-                    ) : null}
-                </div>
+        <div className="relative z-10 flex h-11 items-center justify-between px-6 border-b border-[var(--border-subtle)]">
+          <div className="flex items-center gap-2.5">
+            <ScanLine size={13} className="text-[var(--accent-primary)]" />
+            <span
+              className="text-[10px] tracking-[0.22em] uppercase text-[var(--text-muted)]"
+              style={{ fontFamily: "'Roboto Mono', monospace" }}
+            >
+              {mappingMode
+                ? "Vista template · arrastra el recuadro"
+                : "Vista Previa"}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div
+              data-testid="formatos-context-title"
+              className="flex items-center gap-1.5 border border-[var(--border-subtle)] rounded px-2.5 py-1 bg-[var(--bg-elevated)]"
+              style={{ fontFamily: "'Roboto Mono', monospace" }}
+            >
+              <FileText size={9} className="text-[var(--accent-primary)]/60" />
+              <span className="text-[9px] font-medium tracking-[0.22em] uppercase text-[var(--text-secondary)]">
+                FORMATOS PDF
+              </span>
+              {(mappingMode || previewBlob) && (
+                <>
+                  <div className="w-px h-3 bg-[var(--border-subtle)] mx-0.5" />
+                  <Button
+                    variant="none"
+                    size="none"
+                    onClick={() => setZoom((z) => clampZoom(z - zoomStep))}
+                    className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none"
+                  >
+                    −
+                  </Button>
+                  <input
+                    type="range"
+                    min={ZOOM_MIN}
+                    max={ZOOM_MAX}
+                    step={1}
+                    value={zoom}
+                    onChange={(e) => setZoom(Number(e.target.value))}
+                    className="zoom-slider"
+                    title={`Zoom: ${zoom}%`}
+                  />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={`${zoom}%`}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, "");
+                      if (raw) setZoom(clampZoom(Number(raw)));
+                    }}
+                    onBlur={() => setZoom(clampZoom(zoom))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter")
+                        (e.target as HTMLInputElement).blur();
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setZoom((z) => clampZoom(z + zoomStep));
+                      }
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setZoom((z) => clampZoom(z - zoomStep));
+                      }
+                    }}
+                    className="w-[38px] text-center text-[9px] text-[var(--accent-primary)] font-medium bg-transparent outline-none border-b border-transparent hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)] transition-colors"
+                    title={`Zoom (${ZOOM_MIN}–${ZOOM_MAX}%)`}
+                  />
+                  <Button
+                    variant="none"
+                    size="none"
+                    onClick={() => setZoom((z) => clampZoom(z + zoomStep))}
+                    className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none"
+                  >
+                    +
+                  </Button>
+                  <Button
+                    variant="none"
+                    size="none"
+                    onClick={() => setZoom(100)}
+                    className="text-[8px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    reset
+                  </Button>
+                </>
+              )}
             </div>
 
-            <div data-surface-part="sidebar" className="w-[320px] flex-shrink-0 flex flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-base)]">
-                <div className={`flex-1 px-6 pt-5 pb-3 space-y-4 ${mappingMode ? 'overflow-y-auto' : 'overflow-y-hidden'}`}>
-
-                    <section>
-                        <div className="flex items-center justify-between mb-3">
-                            <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>Formato</p>
-                            <button
-                                onClick={() => setShowUpload(true)}
-                                className="flex items-center gap-1 text-[9px] text-[var(--accent-primary)]/60 hover:text-[var(--accent-primary)] transition-colors"
-                                style={{ fontFamily: "'Roboto Mono', monospace" }}
-                            >
-                                <Plus size={10} />subir
-                            </button>
-                        </div>
-                        <div className="space-y-1.5">
-                            {formats.map(f => (
-                                <div
-                                    key={f.id}
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={() => { setSelectedId(f.id); setMappingMode(false); setEditMapping(null); setMappingBaseline(null); }}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                            e.preventDefault();
-                                            setSelectedId(f.id);
-                                            setMappingMode(false);
-                                            setEditMapping(null);
-                                            setMappingBaseline(null);
-                                        }
-                                    }}
-                                    className={`w-full flex items-center gap-2.5 rounded-md px-3 py-2.5 transition-colors group text-left cursor-pointer ${f.id === selectedId
-                                            ? 'bg-[var(--accent-primary)]/[0.08] border border-[var(--accent-primary)]/25'
-                                            : 'bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
-                                        }`}
-                                >
-                                    <FileText size={13} className={f.id === selectedId ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'} />
-                                    <div className="flex-1 min-w-0">
-                                        <div className={`text-[11px] font-medium truncate ${f.id === selectedId ? 'text-[var(--accent-primary)]' : 'text-[var(--text-primary)]'}`}>{f.nombre}</div>
-                                        <div className="text-[8px] text-[var(--text-muted)] tracking-widest uppercase" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                                            {f.origen}{!f.has_mapping && f.strategy === 'visual_overlay' ? ' · sin mapping' : ''}
-                                        </div>
-                                    </div>
-                                    {f.origen === 'uploaded' && (
-                                        <button
-                                            type="button"
-                                            onClick={e => { e.stopPropagation(); handleDelete(f.id); }}
-                                            className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--accent-red)] transition-all"
-                                            title="Eliminar formato"
-                                            aria-label={`Eliminar formato ${f.nombre}`}
-                                        >
-                                            <Trash2 size={12} />
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-                            {formats.length === 0 && !loadingFormats && (
-                                <div className="text-center text-[10px] text-[var(--text-muted)] py-4" style={{ fontFamily: "'Roboto Mono', monospace" }}>Sin formatos</div>
-                            )}
-                        </div>
-                    </section>
-
-                    <div className="border-t border-[var(--border-subtle)]" />
-
-                    {selected && (selected.strategy === 'visual_overlay' || selected.strategy === 'simple_overlay') && (
-                        <>
-                            <section>
-                                <button
-                                    onClick={() => {
-                                        if (mappingMode) {
-                                            setMappingMode(false);
-                                            setEditMapping(null);
-                                            setMappingBaseline(null);
-                                        } else {
-                                            const baseline = selected.mapping ? { ...selected.mapping } : { ...SIMPLE_OVERLAY_DEFAULT_MAPPING };
-                                            setMappingMode(true);
-                                            setEditMapping({ ...baseline });
-                                            setMappingBaseline(baseline);
-                                        }
-                                    }}
-                                    className="w-full flex items-center justify-between gap-2 bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-md px-3 py-2.5 transition-colors"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        {mappingMode ? <Eye size={13} className="text-[var(--accent-primary)]" /> : <Settings2 size={13} className="text-[var(--text-muted)]" />}
-                                        <span className="text-[10px] tracking-wider text-[var(--text-secondary)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                                            {mappingMode ? 'Editando mapping' : selected.strategy === 'simple_overlay' ? 'Personalizar posición' : 'Configurar mapping'}
-                                        </span>
-                                    </div>
-                                    {!selected.has_mapping && selected.strategy === 'visual_overlay' && (
-                                        <span className="text-[8px] text-[var(--accent-red)] tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>requerido</span>
-                                    )}
-                                    {selected.strategy === 'simple_overlay' && (
-                                        <span className="text-[8px] text-[var(--accent-primary)]/50 tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>opcional</span>
-                                    )}
-                                </button>
-                            </section>
-
-                            {mappingMode && editMapping && (
-                                <MappingEditor
-                                    mapping={editMapping}
-                                    originalMapping={mappingBaseline ?? editMapping}
-                                    showColorReset={selected.origen === 'builtin'}
-                                    onChange={setEditMapping}
-                                    onSave={handleSaveMapping}
-                                    onCancel={() => { setMappingMode(false); setEditMapping(null); setMappingBaseline(null); }}
-                                />
-                            )}
-
-                            <div className="border-t border-[var(--border-subtle)]" />
-                        </>
-                    )}
-
-                    {selected && !mappingMode && (
-                        <section>
-                            <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)] mb-3" style={{ fontFamily: "'Roboto Mono', monospace" }}>Rango de números</p>
-                            <div className="space-y-2.5">
-                                <div>
-                                    <div className="text-[9px] text-[var(--text-muted)] tracking-widest mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>DESDE</div>
-                                    <div className="relative">
-                                        <input
-                                            type="number" min={numMin} max={numMax}
-                                            value={desde}
-                                            onChange={e => setDesde(Math.max(numMin, parseInt(e.target.value) || numMin))}
-                                            className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded-md px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none transition-colors pr-24"
-                                            style={{ fontFamily: "'Roboto Mono', monospace" }}
-                                        />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--accent-primary)]/50 tracking-wider pointer-events-none" style={{ fontFamily: "'Roboto Mono', monospace" }}>{pad(desde, padLen)}</span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 px-1">
-                                    <div className="flex-1 h-px bg-[var(--bg-elevated)]" />
-                                    <ChevronRight size={10} className="text-[var(--text-muted)]" />
-                                    <div className="flex-1 h-px bg-[var(--bg-elevated)]" />
-                                </div>
-                                <div>
-                                    <div className="text-[9px] text-[var(--text-muted)] tracking-widest mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>HASTA</div>
-                                    <div className="relative">
-                                        <input
-                                            type="number" min={desde} max={numMax}
-                                            value={hasta}
-                                            onChange={e => setHasta(Math.max(desde, parseInt(e.target.value) || desde))}
-                                            className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded-md px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none transition-colors pr-24"
-                                            style={{ fontFamily: "'Roboto Mono', monospace" }}
-                                        />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--accent-primary)]/50 tracking-wider pointer-events-none" style={{ fontFamily: "'Roboto Mono', monospace" }}>{pad(hasta, padLen)}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </section>
-                    )}
-
-                    {selected && !mappingMode && (
-                        <>
-                            <div className="border-t border-[var(--border-subtle)]" />
-                            <section>
-                                <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)] mb-3" style={{ fontFamily: "'Roboto Mono', monospace" }}>Resumen</p>
-                                <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] divide-y divide-[var(--border-subtle)]">
-                                    <Row label="Formato" value={selected.nombre} />
-                                    <Row label="Tipo" value={total === 1 ? 'Individual' : 'Consolidado'} />
-                                    <Row label="Páginas" value={total > maxPages ? `${total} ✗` : String(total)} valueClass={total > maxPages ? 'text-[var(--accent-red)]' : 'text-[var(--accent-primary)]'} />
-                                    <Row label="Correlativo" value={total > 1 ? `${pad(desde, padLen)} → ${pad(hasta, padLen)}` : pad(desde, padLen)} />
-                                    {total > maxPages && <Row label="Límite" value={`máx. ${maxPages}`} valueClass="text-[var(--accent-red)]/70" />}
-                                    {!canGenerate && selected.strategy === 'visual_overlay' && (
-                                        <Row label="Estado" value="Mapping requerido" valueClass="text-[var(--accent-red)]" />
-                                    )}
-                                </div>
-                            </section>
-                        </>
-                    )}
-
-                    {error && (
-                        <div className="flex items-start gap-2 bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/30 rounded-md p-3">
-                            <AlertCircle size={11} className="text-[var(--accent-red)] mt-0.5 flex-shrink-0" />
-                            <p className="text-[11px] text-[var(--accent-red)] leading-relaxed" style={{ fontFamily: "'Roboto Mono', monospace" }}>{error}</p>
-                        </div>
-                    )}
-                </div>
-
-                {!mappingMode && (
-                    <div className="px-6 pb-12 pt-3 border-t border-[var(--border-subtle)]">
-                        <button
-                            onClick={handleGenerate}
-                            disabled={loading || !canGenerate}
-                            className="w-full flex items-center justify-between gap-2 bg-[var(--accent-primary)] hover:opacity-90 border border-[var(--accent-primary)] text-[var(--text-primary)] disabled:opacity-30 disabled:pointer-events-none font-medium rounded-lg py-3 px-4 transition-colors text-sm group"
-                            style={{ fontFamily: "'Roboto Mono', monospace" }}
-                        >
-                            <div className="flex items-center gap-2">
-                                {loading ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
-                                <span className="text-[11px] tracking-wider">
-                                    {loading ? 'Generando…' : total <= 1 ? 'Generar PDF' : `Generar ${total} páginas`}
-                                </span>
-                            </div>
-                            {!loading && <ChevronRight size={12} className="opacity-40 group-hover:opacity-80 transition-opacity" />}
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={handleUploaded} />}
+            {previewBlob && previewPagesShown > 0 && (
+              <div
+                className="flex items-center gap-1.5 border border-[var(--border-subtle)] rounded px-2.5 py-1 bg-[var(--bg-elevated)]"
+                style={{ fontFamily: "'Roboto Mono', monospace" }}
+              >
+                <span className="text-[9px] tracking-wider text-[var(--text-muted)]">
+                  N°
+                </span>
+                <span className="text-[10px] font-medium text-[var(--text-primary)] tracking-wider">
+                  {pad(previewDesde, padLen)}
+                  {previewTotal > 1
+                    ? ` → ${pad(previewDesde + previewTotal - 1, padLen)}`
+                    : ""}
+                </span>
+              </div>
+            )}
+            {previewLoading && (
+              <div className="flex items-center gap-1.5">
+                <RefreshCw
+                  size={9}
+                  className="animate-spin text-[var(--accent-primary)]/40"
+                />
+                <span
+                  className="text-[9px] tracking-wider text-[var(--text-muted)]"
+                  style={{ fontFamily: "'Roboto Mono', monospace" }}
+                >
+                  actualizando…
+                </span>
+              </div>
+            )}
+            {previewBlob && previewPagesShown > 0 && (
+              <div
+                className="flex items-center gap-1.5 border border-[var(--accent-primary)]/25 rounded px-2.5 py-1 bg-[var(--accent-primary)]/[0.04]"
+                style={{ fontFamily: "'Roboto Mono', monospace" }}
+              >
+                <Layers size={9} className="text-[var(--accent-primary)]/60" />
+                <span className="text-[10px] font-medium text-[var(--accent-primary)] tracking-wider">
+                  {isCapped
+                    ? `${MAX_PREVIEW_PAGES} / ${previewTotal}`
+                    : previewPagesShown}{" "}
+                  {previewPagesShown === 1 ? "pág." : "págs."}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
-    );
+
+        <div className="relative flex-1 overflow-hidden">
+          {previewBlob ? (
+            <div
+              className={
+                mappingMode
+                  ? "absolute inset-0 invisible pointer-events-none"
+                  : "h-full w-full"
+              }
+              aria-hidden={mappingMode}
+            >
+              <PdfMultiViewer
+                blob={previewBlob}
+                desde={previewDesde}
+                total={previewTotal}
+                padLen={padLen}
+                zoom={zoom}
+              />
+            </div>
+          ) : null}
+          {mappingMode && editMapping && selected ? (
+            <MappingPreviewPanel
+              formatId={selected.id}
+              mapping={editMapping}
+              onChange={setEditMapping}
+              zoom={zoom}
+              previewBlob={previewBlob}
+              sampleNumber={desde}
+            />
+          ) : !previewBlob ? (
+            <EmptyPreview loading={previewLoading || loadingFormats} />
+          ) : null}
+        </div>
+      </div>
+
+      <div
+        data-surface-part="sidebar"
+        className="w-[320px] flex-shrink-0 flex flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-base)]"
+      >
+        <div
+          className={`flex-1 px-6 pt-5 pb-3 space-y-4 ${mappingMode ? "overflow-y-auto" : "overflow-y-hidden"}`}
+        >
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <p
+                className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)]"
+                style={{ fontFamily: "'Roboto Mono', monospace" }}
+              >
+                Formato
+              </p>
+              <Button
+                variant="none"
+                size="none"
+                onClick={() => setShowUpload(true)}
+                className="flex items-center gap-1 text-[9px] text-[var(--accent-primary)]/60 hover:text-[var(--accent-primary)] transition-colors"
+                style={{ fontFamily: "'Roboto Mono', monospace" }}
+              >
+                <Plus size={10} />
+                subir
+              </Button>
+            </div>
+            <div className="space-y-1.5">
+              {formats.map((f) => (
+                <div
+                  key={f.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setSelectedId(f.id);
+                    setMappingMode(false);
+                    setEditMapping(null);
+                    setMappingBaseline(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedId(f.id);
+                      setMappingMode(false);
+                      setEditMapping(null);
+                      setMappingBaseline(null);
+                    }
+                  }}
+                  className={`w-full flex items-center gap-2.5 rounded-md px-3 py-2.5 transition-colors group text-left cursor-pointer ${
+                    f.id === selectedId
+                      ? "bg-[var(--accent-primary)]/[0.08] border border-[var(--accent-primary)]/25"
+                      : "bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)]"
+                  }`}
+                >
+                  <FileText
+                    size={13}
+                    className={
+                      f.id === selectedId
+                        ? "text-[var(--accent-primary)]"
+                        : "text-[var(--text-muted)]"
+                    }
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className={`text-[11px] font-medium truncate ${f.id === selectedId ? "text-[var(--accent-primary)]" : "text-[var(--text-primary)]"}`}
+                    >
+                      {f.nombre}
+                    </div>
+                    <div
+                      className="text-[8px] text-[var(--text-muted)] tracking-widest uppercase"
+                      style={{ fontFamily: "'Roboto Mono', monospace" }}
+                    >
+                      {f.origen}
+                      {!f.has_mapping && f.strategy === "visual_overlay"
+                        ? " · sin mapping"
+                        : ""}
+                    </div>
+                  </div>
+                  {f.origen === "uploaded" && (
+                    <Button
+                      variant="none"
+                      size="none"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(f.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--accent-red)] transition-all"
+                      title="Eliminar formato"
+                      aria-label={`Eliminar formato ${f.nombre}`}
+                    >
+                      <Trash2 size={12} />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {formats.length === 0 && !loadingFormats && (
+                <div
+                  className="text-center text-[10px] text-[var(--text-muted)] py-4"
+                  style={{ fontFamily: "'Roboto Mono', monospace" }}
+                >
+                  Sin formatos
+                </div>
+              )}
+            </div>
+          </section>
+
+          <div className="border-t border-[var(--border-subtle)]" />
+
+          {selected &&
+            (selected.strategy === "visual_overlay" ||
+              selected.strategy === "simple_overlay") && (
+              <>
+                <section>
+                  <Button
+                    variant="none"
+                    size="none"
+                    onClick={() => {
+                      if (mappingMode) {
+                        setMappingMode(false);
+                        setEditMapping(null);
+                        setMappingBaseline(null);
+                      } else {
+                        const baseline = selected.mapping
+                          ? { ...selected.mapping }
+                          : { ...SIMPLE_OVERLAY_DEFAULT_MAPPING };
+                        setMappingMode(true);
+                        setEditMapping({ ...baseline });
+                        setMappingBaseline(baseline);
+                      }
+                    }}
+                    className="w-full flex items-center justify-between gap-2 bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-md px-3 py-2.5 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      {mappingMode ? (
+                        <Eye
+                          size={13}
+                          className="text-[var(--accent-primary)]"
+                        />
+                      ) : (
+                        <Settings2
+                          size={13}
+                          className="text-[var(--text-muted)]"
+                        />
+                      )}
+                      <span
+                        className="text-[10px] tracking-wider text-[var(--text-secondary)]"
+                        style={{ fontFamily: "'Roboto Mono', monospace" }}
+                      >
+                        {mappingMode
+                          ? "Editando mapping"
+                          : selected.strategy === "simple_overlay"
+                            ? "Personalizar posición"
+                            : "Configurar mapping"}
+                      </span>
+                    </div>
+                    {!selected.has_mapping &&
+                      selected.strategy === "visual_overlay" && (
+                        <span
+                          className="text-[8px] text-[var(--accent-red)] tracking-wider"
+                          style={{ fontFamily: "'Roboto Mono', monospace" }}
+                        >
+                          requerido
+                        </span>
+                      )}
+                    {selected.strategy === "simple_overlay" && (
+                      <span
+                        className="text-[8px] text-[var(--accent-primary)]/50 tracking-wider"
+                        style={{ fontFamily: "'Roboto Mono', monospace" }}
+                      >
+                        opcional
+                      </span>
+                    )}
+                  </Button>
+                </section>
+
+                {mappingMode && editMapping && (
+                  <MappingEditor
+                    mapping={editMapping}
+                    originalMapping={mappingBaseline ?? editMapping}
+                    showColorReset={selected.origen === "builtin"}
+                    onChange={setEditMapping}
+                    onSave={handleSaveMapping}
+                    onCancel={() => {
+                      setMappingMode(false);
+                      setEditMapping(null);
+                      setMappingBaseline(null);
+                    }}
+                  />
+                )}
+
+                <div className="border-t border-[var(--border-subtle)]" />
+              </>
+            )}
+
+          {selected && !mappingMode && (
+            <section>
+              <p
+                className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)] mb-3"
+                style={{ fontFamily: "'Roboto Mono', monospace" }}
+              >
+                Rango de números
+              </p>
+              <div className="space-y-2.5">
+                <div>
+                  <div
+                    className="text-[9px] text-[var(--text-muted)] tracking-widest mb-1.5"
+                    style={{ fontFamily: "'Roboto Mono', monospace" }}
+                  >
+                    DESDE
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={numMin}
+                      max={numMax}
+                      value={desde}
+                      onChange={(e) =>
+                        setDesde(
+                          Math.max(numMin, parseInt(e.target.value) || numMin),
+                        )
+                      }
+                      className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded-md px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none transition-colors pr-24"
+                      style={{ fontFamily: "'Roboto Mono', monospace" }}
+                    />
+                    <span
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--accent-primary)]/50 tracking-wider pointer-events-none"
+                      style={{ fontFamily: "'Roboto Mono', monospace" }}
+                    >
+                      {pad(desde, padLen)}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 px-1">
+                  <div className="flex-1 h-px bg-[var(--bg-elevated)]" />
+                  <ChevronRight
+                    size={10}
+                    className="text-[var(--text-muted)]"
+                  />
+                  <div className="flex-1 h-px bg-[var(--bg-elevated)]" />
+                </div>
+                <div>
+                  <div
+                    className="text-[9px] text-[var(--text-muted)] tracking-widest mb-1.5"
+                    style={{ fontFamily: "'Roboto Mono', monospace" }}
+                  >
+                    HASTA
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={desde}
+                      max={numMax}
+                      value={hasta}
+                      onChange={(e) =>
+                        setHasta(
+                          Math.max(desde, parseInt(e.target.value) || desde),
+                        )
+                      }
+                      className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded-md px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none transition-colors pr-24"
+                      style={{ fontFamily: "'Roboto Mono', monospace" }}
+                    />
+                    <span
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--accent-primary)]/50 tracking-wider pointer-events-none"
+                      style={{ fontFamily: "'Roboto Mono', monospace" }}
+                    >
+                      {pad(hasta, padLen)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {selected && !mappingMode && (
+            <>
+              <div className="border-t border-[var(--border-subtle)]" />
+              <section>
+                <p
+                  className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)] mb-3"
+                  style={{ fontFamily: "'Roboto Mono', monospace" }}
+                >
+                  Resumen
+                </p>
+                <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] divide-y divide-[var(--border-subtle)]">
+                  <Row label="Formato" value={selected.nombre} />
+                  <Row
+                    label="Tipo"
+                    value={total === 1 ? "Individual" : "Consolidado"}
+                  />
+                  <Row
+                    label="Páginas"
+                    value={total > maxPages ? `${total} ✗` : String(total)}
+                    valueClass={
+                      total > maxPages
+                        ? "text-[var(--accent-red)]"
+                        : "text-[var(--accent-primary)]"
+                    }
+                  />
+                  <Row
+                    label="Correlativo"
+                    value={
+                      total > 1
+                        ? `${pad(desde, padLen)} → ${pad(hasta, padLen)}`
+                        : pad(desde, padLen)
+                    }
+                  />
+                  {total > maxPages && (
+                    <Row
+                      label="Límite"
+                      value={`máx. ${maxPages}`}
+                      valueClass="text-[var(--accent-red)]/70"
+                    />
+                  )}
+                  {!canGenerate && selected.strategy === "visual_overlay" && (
+                    <Row
+                      label="Estado"
+                      value="Mapping requerido"
+                      valueClass="text-[var(--accent-red)]"
+                    />
+                  )}
+                </div>
+              </section>
+            </>
+          )}
+
+          {error && (
+            <div className="flex items-start gap-2 bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/30 rounded-md p-3">
+              <AlertCircle
+                size={11}
+                className="text-[var(--accent-red)] mt-0.5 flex-shrink-0"
+              />
+              <p
+                className="text-[11px] text-[var(--accent-red)] leading-relaxed"
+                style={{ fontFamily: "'Roboto Mono', monospace" }}
+              >
+                {error}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {!mappingMode && (
+          <div className="px-6 pb-12 pt-3 border-t border-[var(--border-subtle)]">
+            <Button
+              variant="none"
+              size="none"
+              onClick={handleGenerate}
+              disabled={loading || !canGenerate}
+              className="w-full flex items-center justify-between gap-2 bg-[var(--accent-primary)] hover:opacity-90 border border-[var(--accent-primary)] text-[var(--text-primary)] disabled:opacity-30 disabled:pointer-events-none font-medium rounded-lg py-3 px-4 transition-colors text-sm group"
+              style={{ fontFamily: "'Roboto Mono', monospace" }}
+            >
+              <div className="flex items-center gap-2">
+                {loading ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <FileDown size={13} />
+                )}
+                <span className="text-[11px] tracking-wider">
+                  {loading
+                    ? "Generando…"
+                    : total <= 1
+                      ? "Generar PDF"
+                      : `Generar ${total} páginas`}
+                </span>
+              </div>
+              {!loading && (
+                <ChevronRight
+                  size={12}
+                  className="opacity-40 group-hover:opacity-80 transition-opacity"
+                />
+              )}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {showUpload && (
+        <UploadModal
+          onClose={() => setShowUpload(false)}
+          onUploaded={handleUploaded}
+        />
+      )}
+    </div>
+  );
 }

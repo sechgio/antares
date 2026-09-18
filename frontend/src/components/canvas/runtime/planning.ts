@@ -3,7 +3,7 @@ import { mergeCanvasHtmlDocuments, renderCanvasHtml } from './renderHtml';
 import type { CanvasDocument } from '../types';
 import { getActivePageLayers, getPageCount, templateImagesPerPage } from '../ops/pages';
 
-export function chunkArray<T>(items: T[], perPage: number): T[][] {
+function chunkArray<T>(items: T[], perPage: number): T[][] {
   if (perPage <= 0) return items.length ? [items] : [[]];
   const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += perPage) {

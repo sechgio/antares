@@ -15,6 +15,7 @@ import {
   type InlineTextStyle,
 } from '../ops/inlineEdit';
 import { clipPathForLayer } from '../ops/shapePaths';
+import { isTextualLayerType } from '../layerKinds';
 import {
   buildLayerPaintStyle,
   DEFAULT_LAYER_FONT,
@@ -299,13 +300,11 @@ function LayerNode({
         : 'move',
     clipPath,
     display: 'flex',
-    alignItems:
-      layer.type === 'text' || layer.type === 'field'
-        ? (layer.cssVars['--text-valign'] as CSSProperties['alignItems']) || 'center'
-        : 'center',
+    alignItems: isTextualLayerType(layer.type)
+      ? (layer.cssVars['--text-valign'] as CSSProperties['alignItems']) || 'center'
+      : 'center',
     justifyContent: justifyContentForTextAlign(textAlign),
-    padding:
-      layer.type === 'text' || layer.type === 'field' ? `${2 * scale}px ${6 * scale}px` : 0,
+    padding: isTextualLayerType(layer.type) ? `${2 * scale}px ${6 * scale}px` : 0,
     userSelect: editing ? 'text' : 'none',
     zIndex: highlighted ? 20 : 1,
     pointerEvents:

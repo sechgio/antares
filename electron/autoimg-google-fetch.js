@@ -1,8 +1,12 @@
+const { appendLogEvent } = require('./app-log');
+const { throwIfAborted, sleepAbortable } = require('./async-utils');
+
 const SHEETS_WINDOW_MS = 60_000;
 const SHEETS_MAX_PER_WINDOW = 50;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RETRY_BASE_DELAY_MS = 1_000;
 const DEFAULT_RETRY_MAX_DELAY_MS = 10_000;
+const GOOGLE_API_SLOW_MS = 10_000;
 
 const _sheetsTimestamps = [];
 let _sheetsQueue = Promise.resolve();
@@ -11,36 +15,66 @@ function _isSheetsUrl(url) {
   return String(url).includes('sheets.googleapis.com');
 }
 
-function _abortError(signal) {
-  if (signal?.reason instanceof Error) return signal.reason;
-  const error = new Error('La solicitud fue cancelada');
-  error.name = 'AbortError';
-  return error;
+// Endpoint label safe for logs: host + path with long/id-like segments masked.
+// Never includes the query string (it may carry access tokens or API keys).
+function _endpointLabel(url) {
+  try {
+    const u = new URL(String(url));
+    const segments = u.pathname.split('/').map((seg) => {
+      if (seg.length >= 16 || /^[-\d]+$/.test(seg)) return '*';
+      return seg;
+    });
+    return `${u.hostname}${segments.join('/')}`;
+  } catch {
+    return 'unknown-endpoint';
+  }
 }
 
-function _throwIfAborted(signal) {
-  if (signal?.aborted) throw _abortError(signal);
+function _statusClass(status) {
+  return Number.isInteger(status) ? `${Math.floor(status / 100)}xx` : undefined;
 }
 
-function _sleep(ms, signal) {
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    let timer;
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', onAbort);
-      reject(_abortError(signal));
-    };
-    timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
+function _emitGoogleApi({ url, httpMethod, outcome, status, attempt, durationMs, reason }) {
+  try {
+    const endpoint = _endpointLabel(url);
+    appendLogEvent(
+      outcome === 'failed' || outcome === 'timeout'
+        ? 'ERROR'
+        : outcome === 'success'
+          ? 'INFO'
+          : 'WARN',
+      'google.api',
+      {
+        component: 'electron',
+        provider: 'google',
+        outcome,
+        attempt,
+        duration_ms: durationMs,
+        status_class: _statusClass(status),
+        reason,
+        message: `${httpMethod} ${endpoint}${Number.isInteger(status) ? ` -> ${status}` : ''}${reason ? ` (${reason})` : ''}`,
+      },
+    );
+  } catch {
+  }
+}
+
+function _emitRateLimitWait(waitMs) {
+  try {
+    appendLogEvent('INFO', 'google.rate_limit', {
+      component: 'electron',
+      provider: 'google',
+      outcome: 'degraded',
+      duration_ms: waitMs,
+      reason: 'sheets_client_throttle',
+      message: `Sheets client-side rate limit wait ${Math.round(waitMs)}ms`,
+    });
+  } catch {
+  }
 }
 
 async function _waitForSheetsSlot(signal) {
-  _throwIfAborted(signal);
+  throwIfAborted(signal);
   const now = Date.now();
   while (_sheetsTimestamps.length && _sheetsTimestamps[0] <= now - SHEETS_WINDOW_MS) {
     _sheetsTimestamps.shift();
@@ -50,13 +84,14 @@ async function _waitForSheetsSlot(signal) {
     return;
   }
   const wait = _sheetsTimestamps[0] + SHEETS_WINDOW_MS - now + 100;
-  await _sleep(Math.max(wait, 250), signal);
+  _emitRateLimitWait(Math.max(wait, 250));
+  await sleepAbortable(Math.max(wait, 250), signal);
   return _waitForSheetsSlot(signal);
 }
 
 async function _fetchWithTimeout(url, options = {}, timeoutMs) {
   const callerSignal = options.signal;
-  _throwIfAborted(callerSignal);
+  throwIfAborted(callerSignal);
 
   const controller = new AbortController();
   let timedOut = false;
@@ -138,18 +173,72 @@ async function fetchWithRetry(
 ) {
   const method = String(options.method || 'GET').toUpperCase();
   const canRetry = _isRetryableMethod(method, retryUnsafeMethods);
+  const startedAt = Date.now();
   for (let attempt = 0; attempt <= retries; attempt++) {
-    _throwIfAborted(options.signal);
+    throwIfAborted(options.signal);
     let res;
     try {
       res = await _fetchOnce(url, options, timeoutMs);
     } catch (error) {
-      if (!canRetry || attempt === retries || options.signal?.aborted) throw error;
-      await _sleep(_retryDelayMs(null, attempt, baseDelayMs, maxDelayMs), options.signal);
+      if (!canRetry || attempt === retries || options.signal?.aborted) {
+        _emitGoogleApi({
+          url,
+          httpMethod: method,
+          outcome: error?.name === 'AbortError' ? 'cancelled' : error?.name === 'TimeoutError' ? 'timeout' : 'failed',
+          attempt: attempt + 1,
+          durationMs: Date.now() - startedAt,
+          reason: error?.name === 'AbortError' ? 'aborted' : error?.name === 'TimeoutError' ? 'timeout' : 'network_error',
+        });
+        throw error;
+      }
+      _emitGoogleApi({
+        url,
+        httpMethod: method,
+        outcome: 'degraded',
+        attempt: attempt + 1,
+        durationMs: Date.now() - startedAt,
+        reason: 'retry_scheduled',
+      });
+      await sleepAbortable(_retryDelayMs(null, attempt, baseDelayMs, maxDelayMs), options.signal);
       continue;
     }
-    if (!canRetry || !_isRetryableStatus(res.status) || attempt === retries) return res;
-    await _sleep(_retryDelayMs(res, attempt, baseDelayMs, maxDelayMs), options.signal);
+    if (!canRetry || !_isRetryableStatus(res.status) || attempt === retries) {
+      const elapsedMs = Date.now() - startedAt;
+      if (res.ok) {
+        if (attempt > 0 || elapsedMs >= GOOGLE_API_SLOW_MS) {
+          _emitGoogleApi({
+            url,
+            httpMethod: method,
+            outcome: 'success',
+            status: res.status,
+            attempt: attempt + 1,
+            durationMs: elapsedMs,
+            reason: attempt > 0 ? 'retried' : 'slow',
+          });
+        }
+      } else {
+        _emitGoogleApi({
+          url,
+          httpMethod: method,
+          outcome: 'failed',
+          status: res.status,
+          attempt: attempt + 1,
+          durationMs: elapsedMs,
+          reason: 'http_error',
+        });
+      }
+      return res;
+    }
+    _emitGoogleApi({
+      url,
+      httpMethod: method,
+      outcome: 'degraded',
+      status: res.status,
+      attempt: attempt + 1,
+      durationMs: Date.now() - startedAt,
+      reason: res.status === 429 ? 'rate_limited' : 'retry_scheduled',
+    });
+    await sleepAbortable(_retryDelayMs(res, attempt, baseDelayMs, maxDelayMs), options.signal);
   }
   throw new Error('No se pudo completar la solicitud');
 }

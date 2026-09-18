@@ -1,21 +1,35 @@
-import React, { useMemo, useRef, useState, useEffect, useCallback, Component, type ReactNode, type ErrorInfo } from 'react';
-import { createRoot } from 'react-dom/client';
-import { flushSync } from 'react-dom';
-import { reportFrontendError } from '../../utils/observability';
+import React, {
+  useMemo,
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  Component,
+  type ReactNode,
+  type ErrorInfo,
+} from "react";
+import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
+import { reportFrontendError } from "../../utils/observability";
 
-class PdfErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+class PdfErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
   state = { hasError: false };
-  static getDerivedStateFromError() { return { hasError: true }; }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
   componentDidCatch(error: Error, info: ErrorInfo) {
     reportFrontendError({
-      kind: 'react_error',
-      view: 'padron_pdf',
+      kind: "react_error",
+      view: "padron_pdf",
       name: error.name,
       message: error.message,
       stack: error.stack,
       componentStack: info.componentStack,
     });
-    console.error('[PadronView] PDF render error:', error, info);
+    console.error("[PadronView] PDF render error:", error, info);
   }
   render() {
     if (this.state.hasError) return null;
@@ -24,23 +38,21 @@ class PdfErrorBoundary extends Component<{ children: ReactNode }, { hasError: bo
 }
 
 import {
-  Upload,
   Download,
   Printer,
   Trash2,
-  CheckCircle,
   PanelLeft,
   HelpCircle,
-  X,
   FileSpreadsheet,
-} from 'lucide-react';
-import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import DatePicker from '../ui/DatePicker';
-import PreviewPage from './PreviewPage';
-import WaterCutNoticePage from './WaterCutNoticePage';
-import TutorialOverlay from './components/TutorialOverlay';
-import FolioControls from './components/FolioControls';
-import FolioMenuSelect from './components/FolioMenuSelect';
+} from "lucide-react";
+import { WithHoverTooltip } from "@/components/ui/HoverTooltip";
+import DatePicker from "../ui/DatePicker";
+import PreviewPage from "./PreviewPage";
+import ExcelImportModal from "./components/ExcelImportModal";
+import WaterCutNoticePage from "./WaterCutNoticePage";
+import TutorialOverlay from "./components/TutorialOverlay";
+import FolioControls from "./components/FolioControls";
+import FolioMenuSelect from "./components/FolioMenuSelect";
 import {
   HEADER_FIELDS,
   HEADER_FIELD_GROUPS,
@@ -65,8 +77,8 @@ import {
   type OutputFormat,
   type WaterCutData,
   type WaterCutItem,
-} from './data';
-import { parseWorkbook } from './excel';
+} from "./data";
+import { parseWorkbook } from "./excel";
 import {
   canvasToJpegBytes,
   chunkArray,
@@ -74,11 +86,11 @@ import {
   getRenderableExportSheets,
   loadImageAsBase64,
   paginateLuriganchoItems,
-} from './pdfHelpers';
-import type { ExcelRecord } from './data';
-import accionaLogoSrc from '../../assets/padron-assets/logo_acciona.webp';
-import sedapalLogoSrc from '../../assets/padron-assets/logo_sedapal.webp';
-import { saveFeatureHistory } from '../../utils/history';
+} from "./pdfHelpers";
+import type { ExcelRecord } from "./data";
+import accionaLogoSrc from "../../assets/padron-assets/logo_acciona.webp";
+import sedapalLogoSrc from "../../assets/padron-assets/logo_sedapal.webp";
+import { saveFeatureHistory } from "../../utils/history";
 import {
   createDefaultFolioConfig,
   expectedFolioEnd,
@@ -86,52 +98,80 @@ import {
   resolvePhysicalFolios,
   syncFolioEndWithPageCount,
   type FolioConfig,
-} from './folio';
-import './vpad-styles.css';
+} from "./folio";
+import "./vpad-styles.css";
+import Button from "@/components/ui/Button";
+import { errorMessage } from "@/utils/errors";
+import {
+  MAX_PREVIEW_PAGES,
+  filterItemsInRange,
+  folioLabelTotal as computeFolioLabelTotal,
+  isLuriganchoFormat,
+  isWaterCutFormat,
+  previewWindow,
+  resizeItemsPreserve,
+  resolvePreviewVariant,
+  resolveRowsPerPage,
+} from "./previewMath";
 
-export { getRenderableExportSheets, paginateLuriganchoItems } from './pdfHelpers';
+export {
+  getRenderableExportSheets,
+  paginateLuriganchoItems,
+} from "./pdfHelpers";
 
 const ACCIONA_LOGO = accionaLogoSrc;
 const SEDAPAL_LOGO = sedapalLogoSrc;
 
-const MAX_PREVIEW_PAGES = 5;
-
 export default function PadronView() {
   const previewRef = useRef<HTMLDivElement>(null);
-  const [outputFormat, setOutputFormat] = useState<OutputFormat>('service-interruption');
-  const [orientation, setOrientation] = useState<Orientation>('landscape');
-  const [headerData, setHeaderData] = useState<HeaderData>(createDefaultHeaderData());
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>(
+    "service-interruption",
+  );
+  const [orientation, setOrientation] = useState<Orientation>("landscape");
+  const [headerData, setHeaderData] = useState<HeaderData>(
+    createDefaultHeaderData(),
+  );
   const [items, setItems] = useState<PadronItem[]>(createInitialItems());
   const [startItem, setStartItem] = useState(1);
   const [endItem, setEndItem] = useState(18);
   const [totalItemsCount, setTotalItemsCount] = useState(36);
-  const [waterCutData, setWaterCutData] = useState<WaterCutData>(createDefaultWaterCutData());
-  const [waterCutItems, setWaterCutItems] = useState<WaterCutItem[]>(createInitialWaterCutItems());
+  const [waterCutData, setWaterCutData] = useState<WaterCutData>(
+    createDefaultWaterCutData(),
+  );
+  const [waterCutItems, setWaterCutItems] = useState<WaterCutItem[]>(
+    createInitialWaterCutItems(),
+  );
   const [waterCutStartItem, setWaterCutStartItem] = useState(1);
   const [waterCutEndItem, setWaterCutEndItem] = useState(36);
   const [waterCutTotalItemsCount, setWaterCutTotalItemsCount] = useState(36);
   const [excelRecords, setExcelRecords] = useState<ExcelRecord[]>([]);
-  const [selectedRecordId, setSelectedRecordId] = useState('');
-  const [importedFileName, setImportedFileName] = useState('');
-  const [importStatus, setImportStatus] = useState('');
+  const [selectedRecordId, setSelectedRecordId] = useState("");
+  const [importedFileName, setImportedFileName] = useState("");
+  const [importStatus, setImportStatus] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
-  const [logosBase64, setLogosBase64] = useState<{ acciona: string | null; sedapal: string | null }>({ acciona: null, sedapal: null });
+  const [logosBase64, setLogosBase64] = useState<{
+    acciona: string | null;
+    sedapal: string | null;
+  }>({ acciona: null, sedapal: null });
   const [logosLoaded, setLogosLoaded] = useState(false);
-  const [pdfProgress, setPdfProgress] = useState('');
+  const [pdfProgress, setPdfProgress] = useState("");
   const [previewPageOffset, setPreviewPageOffset] = useState(0);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
-  const [folioConfig, setFolioConfig] = useState<FolioConfig>(createDefaultFolioConfig);
+  const [folioConfig, setFolioConfig] = useState<FolioConfig>(
+    createDefaultFolioConfig,
+  );
 
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const style = document.createElement('style');
-    style.setAttribute('data-vpad-page', 'true');
-    const pageOrientation = outputFormat === 'water-cut-notice' ? 'portrait' : orientation;
+    const style = document.createElement("style");
+    style.setAttribute("data-vpad-page", "true");
+    const pageOrientation =
+      outputFormat === "water-cut-notice" ? "portrait" : orientation;
     style.textContent = `@page { size: A4 ${pageOrientation}; margin: 0; }`;
     document.head.appendChild(style);
     return () => {
@@ -149,70 +189,54 @@ export default function PadronView() {
     });
   }, []);
 
-  const isWaterCutNotice = outputFormat === 'water-cut-notice';
-  const isAnyLurigancho = outputFormat === 'volante-lurigancho' || outputFormat === 'volanteo-lurigancho-v2';
-  const previewVariant = isAnyLurigancho
-    ? outputFormat
-    : 'service-interruption';
-  const rowsPerPage = isWaterCutNotice ? 39 : (orientation === 'landscape' ? 18 : 37);
+  const isWaterCutNotice = isWaterCutFormat(outputFormat);
+  const isAnyLurigancho = isLuriganchoFormat(outputFormat);
+  const previewVariant = resolvePreviewVariant(outputFormat);
+  const rowsPerPage = resolveRowsPerPage(outputFormat, orientation);
   const maxItem = totalItemsCount;
   const waterCutMaxItem = waterCutTotalItemsCount;
 
-  const handleTotalItemsChange = useCallback((value: string) => {
-    const parsed = Number(value);
-    const count = normalizeItemCount(parsed, totalItemsCount);
-    setTotalItemsCount(count);
-    setItems((prevItems) => {
-      const newItems = createInitialItems(count);
-      prevItems.forEach((existing) => {
-        const idx = Number(existing.item) - 1;
-        if (idx >= 0 && idx < count) {
-          newItems[idx] = { ...existing };
-        }
-      });
-      return newItems;
-    });
-    setEndItem((prev) => Math.min(prev, count));
-  }, [totalItemsCount]);
+  const handleTotalItemsChange = useCallback(
+    (value: string) => {
+      const parsed = Number(value);
+      const count = normalizeItemCount(parsed, totalItemsCount);
+      setTotalItemsCount(count);
+      setItems((prevItems) =>
+        resizeItemsPreserve(prevItems, count, createInitialItems),
+      );
+      setEndItem((prev) => Math.min(prev, count));
+    },
+    [totalItemsCount],
+  );
 
-  const handleWaterCutTotalItemsChange = useCallback((value: string) => {
-    const parsed = Number(value);
-    const count = normalizeItemCount(parsed, waterCutTotalItemsCount);
-    setWaterCutTotalItemsCount(count);
-    setWaterCutItems((prevItems) => {
-      const newItems = createInitialWaterCutItems(count);
-      prevItems.forEach((existing) => {
-        const idx = Number(existing.item) - 1;
-        if (idx >= 0 && idx < count) {
-          newItems[idx] = { ...existing };
-        }
-      });
-      return newItems;
-    });
-    setWaterCutEndItem((prev) => Math.min(prev, count));
-  }, [waterCutTotalItemsCount]);
+  const handleWaterCutTotalItemsChange = useCallback(
+    (value: string) => {
+      const parsed = Number(value);
+      const count = normalizeItemCount(parsed, waterCutTotalItemsCount);
+      setWaterCutTotalItemsCount(count);
+      setWaterCutItems((prevItems) =>
+        resizeItemsPreserve(prevItems, count, createInitialWaterCutItems),
+      );
+      setWaterCutEndItem((prev) => Math.min(prev, count));
+    },
+    [waterCutTotalItemsCount],
+  );
 
-  const visibleItems = useMemo(() => {
-    const s = clamp(startItem, 1, maxItem);
-    const e = clamp(endItem, s, maxItem);
-    return items
-      .filter((item) => {
-        const n = Number(item.item) || 0;
-        return n >= s && n <= e;
-      })
-      .sort((a, b) => Number(a.item) - Number(b.item));
-  }, [items, startItem, endItem, maxItem]);
+  const visibleItems = useMemo(
+    () => filterItemsInRange(items, startItem, endItem, maxItem),
+    [items, startItem, endItem, maxItem],
+  );
 
-  const waterCutVisibleItems = useMemo(() => {
-    const s = clamp(waterCutStartItem, 1, waterCutMaxItem);
-    const e = clamp(waterCutEndItem, s, waterCutMaxItem);
-    return waterCutItems
-      .filter((item) => {
-        const n = Number(item.item) || 0;
-        return n >= s && n <= e;
-      })
-      .sort((a, b) => Number(a.item) - Number(b.item));
-  }, [waterCutItems, waterCutStartItem, waterCutEndItem, waterCutMaxItem]);
+  const waterCutVisibleItems = useMemo(
+    () =>
+      filterItemsInRange(
+        waterCutItems,
+        waterCutStartItem,
+        waterCutEndItem,
+        waterCutMaxItem,
+      ),
+    [waterCutItems, waterCutStartItem, waterCutEndItem, waterCutMaxItem],
+  );
 
   const servicePages = useMemo(
     () =>
@@ -227,7 +251,9 @@ export default function PadronView() {
     [waterCutVisibleItems, rowsPerPage],
   );
 
-  const activePagesCount = isWaterCutNotice ? waterCutPages.length : servicePages.length;
+  const activePagesCount = isWaterCutNotice
+    ? waterCutPages.length
+    : servicePages.length;
 
   const physicalFolios = useMemo(
     () =>
@@ -241,16 +267,13 @@ export default function PadronView() {
     [activePagesCount, folioConfig],
   );
 
-  const folioLabelTotal = physicalFolios.length > 0
-    ? Math.max(...physicalFolios)
-    : activePagesCount;
+  const folioLabelTotal = computeFolioLabelTotal(
+    physicalFolios,
+    activePagesCount,
+  );
 
   const previewPages = useMemo(() => {
-    const start = Math.min(
-      previewPageOffset,
-      Math.max(0, activePagesCount - MAX_PREVIEW_PAGES),
-    );
-    const end = Math.min(start + MAX_PREVIEW_PAGES, activePagesCount);
+    const { start, end } = previewWindow(previewPageOffset, activePagesCount);
     return {
       start,
       end,
@@ -270,7 +293,14 @@ export default function PadronView() {
 
   useEffect(() => {
     setPreviewPageOffset(0);
-  }, [startItem, endItem, orientation, outputFormat, waterCutStartItem, waterCutEndItem]);
+  }, [
+    startItem,
+    endItem,
+    orientation,
+    outputFormat,
+    waterCutStartItem,
+    waterCutEndItem,
+  ]);
 
   useEffect(() => {
     setFolioConfig((prev) => syncFolioEndWithPageCount(prev, activePagesCount));
@@ -280,9 +310,12 @@ export default function PadronView() {
     setHeaderData((prev) => ({ ...prev, [field]: value }));
   }, []);
 
-  const handleWaterCutHeaderChange = useCallback((field: string, value: string) => {
-    setWaterCutData((prev) => ({ ...prev, [field]: value }));
-  }, []);
+  const handleWaterCutHeaderChange = useCallback(
+    (field: string, value: string) => {
+      setWaterCutData((prev) => ({ ...prev, [field]: value }));
+    },
+    [],
+  );
 
   const handleReset = useCallback(() => {
     setHeaderData(createDefaultHeaderData());
@@ -296,163 +329,185 @@ export default function PadronView() {
     setWaterCutStartItem(1);
     setWaterCutEndItem(36);
     setExcelRecords([]);
-    setSelectedRecordId('');
-    setImportedFileName('');
-    setImportStatus('');
+    setSelectedRecordId("");
+    setImportedFileName("");
+    setImportStatus("");
     setFolioConfig(createDefaultFolioConfig());
   }, []);
 
-  const handleExcelUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleExcelUpload = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
 
-    try {
-      setIsImporting(true);
-      setImportStatus('Leyendo archivo...');
-      const data = await parseWorkbook(file, outputFormat);
-      setExcelRecords(data.records);
-      setImportedFileName(file.name);
+      try {
+        setIsImporting(true);
+        setImportStatus("Leyendo archivo...");
+        const data = await parseWorkbook(file, outputFormat);
+        setExcelRecords(data.records);
+        setImportedFileName(file.name);
 
-      const first = data.records[0];
-      if (isWaterCutNotice) {
-        setWaterCutData(first.data as WaterCutData);
-      } else {
-        setHeaderData(first.data);
-      }
-      setSelectedRecordId(first.id);
+        const first = data.records[0];
+        if (isWaterCutNotice) {
+          setWaterCutData(first.data as WaterCutData);
+        } else {
+          setHeaderData(first.data);
+        }
+        setSelectedRecordId(first.id);
 
-      const requestedCount = Number(first.data.cantidadItems);
-      const importedCount = Number.isFinite(requestedCount) && requestedCount > 0
-        ? normalizeItemCount(requestedCount)
-        : 0;
-      if (isWaterCutNotice && data.importedWaterCutItems.length > 0) {
-        const sorted = [...data.importedWaterCutItems].sort(
-          (a, b) => Number(a.item) - Number(b.item),
+        const requestedCount = Number(first.data.cantidadItems);
+        const importedCount =
+          Number.isFinite(requestedCount) && requestedCount > 0
+            ? normalizeItemCount(requestedCount)
+            : 0;
+        if (isWaterCutNotice && data.importedWaterCutItems.length > 0) {
+          const sorted = [...data.importedWaterCutItems].sort(
+            (a, b) => Number(a.item) - Number(b.item),
+          );
+          const total = normalizeItemCount(
+            importedCount > 0 ? importedCount : sorted.length,
+          );
+          const finalItems =
+            total > sorted.length
+              ? [
+                  ...sorted,
+                  ...Array.from({ length: total - sorted.length }, (_, i) => ({
+                    item: sorted.length + i + 1,
+                    hora: "",
+                    fecha: "",
+                    nombresApellidos: "",
+                    direccion: "",
+                    dni: "",
+                    firma: "",
+                    observaciones: "",
+                  })),
+                ]
+              : sorted.slice(0, total);
+          setWaterCutItems(finalItems);
+          setWaterCutTotalItemsCount(total);
+          setWaterCutStartItem(1);
+          setWaterCutEndItem(total);
+        } else if (!isWaterCutNotice && data.importedItems.length > 0) {
+          const sorted = [...data.importedItems].sort(
+            (a, b) => Number(a.item) - Number(b.item),
+          );
+          const total = normalizeItemCount(
+            importedCount > 0 ? importedCount : sorted.length,
+          );
+          const finalItems =
+            total > sorted.length
+              ? [
+                  ...sorted,
+                  ...Array.from({ length: total - sorted.length }, (_, i) => ({
+                    item: sorted.length + i + 1,
+                    nombresApellidos: "",
+                    direccion: "",
+                    horaComunicacion: "",
+                    firmaSuministro: "",
+                  })),
+                ]
+              : sorted.slice(0, total);
+          setItems(finalItems);
+          setTotalItemsCount(total);
+          setStartItem(1);
+          setEndItem(total);
+        } else if (importedCount > 0 && isWaterCutNotice) {
+          handleWaterCutTotalItemsChange(String(importedCount));
+        } else if (importedCount > 0) {
+          handleTotalItemsChange(String(importedCount));
+        }
+
+        const requiredFields = isWaterCutNotice
+          ? WATER_CUT_FIELDS
+          : HEADER_FIELDS;
+        const missing = requiredFields.filter(
+          (f) => f.required && !String(first.data[f.key] ?? "").trim(),
         );
-        const total = normalizeItemCount(importedCount > 0 ? importedCount : sorted.length);
-        const finalItems =
-          total > sorted.length
-            ? [
-                ...sorted,
-                ...Array.from({ length: total - sorted.length }, (_, i) => ({
-                  item: sorted.length + i + 1,
-                  hora: '',
-                  fecha: '',
-                  nombresApellidos: '',
-                  direccion: '',
-                  dni: '',
-                  firma: '',
-                  observaciones: '',
-                })),
-              ]
-            : sorted.slice(0, total);
-        setWaterCutItems(finalItems);
-        setWaterCutTotalItemsCount(total);
-        setWaterCutStartItem(1);
-        setWaterCutEndItem(total);
-      } else if (!isWaterCutNotice && data.importedItems.length > 0) {
-        const sorted = [...data.importedItems].sort(
-          (a, b) => Number(a.item) - Number(b.item),
+        setImportStatus(
+          `${data.records.length} registro(s) encontrado(s).` +
+            (missing.length
+              ? ` ${missing.length} campo(s) por completar.`
+              : " Todos los campos completos."),
         );
-        const total = normalizeItemCount(importedCount > 0 ? importedCount : sorted.length);
-        const finalItems =
-          total > sorted.length
-            ? [
-                ...sorted,
-                ...Array.from({ length: total - sorted.length }, (_, i) => ({
-                  item: sorted.length + i + 1,
-                  nombresApellidos: '',
-                  direccion: '',
-                  horaComunicacion: '',
-                  firmaSuministro: '',
-                })),
-              ]
-            : sorted.slice(0, total);
-        setItems(finalItems);
-        setTotalItemsCount(total);
-        setStartItem(1);
-        setEndItem(total);
-      } else if (importedCount > 0 && isWaterCutNotice) {
-        handleWaterCutTotalItemsChange(String(importedCount));
-      } else if (importedCount > 0) {
-        handleTotalItemsChange(String(importedCount));
+      } catch (err) {
+        setImportStatus(
+          `Error al leer el archivo: ${errorMessage(err, String(err))}`,
+        );
+      } finally {
+        setIsImporting(false);
+        event.target.value = "";
       }
+    },
+    [
+      handleTotalItemsChange,
+      handleWaterCutTotalItemsChange,
+      isWaterCutNotice,
+      outputFormat,
+    ],
+  );
 
-      const requiredFields = isWaterCutNotice ? WATER_CUT_FIELDS : HEADER_FIELDS;
-      const missing = requiredFields.filter(
-        (f) => f.required && !String(first.data[f.key] ?? '').trim(),
-      );
-      setImportStatus(
-        `${data.records.length} registro(s) encontrado(s).` +
-          (missing.length
-            ? ` ${missing.length} campo(s) por completar.`
-            : ' Todos los campos completos.'),
-      );
-    } catch (err) {
-      setImportStatus(
-        `Error al leer el archivo: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    } finally {
-      setIsImporting(false);
-      event.target.value = '';
-    }
-  }, [handleTotalItemsChange, handleWaterCutTotalItemsChange, isWaterCutNotice, outputFormat]);
-
-  const handleRecordSelect = useCallback((id: string) => {
-    setSelectedRecordId(id);
-    const rec = excelRecords.find((r) => r.id === id);
-    if (rec) {
-      if (isWaterCutNotice) {
-        setWaterCutData(rec.data as WaterCutData);
-      } else {
-        setHeaderData(rec.data);
+  const handleRecordSelect = useCallback(
+    (id: string) => {
+      setSelectedRecordId(id);
+      const rec = excelRecords.find((r) => r.id === id);
+      if (rec) {
+        if (isWaterCutNotice) {
+          setWaterCutData(rec.data as WaterCutData);
+        } else {
+          setHeaderData(rec.data);
+        }
+        const requestedCount = Number(rec.data.cantidadItems);
+        const importedCount =
+          Number.isFinite(requestedCount) && requestedCount > 0
+            ? normalizeItemCount(requestedCount)
+            : 0;
+        if (importedCount > 0 && isWaterCutNotice) {
+          handleWaterCutTotalItemsChange(String(importedCount));
+          setWaterCutStartItem(1);
+          setWaterCutEndItem(importedCount);
+        } else if (importedCount > 0) {
+          handleTotalItemsChange(String(importedCount));
+          setStartItem(1);
+          setEndItem(importedCount);
+        } else if (isWaterCutNotice) {
+          const fallback = waterCutItems.length || 36;
+          handleWaterCutTotalItemsChange(String(fallback));
+          setWaterCutStartItem(1);
+          setWaterCutEndItem(fallback);
+        } else {
+          const fallback = items.length || 36;
+          handleTotalItemsChange(String(fallback));
+          setStartItem(1);
+          setEndItem(fallback);
+        }
       }
-      const requestedCount = Number(rec.data.cantidadItems);
-      const importedCount = Number.isFinite(requestedCount) && requestedCount > 0
-        ? normalizeItemCount(requestedCount)
-        : 0;
-      if (importedCount > 0 && isWaterCutNotice) {
-        handleWaterCutTotalItemsChange(String(importedCount));
-        setWaterCutStartItem(1);
-        setWaterCutEndItem(importedCount);
-      } else if (importedCount > 0) {
-        handleTotalItemsChange(String(importedCount));
-        setStartItem(1);
-        setEndItem(importedCount);
-      } else if (isWaterCutNotice) {
-        const fallback = waterCutItems.length || 36;
-        handleWaterCutTotalItemsChange(String(fallback));
-        setWaterCutStartItem(1);
-        setWaterCutEndItem(fallback);
-      } else {
-        const fallback = items.length || 36;
-        handleTotalItemsChange(String(fallback));
-        setStartItem(1);
-        setEndItem(fallback);
-      }
-    }
-  }, [
-    excelRecords,
-    handleTotalItemsChange,
-    handleWaterCutTotalItemsChange,
-    isWaterCutNotice,
-    items.length,
-    waterCutItems.length,
-  ]);
+    },
+    [
+      excelRecords,
+      handleTotalItemsChange,
+      handleWaterCutTotalItemsChange,
+      isWaterCutNotice,
+      items.length,
+      waterCutItems.length,
+    ],
+  );
 
-  const handleOrientationChange = useCallback((next: string) => {
-    setOrientation(next as Orientation);
-    const rows = next === 'landscape' ? 18 : 37;
-    setEndItem((prev) =>
-      Math.max(startItem, Math.min(prev, maxItem, startItem + rows - 1)),
-    );
-  }, [startItem, maxItem]);
+  const handleOrientationChange = useCallback(
+    (next: string) => {
+      setOrientation(next as Orientation);
+      const rows = next === "landscape" ? 18 : 37;
+      setEndItem((prev) =>
+        Math.max(startItem, Math.min(prev, maxItem, startItem + rows - 1)),
+      );
+    },
+    [startItem, maxItem],
+  );
 
   const handleOutputFormatChange = useCallback((next: string) => {
     setOutputFormat(next as OutputFormat);
-    setSelectedRecordId('');
-    setImportedFileName('');
-    setImportStatus('');
+    setSelectedRecordId("");
+    setImportedFileName("");
+    setImportStatus("");
   }, []);
 
   const waitForPdfRender = () =>
@@ -469,9 +524,9 @@ export default function PadronView() {
     if (!logosLoaded) return;
 
     setIsGeneratingPdf(true);
-    setPdfProgress('Preparando...');
+    setPdfProgress("Preparando...");
 
-    const { toCanvas, getFontEmbedCSS } = await import('html-to-image');
+    const { toCanvas, getFontEmbedCSS } = await import("html-to-image");
 
     let wrapper: HTMLDivElement | null = null;
     let root: ReturnType<typeof createRoot> | null = null;
@@ -479,12 +534,12 @@ export default function PadronView() {
     try {
       if (document.fonts?.ready) await document.fonts.ready;
 
-      const isLandscape = !isWaterCutNotice && orientation === 'landscape';
-      const { default: jsPDF } = await import('jspdf');
+      const isLandscape = !isWaterCutNotice && orientation === "landscape";
+      const { default: jsPDF } = await import("jspdf");
       const pdf = new jsPDF({
-        unit: 'mm',
-        format: 'a4',
-        orientation: isLandscape ? 'landscape' : 'portrait',
+        unit: "mm",
+        format: "a4",
+        orientation: isLandscape ? "landscape" : "portrait",
         compress: true,
         putOnlyUsedFonts: true,
       });
@@ -501,17 +556,17 @@ export default function PadronView() {
 
       const exportHostWidth = isLandscape ? 1123 : 794;
 
-      wrapper = document.createElement('div');
-      wrapper.className = 'vpad-pdf-export-root vpad-export-mode';
+      wrapper = document.createElement("div");
+      wrapper.className = "vpad-pdf-export-root vpad-export-mode";
       wrapper.style.cssText = [
-        'position:fixed',
-        'left:-200vw',
-        'top:0',
+        "position:fixed",
+        "left:-200vw",
+        "top:0",
         `width:${exportHostWidth}px`,
-        'overflow:visible',
-        'pointer-events:none',
-        'z-index:-1',
-      ].join(';');
+        "overflow:visible",
+        "pointer-events:none",
+        "z-index:-1",
+      ].join(";");
       document.body.appendChild(wrapper);
       root = createRoot(wrapper);
 
@@ -527,45 +582,53 @@ export default function PadronView() {
         const batchEnd = Math.min(batchStart + BATCH_SIZE, exportPages.length);
         const batchPages = exportPages.slice(batchStart, batchEnd);
 
-        setPdfProgress(`Páginas ${batchStart + 1}-${batchEnd} de ${exportPages.length}`);
+        setPdfProgress(
+          `Páginas ${batchStart + 1}-${batchEnd} de ${exportPages.length}`,
+        );
 
         flushSync(() => {
           root?.render(
             <PdfErrorBoundary>
-            <>
-              {batchPages.map((pageItems, j) => (
-                <div key={j} data-pdf-page={j}>
-                  {isWaterCutNotice ? (
-                  <WaterCutNoticePage
-                    headerData={waterCutData}
-                    items={pageItems as WaterCutItem[]}
-                    sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
-                    pageNumber={getPageFolio(batchStart + j, physicalFolios)}
-                    totalPages={folioLabelTotal}
-                    pageNumberStyle={folioConfig.pageNumberStyle}
-                    pageNumberSize={folioConfig.pageNumberSize}
-                    pageNumberFontStyle={folioConfig.pageNumberFontStyle}
-                  />
-                  ) : (
-                    <PreviewPage
-                      headerData={headerData}
-                      items={pageItems as PadronItem[]}
-                      orientation={orientation}
-                      accionaLogo={logosBase64.acciona || ACCIONA_LOGO}
-                      sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
-                      pageNumber={getPageFolio(batchStart + j, physicalFolios)}
-                      totalPages={folioLabelTotal}
-                      isFirstPage={batchStart + j === 0}
-                      isLastPage={batchStart + j === exportPages.length - 1}
-                      variant={previewVariant}
-                      pageNumberStyle={folioConfig.pageNumberStyle}
-                      pageNumberSize={folioConfig.pageNumberSize}
-                      pageNumberFontStyle={folioConfig.pageNumberFontStyle}
-                    />
-                  )}
-                </div>
-              ))}
-            </>
+              <>
+                {batchPages.map((pageItems, j) => (
+                  <div key={j} data-pdf-page={j}>
+                    {isWaterCutNotice ? (
+                      <WaterCutNoticePage
+                        headerData={waterCutData}
+                        items={pageItems as WaterCutItem[]}
+                        sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
+                        pageNumber={getPageFolio(
+                          batchStart + j,
+                          physicalFolios,
+                        )}
+                        totalPages={folioLabelTotal}
+                        pageNumberStyle={folioConfig.pageNumberStyle}
+                        pageNumberSize={folioConfig.pageNumberSize}
+                        pageNumberFontStyle={folioConfig.pageNumberFontStyle}
+                      />
+                    ) : (
+                      <PreviewPage
+                        headerData={headerData}
+                        items={pageItems as PadronItem[]}
+                        orientation={orientation}
+                        accionaLogo={logosBase64.acciona || ACCIONA_LOGO}
+                        sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
+                        pageNumber={getPageFolio(
+                          batchStart + j,
+                          physicalFolios,
+                        )}
+                        totalPages={folioLabelTotal}
+                        isFirstPage={batchStart + j === 0}
+                        isLastPage={batchStart + j === exportPages.length - 1}
+                        variant={previewVariant}
+                        pageNumberStyle={folioConfig.pageNumberStyle}
+                        pageNumberSize={folioConfig.pageNumberSize}
+                        pageNumberFontStyle={folioConfig.pageNumberFontStyle}
+                      />
+                    )}
+                  </div>
+                ))}
+              </>
             </PdfErrorBoundary>,
           );
         });
@@ -574,12 +637,14 @@ export default function PadronView() {
 
         const targets = getRenderableExportSheets(wrapper);
         if (targets.length !== batchPages.length) {
-          throw new Error('No se pudo preparar una página medible para exportar el PDF.');
+          throw new Error(
+            "No se pudo preparar una página medible para exportar el PDF.",
+          );
         }
 
         if (!sharedFontEmbedCSS && targets.length > 0) {
           sharedFontEmbedCSS = await getFontEmbedCSS(targets[0], {
-            preferredFontFormat: 'woff2',
+            preferredFontFormat: "woff2",
           });
         }
 
@@ -598,14 +663,14 @@ export default function PadronView() {
           const height = target.offsetHeight;
           const captureScale = targetPxW / measuredWidth;
           const canvas = await toCanvas(target, {
-            backgroundColor: '#ffffff',
+            backgroundColor: "#ffffff",
             pixelRatio: captureScale,
             width: measuredWidth,
             height,
             canvasWidth: targetPxW,
             canvasHeight: Math.round(height * captureScale),
             fontEmbedCSS: sharedFontEmbedCSS,
-            preferredFontFormat: 'woff2',
+            preferredFontFormat: "woff2",
           });
           pageResults.push(await canvasToJpegBytes(canvas, JPEG_QUALITY));
           await new Promise((r) => setTimeout(r, 0));
@@ -616,7 +681,7 @@ export default function PadronView() {
           if (!jpegBytes) continue;
           const globalIdx = batchStart + k;
           if (globalIdx > 0) pdf.addPage();
-          pdf.addImage(jpegBytes, 'JPEG', 0, 0, pdfW, pdfH);
+          pdf.addImage(jpegBytes, "JPEG", 0, 0, pdfW, pdfH);
         }
 
         await yieldToBrowser();
@@ -627,7 +692,7 @@ export default function PadronView() {
         : `padron-${startItem}-${endItem}`;
       pdf.save(`${fileBaseName}.pdf`);
       await saveFeatureHistory(
-        'padron',
+        "padron",
         fileBaseName,
         isWaterCutNotice
           ? {
@@ -636,7 +701,13 @@ export default function PadronView() {
               endItem: waterCutEndItem,
               pages: exportPages.length,
             }
-          : { outputFormat, orientation, startItem, endItem, pages: exportPages.length },
+          : {
+              outputFormat,
+              orientation,
+              startItem,
+              endItem,
+              pages: exportPages.length,
+            },
         isWaterCutNotice ? waterCutVisibleItems.length : visibleItems.length,
       );
     } finally {
@@ -647,7 +718,7 @@ export default function PadronView() {
         wrapper.parentNode.removeChild(wrapper);
       }
       setIsGeneratingPdf(false);
-      setPdfProgress('');
+      setPdfProgress("");
     }
   }, [
     logosLoaded,
@@ -684,18 +755,20 @@ export default function PadronView() {
     setIsTutorialOpen(true);
   }, []);
 
-  const fieldGroups = isWaterCutNotice ? WATER_CUT_FIELD_GROUPS : HEADER_FIELD_GROUPS;
+  const fieldGroups = isWaterCutNotice
+    ? WATER_CUT_FIELD_GROUPS
+    : HEADER_FIELD_GROUPS;
   const dateFields = isWaterCutNotice ? WATER_CUT_DATE_FIELDS : DATE_FIELDS;
 
   const renderFieldControl = (field: HeaderField) => {
     const value = isWaterCutNotice
-      ? waterCutData[field.key] ?? ''
-      : headerData[field.key] ?? '';
+      ? (waterCutData[field.key] ?? "")
+      : (headerData[field.key] ?? "");
     const onChange = (next: string) =>
       isWaterCutNotice
         ? handleWaterCutHeaderChange(field.key, next)
         : handleHeaderChange(field.key, next);
-    const placeholder = field.required ? undefined : 'Opcional';
+    const placeholder = field.required ? undefined : "Opcional";
 
     if (dateFields.has(field.key)) {
       return (
@@ -729,7 +802,7 @@ export default function PadronView() {
 
   return (
     <div className="vpad-app vpad-app-embedded">
-      <aside className={`vpad-sidebar${sidebarVisible ? '' : ' collapsed'}`}>
+      <aside className={`vpad-sidebar${sidebarVisible ? "" : " collapsed"}`}>
         {sidebarVisible && (
           <div className="vpad-config-panel">
             <section className="vpad-section vpad-section-format">
@@ -739,18 +812,24 @@ export default function PadronView() {
                   {isWaterCutNotice ? (
                     <>
                       <label className="vpad-inset-cell">
-                        <span className="vpad-inset-label">Total registros</span>
+                        <span className="vpad-inset-label">
+                          Total registros
+                        </span>
                         <input
                           className="vpad-inset-control tabular-nums"
                           type="number"
                           min={1}
                           max={MAX_PADRON_ITEMS}
                           value={waterCutTotalItemsCount}
-                          onChange={(e) => handleWaterCutTotalItemsChange(e.target.value)}
+                          onChange={(e) =>
+                            handleWaterCutTotalItemsChange(e.target.value)
+                          }
                         />
                       </label>
                       <label className="vpad-inset-cell">
-                        <span className="vpad-inset-label">Registro inicial</span>
+                        <span className="vpad-inset-label">
+                          Registro inicial
+                        </span>
                         <input
                           className="vpad-inset-control tabular-nums"
                           type="number"
@@ -758,7 +837,9 @@ export default function PadronView() {
                           max={waterCutMaxItem}
                           value={clamp(waterCutStartItem, 1, waterCutMaxItem)}
                           onChange={(e) =>
-                            setWaterCutStartItem(clamp(Number(e.target.value), 1, waterCutMaxItem))
+                            setWaterCutStartItem(
+                              clamp(Number(e.target.value), 1, waterCutMaxItem),
+                            )
                           }
                         />
                       </label>
@@ -796,7 +877,9 @@ export default function PadronView() {
                           min={1}
                           max={MAX_PADRON_ITEMS}
                           value={totalItemsCount}
-                          onChange={(e) => handleTotalItemsChange(e.target.value)}
+                          onChange={(e) =>
+                            handleTotalItemsChange(e.target.value)
+                          }
                         />
                       </label>
                       <label className="vpad-inset-cell">
@@ -808,7 +891,9 @@ export default function PadronView() {
                           max={maxItem}
                           value={clamp(startItem, 1, maxItem)}
                           onChange={(e) =>
-                            setStartItem(clamp(Number(e.target.value), 1, maxItem))
+                            setStartItem(
+                              clamp(Number(e.target.value), 1, maxItem),
+                            )
                           }
                         />
                       </label>
@@ -842,14 +927,17 @@ export default function PadronView() {
             </section>
 
             {fieldGroups.map((group) => (
-              <section key={group.title} className="vpad-section vpad-section-data">
+              <section
+                key={group.title}
+                className="vpad-section vpad-section-data"
+              >
                 <h3 className="vpad-section-title">{group.title}</h3>
                 <div className="vpad-inset-group">
                   {group.fields.map((field, index) => (
                     <React.Fragment key={field.key}>
                       {index > 0 && <div className="vpad-inset-sep" />}
                       <div
-                        className={`vpad-inset-row${field.stacked ? ' vpad-inset-row-stacked' : ''}`}
+                        className={`vpad-inset-row${field.stacked ? " vpad-inset-row-stacked" : ""}`}
                       >
                         <span className="vpad-inset-label">
                           {field.shortLabel || field.label}
@@ -865,26 +953,37 @@ export default function PadronView() {
             ))}
 
             <div className="vpad-action-box">
-              <button
+              <Button
+                variant="none"
+                size="none"
                 className="vpad-btn vpad-btn-primary vpad-btn-download"
                 onClick={handleGeneratePdf}
                 disabled={isGeneratingPdf}
               >
                 <Download size={15} strokeWidth={2.25} />
-                {isGeneratingPdf ? pdfProgress || 'Generando...' : 'Descargar PDF'}
-              </button>
+                {isGeneratingPdf
+                  ? pdfProgress || "Generando..."
+                  : "Descargar PDF"}
+              </Button>
               <div className="vpad-actions-row">
-                <button
+                <Button
+                  variant="none"
+                  size="none"
                   className="vpad-btn vpad-btn-secondary"
                   onClick={handlePrint}
                 >
                   <Printer size={14} strokeWidth={2} />
                   Imprimir
-                </button>
-                <button className="vpad-btn vpad-btn-ghost" onClick={handleReset}>
+                </Button>
+                <Button
+                  variant="none"
+                  size="none"
+                  className="vpad-btn vpad-btn-ghost"
+                  onClick={handleReset}
+                >
                   <Trash2 size={14} strokeWidth={2} />
                   Limpiar
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -893,26 +992,40 @@ export default function PadronView() {
 
       <main className="vpad-preview-area">
         <header className="vpad-preview-toolbar">
-          <WithHoverTooltip label={sidebarVisible ? 'Ocultar panel' : 'Mostrar panel'} placement="bottom">
-            <button
+          <WithHoverTooltip
+            label={sidebarVisible ? "Ocultar panel" : "Mostrar panel"}
+            placement="bottom"
+          >
+            <Button
+              variant="none"
+              size="none"
               className="vpad-btn vpad-btn-nav"
-              onClick={() => setSidebarVisible(v => !v)}
+              onClick={() => setSidebarVisible((v) => !v)}
             >
               <PanelLeft size={18} />
-            </button>
+            </Button>
           </WithHoverTooltip>
           <div className="vpad-badges">
             <span className="vpad-badge">
-              {isWaterCutNotice ? 'Aviso corte de agua' : (orientation === 'landscape' ? 'Horizontal' : 'Vertical')}
+              {isWaterCutNotice
+                ? "Aviso corte de agua"
+                : orientation === "landscape"
+                  ? "Horizontal"
+                  : "Vertical"}
             </span>
             <span className="vpad-badge">
-              {isWaterCutNotice ? waterCutVisibleItems.length : visibleItems.length} ítems
+              {isWaterCutNotice
+                ? waterCutVisibleItems.length
+                : visibleItems.length}{" "}
+              ítems
             </span>
             <span className="vpad-badge">{activePagesCount} página(s)</span>
           </div>
           {activePagesCount > MAX_PREVIEW_PAGES && (
             <div className="vpad-preview-nav">
-              <button
+              <Button
+                variant="none"
+                size="none"
                 className="vpad-btn vpad-btn-nav"
                 disabled={previewPages.start === 0}
                 onClick={() =>
@@ -922,12 +1035,14 @@ export default function PadronView() {
                 }
               >
                 &laquo;
-              </button>
+              </Button>
               <span className="vpad-preview-nav-info">
-                Pág. {previewPages.start + 1}–{previewPages.end} de{' '}
+                Pág. {previewPages.start + 1}–{previewPages.end} de{" "}
                 {activePagesCount}
               </span>
-              <button
+              <Button
+                variant="none"
+                size="none"
                 className="vpad-btn vpad-btn-nav"
                 disabled={previewPages.end >= activePagesCount}
                 onClick={() =>
@@ -940,30 +1055,42 @@ export default function PadronView() {
                 }
               >
                 &raquo;
-              </button>
+              </Button>
             </div>
           )}
           <div className="vpad-toolbar-right">
-            <div className="vpad-tool-cluster" role="group" aria-label="Acciones">
+            <div
+              className="vpad-tool-cluster"
+              role="group"
+              aria-label="Acciones"
+            >
               <FolioControls
                 config={folioConfig}
                 totalPages={activePagesCount}
                 onChange={setFolioConfig}
               />
               <WithHoverTooltip label="Importar desde Excel" placement="bottom">
-                <button
+                <Button
+                  variant="none"
+                  size="none"
                   className="vpad-tool-chip vpad-btn-excel"
                   onClick={() => setIsExcelModalOpen(true)}
-                  type="button"
                 >
                   <FileSpreadsheet size={15} strokeWidth={2} aria-hidden />
                   Excel
-                </button>
+                </Button>
               </WithHoverTooltip>
             </div>
 
-            <div className="vpad-tool-cluster" role="group" aria-label="Plantilla">
-              <WithHoverTooltip label="Seleccionar plantilla de salida" placement="bottom">
+            <div
+              className="vpad-tool-cluster"
+              role="group"
+              aria-label="Plantilla"
+            >
+              <WithHoverTooltip
+                label="Seleccionar plantilla de salida"
+                placement="bottom"
+              >
                 <FolioMenuSelect
                   variant="toolbar"
                   value={outputFormat}
@@ -973,7 +1100,10 @@ export default function PadronView() {
                 />
               </WithHoverTooltip>
               {!isWaterCutNotice && (
-                <WithHoverTooltip label="Seleccionar orientación" placement="bottom">
+                <WithHoverTooltip
+                  label="Seleccionar orientación"
+                  placement="bottom"
+                >
                   <div className="vpad-toolbar-picker">
                     <span className="sr-only">Orientación</span>
                     <FolioMenuSelect
@@ -988,22 +1118,29 @@ export default function PadronView() {
               )}
             </div>
 
-            <WithHoverTooltip label="Ver tutorial de como usar Generar Padrones" placement="bottom">
-              <button
+            <WithHoverTooltip
+              label="Ver tutorial de como usar Generar Padrones"
+              placement="bottom"
+            >
+              <Button
+                variant="none"
+                size="none"
                 className="vpad-tool-chip vpad-tool-chip-quiet tutorial-trigger-btn"
                 onClick={openTutorial}
-                type="button"
               >
                 <HelpCircle size={15} strokeWidth={2} aria-hidden />
                 Cómo usar
-              </button>
+              </Button>
             </WithHoverTooltip>
           </div>
         </header>
 
         <div className="vpad-preview-scroll-container vpad-preview-pane">
           <div className="vpad-print-doc" ref={previewRef}>
-            {(isWaterCutNotice ? renderedPages.waterCutItems : renderedPages.serviceItems).map((pageItems, i) => {
+            {(isWaterCutNotice
+              ? renderedPages.waterCutItems
+              : renderedPages.serviceItems
+            ).map((pageItems, i) => {
               const globalIndex = renderedPages.start + i;
               return (
                 <div className="vpad-print-page" key={globalIndex}>
@@ -1047,82 +1184,16 @@ export default function PadronView() {
         onClose={() => setIsTutorialOpen(false)}
       />
       {isExcelModalOpen && (
-        <div 
-          className="vpad-excel-modal-overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setIsExcelModalOpen(false);
-          }}
-        >
-          <div className="vpad-excel-modal">
-            <div className="vpad-excel-modal-header">
-              <h3 className="vpad-excel-modal-title">
-                <FileSpreadsheet size={18} style={{ color: 'var(--vpad-accent)' }} />
-                Importar Excel
-              </h3>
-              <button 
-                className="vpad-excel-modal-close"
-                onClick={() => setIsExcelModalOpen(false)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="vpad-excel-modal-body">
-              <label
-                className={`vpad-upload-zone vpad-btn-import${isImporting ? ' active' : ''}${importedFileName ? ' loaded' : ''}`}
-              >
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={handleExcelUpload}
-                  disabled={isImporting}
-                />
-                {importedFileName ? (
-                  <>
-                    <div className="vpad-upload-icon vpad-upload-icon-loaded">
-                      <CheckCircle size={20} />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span className="vpad-upload-text">{importedFileName}</span>
-                      <span className="vpad-upload-hint">{importStatus}</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="vpad-upload-icon">
-                      <Upload size={20} />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span className="vpad-upload-text">
-                        {isImporting
-                          ? 'Procesando archivo...'
-                          : 'Selecciona o arrastra el archivo'}
-                      </span>
-                      <span className="vpad-upload-hint">
-                        Soporte para .xlsx, .xls, .csv
-                      </span>
-                    </div>
-                  </>
-                )}
-              </label>
-
-              {excelRecords.length > 1 && (
-                <div className="vpad-field">
-                  <span>Seleccionar registro</span>
-                  <select
-                    value={selectedRecordId}
-                    onChange={(e) => handleRecordSelect(e.target.value)}
-                  >
-                    {excelRecords.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <ExcelImportModal
+          isImporting={isImporting}
+          importedFileName={importedFileName}
+          importStatus={importStatus}
+          excelRecords={excelRecords}
+          selectedRecordId={selectedRecordId}
+          onUpload={handleExcelUpload}
+          onRecordSelect={handleRecordSelect}
+          onClose={() => setIsExcelModalOpen(false)}
+        />
       )}
     </div>
   );

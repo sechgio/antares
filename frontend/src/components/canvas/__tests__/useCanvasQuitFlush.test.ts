@@ -21,6 +21,7 @@ vi.mock('../../../utils/ackCanvasFlush', () => ({
 
 vi.mock('../../../utils/observability', () => ({
   reportFrontendEvent: vi.fn(),
+  reportFrontendError: vi.fn(),
 }));
 
 vi.mock('../hooks/useCanvasSync', () => ({
@@ -79,7 +80,7 @@ describe('useCanvasQuitFlush', () => {
       panelBaselineRef: { current: null },
       gestureBaselineRef: { current: null },
       renameBaselineRef: { current: null },
-      openDirtyRef: { current: true },
+      isOpenDirty: () => true,
     }));
 
     await act(async () => {

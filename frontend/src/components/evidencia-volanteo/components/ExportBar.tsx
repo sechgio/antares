@@ -1,3 +1,4 @@
+import Button from '@/components/ui/Button';
 interface Props {
   format: 'pdf' | 'docx';
   onFormatChange: (format: 'pdf' | 'docx') => void;
@@ -7,9 +8,8 @@ export default function ExportBar({ format, onFormatChange }: Props) {
   return (
     <div className="flex bg-[var(--bg-surface)] rounded-md border border-[var(--border-subtle)] p-1">
       {(['pdf', 'docx'] as const).map((fmt) => (
-        <button
+        <Button variant="none" size="none"
           key={fmt}
-          type="button"
           onClick={() => onFormatChange(fmt)}
           className={`flex-1 py-1.5 text-[11px] font-semibold rounded transition-all duration-200 ${
             format === fmt
@@ -18,7 +18,7 @@ export default function ExportBar({ format, onFormatChange }: Props) {
           }`}
         >
           {fmt === 'pdf' ? 'Documento PDF' : 'Documento Word'}
-        </button>
+        </Button>
       ))}
     </div>
   );

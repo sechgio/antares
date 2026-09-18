@@ -1,6 +1,6 @@
 
 from backend import handlers
-from backend.handlers import conversion
+from backend.handlers import conversion, conversion_job
 
 
 class TestProcessStart:
@@ -23,12 +23,12 @@ class TestEmitHeartbeat:
     def test_emit_heartbeat_legacy_default_job(self, monkeypatch) -> None:
         calls: list[tuple[str, dict]] = []
         monkeypatch.setattr(
-            conversion,
+            conversion_job,
             "send_notification",
             lambda method, params: calls.append((method, params)),
         )
 
-        conversion._emit_heartbeat("default", is_default=True)
+        conversion_job._emit_heartbeat("default", is_default=True)
 
         assert calls == [
             ("job.default.heartbeat", {"running": True, "job_id": "default"}),
@@ -41,12 +41,12 @@ class TestEmitHeartbeat:
     def test_emit_heartbeat_non_default_job_skips_process_channel(self, monkeypatch) -> None:
         calls: list[tuple[str, dict]] = []
         monkeypatch.setattr(
-            conversion,
+            conversion_job,
             "send_notification",
             lambda method, params: calls.append((method, params)),
         )
 
-        conversion._emit_heartbeat("job-abc", is_default=False)
+        conversion_job._emit_heartbeat("job-abc", is_default=False)
 
         assert calls == [
             ("job.job-abc.heartbeat", {"running": True, "job_id": "job-abc"}),
@@ -57,11 +57,11 @@ class TestEmitHeartbeat:
 
         calls: list[str] = []
         monkeypatch.setattr(
-            conversion,
+            conversion_job,
             "send_notification",
             lambda method, params: calls.append(method),
         )
-        monkeypatch.setattr(conversion, "set_locale", lambda *_a, **_k: None)
+        monkeypatch.setattr(conversion_job, "set_locale", lambda *_a, **_k: None)
 
         job = Job(
             id="default",

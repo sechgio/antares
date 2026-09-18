@@ -7,9 +7,9 @@ from backend.handlers.common import (
     clear_store,
     create_report_from_params,
     delete_item_or_raise,
-    filter_by_optional_ids,
     get_item_id,
     get_item_or_raise,
+    get_items_by_optional_ids,
     import_into_store,
     require_update_payload,
     resolve_payload_or_store,
@@ -40,42 +40,43 @@ def _summary(report: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def informes_v2_list(params: dict[str, Any]) -> dict[str, Any]:
-    reports = _db().get_all()
     status = str(params.get("status") or "").strip()
     query = str(params.get("q") or "").strip().lower()
-    if status:
-        reports = [r for r in reports if r.get("status") == status]
-    if query:
-        reports = [
-            r
-            for r in reports
-            if query in str(r["header"].get("estacion", "")).lower()
-            or query in str(r["header"].get("suministro", "")).lower()
-            or query in str(r["header"].get("photo_id", "")).lower()
-            or query in str(r["id"]).lower()
-        ]
-    reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
+
+    def matches(report: dict[str, Any]) -> bool:  # allowlist: dict[str, Any]
+        return (not status or report.get("status") == status) and (
+            not query
+            or query in str(report["header"].get("estacion", "")).lower()
+            or query in str(report["header"].get("suministro", "")).lower()
+            or query in str(report["header"].get("photo_id", "")).lower()
+            or query in str(report["id"]).lower()
+        )
+
+    store = _db()
     if params.get("summary"):
-        reports = [_summary(r) for r in reports]
-    return {"reports": reports}
+        reports = store.project_all(_summary, matches)
+    else:
+        reports = [report for report in store.get_all() if matches(report)]
+    reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
+    return {"items": reports, "total": len(reports)}
 
 
 @with_locale
 def informes_v2_get(params: dict[str, Any]) -> dict[str, Any]:
     report_id = get_item_id(params)
-    return {"report": get_item_or_raise(_db(), report_id, "Informe no encontrado")}
+    return {"item": get_item_or_raise(_db(), report_id, "Informe no encontrado")}
 
 
 @with_locale
 def informes_v2_create(params: dict[str, Any]) -> dict[str, Any]:
     created = create_report_from_params(_db(), params, "report")
-    return {"success": True, "report": created}
+    return {"success": True, "item": created}
 
 
 @with_locale
 def informes_v2_update(params: dict[str, Any]) -> dict[str, Any]:
     report_id, report = require_update_payload(params, "report")
-    return {"success": True, "report": update_item_or_raise(_db(), report_id, report)}
+    return {"success": True, "item": update_item_or_raise(_db(), report_id, report)}
 
 
 @with_locale
@@ -150,8 +151,8 @@ def informes_v2_render_html(params: dict[str, Any]) -> dict[str, Any]:
 def informes_v2_render_consolidated_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.informes_v2.rendering import render_consolidated_html
 
-    reports = filter_by_optional_ids(
-        _db().get_all(), params.get("report_ids"), "No hay informes para exportar"
+    reports = get_items_by_optional_ids(
+        _db(), params.get("report_ids"), "No hay informes para exportar"
     )
     reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
 

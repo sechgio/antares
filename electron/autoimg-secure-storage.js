@@ -162,5 +162,4 @@ module.exports = {
   migratePlaintextJson,
   encryptPayload: encryptPayloadAes,
   decryptPayload: decryptPayloadAes,
-  _safeStorageAvailable,
 };

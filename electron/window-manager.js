@@ -55,7 +55,28 @@ function buildAppMenu(menuIndex = 0) {
     { label: 'Editar', submenu: [{ label: 'Deshacer', role: 'undo' }, { label: 'Rehacer', role: 'redo' }, { type: 'separator' }, { label: 'Cortar', role: 'cut' }, { label: 'Copiar', role: 'copy' }, { label: 'Pegar', role: 'paste' }, { label: 'Seleccionar todo', role: 'selectAll' }] },
     { label: 'Ver', submenu: viewSubmenu },
     { label: 'Ventana', submenu: [{ label: 'Minimizar', role: 'minimize' }, { label: 'Maximizar', click: () => mainWindow?.maximize() }, { label: 'Restaurar', click: () => mainWindow?.unmaximize() }, { type: 'separator' }, { label: 'Cerrar', role: 'close' }] },
-    { label: 'Ayuda', submenu: [{ label: 'Acerca de Antares', role: 'about' }] },
+    {
+      label: 'Ayuda',
+      submenu: [
+        { label: 'Acerca de Antares', role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Abrir carpeta de registros',
+          click: async () => {
+            try {
+              const { shell } = require('electron');
+              const { getLogsDir } = require('./app-log');
+              const fs = require('fs');
+              const dir = getLogsDir();
+              fs.mkdirSync(dir, { recursive: true });
+              await shell.openPath(dir);
+            } catch (err) {
+              console.error('No se pudo abrir la carpeta de registros:', err);
+            }
+          },
+        },
+      ],
+    },
   ];
   return Menu.buildFromTemplate([menus[menuIndex] || menus[0]]);
 }

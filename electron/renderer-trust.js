@@ -40,7 +40,5 @@ function isTrustedRendererFrame(event, mainWindow, isDev) {
 }
 
 module.exports = {
-  PACKAGED_RENDERER_URL,
-  isTrustedRendererUrl,
   isTrustedRendererFrame,
 };

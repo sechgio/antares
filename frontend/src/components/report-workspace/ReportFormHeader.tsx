@@ -1,5 +1,6 @@
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Save, Trash2 } from 'lucide-react';
+import Button from '../ui/Button';
 
 interface Props {
   informeId: number;
@@ -18,14 +19,14 @@ export default function ReportFormHeader({ informeId, hasChanges, busy, onSave, 
       </h2>
       <div className="tr-form-actions">
         <WithHoverTooltip label={hasChanges ? 'Guardar cambios' : 'Sin cambios'} placement="bottom">
-          <button type="button" className="tr-form-action" onClick={onSave} disabled={!hasChanges || busy} aria-label="Guardar">
+          <Button variant="none" size="none" className="tr-form-action" onClick={onSave} disabled={!hasChanges || busy} aria-label="Guardar">
             <Save size={14} strokeWidth={2} />
-          </button>
+          </Button>
         </WithHoverTooltip>
         <WithHoverTooltip label="Eliminar informe" placement="bottom">
-          <button type="button" className="tr-form-action tr-form-action--danger" onClick={onDelete} disabled={busy} aria-label="Eliminar informe">
+          <Button variant="none" size="none" className="tr-form-action tr-form-action--danger" onClick={onDelete} disabled={busy} aria-label="Eliminar informe">
             <Trash2 size={14} strokeWidth={2} />
-          </button>
+          </Button>
         </WithHoverTooltip>
       </div>
     </div>

@@ -41,7 +41,5 @@ async function embedCanvasManifest(pdfBytes, manifestB64) {
 
 module.exports = {
   embedCanvasManifest,
-  MAX_MANIFEST_BYTES,
   MAX_MANIFEST_B64_CHARS,
-  MANIFEST_FILENAME,
 };

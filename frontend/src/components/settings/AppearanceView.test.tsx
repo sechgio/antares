@@ -437,5 +437,41 @@ describe('AppearanceView', () => {
       expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#3B82F6');
     });
   });
-});
 
+  it('triggers logs open folder and diagnostics export from Soporte y Diagnóstico section', async () => {
+    const invokedMethods: string[] = [];
+    window.electronAPI = {
+      invoke: async (method: string) => {
+        invokedMethods.push(method);
+        if (method === 'theme_get') return baseTheme;
+        if (method === 'theme_presets') return { presets: [] };
+        if (method === 'logs_open_folder') return { opened: true, path: 'C:/logs' };
+        if (method === 'diagnostics_export') return { exported: true, path: 'C:/diag.json' };
+        return {};
+      },
+      onNotify: () => () => {},
+      onUpdateAvailable: () => () => {},
+      onUpdateDownloaded: () => () => {},
+    };
+
+    renderAppearance();
+
+    expect(await screen.findByText('Soporte y Diagnóstico')).toBeInTheDocument();
+
+    const openLogsBtn = screen.getByRole('button', { name: /Abrir carpeta/i });
+    fireEvent.click(openLogsBtn);
+
+    await waitFor(() => {
+      expect(invokedMethods).toContain('logs_open_folder');
+    });
+
+    const exportDiagBtn = screen.getByRole('button', { name: /Exportar diagnóstico/i });
+    fireEvent.click(exportDiagBtn);
+
+    await waitFor(() => {
+      expect(invokedMethods).toContain('diagnostics_export');
+    });
+
+    expect(await screen.findByText('Diagnóstico exportado correctamente')).toBeInTheDocument();
+  });
+});

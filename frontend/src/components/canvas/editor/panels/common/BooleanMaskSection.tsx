@@ -7,6 +7,7 @@ import { isShapeLayer } from '../../../ops/layerStyle';
 import type { CanvasLayer } from '../../../types';
 import { PropRow, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
+import Button from '@/components/ui/Button';
 
 const OP_OPTS: { value: BooleanOpKind; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { value: 'union', label: 'Unión', icon: Combine },
@@ -140,8 +141,7 @@ export default function BooleanMaskSection({
             <div className="canvas-boolean-ops" role="group" aria-label="Operación booleana">
               {OP_OPTS.map(({ value, label, icon: Icon }) => (
                 <WithHoverTooltip key={value} label={label} placement="bottom" variant="dark">
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     className="canvas-icon-btn"
                     aria-label={label}
                     data-active={combineOp === value}
@@ -149,7 +149,7 @@ export default function BooleanMaskSection({
                     onClick={() => applyOp(value)}
                   >
                     <Icon className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </WithHoverTooltip>
               ))}
             </div>

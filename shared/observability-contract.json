@@ -19,6 +19,7 @@
     "operation_id",
     "outcome",
     "duration_ms",
+    "timeout_ms",
     "error_code",
     "attempt",
     "message",

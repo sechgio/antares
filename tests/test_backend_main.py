@@ -327,7 +327,6 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
         def join(self, timeout: float | None = None) -> None:
             return None
 
-    monkeypatch.setenv("ANTARES_ENABLE_PLUGINS", "1")
     monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
@@ -336,7 +335,6 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: events.append("warm_deferred"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", lambda: events.append("warm_post_ready"))
     monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
-    monkeypatch.setattr(backend_main, "load_plugins_from_dir", lambda: events.append("plugins"))
     monkeypatch.setattr(
         backend_main,
         "get_scheduler",
@@ -363,7 +361,6 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
     assert events == [
         "init_db",
         "warm_core",
-        "plugins",
         "get_scheduler",
         "ready",
         "warm_post_ready",
@@ -397,7 +394,6 @@ def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
         def join(self, timeout: float | None = None) -> None:
             return None
 
-    monkeypatch.delenv("ANTARES_ENABLE_PLUGINS", raising=False)
     monkeypatch.setenv("ANTARES_WARM_DEFERRED", "1")
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
@@ -459,7 +455,6 @@ def test_main_does_not_emit_ready_if_shutdown_arrives_during_startup(monkeypatch
     def fail_if_post_ready() -> None:
         raise AssertionError("post-ready warm must not run when ready is skipped")
 
-    monkeypatch.delenv("ANTARES_ENABLE_PLUGINS", raising=False)
     monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: None)

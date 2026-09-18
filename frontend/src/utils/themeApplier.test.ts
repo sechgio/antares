@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ThemeConfig } from '../../types';
+import type { ThemeConfig } from '../types';
 import {
   DEFAULT_THEME,
   THEME_ACTIVE_CACHE_KEY,

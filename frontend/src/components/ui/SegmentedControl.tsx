@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export interface SegmentedControlOption<T extends string = string> {
+interface SegmentedControlOption<T extends string = string> {
   value: T;
   label: ReactNode;
 }

@@ -17,7 +17,7 @@ export type HandlePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 export type SmartGuide = { axis: 'x' | 'y'; pos: number };
 
-export const SNAP_THRESHOLD_MM = 0.5;
+const SNAP_THRESHOLD_MM = 0.5;
 export const SNAP_THRESHOLD_MAX_MM = 10;
 export const POINTER_CLICK_PX = 4;
 

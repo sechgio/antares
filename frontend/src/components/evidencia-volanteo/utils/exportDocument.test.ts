@@ -5,7 +5,6 @@ import { buildImagePayload, exportEvidenciaDocument, readLogoOnce } from './expo
 
 const renderMock = vi.fn(async () => ({
   filename: 'out.pdf',
-  pdf_base64: btoa('pdf'),
   content_base64: btoa('pdf'),
 }));
 
@@ -111,7 +110,6 @@ describe('exportEvidenciaDocument payload', () => {
     stubElectronStaging();
     renderMock.mockResolvedValueOnce({
       filename: 'out.docx',
-      pdf_base64: btoa('docx'),
       content_base64: btoa('docx'),
     });
     const images = [

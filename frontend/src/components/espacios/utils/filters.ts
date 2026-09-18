@@ -23,9 +23,13 @@ export function filterTareas(
   });
 }
 
-export function isOverdue(tarea: Tarea, columns: BoardColumn[] = []): boolean {
+export function isOverdue(
+  tarea: Tarea,
+  columns: BoardColumn[] = [],
+  today = localTodayString(),
+): boolean {
   if (!tarea.due_date || columnIsDone(columns, tarea.status)) return false;
-  return tarea.due_date < localTodayString();
+  return tarea.due_date < today;
 }
 
 export function countUnscheduled(tareas: Tarea[], columns: BoardColumn[] = []): number {
@@ -52,6 +56,8 @@ export interface TaskStats {
   completed: number;
   overdue: number;
   unscheduled: number;
+  /** Tareas con start_date o due_date (programadas en Gantt/Calendar). */
+  scheduled: number;
   progress: number;
 }
 
@@ -67,6 +73,7 @@ export function computeTaskStats(tareas: Tarea[], columns: BoardColumn[] = []): 
     completed: completed.length,
     overdue: countOverdue(tareas, columns),
     unscheduled: countUnscheduled(tareas, columns),
+    scheduled: tareas.filter((t) => t.start_date || t.due_date).length,
     progress,
   };
 }

@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from backend.core import out_path_dedupe
 from backend.core.jobs import JobManager
-from backend.handlers.conversion import _dedupe_chunk_out_paths, _out_path_key
+from backend.core.out_path_dedupe import _dedupe_chunk_out_paths, _out_path_key
 
 
 def test_cross_job_reservation_blocks_other_job() -> None:
@@ -20,7 +21,7 @@ def test_cross_job_reservation_blocks_other_job() -> None:
 def test_dedupe_renames_when_other_job_holds_path(monkeypatch) -> None:
     mgr = JobManager()
     monkeypatch.setattr(
-        "backend.handlers.conversion.get_job_manager",
+        "backend.core.out_path_dedupe.get_job_manager",
         lambda: mgr,
     )
     key = _out_path_key(Path("out/same.jpg"))
@@ -115,30 +116,26 @@ def test_dedupe_uses_disk_keys_without_exists(tmp_path, monkeypatch) -> None:
 
 
 def test_destination_scan_is_bounded_without_returning_partial_keys(tmp_path, monkeypatch) -> None:
-    from backend.handlers import conversion
-
     destino = tmp_path / "large-destination"
     destino.mkdir()
     (destino / "first.jpg").write_bytes(b"1")
     (destino / "second.jpg").write_bytes(b"2")
-    monkeypatch.setattr(conversion, "_MAX_DEST_SCAN_ENTRIES", 1)
+    monkeypatch.setattr(out_path_dedupe, "_MAX_DEST_SCAN_ENTRIES", 1)
 
-    assert conversion._scan_dest_out_keys(destino) is None
+    assert out_path_dedupe._scan_dest_out_keys(destino) is None
 
 
 def test_destination_scan_cache_is_lru_bounded(tmp_path, monkeypatch) -> None:
-    from backend.handlers import conversion
-
-    monkeypatch.setattr(conversion, "_MAX_DEST_SCAN_CACHE", 1)
+    monkeypatch.setattr(out_path_dedupe, "_MAX_DEST_SCAN_CACHE", 1)
     first = tmp_path / "first"
     second = tmp_path / "second"
     first.mkdir()
     second.mkdir()
-    assert conversion._scan_dest_out_keys(first) == set()
-    assert conversion._scan_dest_out_keys(second) == set()
+    assert out_path_dedupe._scan_dest_out_keys(first) == set()
+    assert out_path_dedupe._scan_dest_out_keys(second) == set()
 
-    assert len(conversion._dest_scan_cache) <= 1
-    assert str(second.resolve()) in conversion._dest_scan_cache
+    assert len(out_path_dedupe._dest_scan_cache) <= 1
+    assert str(second.resolve()) in out_path_dedupe._dest_scan_cache
 
 
 def test_dedupe_spans_chunks_via_shared_reserved_set() -> None:

@@ -199,7 +199,7 @@ def test_history_table_has_indexes(tmp_path, monkeypatch) -> None:
 
 
 def test_chunk_size_is_bounded() -> None:
-    from backend.handlers.conversion import _calculate_chunk_size
+    from backend.handlers.conversion_job import _calculate_chunk_size
 
     chunk_size = _calculate_chunk_size()
     assert 50 <= chunk_size <= 1000, f"Chunk size should be 50-1000, got {chunk_size}"
@@ -391,15 +391,72 @@ def test_cold_import_requests_wait_for_warm_critical(monkeypatch) -> None:
     assert len(responses) == 3
 
 
-def test_conversion_task_queue_uses_deque() -> None:
-    import inspect
+def test_conversion_task_queue_uses_deque(monkeypatch) -> None:
+    """The conversion job must consume pending chunk tasks via a deque
+    (O(1) popleft), not a list pop(0)."""
+    import collections
 
-    from backend.handlers import conversion
+    from backend.core.jobs import Job
+    from backend.handlers import conversion, conversion_job
 
-    source = inspect.getsource(conversion._run_conversion_job)
-    assert "task_queue = deque(chunk_tasks)" in source
-    assert "task = _task_queue.popleft()" in source
-    assert "pop(0)" not in source
+    constructed: list[list] = []
+    popleft_calls = 0
+
+    class _DequeSpy(collections.deque):
+        def __init__(self, iterable=()):  # type: ignore[no-untyped-def]
+            constructed.append(list(iterable))
+            super().__init__(iterable)
+
+        def popleft(self):
+            nonlocal popleft_calls
+            popleft_calls += 1
+            return super().popleft()
+
+    class _ImmediateFuture:
+        def __init__(self, result):
+            self._result = result
+
+        def result(self):
+            return self._result
+
+        def cancelled(self):
+            return False
+
+        def cancel(self):
+            return False
+
+    class _ImmediateScheduler:
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+            return _ImmediateFuture(fn(task))
+
+        def submit_light(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+            return _ImmediateFuture(fn(*args, **kwargs))
+
+    monkeypatch.setattr(conversion_job, "deque", _DequeSpy)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: _ImmediateScheduler())
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda *a, **k: None)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 2)
+    monkeypatch.setattr("backend.core.database.buscar_lote_por_codigos", lambda _codes: {})
+
+    files = [f"C:/tmp/{idx}.jpg" for idx in range(4)]
+    job = Job(
+        id="deque-spy",
+        job_type="conversion",
+        params={
+            "files": files,
+            "destino": "C:/out",
+            "formato": "JPEG",
+            "usar_rename": True,
+            "conversion_enabled": False,
+        },
+    )
+    conversion._run_conversion_job(job)
+
+    assert constructed, "conversion job must stage chunk tasks into a deque"
+    assert popleft_calls == len(files)
+    assert job.result is not None
+    assert job.result["err_count"] == 0
 
 
 def test_json_document_store_uses_compact_serialization(tmp_path) -> None:

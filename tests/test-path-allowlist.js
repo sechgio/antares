@@ -1,6 +1,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { assert, finish } = require('./helpers/harness');
+
 const {
   registerAllowedReadPath,
   assertAllowedReadPath,
@@ -9,19 +11,6 @@ const {
   isPathInside,
   clearAllowedReadPaths,
 } = require('../electron/path-allowlist');
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
 
 async function run() {
   console.log('Testing path allowlist...\n');
@@ -92,11 +81,7 @@ async function run() {
     clearAllowedReadPaths();
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

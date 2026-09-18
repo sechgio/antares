@@ -14,6 +14,7 @@ import { selectGenerateRowIndices, type GenerateExportScope } from '../ops/gener
 import GenerateSidebar from './GenerateSidebar';
 import PageLayerPreview, { documentWithFill } from './PageLayerPreview';
 import PreviewViewport, { type PreviewViewportHandle } from './PreviewViewport';
+import { errorMessage } from '@/utils/errors';
 
 const PAGE_STACK_GAP_PX = 24;
 
@@ -174,7 +175,7 @@ export default function GeneratePanel({
       setExternalDoc(normalizeDocument(res.document as CanvasDocument));
       setSelectedTemplateId(id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cargar la plantilla');
+      setError(errorMessage(err, 'No se pudo cargar la plantilla'));
     }
   };
 
@@ -254,7 +255,7 @@ export default function GeneratePanel({
       setError(null);
       revokeBlobUrlsAfterPaint(prevPreviewUrls);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al renderizar preview');
+      setError(errorMessage(err, 'Error al renderizar preview'));
     }
   }, [templateDoc, rows, rowIndex, buildContexts, logoLeft, logoRight, showPlaceholders]);
 
@@ -283,7 +284,7 @@ export default function GeneratePanel({
       }
       setMappings((prev) => ({ ...auto, ...prev }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al leer Excel');
+      setError(errorMessage(err, 'Error al leer Excel'));
     }
   };
 
@@ -342,7 +343,7 @@ export default function GeneratePanel({
         showCropMarks,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al exportar PDF');
+      setError(errorMessage(err, 'Error al exportar PDF'));
     } finally {
       setBusy(false);
     }

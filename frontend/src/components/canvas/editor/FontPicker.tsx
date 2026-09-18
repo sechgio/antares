@@ -7,6 +7,7 @@ import {
   ensureCanvasFontsLoaded,
   getFontByStack,
 } from '../ops/fontCatalog';
+import Button from '@/components/ui/Button';
 
 interface FontPickerProps {
   value: string;
@@ -92,8 +93,7 @@ export default function FontPicker({
 
   return (
     <div ref={containerRef} className={`relative w-full ${className}`}>
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={() => { if (!disabled) toggle(); }}
         disabled={disabled}
         aria-expanded={isOpen}
@@ -113,7 +113,7 @@ export default function FontPicker({
             isOpen ? 'rotate-180 text-[var(--cv-accent)]' : ''
           }`}
         />
-      </button>
+      </Button>
 
       {isOpen &&
         portalRoot &&
@@ -144,14 +144,13 @@ export default function FontPicker({
               >
                 {displayLabel}
               </span>
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-icon-btn shrink-0"
                 aria-label="Cerrar"
                 onClick={close}
               >
                 <X className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </div>
 
             <div className="relative shrink-0 border-b border-[var(--cv-border,#e2e8f0)] bg-[var(--cv-panel-elevated)] px-2 py-1.5">
@@ -176,9 +175,8 @@ export default function FontPicker({
                 filtered.map((font) => {
                   const isSelected = font.stack === selected?.stack;
                   return (
-                    <button
+                    <Button variant="none" size="none"
                       key={font.id}
-                      type="button"
                       role="option"
                       aria-selected={isSelected}
                       onClick={() => handleSelect(font.stack)}
@@ -197,7 +195,7 @@ export default function FontPicker({
                       {isSelected && (
                         <Check className="h-3.5 w-3.5 shrink-0 text-[var(--cv-accent,#0d99ff)]" />
                       )}
-                    </button>
+                    </Button>
                   );
                 })
               )}

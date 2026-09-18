@@ -18,7 +18,7 @@ export function nextFreeLogoSide(layers: CanvasLayer[], excludeIds?: ReadonlySet
   return 'left';
 }
 
-export function logoSideLabel(side: LogoSide): string {
+function logoSideLabel(side: LogoSide): string {
   return side === 'right' ? 'Logo derecho' : 'Logo izquierdo';
 }
 

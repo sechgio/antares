@@ -45,7 +45,6 @@ export default function SpaceSidebar({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-[var(--border-subtle)] p-2.5">
         <Button
-          type="button"
           variant="nav"
           size="none"
           onClick={onSelectMyTasks}
@@ -89,14 +88,13 @@ export default function SpaceSidebar({
               <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-muted)]">
                 Tu primer espacio agrupa proyectos y tareas.
               </p>
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={onAddEspacio}
                 className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-2 text-xs font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)]"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Crear el primero
-              </button>
+              </Button>
             </li>
           )}
         </ul>
@@ -111,15 +109,14 @@ export default function SpaceSidebar({
             label={activeEspacioId ? 'Nuevo proyecto' : 'Selecciona un espacio primero'}
             placement="right"
           >
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={onAddProyecto}
               disabled={!activeEspacioId}
               className="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Nuevo proyecto"
             >
               <Plus className="h-4 w-4" />
-            </button>
+            </Button>
           </WithHoverTooltip>
         </div>
         <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
@@ -152,13 +149,12 @@ export default function SpaceSidebar({
           {activeEspacioId && proyectos.length === 0 && (
             <li className="rounded-lg border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center">
               <p className="text-xs text-[var(--text-muted)]">Sin proyectos en este espacio</p>
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={onAddProyecto}
                 className="mt-2 text-xs font-medium text-[var(--accent-primary)] hover:underline"
               >
                 Crear proyecto
-              </button>
+              </Button>
             </li>
           )}
         </ul>

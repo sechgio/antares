@@ -3,7 +3,7 @@ import { layerBounds } from './layerBounds';
 import { distributeLayers, nudgeLayers } from './layerOps';
 import type { RectMm } from './selectionTransform';
 
-export type SmartBounds = ReturnType<typeof layerBounds>;
+type SmartBounds = ReturnType<typeof layerBounds>;
 
 export interface SmartSequence {
   axis: 'x' | 'y';

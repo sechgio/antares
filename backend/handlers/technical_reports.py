@@ -6,9 +6,9 @@ from backend.handlers.common import (
     clear_store,
     create_report_from_params,
     delete_item_or_raise,
-    filter_by_optional_ids,
     get_item_id,
     get_item_or_raise,
+    get_items_by_optional_ids,
     import_into_store,
     require_update_payload,
     resolve_payload_or_store,
@@ -32,35 +32,39 @@ def _summary(report: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def technical_reports_list(params: dict[str, Any]) -> dict[str, Any]:
-    reports = _db().get_all()
     cs = str(params.get("cs") or "").strip()
     contratista = str(params.get("contratista") or "").strip()
     status = str(params.get("status") or "").strip()
-    if cs:
-        reports = [r for r in reports if r["header"].get("cs") == cs]
-    if contratista:
-        reports = [r for r in reports if r["header"].get("contratista") == contratista]
-    if status:
-        reports = [r for r in reports if r.get("status") == status]
-    reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
+
+    def matches(report: dict[str, Any]) -> bool:  # allowlist: dict[str, Any]
+        return (
+            (not cs or report["header"].get("cs") == cs)
+            and (not contratista or report["header"].get("contratista") == contratista)
+            and (not status or report.get("status") == status)
+        )
+
+    store = _db()
     if params.get("summary"):
-        reports = [_summary(r) for r in reports]
-    return {"reports": reports}
+        reports = store.project_all(_summary, matches)
+    else:
+        reports = [report for report in store.get_all() if matches(report)]
+    reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
+    return {"items": reports, "total": len(reports)}
 
 @with_locale
 def technical_reports_get(params: dict[str, Any]) -> dict[str, Any]:
     report_id = get_item_id(params)
-    return {"report": get_item_or_raise(_db(), report_id, "Informe no encontrado")}
+    return {"item": get_item_or_raise(_db(), report_id, "Informe no encontrado")}
 
 @with_locale
 def technical_reports_create(params: dict[str, Any]) -> dict[str, Any]:
     created = create_report_from_params(_db(), params, "report")
-    return {"success": True, "report": created}
+    return {"success": True, "item": created}
 
 @with_locale
 def technical_reports_update(params: dict[str, Any]) -> dict[str, Any]:
     report_id, report = require_update_payload(params, "report")
-    return {"success": True, "report": update_item_or_raise(_db(), report_id, report)}
+    return {"success": True, "item": update_item_or_raise(_db(), report_id, report)}
 
 @with_locale
 def technical_reports_delete(params: dict[str, Any]) -> dict[str, Any]:
@@ -100,8 +104,8 @@ def technical_reports_render_html(params: dict[str, Any]) -> dict[str, Any]:
 @with_locale
 def technical_reports_render_consolidated_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.technical_reports.rendering import render_consolidated_html
-    reports = filter_by_optional_ids(
-        _db().get_all(), params.get("report_ids"), "No hay informes para exportar"
+    reports = get_items_by_optional_ids(
+        _db(), params.get("report_ids"), "No hay informes para exportar"
     )
     reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
     html = render_consolidated_html(reports, params.get("logo_left"), params.get("logo_right"))

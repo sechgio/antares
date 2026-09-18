@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 
-const { execFileSync } = require('child_process');
 const {
   REPO_OWNER,
   REPO_NAME,
   BASE_BRANCH,
-  ROOT,
   sh,
   trySh,
+  gh,
+  parseLoopArgs,
+  printLoopBanner,
+  shipStep,
   step,
-  skip,
   die,
   requireGhAuth,
   requireOriginRepo,
@@ -17,24 +18,20 @@ const {
   workingTreeDirty,
   findOpenPrNumber,
   mergePr,
+  commitAll,
+  pushBranch,
   runQualityCommand,
   runQualityGate,
 } = require('./lib/loop-utils');
 
 function parseArgs(argv) {
-  const args = argv.slice(2);
-  const getFlagValue = (flag) => {
-    const idx = args.indexOf(flag);
-    if (idx === -1) return null;
-    return args[idx + 1] || null;
-  };
-
+  const parsed = parseLoopArgs(argv);
   return {
-    isShip: args.includes('--ship'),
-    doMerge: args.includes('--merge'),
-    message: getFlagValue('--message'),
-    title: getFlagValue('--title'),
-    branch: getFlagValue('--branch'),
+    isShip: parsed.isShip,
+    doMerge: parsed.doMerge,
+    message: parsed.value('--message'),
+    title: parsed.value('--title'),
+    branch: parsed.value('--branch'),
   };
 }
 
@@ -87,14 +84,6 @@ function ensureFeatureBranch(options) {
   return branch;
 }
 
-function runGit(args) {
-  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' }).trim();
-}
-
-function runGh(args) {
-  return execFileSync('gh', args, { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' }).trim();
-}
-
 function commitChanges(message) {
   if (!workingTreeDirty()) {
     console.log('    Working tree limpio, sin commit.');
@@ -105,31 +94,19 @@ function commitChanges(message) {
     throw new Error('Hay cambios sin commit. Pasa --message "tipo: descripción".');
   }
 
-  runGit(['add', '-A']);
-  runGit(['commit', '-m', message]);
-  console.log(`    Commit creado: ${message}`);
+  commitAll(message);
   return true;
-}
-
-function pushBranch(branch) {
-  const upstream = trySh(`git rev-parse --abbrev-ref "${branch}@{upstream}" 2>&1`);
-  if (upstream && !upstream.includes('fatal')) {
-    sh(`git push origin "${branch}"`);
-  } else {
-    sh(`git push -u origin "${branch}"`);
-  }
-  console.log(`    Branch ${branch} pusheada a origin.`);
 }
 
 function createOrUpdatePr(branch, title, body) {
   const existing = findOpenPrNumber(branch);
   if (existing) {
-    runGh(['pr', 'edit', String(existing), '--title', title, '--body', body]);
+    gh(['pr', 'edit', String(existing), '--title', title, '--body', body]);
     console.log(`    PR #${existing} actualizado.`);
     return existing;
   }
 
-  const url = runGh([
+  const url = gh([
     'pr', 'create',
     '--base', BASE_BRANCH,
     '--head', branch,
@@ -169,12 +146,7 @@ function defaultPrBody(branch, message) {
 
 function main() {
   const options = parseArgs(process.argv);
-  const mode = options.isShip ? '🚀 SHIP MODE (PR real)' : '🔍 DRY-RUN (sin side effects)';
-
-  console.log('\n════════════════════════════════════════════');
-  console.log('  Antares Push Pipeline Loop (PR-first)');
-  console.log(`  ${mode}`);
-  console.log('════════════════════════════════════════════\n');
+  printLoopBanner('Antares Push Pipeline Loop (PR-first)', options.isShip, 'PR real');
 
   try {
     step('① Entorno (gh auth, remote, fetch)', validateEnvironment);
@@ -187,38 +159,28 @@ function main() {
 
     step('③ Quality Gate (lint + typecheck + test)', runQualityGate);
 
-    if (options.isShip) {
-      step('④ Commit cambios locales', () => {
-        commitChanges(options.message);
-      });
-      step('⑤ Push branch a origin', () => {
-        pushBranch(branch);
-      });
+    let prNumber;
+    shipStep('④ Commit cambios locales', options.isShip, () => {
+      commitChanges(options.message);
+    }, 'dry-run, usa --ship para ejecutar');
+    shipStep('⑤ Push branch a origin', options.isShip, () => {
+      pushBranch(branch);
+    }, 'dry-run, usa --ship para ejecutar');
+    shipStep('⑥ Crear/actualizar Pull Request', options.isShip, () => {
+      const title = options.title || options.message || branch;
+      const body = defaultPrBody(branch, options.message);
+      prNumber = createOrUpdatePr(branch, title, body);
+    }, 'dry-run, usa --ship para ejecutar');
 
-      let prNumber;
-      step('⑥ Crear/actualizar Pull Request', () => {
-        const title = options.title || options.message || branch;
-        const body = defaultPrBody(branch, options.message);
-        prNumber = createOrUpdatePr(branch, title, body);
-      });
-
-      if (options.doMerge) {
-        if (!prNumber) {
-          throw new Error('No se pudo resolver el número de PR para mergear.');
-        }
-        step('⑦ Esperar CI', () => waitForCi(prNumber));
-        step('⑧ Merge PR a main', () => mergePr(prNumber));
-      } else {
-        skip('⑦ Esperar CI', 'omitido, usa --merge para incluir');
-        skip('⑧ Merge PR a main', 'omitido, usa --merge para incluir');
+    const canMerge = options.isShip && options.doMerge;
+    const mergeSkip = options.isShip ? 'omitido, usa --merge para incluir' : 'dry-run, usa --ship --merge para ejecutar';
+    shipStep('⑦ Esperar CI', canMerge, () => {
+      if (!prNumber) {
+        throw new Error('No se pudo resolver el número de PR para mergear.');
       }
-    } else {
-      skip('④ Commit cambios locales', 'dry-run, usa --ship para ejecutar');
-      skip('⑤ Push branch a origin', 'dry-run, usa --ship para ejecutar');
-      skip('⑥ Crear/actualizar Pull Request', 'dry-run, usa --ship para ejecutar');
-      skip('⑦ Esperar CI', 'dry-run, usa --ship --merge para ejecutar');
-      skip('⑧ Merge PR a main', 'dry-run, usa --ship --merge para ejecutar');
-    }
+      waitForCi(prNumber);
+    }, mergeSkip);
+    shipStep('⑧ Merge PR a main', canMerge, () => mergePr(prNumber), mergeSkip);
 
     console.log('\n════════════════════════════════════════════');
     if (options.isShip) {

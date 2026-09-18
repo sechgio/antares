@@ -9,7 +9,7 @@ def test_technical_reports_handlers_are_registered(monkeypatch, tmp_path) -> Non
     from backend.core.technical_reports import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
-    db_module._db_instance = None
+    db_module._db_singleton.reset()
     assert "technical_reports_list" in HANDLERS
     assert "technical_reports_import_file" in HANDLERS
 
@@ -18,7 +18,7 @@ def test_crud_errors_preserve_public_messages(monkeypatch, tmp_path) -> None:
     from backend.core.technical_reports import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
-    db_module._db_instance = None
+    db_module._db_singleton.reset()
 
     with pytest.raises(ValueError, match="Informe no encontrado: missing"):
         HANDLERS["technical_reports_get"]({"id": "missing"})
@@ -39,7 +39,7 @@ def test_import_file_handler_imports_csv(monkeypatch, tmp_path) -> None:
     result = HANDLERS["technical_reports_import_file"]({"filename": "datos.csv", "content_b64": content})
 
     assert result["imported_count"] == 1
-    assert HANDLERS["technical_reports_list"]({"summary": True})["reports"][0]["id"] == "RPT-0001"
+    assert HANDLERS["technical_reports_list"]({"summary": True})["items"][0]["id"] == "RPT-0001"
 
 
 def test_render_html_prefers_inline_report_over_database(monkeypatch, tmp_path) -> None:
@@ -47,7 +47,7 @@ def test_render_html_prefers_inline_report_over_database(monkeypatch, tmp_path) 
     from backend.handlers.technical_reports import HANDLERS
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
-    stored = HANDLERS["technical_reports_create"]({})["report"]
+    stored = HANDLERS["technical_reports_create"]({})["item"]
     stored["medidas"]["etiqueta_diametro"] = "DIAMETRO"
     stored["medidas"]["etiqueta_diametro_interno"] = "DIAMETRO INTERNO"
     stored["valvulas"]["aduccion"]["3"] = 3
@@ -85,7 +85,7 @@ def test_import_file_handler_accepts_data_uri_and_unpadded_base64(monkeypatch, t
 
     assert result["imported_count"] == 1
     assert result["total_rows_in_file"] == 1
-    reports = HANDLERS["technical_reports_list"]({})["reports"]
+    reports = HANDLERS["technical_reports_list"]({})["items"]
     assert len(reports) == 1
     assert reports[0]["header"]["cs"] == "NORTE"
 
@@ -126,7 +126,7 @@ def test_import_file_handler_imports_xlsx_multisheet(monkeypatch, tmp_path) -> N
     result = HANDLERS["technical_reports_import_file"]({"filename": "reportes.xlsx", "content_b64": content_b64})
 
     assert result["imported_count"] == 1
-    reports = HANDLERS["technical_reports_list"]({})["reports"]
+    reports = HANDLERS["technical_reports_list"]({})["items"]
     assert reports[0]["header"]["cs"] == "CENTRO"
 
 

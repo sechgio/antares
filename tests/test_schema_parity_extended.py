@@ -7,7 +7,7 @@ from typing import get_args
 
 def _read_frontend_interface(path: pathlib.Path, interface: str) -> dict[str, str]:
     text = path.read_text(encoding="utf-8")
-    m = re.search(rf"export interface {interface}\s*\{{", text)
+    m = re.search(rf"(?:export\s+)?interface {interface}\s*\{{", text)
     if not m:
         return {}
 
@@ -107,6 +107,7 @@ def test_technical_report_schema_parity() -> None:
 
 
 def test_api_jsonvalue_type_exists() -> None:
-    api_path = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "api.ts"
-    text = api_path.read_text(encoding="utf-8")
-    assert "Record<string, unknown>" in text or "JsonValue" in text
+    src_dir = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src"
+    texts = [(src_dir / "api.ts").read_text(encoding="utf-8")]
+    texts += [p.read_text(encoding="utf-8") for p in (src_dir / "api").glob("*.ts")]
+    assert any("Record<string, unknown>" in text or "JsonValue" in text for text in texts)

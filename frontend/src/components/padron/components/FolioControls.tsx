@@ -17,6 +17,7 @@ import {
   type PageNumberStyle,
 } from '../folio';
 import FolioMenuSelect, { type FolioMenuOption } from './FolioMenuSelect';
+import Button from '@/components/ui/Button';
 
 interface FolioControlsProps {
   config: FolioConfig;
@@ -161,10 +162,9 @@ export default function FolioControls({
   return (
     <div className="vpad-folio-wrapper" ref={wrapperRef}>
       <WithHoverTooltip label="Configurar numeración de página (foleado)" placement="bottom">
-        <button
+        <Button variant="none" size="none"
           className={`vpad-tool-chip vpad-btn-folio${!isDefault ? ' is-active vpad-btn-folio-active' : ''}${open ? ' is-open vpad-btn-folio-open' : ''}`}
           onClick={() => setOpen((v) => !v)}
-          type="button"
           aria-expanded={open}
           aria-haspopup="dialog"
         >
@@ -173,7 +173,7 @@ export default function FolioControls({
           {!isDefault && totalPages > 0 && (
             <span className="vpad-folio-summary tabular-nums">{summary}</span>
           )}
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       {open && (
@@ -279,14 +279,13 @@ export default function FolioControls({
             )}
           </div>
 
-          <button
+          <Button variant="none" size="none"
             className="vpad-folio-reset"
-            type="button"
             onClick={handleReset}
             disabled={isDefault}
           >
             Restablecer
-          </button>
+          </Button>
         </div>
       )}
     </div>

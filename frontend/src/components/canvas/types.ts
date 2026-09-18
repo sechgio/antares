@@ -3,8 +3,8 @@ import schema from '../../../../shared/canvas-schema.json';
 
 export const DOCUMENT_VERSION = schema.documentVersion as unknown as 2;
 
-export const A4_WIDTH_MM = schema.a4.widthMm as number;
-export const A4_HEIGHT_MM = schema.a4.heightMm as number;
+const A4_WIDTH_MM = schema.a4.widthMm as number;
+const A4_HEIGHT_MM = schema.a4.heightMm as number;
 const GUIDE_AXES = new Set<CanvasGuide['axis']>(schema.guideAxes as CanvasGuide['axis'][]);
 
 export const DEFAULT_PAGE_MARGIN_MM = 10;
@@ -150,13 +150,13 @@ export interface LayerAutoLayout {
   crossGapMm?: number;
 }
 
-export interface VariantPropBinding {
+interface VariantPropBinding {
   fieldKey: string;
   mapping?: Record<string, string>;
   fallback?: string;
 }
 
-export interface VariantDataBinding {
+interface VariantDataBinding {
   fieldKey?: string;
   mapping?: Record<string, string>;
   fallbackVariant?: string;

@@ -24,6 +24,7 @@ import {
   resolveDefaultAddressColumn,
   resolveDefaultKeyColumn,
 } from '../utils/excelPreview';
+import { errorMessage } from '@/utils/errors';
 
 export interface PanelSession {
   headerForm: HeaderFormState;
@@ -250,7 +251,7 @@ export function usePanelSession(): PanelSession {
       setCurrentPageIndex(0);
     } catch (e: unknown) {
       if (token !== matchTokenRef.current) return;
-      setErrors([e instanceof Error ? e.message : 'Error en emparejamiento']);
+      setErrors([errorMessage(e, 'Error en emparejamiento')]);
       setMatchResult(null);
     }
   }, []);

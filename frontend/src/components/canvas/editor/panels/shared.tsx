@@ -16,6 +16,7 @@ import { clampImageZoom, clampOpacity, normalizeHex, parseImageZoom } from '../.
 import type { CanvasLayer } from '../../types';
 import CanvasSelect from '../CanvasSelect';
 import InlineNumField from '../InlineNumField';
+import Button from '@/components/ui/Button';
 
 export function HexField({
   color,
@@ -107,24 +108,24 @@ export function ZOrderButtons({
   return (
     <>
       <WithHoverTooltip label="Al frente" placement="bottom" variant="dark">
-        <button type="button" className="canvas-icon-btn" aria-label="Al frente" onClick={onBringFront}>
+        <Button variant="none" size="none" className="canvas-icon-btn" aria-label="Al frente" onClick={onBringFront}>
           <ArrowUpToLine className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </WithHoverTooltip>
       <WithHoverTooltip label="Adelante" placement="bottom" variant="dark">
-        <button type="button" className="canvas-icon-btn" aria-label="Adelante" onClick={onBringForward}>
+        <Button variant="none" size="none" className="canvas-icon-btn" aria-label="Adelante" onClick={onBringForward}>
           <ChevronUp className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </WithHoverTooltip>
       <WithHoverTooltip label="Atrás" placement="bottom" variant="dark">
-        <button type="button" className="canvas-icon-btn" aria-label="Atrás" onClick={onSendBackward}>
+        <Button variant="none" size="none" className="canvas-icon-btn" aria-label="Atrás" onClick={onSendBackward}>
           <ChevronDown className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </WithHoverTooltip>
       <WithHoverTooltip label="Al fondo" placement="bottom" variant="dark">
-        <button type="button" className="canvas-icon-btn" aria-label="Al fondo" onClick={onSendBack}>
+        <Button variant="none" size="none" className="canvas-icon-btn" aria-label="Al fondo" onClick={onSendBack}>
           <ArrowDownToLine className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </WithHoverTooltip>
     </>
   );
@@ -169,13 +170,13 @@ export const ALIGN_ITEMS = [
   { align: 'bottom' as const, icon: AlignEndHorizontal, label: 'Abajo' },
 ];
 
-export const IMAGE_FIT_OPTIONS = [
+const IMAGE_FIT_OPTIONS = [
   { value: 'cover', label: 'Cubrir' },
   { value: 'contain', label: 'Contener' },
   { value: 'fill', label: 'Estirar' },
 ];
 
-export const IMAGE_POSITION_OPTIONS = [
+const IMAGE_POSITION_OPTIONS = [
   { value: '50% 50%', label: 'Centro' },
   { value: '0% 0%', label: 'Arriba izq.' },
   { value: '50% 0%', label: 'Arriba' },

@@ -1,72 +1,37 @@
 const fs = require('fs');
 const path = require('path');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
 
 function stubElectronAndDeps() {
-  const electronPath = require.resolve('electron');
-  require.cache[electronPath] = {
-    id: electronPath,
-    filename: electronPath,
-    loaded: true,
-    exports: {
-      ipcMain: { handle: () => {}, removeHandler: () => {} },
-      dialog: {},
-      app: { isPackaged: true },
-    },
-  };
+  stubModule('electron', {
+    ipcMain: { handle: () => {}, removeHandler: () => {} },
+    dialog: {},
+    app: { isPackaged: true },
+  });
 
-  const spawnerPath = require.resolve('../electron/backend-spawner');
-  require.cache[spawnerPath] = {
-    id: spawnerPath,
-    filename: spawnerPath,
-    loaded: true,
-    exports: {
-      getProcess: () => null,
-      isReady: () => true,
-      waitForReady: async () => true,
-      getState: () => 'ready',
-      getLastError: () => null,
-      getStderrTail: () => '',
-      manualRestart: async () => true,
-      incrementPendingRequests: () => {},
-      decrementPendingRequests: () => {},
-      noteJobActivity: () => {},
-      clearJobActivity: () => {},
-      STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-    },
-  };
+  stubModule('electron/backend-spawner', {
+    getProcess: () => null,
+    isReady: () => true,
+    waitForReady: async () => true,
+    getState: () => 'ready',
+    getLastError: () => null,
+    getStderrTail: () => '',
+    manualRestart: async () => true,
+    incrementPendingRequests: () => {},
+    decrementPendingRequests: () => {},
+    noteJobActivity: () => {},
+    clearJobActivity: () => {},
+    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
+  });
 
-  const wmPath = require.resolve('../electron/window-manager');
-  require.cache[wmPath] = {
-    id: wmPath,
-    filename: wmPath,
-    loaded: true,
-    exports: {
-      getMainWindow: () => null,
-      buildAppMenu: () => ({ popup: () => {} }),
-      getIsDev: () => true,
-    },
-  };
+  stubModule('electron/window-manager', {
+    getMainWindow: () => null,
+    buildAppMenu: () => ({ popup: () => {} }),
+    getIsDev: () => true,
+  });
 
-  const dialogPath = require.resolve('../electron/dialog-handlers');
-  require.cache[dialogPath] = {
-    id: dialogPath,
-    filename: dialogPath,
-    loaded: true,
-    exports: { handleDialogCall: async () => ({ handled: false }), isUnderAllowedWriteRoot: (dir) => allowedWriteRoots.has(dir) },
-  };
+  stubModule('electron/dialog-handlers', { handleDialogCall: async () => ({ handled: false }), isUnderAllowedWriteRoot: (dir) => allowedWriteRoots.has(dir) });
 }
 
 const allowedWriteRoots = new Set();
@@ -92,10 +57,10 @@ function run() {
 
   stubElectronAndDeps();
   const ubicacionesPath = require.resolve('../electron/ubicaciones-handlers');
-  delete require.cache[ubicacionesPath];
+  evictModule('electron/ubicaciones-handlers');
 
   const routerPath = require.resolve('../electron/ipc-router');
-  delete require.cache[routerPath];
+  evictModule('electron/ipc-router');
   require(routerPath);
 
   assert(
@@ -108,10 +73,7 @@ function run() {
 
   runRouterSmokeTests();
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 function runRouterSmokeTests() {

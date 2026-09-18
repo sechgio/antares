@@ -15,7 +15,7 @@ export interface ProcessStatus {
   result?: Record<string, unknown> | null;
 }
 
-export interface LogEntry {
+interface LogEntry {
   message: string;
   tag: string;
 }
@@ -102,8 +102,8 @@ export interface VisualMapping {
   blank_mcids: number[] | null;
 }
 
-export type FormatOrigin = 'builtin' | 'uploaded';
-export type MappingStrategy = 'legacy_xobject' | 'visual_overlay' | 'simple_overlay';
+type FormatOrigin = 'builtin' | 'uploaded';
+type MappingStrategy = 'legacy_xobject' | 'visual_overlay' | 'simple_overlay';
 
 export interface FormatInfo {
   id: string;

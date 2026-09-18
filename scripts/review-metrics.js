@@ -6,8 +6,7 @@
  */
 
 const fs = require('fs');
-const { execFileSync } = require('child_process');
-const { ROOT, detectRepo } = require('./lib/loop-utils');
+const { detectRepo, gh, parseCliArgs } = require('./lib/loop-utils');
 const { SIZE_WARN, isBot, hasThirdPartyApproval, taxonomyCompliance } = require('./review-policy-check.js');
 
 const FIRST_REVIEW_TARGET_H = 4;
@@ -152,28 +151,27 @@ function renderMarkdown(metrics, days) {
 }
 
 function parseArgs(argv) {
-  const args = { days: 14, strict: false, json: false, jsonFile: null, repo: null };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--strict') args.strict = true;
-    else if (a === '--json') args.json = true;
-    else if (a === '--json-file') args.jsonFile = argv[++i];
-    else if (a === '--days') args.days = Number(argv[++i]);
-    else if (a === '--repo') args.repo = argv[++i];
-  }
-  return args;
+  return parseCliArgs(argv, {
+    defaults: { days: 14, strict: false, json: false, jsonFile: null, repo: null },
+    flags: {
+      '--strict': { key: 'strict' },
+      '--json': { key: 'json' },
+      '--json-file': { key: 'jsonFile', value: true },
+      '--days': { key: 'days', value: true, coerce: Number },
+      '--repo': { key: 'repo', value: true },
+    },
+  });
 }
 
 function fetchMergedPrs(repo, days) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
-  const out = execFileSync(
-    'gh',
+  const out = gh(
     [
       'pr', 'list', '--repo', repo, '--state', 'merged',
       '--search', `merged:>=${since}`, '--limit', '200',
       '--json', 'number,title,author,createdAt,mergedAt,additions,deletions,reviews,comments',
     ],
-    { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', timeout: 60000, maxBuffer: 40 * 1024 * 1024 },
+    { timeout: 60000, maxBuffer: 40 * 1024 * 1024 },
   );
   return JSON.parse(out);
 }

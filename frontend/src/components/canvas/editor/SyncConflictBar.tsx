@@ -5,6 +5,7 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { SyncConflict } from '../sync/syncCompare';
 
 import type { SyncConflictChoice } from '../hooks/useCanvasSync';
+import Button from '@/components/ui/Button';
 
 interface SyncConflictBarProps {
 
@@ -40,9 +41,8 @@ export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBar
 
         <WithHoverTooltip label={`Mantener mi versión · ${docName}`} placement="bottom" variant="dark">
 
-          <button
+          <Button variant="none" size="none"
 
-            type="button"
 
             data-testid="sync-conflict-keep-local"
 
@@ -56,15 +56,14 @@ export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBar
 
             <HardDrive className="h-3.5 w-3.5" />
 
-          </button>
+          </Button>
 
         </WithHoverTooltip>
 
         <WithHoverTooltip label={`Eliminar localmente · ${docName}`} placement="bottom" variant="dark">
 
-          <button
+          <Button variant="none" size="none"
 
-            type="button"
 
             data-testid="sync-conflict-use-remote"
 
@@ -78,7 +77,7 @@ export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBar
 
             <Trash2 className="h-3.5 w-3.5" />
 
-          </button>
+          </Button>
 
         </WithHoverTooltip>
 
@@ -106,9 +105,8 @@ export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBar
 
       <WithHoverTooltip label={`Mantener mi versión · ${docName}`} placement="bottom" variant="dark">
 
-        <button
+        <Button variant="none" size="none"
 
-          type="button"
 
           data-testid="sync-conflict-keep-local"
 
@@ -122,15 +120,14 @@ export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBar
 
           <HardDrive className="h-3.5 w-3.5" />
 
-        </button>
+        </Button>
 
       </WithHoverTooltip>
 
       <WithHoverTooltip label={`Usar versión en la nube · ${docName}`} placement="bottom" variant="dark">
 
-        <button
+        <Button variant="none" size="none"
 
-          type="button"
 
           data-testid="sync-conflict-use-remote"
 
@@ -144,7 +141,7 @@ export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBar
 
           <CloudDownload className="h-3.5 w-3.5" />
 
-        </button>
+        </Button>
 
       </WithHoverTooltip>
 

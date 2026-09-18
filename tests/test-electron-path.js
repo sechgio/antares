@@ -3,18 +3,7 @@ const os = require('os');
 const path = require('path');
 const { getBackendCommand } = require('../electron/backend-command.js');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish, counters } = require('./helpers/harness');
 
 console.log('Testing getBackendCommand...\n');
 
@@ -67,10 +56,10 @@ const devPaths = getBackendCommand(true, 'win32', __dirname);
 assert(devPaths.cmd !== null, 'Dev mode should return a command');
 
 console.log(`\n${'='.repeat(50)}`);
-console.log(`Results: ${passed} passed, ${failed} failed`);
+console.log(`Results: ${counters.passed} passed, ${counters.failed} failed`);
 console.log('='.repeat(50));
 
-if (failed > 0) {
+if (counters.failed > 0) {
   process.exit(1);
 } else {
   console.log('All path tests passed!');

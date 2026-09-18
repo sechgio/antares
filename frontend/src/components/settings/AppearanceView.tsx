@@ -4,6 +4,8 @@ import {
   Check,
   ChevronDown,
   Copy,
+  FileDown,
+  FolderOpen,
   Laptop,
   Monitor,
   Moon,
@@ -34,6 +36,8 @@ import {
   type ThemeDensity,
   type ThemeMode,
 } from '../../utils/themeApplier';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 type EditableColor = {
   key: keyof ThemeConfig;
@@ -325,6 +329,39 @@ export default function AppearanceView() {
     }
   };
 
+  const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
+
+  const handleOpenLogsFolder = async () => {
+    try {
+      await api.logsOpenFolder();
+    } catch (err: unknown) {
+      addToast({
+        message: errorMessage(err, 'No se pudo abrir la carpeta de registros'),
+        type: 'error',
+      });
+    }
+  };
+
+  const handleExportDiagnostics = async () => {
+    try {
+      setIsExportingDiagnostics(true);
+      const res = await api.diagnosticsExport();
+      if (res?.exported) {
+        addToast({
+          message: 'Diagnóstico exportado correctamente',
+          type: 'success',
+        });
+      }
+    } catch (err: unknown) {
+      addToast({
+        message: errorMessage(err, 'No se pudo exportar el diagnóstico'),
+        type: 'error',
+      });
+    } finally {
+      setIsExportingDiagnostics(false);
+    }
+  };
+
   const copyTheme = async () => {
     try {
       await navigator.clipboard?.writeText(JSON.stringify(buildThemePayload(), null, 2));
@@ -356,9 +393,8 @@ export default function AppearanceView() {
                 const Icon = option.icon;
                 const active = mode === option.key;
                 return (
-                  <button
+                  <Button variant="none" size="none"
                     key={option.key}
-                    type="button"
                     onClick={() => updateMode(option.key)}
                     aria-pressed={active}
                     className={`inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors ${
@@ -367,7 +403,7 @@ export default function AppearanceView() {
                   >
                     <Icon size={14} />
                     {option.label}
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -411,17 +447,16 @@ export default function AppearanceView() {
                 onChange={(event) => importTheme(event.target.files?.[0])}
                 className="sr-only"
               />
-              <button type="button" onClick={() => importInputRef.current?.click()} className="inline-flex items-center gap-1.5 px-2 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+              <Button variant="none" size="none" onClick={() => importInputRef.current?.click()} className="inline-flex items-center gap-1.5 px-2 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                 <Upload size={13} />
                 Importar
-              </button>
-              <button type="button" onClick={copyTheme} className="inline-flex items-center gap-1.5 px-2 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+              </Button>
+              <Button variant="none" size="none" onClick={copyTheme} className="inline-flex items-center gap-1.5 px-2 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                 <Copy size={13} />
                 Copiar tema
-              </button>
+              </Button>
               <div className="relative min-w-[240px] flex-1 sm:flex-none">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   onClick={() => setPresetOpen((value) => !value)}
                   className="flex h-8 w-full items-center gap-2 rounded-lg bg-[var(--bg-input)] px-3 text-left text-[12px] font-medium text-[var(--text-primary)]"
                 >
@@ -430,15 +465,14 @@ export default function AppearanceView() {
                   </span>
                   <span className="min-w-0 flex-1 truncate">{displayPresetName(theme.name)}</span>
                   <ChevronDown size={15} className={`text-[var(--text-secondary)] transition-transform ${presetOpen ? 'rotate-180' : ''}`} />
-                </button>
+                </Button>
                 {presetOpen && (
                   <div className="absolute right-0 z-20 mt-1 max-h-[320px] w-full overflow-auto rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1 shadow-2xl">
                     {presets.map((name) => {
                       const active = theme.name === name;
                       return (
-                        <button
+                        <Button variant="none" size="none"
                           key={name}
-                          type="button"
                           onClick={() => applyPreset(name)}
                           className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] transition-colors ${
                             active ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'
@@ -449,7 +483,7 @@ export default function AppearanceView() {
                           </span>
                           <span className="min-w-0 flex-1 truncate">{displayPresetName(name)}</span>
                           {active && <Check size={14} />}
-                        </button>
+                        </Button>
                       );
                     })}
                   </div>
@@ -486,9 +520,8 @@ export default function AppearanceView() {
                 {ACCENTS.map((item) => {
                   const isActive = accent === item.key;
                   return (
-                    <button
+                    <Button variant="none" size="none"
                       key={item.key}
-                      type="button"
                       onClick={() => {
                         setAccent(item.key);
                         const nextTheme = {
@@ -556,9 +589,8 @@ export default function AppearanceView() {
                 {DENSITY_OPTIONS.map((option) => {
                   const active = density === option.key;
                   return (
-                    <button
+                    <Button variant="none" size="none"
                       key={option.key}
-                      type="button"
                       aria-label={`Densidad ${option.label.toLowerCase()}`}
                       aria-pressed={active}
                       onClick={() => updateDensity(option.key)}
@@ -569,7 +601,7 @@ export default function AppearanceView() {
                       }`}
                     >
                       {option.label}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
@@ -613,15 +645,49 @@ export default function AppearanceView() {
           </SettingRow>
         </section>
 
+        <section className="mt-3 overflow-visible rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)]">
+          <div className="border-b border-[var(--border-subtle)] px-3 py-3">
+            <div className="text-[12px] font-semibold text-[var(--text-primary)]">Soporte y Diagnóstico</div>
+            <div className="mt-1 text-[12px] text-[var(--text-secondary)]">
+              Accede a los archivos de registro o genera un informe técnico para resolución de incidencias
+            </div>
+          </div>
+          <SettingRow
+            label="Registros de la aplicación"
+            hint="Abre la carpeta local que contiene los registros de eventos e incidentes"
+          >
+            <Button variant="none" size="none"
+              onClick={handleOpenLogsFolder}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 text-[12px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
+            >
+              <FolderOpen size={14} className="text-[var(--text-secondary)]" />
+              Abrir carpeta
+            </Button>
+          </SettingRow>
+          <SettingRow
+            label="Exportar diagnóstico"
+            hint="Genera un archivo JSON con métricas del sistema, estado del backend y registros recientes"
+          >
+            <Button variant="none" size="none"
+              onClick={handleExportDiagnostics}
+              disabled={isExportingDiagnostics}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 text-[12px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)] disabled:opacity-50"
+            >
+              <FileDown size={14} className="text-[var(--text-secondary)]" />
+              {isExportingDiagnostics ? 'Exportando...' : 'Exportar diagnóstico'}
+            </Button>
+          </SettingRow>
+        </section>
+
         <div className="mt-3 flex justify-end gap-2">
-          <button type="button" onClick={reset} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]">
+          <Button variant="none" size="none" onClick={reset} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]">
             <RotateCcw size={14} />
             Restaurar
-          </button>
-          <button type="button" onClick={save} className="inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--accent-primary)] px-3 text-[12px] font-semibold text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-hover)]">
+          </Button>
+          <Button variant="none" size="none" onClick={save} className="inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--accent-primary)] px-3 text-[12px] font-semibold text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-hover)]">
             <Save size={14} />
             Guardar
-          </button>
+          </Button>
         </div>
 
         <div className="sr-only">

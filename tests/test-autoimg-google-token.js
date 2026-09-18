@@ -1,10 +1,6 @@
 
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
+
+const { assertOrExit:assert, evictModule } = require('./helpers/harness');
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -79,7 +75,7 @@ async function main() {
 
   require.cache[storePath] = { id: storePath, filename: storePath, loaded: true, exports: fakeStore };
   require.cache[scopePath] = { id: scopePath, filename: scopePath, loaded: true, exports: fakeScope };
-  delete require.cache[sheetsPath];
+  evictModule('electron/google-sheets-service');
 
   process.env.AUTOIMG_GOOGLE_CLIENT_ID = '123456789012-testclientid.apps.googleusercontent.com';
   process.env.AUTOIMG_GOOGLE_CLIENT_SECRET = 'test-secret-value';

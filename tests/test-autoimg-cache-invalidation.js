@@ -2,12 +2,7 @@
 const path = require('path');
 const Module = require('module');
 
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
+const { assertOrExit:assert, evictModule } = require('./helpers/harness');
 
 function installMock(resolvedPath, exports) {
   require.cache[resolvedPath] = {
@@ -22,7 +17,6 @@ async function main() {
   const sheetsPath = require.resolve('../electron/google-sheets-service');
   const drivePath = require.resolve('../electron/google-drive-service');
   const wmPath = require.resolve('../electron/window-manager');
-  const enginePath = require.resolve('../electron/autoimg-sync-engine');
 
   const folderHeader = ['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS'];
   let folderValues = [
@@ -69,7 +63,7 @@ async function main() {
     getMainWindow: () => null,
   });
 
-  delete require.cache[enginePath];
+  evictModule('electron/autoimg-sync-engine');
   for (const key of Object.keys(require.cache)) {
     if (key.includes(`${path.sep}electron${path.sep}autoimg-`)) {
       delete require.cache[key];

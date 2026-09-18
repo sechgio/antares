@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { reportFrontendError } from '../utils/observability';
 
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
+type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 export interface ToastItem {
   id: string;
@@ -8,6 +9,8 @@ export interface ToastItem {
   type: ToastType;
   action?: { label: string; onClick: () => void };
   duration?: number;
+  view?: string;
+  error?: unknown;
 }
 
 interface ToastContextValue {
@@ -35,6 +38,24 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const addToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
     const id = Math.random().toString(36).slice(2, 9);
     setToasts((prev) => [...prev, { ...toast, id }]);
+
+    if (toast.type === 'error') {
+      let errName: string | undefined;
+      let errStack: string | undefined;
+      if (toast.error instanceof Error) {
+        errName = toast.error.name;
+        errStack = toast.error.stack;
+      } else if (toast.error && typeof toast.error === 'object' && 'name' in toast.error) {
+        errName = String((toast.error as { name: unknown }).name);
+      }
+      reportFrontendError({
+        kind: 'toast_error',
+        view: toast.view ?? 'toast',
+        name: errName ?? 'ToastError',
+        message: toast.message || (toast.error instanceof Error ? toast.error.message : String(toast.error || 'Toast error')),
+        stack: errStack,
+      });
+    }
 
     const duration = toast.duration ?? 5000;
     if (duration > 0) {

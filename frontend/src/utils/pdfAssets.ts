@@ -46,7 +46,7 @@ function stageFileForPdf(file: File): Promise<string | null> {
   return runStagedLimited(() => stageFileForIpc(file));
 }
 
-export function fileToDataUrl(file: File): Promise<string> {
+export function fileToDataUrl(file: Blob): Promise<string> {
   if (typeof FileReader === 'undefined' && typeof file.arrayBuffer === 'function') {
     return file.arrayBuffer().then(bytes =>
       `data:${file.type || 'application/octet-stream'};base64,${arrayBufferToBase64(bytes)}`,
@@ -61,7 +61,7 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export async function toPersistentUrl(url: string | null): Promise<string | null> {
+async function toPersistentUrl(url: string | null): Promise<string | null> {
   if (!url) return null;
   if (url.startsWith('data:')) return url;
   if (!url.startsWith('blob:') && !url.startsWith('http://') && !url.startsWith('https://')) {
@@ -70,12 +70,7 @@ export async function toPersistentUrl(url: string | null): Promise<string | null
   try {
     const res = await fetch(url);
     const blob = await res.blob();
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
+    return await fileToDataUrl(blob);
   } catch {
     return url;
   }

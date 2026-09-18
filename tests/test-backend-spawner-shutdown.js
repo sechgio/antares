@@ -1,59 +1,24 @@
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const {
+  assert, finish, stubBackendCommand, evictModule, makeFakeProc, patchSpawn,
+} = require('./helpers/harness');
 
 async function run() {
   console.log('Testing backend spawner shutdown path...\n');
 
-  const backendCommandPath = require.resolve('../electron/backend-command.js');
-  require.cache[backendCommandPath] = {
-    id: backendCommandPath,
-    filename: backendCommandPath,
-    loaded: true,
-    exports: {
-      getBackendCommand: () => ({ cmd: 'python', args: [] }),
-    },
-  };
+  stubBackendCommand();
 
-  const originalSpawn = childProcess.spawn;
   const originalExecFileSync = childProcess.execFileSync;
   const originalExecFile = childProcess.execFile;
   const originalPlatform = process.platform;
   let syncTaskkillCalls = 0;
   let asyncTaskkillCalls = 0;
-  let spawnCount = 0;
 
   Object.defineProperty(process, 'platform', { value: 'win32' });
 
-  childProcess.spawn = () => {
-    spawnCount++;
-    const fakeProcess = new EventEmitter();
-    fakeProcess.stdout = new EventEmitter();
-    fakeProcess.stderr = new EventEmitter();
-    fakeProcess.stdin = new EventEmitter();
-    fakeProcess.stdin.end = () => {};
-    fakeProcess.killed = false;
-    fakeProcess.pid = 54321 + spawnCount;
-    fakeProcess.kill = () => {
-      fakeProcess.killed = true;
-    };
-    process.nextTick(() => {
-      fakeProcess.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","method":"ready","params":{"status":"ok"}}\n'));
-    });
-    return fakeProcess;
-  };
+  const spawn = patchSpawn(() => makeFakeProc({ pid: 54321 + spawn.count, closeOnKill: false }));
 
   childProcess.execFileSync = () => {
     syncTaskkillCalls++;
@@ -64,8 +29,7 @@ async function run() {
     return new EventEmitter();
   };
 
-  const backendSpawnerPath = require.resolve('../electron/backend-spawner.js');
-  delete require.cache[backendSpawnerPath];
+  evictModule('electron/backend-spawner.js');
   const {
     startPythonBackend,
     killPython,
@@ -80,23 +44,19 @@ async function run() {
     assert(syncTaskkillCalls === 0, 'Shutdown should not use blocking taskkill');
     assert(asyncTaskkillCalls === 1, 'Shutdown should schedule taskkill asynchronously on Windows');
 
-    const spawnBefore = spawnCount;
+    const spawnBefore = spawn.count;
     const restarted = await manualRestart(true, { force: true });
     assert(restarted === false, 'manualRestart aborts when shutdown is in progress');
     assert(!isReady(), 'backend stays not-ready after quit + aborted restart');
-    assert(spawnCount === spawnBefore, 'manualRestart does not spawn after killPython');
+    assert(spawn.count === spawnBefore, 'manualRestart does not spawn after killPython');
   } finally {
-    childProcess.spawn = originalSpawn;
+    spawn.restore();
     childProcess.execFileSync = originalExecFileSync;
     childProcess.execFile = originalExecFile;
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

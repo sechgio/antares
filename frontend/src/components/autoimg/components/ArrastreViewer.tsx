@@ -3,6 +3,7 @@ import { ClipboardList, Loader2 } from 'lucide-react';
 import { api } from '../../../api';
 import type { ArrastreEntry } from '../types';
 import { ActionButton, EmptyState, PanelHeader, PanelShell } from './shared';
+import { errorMessage } from '@/utils/errors';
 
 interface ArrastreViewerProps {
   entries?: ArrastreEntry[];
@@ -30,7 +31,7 @@ export default function ArrastreViewer({ entries: externalEntries, onRefresh }: 
       }
     } catch (e) {
       if (!externalEntries) setEntries([]);
-      setError(e instanceof Error ? e.message : 'Error al cargar BD_ARRASTRE');
+      setError(errorMessage(e, 'Error al cargar BD_ARRASTRE'));
     } finally {
       setLoading(false);
     }

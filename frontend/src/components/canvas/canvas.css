@@ -789,11 +789,6 @@ select.canvas-input option {
   padding-bottom: 6px;
 }
 
-.canvas-section--bare {
-  padding-top: 2px;
-  padding-bottom: 10px;
-}
-
 .canvas-inspector-stack {
   display: flex;
   flex-direction: column;
@@ -1320,10 +1315,7 @@ select.canvas-input option {
 
 .canvas-dot-bg {
   background-color: var(--cv-bg-deep);
-}
-
-.canvas-dot-bg[data-canvas-tool='hand']:not([data-canvas-panning='1']),
-.canvas-dot-bg[data-canvas-tool='hand']:not([data-canvas-panning='1']) .canvas-artboard-cursor {
+}.canvas-dot-bg[data-canvas-tool='hand']:not([data-canvas-panning='1']){
   cursor: grab;
 }
 .canvas-dot-bg[data-canvas-panning='1'] {
@@ -1709,32 +1701,6 @@ select.canvas-input option {
 
 .canvas-field-presets {
   margin-bottom: 8px;
-}
-
-.canvas-field-presets-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 7px;
-}
-
-.canvas-field-presets-header .canvas-sublabel {
-  margin: 0;
-  color: var(--cv-text-secondary);
-  font-size: 10px;
-}
-
-.canvas-field-presets-count {
-  display: inline-flex;
-  min-width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  background: var(--cv-hover);
-  color: var(--cv-text-muted);
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
 }
 
 .canvas-field-chips {
@@ -2631,14 +2597,6 @@ select.canvas-input option {
   color: var(--cv-text-secondary);
 }
 
-.canvas-status-pill {
-  border-radius: 999px;
-  background: var(--cv-hover);
-  padding: 2px 8px;
-  font-size: 11px;
-  color: var(--cv-text-muted);
-}
-
 .canvas-generate-aside {
   display: flex;
   width: 340px;
@@ -2930,12 +2888,6 @@ select.canvas-input option {
   font-weight: 500;
   color: var(--cv-text-secondary);
   white-space: nowrap;
-}
-
-.canvas-inline-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
-  color: var(--cv-accent);
 }
 
 .canvas-chip {

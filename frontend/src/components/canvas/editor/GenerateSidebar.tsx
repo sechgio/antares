@@ -17,6 +17,7 @@ import type { CanvasDocumentSummary } from '../types';
 import { CanvasToggle } from './CanvasControls';
 import { GenerateSegmented, GenerateStep } from './GenerateWizardChrome';
 import CanvasSelect from './CanvasSelect';
+import Button from '@/components/ui/Button';
 
 function dashedStyle(active: boolean) {
   return {
@@ -131,8 +132,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
               const inputId = side === 'left' ? 'canvasLogoLeft' : 'canvasLogoRight';
               return (
                 <div key={side}>
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     className="relative flex h-11 w-full cursor-pointer items-center justify-center overflow-hidden rounded-md border border-dashed transition-colors"
                     style={{ borderColor: 'var(--cv-border-strong)' }}
                     onClick={() => document.getElementById(inputId)?.click()}
@@ -144,7 +144,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
                         {side === 'left' ? 'Logo Izq' : 'Logo Der'}
                       </span>
                     )}
-                  </button>
+                  </Button>
                   <input
                     id={inputId}
                     type="file"
@@ -497,17 +497,15 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
               </p>
 
               <div className="space-y-1.5 pt-0.5">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   disabled={busy || rows.length === 0 || (exportScope === 'single' && !rows[rowIndex])}
                   className="canvas-btn-primary !h-9 w-full justify-center gap-2"
                   onClick={onExport}
                 >
                   {busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                   {busy ? 'Generando…' : exportScope === 'all' ? 'PDF Consolidado' : 'Descargar PDF'}
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button variant="none" size="none"
                   disabled={rows.length === 0 || exportScope === 'all'}
                   className="flex w-full items-center justify-center gap-1.5 rounded-md border py-1.5 text-[10px] font-medium transition-colors disabled:opacity-40"
                   style={{
@@ -518,7 +516,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
                   onClick={onPrint}
                 >
                   <Printer size={12} /> Imprimir
-                </button>
+                </Button>
               </div>
             </div>
           </div>

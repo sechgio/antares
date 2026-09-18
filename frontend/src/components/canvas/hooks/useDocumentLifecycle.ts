@@ -14,12 +14,17 @@ import {
   serializeHistorySteps,
 } from '../utils/imageBlobStore';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
+import { reportFrontendError, reportFrontendEvent } from '../../../utils/observability';
+import { errorMessage } from '@/utils/errors';
 
-function logCloudPersistFailure(error: unknown): void {
-  console.warn(
-    '[canvas] No se pudo sincronizar con cloud:',
-    error instanceof Error ? error.message : error,
-  );
+function logCloudPersistFailure(): void {
+  reportFrontendEvent({
+    event: 'canvas.push',
+    level: 'WARN',
+    outcome: 'failed',
+    reason: 'cloud_push_failed',
+    view: 'canvas',
+  });
 }
 
 interface DocumentSnapshot {
@@ -118,10 +123,19 @@ export function useDocumentLifecycle({
   );
 
   const warnHistoryPersistFailed = useCallback((err: unknown) => {
-    console.warn(
-      '[canvas] No se pudo persistir historial:',
-      err instanceof Error ? err.message : err,
-    );
+    reportFrontendEvent({
+      event: 'storage.local',
+      level: 'WARN',
+      outcome: 'degraded',
+      reason: 'history_persist_failed',
+      view: 'canvas',
+    });
+    reportFrontendError({
+      kind: 'storage_error',
+      view: 'canvas.history',
+      name: err instanceof Error ? err.name : 'StorageError',
+      message: errorMessage(err, String(err)),
+    });
   }, []);
 
   const hydratePersistedHistory = useCallback(
@@ -195,10 +209,13 @@ export function useDocumentLifecycle({
           }
         }
       } catch (err) {
-        console.warn(
-          '[canvas] No se pudo restaurar historial:',
-          err instanceof Error ? err.message : err,
-        );
+        reportFrontendEvent({
+          event: 'storage.local',
+          level: 'WARN',
+          outcome: 'degraded',
+          reason: 'history_restore_failed',
+          view: 'canvas',
+        });
       } finally {
         if (restoreGenerationRef.current === restoreGeneration) {
           historyReadyRef.current = true;
@@ -275,7 +292,7 @@ export function useDocumentLifecycle({
         return true;
       } catch (err) {
         lastSaveRetryAfterMsRef.current = apiRetryAfterMs(err);
-        if (!opts?.silent) flashStatus(err instanceof Error ? err.message : 'Error al guardar');
+        if (!opts?.silent) flashStatus(errorMessage(err, 'Error al guardar'));
         return false;
       }
     },
@@ -301,7 +318,7 @@ export function useDocumentLifecycle({
           resetViewportPan();
           await refreshList();
         } catch (err) {
-          setStatus(err instanceof Error ? err.message : 'Error al abrir');
+          setStatus(errorMessage(err, 'Error al abrir'));
         }
       });
     },
@@ -343,7 +360,7 @@ export function useDocumentLifecycle({
           await refreshList();
           void Promise.resolve(queueCanvasCloudPush(hydrated)).catch(logCloudPersistFailure);
         } catch (err) {
-          setStatus(err instanceof Error ? err.message : 'Error al crear');
+          setStatus(errorMessage(err, 'Error al crear'));
         }
       });
     },
@@ -384,7 +401,7 @@ export function useDocumentLifecycle({
           flashStatus('Duplicado');
           void Promise.resolve(queueCanvasCloudPush(dup)).catch(logCloudPersistFailure);
         } catch (err) {
-          setStatus(err instanceof Error ? err.message : 'Error al duplicar');
+          setStatus(errorMessage(err, 'Error al duplicar'));
         }
       });
     },
@@ -425,7 +442,7 @@ export function useDocumentLifecycle({
           resetViewportPan();
           flashStatus('Documento eliminado');
         } catch (err) {
-          setStatus(err instanceof Error ? err.message : 'Error al eliminar');
+          setStatus(errorMessage(err, 'Error al eliminar'));
         }
       });
     },

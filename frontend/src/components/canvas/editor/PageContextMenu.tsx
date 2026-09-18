@@ -1,7 +1,8 @@
 import { Copy, Pencil, Trash2 } from 'lucide-react';
 import { useContextMenuSurface } from '../hooks/useContextMenuSurface';
+import Button from '@/components/ui/Button';
 
-export type PageContextAction = 'rename' | 'duplicate' | 'delete';
+type PageContextAction = 'rename' | 'duplicate' | 'delete';
 
 export interface PageContextMenuState {
   x: number;
@@ -50,8 +51,7 @@ export default function PageContextMenu({
       {items.map((item) => (
         <div key={item.id}>
           {item.sepBefore && <div className="canvas-context-sep" role="separator" />}
-          <button
-            type="button"
+          <Button variant="none" size="none"
             role="menuitem"
             className="canvas-context-item"
             data-danger={item.danger || undefined}
@@ -64,7 +64,7 @@ export default function PageContextMenu({
           >
             <item.icon className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 flex-1 text-left">{item.label}</span>
-          </button>
+          </Button>
         </div>
       ))}
     </div>

@@ -4,6 +4,7 @@ import Toggle from '../ui/Toggle';
 import Input from '../ui/Input';
 import { Camera, Maximize2, SlidersHorizontal, Info, Zap, Image as ImageIcon, FileImage, Layers } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import Button from '@/components/ui/Button';
 
 interface OptionsCardProps {
   formato: string;
@@ -98,14 +99,13 @@ export default function OptionsCard({
         <div className="flex items-center justify-between">
           <label className="text-xs font-medium text-[var(--text-secondary)]">Formato de salida</label>
           <WithHoverTooltip label="Información del formato" placement="bottom">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={() => setShowFormatInfo((v) => !v)}
               aria-label="Información del formato"
               className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
             >
               <Info className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </WithHoverTooltip>
         </div>
         <div className="grid grid-cols-4 gap-1.5">
@@ -114,8 +114,7 @@ export default function OptionsCard({
             const info = FORMAT_INFO[f];
             return (
               <WithHoverTooltip key={f} label={info?.desc || f} placement="bottom">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   onClick={() => onFormatoChange(f)}
                   aria-label={info?.desc || f}
                   className={`relative flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl border text-center transition-all duration-200 ${
@@ -132,7 +131,7 @@ export default function OptionsCard({
                     </svg>
                   </span>
                 )}
-              </button>
+              </Button>
               </WithHoverTooltip>
             );
           })}
@@ -164,7 +163,7 @@ export default function OptionsCard({
             const Icon = preset.icon;
             const active = calidad === preset.value;
             return (
-              <button
+              <Button variant="none" size="none"
                 key={preset.label}
                 onClick={() => onCalidadChange(preset.value)}
                 className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl border text-center transition-all duration-200 ${
@@ -176,7 +175,7 @@ export default function OptionsCard({
                 <Icon className="h-3.5 w-3.5" style={{ color: active ? 'var(--accent-primary)' : preset.color }} />
                 <span className={`text-[10px] font-bold ${active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-secondary)]'}`}>{preset.label}</span>
                 <span className="text-[9px] text-[var(--text-muted)]">{preset.desc}</span>
-              </button>
+              </Button>
             );
           })}
         </div>

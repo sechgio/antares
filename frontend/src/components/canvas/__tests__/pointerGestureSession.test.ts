@@ -42,6 +42,37 @@ describe('createPointerGestureSession', () => {
     expect(getActivePointerGestureSession()).toBeNull();
   });
 
+  it('ignores move and up events from a different pointer', () => {
+    const onMove = vi.fn();
+    const onEnd = vi.fn();
+    const options = { pointerId: 7, onMove, onEnd };
+    createPointerGestureSession(options);
+
+    window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 8 }));
+    window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 8 }));
+    expect(onMove).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 7 }));
+    window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7 }));
+    expect(onMove).toHaveBeenCalledTimes(1);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('losing window focus does not abort the gesture (parity with pre-refactor)', () => {
+    const onEnd = vi.fn();
+    const onAbort = vi.fn();
+    const session = createPointerGestureSession({ onMove: () => {}, onEnd, onAbort });
+
+    window.dispatchEvent(new Event('blur'));
+
+    expect(onAbort).not.toHaveBeenCalled();
+    expect(session.aborted).toBe(false);
+
+    window.dispatchEvent(new PointerEvent('pointerup'));
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
   it('Escape via onKeyDown can abort without onEnd', () => {
     const onEnd = vi.fn();
     const onAbort = vi.fn();

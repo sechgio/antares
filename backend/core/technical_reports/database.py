@@ -1,28 +1,15 @@
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 
 from backend.core.report_store import ReportStore, resolve_report_store_paths
 from backend.core.technical_reports.models import TechnicalReport, create_empty_report, next_technical_report_number
+from backend.utils.lazy import LazySingleton
 from backend.utils.paths import resource_path, user_data_path
 
 DEFAULT_DB_PATH = user_data_path("technical_reports.json")
 _DEFAULT_USER_DATA_PATH = DEFAULT_DB_PATH
 _LEGACY_DB_PATH = resource_path("data/technical_reports.json")
-
-_db_instance: TechnicalReportsDB | None = None
-_db_instance_lock = threading.Lock()
-
-
-def get_reports_db(db_path: str | Path | None = None) -> TechnicalReportsDB:
-    global _db_instance
-    if _db_instance is None:
-        with _db_instance_lock:
-            if _db_instance is None:
-                _db_instance = TechnicalReportsDB(db_path)
-    return _db_instance
-
 
 class TechnicalReportsDB(ReportStore):
     not_found_template = "Informe no encontrado: {id}"
@@ -55,3 +42,10 @@ class TechnicalReportsDB(ReportStore):
             return sorted(
                 {r.get("header", {}).get("contratista", "") for r in filtered_items if r.get("header", {}).get("contratista")}
             )
+
+
+_db_singleton = LazySingleton(TechnicalReportsDB)
+
+
+def get_reports_db(db_path: str | Path | None = None) -> TechnicalReportsDB:
+    return _db_singleton.get(db_path)

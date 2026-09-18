@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pencil, Star, Trash2 } from 'lucide-react';
 import ColorSwatchPicker from './ColorSwatchPicker';
 import { resolveItemColor } from '../utils/colors';
+import Button from '@/components/ui/Button';
 
 interface SidebarNavItemProps {
   name: string;
@@ -120,8 +121,7 @@ export default function SidebarNavItem({
           </form>
         ) : (
           <WithHoverTooltip label="Doble clic para renombrar" placement="right" className="min-w-0 flex-1">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={onSelect}
               onDoubleClick={(e) => {
                 e.preventDefault();
@@ -139,31 +139,29 @@ export default function SidebarNavItem({
                 {name}
               </span>
               {isFavorite && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />}
-            </button>
+            </Button>
           </WithHoverTooltip>
         )}
 
         {!editing && (
           <div className="relative z-[1] flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100">
             <WithHoverTooltip label={renameLabel} placement="right">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={startEditing}
                 className="rounded-md p-1 text-[var(--text-muted)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] focus:opacity-100"
                 aria-label={renameLabel}
               >
                 <Pencil className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </WithHoverTooltip>
             <WithHoverTooltip label={deleteLabel} placement="right">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={onDelete}
                 className="rounded-md p-1 text-[var(--text-muted)] hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)] focus:opacity-100"
                 aria-label={deleteLabel}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </WithHoverTooltip>
           </div>
         )}

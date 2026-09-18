@@ -4,16 +4,16 @@ import { mm, parseMm } from '../types';
 
 export type ChildBox = { x: number; y: number; w: number; h: number };
 
-export const MIN_SIZE_MM = 1;
+const MIN_SIZE_MM = 1;
 
-export interface ResolvedPadding {
+interface ResolvedPadding {
   top: number;
   right: number;
   bottom: number;
   left: number;
 }
 
-export function resolvePadding(layout: LayerAutoLayout): ResolvedPadding {
+function resolvePadding(layout: LayerAutoLayout): ResolvedPadding {
   const fallback = Math.max(0, layout.padMm ?? 0);
   return {
     top: Math.max(0, layout.padTopMm ?? fallback),

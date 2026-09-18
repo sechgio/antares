@@ -1,4 +1,6 @@
 import type { BulletStyle } from "../types";
+import { excelSerialToDate } from "../../../utils/excel";
+import { isoDateStamp } from "../../../utils/dates";
 
 const dateFormatter = new Intl.DateTimeFormat("es-PE", {
   weekday: "long",
@@ -21,12 +23,6 @@ export const toSlugId = (): string =>
 
 export const normalizeHeader = (value: string): string =>
   stripAccents(value).replace(/\s+/g, "_");
-
-export const excelSerialToDate = (value: number): Date => {
-  const base = new Date(Date.UTC(1899, 11, 30));
-  const millis = value * 24 * 60 * 60 * 1000;
-  return new Date(base.getTime() + millis);
-};
 
 export const normalizeDateInput = (value: unknown): string | null => {
   if (value === null || value === undefined || value === "") {
@@ -74,7 +70,7 @@ export const normalizeDateInput = (value: unknown): string | null => {
 
   const parsed = new Date(trimmed);
   if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10);
+    return isoDateStamp(parsed);
   }
 
   return null;
@@ -127,7 +123,7 @@ export const normalizeTimeInput = (value: unknown): string | null => {
   return null;
 };
 
-export const capitalize = (value: string): string =>
+const capitalize = (value: string): string =>
   value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 
 export const formatFlyerDateLine = (

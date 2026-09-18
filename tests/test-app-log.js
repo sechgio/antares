@@ -22,6 +22,8 @@ function makeDir(name, contentMtime) {
   return p;
 }
 
+async function main() {
+
 makeDir('antares-staged-99999999', OLD);
 makeDir(`antares-staged-${process.pid}`, OLD);
 makeDir('antares-staged-88888888', FRESH);
@@ -39,7 +41,16 @@ assert(fs.existsSync(path.join(tmp, 'antares-backend-command-abc')) === false, '
 console.log('cleanStaleTempDirs: 5/5 escenarios OK');
 
 const dir = l.initAppLogs();
+let syncAppendCalls = 0;
+const originalAppendFileSync = fs.appendFileSync;
+fs.appendFileSync = (...args) => {
+  syncAppendCalls += 1;
+  return originalAppendFileSync(...args);
+};
 l.appendLogLine('INFO', 'linea normal con\nsalto de linea inyectado');
+await l.flushLogQueue();
+fs.appendFileSync = originalAppendFileSync;
+assert.strictEqual(syncAppendCalls, 0, 'logging frecuente no debe usar appendFileSync');
 const d = new Date();
 const yyyy = d.getFullYear();
 const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -54,6 +65,7 @@ try {
   fs.unlinkSync(logFile);
   fs.symlinkSync(path.join(dir, 'victima.txt'), logFile, 'file');
   l.appendLogLine('INFO', 'tras symlink');
+  await l.flushLogQueue();
   const st = fs.lstatSync(logFile);
   assert(!st.isSymbolicLink(), 'el symlink debe haberse eliminado');
   const c2 = fs.readFileSync(logFile, 'utf8');
@@ -68,8 +80,31 @@ try {
   }
 }
 
+// flushSync persiste lo encolado sin esperar el tick asincrono (ruta de cierre/crash).
+l.appendLogLine('INFO', 'pendiente en cierre sincrono');
+l.flushLogQueueSync();
+assert(fs.readFileSync(logFile, 'utf8').includes('pendiente en cierre sincrono'), 'flushSync escribe el pending');
+console.log('flushSync en cierre sincrono: OK');
+
+// Un fallo de escritura no debe envenenar la cadena: lo posterior sigue llegando.
+fs.unlinkSync(logFile);
+fs.mkdirSync(logFile, { recursive: true }); // appendFile sobre un directorio falla (EISDIR/EPERM)
+l.appendLogLine('INFO', 'linea hacia destino roto');
+await l.flushLogQueue();
+fs.rmdirSync(logFile);
+l.appendLogLine('INFO', 'linea posterior al fallo');
+await l.flushLogQueue();
+assert(fs.readFileSync(logFile, 'utf8').includes('linea posterior al fallo'), 'la cola sigue viva tras un writeBatch fallido');
+console.log('cadena de drain inmune a rechazos: OK');
+
 for (const name of ['antares-staged-99999999', `antares-staged-${process.pid}`, 'antares-staged-88888888', 'antares-pdf-x1y2z3', 'antares-backend-command-abc']) {
   fs.rmSync(path.join(tmp, name), { recursive: true, force: true });
 }
 fs.rmSync(process.env.LOCALAPPDATA, { recursive: true, force: true });
 console.log('TODO OK');
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

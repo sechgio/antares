@@ -9,9 +9,9 @@ export type AspectRatio = 'original' | '1:1' | '4:3' | '4:5' | '3:2' | '16:9' | 
 
 export type CropOrigin = 'top' | 'bottom';
 
-export type ExportMode = 'zip' | 'individual';
+type ExportMode = 'zip' | 'individual';
 
-export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'error';
+type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'error';
 
 export type PreviewTab = 'original' | 'crop' | 'result' | 'compare';
 
@@ -23,7 +23,7 @@ export interface AspectRatioOption {
   ratio: number | null;
 }
 
-export interface OperationToggles {
+interface OperationToggles {
   cropEnabled: boolean;
   resizeEnabled: boolean;
   formatEnabled: boolean;
@@ -31,33 +31,33 @@ export interface OperationToggles {
   renameEnabled: boolean;
 }
 
-export interface CropSettings {
+interface CropSettings {
   aspectRatio: AspectRatio;
   cropOrigin: CropOrigin;
 }
 
-export interface ResizeSettings {
+interface ResizeSettings {
   maxWidth: number;
   maxHeight: number;
   noUpscale: boolean;
 }
 
-export interface FormatSettings {
+interface FormatSettings {
   outputFormat: OutputFormat;
 }
 
-export interface CompressionSettings {
+interface CompressionSettings {
   maxSizeMB: number;
   quality: number;
   useWebWorker: boolean;
 }
 
-export interface RenameSettings {
+interface RenameSettings {
   prefix: string;
   startAt: number;
 }
 
-export interface ExportSettings {
+interface ExportSettings {
   mode: ExportMode;
   zipName: string;
   outputFolder: string;
@@ -73,7 +73,7 @@ export interface BatchSettings {
   export: ExportSettings;
 }
 
-export interface ImageOverrides {
+interface ImageOverrides {
   skipCompression: boolean;
   customFilename: string;
   customCropOffset?: CropOffset;

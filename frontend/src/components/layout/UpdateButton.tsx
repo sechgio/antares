@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useDialog } from '../../hooks/useDialog';
 import { HoverTooltip } from '@/components/ui/HoverTooltip';
+import Button from '@/components/ui/Button';
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
 
@@ -113,8 +114,7 @@ export default function UpdateButton() {
 
   return (
     <div className="relative flex h-full">
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={handleClick}
         className={`app-titlebar-button flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] ${isActive ? 'pointer-events-none opacity-70' : ''} ${isError ? 'text-[var(--accent-red)]' : ''}`}
         disabled={isActive}
@@ -127,7 +127,7 @@ export default function UpdateButton() {
           {update.status === 'error' && <AlertCircle size={14} strokeWidth={1.8} />}
           {(update.status === 'idle' || update.status === 'up-to-date') && <Download size={14} strokeWidth={1.8} />}
         </span>
-      </button>
+      </Button>
       <HoverTooltip label={title} placement="bottom" />
 
       {update.status === 'downloading' && (

@@ -1,7 +1,7 @@
-import { Upload, X, Trash2, ImageIcon, ChevronDown, ChevronUp } from 'lucide-react';
-import { useImageUploaderState } from '../../../hooks/useImageUploaderState';
+import { ImageIcon } from 'lucide-react';
 import { ARIA_LABELS, ACCEPTED_IMAGE_TYPES } from '../constants';
 import type { LocalImage } from '../types';
+import SharedImageUploader from '@/components/ui/ImageUploader';
 
 interface Props {
   images: LocalImage[];
@@ -11,128 +11,29 @@ interface Props {
 }
 
 export default function ImageUploader({ images, onAdd, onRemove, onClear }: Props) {
-  const {
-    inputRef,
-    isDragging,
-    errors,
-    expanded,
-    hasMore,
-    hiddenCount,
-    visibleImages,
-    handleFiles,
-    onDrop,
-    onDragOver,
-    onDragLeave,
-    clearErrors,
-    toggleExpanded,
-  } = useImageUploaderState({
-    images,
-    onAdd,
-    acceptFile: (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
-  });
-
   return (
-    <div className="flex flex-col gap-2">
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label={ARIA_LABELS.imageUploader}
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            inputRef.current?.click();
-          }
-        }}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        className={`cursor-pointer rounded-lg border-2 border-dashed px-3 py-3 flex items-center gap-2.5 transition-colors ${
-          isDragging ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5' : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--accent-primary)]/50'
-        }`}
-      >
-        <div className="w-8 h-8 rounded-md bg-[var(--bg-elevated)] flex items-center justify-center shrink-0">
-          <Upload size={14} className="text-[var(--text-muted)]" />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[11px] font-medium text-[var(--text-primary)]">Arrastra imágenes o haz clic</span>
-          <span className="text-[10px] text-[var(--text-muted)]">PNG, JPG, WebP · admite lotes grandes</span>
-        </div>
-        {images.length > 0 && (
-          <span className="ml-auto px-2 py-0.5 rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[11px] font-bold">
-            {images.length}
-          </span>
-        )}
-      </div>
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept={ACCEPTED_IMAGE_TYPES.join(',')}
-        className="hidden"
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => handleFiles(e.target.files)}
-      />
-
-      {errors.length > 0 && (
-        <div className="flex flex-col gap-1 px-1">
-          {errors.map((err, i) => (
-            <span key={i} className="text-[11px] text-[var(--accent-red)]">{err}</span>
-          ))}
-          <button type="button" className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={clearErrors}>Descartar</button>
-        </div>
-      )}
-
-      {images.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between px-0.5">
-            <span className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
-              <ImageIcon size={11} />
-              {images.length} imagen{images.length !== 1 && 'es'}
-            </span>
-            <button type="button" onClick={onClear} className="text-[11px] text-[var(--accent-red)] hover:opacity-80 flex items-center gap-1 transition-colors">
-              <Trash2 size={11} />
-              Limpiar
-            </button>
-          </div>
-          <div className="grid grid-cols-5 gap-1.5 place-items-center">
-            {visibleImages.map((img, idx) => (
-              <div key={idx} className="relative group rounded-md overflow-hidden border border-[var(--border-subtle)] aspect-square w-full bg-[var(--bg-surface)]">
-                <img src={img.objectUrl} alt={img.file.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  aria-label={`Eliminar imagen ${idx + 1}`}
-                  onClick={() => onRemove(idx)}
-                  className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 50%, transparent)' }}
-                >
-                  <X size={14} className="text-[var(--text-primary)]" />
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {hasMore && (
-            <button
-              type="button"
-              onClick={toggleExpanded}
-              className="mx-auto flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] transition-all"
-            >
-              {expanded ? (
-                <>
-                  <ChevronUp size={12} />
-                  Ver menos
-                </>
-              ) : (
-                <>
-                  <ChevronDown size={12} />
-                  Ver más · {hiddenCount} más
-                </>
-              )}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+    <SharedImageUploader
+      images={images}
+      onAdd={onAdd}
+      onRemove={onRemove}
+      onClear={onClear}
+      variant="dashed"
+      accept={ACCEPTED_IMAGE_TYPES.join(',')}
+      acceptFile={(file) => ACCEPTED_IMAGE_TYPES.includes(file.type)}
+      labels={{
+        dropzoneTitle: 'Arrastra imágenes o haz clic',
+        dropzoneSubtitle: 'PNG, JPG, WebP · admite lotes grandes',
+        dropzoneAriaLabel: ARIA_LABELS.imageUploader,
+        dismissErrors: 'Descartar',
+        galleryTitle: (count) => (
+          <>
+            <ImageIcon size={11} />
+            {count} imagen{count !== 1 && 'es'}
+          </>
+        ),
+        clearLabel: 'Limpiar',
+        expandMore: (hiddenCount) => `Ver más · ${hiddenCount} más`,
+      }}
+    />
   );
 }

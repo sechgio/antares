@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { PdfImportOptionsValue, PdfImportPreflight } from '../import/pdfImportTypes';
 import { DEFAULT_PDF_IMPORT_LIMITS } from '../import/pdfImportLimits';
 import { useFocusTrap } from '../../../hooks/useFocusTrap';
+import Button from '@/components/ui/Button';
 
 interface PdfImportOptionsDialogProps {
   preflight: PdfImportPreflight;
@@ -99,17 +100,16 @@ export default function PdfImportOptionsDialog({
           </fieldset>
         ) : null}
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" className="rounded px-3 py-1.5 text-xs" onClick={onCancel}>
+          <Button variant="none" size="none" className="rounded px-3 py-1.5 text-xs" onClick={onCancel}>
             Cancelar
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button variant="none" size="none"
             className="rounded bg-[var(--cv-accent)] px-3 py-1.5 text-xs text-white"
             disabled={pageStart > pageEnd}
             onClick={() => onConfirm({ pageStart, pageEnd, mixedPagePolicy })}
           >
             Importar
-          </button>
+          </Button>
         </div>
       </section>
     </div>

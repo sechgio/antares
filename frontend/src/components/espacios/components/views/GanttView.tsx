@@ -3,7 +3,7 @@ import { ChartGantt, ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BoardColumn, Tarea, TareaStatus } from '../../types';
 import { localTodayString } from '../../utils/dates';
-import { countOverdue, countUnscheduled } from '../../utils/filters';
+import { computeTaskStats } from '../../utils/filters';
 import {
   addDaysIso,
   applyGanttDragDelta,
@@ -26,9 +26,11 @@ import {
   type GanttDragMode,
   type GanttZoomLevel,
 } from '../../utils/ganttLayout';
-import { columnColor, columnIsDone, pickerColumns } from '../../utils/statusConfig';
+import { columnIsDone, pickerColumns, OVERDUE_COLOR, softSurface, statusAccent } from '../../utils/statusConfig';
+import { useOpenCreateForDate } from '../../hooks/useOpenCreateForDate';
 import EmptyState from '../EmptyState';
 import ViewStatsBar from './ViewStatsBar';
+import Button from '@/components/ui/Button';
 
 interface GanttViewProps {
   tareas: Tarea[];
@@ -50,17 +52,14 @@ const BAR_HEIGHT = 26;
 const HEADER_WEEK_H = 28;
 const HEADER_DAY_H = 36;
 const MIN_LANES = 4;
-const OVERDUE_COLOR = 'var(--accent-red)';
-
 const DATE_SHORT = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short' });
 
 function barAccent(bar: GanttBar, columns: BoardColumn[] = []): string {
-  if (bar.overdue) return OVERDUE_COLOR;
-  return columnColor(columns, bar.tarea.status);
+  return statusAccent(bar.tarea.status, bar.overdue, columns);
 }
 
 function barSurface(accent: string): string {
-  return `color-mix(in srgb, ${accent} 16%, var(--bg-elevated))`;
+  return softSurface(accent, 16);
 }
 
 function formatRangeDuration(start: string, end: string): string {
@@ -222,9 +221,11 @@ export default function GanttView({
     return () => el.removeEventListener('wheel', onWheel);
   }, [applyFreeZoom, tareas.length]);
 
-  const scheduledCount = tareas.filter((t) => t.start_date || t.due_date).length;
-  const unscheduledCount = countUnscheduled(tareas, columns);
-  const overdueCount = countOverdue(tareas, columns);
+  const {
+    scheduled: scheduledCount,
+    unscheduled: unscheduledCount,
+    overdue: overdueCount,
+  } = computeTaskStats(tareas, columns);
 
   const dayIndex = useCallback(
     (iso: string) => {
@@ -293,16 +294,7 @@ export default function GanttView({
     return () => cancelAnimationFrame(id);
   }, [days, colW, viewportW, scrollChartIntoFocus]);
 
-  const openCreateForDate = useCallback(
-    (date: string) => {
-      if (onAddTaskOnDate) {
-        onAddTaskOnDate(date);
-        return;
-      }
-      onAddTask?.();
-    },
-    [onAddTask, onAddTaskOnDate],
-  );
+  const openCreateForDate = useOpenCreateForDate(onAddTask, onAddTaskOnDate);
 
   const handleGridClick = useCallback(
     (e: React.MouseEvent) => {
@@ -434,27 +426,25 @@ export default function GanttView({
 
         <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           <WithHoverTooltip label="Anterior" placement="bottom">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={() => setRangeOffset((o) => o - 14)}
               className="gantt-tool-btn"
               aria-label="Periodo anterior"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </WithHoverTooltip>
-          <button type="button" onClick={goToday} className="gantt-tool-btn px-2.5 text-[11px] font-medium">
+          <Button variant="none" size="none" onClick={goToday} className="gantt-tool-btn px-2.5 text-[11px] font-medium">
             Hoy
-          </button>
+          </Button>
           <WithHoverTooltip label="Siguiente" placement="bottom">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={() => setRangeOffset((o) => o + 14)}
               className="gantt-tool-btn"
               aria-label="Periodo siguiente"
             >
               <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </WithHoverTooltip>
 
           <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
@@ -471,9 +461,8 @@ export default function GanttView({
                 ['month', 'Mes'],
               ] as const
             ).map(([id, label]) => (
-              <button
+              <Button variant="none" size="none"
                 key={id}
-                type="button"
                 onClick={() => setZoomPreset(id)}
                 aria-pressed={zoom === id && colWManual == null}
                 data-gantt-zoom={id}
@@ -487,32 +476,30 @@ export default function GanttView({
                 }`}
               >
                 {label}
-              </button>
+              </Button>
             ))}
           </div>
 
           <div className="flex overflow-hidden rounded-md border border-[var(--border-subtle)]">
             <WithHoverTooltip label="Acercar (Ctrl + rueda)" placement="bottom">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={zoomIn}
                 disabled={colW >= COL_W_MAX}
                 className="gantt-zoom-step border-r border-[var(--border-subtle)]"
                 aria-label="Acercar"
               >
                 <Plus className="h-3 w-3" strokeWidth={2.5} />
-              </button>
+              </Button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Alejar (Ctrl + rueda)" placement="bottom">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={zoomOut}
                 disabled={colW <= COL_W_MIN}
                 className="gantt-zoom-step"
                 aria-label="Alejar"
               >
                 <Minus className="h-3 w-3" strokeWidth={2.5} />
-              </button>
+              </Button>
             </WithHoverTooltip>
           </div>
         </div>
@@ -561,8 +548,7 @@ export default function GanttView({
                     className="gantt-day-head absolute top-0 h-full"
                     style={{ left: i * colW, width: colW }}
                   >
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       className="flex h-full w-full flex-col items-center justify-center gap-0.5 border-r border-[var(--border-subtle)]/70 transition-colors hover:bg-[var(--bg-base)]"
                       style={{
                         background: day.isToday
@@ -600,7 +586,7 @@ export default function GanttView({
                           <Plus className="h-2.5 w-2.5" strokeWidth={2.5} />
                         </span>
                       )}
-                    </button>
+                    </Button>
                   </WithHoverTooltip>
                 );
               })}

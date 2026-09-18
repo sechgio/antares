@@ -1,4 +1,5 @@
 import type { PdfImportProgress, PdfImportReport } from '../import/pdfImportTypes';
+import Button from '@/components/ui/Button';
 
 interface PdfImportStatusProps {
   progress: PdfImportProgress | null;
@@ -24,18 +25,18 @@ export default function PdfImportStatus({
             PDF: {progress.stage} · página {progress.page}/{progress.totalPages || '…'} · {progress.layers} capas · {progress.skipped} omitidos
           </span>
           {importing ? (
-            <button type="button" className="shrink-0 rounded border px-2 py-1" onClick={onCancel}>
+            <Button variant="none" size="none" className="shrink-0 rounded border px-2 py-1" onClick={onCancel}>
               Cancelar
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}
       {!progress && importing ? (
         <div className="flex items-center justify-between gap-3">
           <span>Procesando PDF…</span>
-          <button type="button" className="shrink-0 rounded border px-2 py-1" onClick={onCancel}>
+          <Button variant="none" size="none" className="shrink-0 rounded border px-2 py-1" onClick={onCancel}>
             Cancelar
-          </button>
+          </Button>
         </div>
       ) : null}
       {error ? <p className="text-red-600">{error}</p> : null}

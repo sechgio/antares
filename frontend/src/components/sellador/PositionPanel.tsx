@@ -1,6 +1,8 @@
 import { Plus, Trash2 } from 'lucide-react';
+import ThemedSelect from '../ui/ThemedSelect';
 import type { PositionAssignmentMode, StampPosition } from './utils';
 import { MAX_STAMP_POSITIONS_LIMIT } from './utils';
+import Button from '@/components/ui/Button';
 
 interface PositionPanelProps {
   positions: StampPosition[];
@@ -35,22 +37,20 @@ export default function PositionPanel({
         <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">
           Posiciones del sello
         </span>
-        <button
-          type="button"
+        <Button variant="none" size="none"
           disabled={!canAdd}
           onClick={onAddPosition}
           className="inline-flex items-center gap-1 rounded-md border border-[var(--border-medium)] px-2 py-1 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] disabled:opacity-30"
         >
           <Plus size={11} />
           Añadir
-        </button>
+        </Button>
       </div>
 
       <div className="flex flex-wrap gap-1.5">
         {positions.map((pos, index) => (
-          <button
+          <Button variant="none" size="none"
             key={pos.id}
-            type="button"
             onClick={() => onSelectPosition(index)}
             className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-mono transition-colors ${
               index === activeIndex
@@ -80,7 +80,7 @@ export default function PositionPanel({
                 <Trash2 size={10} />
               </span>
             ) : null}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -112,15 +112,12 @@ export default function PositionPanel({
               {Array.from({ length: stampCount }, (_, stampIndex) => (
                 <label key={stampIndex} className="flex items-center justify-between gap-2 text-[11px]">
                   <span className="text-[var(--text-muted)]">Sello {stampIndex + 1}</span>
-                  <select
-                    value={slotIndices[stampIndex] ?? 0}
-                    onChange={(e) => onSlotChange(stampIndex, Number(e.target.value))}
-                    className="rounded border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-0.5 text-[11px]"
-                  >
-                    {positions.map((pos, posIndex) => (
-                      <option key={pos.id} value={posIndex}>{pos.name}</option>
-                    ))}
-                  </select>
+                  <ThemedSelect
+                    value={String(slotIndices[stampIndex] ?? 0)}
+                    onChange={(value) => onSlotChange(stampIndex, Number(value))}
+                    options={positions.map((pos, posIndex) => ({ value: String(posIndex), label: pos.name }))}
+                    aria-label={`Posición del sello ${stampIndex + 1}`}
+                  />
                 </label>
               ))}
             </div>

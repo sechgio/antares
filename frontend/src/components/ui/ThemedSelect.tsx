@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 
-export interface ThemedSelectOption {
+interface ThemedSelectOption {
   value: string;
   label: string;
 }
@@ -15,6 +15,8 @@ interface ThemedSelectProps {
   'aria-label'?: string;
   placeholder?: string;
   disabled?: boolean;
+  className?: string;
+  triggerClassName?: string;
 }
 
 const MENU_GAP = 4;
@@ -27,6 +29,8 @@ export default function ThemedSelect({
   'aria-label': ariaLabel,
   placeholder,
   disabled = false,
+  className,
+  triggerClassName,
 }: ThemedSelectProps) {
   const { isOpen, position: menuBox, triggerRef, popupRef: menuRef, open, close, updatePosition } =
     useAnchoredPopover({
@@ -100,7 +104,7 @@ export default function ThemedSelect({
   };
 
   return (
-    <div className="relative w-full">
+    <div className={`relative w-full${className ? ` ${className}` : ''}`}>
       <button
         ref={triggerRef}
         type="button"
@@ -120,7 +124,7 @@ export default function ThemedSelect({
           isOpen
             ? 'bg-[var(--bg-elevated)] border-[var(--accent-primary)] ring-2 ring-[var(--accent-primary-glow)]'
             : 'bg-[var(--bg-input)] border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-glow)]'
-        } ${disabled ? '' : 'cursor-pointer'}`}
+        } ${disabled ? '' : 'cursor-pointer'} ${triggerClassName ?? ''}`}
       >
         <span className="truncate text-[var(--text-primary)]">
           {selected?.label ?? placeholder ?? value}

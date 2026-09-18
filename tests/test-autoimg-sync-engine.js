@@ -1,10 +1,6 @@
 
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
+
+const { assertOrExit:assert } = require('./helpers/harness');
 
 async function main() {
   const originalSetInterval = global.setInterval;
@@ -208,6 +204,11 @@ async function main() {
   const scanCompletos = scanOnly.filter((r) => r.count === 3).length;
   assert(scanCompletos !== fromRows.completos,
     'métricas solo-scan divergen de BD_IMG mergeado (regresión RESUMEN)');
+
+  const { getOperationStatus } = require('../electron/autoimg-sync-engine');
+  const opStatus = getOperationStatus();
+  assert(opStatus.active === null, 'inicialmente no hay operación activa');
+  assert(opStatus.cancellable === false, 'sin operación activa no es cancelable');
 
     console.log('[PASS] AutoIMG sync-engine helpers OK.');
   } finally {

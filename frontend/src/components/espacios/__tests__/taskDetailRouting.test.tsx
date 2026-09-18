@@ -17,6 +17,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }));
+vi.mock('../api/realtime', () => ({
+  subscribeEspaciosSync: () => null,
+  subscribeDueNotifications: () => null,
+  subscribeTaskActivity: () => null,
+  subscribeMyTasks: () => null,
+  unsubscribeEspaciosSync: () => {},
+}));
 vi.mock('../../../hooks/useDialog', () => ({ useDialog: () => ({ confirm: vi.fn() }) }));
 vi.mock('../../../hooks/useToast', () => ({ useToast: () => ({ addToast: vi.fn() }) }));
 vi.mock('../hooks/useTeamMembers', () => ({ useTeamMembers: () => ({ members: [], error: null }) }));

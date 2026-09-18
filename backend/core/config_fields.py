@@ -1,14 +1,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from pathlib import Path
 from typing import Any
 
+from backend.core.config_store import JsonConfigStore
 from backend.core.repository import _db_schema_lock
-from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import cached_config_path
 
 logger = logging.getLogger(__name__)
@@ -82,52 +81,44 @@ def sanitize_field_defs(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return validated
 
 
-_cached_fields: tuple[Path, list[dict[str, Any]]] | None = None
+def _parse_fields_payload(data: Any) -> list[dict[str, Any]] | None:
+    fields = data.get("fields", [])
+    if fields and isinstance(fields, list):
+        validated = sanitize_field_defs(fields)
+        if validated:
+            return validated
+    return None
+
+
+_store: JsonConfigStore[list[dict[str, Any]]] = JsonConfigStore(
+    lambda: _config_file(),
+    default=lambda: [dict(f) for f in DEFAULT_FIELDS],
+    parse=_parse_fields_payload,
+    serialize=lambda fields: {"fields": fields},
+    label="configuración de campos",
+)
+
 _cached_field_names: tuple[Path, list[str]] | None = None
 
 
 def _invalidate_fields_cache() -> None:
-    global _cached_fields, _cached_field_names
+    global _cached_field_names
     with _db_schema_lock.write():
-        _cached_fields = None
+        _store.invalidate()
         _cached_field_names = None
 
 
 def load_fields() -> list[dict[str, Any]]:
     with _db_schema_lock.read():
-        return _load_fields_unlocked()
-
-
-def _load_fields_unlocked() -> list[dict[str, Any]]:
-    global _cached_fields
-    path = _config_file()
-    if _cached_fields is not None:
-        cached_path, cached_data = _cached_fields
-        if cached_path == path:
-            return [dict(f) for f in cached_data]
-    if path.exists():
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            fields = data.get("fields", [])
-            if fields and isinstance(fields, list):
-                validated = sanitize_field_defs(fields)
-                if validated:
-                    _cached_fields = (path, validated)
-                    return [dict(f) for f in validated]
-        except (json.JSONDecodeError, OSError, TypeError) as exc:
-            logger.warning("Error leyendo configuración de campos, usando defaults: %s", exc)
-    defaults = [dict(f) for f in DEFAULT_FIELDS]
-    _cached_fields = (path, defaults)
-    return defaults
+        return _store.load()
 
 
 def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     with _db_schema_lock.write():
-        path = _config_file()
         validated = sanitize_field_defs(fields)
-        atomic_write_json(path, {"fields": validated})
-        _invalidate_fields_cache()
+        _store.save(validated)
+        global _cached_field_names
+        _cached_field_names = None
         return validated
 
 

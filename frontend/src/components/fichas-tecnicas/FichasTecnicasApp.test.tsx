@@ -5,7 +5,7 @@ import { ToastProvider } from '../../hooks/useToast';
 import FichasTecnicasApp from './FichasTecnicasApp';
 
 const { listMock } = vi.hoisted(() => ({
-  listMock: vi.fn(async () => ({ fichas: [], total: 0 })),
+  listMock: vi.fn(async () => ({ reports: [], total: 0 })),
 }));
 
 vi.mock('./api', () => ({
@@ -42,7 +42,7 @@ function renderApp() {
 
 describe('FichasTecnicasApp focus mode', () => {
   beforeEach(() => {
-    listMock.mockResolvedValue({ fichas: [], total: 0 });
+    listMock.mockResolvedValue({ reports: [], total: 0 });
     localStorage.clear();
   });
 
@@ -74,7 +74,7 @@ describe('FichasTecnicasApp focus mode', () => {
 
   it('anchors focus navigation tooltips to the fixed arrow wrappers', async () => {
     listMock.mockResolvedValue({
-      fichas: [
+      reports: [
         {
           id: 'F-001',
           os_numero: 'OS-001',

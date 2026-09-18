@@ -361,14 +361,8 @@ async function gcOrphanCanvasAssets({ nowMs = Date.now(), graceMs = GC_GRACE_MS 
 }
 
 module.exports = {
-  ASSET_REF_PREFIX,
-  MAX_ASSET_BYTES,
-  MAX_CANVAS_ASSET_TOTAL_BYTES,
-  MAX_PENDING_ASSET_WRITE_BYTES,
   GC_GRACE_MS,
-  PENDING_ASSET_TTL_MS,
   assetsDir,
-  assetPath,
   parseAssetRef,
   toAssetRef,
   putCanvasAsset,
@@ -376,7 +370,5 @@ module.exports = {
   getCanvasAssetInfo,
   canvasAssetUsageBytes,
   cachedCanvasAssetUsageBytes,
-  collectReferencedAssetIds,
   gcOrphanCanvasAssets,
-  canvasDocsAndHistoryDirs,
 };

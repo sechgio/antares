@@ -2,6 +2,7 @@
 
 import type { BatchSettings, CropOffset } from './types';
 import { computeResizeDimensions, getCropRectangle, getOutputMimeType } from './utils';
+import { errorMessage } from '@/utils/errors';
 
 export type ProcessWorkerRequest = {
   requestId: string;
@@ -141,7 +142,7 @@ async function processJob(job: ProcessWorkerRequest): Promise<ProcessWorkerRespo
       bitmap.close();
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Error en worker de imagen';
+    const message = errorMessage(err, 'Error en worker de imagen');
     return { requestId, ok: false, error: message };
   }
 }

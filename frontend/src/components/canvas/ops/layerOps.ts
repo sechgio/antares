@@ -1,5 +1,6 @@
 import type { CanvasLayer } from '../types';
 import { mm, newId, parseMm } from '../types';
+import { isAutoLayoutContainerType } from '../layerKinds';
 import { relayoutAutoFrame } from './autoLayout';
 import { layerBounds } from './layerBounds';
 import { expandWithDescendants, isLayerContainer } from './layerTree';
@@ -503,7 +504,7 @@ export function setLayerLocked(layers: CanvasLayer[], id: string, locked: boolea
 }
 
 function isAutoLayoutContainer(layer: CanvasLayer): boolean {
-  return layer.type === 'frame' || layer.type === 'group' || layer.type === 'component';
+  return isAutoLayoutContainerType(layer.type);
 }
 
 export function propagateContainerResize(
@@ -560,7 +561,7 @@ export function containerUsesLayoutConstraints(
   );
 }
 
-export function applyAutoLayoutIfNeeded(layers: CanvasLayer[], containerId: string): CanvasLayer[] {
+function applyAutoLayoutIfNeeded(layers: CanvasLayer[], containerId: string): CanvasLayer[] {
   const frame = layers.find((l) => l.id === containerId);
   if (!frame || !isAutoLayoutContainer(frame) || !frame.meta?.autoLayout) return layers;
   const kids = layers.filter((l) => l.parentId === containerId);
@@ -588,9 +589,7 @@ export function applyContainerLayoutPanelEffects(
     }
   }
 
-  const isContainer =
-    layer.type === 'frame' || layer.type === 'group' || layer.type === 'component';
-  if (!isContainer) return next;
+  if (!isAutoLayoutContainerType(layer.type)) return next;
   if (prev) {
     const dx = parseMm(layer.cssVars['--translate-x']) - parseMm(prev.cssVars['--translate-x']);
     const dy = parseMm(layer.cssVars['--translate-y']) - parseMm(prev.cssVars['--translate-y']);

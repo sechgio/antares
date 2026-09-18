@@ -14,6 +14,8 @@ import CuadranteRangesEditor from './components/CuadranteRangesEditor';
 import ImageUploader from './components/ImageUploader';
 import SheetPreview from './components/SheetPreview';
 import ExportBar from './components/ExportBar';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 const SIDEBAR_CLASS =
   'ev-sidebar flex flex-col border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-y-auto shrink-0';
@@ -63,7 +65,7 @@ export default function EvidenciaVolanteoApp() {
       );
       addToast({ message: `Exportado: ${filename}`, type: 'success' });
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : `Error al exportar ${exportFormat.toUpperCase()}`;
+      const message = errorMessage(e, `Error al exportar ${exportFormat.toUpperCase()}`);
       addToast({ message, type: 'error' });
     } finally {
       session.setIsExporting(false);
@@ -115,15 +117,14 @@ export default function EvidenciaVolanteoApp() {
           />
           <div className="relative pointer-events-auto flex flex-col gap-3 w-full px-4 pt-8 pb-4">
             <ExportBar format={exportFormat} onFormatChange={setExportFormat} />
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={handleExport}
               disabled={session.isExporting}
               className="flex items-center justify-center gap-2 rounded-md bg-[var(--accent-primary)] px-4 py-2.5 text-[13px] font-semibold text-[var(--text-on-accent)] hover:opacity-90 disabled:opacity-50 transition-all shadow-sm w-full"
             >
               {session.isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               Exportar documento
-            </button>
+            </Button>
           </div>
         </div>
       </aside>
@@ -185,24 +186,22 @@ export default function EvidenciaVolanteoApp() {
             </span>
             {session.totalPages > 1 && (
               <div className="flex items-center gap-0.5 bg-[var(--bg-base)] rounded-md border border-[var(--border-subtle)] p-0.5 shadow-sm">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   aria-label="Hoja anterior"
                   disabled={session.currentPageIndex <= 0}
                   onClick={() => session.setCurrentPageIndex(session.currentPageIndex - 1)}
                   className="p-1 rounded hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] disabled:opacity-30 text-[var(--text-muted)] transition-colors"
                 >
                   <ChevronLeft size={14} />
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button variant="none" size="none"
                   aria-label="Hoja siguiente"
                   disabled={session.currentPageIndex >= session.totalPages - 1}
                   onClick={() => session.setCurrentPageIndex(session.currentPageIndex + 1)}
                   className="p-1 rounded hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] disabled:opacity-30 text-[var(--text-muted)] transition-colors"
                 >
                   <ChevronRight size={14} />
-                </button>
+                </Button>
               </div>
             )}
           </div>

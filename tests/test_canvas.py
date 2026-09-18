@@ -1065,6 +1065,45 @@ def test_canvas_history_save_skips_unchanged_payload(tmp_path: Path) -> None:
     assert path.stat().st_mtime_ns == first_mtime
 
 
+def test_canvas_history_delta_reuses_persisted_prefix(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Doc Delta")
+    doc_id = created["id"]
+    first = {"type": "diff", "ops": [{"value": "first"}]}
+    second = {"type": "diff", "ops": [{"value": "second"}]}
+    store.save_history(doc_id, [first], [])
+    base_digest = store.get_history_digest(doc_id)
+
+    store.save_history_delta(
+        doc_id,
+        past_prefix=1,
+        past_suffix=[second],
+        future_prefix=0,
+        future_suffix=[],
+        base_digest=base_digest,
+    )
+
+    assert store.get_history(doc_id) == {"past": [first, second], "future": []}
+    assert store.get_history_digest(doc_id) != base_digest
+
+
+def test_canvas_history_delta_rejects_a_stale_base(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Doc Stale Delta")
+    doc_id = created["id"]
+    store.save_history(doc_id, [{"type": "diff", "ops": []}], [])
+
+    with pytest.raises(ValueError, match="base"):
+        store.save_history_delta(
+            doc_id,
+            past_prefix=0,
+            past_suffix=[],
+            future_prefix=0,
+            future_suffix=[],
+            base_digest="stale-digest",
+        )
+
+
 def test_canvas_history_max_history_capping(tmp_path: Path) -> None:
     store = CanvasStore(tmp_path)
     created = store.create(name="Doc Cap")
@@ -1120,6 +1159,24 @@ def test_canvas_history_ipc_handlers(tmp_path: Path, monkeypatch: pytest.MonkeyP
     res_get_updated = canvas_handlers.canvas_get_history({"id": doc_id})
     assert len(res_get_updated["past"]) == 1
     assert res_get_updated["past"][0]["name"] == "Past IPC"
+
+    first_digest = canvas_handlers.canvas_save_history(
+        {"id": doc_id, "past": [past_doc], "future": [], "include_digest": True}
+    )["digest"]
+    future_doc = create_empty_document(name="Future IPC")
+    delta_result = canvas_handlers.canvas_save_history(
+        {
+            "id": doc_id,
+            "past_prefix": 1,
+            "past": [],
+            "future_prefix": 0,
+            "future": [future_doc],
+            "base_digest": first_digest,
+        }
+    )
+
+    assert delta_result["digest"] != first_digest
+    assert canvas_handlers.canvas_get_history({"id": doc_id})["future"][0]["name"] == "Future IPC"
 
 
 def test_store_index_avoids_full_rescan_on_steady_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

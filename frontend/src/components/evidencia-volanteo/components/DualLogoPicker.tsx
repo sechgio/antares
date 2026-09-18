@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { ImagePlus, X, Briefcase } from 'lucide-react';
 import { ACCEPTED_IMAGE_EXTENSIONS, ACCEPTED_IMAGE_TYPES } from '../constants';
 import type { LogoAsset } from '../types';
+import Button from '@/components/ui/Button';
 
 interface Props {
   logoLeft: LogoAsset | null;
@@ -46,14 +47,13 @@ function LogoSlot({
           <>
             <img src={logo.objectUrl} alt="" className="w-full h-full object-contain p-2" />
             <div className="absolute inset-0 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}>
-               <button
-                  type="button"
+               <Button variant="none" size="none"
                   onClick={(e) => { e.stopPropagation(); onRemove(); }}
                   className="p-1.5 rounded-full bg-[var(--text-primary)]/10 text-[var(--text-primary)] hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)] transition-colors"
                   aria-label={`Quitar ${label}`}
                >
                  <X size={14} />
-               </button>
+               </Button>
             </div>
           </>
         ) : (

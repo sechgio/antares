@@ -10,8 +10,10 @@ import type {
   LayerAutoLayout,
 } from '../../../types';
 import InlineNumField from '../../InlineNumField';
+import { isAutoLayoutContainerType } from '../../../layerKinds';
 import { PropRow, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
+import Button from '@/components/ui/Button';
 
 const DIRECTION_OPTS: { value: AutoLayoutDirection; label: string }[] = [
   { value: 'row', label: 'Fila' },
@@ -168,15 +170,14 @@ export default function AutoLayoutSection({
                   suffix="mm"
                 />
               ) : null}
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="inline-flex items-center justify-center p-1 rounded hover:bg-[var(--cv-hover)] select-none text-[11px] text-[var(--cv-text-muted)] hover:text-[var(--cv-text)]"
                 title={independentPad ? 'Usar padding uniforme' : 'Configurar padding por lados independientes'}
                 onClick={toggleIndependentPad}
                 style={{ height: 24, minWidth: 24 }}
               >
                 {independentPad ? '⊟' : '⛶'}
-              </button>
+              </Button>
             </div>
             {independentPad && (
               <div className="grid grid-cols-4 gap-1">
@@ -265,7 +266,7 @@ export default function AutoLayoutSection({
 
 export function ConstraintsSection({ layer, layers, setMeta }: SectionProps) {
   const parent = layers?.find((l) => l.id === layer.parentId);
-  if (parent && parent.type !== 'frame' && parent.type !== 'group' && parent.type !== 'component') {
+  if (parent && !isAutoLayoutContainerType(parent.type)) {
     return null;
   }
 

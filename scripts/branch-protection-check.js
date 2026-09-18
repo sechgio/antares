@@ -10,8 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
-const { REPO_OWNER, REPO_NAME, BASE_BRANCH, detectRepo } = require('./lib/loop-utils');
+const { REPO_OWNER, REPO_NAME, BASE_BRANCH, detectRepo, gh, ghApi, parseCliArgs } = require('./lib/loop-utils');
 
 const DEFAULT_REPO = `${REPO_OWNER}/${REPO_NAME}`;
 const DEFAULT_BRANCH = BASE_BRANCH;
@@ -143,8 +142,7 @@ function readConfig(branch) {
 
 function fetchProtection(repo, branch) {
   try {
-    const out = execFileSync('gh', ['api', `repos/${repo}/branches/${branch}/protection`], {
-      encoding: 'utf8',
+    const out = ghApi([`repos/${repo}/branches/${branch}/protection`], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return { ok: true, protection: JSON.parse(out) };
@@ -157,24 +155,23 @@ function fetchProtection(repo, branch) {
 }
 
 function applyProtection(repo, branch, file) {
-  execFileSync(
-    'gh',
-    ['api', '--method', 'PUT', `repos/${repo}/branches/${branch}/protection`, '--input', file],
-    { stdio: 'inherit' },
-  );
+  gh(['api', '--method', 'PUT', `repos/${repo}/branches/${branch}/protection`, '--input', file], {
+    stdio: 'inherit',
+  });
 }
 
 function parseArgs(argv) {
-  const options = { repo: null, branch: DEFAULT_BRANCH, apply: false, json: false };
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === '--apply') options.apply = true;
-    else if (arg === '--json') options.json = true;
-    else if (arg === '--repo') options.repo = argv[++index];
-    else if (arg === '--branch') options.branch = argv[++index];
-    else if (arg === '--help' || arg === '-h') options.help = true;
-  }
-  return options;
+  return parseCliArgs(argv, {
+    defaults: { repo: null, branch: DEFAULT_BRANCH, apply: false, json: false, help: false },
+    flags: {
+      '--apply': { key: 'apply' },
+      '--json': { key: 'json' },
+      '--repo': { key: 'repo', value: true },
+      '--branch': { key: 'branch', value: true },
+      '--help': { key: 'help' },
+      '-h': { key: 'help' },
+    },
+  });
 }
 
 function run(argv) {

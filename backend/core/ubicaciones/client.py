@@ -14,6 +14,7 @@ from typing import Any, cast
 
 from PIL import Image
 
+from backend.core.observability import log_event
 from backend.version import __version__ as _antares_version
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,14 @@ def _http_get(
         except urllib.error.HTTPError as exc:
             is_transient = exc.code in _TRANSIENT_CODES
             if not is_transient or deadline is None:
-                logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "ubicaciones.http_error",
+                    outcome="failed",
+                    error_code=str(exc.code),
+                    message=f"HTTP GET {exc.code} failed for {_redact_url_for_log(url)}: {exc.reason}",
+                )
                 return None
             retry_after = 0.0
             try:
@@ -118,18 +126,37 @@ def _http_get(
             last_exc: Exception = exc
         except (urllib.error.URLError, OSError, TimeoutError) as exc:
             if deadline is None:
-                logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
+                is_timeout = isinstance(exc, TimeoutError) or "timed out" in str(exc).lower()
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "ubicaciones.http_error",
+                    outcome="timeout" if is_timeout else "failed",
+                    message=f"HTTP GET failed for {_redact_url_for_log(url)}: {type(exc).__name__}: {exc}",
+                )
                 return None
             last_exc = exc
             retry_after = 0.0
         except Exception as exc:
-            logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
+            log_event(
+                logger,
+                logging.WARNING,
+                "ubicaciones.http_error",
+                outcome="failed",
+                message=f"HTTP GET failed for {_redact_url_for_log(url)}: {type(exc).__name__}: {exc}",
+            )
             return None
         assert start is not None and deadline is not None
         elapsed = time.monotonic() - start
         remaining = deadline - elapsed
         if remaining <= 0:
-            logger.debug("HTTP GET deadline exceeded for %s: %s", _redact_url_for_log(url), last_exc)
+            log_event(
+                logger,
+                logging.ERROR,
+                "ubicaciones.deadline_exceeded",
+                outcome="timeout",
+                message=f"HTTP GET deadline exceeded for {_redact_url_for_log(url)}: {type(last_exc).__name__}: {last_exc}",
+            )
             return None
         sleep_for = retry_after if retry_after > 0 else 0.0
         if sleep_for > remaining:

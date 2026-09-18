@@ -273,32 +273,10 @@ export const WATER_CUT_ITEM_FIELD_ALIASES: Record<string, string[]> = {
   observaciones: ['observaciones', 'observacion', 'observación'],
 };
 
-export function toDisplayDate(isoOrAny: string): string {
-  if (!isoOrAny) return '';
-  const s = String(isoOrAny).trim();
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const [y, m, d] = s.slice(0, 10).split('-');
-    return `${d}/${m}/${y}`;
-  }
-  const parsed = new Date(s);
-  if (!isNaN(parsed.getTime())) {
-    const d = String(parsed.getDate()).padStart(2, '0');
-    const m = String(parsed.getMonth() + 1).padStart(2, '0');
-    const y = parsed.getFullYear();
-    return `${d}/${m}/${y}`;
-  }
-  return s;
-}
-
-export function toISODate(displayDate: string): string {
-  if (!displayDate) return '';
-  const s = String(displayDate).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const match = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
-  return '';
-}
+export {
+  formatDisplayDateDMY as toDisplayDate,
+  parseDisplayDateToIso as toISODate,
+} from '../../utils/dates';
 
 export function createDefaultHeaderData(): HeaderData {
   return {
@@ -332,7 +310,7 @@ export function createDefaultWaterCutData(): WaterCutData {
   };
 }
 
-export function createEmptyItem(num: number): PadronItem {
+function createEmptyItem(num: number): PadronItem {
   return {
     item: num,
     nombresApellidos: '',
@@ -347,7 +325,7 @@ export function createInitialItems(total = 36): PadronItem[] {
   return Array.from({ length: count }, (_, i) => createEmptyItem(i + 1));
 }
 
-export function createEmptyWaterCutItem(num: number): WaterCutItem {
+function createEmptyWaterCutItem(num: number): WaterCutItem {
   return {
     item: num,
     hora: '',

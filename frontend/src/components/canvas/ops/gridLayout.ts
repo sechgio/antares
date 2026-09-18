@@ -9,8 +9,8 @@ export const DEFAULT_GRID_RULES: GridRule[] = [
   { whenImages: 9, cols: 3, rows: 3 },
 ];
 
-export const MAX_GRID_DIM = 12;
-export const MIN_GRID_CELL_MM = 2;
+const MAX_GRID_DIM = 12;
+const MIN_GRID_CELL_MM = 2;
 
 export function clampGridDim(n: number): number {
   return Math.min(MAX_GRID_DIM, Math.max(1, Math.floor(n)));
@@ -26,7 +26,7 @@ export function resolveGridLayout(
   return fallback;
 }
 
-export function normalizeTracks(tracks: number[] | undefined, count: number): number[] {
+function normalizeTracks(tracks: number[] | undefined, count: number): number[] {
   const n = Math.max(0, count);
   if (n === 0) return [];
   if (tracks && tracks.length === n && tracks.every((t) => Number.isFinite(t) && t > 0)) {

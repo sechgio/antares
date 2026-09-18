@@ -1,3 +1,4 @@
+import Button from '../ui/Button';
 import type { ReportStatus } from '../../types/reports';
 
 interface Props {
@@ -12,8 +13,9 @@ interface Props {
 
 export default function ReportListItem({ id, informeId, main, sub, status, selected, onSelect }: Props) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="none"
+      size="none"
       className={`tr-list-item ${selected ? 'active' : ''}`}
       onClick={() => onSelect(id)}
     >
@@ -21,6 +23,6 @@ export default function ReportListItem({ id, informeId, main, sub, status, selec
       <span className="tr-list-main">{main}</span>
       <span className="tr-list-sub">{sub}</span>
       <span className={`tr-status ${status}`}>{status === 'completed' ? 'Listo' : 'Borrador'}</span>
-    </button>
+    </Button>
   );
 }

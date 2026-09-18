@@ -10,10 +10,8 @@ from typing import Any, cast
 
 from backend.core.import_guard import serialized_import
 from backend.core.ipc_catalog import BACKEND_HANDLER_MODULES, handler_module_for
-from backend.handlers.common import (
-    process_state,
-    reset_state,
-)
+from backend.core.observability import log_event
+from backend.core.state import process_state, reset_state
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +39,7 @@ _DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
     if m not in _CORE_HANDLER_MODULES and m not in _POST_READY_HANDLER_MODULES
 )
 
-_RETIRED_METHODS = frozenset(("db_records", "db_detect_key_column", "image_optimizer_zip"))
-
-
 def _module_for_method(method: str) -> str | None:
-    if method in _RETIRED_METHODS:
-        return None
     return handler_module_for(method)
 
 
@@ -89,7 +82,7 @@ class HandlerRegistry:
             except Exception:
                 failed.append(mod_name)
                 logger.exception("Handler warm-up failed for %s", mod_name)
-        logger.info("Handler registry warmed (%d methods)", len(self._map))
+        log_event(logger, logging.INFO, "handlers.warmed", count=len(self._map), message=f"Handler registry warmed ({len(self._map)} methods)")
         return failed
 
     def warm_core(self) -> list[str]:
@@ -101,9 +94,9 @@ class HandlerRegistry:
                 import openpyxl  # noqa: F401
                 import pandas  # noqa: F401
 
-            logger.info("pandas/openpyxl pre-ready warm complete")
+            log_event(logger, logging.INFO, "handlers.warm_pandas", outcome="success", message="pandas/openpyxl pre-ready warm complete")
         except Exception:
-            logger.exception("pandas/openpyxl pre-ready warm failed")
+            log_event(logger, logging.ERROR, "handlers.warm_pandas", outcome="failed", message="pandas/openpyxl pre-ready warm failed", exc_info=True)
 
     def warm_post_ready(self) -> None:
         # No envolver warm() en serialized_import: _load_module adquiere
@@ -112,20 +105,20 @@ class HandlerRegistry:
         try:
             self.warm(_POST_READY_HANDLER_MODULES)
         except Exception:
-            logger.exception("canvas/conversion post-ready warm failed")
+            log_event(logger, logging.ERROR, "handlers.warm_post_ready", outcome="failed", message="canvas/conversion post-ready warm failed", exc_info=True)
         try:
             from backend.core.canvas.store import get_canvas_store
 
             get_canvas_store().list_documents()
-            logger.info("canvas store post-ready warm complete")
+            log_event(logger, logging.INFO, "handlers.warm_canvas_store", outcome="success", message="canvas store post-ready warm complete")
         except Exception:
-            logger.exception("canvas store post-ready warm failed")
+            log_event(logger, logging.ERROR, "handlers.warm_canvas_store", outcome="failed", message="canvas store post-ready warm failed", exc_info=True)
         write_pdf_sanitized: Callable[[str], bytes] | None = None
         try:
             with serialized_import():
                 from backend.utils.pdf_html import write_pdf_sanitized
         except Exception:
-            logger.exception("WeasyPrint import warm failed")
+            log_event(logger, logging.ERROR, "handlers.warm_weasyprint", outcome="failed", message="WeasyPrint import warm failed", exc_info=True)
         WARM_CRITICAL_DONE.set()
         self._warm_formatos_core()
         try:
@@ -135,9 +128,9 @@ class HandlerRegistry:
                         from backend.core.history import _ensure_table
 
                     _ensure_table()
-                    logger.info("history schema background warm complete")
+                    log_event(logger, logging.INFO, "handlers.warm_history_schema", outcome="success", message="history schema background warm complete")
                 except Exception:
-                    logger.exception("history schema background warm failed")
+                    log_event(logger, logging.ERROR, "handlers.warm_history_schema", outcome="failed", message="history schema background warm failed", exc_info=True)
 
             executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="history-warm")
             executor.submit(_warm_history_bg)
@@ -147,9 +140,9 @@ class HandlerRegistry:
         if write_pdf_sanitized is not None:
             try:
                 write_pdf_sanitized("<!DOCTYPE html><html><body>warm</body></html>")
-                logger.info("WeasyPrint post-ready warm complete")
+                log_event(logger, logging.INFO, "handlers.warm_weasyprint", outcome="success", message="WeasyPrint post-ready warm complete")
             except Exception:
-                logger.exception("WeasyPrint post-ready warm failed")
+                log_event(logger, logging.ERROR, "handlers.warm_weasyprint", outcome="failed", message="WeasyPrint post-ready warm failed", exc_info=True)
 
     def warm_deferred(self) -> None:
         self.warm(_DEFERRED_HANDLER_MODULES)
@@ -159,9 +152,9 @@ class HandlerRegistry:
             with serialized_import():
                 import backend.core.formatos  # noqa: F401
 
-            logger.info("formatos core post-ready warm complete")
+            log_event(logger, logging.INFO, "handlers.warm_formatos_core", outcome="success", message="formatos core post-ready warm complete")
         except Exception:
-            logger.exception("formatos core post-ready warm failed")
+            log_event(logger, logging.ERROR, "handlers.warm_formatos_core", outcome="failed", message="formatos core post-ready warm failed", exc_info=True)
 
     def get(self, key: str, default: Any = None) -> Any:
         with self._lock:

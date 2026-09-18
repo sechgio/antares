@@ -4,6 +4,8 @@ import { api } from '../../../api';
 import type { AutoImgFolder, DriveVerifyResult } from '../types';
 import { parseDriveFolderId } from '../utils/parseDriveFolderId';
 import { INPUT_SM_CLASS, InlineMessage, SidebarSection, StatusChip } from './shared';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 interface GoogleDrivePanelProps {
   googleConnected: boolean;
@@ -48,7 +50,7 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
       setVerified(res);
       if (!folderName.trim()) setFolderName(res.name);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo acceder a la carpeta');
+      setError(errorMessage(e, 'No se pudo acceder a la carpeta'));
     } finally {
       setLoading(false);
     }
@@ -68,7 +70,7 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
       setVerified(null);
       await onFolderAdded?.(result.folders);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al agregar carpeta');
+      setError(errorMessage(e, 'Error al agregar carpeta'));
     } finally {
       setAdding(false);
     }
@@ -100,15 +102,14 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
         <p className="mt-1 truncate font-mono text-[10px] text-[var(--text-muted)]">ID: {parsedId}</p>
       )}
 
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={handleVerify}
         disabled={loading || !folderInput.trim()}
         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
       >
         {loading ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
         Verificar
-      </button>
+      </Button>
 
       {verified && (
         <div className="mt-2.5 space-y-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] p-2.5">
@@ -129,15 +130,14 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
             placeholder="Nombre en el registro"
             className={INPUT_SM_CLASS}
           />
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={handleAddFolder}
             disabled={adding}
             className="flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-primary)] py-1.5 text-[11px] font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
           >
             {adding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
             Agregar
-          </button>
+          </Button>
         </div>
       )}
 

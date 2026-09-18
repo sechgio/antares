@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchMyTaskOrigins, fetchMyTasks, MY_TASKS_PAGE_SIZE } from '../api/espaciosApi';
 import { subscribeMyTasks, unsubscribeEspaciosSync } from '../api/realtime';
 import { DEFAULT_MY_TASKS_FILTERS, type MyTask, type MyTaskOrigin, type MyTasksFilters } from '../types';
+import { errorMessage } from '../../../utils/errors';
+import { nextRequest } from '../../../utils/async';
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : 'No se pudieron cargar tus tareas';
-}
+const MY_TASKS_ERROR_FALLBACK = 'No se pudieron cargar tus tareas';
 
 function mergeKnown(current: MyTask[], incoming: MyTask[]): MyTask[] {
   const rows = new Map(current.map((task) => [task.id, task]));
@@ -35,7 +35,7 @@ export function useMyTasks(userId: string | undefined, filters: Partial<MyTasksF
 
   const reload = useCallback(async () => {
     if (!userId) return;
-    const request = ++requestRef.current;
+    const guard = nextRequest(requestRef);
     setLoading(true);
     setError(null);
     try {
@@ -46,16 +46,16 @@ export function useMyTasks(userId: string | undefined, filters: Partial<MyTasksF
         fetchMyTasks(resolved, 0, limit),
         fetchMyTaskOrigins(),
       ]);
-      if (request !== requestRef.current) return;
+      if (!guard.isCurrent()) return;
       setTasks(rows);
       setOrigins(nextOrigins);
       setHasMore(rows.length === limit);
       setHasAssignments(nextOrigins.length > 0);
       loadedFilterKeyRef.current = filterKey;
     } catch (loadError) {
-      if (request === requestRef.current) setError(errorMessage(loadError));
+      if (guard.isCurrent()) setError(errorMessage(loadError, MY_TASKS_ERROR_FALLBACK));
     } finally {
-      if (request === requestRef.current) {
+      if (guard.isCurrent()) {
         setLoading(false);
         setLoadedUserId(userId);
       }
@@ -105,7 +105,7 @@ export function useMyTasks(userId: string | undefined, filters: Partial<MyTasksF
       setTasks((current) => mergeKnown(current, rows));
       setHasMore(rows.length === MY_TASKS_PAGE_SIZE);
     } catch (loadError) {
-      if (request === requestRef.current) setError(errorMessage(loadError));
+      if (request === requestRef.current) setError(errorMessage(loadError, MY_TASKS_ERROR_FALLBACK));
     } finally {
       if (request === requestRef.current) setLoadingMore(false);
     }

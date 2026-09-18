@@ -1,6 +1,6 @@
 import type { ReportStatus, ReservoirType } from '../../types/reports';
 
-export type { ReportStatus, ReservoirType } from '../../types/reports';
+export type { ReservoirType };
 
 export const DIAMETERS = ['2', '4', '6', '8', '10', '12', '14', '16'] as const;
 
@@ -30,7 +30,7 @@ export interface DiameterRow {
   observaciones: string;
 }
 
-export interface ReportHeader {
+interface ReportHeader {
   photo_id: string;
   estacion: string;
   tipo: ReservoirType;
@@ -42,7 +42,7 @@ export interface ReportHeader {
   sgio: string;
 }
 
-export interface MedidasData {
+interface MedidasData {
   largo: string;
   ancho: string;
   diametro: string;

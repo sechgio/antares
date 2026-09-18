@@ -1,14 +1,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from pathlib import Path
 from typing import Any
 
 from backend.core.config_fields import get_field_names
-from backend.utils.atomic_write import atomic_write_json
+from backend.core.config_store import JsonConfigStore
 from backend.utils.paths import cached_config_path
 
 logger = logging.getLogger(__name__)
@@ -19,8 +18,6 @@ DEFAULT_PATTERNS: list[dict[str, Any]] = [
     {"id": "sequential", "label": "IMG + número", "pattern": "img_{seq}{ext}"},
     {"id": "keep", "label": "Mantener nombres", "pattern": ""},
 ]
-
-_cached_patterns: list[dict[str, Any]] | None = None
 
 _CONFIG_PATH: Path | None = None
 
@@ -40,37 +37,35 @@ def _validate_pattern(pattern: str, available_vars: set[str]) -> bool:
     return placeholders.issubset(allowed)
 
 
+def _parse_patterns_payload(data: Any) -> list[dict[str, Any]] | None:
+    patterns = data.get("patterns", [])
+    if not (patterns and isinstance(patterns, list)):
+        return None
+    validated = []
+    for p in patterns:
+        if isinstance(p, dict) and "id" in p and "label" in p and "pattern" in p:
+            validated.append({
+                "id": str(p["id"]),
+                "label": str(p["label"]),
+                "pattern": str(p["pattern"]),
+            })
+    return validated if validated else None
+
+
+_store: JsonConfigStore[list[dict[str, Any]]] = JsonConfigStore(
+    lambda: _config_file(),
+    default=lambda: [dict(p) for p in DEFAULT_PATTERNS],
+    parse=_parse_patterns_payload,
+    serialize=lambda patterns: {"patterns": patterns},
+    label="patrones",
+)
+
+
 def load_patterns() -> list[dict[str, Any]]:
-    global _cached_patterns
-    if _cached_patterns is not None:
-        return [dict(p) for p in _cached_patterns]
-    path = _config_file()
-    if path.exists():
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            patterns = data.get("patterns", [])
-            if patterns and isinstance(patterns, list):
-                validated = []
-                for p in patterns:
-                    if isinstance(p, dict) and "id" in p and "label" in p and "pattern" in p:
-                        validated.append({
-                            "id": str(p["id"]),
-                            "label": str(p["label"]),
-                            "pattern": str(p["pattern"]),
-                        })
-                if validated:
-                    _cached_patterns = validated
-                    return [dict(p) for p in validated]
-        except (json.JSONDecodeError, OSError, TypeError) as exc:
-            logger.warning("Error leyendo patrones, usando defaults: %s", exc)
-    _cached_patterns = [dict(p) for p in DEFAULT_PATTERNS]
-    return [dict(p) for p in DEFAULT_PATTERNS]
+    return _store.load()
 
 
 def save_patterns(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    global _cached_patterns
-    path = _config_file()
     available_vars = set(get_field_names())
     validated = []
     seen_ids = set()
@@ -88,13 +83,10 @@ def save_patterns(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "label": str(p["label"]),
                 "pattern": pattern,
             })
-    atomic_write_json(path, {"patterns": validated})
-    _cached_patterns = validated
+    _store.save(validated)
     return validated
 
 
 def reset_to_defaults() -> list[dict[str, Any]]:
-    global _cached_patterns
     save_patterns(DEFAULT_PATTERNS)
-    _cached_patterns = [dict(p) for p in DEFAULT_PATTERNS]
     return [dict(p) for p in DEFAULT_PATTERNS]

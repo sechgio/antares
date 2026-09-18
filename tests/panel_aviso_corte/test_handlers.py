@@ -158,7 +158,7 @@ def test_render_pdf_handles_null_images_and_logos(monkeypatch) -> None:
     assert captured["logos"] == {"left": None, "right": None}
     assert result["format"] == "pdf"
     assert result["mime_type"] == "application/pdf"
-    assert result["pdf_base64"] == result["content_base64"]
+    assert base64.b64decode(result["content_base64"]) == b"%PDF"
 
 
 def test_render_docx_response_advertises_docx_format(monkeypatch) -> None:
@@ -179,7 +179,7 @@ def test_render_docx_response_advertises_docx_format(monkeypatch) -> None:
 
     assert result["format"] == "docx"
     assert "wordprocessingml" in result["mime_type"]
-    assert result["pdf_base64"] == result["content_base64"]
+    assert base64.b64decode(result["content_base64"]) == b"PK\x03\x04docx-bytes"
     assert result["filename"].endswith(".docx")
 
 
@@ -202,7 +202,6 @@ def test_render_pdf_writes_to_disk_when_output_path_given(monkeypatch, tmp_path)
     )
 
     assert result["saved_path"] == str(output_file)
-    assert result["pdf_base64"] == ""
     assert result["content_base64"] == ""
     assert result["filename"] == "output.pdf"
     assert output_file.read_bytes() == b"%PDF-1.4disk-content"
@@ -227,7 +226,6 @@ def test_render_docx_writes_to_disk_when_output_path_given(monkeypatch, tmp_path
     )
 
     assert result["saved_path"] == str(output_file)
-    assert result["pdf_base64"] == ""
     assert result["content_base64"] == ""
     assert result["filename"] == "output.docx"
     assert output_file.read_bytes() == b"PK\x03\x04docx-disk-content"

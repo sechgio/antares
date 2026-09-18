@@ -3,12 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
+const { assertOrExit:assert } = require('./helpers/harness');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

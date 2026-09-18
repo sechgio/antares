@@ -35,6 +35,7 @@ def backend_process():
     )
     stderr_lines: list[str] = []
     threading.Thread(target=_drain_stderr, args=(proc, stderr_lines), daemon=True).start()
+    proc.stderr_lines = stderr_lines
 
     buffer = ""
     start = time.time()
@@ -186,5 +187,11 @@ class TestIPC:
         assert resp["error"]["category"] == "METHOD_NOT_FOUND"
         msg = resp["error"]["message"]
         assert "desconocido" in msg.lower() or "unknown" in msg.lower()
+        time.sleep(0.15)
+        stderr_lines = getattr(backend_process, "stderr_lines", [])
+        assert any(
+            "backend.ipc.unknown_method" in line and "nonexistent_method" in line
+            for line in stderr_lines
+        )
 
 

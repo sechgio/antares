@@ -5,6 +5,7 @@ import type { BoardColumn, Tarea, TeamMember } from '../../types';
 import { formatDisplayDate } from '../../utils/dates';
 import { isOverdue } from '../../utils/filters';
 import { memberLabel } from '../../utils/members';
+import Button from '@/components/ui/Button';
 
 interface ListTaskRowContentProps {
   variant: 'grid' | 'table';
@@ -40,25 +41,23 @@ export default function ListTaskRowContent({
     <>
       {onEdit && (
         <WithHoverTooltip label="Editar" placement="bottom">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={() => onEdit(tarea)}
             className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             aria-label={`Editar ${tarea.title}`}
           >
             <Pencil className="h-4 w-4" />
-          </button>
+          </Button>
         </WithHoverTooltip>
       )}
       <WithHoverTooltip label="Eliminar" placement="bottom">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={() => onDelete(tarea.id)}
           className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red)]"
           aria-label={`Eliminar ${tarea.title}`}
         >
           <Trash2 className="h-4 w-4" />
-        </button>
+        </Button>
       </WithHoverTooltip>
     </>
   );
@@ -79,8 +78,7 @@ export default function ListTaskRowContent({
         !isTable && <span />
       )}
       <Cell className={isTable ? 'px-4 py-3' : undefined}>
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className={isTable ? 'text-left' : 'min-w-0 text-left'}
           onClick={() => onEdit?.(tarea)}
           onDoubleClick={isTable ? () => onEdit?.(tarea) : undefined}
@@ -93,7 +91,7 @@ export default function ListTaskRowContent({
           {tarea.description && (
             <div className="mt-0.5 line-clamp-1 text-xs text-[var(--text-muted)]">{tarea.description}</div>
           )}
-        </button>
+        </Button>
       </Cell>
       <Cell className={isTable ? 'px-4 py-3' : undefined}>
         <StatusPicker
