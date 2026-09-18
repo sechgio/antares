@@ -16,7 +16,16 @@ import type {
   FlyerRecord,
   LayoutMode,
 } from "./types";
-import { sanitizeMultilineText, toSlugId } from "./utils/format";
+import { sanitizeMultilineText } from "./utils/format";
+import { isoDateStamp } from "../../utils/dates";
+import LogoUploadBox from "./components/LogoUploadBox";
+
+import {
+  abortAllImageReaders,
+  createFlyerRecord,
+  nextSelectedIdAfterDelete,
+  readImageAsDataUrl,
+} from "./utils/imageSlotReaders";
 import {
   appendPagesToPdf,
   chunkExportItems,
@@ -31,6 +40,8 @@ import { useDialog } from "../../hooks/useDialog";
 import { saveFeatureHistory } from "../../utils/history";
 import { WithHoverTooltip } from "@/components/ui/HoverTooltip";
 import { useVolantesDraft } from "./hooks/useVolantesDraft";
+import Button from "@/components/ui/Button";
+import { errorMessage } from "@/utils/errors";
 
 interface BulletOption {
   id: BulletStyle;
@@ -43,7 +54,15 @@ const BULLET_OPTIONS: BulletOption[] = [
     id: "none",
     label: "Sin viñeta",
     renderIcon: () => (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      >
         <line x1="3" y1="6" x2="21" y2="6" />
         <line x1="3" y1="12" x2="21" y2="12" />
         <line x1="3" y1="18" x2="21" y2="18" />
@@ -54,7 +73,15 @@ const BULLET_OPTIONS: BulletOption[] = [
     id: "disc",
     label: "Punto (•)",
     renderIcon: () => (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      >
         <line x1="9" y1="6" x2="21" y2="6" />
         <line x1="9" y1="12" x2="21" y2="12" />
         <line x1="9" y1="18" x2="21" y2="18" />
@@ -68,7 +95,15 @@ const BULLET_OPTIONS: BulletOption[] = [
     id: "dash",
     label: "Guión (–)",
     renderIcon: () => (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      >
         <line x1="10" y1="6" x2="21" y2="6" />
         <line x1="10" y1="12" x2="21" y2="12" />
         <line x1="10" y1="18" x2="21" y2="18" />
@@ -82,7 +117,16 @@ const BULLET_OPTIONS: BulletOption[] = [
     id: "arrow",
     label: "Flecha (▸)",
     renderIcon: () => (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <line x1="10" y1="6" x2="21" y2="6" />
         <line x1="10" y1="12" x2="21" y2="12" />
         <line x1="10" y1="18" x2="21" y2="18" />
@@ -96,7 +140,16 @@ const BULLET_OPTIONS: BulletOption[] = [
     id: "check",
     label: "Check (✓)",
     renderIcon: () => (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <line x1="11" y1="6" x2="21" y2="6" />
         <line x1="11" y1="12" x2="21" y2="12" />
         <line x1="11" y1="18" x2="21" y2="18" />
@@ -110,7 +163,15 @@ const BULLET_OPTIONS: BulletOption[] = [
     id: "number",
     label: "Numerado (1, 2, 3...)",
     renderIcon: () => (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      >
         <line x1="10" y1="6" x2="21" y2="6" />
         <line x1="10" y1="12" x2="21" y2="12" />
         <line x1="10" y1="18" x2="21" y2="18" />
@@ -122,49 +183,6 @@ const BULLET_OPTIONS: BulletOption[] = [
     ),
   },
 ];
-
-const LOGO_MAX_BYTES = 5 * 1024 * 1024;
-const LOGO_ALLOWED_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "image/bmp",
-]);
-const imageReaders: Record<string, FileReader | null> = {
-  logoIzquierdo: null,
-  logoDerecho: null,
-  logoOperativo: null,
-  servicioAgua: null,
-};
-
-function readImageAsDataUrl(
-  slotKey: string,
-  file: File,
-  onError: (message: string) => void,
-  onResult: (dataUrl: string) => void,
-): void {
-  if (!LOGO_ALLOWED_TYPES.has(file.type)) {
-    onError("La imagen debe ser PNG, JPEG, WebP, GIF o BMP.");
-    return;
-  }
-  if (file.size > LOGO_MAX_BYTES) {
-    onError(`La imagen no puede superar 5 MB (recibido: ${(file.size / 1024 / 1024).toFixed(1)} MB).`);
-    return;
-  }
-  let reader = imageReaders[slotKey];
-  if (reader) {
-    try { reader.abort(); } catch {}
-  }
-  reader = new FileReader();
-  imageReaders[slotKey] = reader;
-  reader.onload = () => {
-    if (typeof reader.result === "string") onResult(reader.result);
-    else onError("No se pudo leer la imagen.");
-  };
-  reader.onerror = () => onError("Error leyendo el archivo de imagen.");
-  reader.readAsDataURL(file);
-}
 
 export default function VolantesView() {
   const { addToast } = useToast();
@@ -203,14 +221,7 @@ export default function VolantesView() {
     records[0] ??
     null;
 
-  useEffect(() => {
-    return () => {
-      for (const key of Object.keys(imageReaders)) {
-        try { imageReaders[key]?.abort(); } catch {}
-        imageReaders[key] = null;
-      }
-    };
-  }, []);
+  useEffect(() => abortAllImageReaders, []);
 
   useEffect(() => {
     if (!pendingExport) return;
@@ -232,13 +243,16 @@ export default function VolantesView() {
         await saveFeatureHistory(
           "volante",
           fileName,
-          { layoutMode: pendingExport.mode, reservorio: pendingExport.record.reservorio, single: true },
+          {
+            layoutMode: pendingExport.mode,
+            reservorio: pendingExport.record.reservorio,
+            single: true,
+          },
           1,
         );
       } catch (error) {
         if (!cancelled) {
-          const message =
-            error instanceof Error ? error.message : "No se pudo generar el PDF.";
+          const message = errorMessage(error, "No se pudo generar el PDF.");
           addToast({ message, type: "error" });
         }
       } finally {
@@ -247,7 +261,9 @@ export default function VolantesView() {
     };
 
     doExport();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [pendingExport, addToast]);
 
   const updateSelectedRecord = (
@@ -262,8 +278,8 @@ export default function VolantesView() {
   };
 
   const handleLogoChange =
-    (side: keyof BrandConfig) => (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
+    (side: keyof BrandConfig) => (files: FileList | null) => {
+      const file = files?.[0];
       if (!file) return;
       readImageAsDataUrl(
         side,
@@ -271,7 +287,6 @@ export default function VolantesView() {
         (message) => addToast({ message, type: "error" }),
         (dataUrl) => setBrand((current) => ({ ...current, [side]: dataUrl })),
       );
-      event.target.value = "";
     };
 
   const handleLogoDragOver = (event: DragEvent<HTMLLabelElement>) => {
@@ -292,8 +307,8 @@ export default function VolantesView() {
     };
 
   const handleFooterChange =
-    (key: keyof FooterConfig) => (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
+    (key: keyof FooterConfig) => (files: FileList | null) => {
+      const file = files?.[0];
       if (!file) return;
       readImageAsDataUrl(
         key,
@@ -301,7 +316,6 @@ export default function VolantesView() {
         (message) => addToast({ message, type: "error" }),
         (dataUrl) => setFooter((current) => ({ ...current, [key]: dataUrl })),
       );
-      event.target.value = "";
     };
 
   const handleFooterDrop =
@@ -328,10 +342,7 @@ export default function VolantesView() {
       setSelectedRecordId(result.records[0]?.id ?? null);
       setIsRecordsPanelOpen(false);
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "No se pudo importar el archivo.";
+      const message = errorMessage(error, "No se pudo importar el archivo.");
       addToast({ message, type: "error" });
     } finally {
       event.target.value = "";
@@ -339,17 +350,7 @@ export default function VolantesView() {
   };
 
   const handleAddRecord = (): void => {
-    const today = new Date().toISOString().slice(0, 10);
-    const newRecord: FlyerRecord = {
-      id: toSlugId(),
-      distrito: "NUEVO DISTRITO",
-      fecha: today,
-      horaInicio: "08:00",
-      horaFin: "16:00",
-      reservorio: "NUEVO RESERVORIO",
-      sector: "NUEVO SECTOR",
-      zonasAfectadas: "Ingrese aqui el detalle de las zonas afectadas.",
-    };
+    const newRecord = createFlyerRecord(isoDateStamp());
     setRecords((current) => [newRecord, ...current]);
     setSelectedRecordId(newRecord.id);
     setIsRecordsPanelOpen(false);
@@ -358,8 +359,13 @@ export default function VolantesView() {
   const handleDeleteRecord = (recordId: string): void => {
     setRecords((current) => {
       const nextRecords = current.filter((record) => record.id !== recordId);
-      if (selectedRecordId === recordId) {
-        setSelectedRecordId(nextRecords[0]?.id ?? null);
+      const nextSelected = nextSelectedIdAfterDelete(
+        nextRecords,
+        recordId,
+        selectedRecordId,
+      );
+      if (nextSelected !== selectedRecordId) {
+        setSelectedRecordId(nextSelected);
       }
       return nextRecords;
     });
@@ -368,7 +374,8 @@ export default function VolantesView() {
   const handleClearDraft = async (): Promise<void> => {
     const confirmed = await confirm({
       title: "¿Limpiar el borrador de volantes?",
-      description: "Se eliminarán los registros y la configuración guardada localmente.",
+      description:
+        "Se eliminarán los registros y la configuración guardada localmente.",
       type: "destructive",
       confirmLabel: "Limpiar",
       cancelLabel: "Conservar trabajo",
@@ -437,12 +444,15 @@ export default function VolantesView() {
       await saveFeatureHistory(
         "volante",
         fileName,
-        { layoutMode: exportLayout, reservorio: exportRecord?.reservorio || "", records: recordsToExport.length },
+        {
+          layoutMode: exportLayout,
+          reservorio: exportRecord?.reservorio || "",
+          records: recordsToExport.length,
+        },
         recordsToExport.length,
       );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "No se pudo generar el PDF.";
+      const message = errorMessage(error, "No se pudo generar el PDF.");
       addToast({ message, type: "error" });
     } finally {
       root?.unmount();
@@ -458,10 +468,7 @@ export default function VolantesView() {
     try {
       await exportTemplateWorkbook();
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "No se pudo exportar la plantilla.";
+      const message = errorMessage(error, "No se pudo exportar la plantilla.");
       addToast({ message, type: "error" });
     }
   };
@@ -491,7 +498,9 @@ export default function VolantesView() {
         </div>
 
         <div className="vgen-layout-toggle" role="group">
-          <button
+          <Button
+            variant="none"
+            size="none"
             className={layoutMode === "2-up" ? "active" : ""}
             onClick={() => setLayoutMode("2-up")}
           >
@@ -507,8 +516,10 @@ export default function VolantesView() {
               <rect x="4" y="14" width="16" height="6" rx="1" />
             </svg>
             2 por hoja
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="none"
+            size="none"
             className={layoutMode === "3-up" ? "active" : ""}
             onClick={() => setLayoutMode("3-up")}
           >
@@ -525,16 +536,17 @@ export default function VolantesView() {
               <rect x="4" y="17" width="16" height="4" rx="1" />
             </svg>
             3 por hoja
-          </button>
+          </Button>
         </div>
 
         <div className="vgen-header-actions">
           <WithHoverTooltip label="Ver tutorial" placement="bottom">
-            <button
+            <Button
+              variant="none"
+              size="none"
               aria-label="Como usar"
               className="tutorial-trigger-btn vgen-icon-action"
               onClick={() => setIsTutorialOpen(true)}
-              type="button"
             >
               <svg
                 aria-hidden="true"
@@ -549,14 +561,18 @@ export default function VolantesView() {
                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
                 <line x1="12" y1="17" x2="12.01" y2="17" />
               </svg>
-            </button>
+            </Button>
           </WithHoverTooltip>
-          <WithHoverTooltip label="Descargar Plantilla Excel" placement="bottom">
-            <button
+          <WithHoverTooltip
+            label="Descargar Plantilla Excel"
+            placement="bottom"
+          >
+            <Button
+              variant="none"
+              size="none"
               aria-label="Plantilla"
               className="v-btn v-btn-outline vgen-btn-template vgen-icon-action"
               onClick={handleExportTemplate}
-              type="button"
             >
               <svg
                 aria-hidden="true"
@@ -574,10 +590,13 @@ export default function VolantesView() {
                 <polyline points="10 9 9 9 8 9" />
               </svg>
               <span className="sr-only">Plantilla</span>
-            </button>
+            </Button>
           </WithHoverTooltip>
           <WithHoverTooltip label="Importar archivo Excel" placement="bottom">
-            <label aria-label="Importar" className="v-btn v-btn-outline vgen-btn-import vgen-icon-action">
+            <label
+              aria-label="Importar"
+              className="v-btn v-btn-outline vgen-btn-import vgen-icon-action"
+            >
               <svg
                 aria-hidden="true"
                 width="16"
@@ -601,11 +620,12 @@ export default function VolantesView() {
             </label>
           </WithHoverTooltip>
           <WithHoverTooltip label="Eliminar" placement="bottom">
-            <button
+            <Button
+              variant="none"
+              size="none"
               aria-label="Limpiar"
               className="v-btn v-btn-outline vgen-btn-clear vgen-icon-action"
               onClick={() => void handleClearDraft()}
-              type="button"
             >
               <svg
                 aria-hidden="true"
@@ -624,14 +644,15 @@ export default function VolantesView() {
                 <path d="M10 11v5" />
                 <path d="M14 11v5" />
               </svg>
-            </button>
+            </Button>
           </WithHoverTooltip>
-          <button
+          <Button
+            variant="none"
+            size="none"
             aria-label="Exportar todo"
             className="v-btn v-btn-primary vgen-btn-export-all vgen-icon-action"
             onClick={handleExportAllPdf}
             title="Exportar todo"
-            type="button"
           >
             <svg
               aria-hidden="true"
@@ -647,7 +668,7 @@ export default function VolantesView() {
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
             <span className="sr-only">Todo</span>
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -659,76 +680,22 @@ export default function VolantesView() {
                 <div className="vgen-editor">
                   <div className="vgen-section vgen-section-logos">
                     <div className="vgen-logos-grid">
-                      <label
-                        className="v-upload-box"
-                        onDragOver={handleLogoDragOver}
+                      <LogoUploadBox
+                        value={brand.logoIzquierdo}
+                        label="Izquierdo"
+                        alt="Logo izquierdo"
+                        onFiles={handleLogoChange("logoIzquierdo")}
                         onDrop={handleLogoDrop("logoIzquierdo")}
-                      >
-                        {brand.logoIzquierdo ? (
-                          <img
-                            src={brand.logoIzquierdo}
-                            alt="Logo izquierdo"
-                            className="v-upload-preview"
-                          />
-                        ) : (
-                          <>
-                            <svg
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                            >
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                              <polyline points="17 8 12 3 7 8" />
-                              <line x1="12" y1="3" x2="12" y2="15" />
-                            </svg>
-                            <span>Izquierdo</span>
-                          </>
-                        )}
-                        <input
-                          accept="image/*"
-                          onChange={handleLogoChange("logoIzquierdo")}
-                          type="file"
-                          hidden
-                        />
-                      </label>
-                      <label
-                        className="v-upload-box"
                         onDragOver={handleLogoDragOver}
+                      />
+                      <LogoUploadBox
+                        value={brand.logoDerecho}
+                        label="Derecho"
+                        alt="Logo derecho"
+                        onFiles={handleLogoChange("logoDerecho")}
                         onDrop={handleLogoDrop("logoDerecho")}
-                      >
-                        {brand.logoDerecho ? (
-                          <img
-                            src={brand.logoDerecho}
-                            alt="Logo derecho"
-                            className="v-upload-preview"
-                          />
-                        ) : (
-                          <>
-                            <svg
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                            >
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                              <polyline points="17 8 12 3 7 8" />
-                              <line x1="12" y1="3" x2="12" y2="15" />
-                            </svg>
-                            <span>Derecho</span>
-                          </>
-                        )}
-                        <input
-                          accept="image/*"
-                          onChange={handleLogoChange("logoDerecho")}
-                          type="file"
-                          hidden
-                        />
-                      </label>
+                        onDragOver={handleLogoDragOver}
+                      />
                     </div>
                   </div>
 
@@ -736,7 +703,12 @@ export default function VolantesView() {
                     <div className="vgen-group-title">Textos</div>
                     <div className="vgen-inset-list">
                       <div className="vgen-inset-row">
-                        <label className="vgen-inset-label" htmlFor="vgen-titulo">Título</label>
+                        <label
+                          className="vgen-inset-label"
+                          htmlFor="vgen-titulo"
+                        >
+                          Título
+                        </label>
                         <input
                           id="vgen-titulo"
                           className="vgen-inset-input"
@@ -750,7 +722,12 @@ export default function VolantesView() {
                         />
                       </div>
                       <div className="vgen-inset-row">
-                        <label className="vgen-inset-label" htmlFor="vgen-subtitulo">Subtítulo</label>
+                        <label
+                          className="vgen-inset-label"
+                          htmlFor="vgen-subtitulo"
+                        >
+                          Subtítulo
+                        </label>
                         <input
                           id="vgen-subtitulo"
                           className="vgen-inset-input"
@@ -764,7 +741,12 @@ export default function VolantesView() {
                         />
                       </div>
                       <div className="vgen-inset-row">
-                        <label className="vgen-inset-label" htmlFor="vgen-enc-limpieza">Limpieza</label>
+                        <label
+                          className="vgen-inset-label"
+                          htmlFor="vgen-enc-limpieza"
+                        >
+                          Limpieza
+                        </label>
                         <input
                           id="vgen-enc-limpieza"
                           className="vgen-inset-input"
@@ -778,7 +760,12 @@ export default function VolantesView() {
                         />
                       </div>
                       <div className="vgen-inset-row">
-                        <label className="vgen-inset-label" htmlFor="vgen-enc-zonas">Zonas</label>
+                        <label
+                          className="vgen-inset-label"
+                          htmlFor="vgen-enc-zonas"
+                        >
+                          Zonas
+                        </label>
                         <input
                           id="vgen-enc-zonas"
                           className="vgen-inset-input"
@@ -792,7 +779,12 @@ export default function VolantesView() {
                         />
                       </div>
                       <div className="vgen-inset-row">
-                        <label className="vgen-inset-label" htmlFor="vgen-enc-detalle">Detalle</label>
+                        <label
+                          className="vgen-inset-label"
+                          htmlFor="vgen-enc-detalle"
+                        >
+                          Detalle
+                        </label>
                         <input
                           id="vgen-enc-detalle"
                           className="vgen-inset-input"
@@ -812,7 +804,12 @@ export default function VolantesView() {
                     <div className="vgen-group-title">Datos</div>
                     <div className="vgen-inset-list">
                       <div className="vgen-inset-row">
-                        <label className="vgen-inset-label" htmlFor="vgen-distrito">Distrito</label>
+                        <label
+                          className="vgen-inset-label"
+                          htmlFor="vgen-distrito"
+                        >
+                          Distrito
+                        </label>
                         <input
                           id="vgen-distrito"
                           className="vgen-inset-input"
@@ -825,7 +822,12 @@ export default function VolantesView() {
                         />
                       </div>
                       <div className="vgen-inset-row">
-                        <label className="vgen-inset-label" htmlFor="vgen-reservorio">Reservorio</label>
+                        <label
+                          className="vgen-inset-label"
+                          htmlFor="vgen-reservorio"
+                        >
+                          Reservorio
+                        </label>
                         <input
                           id="vgen-reservorio"
                           className="vgen-inset-input"
@@ -838,7 +840,12 @@ export default function VolantesView() {
                         />
                       </div>
                       <div className="vgen-inset-row">
-                        <label className="vgen-inset-label" htmlFor="vgen-sector">Sector</label>
+                        <label
+                          className="vgen-inset-label"
+                          htmlFor="vgen-sector"
+                        >
+                          Sector
+                        </label>
                         <input
                           id="vgen-sector"
                           className="vgen-inset-input"
@@ -886,20 +893,29 @@ export default function VolantesView() {
                       className="vgen-input vgen-textarea-compact"
                       onChange={(e) =>
                         updateSelectedRecord({
-                          zonasAfectadas: sanitizeMultilineText(
-                            e.target.value,
-                          ),
+                          zonasAfectadas: sanitizeMultilineText(e.target.value),
                         })
                       }
                       value={selectedRecord.zonasAfectadas}
                     />
-                    <div className="vgen-bullet-toolbar" role="group" aria-label="Estilo de viñetas">
+                    <div
+                      className="vgen-bullet-toolbar"
+                      role="group"
+                      aria-label="Estilo de viñetas"
+                    >
                       {BULLET_OPTIONS.map((opt) => (
-                        <WithHoverTooltip key={opt.id} label={opt.label} placement="bottom">
-                          <button
-                            type="button"
+                        <WithHoverTooltip
+                          key={opt.id}
+                          label={opt.label}
+                          placement="bottom"
+                        >
+                          <Button
+                            variant="none"
+                            size="none"
                             className={`vgen-bullet-btn${
-                              (selectedRecord.bulletStyle ?? "none") === opt.id ? " active" : ""
+                              (selectedRecord.bulletStyle ?? "none") === opt.id
+                                ? " active"
+                                : ""
                             }`}
                             onClick={() =>
                               updateSelectedRecord({ bulletStyle: opt.id })
@@ -907,11 +923,15 @@ export default function VolantesView() {
                             aria-label={opt.label}
                           >
                             {opt.renderIcon()}
-                          </button>
+                          </Button>
                         </WithHoverTooltip>
                       ))}
                     </div>
-                    <div className="vgen-district-color-row" role="group" aria-label="Color pastilla distrito">
+                    <div
+                      className="vgen-district-color-row"
+                      role="group"
+                      aria-label="Color pastilla distrito"
+                    >
                       {[
                         "#55caeb",
                         "#1a9fc4",
@@ -922,11 +942,17 @@ export default function VolantesView() {
                         "#9b59b6",
                         "#f1c40f",
                       ].map((preset) => (
-                        <WithHoverTooltip key={preset} label={preset} placement="bottom">
-                          <button
-                            type="button"
+                        <WithHoverTooltip
+                          key={preset}
+                          label={preset}
+                          placement="bottom"
+                        >
+                          <Button
+                            variant="none"
+                            size="none"
                             className={`vgen-color-swatch${
-                              (selectedRecord.districtColor ?? "#55caeb") === preset
+                              (selectedRecord.districtColor ?? "#55caeb") ===
+                              preset
                                 ? " active"
                                 : ""
                             }`}
@@ -938,28 +964,44 @@ export default function VolantesView() {
                           />
                         </WithHoverTooltip>
                       ))}
-                      <WithHoverTooltip label="Color personalizado" placement="bottom">
+                      <WithHoverTooltip
+                        label="Color personalizado"
+                        placement="bottom"
+                      >
                         <label
                           className="vgen-color-swatch vgen-color-custom"
                           style={{
-                          background:
-                            selectedRecord.districtColor &&
-                            ![
-                              "#55caeb","#1a9fc4","#18416d","#2ecc71",
-                              "#e67e22","#e74c3c","#9b59b6","#f1c40f",
-                            ].includes(selectedRecord.districtColor)
-                              ? selectedRecord.districtColor
-                              : "conic-gradient(red,yellow,lime,aqua,blue,magenta,red)",
-                        }}
-                      >
-                        <input
-                          type="color"
-                          value={selectedRecord.districtColor ?? "#55caeb"}
-                          onChange={(e) =>
-                            updateSelectedRecord({ districtColor: e.target.value })
-                          }
-                          style={{ opacity: 0, position: "absolute", width: 0, height: 0 }}
-                        />
+                            background:
+                              selectedRecord.districtColor &&
+                              ![
+                                "#55caeb",
+                                "#1a9fc4",
+                                "#18416d",
+                                "#2ecc71",
+                                "#e67e22",
+                                "#e74c3c",
+                                "#9b59b6",
+                                "#f1c40f",
+                              ].includes(selectedRecord.districtColor)
+                                ? selectedRecord.districtColor
+                                : "conic-gradient(red,yellow,lime,aqua,blue,magenta,red)",
+                          }}
+                        >
+                          <input
+                            type="color"
+                            value={selectedRecord.districtColor ?? "#55caeb"}
+                            onChange={(e) =>
+                              updateSelectedRecord({
+                                districtColor: e.target.value,
+                              })
+                            }
+                            style={{
+                              opacity: 0,
+                              position: "absolute",
+                              width: 0,
+                              height: 0,
+                            }}
+                          />
                         </label>
                       </WithHoverTooltip>
                     </div>
@@ -968,81 +1010,26 @@ export default function VolantesView() {
                   <div className="vgen-section">
                     <div className="vgen-group-title">Footer</div>
                     <div className="vgen-logos-grid">
-                      <label
-                        className="v-upload-box"
-                        onDragOver={handleLogoDragOver}
-                        onDrop={handleFooterDrop("logoOperativo")}
+                      <LogoUploadBox
+                        value={footer.logoOperativo}
+                        label="Logo operativo"
+                        alt="Logo operativo"
                         title="Cambiar Logo operativo"
-                      >
-                        {footer.logoOperativo ? (
-                          <img
-                            src={footer.logoOperativo}
-                            alt="Logo operativo"
-                            className="v-upload-preview"
-                          />
-                        ) : (
-                          <>
-                            <svg
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                            >
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                              <polyline points="17 8 12 3 7 8" />
-                              <line x1="12" y1="3" x2="12" y2="15" />
-                            </svg>
-                            <span>Logo operativo</span>
-                          </>
-                        )}
-                        <input
-                          accept="image/*"
-                          onChange={handleFooterChange("logoOperativo")}
-                          type="file"
-                          hidden
-                        />
-                      </label>
-                      <label
-                        className="v-upload-box"
+                        onFiles={handleFooterChange("logoOperativo")}
+                        onDrop={handleFooterDrop("logoOperativo")}
                         onDragOver={handleLogoDragOver}
-                        onDrop={handleFooterDrop("servicioAgua")}
+                      />
+                      <LogoUploadBox
+                        value={footer.servicioAgua}
+                        label="Servicio de agua"
+                        alt="Servicio de agua"
                         title="Cambiar Servicio de agua"
-                      >
-                        {footer.servicioAgua ? (
-                          <img
-                            src={footer.servicioAgua}
-                            alt="Servicio de agua"
-                            className="v-upload-preview"
-                          />
-                        ) : (
-                          <>
-                            <svg
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                            >
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                              <polyline points="17 8 12 3 7 8" />
-                              <line x1="12" y1="3" x2="12" y2="15" />
-                            </svg>
-                            <span>Servicio de agua</span>
-                          </>
-                        )}
-                        <input
-                          accept="image/*"
-                          onChange={handleFooterChange("servicioAgua")}
-                          type="file"
-                          hidden
-                        />
-                      </label>
+                        onFiles={handleFooterChange("servicioAgua")}
+                        onDrop={handleFooterDrop("servicioAgua")}
+                        onDragOver={handleLogoDragOver}
+                      />
                     </div>
                   </div>
-
                 </div>
               ) : (
                 <div className="vgen-empty-state">
@@ -1060,8 +1047,8 @@ export default function VolantesView() {
                     <path d="M9 21V9" />
                   </svg>
                   <p>
-                    No hay un registro seleccionado. Usa el widget de Lotes
-                    para seleccionar o crear uno nuevo.
+                    No hay un registro seleccionado. Usa el widget de Lotes para
+                    seleccionar o crear uno nuevo.
                   </p>
                 </div>
               )}
@@ -1108,42 +1095,46 @@ export default function VolantesView() {
       </main>
 
       {selectedRecord && (
-        <WithHoverTooltip label="Configurar tamaño de textos" placement="bottom">
-          <button
+        <WithHoverTooltip
+          label="Configurar tamaño de textos"
+          placement="bottom"
+        >
+          <Button
+            variant="none"
+            size="none"
             className={`vgen-fab vgen-fab-size ${isSizePanelOpen ? "active" : ""}`}
             onClick={() => setIsSizePanelOpen(!isSizePanelOpen)}
-            type="button"
             aria-label="Configurar tamaño de textos"
           >
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-          {isSizePanelOpen && (
             <svg
-              className="vgen-fab-check"
-              width="14"
-              height="14"
+              width="22"
+              height="22"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="3"
+              strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <polyline points="20 6 9 17 4 12" />
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-          )}
-          </button>
+            {isSizePanelOpen && (
+              <svg
+                className="vgen-fab-check"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            )}
+          </Button>
         </WithHoverTooltip>
       )}
 
@@ -1168,43 +1159,44 @@ export default function VolantesView() {
       />
 
       <WithHoverTooltip label="Gestionar lotes" placement="bottom">
-        <button
+        <Button
+          variant="none"
+          size="none"
           className={`vgen-fab vgen-fab-records ${isRecordsPanelOpen ? "active" : ""}`}
           onClick={() => setIsRecordsPanelOpen(!isRecordsPanelOpen)}
-          type="button"
           aria-label="Gestionar lotes"
         >
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <path d="M3 9h18" />
-          <path d="M9 21V9" />
-        </svg>
-        {isRecordsPanelOpen && (
           <svg
-            className="vgen-fab-check"
-            width="14"
-            height="14"
+            width="22"
+            height="22"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            strokeWidth="3"
+            strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <polyline points="20 6 9 17 4 12" />
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M3 9h18" />
+            <path d="M9 21V9" />
           </svg>
-        )}
-        <span className="vgen-fab-count">{records.length}</span>
-        </button>
+          {isRecordsPanelOpen && (
+            <svg
+              className="vgen-fab-check"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+          <span className="vgen-fab-count">{records.length}</span>
+        </Button>
       </WithHoverTooltip>
     </div>
   );

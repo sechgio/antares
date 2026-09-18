@@ -16,7 +16,10 @@ import AddressColumnSelector from './components/AddressColumnSelector';
 import SummaryPanel from './components/SummaryPanel';
 import SheetPreview from './components/SheetPreview';
 import ExportBar from './components/ExportBar';
+import ThemedSelect from '../ui/ThemedSelect';
 import './panel-styles.css';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 export default function PanelAvisoCorteApp() {
   const session = usePanelSession();
@@ -58,7 +61,7 @@ export default function PanelAvisoCorteApp() {
       await saveFeatureHistory('panel_aviso_corte', filename, { format: exportFormat, template: templateId, panels: session.previewPanels.length }, session.previewPanels.length);
       addToast({ message: `Exportado: ${filename}`, type: 'success' });
     } catch (e: unknown) {
-      addToast({ message: e instanceof Error ? e.message : `Error al exportar ${exportFormat.toUpperCase()}`, type: 'error' });
+      addToast({ message: errorMessage(e, `Error al exportar ${exportFormat.toUpperCase()}`), type: 'error' });
     } finally {
       session.setIsExporting(false);
     }
@@ -120,17 +123,17 @@ export default function PanelAvisoCorteApp() {
           )}
 
           <div className="pac-sidebar-export__row">
-            <select
+            <ThemedSelect
               aria-label="Formato de exportación"
               value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value as 'pdf' | 'docx')}
-              className="pac-sidebar-export__select"
-            >
-              <option value="pdf">PDF</option>
-              <option value="docx">Word</option>
-            </select>
-            <button
-              type="button"
+              onChange={(value) => setExportFormat(value as 'pdf' | 'docx')}
+              options={[
+                { value: 'pdf', label: 'PDF' },
+                { value: 'docx', label: 'Word' },
+              ]}
+              triggerClassName="pac-sidebar-export__select"
+            />
+            <Button variant="none" size="none"
               aria-label="Exportar documento"
               onClick={handleExport}
               disabled={!session.previewPanels.length || session.isExporting}
@@ -142,7 +145,7 @@ export default function PanelAvisoCorteApp() {
                 <Download size={14} />
               )}
               {session.isExporting ? 'Exportando…' : `Exportar ${exportFormat.toUpperCase()}`}
-            </button>
+            </Button>
           </div>
 
           {session.matchResult && (
@@ -162,7 +165,7 @@ export default function PanelAvisoCorteApp() {
                 {session.errors.map((err, i) => (
                   <span key={i} className="text-[11px] text-[var(--accent-red)]">{err}</span>
                 ))}
-                <button type="button" className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={session.clearErrors}>Descartar</button>
+                <Button variant="none" size="none" className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={session.clearErrors}>Descartar</Button>
               </div>
             </div>
           </div>

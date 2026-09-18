@@ -7,7 +7,7 @@ import type {
 } from '../types';
 import { newId } from '../types';
 
-export const COLOR_STYLE_KEYS = [
+const COLOR_STYLE_KEYS = [
   '--background-color',
   '--fill-type',
   '--fill-color-2',
@@ -25,7 +25,7 @@ export const COLOR_STYLE_KEYS = [
   '--stroke-end',
 ] as const;
 
-export const TEXT_STYLE_KEYS = [
+const TEXT_STYLE_KEYS = [
   '--color',
   '--font-family',
   '--font-size',
@@ -38,7 +38,7 @@ export const TEXT_STYLE_KEYS = [
   '--text-transform',
 ] as const;
 
-export const EFFECT_STYLE_KEYS = ['--box-shadow', '--filter-blur'] as const;
+const EFFECT_STYLE_KEYS = ['--box-shadow', '--filter-blur'] as const;
 
 const KEYS_BY_KIND: Record<CanvasStyleKind, readonly string[]> = {
   color: COLOR_STYLE_KEYS,
@@ -64,7 +64,7 @@ export function pickStyleVars(
   return out;
 }
 
-export function stylesOfKind(doc: CanvasDocument, kind: CanvasStyleKind): CanvasSharedStyle[] {
+function stylesOfKind(doc: CanvasDocument, kind: CanvasStyleKind): CanvasSharedStyle[] {
   return (doc.styles ?? []).filter((s) => s.kind === kind);
 }
 
@@ -159,7 +159,7 @@ export function updateStyle(
   };
 }
 
-export function addStyleToDocument(doc: CanvasDocument, style: CanvasSharedStyle): CanvasDocument {
+function addStyleToDocument(doc: CanvasDocument, style: CanvasSharedStyle): CanvasDocument {
   return { ...doc, styles: [...(doc.styles ?? []), style] };
 }
 

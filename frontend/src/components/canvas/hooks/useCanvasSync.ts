@@ -12,6 +12,7 @@ import { normalizeDocument, type CanvasDocument } from '../types';
 import { hydrateDocumentImages } from '../utils/imageBlobStore';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 import { reportFrontendEvent } from '../../../utils/observability';
+import { TimerScheduler } from '../sync/timerScheduler';
 
 export type SyncConflictChoice = 'use-remote' | 'keep-local';
 
@@ -20,7 +21,9 @@ const REALTIME_PULL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
 export interface UseCanvasSyncOptions {
   historyDocRef: React.MutableRefObject<CanvasDocument>;
-  openDirtyRef: React.MutableRefObject<boolean>;
+  // Fuente única de "doc abierto dirty": deriva de hasUnsavedEdits + baselines
+  // en el momento de la lectura (no un espejo manual).
+  isOpenDirty: () => boolean;
   refreshList: () => Promise<void>;
   replaceDocument: CanvasHistoryHandle['replaceDocument'];
   onConflict?: (conflict: SyncConflict) => void;
@@ -28,7 +31,6 @@ export interface UseCanvasSyncOptions {
   guarded?: boolean;
   documentId?: string;
   documentReady?: boolean;
-  openDirty?: boolean;
   initialGuarded?: boolean;
   onRemoteDocumentApplied?: (document: CanvasDocument) => void;
 }
@@ -52,7 +54,7 @@ function isLaterTimestamp(next: string, previous?: string | null): boolean {
 
 export function useCanvasSync({
   historyDocRef,
-  openDirtyRef,
+  isOpenDirty,
   refreshList,
   replaceDocument,
   onConflict,
@@ -60,7 +62,6 @@ export function useCanvasSync({
   guarded = false,
   documentId,
   documentReady = true,
-  openDirty,
   initialGuarded = false,
   onRemoteDocumentApplied,
 }: UseCanvasSyncOptions) {
@@ -70,7 +71,11 @@ export function useCanvasSync({
   const [collaborators, setCollaborators] = useState<CanvasCollaborator[]>([]);
 
   const currentDocumentId = documentId ?? historyDocRef.current.id;
-  const currentOpenDirty = openDirty ?? openDirtyRef.current;
+  // Ref-wrapper: el getter puede ser una lambda inline (identidad inestable);
+  // leerlo desde el ref mantiene estables las deps de effects/callbacks.
+  const isOpenDirtyRef = useRef(isOpenDirty);
+  isOpenDirtyRef.current = isOpenDirty;
+  const currentOpenDirty = isOpenDirtyRef.current();
   const currentDocumentIdRef = useRef(currentDocumentId);
   currentDocumentIdRef.current = currentDocumentId;
   const initialGuardedRef = useRef(initialGuarded);
@@ -82,12 +87,13 @@ export function useCanvasSync({
   onRemoteDocumentAppliedRef.current = onRemoteDocumentApplied;
   const realtimeSubscriptionRef = useRef<CanvasRealtimeSubscription | null>(null);
   const presenceIdentityRef = useRef<CanvasPresence | null>(null);
-  const realtimePullTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRealtimeTimestampRef = useRef<string | null>(null);
   const pendingRealtimePullRef = useRef(false);
   const realtimePullInFlightRef = useRef(false);
   const realtimePullInFlightGenerationRef = useRef<number | null>(null);
-  const realtimePullRetryRef = useRef(0);
+  const [pullScheduler] = useState(
+    () => new TimerScheduler(() => { void drainRealtimePull(); }),
+  );
   const realtimeEnabledRef = useRef(false);
   const realtimeGenerationRef = useRef(0);
   const realtimeLiveRef = useRef(false);
@@ -102,7 +108,7 @@ export function useCanvasSync({
 
     try {
       const openId = historyDocRef.current.id;
-      const openDirtyAtStart = openDirtyRef.current;
+      const openDirtyAtStart = isOpenDirtyRef.current();
 
       const applySyncResult = async (result: SyncResult) => {
         if (result.skipped) {
@@ -129,7 +135,7 @@ export function useCanvasSync({
             const hydrated = await hydrateDocumentImages(doc, { strict: true });
             // El documento abierto puede cambiar mientras se carga el snapshot remoto.
             if (result.reloadOpenId === historyDocRef.current.id) {
-              if (!openDirtyRef.current) {
+              if (!isOpenDirtyRef.current()) {
                 replaceDocumentRef.current(hydrated);
                 onRemoteDocumentAppliedRef.current?.(hydrated);
               } else if (onConflictRef.current) {
@@ -182,7 +188,7 @@ export function useCanvasSync({
         if (realtimeLiveRef.current) scheduleRealtimePull();
       }
     }
-  }, [guarded, historyDocRef, openDirtyRef, refreshList]);
+  }, [guarded, historyDocRef, refreshList]);
 
   const drainRealtimePull = useCallback(async () => {
     if (realtimePullInFlightRef.current) return;
@@ -210,14 +216,14 @@ export function useCanvasSync({
       if (!isCurrentPull()) return;
       const result = await pullCanvasDocument(targetDocumentId, {
         localDocument: historyDocRef.current,
-        openDirty: openDirtyRef.current,
+        openDirty: isOpenDirtyRef.current(),
       });
       if (!isCurrentPull()) return;
 
       if (result.kind === 'applied') {
         const hydrated = await hydrateDocumentImages(result.document, { strict: true });
         if (!isCurrentPull()) return;
-        if (openDirtyRef.current) {
+        if (isOpenDirtyRef.current()) {
           const localDoc = historyDocRef.current;
           onConflictRef.current?.({
             localDoc,
@@ -232,7 +238,7 @@ export function useCanvasSync({
       } else if (result.kind === 'conflict' || result.kind === 'deleted') {
         onConflictRef.current?.(result.conflict);
       }
-      realtimePullRetryRef.current = 0;
+      pullScheduler.reset();
       if (realtimeLiveRef.current) setRealtimeStatus('live');
       reportFrontendEvent({
         event: 'canvas.realtime',
@@ -251,10 +257,10 @@ export function useCanvasSync({
           durationMs: Date.now() - startedAt,
           reason: 'pull_failed',
         });
-        const retryIndex = realtimePullRetryRef.current;
+        const retryIndex = pullScheduler.attempts;
         const retryDelay = REALTIME_PULL_RETRY_DELAYS_MS[retryIndex];
         if (retryDelay !== undefined) {
-          realtimePullRetryRef.current = retryIndex + 1;
+          pullScheduler.attempts = retryIndex + 1;
           pendingRealtimePullRef.current = true;
           if (pendingTimestamp && !pendingRealtimeTimestampRef.current) {
             pendingRealtimeTimestampRef.current = pendingTimestamp;
@@ -262,7 +268,7 @@ export function useCanvasSync({
           scheduleRealtimePull(retryDelay);
           retryScheduled = true;
         } else {
-          realtimePullRetryRef.current = 0;
+          pullScheduler.reset();
           pendingRealtimePullRef.current = false;
           pendingRealtimeTimestampRef.current = null;
         }
@@ -275,20 +281,16 @@ export function useCanvasSync({
           isCurrentPull()
           && (pendingRealtimeTimestampRef.current || pendingRealtimePullRef.current)
           && !retryScheduled
-          && realtimePullTimerRef.current === null
+          && !pullScheduler.pending
         ) {
           scheduleRealtimePull();
         }
       }
     }
-  }, [historyDocRef, openDirtyRef]);
+  }, [historyDocRef]);
 
   function scheduleRealtimePull(delay = REALTIME_PULL_DEBOUNCE_MS): void {
-    if (realtimePullTimerRef.current !== null) return;
-    realtimePullTimerRef.current = setTimeout(() => {
-      realtimePullTimerRef.current = null;
-      void drainRealtimePull();
-    }, delay);
+    pullScheduler.schedule(delay);
   }
 
   function requestRealtimePull(updatedAt?: string): void {
@@ -300,7 +302,7 @@ export function useCanvasSync({
       pendingRealtimeTimestampRef.current = updatedAt;
     }
     pendingRealtimePullRef.current = true;
-    if (isNewInvalidation) realtimePullRetryRef.current = 0;
+    if (isNewInvalidation) pullScheduler.reset();
     if (!initialGuardedRef.current) scheduleRealtimePull();
   }
 
@@ -345,13 +347,9 @@ export function useCanvasSync({
       realtimeEnabledRef.current = false;
       realtimeLiveRef.current = false;
       realtimeEverLiveRef.current = false;
-      if (realtimePullTimerRef.current !== null) {
-        clearTimeout(realtimePullTimerRef.current);
-        realtimePullTimerRef.current = null;
-      }
+      pullScheduler.cancel();
       pendingRealtimeTimestampRef.current = null;
       pendingRealtimePullRef.current = false;
-      realtimePullRetryRef.current = 0;
       realtimePullInFlightRef.current = false;
       realtimePullInFlightGenerationRef.current = null;
       const subscription = realtimeSubscriptionRef.current;
@@ -384,10 +382,10 @@ export function useCanvasSync({
 
         const initialPresence: CanvasPresence = {
           ...identity,
-          mode: openDirtyRef.current ? 'editing' : 'viewing',
+          mode: isOpenDirtyRef.current() ? 'editing' : 'viewing',
         };
         presenceIdentityRef.current = initialPresence;
-        const subscription = subscribeCanvasDocument(currentDocumentId, initialPresence, {
+        const subscription = await subscribeCanvasDocument(currentDocumentId, initialPresence, {
           onSaved: (event) => {
             if (!disposed) handleRealtimeSaved(event);
           },
@@ -420,7 +418,7 @@ export function useCanvasSync({
       disposed = true;
       cleanupRealtime();
     };
-  }, [active, currentDocumentId, documentReady, handleRealtimeSaved, handleRealtimeStatus, openDirtyRef]);
+  }, [active, currentDocumentId, documentReady, handleRealtimeSaved, handleRealtimeStatus]);
 
   useEffect(() => {
     const subscription = realtimeSubscriptionRef.current;

@@ -27,6 +27,19 @@ import type { BoardColumn, BoardColumnInput, Espacio, Proyecto, Tarea, TareaInpu
 import { emitDueNotificationsInvalidate } from '../utils/dueNotificationsBus';
 import { readEspaciosPrefs, writeEspaciosPrefs } from '../utils/sessionPrefs';
 import { fallbackBoardColumns } from '../utils/statusConfig';
+import { reportFrontendError, reportFrontendEvent } from '../../../utils/observability';
+import { errorMessage } from '../../../utils/errors';
+import { nextRequest } from '../../../utils/async';
+
+function pickActiveId<T extends { id: string }>(
+  items: T[],
+  currentId: string | null,
+  preferredId?: string | null,
+): string | null {
+  if (currentId && items.some((i) => i.id === currentId)) return currentId;
+  if (preferredId && items.some((i) => i.id === preferredId)) return preferredId;
+  return items[0]?.id ?? null;
+}
 
 function mergeById<T extends { id: string }>(items: T[], item: T, eventType: string): T[] {
   if (eventType === 'DELETE') return items.filter((i) => i.id !== item.id);
@@ -37,13 +50,15 @@ function mergeById<T extends { id: string }>(items: T[], item: T, eventType: str
   return next;
 }
 
-function errorMessage(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) return err.message;
-  if (err && typeof err === 'object' && 'message' in err) {
-    const msg = (err as { message?: unknown }).message;
-    if (typeof msg === 'string' && msg) return msg;
-  }
-  return fallback;
+function reportEspaciosSyncError(op: string, err: unknown, fallback: string): string {
+  const message = errorMessage(err, fallback);
+  reportFrontendError({
+    kind: 'sync_error',
+    view: `espacios.${op}`,
+    name: err instanceof Error ? err.name : 'EspaciosSyncError',
+    message,
+  });
+  return message;
 }
 
 function isEspacioRow(row: unknown): row is Espacio {
@@ -117,107 +132,95 @@ export function useEspaciosSync(userId: string | undefined) {
 
   const clearWarning = useCallback(() => setWarning(null), []);
 
+  const resetTareasState = useCallback(() => {
+    setTareas([]);
+    setBoardColumns([]);
+    setTareasLoading(false);
+  }, []);
+
+  const resetProyectoState = useCallback(() => {
+    setProyectos([]);
+    setActiveProyectoId(null);
+    resetTareasState();
+  }, [resetTareasState]);
+
   const loadEspacios = useCallback(async () => {
     const data = await fetchEspacios();
     setEspacios(data);
     setError(null);
     const preferred = prefs.current.activeEspacioId;
-    setActiveEspacioId((prev) => {
-      if (prev && data.some((e) => e.id === prev)) return prev;
-      if (preferred && data.some((e) => e.id === preferred)) return preferred;
-      return data[0]?.id ?? null;
-    });
+    setActiveEspacioId((prev) => pickActiveId(data, prev, preferred));
     return data;
   }, []);
 
   const loadProyectos = useCallback(async (espacioId: string) => {
-    const requestId = ++proyectosRequestRef.current;
+    const guard = nextRequest(proyectosRequestRef);
     const data = await fetchProyectos(espacioId);
-    if (requestId !== proyectosRequestRef.current) return data;
+    if (!guard.isCurrent()) return data;
     setProyectos(data);
     setWarning(null);
     if (data.length > 0) {
       const preferred = prefs.current.activeProyectoId;
-      setActiveProyectoId((prev) => {
-        if (prev && data.some((p) => p.id === prev)) return prev;
-        if (preferred && data.some((p) => p.id === preferred)) return preferred;
-        return data[0].id;
-      });
+      setActiveProyectoId((prev) => pickActiveId(data, prev, preferred));
     } else {
       setActiveProyectoId(null);
-      setTareas([]);
-      setBoardColumns([]);
-      setTareasLoading(false);
+      resetTareasState();
     }
     return data;
-  }, []);
+  }, [resetTareasState]);
 
   const loadTareas = useCallback(async (proyectoId: string) => {
-    const requestId = ++tareasRequestRef.current;
+    const guard = nextRequest(tareasRequestRef);
     setTareasLoading(true);
     try {
       const data = await fetchTareas(proyectoId);
-      if (requestId !== tareasRequestRef.current) return data;
+      if (!guard.isCurrent()) return data;
       const pending = pendingDeleteIdsRef.current;
       setTareas(pending.size ? data.filter((t) => !pending.has(t.id)) : data);
       setWarning(null);
       setTareasLoading(false);
       return data;
     } catch (err) {
-      if (requestId === tareasRequestRef.current) setTareasLoading(false);
+      if (guard.isCurrent()) setTareasLoading(false);
       throw err;
     }
   }, []);
 
   const loadBoardColumns = useCallback(async (proyectoId: string) => {
-    const requestId = ++columnsRequestRef.current;
+    const guard = nextRequest(columnsRequestRef);
     const data = await fetchBoardColumns(proyectoId);
-    if (requestId !== columnsRequestRef.current) return data;
+    if (!guard.isCurrent()) return data;
     setBoardColumns(data);
     return data;
   }, []);
 
   const reloadAll = useCallback(async () => {
-    const requestId = ++reloadAllRequestRef.current;
-    proyectosRequestRef.current = requestId;
-    tareasRequestRef.current = requestId;
-    columnsRequestRef.current = requestId;
+    const guard = nextRequest(reloadAllRequestRef);
+    proyectosRequestRef.current = guard.id;
+    tareasRequestRef.current = guard.id;
+    columnsRequestRef.current = guard.id;
     setLoading(true);
     setError(null);
     try {
       const espaciosData = await fetchEspacios();
-      if (requestId !== reloadAllRequestRef.current) return;
+      if (!guard.isCurrent()) return;
       setEspacios(espaciosData);
-      const currentEspacioId = activeEspacioIdRef.current;
-      const espacioId =
-        currentEspacioId && espaciosData.some((e) => e.id === currentEspacioId)
-          ? currentEspacioId
-          : (espaciosData[0]?.id ?? null);
+      const espacioId = pickActiveId(espaciosData, activeEspacioIdRef.current);
       setActiveEspacioId(espacioId);
 
       if (!espacioId) {
-        setProyectos([]);
-        setActiveProyectoId(null);
-        setTareas([]);
-        setBoardColumns([]);
-        setTareasLoading(false);
+        resetProyectoState();
         return;
       }
 
       const proyectosData = await fetchProyectos(espacioId);
-      if (requestId !== reloadAllRequestRef.current) return;
+      if (!guard.isCurrent()) return;
       setProyectos(proyectosData);
-      const currentProyectoId = activeProyectoIdRef.current;
-      const proyectoId =
-        currentProyectoId && proyectosData.some((p) => p.id === currentProyectoId)
-          ? currentProyectoId
-          : (proyectosData[0]?.id ?? null);
+      const proyectoId = pickActiveId(proyectosData, activeProyectoIdRef.current);
       setActiveProyectoId(proyectoId);
 
       if (!proyectoId) {
-        setTareas([]);
-        setBoardColumns([]);
-        setTareasLoading(false);
+        resetTareasState();
         return;
       }
 
@@ -226,101 +229,81 @@ export function useEspaciosSync(userId: string | undefined) {
         fetchTareas(proyectoId),
         fetchBoardColumns(proyectoId),
       ]);
-      if (requestId !== reloadAllRequestRef.current) return;
+      if (!guard.isCurrent()) return;
       setTareas(tareasData);
       setBoardColumns(columnsData);
       setTareasLoading(false);
     } catch (err) {
-      if (requestId !== reloadAllRequestRef.current) return;
+      if (!guard.isCurrent()) return;
       setError(errorMessage(err, 'Error al cargar ESPACIOS'));
       setTareasLoading(false);
     } finally {
-      if (requestId === reloadAllRequestRef.current) {
+      if (guard.isCurrent()) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [resetProyectoState, resetTareasState]);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     loadEspacios()
-      .catch((err) => setError(errorMessage(err, 'Error al cargar ESPACIOS')))
+      .catch((err) => setError(reportEspaciosSyncError('loadEspacios', err, 'Error al cargar ESPACIOS')))
       .finally(() => setLoading(false));
   }, [loadEspacios]);
 
   useEffect(() => {
     if (!activeEspacioId) {
-      setProyectos([]);
-      setActiveProyectoId(null);
-      setTareas([]);
-      setBoardColumns([]);
-      setTareasLoading(false);
+      resetProyectoState();
       return;
     }
-    setTareas([]);
-    setBoardColumns([]);
+    resetTareasState();
     void loadProyectos(activeEspacioId).catch((err) => {
-      const message = errorMessage(err, 'Error al cargar proyectos');
-      console.error('[espacios] loadProyectos failed:', message);
+      const message = reportEspaciosSyncError('loadProyectos', err, 'Error al cargar proyectos');
       if (activeEspacioIdRef.current === activeEspacioId) {
-        setProyectos([]);
-        setActiveProyectoId(null);
-        setTareas([]);
-        setBoardColumns([]);
-        setTareasLoading(false);
+        resetProyectoState();
         setWarning(message);
       }
     });
-  }, [activeEspacioId, loadProyectos]);
+  }, [activeEspacioId, loadProyectos, resetProyectoState]);
 
   useEffect(() => {
     if (!activeProyectoId) {
-      setTareas([]);
-      setBoardColumns([]);
-      setTareasLoading(false);
+      resetTareasState();
       return;
     }
     setTareas([]);
     setBoardColumns(fallbackBoardColumns(activeProyectoId));
     setTareasLoading(true);
     void loadTareas(activeProyectoId).catch((err) => {
-      const message = errorMessage(err, 'Error al cargar tareas');
-      console.error('[espacios] loadTareas failed:', message);
+      const message = reportEspaciosSyncError('loadTareas', err, 'Error al cargar tareas');
       if (activeProyectoIdRef.current === activeProyectoId) {
         setTareas([]);
         setWarning(message);
       }
     });
     void loadBoardColumns(activeProyectoId).catch((err) => {
-      const message = errorMessage(err, 'Error al cargar columnas del tablero');
-      console.error('[espacios] loadBoardColumns failed:', message);
+      const message = reportEspaciosSyncError('loadBoardColumns', err, 'Error al cargar columnas del tablero');
       if (activeProyectoIdRef.current === activeProyectoId) {
         setBoardColumns(fallbackBoardColumns(activeProyectoId));
         setWarning(message);
       }
     });
-  }, [activeProyectoId, loadTareas, loadBoardColumns]);
+  }, [activeProyectoId, loadTareas, loadBoardColumns, resetTareasState]);
 
   useEffect(() => {
     if (activeEspacioId && !espacios.some((e) => e.id === activeEspacioId)) {
       setActiveEspacioId(espacios[0]?.id ?? null);
-      setActiveProyectoId(null);
-      setProyectos([]);
-      setTareas([]);
-      setBoardColumns([]);
-      setTareasLoading(false);
+      resetProyectoState();
     }
-  }, [espacios, activeEspacioId]);
+  }, [espacios, activeEspacioId, resetProyectoState]);
 
   useEffect(() => {
     if (activeProyectoId && !proyectos.some((p) => p.id === activeProyectoId)) {
       setActiveProyectoId(proyectos[0]?.id ?? null);
-      setTareas([]);
-      setBoardColumns([]);
-      setTareasLoading(false);
+      resetTareasState();
     }
-  }, [proyectos, activeProyectoId]);
+  }, [proyectos, activeProyectoId, resetTareasState]);
 
   useEffect(() => {
     const channel = subscribeEspaciosSync(
@@ -367,7 +350,18 @@ export function useEspaciosSync(userId: string | undefined) {
           });
         }
       },
-      setRealtimeStatus,
+      (status) => {
+        setRealtimeStatus(status);
+        if (status === 'live' || status === 'error' || status === 'offline') {
+          reportFrontendEvent({
+            event: 'espacios.sync',
+            level: status === 'error' ? 'WARN' : 'DEBUG',
+            status,
+            outcome: status === 'live' ? 'success' : status === 'error' ? 'failed' : undefined,
+            view: 'espacios',
+          });
+        }
+      },
     );
     return () => {
       unsubscribeEspaciosSync(channel);
@@ -409,7 +403,7 @@ export function useEspaciosSync(userId: string | undefined) {
     });
     setActiveProyectoId(proyecto.id);
     void loadProyectos(activeEspacioId).catch((err) => {
-      console.error('[espacios] reconcile loadProyectos failed:', errorMessage(err, 'Error al cargar proyectos'));
+      reportEspaciosSyncError('reconcileProyectos', err, 'Error al cargar proyectos');
     });
   }, [activeEspacioId, proyectos.length, loadProyectos]);
 
@@ -429,10 +423,17 @@ export function useEspaciosSync(userId: string | undefined) {
       setTareas((prev) => (prev.some((t) => t.id === tarea.id) ? prev : [...prev, tarea]));
       emitDueNotificationsInvalidate();
       void loadTareas(proyectoId).catch((err) => {
-        console.error('[espacios] reconcile loadTareas failed:', errorMessage(err, 'Error al cargar tareas'));
+        reportEspaciosSyncError('reconcileTareas', err, 'Error al cargar tareas');
       });
     },
     [activeProyectoId, userId, loadTareas],
+  );
+
+  const reloadActiveProyecto = useCallback(
+    async (reload: (proyectoId: string) => Promise<unknown>) => {
+      if (activeProyectoId) await reload(activeProyectoId);
+    },
+    [activeProyectoId],
   );
 
   const patchTarea = useCallback(async (id: string, patch: Partial<TareaInput & Pick<Tarea, 'status'>>) => {
@@ -441,10 +442,10 @@ export function useEspaciosSync(userId: string | undefined) {
       await updateTarea(id, patch);
       emitDueNotificationsInvalidate();
     } catch (err) {
-      if (activeProyectoId) await loadTareas(activeProyectoId);
+      await reloadActiveProyecto(loadTareas);
       throw err;
     }
-  }, [activeProyectoId, loadTareas]);
+  }, [reloadActiveProyecto, loadTareas]);
 
   const removeTarea = useCallback(async (id: string) => {
     setTareas((prev) => prev.filter((t) => t.id !== id));
@@ -452,10 +453,10 @@ export function useEspaciosSync(userId: string | undefined) {
       await deleteTarea(id);
       emitDueNotificationsInvalidate();
     } catch (err) {
-      if (activeProyectoId) await loadTareas(activeProyectoId);
+      await reloadActiveProyecto(loadTareas);
       throw err;
     }
-  }, [activeProyectoId, loadTareas]);
+  }, [reloadActiveProyecto, loadTareas]);
 
   const softRemoveTarea = useCallback((id: string) => {
     pendingDeleteIdsRef.current.add(id);
@@ -482,10 +483,10 @@ export function useEspaciosSync(userId: string | undefined) {
       emitDueNotificationsInvalidate();
     } catch (err) {
       pendingDeleteIdsRef.current.delete(id);
-      if (activeProyectoId) await loadTareas(activeProyectoId);
+      await reloadActiveProyecto(loadTareas);
       throw err;
     }
-  }, [activeProyectoId, loadTareas]);
+  }, [reloadActiveProyecto, loadTareas]);
 
   const addBoardColumn = useCallback(
     async (input: BoardColumnInput) => {
@@ -504,10 +505,7 @@ export function useEspaciosSync(userId: string | undefined) {
         return [...prev, column].sort((a, b) => a.sort_order - b.sort_order);
       });
       void loadBoardColumns(proyectoId).catch((err) => {
-        console.error(
-          '[espacios] reconcile loadBoardColumns failed:',
-          errorMessage(err, 'Error al cargar columnas'),
-        );
+        reportEspaciosSyncError('reconcileBoardColumns', err, 'Error al cargar columnas');
       });
       return column;
     },
@@ -525,11 +523,11 @@ export function useEspaciosSync(userId: string | undefined) {
         await updateBoardColumn(id, patch);
         if (patch.is_done !== undefined) emitDueNotificationsInvalidate();
       } catch (err) {
-        if (activeProyectoId) await loadBoardColumns(activeProyectoId);
+        await reloadActiveProyecto(loadBoardColumns);
         throw err;
       }
     },
-    [activeProyectoId, loadBoardColumns],
+    [reloadActiveProyecto, loadBoardColumns],
   );
 
   const removeBoardColumn = useCallback(
@@ -549,11 +547,11 @@ export function useEspaciosSync(userId: string | undefined) {
       try {
         await deleteBoardColumn(id);
       } catch (err) {
-        if (activeProyectoId) await loadBoardColumns(activeProyectoId);
+        await reloadActiveProyecto(loadBoardColumns);
         throw err;
       }
     },
-    [boardColumns, tareas, activeProyectoId, loadBoardColumns],
+    [boardColumns, tareas, reloadActiveProyecto, loadBoardColumns],
   );
 
   const removeEspacio = useCallback(

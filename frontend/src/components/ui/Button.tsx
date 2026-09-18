@@ -1,7 +1,7 @@
 import React, { forwardRef } from 'react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'nav' | 'card';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'nav' | 'card' | 'none';
   size?: 'none' | 'sm' | 'md' | 'lg';
 }
 
@@ -27,6 +27,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
     danger: 'inline-flex items-center justify-center gap-2 rounded-full bg-transparent text-[var(--accent-red)] border border-[var(--accent-red)] hover:bg-[var(--bg-elevated)]',
     nav: 'flex w-full items-center justify-start gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium',
     card: 'block h-auto w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 text-left hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]',
+    none: '',
   };
 
   return (

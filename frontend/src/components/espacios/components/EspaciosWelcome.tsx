@@ -323,9 +323,8 @@ function PreviewMockup({ activeView, onViewChange, reducedMotion }: PreviewMocku
               {VIEWS.map((tab) => {
                 const isActive = activeView === tab.id;
                 return (
-                  <button
+                  <Button variant="none" size="none"
                     key={tab.id}
-                    type="button"
                     onClick={() => onViewChange(tab.id)}
                     className={`rounded-md px-2 py-0.5 text-[8px] transition-colors ${
                       isActive
@@ -334,7 +333,7 @@ function PreviewMockup({ activeView, onViewChange, reducedMotion }: PreviewMocku
                     }`}
                   >
                     {tab.label}
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -408,7 +407,6 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
 
             <div className="flex flex-wrap items-center gap-4">
               <Button
-                type="button"
                 size="lg"
                 onClick={onCreateEspacio}
                 className="gap-2 shadow-[0_8px_32px_color-mix(in_srgb,var(--accent-primary)_40%,transparent)]"
@@ -457,13 +455,12 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
                     <p className="text-xs leading-relaxed text-[var(--text-muted)]">{item.description}</p>
                   </div>
                   {index === 0 && (
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       onClick={onCreateEspacio}
                       className="shrink-0 self-center rounded-lg px-2 py-1 text-[11px] font-medium text-[var(--accent-primary)] opacity-0 transition-opacity hover:bg-[var(--accent-primary)]/10 group-hover:opacity-100"
                     >
                       Empezar →
-                    </button>
+                    </Button>
                   )}
                 </motion.div>
               ))}
@@ -476,9 +473,8 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
               {VIEWS.map((view) => {
                 const isActive = activeView === view.id;
                 return (
-                  <button
+                  <Button variant="none" size="none"
                     key={view.id}
-                    type="button"
                     onClick={() => handleViewChange(view.id)}
                     className={`group flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
                       isActive
@@ -502,7 +498,7 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
                     {isActive && (
                       <span className="text-[10px] font-medium text-[var(--accent-primary-hover)]">Vista activa en preview</span>
                     )}
-                  </button>
+                  </Button>
                 );
               })}
             </div>

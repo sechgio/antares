@@ -5,6 +5,7 @@ import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
 import CanvasSelect from '../../CanvasSelect';
+import Button from '@/components/ui/Button';
 
 export default function ExportSection({
   layer,
@@ -28,8 +29,7 @@ export default function ExportSection({
           ]}
         />
         <span className="canvas-export-format">PNG</span>
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="canvas-export-btn"
           disabled={exporting}
           aria-label={`Exportar ${fileName}`}
@@ -39,7 +39,7 @@ export default function ExportSection({
           }}
         >
           <Download className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
     </div>
   );

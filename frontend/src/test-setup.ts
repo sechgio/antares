@@ -46,6 +46,48 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   });
 }
 
+// Ningún test debe abrir sockets reales (p. ej. Supabase Realtime vía undici).
+// El stub satisface la API que usan los clientes pero nunca conecta.
+if (typeof window !== 'undefined') {
+  class WebSocketStub {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSING = 2;
+    static readonly CLOSED = 3;
+    readonly CONNECTING = 0;
+    readonly OPEN = 1;
+    readonly CLOSING = 2;
+    readonly CLOSED = 3;
+    binaryType: BinaryType = 'blob';
+    bufferedAmount = 0;
+    extensions = '';
+    protocol = '';
+    readyState = 0;
+    url: string;
+    onclose: ((ev: CloseEvent) => void) | null = null;
+    onerror: ((ev: Event) => void) | null = null;
+    onmessage: ((ev: MessageEvent) => void) | null = null;
+    onopen: ((ev: Event) => void) | null = null;
+    constructor(url: string | URL, _protocols?: string | string[]) {
+      this.url = String(url);
+    }
+    addEventListener() {}
+    removeEventListener() {}
+    dispatchEvent() {
+      return false;
+    }
+    send() {}
+    close() {
+      this.readyState = 3;
+    }
+  }
+  Object.defineProperty(globalThis, 'WebSocket', {
+    writable: true,
+    configurable: true,
+    value: WebSocketStub,
+  });
+}
+
 const defaultTheme = {
   name: 'Precision Linear', bg: '#0A0D12', bg_secondary: '#111522',
   fg: '#FFFFFF', fg_muted: '#7C8494', accent: '#5E6AD2',
@@ -67,7 +109,7 @@ if (typeof window !== 'undefined') {
       if (method === 'history_list') return { runs: [] };
       if (method === 'technical_reports_list') return { reports: [] };
       if (method === 'templates_list') return { templates: [] };
-      return {};
+      throw new Error(`IPC method not allowed: ${method} (test stub — añade el método al stub si el test lo necesita)`);
     },
     onNotify: () => () => {},
     onUpdateAvailable: () => () => {},

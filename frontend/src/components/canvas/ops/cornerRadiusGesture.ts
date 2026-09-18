@@ -21,7 +21,7 @@ export function maxCornerRadiusPxForLayer(layer: CanvasLayer): number {
   return maxCornerRadiusPx(w, h);
 }
 
-export const RADIUS_HANDLE_MIN_INSET_SCREEN = 14;
+const RADIUS_HANDLE_MIN_INSET_SCREEN = 14;
 
 export function radiusHandleInsetPx(
   radiusPx: number,

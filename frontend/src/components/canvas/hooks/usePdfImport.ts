@@ -9,6 +9,7 @@ import type {
   PdfImportReport,
 } from '../import/pdfImportTypes';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
+import { errorMessage } from '@/utils/errors';
 
 interface UsePdfImportOptions {
   history: Pick<CanvasHistoryHandle, 'documentRef' | 'setDocument'>;
@@ -80,7 +81,7 @@ export function usePdfImport({
         setPdfPreflight(preflight);
       } catch (error) {
         if (generation !== selectionGenerationRef.current) return;
-        const message = error instanceof Error ? error.message : 'No se pudo inspeccionar el PDF';
+        const message = errorMessage(error, 'No se pudo inspeccionar el PDF');
         setPdfFile(null);
         setPdfImportError(message);
       }
@@ -136,7 +137,7 @@ export function usePdfImport({
         if (error instanceof DOMException && error.name === 'AbortError') {
           setPdfImportError('Importación cancelada');
         } else {
-          setPdfImportError(error instanceof Error ? error.message : 'No se pudo importar el PDF');
+          setPdfImportError(errorMessage(error, 'No se pudo importar el PDF'));
         }
       } finally {
         pdfImportControllerRef.current = null;

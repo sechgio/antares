@@ -2,6 +2,7 @@ import { RotateCcw } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { VisualMapping } from '../../types';
 import { hexToMappingColor, mappingColorCss, mappingColorToHex } from './mappingCoords';
+import Button from '@/components/ui/Button';
 
 type MappingColors = Pick<VisualMapping, 'color_r' | 'color_g' | 'color_b'>;
 
@@ -62,8 +63,7 @@ export default function MappingColorField({ mapping, originalMapping, showReset,
           const active = currentHex.toLowerCase() === preset.hex.toLowerCase();
           return (
             <WithHoverTooltip key={preset.hex} label={preset.label} placement="bottom">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 aria-label={preset.label}
                 onClick={() => onChange(hexToMappingColor(preset.hex))}
                 className={`h-6 w-6 rounded-full border transition-transform hover:scale-110 ${
@@ -81,15 +81,14 @@ export default function MappingColorField({ mapping, originalMapping, showReset,
       </p>
 
       {showReset && !isOriginal && (
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={() => onChange({ ...originalMapping })}
           className="mt-2 flex w-full items-center justify-center gap-1.5 text-[9px] text-[var(--accent-primary)]/70 hover:text-[var(--accent-primary)] tracking-wider transition-colors"
           style={{ fontFamily: "'Roboto Mono', monospace" }}
         >
           <RotateCcw size={10} />
           Restaurar color original
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -19,7 +19,7 @@ import {
 } from '../utils/cuadranteRanges';
 import { loadSession, saveSession, storedToSession } from '../utils/storage';
 
-export interface EvidenciaMetadataState {
+interface EvidenciaMetadataState {
   title: string;
   cuadranteLabel: string;
   showCuadranteLabel: boolean;
@@ -27,20 +27,20 @@ export interface EvidenciaMetadataState {
   currentCuadrante: string;
 }
 
-export interface EvidenciaAssetsState {
+interface EvidenciaAssetsState {
   logoLeft: LogoAsset | null;
   logoRight: LogoAsset | null;
   images: LocalImage[];
 }
 
-export interface EvidenciaPaginationState {
+interface EvidenciaPaginationState {
   pages: LocalImage[][];
   currentPageIndex: number;
   currentPageImages: LocalImage[];
   totalPages: number;
 }
 
-export interface EvidenciaSessionActions {
+interface EvidenciaSessionActions {
   setTitle: (val: string) => void;
   setCuadranteLabel: (val: string) => void;
   setShowCuadranteLabel: (val: boolean) => void;

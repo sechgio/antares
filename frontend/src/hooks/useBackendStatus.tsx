@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getBackendStatus, restartBackend, onNotify } from '../api';
 import type { BackendHealthStatus } from '../api';
 
-export type BackendState = 'idle' | 'starting' | 'ready' | 'exited' | 'fatal' | 'unknown';
+type BackendState = 'idle' | 'starting' | 'ready' | 'exited' | 'fatal' | 'unknown';
 
-export type BackendStatusState =
+type BackendStatusState =
   | { status: 'ready' }
   | { status: 'starting'; isRestarting: boolean }
   | { status: 'degraded'; phase: 'exited' | 'fatal' | 'unknown'; errorMessage: string; isRestarting: boolean }

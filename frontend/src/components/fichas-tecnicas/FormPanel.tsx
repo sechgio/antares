@@ -1,4 +1,7 @@
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import Button from '../ui/Button';
+import ThemedSelect from '../ui/ThemedSelect';
+import { FileImportInput } from '../ui/FileImportInput';
 import { Save, Trash2, Upload, X } from 'lucide-react';
 import {
   normalizeFicha,
@@ -38,27 +41,23 @@ function LogoSlot({
             <span className="tr-logo-chip-label">Logo</span>
             <span className="tr-logo-chip-hint">{url ? 'Cambiar' : 'PNG · JPG · WebP'}</span>
           </span>
-          <input
-            type="file"
+          <FileImportInput
             accept="image/*"
-            onChange={(event) => {
-              const file = event.target.files?.[0] || null;
-              event.target.value = '';
-              onLogoChange(file);
-            }}
+            onFiles={(files) => onLogoChange(files?.[0] || null)}
           />
         </label>
       </WithHoverTooltip>
       {url && (
         <WithHoverTooltip label="Quitar logo" placement="bottom">
-          <button
-            type="button"
+          <Button
+            variant="none"
+            size="none"
             className="tr-logo-chip-clear"
             onClick={() => onLogoChange(null)}
             aria-label="Quitar logo"
           >
             <X size={11} strokeWidth={2.25} />
-          </button>
+          </Button>
         </WithHoverTooltip>
       )}
     </div>
@@ -87,14 +86,14 @@ function FormHeaderActions({
       <LogoSlot url={logoLeft} onLogoChange={onLogoChange} />
       {showSave && (
         <>
-          <button type="button" className="tr-primary" disabled={!hasChanges || busy} onClick={onSave}>
+          <Button variant="none" size="none" className="tr-primary" disabled={!hasChanges || busy} onClick={onSave}>
             <Save size={13} />
             Guardar
-          </button>
+          </Button>
           <WithHoverTooltip label="Eliminar" placement="left">
-            <button type="button" className="tr-danger tr-icon-button" disabled={busy} onClick={onDelete}>
+            <Button variant="none" size="none" className="tr-danger tr-icon-button" disabled={busy} onClick={onDelete}>
               <Trash2 size={13} />
-            </button>
+            </Button>
           </WithHoverTooltip>
         </>
       )}
@@ -230,13 +229,15 @@ export default function FormPanel({
             </label>
             <label className="tr-field">
               <span>Estado</span>
-              <select
+              <ThemedSelect
                 value={safe.status}
-                onChange={(e) => patch({ status: e.target.value as FichaTecnica['status'] })}
-              >
-                <option value="draft">Borrador</option>
-                <option value="completed">Completado</option>
-              </select>
+                onChange={(value) => patch({ status: value as FichaTecnica['status'] })}
+                options={[
+                  { value: 'draft', label: 'Borrador' },
+                  { value: 'completed', label: 'Completado' },
+                ]}
+                aria-label="Estado"
+              />
             </label>
           </div>
         </section>

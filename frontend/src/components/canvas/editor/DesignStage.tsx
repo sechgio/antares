@@ -15,6 +15,7 @@ import type {
 import { useSmoothViewport } from '../hooks/useSmoothViewport';
 import Artboard from './Artboard';
 import ZoomMenu from './ZoomMenu';
+import Button from '@/components/ui/Button';
 
 export type ViewportNavApi = {
   getZoom: () => number;
@@ -249,8 +250,7 @@ export default function DesignStage({
           style={showRulers ? { top: 'calc(20px + 0.75rem)', left: 'calc(20px + 0.75rem)' } : undefined}
         >
           <WithHoverTooltip label="Mostrar panel izquierdo" placement="bottom" variant="dark">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               className="canvas-icon-btn canvas-panel-reopen"
               data-testid="canvas-reopen-left-panel"
               disabled={reopenDisabled}
@@ -258,7 +258,7 @@ export default function DesignStage({
               aria-label="Mostrar panel izquierdo"
             >
               <PanelLeft className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </WithHoverTooltip>
         </div>
       ) : null}
@@ -273,8 +273,7 @@ export default function DesignStage({
           ) : null}
           {showRightReopen && onShowRightPanel ? (
             <WithHoverTooltip label="Mostrar panel derecho" placement="bottom" variant="dark">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-icon-btn canvas-panel-reopen"
                 data-testid="canvas-reopen-right-panel"
                 disabled={reopenDisabled}
@@ -282,7 +281,7 @@ export default function DesignStage({
                 aria-label="Mostrar panel derecho"
               >
                 <PanelRight className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </WithHoverTooltip>
           ) : null}
         </div>

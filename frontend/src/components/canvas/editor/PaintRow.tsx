@@ -3,6 +3,7 @@ import { Minus } from 'lucide-react';
 import { clampOpacity, normalizeHex } from '../ops/layerStyle';
 import ColorPicker from './ColorPicker';
 import { VisibilityIcon } from './VisibilityIcon';
+import Button from '@/components/ui/Button';
 
 interface PaintRowProps {
   color: string;
@@ -45,9 +46,8 @@ export default function PaintRow({
   return (
     <>
       <div className="canvas-paint-row" data-testid="canvas-paint-row">
-        <button
+        <Button variant="none" size="none"
           ref={swatchRef}
-          type="button"
           className="canvas-swatch"
           aria-label="Color"
           onClick={(e) => {
@@ -70,7 +70,7 @@ export default function PaintRow({
               opacity: visible ? op / 100 : 0.25,
             }}
           />
-        </button>
+        </Button>
         <input
           className="canvas-paint-hex"
           value={hexDraft}
@@ -100,19 +100,18 @@ export default function PaintRow({
         />
         <span className="canvas-paint-pct">%</span>
         {onVisibleChange && (
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-paint-icon"
             data-active={visible}
             aria-label={visible ? 'Ocultar' : 'Mostrar'}
             onClick={() => onVisibleChange(!visible)}
           >
             <VisibilityIcon visible={visible} className="h-3 w-3" />
-          </button>
+          </Button>
         )}
-        <button type="button" className="canvas-paint-icon" aria-label="Quitar" onClick={onRemove}>
+        <Button variant="none" size="none" className="canvas-paint-icon" aria-label="Quitar" onClick={onRemove}>
           <Minus className="h-3 w-3" />
-        </button>
+        </Button>
       </div>
       {open && anchor && (
         <ColorPicker

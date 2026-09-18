@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Check, Crop, Move, RotateCw, X } from 'lucide-react';
 import { CropOffset, CropOrigin, ImageItem, AspectRatio } from './types';
 import { getCropRectangle } from './utils';
+import Button from '@/components/ui/Button';
 
 interface CropEditorProps {
   image: ImageItem;
@@ -109,16 +110,16 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
             <span className="rounded bg-[var(--bg-surface)] px-2 py-0.5 text-[10px] font-mono text-[var(--text-muted)] border border-[var(--border-medium)]">{aspectRatio}</span>
           </div>
           <div className="flex items-center gap-3">
-            <button
+            <Button variant="none" size="none"
               onClick={handleReset}
               className="flex items-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
             >
               <RotateCw size={12} />
               Resetear
-            </button>
-            <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]">
+            </Button>
+            <Button variant="none" size="none" onClick={onClose} className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]">
               <X size={16} />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -165,19 +166,19 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
             <span className="flex items-center gap-2">Offset <span className="text-amber-400 border border-amber-500/10 bg-amber-500/5 px-1.5 py-0.5 rounded">{cropInfo.cropType === 'vertical' ? `X ${Math.round(offset.x * 100)}%` : `Y ${Math.round(offset.y * 100)}%`}</span></span>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <Button variant="none" size="none"
               onClick={onClose}
               className="rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-4 py-2 text-[11px] font-mono uppercase tracking-widest text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
             >
               Cancelar
-            </button>
-            <button
+            </Button>
+            <Button variant="none" size="none"
               onClick={handleSave}
               className="inline-flex items-center gap-2 rounded-lg bg-[var(--text-primary)] px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-[var(--bg-base)] transition-colors hover:opacity-90"
             >
               <Check size={14} />
               Aplicar
-            </button>
+            </Button>
           </div>
         </div>
       </div>

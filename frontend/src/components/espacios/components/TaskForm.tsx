@@ -10,6 +10,7 @@ import ModalShell from './ModalShell';
 import StatusPicker from './StatusPicker';
 import TaskActivityFeed from './TaskActivityFeed';
 import SelectPicker from './filters/SelectPicker';
+import { errorMessage } from '@/utils/errors';
 
 const FIELD_CLASS =
   'w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:shadow-[0_0_0_3px_var(--accent-primary-glow)]';
@@ -130,7 +131,7 @@ function TaskEditor({
       });
       if (mountedRef.current) onClose();
     } catch (err) {
-      if (mountedRef.current) setError(err instanceof Error ? err.message : 'Error al guardar');
+      if (mountedRef.current) setError(errorMessage(err, 'Error al guardar'));
     } finally {
       submittingRef.current = false;
       if (mountedRef.current) setSaving(false);

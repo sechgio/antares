@@ -1,4 +1,13 @@
-export type FrontendErrorKind = 'react_error' | 'global_error' | 'unhandled_rejection';
+type FrontendErrorKind =
+  | 'react_error'
+  | 'global_error'
+  | 'unhandled_rejection'
+  | 'toast_error'
+  | 'api_error'
+  | 'app_error'
+  | 'sync_error'
+  | 'storage_error'
+  | 'worker_error';
 
 export interface FrontendErrorReport {
   kind: FrontendErrorKind;
@@ -7,13 +16,23 @@ export interface FrontendErrorReport {
   message?: string;
   stack?: string;
   componentStack?: string | null;
+  requestId?: string;
 }
 
-export type FrontendEventLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
-export type FrontendEventOutcome = 'success' | 'partial' | 'degraded' | 'failed' | 'timeout' | 'cancelled' | 'rejected';
+type FrontendEventLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+type FrontendEventOutcome = 'success' | 'partial' | 'degraded' | 'failed' | 'timeout' | 'cancelled' | 'rejected';
+
+type FrontendEventName =
+  | 'canvas.realtime'
+  | 'canvas.quit_flush'
+  | 'canvas.push'
+  | 'canvas.cloud_sync'
+  | 'espacios.sync'
+  | 'storage.local'
+  | 'worker.error';
 
 export interface FrontendEventReport {
-  event: 'canvas.realtime' | 'canvas.quit_flush';
+  event: FrontendEventName;
   level?: FrontendEventLevel;
   view?: string;
   status?: string;
@@ -45,6 +64,7 @@ export function reportFrontendError(report: FrontendErrorReport): void {
       message: safeText(report.message, 2000),
       stack: safeText(report.stack, 3000),
       componentStack: safeText(report.componentStack, 2000),
+      request_id: safeToken(report.requestId),
     };
     reporter(payload);
   } catch {

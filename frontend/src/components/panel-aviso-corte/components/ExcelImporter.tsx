@@ -4,6 +4,9 @@ import { api } from '../../../api';
 import { MSG_ONLY_XLSX } from '../constants';
 import type { ExcelSource } from '../types';
 import { useToast } from '../../../hooks/useToast';
+import { fileToBase64 } from '../../../utils/pdfAssets';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 interface Props {
   source: ExcelSource | null;
@@ -25,12 +28,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const b64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      const b64 = await fileToBase64(file);
       const resp = await api.panelAvisoCorteParseExcel({ xlsx_b64: b64, filename: file.name });
       onSource({
         filename: file.name,
@@ -40,7 +38,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
         warnings: resp.warnings,
       });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Error al importar Excel');
+      setError(errorMessage(e, 'Error al importar Excel'));
       onSource(null);
     } finally {
       setLoading(false);
@@ -56,13 +54,12 @@ export default function ExcelImporter({ source, onSource }: Props) {
             <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">{source.filename}</span>
             <span className="text-[10px] text-[var(--text-muted)]">{source.rows.length} filas · {source.columns.length} columnas</span>
           </div>
-          <button type="button" onClick={() => onSource(null)} className="p-1 rounded hover:bg-[var(--bg-elevated)] transition-colors" aria-label="Quitar archivo Excel">
+          <Button variant="none" size="none" onClick={() => onSource(null)} className="p-1 rounded hover:bg-[var(--bg-elevated)] transition-colors" aria-label="Quitar archivo Excel">
             <X size={14} className="text-[var(--text-muted)]" />
-          </button>
+          </Button>
         </div>
       ) : (
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={() => inputRef.current?.click()}
           disabled={loading}
           className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2.5 py-2 hover:border-[var(--accent-primary)]/50 transition-colors disabled:opacity-50"
@@ -75,7 +72,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
           <span className="text-[11px] font-medium text-[var(--text-primary)]">
             {loading ? 'Leyendo...' : 'Importar Excel (.xlsx)'}
           </span>
-        </button>
+        </Button>
       )}
       <input ref={inputRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
       {error && <span className="text-[11px] text-[var(--accent-red)] px-1">{error}</span>}
@@ -88,8 +85,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
       )}
       
       {!source && (
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={async () => {
             try {
               const res = await api.dialogSave({
@@ -102,14 +98,14 @@ export default function ExcelImporter({ source, onSource }: Props) {
               await api.panelAvisoCorteTemplate({ output_path: savePath });
               addToast({ message: 'Plantilla de Excel guardada', type: 'success' });
             } catch (err: unknown) {
-              setError(err instanceof Error ? err.message : 'Error al descargar la plantilla');
+              setError(errorMessage(err, 'Error al descargar la plantilla'));
             }
           }}
           className="flex items-center justify-center gap-2 rounded-lg border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/5 px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-green)] hover:bg-[var(--accent-green)]/10 transition-colors"
         >
           <Download size={14} className="shrink-0" />
           <span>Descargar plantilla de ejemplo</span>
-        </button>
+        </Button>
       )}
     </div>
   );

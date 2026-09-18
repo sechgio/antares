@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import Button from '@/components/ui/Button';
 
 interface PreviewButtonProps {
   active: boolean;
@@ -13,8 +14,7 @@ export default function PreviewButton({ active, onToggle }: PreviewButtonProps) 
 
   return (
     <WithHoverTooltip label="Vista previa" placement="bottom" variant="dark">
-      <button
-        type="button"
+      <Button variant="none" size="none"
         data-testid="canvas-preview-btn"
         aria-label="Vista previa"
         aria-pressed={active}
@@ -44,7 +44,7 @@ export default function PreviewButton({ active, onToggle }: PreviewButtonProps) 
           </span>
         </span>
         Vista previa
-      </button>
+      </Button>
     </WithHoverTooltip>
   );
 }

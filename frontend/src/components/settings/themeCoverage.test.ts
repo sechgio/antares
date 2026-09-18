@@ -34,7 +34,7 @@ const THEMED_UI_FILES = [
   'components/image-optimizer/ui.tsx',
   'components/image-optimizer/index.tsx',
   'components/Thumbnail.tsx',
-  'components/panel-aviso-corte/components/ImageUploader.tsx',
+  'components/ui/ImageUploader.tsx',
   'components/panel-aviso-corte/components/ExcelImporter.tsx',
   'components/panel-aviso-corte/components/LogoPicker.tsx',
   'components/panel-aviso-corte/components/MatchRuleEditor.tsx',

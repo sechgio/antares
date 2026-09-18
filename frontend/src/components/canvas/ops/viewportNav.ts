@@ -2,7 +2,7 @@
 export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 256;
 
-export const ZOOM_PRESETS = [0.02, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 8, 16, 32, 64, 128, 256];
+const ZOOM_PRESETS = [0.02, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 8, 16, 32, 64, 128, 256];
 
 export function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(zoom * 1000) / 1000));
@@ -96,8 +96,8 @@ export function wheelPanDelta(
   return { x: deltaX, y: deltaY };
 }
 
-export const WHEEL_LINE_PX = 16;
-export const WHEEL_PAGE_PX = 400;
+const WHEEL_LINE_PX = 16;
+const WHEEL_PAGE_PX = 400;
 
 export function normalizeWheelDelta(delta: number, deltaMode = 0): number {
   if (deltaMode === 1) return delta * WHEEL_LINE_PX;
@@ -169,7 +169,7 @@ export function pinchViewport(
 
 export type ViewportState = { zoom: number; pan: { x: number; y: number } };
 
-export function easeOutCubic(t: number): number {
+function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
 }
 
@@ -196,7 +196,7 @@ export type Velocity = { vx: number; vy: number };
 
 export const PAN_FRICTION = 0.92;
 export const PAN_MIN_VELOCITY = 0.5;
-export const INERTIA_FRAME_MS = 1000 / 60;
+const INERTIA_FRAME_MS = 1000 / 60;
 
 export function inertiaStep(
   pan: { x: number; y: number },

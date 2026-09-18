@@ -2,6 +2,7 @@ import type { FlyerRecord, LayoutMode } from "../types";
 import { WithHoverTooltip } from "@/components/ui/HoverTooltip";
 import { useFloatingPanel } from "../hooks/useFloatingPanel";
 import FloatingPanelFrame from "./FloatingPanelFrame";
+import Button from '@/components/ui/Button';
 
 interface FloatingRecordsPanelProps {
   records: FlyerRecord[];
@@ -84,9 +85,9 @@ export default function FloatingRecordsPanel({
           <div className="vgen-search">
             <input className="vgen-input" onChange={(e) => onFilterChange(e.target.value)} placeholder="Buscar reservorio..." type="text" value={filterText} />
           </div>
-          <button className="v-btn v-btn-outline vgen-new-btn" onClick={onAddRecord}>
+          <Button variant="none" size="none" className="v-btn v-btn-outline vgen-new-btn" onClick={onAddRecord}>
             + Nuevo
-          </button>
+          </Button>
         </div>
 
         <div className="vgen-record-list">
@@ -106,13 +107,13 @@ export default function FloatingRecordsPanel({
 
               <div className="vgen-record-actions" onClick={(e) => e.stopPropagation()}>
                 <WithHoverTooltip label="Descargar 2 por hoja" placement="bottom">
-                  <button className="v-icon-btn" onClick={() => onExportSingle(record, "2-up")}>2↓</button>
+                  <Button variant="none" size="none" className="v-icon-btn" onClick={() => onExportSingle(record, "2-up")}>2↓</Button>
                 </WithHoverTooltip>
                 <WithHoverTooltip label="Descargar 3 por hoja" placement="bottom">
-                  <button className="v-icon-btn" onClick={() => onExportSingle(record, "3-up")}>3↓</button>
+                  <Button variant="none" size="none" className="v-icon-btn" onClick={() => onExportSingle(record, "3-up")}>3↓</Button>
                 </WithHoverTooltip>
                 <WithHoverTooltip label="Eliminar" placement="bottom">
-                  <button className="v-icon-btn danger" onClick={() => onDeleteRecord(record.id)} aria-label="Eliminar">×</button>
+                  <Button variant="none" size="none" className="v-icon-btn danger" onClick={() => onDeleteRecord(record.id)} aria-label="Eliminar">×</Button>
                 </WithHoverTooltip>
               </div>
             </div>

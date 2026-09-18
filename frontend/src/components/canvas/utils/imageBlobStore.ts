@@ -1,6 +1,9 @@
 import type { CanvasDocument, CanvasLayer } from '../types';
 import type { CanvasDiff, HistoryStep } from './canvasDiff';
 import { isHistoryStepDiff } from './canvasDiff';
+import { reportFrontendEvent } from '../../../utils/observability';
+import { fileToDataUrl } from '../../../utils/pdfAssets';
+import { errorMessage } from '@/utils/errors';
 
 export interface RegisteredBlob {
   blobId: string;
@@ -177,12 +180,7 @@ export function getThumbnailUrl(value: string | undefined): string {
 }
 
 export async function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+  return fileToDataUrl(blob);
 }
 
 type CanvasAssetPutter = (chunk: ArrayBuffer | Uint8Array) => Promise<{ ref?: string }>;
@@ -210,6 +208,13 @@ function persistRegisteredBlob(
           const stored = await putAsset(await reg.blob.arrayBuffer());
           if (stored?.ref) return stored.ref;
         } catch {
+          reportFrontendEvent({
+            event: 'storage.local',
+            level: 'WARN',
+            outcome: 'degraded',
+            reason: 'canvas_asset_put_failed',
+            view: 'canvas.assets',
+          });
         }
         return null;
       }).then((storedRef) => storedRef ?? reg.dataUrl ?? blobToDataUrl(reg.blob))
@@ -328,7 +333,7 @@ export async function embedCanvasAssetsAsDataUrls(
     }
     if (strict) {
       const err = readErrorsByRef.get(layer.value);
-      const msg = err instanceof Error ? err.message : String(err ?? 'asset vacío');
+      const msg = errorMessage(err, String(err ?? 'asset vacío'));
       throw new Error(`No se pudo resolver ${layer.value}: ${msg}`);
     }
     layers.push(layer);
@@ -425,7 +430,7 @@ export async function prepareDocumentImagesForExport(
   return embedManagedBlobsAsDataUrls(withAssets);
 }
 
-export async function prepareDocumentImagesForCmykExport(doc: CanvasDocument): Promise<CanvasDocument> {
+async function prepareDocumentImagesForCmykExport(doc: CanvasDocument): Promise<CanvasDocument> {
   let next = await serializeDocumentImages(doc, { preferAssetRefs: true });
   next = await persistDataUrlsAsCanvasAssets(next);
   for (const layer of next.layers) {
@@ -521,7 +526,7 @@ export async function hydrateDocumentImages(
     if (!chunk) {
       const err = readErrorsByRef.get(layer.value);
       if (strict) {
-        const msg = err instanceof Error ? err.message : String(err ?? 'asset vacío');
+        const msg = errorMessage(err, String(err ?? 'asset vacío'));
         throw new Error(`No se pudo resolver ${layer.value}: ${msg}`);
       }
       layers.push(layer);
@@ -558,7 +563,7 @@ export async function assertDocumentImagesResolvable(doc: CanvasDocument): Promi
   for (const ref of new Set(refs)) {
     const err = failures.get(ref);
     if (err !== undefined) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err, String(err));
       throw new Error(`No se pudo resolver ${ref}: ${msg}`);
     }
   }

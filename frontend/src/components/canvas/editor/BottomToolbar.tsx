@@ -32,6 +32,7 @@ import { useAnchoredPopover, type PopoverPosition } from '@/hooks/useAnchoredPop
 import type { CanvasToolbarPosition } from '../ops/panelChrome';
 import { isShapeTool, type ShapeTool } from '../ops/shapePaths';
 import type { CanvasTool } from '../types';
+import Button from '@/components/ui/Button';
 
 interface BottomToolbarProps {
   tool: CanvasTool;
@@ -162,8 +163,7 @@ function ShapeToolMenu({ tool, onTool, position = 'top' }: BottomToolbarProps) {
           placement={position === 'bottom' ? 'top' : 'bottom'}
           variant="dark"
         >
-          <button
-            type="button"
+          <Button variant="none" size="none"
             aria-label={lastLabel}
             aria-pressed={shapeActive}
             aria-expanded={open}
@@ -177,15 +177,14 @@ function ShapeToolMenu({ tool, onTool, position = 'top' }: BottomToolbarProps) {
           >
             <CurrentIcon className="h-4 w-4" strokeWidth={shapeActive ? 2 : 1.5} />
             <span className="canvas-toolbar-tool-label">{lastLabel}</span>
-          </button>
+          </Button>
         </WithHoverTooltip>
         <WithHoverTooltip
           label="Más formas"
           placement={position === 'bottom' ? 'top' : 'bottom'}
           variant="dark"
         >
-          <button
-            type="button"
+          <Button variant="none" size="none"
             aria-label="Más formas"
             aria-haspopup="menu"
             aria-expanded={open}
@@ -198,7 +197,7 @@ function ShapeToolMenu({ tool, onTool, position = 'top' }: BottomToolbarProps) {
             }}
           >
             <ChevronDown className="h-3 w-3" strokeWidth={2} />
-          </button>
+          </Button>
         </WithHoverTooltip>
       </div>
 
@@ -225,8 +224,7 @@ function ShapeToolMenu({ tool, onTool, position = 'top' }: BottomToolbarProps) {
                 return (
                   <div key={id}>
                     {sepBefore ? <div className="canvas-shape-menu-sep" role="separator" /> : null}
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       role="menuitemradio"
                       aria-checked={checked}
                       className="canvas-shape-menu-item"
@@ -240,7 +238,7 @@ function ShapeToolMenu({ tool, onTool, position = 'top' }: BottomToolbarProps) {
                       </span>
                       <span className="canvas-shape-menu-label">{title}</span>
                       {tip ? <span className="canvas-shape-menu-tip" aria-hidden="true">{tip}</span> : null}
-                    </button>
+                    </Button>
                   </div>
                 );
               })}
@@ -295,8 +293,7 @@ function MoreToolMenu({
         placement={position === 'bottom' ? 'top' : 'bottom'}
         variant="dark"
       >
-        <button
-          type="button"
+        <Button variant="none" size="none"
           aria-label="Más herramientas"
           aria-haspopup="menu"
           aria-expanded={open}
@@ -313,7 +310,7 @@ function MoreToolMenu({
           <Plus className="h-4 w-4" strokeWidth={active ? 2 : 1.75} />
           <span className="canvas-toolbar-tool-label">Más</span>
           <ChevronDown className="h-3 w-3" strokeWidth={2} />
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       {menu
@@ -341,9 +338,8 @@ function MoreToolMenu({
                   {section.items.map(({ id, icon: ItemIcon, title, tip }) => {
                     const checked = tool === id;
                     return (
-                      <button
+                      <Button variant="none" size="none"
                         key={id}
-                        type="button"
                         role="menuitemradio"
                         aria-checked={checked}
                         className="canvas-shape-menu-item"
@@ -358,7 +354,7 @@ function MoreToolMenu({
                         <span className="canvas-shape-menu-label">{title}</span>
                         {checked ? <Check className="canvas-tool-menu-check" strokeWidth={2.5} aria-hidden /> : null}
                         {tip ? <span className="canvas-shape-menu-tip" aria-hidden="true">{tip}</span> : null}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -369,9 +365,8 @@ function MoreToolMenu({
                 {TOOLBAR_POSITIONS.map(({ id, icon: ItemIcon, title }) => {
                   const checked = position === id;
                   return (
-                    <button
+                    <Button variant="none" size="none"
                       key={id}
-                      type="button"
                       role="menuitemradio"
                       aria-checked={checked}
                       className="canvas-shape-menu-item"
@@ -385,7 +380,7 @@ function MoreToolMenu({
                       </span>
                       <span className="canvas-shape-menu-label">{title}</span>
                       {checked ? <Check className="canvas-tool-menu-check" strokeWidth={2.5} aria-hidden /> : null}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
@@ -422,8 +417,7 @@ function ToolGroup({
             placement={tooltipPlacement}
             variant="dark"
           >
-            <button
-              type="button"
+            <Button variant="none" size="none"
               aria-label={title}
               aria-pressed={active}
               className={`canvas-toolbar-tool${showLabels ? ' canvas-toolbar-tool--labeled' : ''}`}
@@ -435,7 +429,7 @@ function ToolGroup({
             >
               <Icon className="h-4 w-4" strokeWidth={active ? 2 : 1.5} />
               {showLabels ? <span className="canvas-toolbar-tool-label">{title}</span> : null}
-            </button>
+            </Button>
           </WithHoverTooltip>
         );
       })}

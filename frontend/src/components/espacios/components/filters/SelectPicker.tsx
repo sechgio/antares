@@ -2,8 +2,9 @@ import { Check, ChevronDown } from 'lucide-react';
 import { useId, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAnchoredPopover } from '../../../../hooks/useAnchoredPopover';
+import Button from '@/components/ui/Button';
 
-export interface SelectPickerOption {
+interface SelectPickerOption {
   value: string;
   label: string;
   color?: string;
@@ -56,9 +57,8 @@ export default function SelectPicker({
 
   return (
     <div className={`relative inline-flex ${className}`}>
-      <button
+      <Button variant="none" size="none"
         ref={triggerRef}
-        type="button"
         disabled={disabled}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
@@ -89,7 +89,7 @@ export default function SelectPicker({
           }`}
           aria-hidden
         />
-      </button>
+      </Button>
 
       {open &&
         createPortal(
@@ -109,9 +109,8 @@ export default function SelectPicker({
             {options.map((opt) => {
               const isSelected = opt.value === value;
               return (
-                <button
+                <Button variant="none" size="none"
                   key={opt.value}
-                  type="button"
                   role="option"
                   aria-selected={isSelected}
                   onClick={() => pick(opt.value)}
@@ -150,7 +149,7 @@ export default function SelectPicker({
                       aria-hidden
                     />
                   )}
-                </button>
+                </Button>
               );
             })}
           </div>,

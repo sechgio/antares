@@ -1,24 +1,19 @@
 import { api } from '../../api';
+import { createReportApi } from '../../api/reportApi';
 import type { FichaTecnica, FichaTecnicaListItem } from './types';
 
 export const fichasTecnicasApi = {
-  list: (summary = true) =>
-    api.fichasTecnicasList({ summary }) as Promise<{ fichas: FichaTecnicaListItem[]; total: number }>,
-  get: async (id: string) => {
-    const result = (await api.fichasTecnicasGet(id)) as { ficha: FichaTecnica };
-    return result.ficha;
-  },
-  create: async (ficha?: FichaTecnica) => {
-    const result = (await api.fichasTecnicasCreate(ficha)) as { success: boolean; ficha: FichaTecnica };
-    return result.ficha;
-  },
-  update: async (id: string, ficha: FichaTecnica) => {
-    const result = (await api.fichasTecnicasUpdate(id, ficha)) as { success: boolean; ficha: FichaTecnica };
-    return result.ficha;
-  },
-  delete: (id: string) => api.fichasTecnicasDelete(id),
-  clear: () => api.fichasTecnicasClear(),
-  importFile: (filename: string, content_b64: string) => api.fichasTecnicasImportFile({ filename, content_b64 }),
+  ...createReportApi<FichaTecnica, FichaTecnicaListItem>(
+    {
+      list: api.fichasTecnicasList,
+      get: api.fichasTecnicasGet,
+      create: api.fichasTecnicasCreate,
+      update: api.fichasTecnicasUpdate,
+      delete: api.fichasTecnicasDelete,
+      clear: api.fichasTecnicasClear,
+      importFile: api.fichasTecnicasImportFile,
+    },
+  ),
   renderHtml: (body: {
     id?: string;
     ficha?: FichaTecnica;

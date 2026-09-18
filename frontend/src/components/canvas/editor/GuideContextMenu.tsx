@@ -1,5 +1,6 @@
 import { Trash2 } from 'lucide-react';
 import { useContextMenuSurface } from '../hooks/useContextMenuSurface';
+import Button from '@/components/ui/Button';
 
 export interface GuideContextMenuState {
   id: string;
@@ -24,8 +25,7 @@ export default function GuideContextMenu({ menu, onRemove, onClose }: GuideConte
       role="menu"
       data-testid="canvas-guide-context-menu"
     >
-      <button
-        type="button"
+      <Button variant="none" size="none"
         role="menuitem"
         aria-label="Eliminar guía"
         className="canvas-context-item"
@@ -38,7 +38,7 @@ export default function GuideContextMenu({ menu, onRemove, onClose }: GuideConte
         <Trash2 className="h-3.5 w-3.5 shrink-0" />
         <span className="min-w-0 flex-1 text-left">Eliminar guía</span>
         <span className="canvas-kbd">Supr</span>
-      </button>
+      </Button>
     </div>
   );
 }

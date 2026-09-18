@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Card from '../ui/Card';
 import Input from '../ui/Input';
+import ThemedSelect from '../ui/ThemedSelect';
 import Toggle from '../ui/Toggle';
 import type { RenamePattern, DBRecord, MappingResult, PreviewItem } from '../../types';
 import { PencilLine, Tags, Database, ArrowRight, AlertTriangle } from 'lucide-react';
 import { fileNameFromPath } from './helpers';
+import Button from '@/components/ui/Button';
 
 interface RenameCardProps {
   files: string[];
@@ -269,13 +271,12 @@ export default function RenameCard(props: RenameCardProps) {
                     <span className="text-xs font-bold text-[var(--text-primary)]">Mapeo directo activo</span>
                   </div>
                   {onClearMapping && (
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       onClick={onClearMapping}
                       className="text-[10px] font-medium text-[var(--text-muted)] hover:text-[var(--accent-red)] transition-colors"
                     >
                       Descartar mapeo
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <p className="text-[11px] text-[var(--text-secondary)]">
@@ -295,26 +296,26 @@ export default function RenameCard(props: RenameCardProps) {
                   <div className="space-y-2">
                     <p className="text-[10px] text-[var(--text-muted)]">Columnas del Excel:</p>
                     <div className="grid grid-cols-2 gap-2">
-                      <select
+                      <ThemedSelect
                         value={mappingIdColumn}
-                        onChange={(e) => onMappingIdColumnChange?.(e.target.value)}
-                        className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-2 text-xs text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
-                      >
-                        <option value="">Columna ID...</option>
-                        {mappingColumns.map((col) => (
-                          <option key={col} value={col}>{col}</option>
-                        ))}
-                      </select>
-                      <select
+                        onChange={(value) => onMappingIdColumnChange?.(value)}
+                        options={[
+                          { value: '', label: 'Columna ID...' },
+                          ...mappingColumns.map((col) => ({ value: col, label: col })),
+                        ]}
+                        aria-label="Columna ID"
+                        triggerClassName="rounded-lg bg-[var(--bg-elevated)] py-2 text-xs"
+                      />
+                      <ThemedSelect
                         value={mappingRenameColumn}
-                        onChange={(e) => onMappingRenameColumnChange?.(e.target.value)}
-                        className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-2 text-xs text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
-                      >
-                        <option value="">Nuevo nombre...</option>
-                        {mappingColumns.map((col) => (
-                          <option key={col} value={col}>{col}</option>
-                        ))}
-                      </select>
+                        onChange={(value) => onMappingRenameColumnChange?.(value)}
+                        options={[
+                          { value: '', label: 'Nuevo nombre...' },
+                          ...mappingColumns.map((col) => ({ value: col, label: col })),
+                        ]}
+                        aria-label="Nuevo nombre"
+                        triggerClassName="rounded-lg bg-[var(--bg-elevated)] py-2 text-xs"
+                      />
                     </div>
                   </div>
                 )}
@@ -356,13 +357,12 @@ export default function RenameCard(props: RenameCardProps) {
                     ))}
                   </div>
                   {previewRows.length > 10 && (
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       onClick={() => setShowAllMappings((prev) => !prev)}
                       className="w-full px-3 py-2 text-[11px] font-medium text-[var(--accent-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
                     >
                       {showAllMappings ? 'Ver menos' : `Ver todas (${previewRows.length})`}
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
@@ -375,16 +375,16 @@ export default function RenameCard(props: RenameCardProps) {
                   <label className="text-xs font-bold text-[var(--text-primary)]">¿Qué columna identifica a tus archivos?</label>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
-                   <select
+                   <ThemedSelect
                     value={keyColumn}
-                    onChange={(e) => onKeyColumnChange?.(e.target.value)}
-                    className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none transition-colors"
-                  >
-                    <option value="">Selecciona la columna ID...</option>
-                    {dbColumns.map((col) => (
-                      <option key={col} value={col}>{col}</option>
-                    ))}
-                  </select>
+                    onChange={(value) => onKeyColumnChange?.(value)}
+                    options={[
+                      { value: '', label: 'Selecciona la columna ID...' },
+                      ...dbColumns.map((col) => ({ value: col, label: col })),
+                    ]}
+                    aria-label="Columna ID"
+                    triggerClassName="rounded-xl bg-[var(--bg-elevated)] px-3 py-2.5 text-sm"
+                  />
                 </div>
                 <p className="text-[11px] text-[var(--text-muted)] px-1">
                   {keyColumn 
@@ -403,8 +403,7 @@ export default function RenameCard(props: RenameCardProps) {
                     {dbColumns.map((col) => {
                       const active = selectedRenameCols.includes(col);
                       return (
-                        <button
-                          type="button"
+                        <Button variant="none" size="none"
                           key={col}
                           onClick={() => toggleCol(col)}
                           className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
@@ -414,7 +413,7 @@ export default function RenameCard(props: RenameCardProps) {
                           }`}
                         >
                           {col}
-                        </button>
+                        </Button>
                       );
                     })}
                   </div>
@@ -476,8 +475,7 @@ export default function RenameCard(props: RenameCardProps) {
                     { id: ' ', label: 'Espacio ( )' },
                     { id: '', label: 'Pegado' },
                   ].map((sep) => (
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       key={sep.id || 'none'}
                       onClick={() => changeSeparator(sep.id)}
                       className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${
@@ -487,7 +485,7 @@ export default function RenameCard(props: RenameCardProps) {
                       }`}
                     >
                       {sep.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -495,14 +493,13 @@ export default function RenameCard(props: RenameCardProps) {
           )}
 
           <div className="pt-2">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
             >
               <PencilLine className="h-3.5 w-3.5" />
               {showAdvanced ? 'Ocultar editor avanzado' : 'Editor avanzado (expertos)'}
-            </button>
+            </Button>
           </div>
 
           {showAdvanced && (
@@ -518,14 +515,13 @@ export default function RenameCard(props: RenameCardProps) {
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {['seq', 'ext', 'sep', ...variableFields].map(f => (
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     key={f}
                     onClick={() => onInsertVar(`{${f}}`)}
                     className="px-2 py-1 rounded bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[10px] font-mono"
                   >
                     {`{${f}}`}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -541,8 +537,7 @@ export default function RenameCard(props: RenameCardProps) {
                   { id: ' ', label: 'Espacio ( )' },
                   { id: '', label: 'Pegado' },
                 ].map((sep) => (
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     key={sep.id || 'none'}
                     onClick={() => changeSeparator(sep.id)}
                     className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${
@@ -552,7 +547,7 @@ export default function RenameCard(props: RenameCardProps) {
                     }`}
                   >
                     {sep.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>

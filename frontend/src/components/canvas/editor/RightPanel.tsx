@@ -36,6 +36,7 @@ import { TAIL_SECTIONS, LAYOUT_SECTIONS } from './panels/registry';
 import type { SectionProps, ZOrderCallbacks } from './panels/types';
 import CanvasSelect from './CanvasSelect';
 import CanvasVersionsPanel from './CanvasVersionsPanel';
+import Button from '@/components/ui/Button';
 
 interface RightPanelProps {
   documentId?: string;
@@ -310,31 +311,28 @@ export default memo(function RightPanel({
         style={{ borderColor: 'var(--cv-border)' }}
       >
         <div className="canvas-right-panel-tabs min-w-0 flex-1">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={() => setActiveTab('properties')}
             aria-pressed={activeTab === 'properties'}
             className="canvas-right-panel-tab"
           >
             Diseño
-          </button>
+          </Button>
           {documentId && (
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={() => setActiveTab('versions')}
               aria-pressed={activeTab === 'versions'}
               className="canvas-right-panel-tab"
             >
               Versiones
-            </button>
+            </Button>
           )}
         </div>
         <div className="flex shrink-0 items-center">
           <div ref={zoomSlotRef} className="relative shrink-0" data-testid="canvas-zoom-slot" />
           {onHidePanel && (
             <WithHoverTooltip label="Ocultar panel derecho" placement="bottom" variant="dark">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-icon-btn shrink-0"
                 data-testid="canvas-toggle-right-panel"
                 disabled={hidePanelDisabled}
@@ -342,7 +340,7 @@ export default memo(function RightPanel({
                 aria-label="Ocultar panel derecho"
               >
                 <PanelRightClose className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </WithHoverTooltip>
           )}
         </div>
@@ -377,28 +375,26 @@ export default memo(function RightPanel({
                   placement="bottom"
                   variant="dark"
                 >
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     className="canvas-icon-btn"
                     aria-label="Visible"
                     onClick={() => onChange({ ...layer, visible: layer.visible === false })}
                   >
                     <VisibilityIcon visible={layer.visible !== false} className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </WithHoverTooltip>
                 <WithHoverTooltip
                   label={layer.locked ? 'Desbloquear' : 'Bloquear'}
                   placement="bottom"
                   variant="dark"
                 >
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     className="canvas-icon-btn"
                     aria-label="Bloquear"
                     onClick={() => onChange({ ...layer, locked: !layer.locked })}
                   >
                     {layer.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-                  </button>
+                  </Button>
                 </WithHoverTooltip>
               </div>
             )}
@@ -474,14 +470,13 @@ export default memo(function RightPanel({
               <div className="canvas-alignment-tools" role="group" aria-label="Alinear selección">
                 {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
                   <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       className="canvas-icon-btn"
                       aria-label={label}
                       onClick={() => onAlign(align)}
                     >
                       <Icon className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </WithHoverTooltip>
                 ))}
               </div>
@@ -501,8 +496,7 @@ export default memo(function RightPanel({
                     placement="bottom"
                     variant="dark"
                   >
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       className="canvas-icon-btn"
                       aria-label="Espaciado uniforme horizontal"
                       data-testid="canvas-distribute-horizontal"
@@ -510,7 +504,7 @@ export default memo(function RightPanel({
                       onClick={() => onDistribute('horizontal')}
                     >
                       <AlignHorizontalDistributeCenter className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </WithHoverTooltip>
                   <WithHoverTooltip
                     label={
@@ -521,8 +515,7 @@ export default memo(function RightPanel({
                     placement="bottom"
                     variant="dark"
                   >
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       className="canvas-icon-btn"
                       aria-label="Espaciado uniforme vertical"
                       data-testid="canvas-distribute-vertical"
@@ -530,7 +523,7 @@ export default memo(function RightPanel({
                       onClick={() => onDistribute('vertical')}
                     >
                       <AlignVerticalDistributeCenter className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </WithHoverTooltip>
                 </div>
               </div>
@@ -547,29 +540,28 @@ export default memo(function RightPanel({
                   onSendBack={onSendBack}
                 />
                 <WithHoverTooltip label="Mostrar" placement="bottom" variant="dark">
-                  <button type="button" className="canvas-icon-btn" aria-label="Mostrar" onClick={() => onBulkVisible(true)}>
+                  <Button variant="none" size="none" className="canvas-icon-btn" aria-label="Mostrar" onClick={() => onBulkVisible(true)}>
                     <VisibilityIcon visible className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </WithHoverTooltip>
                 <WithHoverTooltip label="Ocultar" placement="bottom" variant="dark">
-                  <button type="button" className="canvas-icon-btn" aria-label="Ocultar" onClick={() => onBulkVisible(false)}>
+                  <Button variant="none" size="none" className="canvas-icon-btn" aria-label="Ocultar" onClick={() => onBulkVisible(false)}>
                     <EyeSlash className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </WithHoverTooltip>
                 <WithHoverTooltip label="Bloquear" placement="bottom" variant="dark">
-                  <button type="button" className="canvas-icon-btn" aria-label="Bloquear" onClick={() => onBulkLocked(true)}>
+                  <Button variant="none" size="none" className="canvas-icon-btn" aria-label="Bloquear" onClick={() => onBulkLocked(true)}>
                     <Lock className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </WithHoverTooltip>
                 <WithHoverTooltip label="Desbloquear" placement="bottom" variant="dark">
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     className="canvas-icon-btn"
                     aria-label="Desbloquear"
                     onClick={() => onBulkLocked(false)}
                   >
                     <Unlock className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </WithHoverTooltip>
               </div>
               <BulkOpacityField
@@ -596,8 +588,7 @@ export default memo(function RightPanel({
                     { value: '2', label: '2x' },
                   ]}
                 />
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   className="canvas-export-btn flex-1"
                   disabled={exporting || selectedIds.length === 0}
                   onClick={() => {
@@ -610,7 +601,7 @@ export default memo(function RightPanel({
                   }}
                 >
                   Exportar PNG
-                </button>
+                </Button>
               </div>
             </div>
           </InspectorGroup>
@@ -676,14 +667,13 @@ export default memo(function RightPanel({
               )}
 
             <div className="px-3 py-3">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-danger-btn flex w-full items-center justify-center gap-2 rounded-md px-3 py-1.5 text-[11px] transition-colors"
                 onClick={() => onDelete(layer.id)}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Eliminar capa
-              </button>
+              </Button>
             </div>
           </InspectorGroup>
         </div>

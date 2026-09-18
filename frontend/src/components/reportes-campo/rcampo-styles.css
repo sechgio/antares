@@ -137,19 +137,6 @@
     height: 12px;
 }
 
-.rcampo-header-nav {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-}
-
-.rcampo-page-badge-combined {
-    min-width: 0;
-    flex: 1;
-    text-align: center;
-}
-
 .rcampo-sidebar-right {
     border-right: none;
     border-left: 1px solid var(--rcampo-border);
@@ -233,12 +220,6 @@
 
 .rcampo-preview-frame {
     transform-origin: top center;
-}
-
-.rcampo-header-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 4px;
 }
 
 .rcampo-toolbar-btn {
@@ -392,47 +373,6 @@
 .rcampo-panel-item-delete:hover {
     color: var(--rcampo-danger);
     background: color-mix(in srgb, var(--rcampo-danger) 10%, transparent);
-}
-
-.rcampo-page-badge {
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-size: 0.62rem;
-    font-weight: 400;
-    font-family: "SF Mono", "Cascadia Code", monospace;
-    background: var(--rcampo-elevated);
-    color: var(--rcampo-secondary);
-    border: 1px solid var(--rcampo-border);
-    white-space: nowrap;
-}
-
-.rcampo-nav-btn {
-    width: 22px;
-    height: 22px;
-    border-radius: 4px;
-    background: transparent;
-    border: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    color: var(--rcampo-secondary);
-    transition: all 0.15s ease;
-}
-
-.rcampo-nav-btn:hover:not(:disabled) {
-    background: var(--rcampo-hover);
-    color: var(--rcampo-primary);
-}
-
-.rcampo-nav-btn:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-}
-
-.rcampo-nav-btn svg {
-    width: 14px;
-    height: 14px;
 }
 
 .rcampo-workspace {
@@ -998,19 +938,10 @@
     transition: color 0.15s ease;
 }
 
-.rcampo-dropzone-hint {
-    font-size: 0.58rem;
-    color: var(--rcampo-muted);
-    margin-top: 1px;
-}
-
 .rcampo-photos-count {
     font-size: 0.6rem;
     color: var(--rcampo-secondary);
-}
-
-.rcampo-photos-clear,
-.rcampo-clear-btn {
+}.rcampo-photos-clear{
     color: var(--rcampo-muted);
     background: transparent;
     border: none;
@@ -1025,17 +956,7 @@
     font-size: 0.58rem;
     gap: 2px;
     padding: 1px 4px;
-}
-
-.rcampo-clear-btn {
-    font-size: 0.6rem;
-    font-weight: 400;
-    gap: 3px;
-    padding: 2px 4px;
-}
-
-.rcampo-photos-clear:hover,
-.rcampo-clear-btn:hover {
+}.rcampo-photos-clear:hover{
     color: var(--rcampo-danger);
     background: color-mix(in srgb, var(--rcampo-danger) 12%, transparent);
 }
@@ -1043,54 +964,6 @@
 .rcampo-photos-clear svg {
     width: 9px;
     height: 9px;
-}
-
-.rcampo-clear-btn svg {
-    width: 10px;
-    height: 10px;
-}
-
-.rcampo-export-btn {
-    width: 100%;
-    padding: 8px 12px;
-    border-radius: 5px;
-    font-size: 0.72rem;
-    font-weight: 500;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    transition: all 0.15s ease;
-    background: var(--rcampo-accent);
-    color: var(--rcampo-on-accent);
-}
-
-.rcampo-export-btn:hover:not(:disabled) {
-    background: var(--rcampo-accent-hover);
-}
-
-.rcampo-export-btn:active:not(:disabled) {
-    transform: translateY(1px);
-}
-
-.rcampo-export-btn:disabled {
-    background: var(--rcampo-elevated);
-    color: var(--rcampo-muted);
-    cursor: not-allowed;
-}
-
-.rcampo-export-btn svg {
-    width: 14px;
-    height: 14px;
-}
-
-.rcampo-export-meta {
-    font-size: 0.58rem;
-    color: var(--rcampo-muted);
-    text-align: center;
-    margin-top: 4px;
 }
 
 .rcampo-canvas {

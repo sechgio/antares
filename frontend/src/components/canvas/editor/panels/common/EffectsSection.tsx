@@ -12,6 +12,7 @@ import {
 import InlineNumField from '../../InlineNumField';
 import { HexField, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
+import Button from '@/components/ui/Button';
 
 export default function EffectsSection({
   layer,
@@ -22,8 +23,7 @@ export default function EffectsSection({
   return (
     <div className="canvas-section">
       <SectionHeader title="Efectos">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="canvas-paint-icon"
           aria-label="Añadir sombra"
           onClick={() => {
@@ -33,7 +33,7 @@ export default function EffectsSection({
           }}
         >
           <Plus className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </SectionHeader>
       <div className="space-y-2">
         <InlineNumField
@@ -69,8 +69,7 @@ export default function EffectsSection({
                   )
                 }
               />
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-paint-icon"
                 aria-label="Quitar sombra"
                 onClick={() =>
@@ -81,7 +80,7 @@ export default function EffectsSection({
                 }
               >
                 <Minus className="h-3 w-3" />
-              </button>
+              </Button>
             </div>
             <div className="flex gap-1">
               <InlineNumField

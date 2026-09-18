@@ -2,7 +2,7 @@
 import type { CanvasLayer } from '../types';
 import { layerBounds } from './layerBounds';
 
-export type BBox = { x: number; y: number; w: number; h: number };
+type BBox = { x: number; y: number; w: number; h: number };
 
 export interface SpatialIndex {
   query(rect: BBox): string[];

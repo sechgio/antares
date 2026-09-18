@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { FlyerRecord, LayoutMode } from "../types";
 import { useFloatingPanel } from "../hooks/useFloatingPanel";
 import FloatingPanelFrame from "./FloatingPanelFrame";
+import Button from '@/components/ui/Button';
 
 interface FloatingSizePanelProps {
   selectedRecord: FlyerRecord | null;
@@ -117,12 +118,12 @@ export default function FloatingSizePanel({
       )}
     >
       <div className="vgen-floating-panel-tabs">
-        <button className={activeTab === "2-up" ? "active" : ""} onClick={() => setActiveTab("2-up")}>
+        <Button variant="none" size="none" className={activeTab === "2-up" ? "active" : ""} onClick={() => setActiveTab("2-up")}>
           2 por hoja
-        </button>
-        <button className={activeTab === "3-up" ? "active" : ""} onClick={() => setActiveTab("3-up")}>
+        </Button>
+        <Button variant="none" size="none" className={activeTab === "3-up" ? "active" : ""} onClick={() => setActiveTab("3-up")}>
           3 por hoja
-        </button>
+        </Button>
       </div>
 
       <div className="vgen-floating-panel-content">

@@ -14,7 +14,7 @@ import { clearVolantesDraft, loadVolantesDraft, saveVolantesDraft } from "../uti
 
 const SAVE_DEBOUNCE_MS = 350;
 
-export type VolantesPersistenceStatus = "loading" | "saving" | "saved" | "error";
+type VolantesPersistenceStatus = "loading" | "saving" | "saved" | "error";
 
 type PersistedSetter<T> = (value: SetStateAction<T>) => void;
 

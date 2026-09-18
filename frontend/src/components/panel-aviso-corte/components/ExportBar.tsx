@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import Button from '@/components/ui/Button';
 
 interface Props {
   totalPages?: number;
@@ -16,27 +17,25 @@ export default function ExportBar({ totalPages = 0, pageIndex = 0, onPrev, onNex
 
       {totalPages > 1 && (
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             aria-label="Panel anterior"
             onClick={onPrev}
             disabled={pageIndex <= 0}
             className="p-1 rounded-md bg-[var(--bg-surface)] text-[var(--text-secondary)] disabled:opacity-30 border border-[var(--border-subtle)] hover:bg-[var(--bg-elevated)] transition-colors"
           >
             <ChevronLeft size={14} />
-          </button>
+          </Button>
           <span className="text-[11px] text-[var(--text-secondary)] font-medium tabular-nums min-w-[60px] text-center">
             {pageIndex + 1} / {totalPages}
           </span>
-          <button
-            type="button"
+          <Button variant="none" size="none"
             aria-label="Panel siguiente"
             onClick={onNext}
             disabled={pageIndex >= totalPages - 1}
             className="p-1 rounded-md bg-[var(--bg-surface)] text-[var(--text-secondary)] disabled:opacity-30 border border-[var(--border-subtle)] hover:bg-[var(--bg-elevated)] transition-colors"
           >
             <ChevronRight size={14} />
-          </button>
+          </Button>
         </div>
       )}
     </div>

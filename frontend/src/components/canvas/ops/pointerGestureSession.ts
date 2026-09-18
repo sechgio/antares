@@ -6,6 +6,7 @@ export type PointerGestureSession = {
 };
 
 export type PointerGestureSessionOptions = {
+  pointerId?: number;
   onMove: (ev: PointerEvent) => void;
   onEnd: (ev: PointerEvent | null, reason: 'up') => void;
   onKeyDown?: (ev: KeyboardEvent) => void;
@@ -70,12 +71,14 @@ export function createPointerGestureSession(
   let onMove!: (ev: PointerEvent) => void;
   let onUp!: (ev: PointerEvent) => void;
   let onCancel!: (ev: PointerEvent) => void;
+  let onBlur!: () => void;
   let onKey: ((ev: KeyboardEvent) => void) | null = null;
 
   const detach = () => {
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onCancel);
+    window.removeEventListener('blur', onBlur);
     if (onKey) window.removeEventListener('keydown', onKey);
   };
 
@@ -100,6 +103,7 @@ export function createPointerGestureSession(
 
   onMove = (ev: PointerEvent) => {
     if (finished) return;
+    if (options.pointerId != null && ev.pointerId !== options.pointerId) return;
     options.onMove(ev);
   };
 
@@ -111,8 +115,15 @@ export function createPointerGestureSession(
     options.onEnd(ev, 'up');
   };
 
-  onUp = (ev: PointerEvent) => finish(ev);
-  onCancel = () => session.abort();
+  onUp = (ev: PointerEvent) => {
+    if (options.pointerId != null && ev.pointerId !== options.pointerId) return;
+    finish(ev);
+  };
+  onCancel = (ev: PointerEvent) => {
+    if (options.pointerId != null && ev.pointerId !== options.pointerId) return;
+    session.abort();
+  };
+  onBlur = () => session.abort();
   onKey = options.onKeyDown
     ? (ev: KeyboardEvent) => {
         if (finished) return;
@@ -123,6 +134,7 @@ export function createPointerGestureSession(
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onCancel);
+  window.addEventListener('blur', onBlur);
   if (onKey) window.addEventListener('keydown', onKey);
 
   activeSession = session;

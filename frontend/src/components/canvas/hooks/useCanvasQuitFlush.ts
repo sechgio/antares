@@ -2,7 +2,6 @@ import { useEffect, useRef, type MutableRefObject } from 'react';
 import { api, onNotify } from '../../../api';
 import { acknowledgeCanvasFlush } from '../../../utils/ackCanvasFlush';
 import { reportFrontendEvent } from '../../../utils/observability';
-import { isOpenDocumentDirty } from './useCanvasSync';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 import type { CanvasDocument } from '../types';
 import {
@@ -23,7 +22,8 @@ interface UseCanvasQuitFlushOptions {
   panelBaselineRef: MutableRefObject<CanvasDocument | null>;
   gestureBaselineRef: MutableRefObject<CanvasDocument | null>;
   renameBaselineRef: MutableRefObject<CanvasDocument | null>;
-  openDirtyRef: MutableRefObject<boolean>;
+  // Fuente única de dirty: deriva de hasUnsavedEdits + baselines al leer.
+  isOpenDirty: () => boolean;
 }
 
 export function useCanvasQuitFlush({
@@ -36,9 +36,13 @@ export function useCanvasQuitFlush({
   panelBaselineRef,
   gestureBaselineRef,
   renameBaselineRef,
-  openDirtyRef,
+  isOpenDirty,
 }: UseCanvasQuitFlushOptions): void {
   const flushRef = useRef<() => Promise<void>>(async () => {});
+  // El getter puede ser una lambda inline (identidad inestable): se lee desde
+  // un ref para no rearmar el flush en cada render.
+  const isOpenDirtyRef = useRef(isOpenDirty);
+  isOpenDirtyRef.current = isOpenDirty;
 
   useEffect(() => {
     flushRef.current = async () => {
@@ -59,18 +63,11 @@ export function useCanvasQuitFlush({
           renameBaselineRef.current = null;
           if (baseline.name !== history.document.name) {
             history.commitFromBaseline(baseline);
-          } else {
-            openDirtyRef.current = isOpenDocumentDirty(
-              history.hasUnsavedEditsRef.current,
-              panelBaselineRef.current != null,
-              gestureBaselineRef.current != null,
-              false,
-            );
           }
         }
       } catch {}
 
-      if (history.hasUnsavedEditsRef.current || openDirtyRef.current) {
+      if (isOpenDirtyRef.current()) {
         try {
           await onSave({ silent: true });
         } catch {
@@ -102,7 +99,7 @@ export function useCanvasQuitFlush({
           }
         }
       }
-      // El ack no espera el flush. Si falla, queda el JSONL.
+      // El flush se espera antes del ack; si falla queda evidencia en el JSONL.
       reportFrontendEvent({
         event: 'canvas.quit_flush',
         level: flushFailed ? 'ERROR' : 'INFO',
@@ -118,7 +115,6 @@ export function useCanvasQuitFlush({
     history,
     onPanelCommitLive,
     onSave,
-    openDirtyRef,
     panelBaselineRef,
     gestureBaselineRef,
     renameBaselineRef,

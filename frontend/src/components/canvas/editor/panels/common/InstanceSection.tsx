@@ -16,6 +16,7 @@ import {
 } from '../../../types';
 import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
+import Button from '@/components/ui/Button';
 
 const OVERRIDE_KEYS = [
   { key: '--translate-x', label: 'X', suffix: 'mm' },
@@ -91,8 +92,7 @@ export default function InstanceSection({
     return (
       <div className="canvas-section">
         <SectionHeader title="Componente" />
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="canvas-btn w-full rounded-md px-3 py-2 text-[12px]"
           onClick={() => {
             const stub = layers.length
@@ -102,7 +102,7 @@ export default function InstanceSection({
           }}
         >
           Crear componente
-        </button>
+        </Button>
       </div>
     );
   }
@@ -117,13 +117,12 @@ export default function InstanceSection({
           <p className="canvas-sublabel mb-2">Variantes: {variantKeys.join(', ')}</p>
         )}
         {onInstantiateComponent && (
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-btn w-full rounded-md px-3 py-2 text-[12px]"
             onClick={() => onInstantiateComponent()}
           >
             Crear instancia
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -180,14 +179,13 @@ export default function InstanceSection({
                 title={isOverridden ? `${label} (override)` : label}
               />
               {isOverridden && (
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   className="absolute right-0 top-0 text-[10px] text-[var(--cv-accent)]"
                   title="Quitar override"
                   onClick={() => clearOverride(layer, key, master, onChange)}
                 >
                   ✕
-                </button>
+                </Button>
               )}
             </div>
           );
@@ -218,14 +216,13 @@ export default function InstanceSection({
                   onChange={(e) => setOverride(layer, key, e.target.value, master, onChange)}
                 />
                 {isOverridden && (
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     className="canvas-btn px-2 text-[11px]"
                     title="Quitar override"
                     onClick={() => clearOverride(layer, key, master, onChange)}
                   >
                     ✕
-                  </button>
+                  </Button>
                 )}
               </div>
             </label>
@@ -235,30 +232,27 @@ export default function InstanceSection({
 
       <div className="mt-3 space-y-1.5">
         {master && onSelectLayer && (
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-btn w-full rounded-md px-3 py-1.5 text-[12px]"
             onClick={() => onSelectLayer(master.id)}
           >
             Ir al maestro
-          </button>
+          </Button>
         )}
         {Object.keys(overrides).length > 0 && (
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-btn w-full rounded-md px-3 py-1.5 text-[12px]"
             onClick={() => onChange(resetInstanceOverrides(layer, master))}
           >
             Restablecer overrides
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="canvas-btn w-full rounded-md px-3 py-1.5 text-[12px]"
           onClick={() => onChange(detachInstance(layer))}
         >
           Desvincular instancia
-        </button>
+        </Button>
       </div>
     </div>
   );

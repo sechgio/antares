@@ -6,8 +6,9 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import Button from '@/components/ui/Button';
 
-export interface TemplatePickerOption {
+interface TemplatePickerOption {
   value: string;
   label: string;
 }
@@ -106,9 +107,8 @@ export default function TemplatePicker({
 
   return (
     <div className={`pp-template-picker relative w-full${open ? ' is-open' : ''}`}>
-      <button
+      <Button variant="none" size="none"
         ref={triggerRef}
-        type="button"
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -128,7 +128,7 @@ export default function TemplatePicker({
           className={`shrink-0 text-[var(--text-muted)] transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${open ? 'rotate-180' : ''}`}
           aria-hidden
         />
-      </button>
+      </Button>
 
       {open &&
         createPortal(
@@ -190,8 +190,7 @@ function OptionRow({
   onPick: (value: string) => void;
 }) {
   return (
-    <button
-      type="button"
+    <Button variant="none" size="none"
       role="option"
       aria-selected={selected}
       data-value={value}
@@ -210,6 +209,6 @@ function OptionRow({
           <Check size={12} strokeWidth={2.5} className="text-[var(--accent-primary)]" />
         ) : null}
       </span>
-    </button>
+    </Button>
   );
 }

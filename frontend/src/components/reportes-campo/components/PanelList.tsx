@@ -1,6 +1,7 @@
 import { Trash2 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CampoPanelListItem } from '../types';
+import Button from '@/components/ui/Button';
 
 interface PanelListProps {
     panels: CampoPanelListItem[];
@@ -23,8 +24,7 @@ export default function PanelList({ panels, selectedId, onSelect, onDelete }: Pa
                         key={panel.id}
                         className={`rcampo-panel-item ${selectedId === panel.id ? 'active' : ''}`}
                     >
-                        <button
-                            type="button"
+                        <Button variant="none" size="none"
                             className="rcampo-panel-item-main"
                             onClick={() => onSelect(panel.id)}
                         >
@@ -34,16 +34,15 @@ export default function PanelList({ panels, selectedId, onSelect, onDelete }: Pa
                                 {panel.photoCount} foto{panel.photoCount !== 1 ? 's' : ''}
                                 {panel.pageCount > 0 ? ` · ${panel.pageCount} hoja${panel.pageCount !== 1 ? 's' : ''}` : ''}
                             </span>
-                        </button>
+                        </Button>
                         <WithHoverTooltip label="Eliminar panel" placement="bottom">
-                            <button
-                                type="button"
+                            <Button variant="none" size="none"
                                 className="rcampo-panel-item-delete"
                                 onClick={() => onDelete(panel.id)}
                                 aria-label="Eliminar panel"
                             >
                                 <Trash2 size={12} />
-                            </button>
+                            </Button>
                         </WithHoverTooltip>
                     </div>
                 ))}

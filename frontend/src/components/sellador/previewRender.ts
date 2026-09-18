@@ -84,7 +84,7 @@ async function drawStampsOnCanvas(
   });
 }
 
-export async function renderPageWithStampFromPdf(
+async function renderPageWithStampFromPdf(
   pdf: PDFDocumentProxy,
   pageNum: number,
   containerW: number,
@@ -115,7 +115,7 @@ export async function renderPageWithStampFromPdf(
   return canvas.toDataURL('image/png');
 }
 
-export async function renderPageWithStampFromPath(
+async function renderPageWithStampFromPath(
   pdfPath: string,
   pageNum: number,
   containerW: number,

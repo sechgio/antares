@@ -1,4 +1,5 @@
 import type { PanelSection } from './types';
+import { isAutoLayoutContainerType, isTextualLayerType } from '../../layerKinds';
 import TextSection from './tails/TextSection';
 import FieldSection from './tails/FieldSection';
 import LogoSection from './tails/LogoSection';
@@ -13,7 +14,7 @@ import InstanceSection from './common/InstanceSection';
 import BooleanMaskSection, { showBooleanMaskSection } from './common/BooleanMaskSection';
 
 export const LAYOUT_SECTIONS: PanelSection[] = [
-  { test: (l) => l.type === 'frame' || l.type === 'group' || l.type === 'component', Component: AutoLayoutSection },
+  { test: (l) => isAutoLayoutContainerType(l.type), Component: AutoLayoutSection },
   {
     test: (l) => Boolean(l.parentId),
     Component: ConstraintsSection,
@@ -31,7 +32,7 @@ export const LAYOUT_SECTIONS: PanelSection[] = [
 ];
 
 export const TAIL_SECTIONS: PanelSection[] = [
-  { test: (l) => l.type === 'text' || l.type === 'field', Component: TextSection },
+  { test: (l) => isTextualLayerType(l.type), Component: TextSection },
   { test: (l) => l.type === 'field', Component: FieldSection },
   { test: (l) => l.type === 'logo', Component: LogoSection },
   { test: (l) => l.type === 'image', Component: ImageSection },

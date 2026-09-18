@@ -1,6 +1,9 @@
 import { FolderOpen } from 'lucide-react';
 import ReportFormEmptyState from '../report-workspace/ReportFormEmptyState';
 import ReportFormHeader from '../report-workspace/ReportFormHeader';
+import Button from '../ui/Button';
+import ThemedSelect from '../ui/ThemedSelect';
+import { FileImportInput } from '../ui/FileImportInput';
 import { RESERVOIR_TYPES } from '../../types/reports';
 import { Field, LogoInput, Section } from '../technical-reports/trFormControls';
 import {
@@ -94,20 +97,16 @@ export default function FormPanel({
             <label className="tr-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '6px 10px' }}>
               <FolderOpen size={14} />
               Cargar fotos
-              <input
-                type="file"
+              <FileImportInput
                 accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp"
                 multiple
                 className="hidden"
-                onChange={(event) => {
-                  onPhotosChange(event.target.files);
-                  event.target.value = '';
-                }}
+                onFiles={onPhotosChange}
               />
             </label>
-            <button type="button" className="tr-secondary" disabled={photoCount === 0} onClick={onClearPhotos}>
+            <Button variant="none" size="none" className="tr-secondary" disabled={photoCount === 0} onClick={onClearPhotos}>
               Limpiar ({photoCount})
-            </button>
+            </Button>
           </div>
         </Section>
 
@@ -116,14 +115,12 @@ export default function FormPanel({
           <div className="tr-grid-2">
             <label className="tr-field">
               <span>Tipo</span>
-              <select
+              <ThemedSelect
                 value={report.header.tipo}
-                onChange={(event) => patchHeader('tipo', event.target.value as ReservoirType)}
-              >
-                {RESERVOIR_TYPES.map((tipo) => (
-                  <option key={tipo} value={tipo}>{tipo}</option>
-                ))}
-              </select>
+                onChange={(value) => patchHeader('tipo', value as ReservoirType)}
+                options={RESERVOIR_TYPES.map((tipo) => ({ value: tipo, label: tipo }))}
+                aria-label="Tipo"
+              />
             </label>
             <Field label="Volumen (m³)" type="number" value={report.header.volumen} onChange={(value) => patchHeader('volumen', Number(value) || 0)} />
           </div>

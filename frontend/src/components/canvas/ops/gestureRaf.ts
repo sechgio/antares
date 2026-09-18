@@ -54,7 +54,7 @@ export function createGestureRaf<E>(apply: (ev: E) => void): GestureRaf<E> {
   };
 }
 
-export function toCoalescedWheel(input: WheelGestureInput): CoalescedWheel {
+function toCoalescedWheel(input: WheelGestureInput): CoalescedWheel {
   return {
     kind: wheelGestureKind(input.ctrlKey, input.metaKey),
     deltaX: normalizeWheelDelta(input.deltaX, input.deltaMode ?? 0),

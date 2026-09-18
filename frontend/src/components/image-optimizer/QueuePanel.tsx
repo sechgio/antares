@@ -6,6 +6,7 @@ import { BatchSettings, ImageItem } from './types';
 import { glassPanelClass } from './ui';
 import { buildExportNameMap, resolveSettingsForItem } from './utils';
 import { formatBytes } from '../../utils/format';
+import Button from '@/components/ui/Button';
 
 interface QueuePanelProps {
   items: ImageItem[];
@@ -239,36 +240,33 @@ export default function QueuePanel({
 
           <div className="flex shrink-0 items-center gap-px opacity-70 transition-opacity group-hover:opacity-100">
             <WithHoverTooltip label={t('optimizer.queue.cropEditor')} placement="bottom">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 aria-label={t('optimizer.queue.cropEditor')}
                 onClick={(e) => { e.stopPropagation(); onOpenCropEditor(item.id); }}
                 disabled={!itemSettings.operations.cropEnabled || itemSettings.crop.aspectRatio === 'original'}
                 className={iconBtn}
               >
                 <Crop size={12} />
-              </button>
+              </Button>
             </WithHoverTooltip>
             <WithHoverTooltip label={t('optimizer.preview.download')} placement="bottom">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 aria-label={t('optimizer.preview.download')}
                 onClick={(e) => { e.stopPropagation(); onDownloadSingle(item); }}
                 disabled={!isReady}
                 className={iconBtn}
               >
                 <FileDown size={12} />
-              </button>
+              </Button>
             </WithHoverTooltip>
             <WithHoverTooltip label={t('optimizer.queue.remove')} placement="bottom">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 aria-label={t('optimizer.queue.remove')}
                 onClick={(e) => { e.stopPropagation(); onRemoveItem(item.id); }}
                 className={`${iconBtn} hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)]`}
               >
                 <Trash2 size={12} />
-              </button>
+              </Button>
             </WithHoverTooltip>
             <span
               className={`ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'processing' ? 'animate-pulse' : ''}`}
@@ -288,13 +286,13 @@ export default function QueuePanel({
             {t('optimizer.queue.title')} <span className="ml-1 font-mono text-[10px] tabular-nums text-[var(--text-secondary)]">{items.length}</span>
           </p>
           <div className="flex items-center gap-1">
-            <button type="button" onClick={onSelectAll} className={chipBtn}>
+            <Button variant="none" size="none" onClick={onSelectAll} className={chipBtn}>
               {allSelected ? t('optimizer.queue.deselectAll') : t('optimizer.queue.selectAll')}
-            </button>
+            </Button>
             {selectedCount > 0 && (
-              <button type="button" onClick={onClearSelection} className={chipBtn}>
+              <Button variant="none" size="none" onClick={onClearSelection} className={chipBtn}>
                 {t('optimizer.queue.clearSelection')}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -307,16 +305,15 @@ export default function QueuePanel({
         </div>
         {selectedCount > 0 && (
           <div className="flex flex-wrap gap-1">
-            <button type="button" onClick={onApplyPresetToSelection} className={chipBtn}>{t('optimizer.queue.applyPreset')}</button>
-            <button type="button" onClick={onReprocessSelected} className={chipBtn}>{t('optimizer.queue.reprocess')}</button>
-            <button type="button" onClick={onToggleExcludeSelected} className={chipBtn}>{t('optimizer.queue.exclude')}</button>
-            <button
-              type="button"
+            <Button variant="none" size="none" onClick={onApplyPresetToSelection} className={chipBtn}>{t('optimizer.queue.applyPreset')}</Button>
+            <Button variant="none" size="none" onClick={onReprocessSelected} className={chipBtn}>{t('optimizer.queue.reprocess')}</Button>
+            <Button variant="none" size="none" onClick={onToggleExcludeSelected} className={chipBtn}>{t('optimizer.queue.exclude')}</Button>
+            <Button variant="none" size="none"
               onClick={onRemoveSelected}
               className="h-6 rounded-md border border-[var(--accent-red)]/25 px-2 text-[10px] font-medium text-[var(--accent-red)] transition-[background-color,transform] duration-100 hover:bg-[var(--accent-red)]/10 active:scale-[0.96]"
             >
               {t('optimizer.queue.remove')}
-            </button>
+            </Button>
           </div>
         )}
       </header>

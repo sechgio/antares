@@ -10,6 +10,7 @@ import {
   type DueNotification,
 } from '../utils/dueNotifications';
 import { onDueNotificationsInvalidate } from '../utils/dueNotificationsBus';
+import { errorMessage } from '@/utils/errors';
 
 const POLL_MS = 5 * 60 * 1000;
 const REALTIME_DEBOUNCE_MS = 350;
@@ -42,7 +43,7 @@ export function useDueNotifications(enabled = true) {
       setError(null);
     } catch (err) {
       if (requestId !== inFlightRef.current) return;
-      const message = err instanceof Error ? err.message : 'No se pudieron cargar las notificaciones';
+      const message = errorMessage(err, 'No se pudieron cargar las notificaciones');
       setError(message);
     } finally {
       if (requestId === inFlightRef.current) setLoading(false);

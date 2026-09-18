@@ -2,7 +2,7 @@
 import type { CanvasLayer } from '../types';
 import { parseMm } from '../types';
 
-export const SHAPE_CLIP_PATHS = {
+const SHAPE_CLIP_PATHS = {
   polygon: 'polygon(50% 0%, 0% 100%, 100% 100%)',
   star: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
   arrow: 'polygon(0% 35%, 65% 35%, 65% 10%, 100% 50%, 65% 90%, 65% 65%, 0% 65%)',
@@ -11,7 +11,7 @@ export const SHAPE_CLIP_PATHS = {
   pentagon: 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)',
 } as const;
 
-export type ClippedShapeType = keyof typeof SHAPE_CLIP_PATHS;
+type ClippedShapeType = keyof typeof SHAPE_CLIP_PATHS;
 
 export function clipPathForLayerType(type: string): string | undefined {
   if (type in SHAPE_CLIP_PATHS) {
@@ -20,7 +20,7 @@ export function clipPathForLayerType(type: string): string | undefined {
   return undefined;
 }
 
-export function clipPathFromMetaPath(layer: CanvasLayer): string | undefined {
+function clipPathFromMetaPath(layer: CanvasLayer): string | undefined {
   const points = layer.meta?.path?.points;
   if (!points?.length) return undefined;
   const w = Math.max(0.01, parseMm(layer.cssVars['--width'], 40));
@@ -80,7 +80,7 @@ export function clipPathForLayer(
   return clipPathForOperandLayer(layer);
 }
 
-export const SHAPE_TOOLS = new Set([
+const SHAPE_TOOLS = new Set([
   'rect',
   'ellipse',
   'line',

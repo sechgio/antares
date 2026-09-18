@@ -82,7 +82,7 @@ describe('canvas realtime transport', () => {
     const onSaved = vi.fn();
     const onPresence = vi.fn();
     const onStatus = vi.fn();
-    activeSubscription = subscribeCanvasDocument('doc-1', presence, { onSaved, onPresence, onStatus });
+    activeSubscription = await subscribeCanvasDocument('doc-1', presence, { onSaved, onPresence, onStatus });
 
     expect(supabaseMock.channel).toHaveBeenCalledWith('canvas-document:doc-1', {
       config: {
@@ -100,14 +100,14 @@ describe('canvas realtime transport', () => {
     });
   });
 
-  it('rejects malformed broadcast payloads before invoking the handler', () => {
+  it('rejects malformed broadcast payloads before invoking the handler', async () => {
     let broadcastHandler: ((payload: { payload?: unknown }) => void) | undefined;
     channel.on.mockImplementation(function (this: unknown, type: string, _filter: unknown, callback: unknown) {
       if (type === 'broadcast') broadcastHandler = callback as (payload: { payload?: unknown }) => void;
       return this;
     });
     const onSaved = vi.fn();
-    activeSubscription = subscribeCanvasDocument('doc-1', presence, {
+    activeSubscription = await subscribeCanvasDocument('doc-1', presence, {
       onSaved,
       onPresence: vi.fn(),
       onStatus: vi.fn(),
@@ -132,7 +132,7 @@ describe('canvas realtime transport', () => {
   });
 
   it('tracks identity and only retracks when the mode changes', async () => {
-    activeSubscription = subscribeCanvasDocument('doc-1', presence, {
+    activeSubscription = await subscribeCanvasDocument('doc-1', presence, {
       onSaved: vi.fn(),
       onPresence: vi.fn(),
       onStatus: vi.fn(),
@@ -147,7 +147,7 @@ describe('canvas realtime transport', () => {
   });
 
   it('retracks presence after a channel rejoin', async () => {
-    activeSubscription = subscribeCanvasDocument('doc-1', presence, {
+    activeSubscription = await subscribeCanvasDocument('doc-1', presence, {
       onSaved: vi.fn(),
       onPresence: vi.fn(),
       onStatus: vi.fn(),
@@ -171,7 +171,7 @@ describe('canvas realtime transport', () => {
   });
 
   it('closes the channel idempotently', async () => {
-    activeSubscription = subscribeCanvasDocument('doc-1', presence, {
+    activeSubscription = await subscribeCanvasDocument('doc-1', presence, {
       onSaved: vi.fn(),
       onPresence: vi.fn(),
       onStatus: vi.fn(),
@@ -184,7 +184,7 @@ describe('canvas realtime transport', () => {
   it('closes the channel and clears Presence when the auth session ends', async () => {
     const onPresence = vi.fn();
     const onStatus = vi.fn();
-    activeSubscription = subscribeCanvasDocument('doc-1', presence, {
+    activeSubscription = await subscribeCanvasDocument('doc-1', presence, {
       onSaved: vi.fn(),
       onPresence,
       onStatus,

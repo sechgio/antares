@@ -7,6 +7,7 @@ import { isOverdue } from '../../utils/filters';
 import { memberName } from '../../utils/members';
 import { columnIsDone } from '../../utils/statusConfig';
 import { priorityMeta } from './taskPriority';
+import Button from '@/components/ui/Button';
 
 function AssigneeCell({ members, id }: { members: TeamMember[]; id: string | null }) {
   const name = memberName(members, id);
@@ -70,8 +71,7 @@ export default function TableTaskRowContent({
 
   const completeButton = (
     <WithHoverTooltip label={done ? 'Reabrir' : 'Completar'} placement="bottom">
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={() => onComplete(tarea)}
         className={`flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
           done
@@ -81,13 +81,12 @@ export default function TableTaskRowContent({
         aria-label={done ? `Reabrir «${tarea.title}»` : `Completar «${tarea.title}»`}
       >
         <Check className="h-3 w-3" strokeWidth={3} />
-      </button>
+      </Button>
     </WithHoverTooltip>
   );
 
   const titleButton = (
-    <button
-      type="button"
+    <Button variant="none" size="none"
       className={isTable ? 'min-w-0 max-w-full text-left' : 'min-w-0 text-left'}
       onClick={() => onEdit?.(tarea)}
     >
@@ -103,7 +102,7 @@ export default function TableTaskRowContent({
           {tarea.description}
         </span>
       )}
-    </button>
+    </Button>
   );
 
   const statusPicker = (
@@ -129,25 +128,23 @@ export default function TableTaskRowContent({
     <>
       {onEdit && (
         <WithHoverTooltip label="Editar" placement="bottom">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             onClick={() => onEdit(tarea)}
             className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
             aria-label={`Editar ${tarea.title}`}
           >
             <Pencil className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </WithHoverTooltip>
       )}
       <WithHoverTooltip label="Eliminar" placement="bottom">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={() => onDelete(tarea.id)}
           className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
           aria-label={`Eliminar ${tarea.title}`}
         >
           <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </WithHoverTooltip>
     </>
   );

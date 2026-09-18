@@ -15,6 +15,7 @@ import {
 } from '../../../ops/layerStyle';
 import { parseStrokeCap } from '../../../ops/pathGeometry';
 import type { StrokeCap } from '../../../types';
+import Button from '@/components/ui/Button';
 
 const STROKE_CAP_OPTIONS: { value: StrokeCap; label: string }[] = [
   { value: 'none', label: 'Ninguno' },
@@ -40,8 +41,7 @@ export default function StrokeSection({
   return (
     <div className="canvas-section">
       <SectionHeader title="Trazo">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="canvas-paint-icon"
           aria-label="Añadir trazo"
           disabled={hasStroke}
@@ -73,7 +73,7 @@ export default function StrokeSection({
           }}
         >
           <Plus className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </SectionHeader>
       {hasStroke ? (
         <>

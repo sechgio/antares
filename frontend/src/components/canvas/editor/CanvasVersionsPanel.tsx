@@ -1,6 +1,8 @@
 import { memo, useEffect, useState } from 'react';
 import { History, RotateCcw, RefreshCw, AlertCircle, Clock, User } from 'lucide-react';
 import type { CanvasDocument } from '../types';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 type CanvasVersionEntry = {
   id: string;
@@ -32,7 +34,7 @@ export default memo(function CanvasVersionsPanel({
       const data = await listCanvasVersions(documentId);
       setVersions(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar versiones');
+      setError(errorMessage(err, 'Error al cargar versiones'));
     } finally {
       setLoading(false);
     }
@@ -55,7 +57,7 @@ export default memo(function CanvasVersionsPanel({
         onVersionRestored?.(restored);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al restaurar versión');
+      setError(errorMessage(err, 'Error al restaurar versión'));
     } finally {
       setRestoringId(null);
     }
@@ -68,14 +70,13 @@ export default memo(function CanvasVersionsPanel({
           <History className="h-4 w-4 text-[var(--cv-accent)]" />
           <span>Historial de Versiones</span>
         </div>
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={() => void loadVersions()}
           className="p-1 rounded hover:bg-[var(--cv-bg-hover)] text-[var(--cv-text-muted)]"
           title="Actualizar versiones"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
@@ -134,31 +135,28 @@ export default memo(function CanvasVersionsPanel({
                     <div>
                       {isConfirming ? (
                         <div className="flex items-center gap-1">
-                          <button
-                            type="button"
+                          <Button variant="none" size="none"
                             disabled={isRestoring}
                             onClick={() => void handleRestore(ver.id)}
                             className="px-2 py-0.5 bg-amber-600 text-white rounded font-medium text-[10px] hover:bg-amber-500"
                           >
                             {isRestoring ? 'Restaurando...' : 'Confirmar'}
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button variant="none" size="none"
                             onClick={() => setConfirmId(null)}
                             className="px-1.5 py-0.5 bg-[var(--cv-bg-hover)] text-[var(--cv-text-muted)] rounded text-[10px]"
                           >
                             Cancelar
-                          </button>
+                          </Button>
                         </div>
                       ) : (
-                        <button
-                          type="button"
+                        <Button variant="none" size="none"
                           onClick={() => setConfirmId(ver.id)}
                           className="flex items-center gap-1 px-2 py-1 bg-[var(--cv-bg-hover)] hover:bg-[var(--cv-accent)] hover:text-white rounded transition-colors text-[10px] font-medium"
                         >
                           <RotateCcw className="h-3 w-3" />
                           <span>Restaurar</span>
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )}

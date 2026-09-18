@@ -1,9 +1,8 @@
 import type { ReportStatus, ReservoirType } from '../../types/reports';
 
 export type CheckState = 'normal' | 'critico' | 'unchecked';
-export type { ReportStatus, ReservoirType } from '../../types/reports';
 
-export interface ReportMetadata {
+interface ReportMetadata {
   informe_id: number;
   dia: number;
   mes: string;
@@ -15,7 +14,7 @@ export const DEFAULT_SGIO_LABEL = 'SGIO';
 export const DEFAULT_TITULO_LINEA1 = 'Limpieza y Desinfección de Reservorios y Cisternas';
 export const DEFAULT_TITULO_LINEA2 = 'Centro de Servicio Villa El Salvador';
 
-export interface ReportHeader {
+interface ReportHeader {
   cs: string;
   contratista: string;
   sgio: string;
@@ -69,7 +68,7 @@ export interface InspeccionDescripcion {
   sugerencias_descarga: string;
 }
 
-export interface DiameterMap {
+interface DiameterMap {
   [diameter: string]: number;
 }
 
@@ -113,7 +112,7 @@ export interface CanastillasData {
 export const DEFAULT_MEDIDA_LABEL_DIAMETRO = 'DIAMETRO';
 export const DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO = 'DIAMETRO INTERNO';
 
-export interface MedidasData {
+interface MedidasData {
   [key: string]: string;
   diametro: string;
   diametro_interno: string;

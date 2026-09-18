@@ -22,7 +22,7 @@ import {
 } from '../layout';
 import type { LocalImage } from '../types';
 
-export type SheetPreviewVariant = 'screen' | 'export';
+type SheetPreviewVariant = 'screen' | 'export';
 
 interface Props {
   title: string;

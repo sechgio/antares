@@ -17,10 +17,10 @@ function formatDateDisplay(isoDate: string): string {
 }
 
 export const CHUNK_SIZE = 6;
-export const GRID_COLUMNS = 3;
-export const GRID_ROWS = 2;
+const GRID_COLUMNS = 3;
+const GRID_ROWS = 2;
 
-export const PHOTO_GRID_DEFAULTS = {
+const PHOTO_GRID_DEFAULTS = {
     photosPerPage: CHUNK_SIZE,
     gridColumns: GRID_COLUMNS,
     gridRows: GRID_ROWS,

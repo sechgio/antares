@@ -7,6 +7,7 @@ import type { DueNotification, DueUrgency } from '../espacios/utils/dueNotificat
 import { writeEspaciosFocusTarget } from '../espacios/utils/focusTarget';
 import { HoverTooltip } from '@/components/ui/HoverTooltip';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import Button from '@/components/ui/Button';
 
 interface TaskNotificationsBellProps {
   onOpenEspacios?: () => void;
@@ -61,9 +62,8 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
   return (
     <>
       <div className="relative flex h-full">
-        <button
+        <Button variant="none" size="none"
           ref={triggerRef}
-          type="button"
           data-testid="titlebar-notifications-button"
           aria-label={count > 0 ? `Notificaciones: ${count} tareas por vencer` : 'Notificaciones de tareas'}
           aria-haspopup="dialog"
@@ -81,7 +81,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
               {badgeLabel}
             </span>
           )}
-        </button>
+        </Button>
         {!open && (
           <HoverTooltip label={tooltipLabel} placement="bottom" />
         )}
@@ -122,13 +122,12 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
               {!loading && error && (
                 <div className="px-3 py-4 text-center">
                   <p className="text-[12px] text-[var(--text-secondary)]">{error}</p>
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     onClick={() => void refresh()}
                     className="mt-2 text-[11px] font-medium text-[var(--accent-primary)] hover:underline"
                   >
                     Reintentar
-                  </button>
+                  </Button>
                 </div>
               )}
 
@@ -143,9 +142,8 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
               )}
 
               {items.map((item) => (
-                <button
+                <Button variant="none" size="none"
                   key={item.id}
-                  type="button"
                   onClick={() => handleSelect(item)}
                   className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-base)]/70"
                 >
@@ -177,14 +175,13 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
                       </span>
                     </span>
                   </span>
-                </button>
+                </Button>
               ))}
             </div>
 
             {onOpenEspacios && (
               <div className="border-t border-[var(--border-subtle)] p-1.5">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   onClick={() => {
                     close();
                     onOpenEspacios();
@@ -192,7 +189,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
                   className="w-full rounded-lg px-2.5 py-2 text-center text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-base)]/70 hover:text-[var(--text-primary)]"
                 >
                   Ir a Espacios
-                </button>
+                </Button>
               </div>
             )}
           </div>,

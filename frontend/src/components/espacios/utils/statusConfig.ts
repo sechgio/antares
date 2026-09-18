@@ -1,7 +1,7 @@
 import type { BoardColumn, TareaStatus } from '../types';
 import { pickDefaultColor } from './colors';
 
-export const BUILTIN_STATUS = {
+const BUILTIN_STATUS = {
   todo: 'todo',
   in_progress: 'in_progress',
   done: 'done',
@@ -9,9 +9,9 @@ export const BUILTIN_STATUS = {
   closed: 'closed',
 } as const;
 
-export type BuiltinTareaStatus = (typeof BUILTIN_STATUS)[keyof typeof BUILTIN_STATUS];
+type BuiltinTareaStatus = (typeof BUILTIN_STATUS)[keyof typeof BUILTIN_STATUS];
 
-export const STATUS_LABELS: Record<BuiltinTareaStatus, string> = {
+const STATUS_LABELS: Record<BuiltinTareaStatus, string> = {
   todo: 'Pendiente',
   in_progress: 'En curso',
   done: 'Completados',
@@ -19,7 +19,7 @@ export const STATUS_LABELS: Record<BuiltinTareaStatus, string> = {
   closed: 'Cerrada',
 };
 
-export const STATUS_COLORS: Record<BuiltinTareaStatus, string> = {
+const STATUS_COLORS: Record<BuiltinTareaStatus, string> = {
   todo: '#87909E',
   in_progress: '#5F55EE',
   done: '#0F9D58',
@@ -27,7 +27,7 @@ export const STATUS_COLORS: Record<BuiltinTareaStatus, string> = {
   closed: '#64748B',
 };
 
-export const STATUS_PILL_FILLED: Record<BuiltinTareaStatus, boolean> = {
+const STATUS_PILL_FILLED: Record<BuiltinTareaStatus, boolean> = {
   todo: false,
   in_progress: true,
   done: true,
@@ -35,7 +35,7 @@ export const STATUS_PILL_FILLED: Record<BuiltinTareaStatus, boolean> = {
   closed: false,
 };
 
-export const ALL_STATUS_VALUES: BuiltinTareaStatus[] = [
+const ALL_STATUS_VALUES: BuiltinTareaStatus[] = [
   'todo',
   'in_progress',
   'done',
@@ -43,7 +43,7 @@ export const ALL_STATUS_VALUES: BuiltinTareaStatus[] = [
   'closed',
 ];
 
-export const DEFAULT_BOARD_COLUMN_DEFS: Omit<
+const DEFAULT_BOARD_COLUMN_DEFS: Omit<
   BoardColumn,
   'id' | 'proyecto_id' | 'created_at' | 'updated_at'
 >[] = [
@@ -54,7 +54,7 @@ export const DEFAULT_BOARD_COLUMN_DEFS: Omit<
   { key: 'closed', name: 'Cerrada', color: '#64748B', sort_order: 4, is_done: true, is_system: true },
 ];
 
-export function isBuiltinStatus(value: string): value is BuiltinTareaStatus {
+function isBuiltinStatus(value: string): value is BuiltinTareaStatus {
   return (ALL_STATUS_VALUES as string[]).includes(value);
 }
 
@@ -70,6 +70,10 @@ export function parseColumnDropId(id: string): TareaStatus | null {
 
 export function softColor(hex: string, amount = 14): string {
   return `color-mix(in srgb, ${hex} ${amount}%, transparent)`;
+}
+
+export function softSurface(hex: string, amount = 22): string {
+  return `color-mix(in srgb, ${hex} ${amount}%, var(--bg-elevated))`;
 }
 
 export function columnLabel(columns: BoardColumn[], key: TareaStatus): string {
@@ -99,6 +103,19 @@ export function columnIsDone(columns: BoardColumn[], key: TareaStatus): boolean 
 export function columnPillFilled(columns: BoardColumn[], key: TareaStatus): boolean {
   if (isBuiltinStatus(key)) return STATUS_PILL_FILLED[key];
   return columnIsDone(columns, key);
+}
+
+export const OVERDUE_COLOR = 'var(--accent-red)';
+
+// Regla única de acento de tarea en vistas (Board/Gantt/Calendar): una tarea
+// vencida pinta rojo sin importar la columna.
+export function statusAccent(
+  status: TareaStatus,
+  overdue: boolean,
+  columns: BoardColumn[] = [],
+): string {
+  if (overdue) return OVERDUE_COLOR;
+  return columnColor(columns, status);
 }
 
 export function visibleBoardColumns(columns: BoardColumn[], showClosed: boolean): BoardColumn[] {

@@ -18,8 +18,11 @@ import { Check, Plus } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import type { BoardColumn, Tarea, TareaStatus } from '../../types';
 import { localTodayString, toLocalDateString } from '../../utils/dates';
-import { countOverdue, countUnscheduled } from '../../utils/filters';
-import { columnColor, columnIsDone } from '../../utils/statusConfig';
+import { computeTaskStats } from '../../utils/filters';
+import { columnIsDone, softSurface, statusAccent } from '../../utils/statusConfig';
+import { isOverdue } from '../../utils/filters';
+import { useOpenCreateForDate } from '../../hooks/useOpenCreateForDate';
+import Button from '@/components/ui/Button';
 
 interface CalendarViewProps {
   tareas: Tarea[];
@@ -31,19 +34,8 @@ interface CalendarViewProps {
   onEditTask?: (tarea: Tarea) => void;
 }
 
-const OVERDUE_COLOR = 'var(--accent-red)';
-
 const WEEKDAY_LONG = new Intl.DateTimeFormat('es', { weekday: 'long' });
 const DAY_MONTH = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short' });
-
-function softSurface(hex: string, amount = 22): string {
-  return `color-mix(in srgb, ${hex} ${amount}%, var(--bg-elevated))`;
-}
-
-function statusAccent(status: TareaStatus, overdue: boolean, columns: BoardColumn[] = []): string {
-  if (overdue) return OVERDUE_COLOR;
-  return columnColor(columns, status);
-}
 
 function exclusiveEndIso(inclusiveEnd: string): string {
   const [y, m, d] = inclusiveEnd.split('-').map(Number);
@@ -64,10 +56,7 @@ function toEvent(tarea: Tarea, columns: BoardColumn[]): EventInput | null {
   }
   const end = exclusiveEndIso(inclusiveEnd);
 
-  const overdue =
-    tarea.due_date !== null &&
-    tarea.due_date < localTodayString() &&
-    !columnIsDone(columns, tarea.status);
+  const overdue = isOverdue(tarea, columns);
   const status = tarea.status;
   const accent = statusAccent(status, overdue, columns);
 
@@ -144,21 +133,13 @@ export default function CalendarView({
     [tareas, columns],
   );
 
-  const scheduledCount = events.length;
-  const unscheduledCount = countUnscheduled(tareas, columns);
-  const overdueCount = countOverdue(tareas, columns);
+  const {
+    scheduled: scheduledCount,
+    unscheduled: unscheduledCount,
+    overdue: overdueCount,
+  } = computeTaskStats(tareas, columns);
 
-  const openCreateForDate = useCallback(
-    (date: Date | string) => {
-      const dueDate = typeof date === 'string' ? date : toLocalDateString(date);
-      if (onAddTaskOnDate) {
-        onAddTaskOnDate(dueDate);
-        return;
-      }
-      onAddTask?.();
-    },
-    [onAddTask, onAddTaskOnDate],
-  );
+  const openCreateForDate = useOpenCreateForDate(onAddTask, onAddTaskOnDate);
 
   const persistEventDates = (event: EventApi) => {
     if (!event.start) {
@@ -214,8 +195,7 @@ export default function CalendarView({
         <div className="fc-day-cell-head">
           {(onAddTaskOnDate || onAddTask) && (
             <WithHoverTooltip label="Crear tarea" placement="bottom">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="fc-day-add"
                 aria-label={`Crear tarea el ${dateStr}`}
                 onClick={(e) => {
@@ -225,7 +205,7 @@ export default function CalendarView({
                 }}
               >
                 <Plus className="h-3 w-3" strokeWidth={2.5} />
-              </button>
+              </Button>
             </WithHoverTooltip>
           )}
           <span className="fc-day-num">{arg.dayNumberText}</span>

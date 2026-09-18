@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, Save } from 'lucide-react';
+import Button from '@/components/ui/Button';
 
 interface SaveButtonProps {
   onSave: () => void;
@@ -10,8 +11,7 @@ export default function SaveButton({ onSave, dirty = false }: SaveButtonProps) {
   const [hovered, setHovered] = useState(false);
 
   return (
-    <button
-      type="button"
+    <Button variant="none" size="none"
       data-testid="canvas-save-btn"
       aria-label={dirty ? 'Guardar (hay cambios sin guardar)' : 'Guardar'}
       onClick={onSave}
@@ -45,6 +45,6 @@ export default function SaveButton({ onSave, dirty = false }: SaveButtonProps) {
         )}
       </span>
       Guardar
-    </button>
+    </Button>
   );
 }

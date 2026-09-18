@@ -19,6 +19,7 @@ import RunDetail from './RunDetail';
 import { dispatchHistoryReexecute } from './historyEvents';
 
 import { getTypeFilters, type RunTypeId } from './runTypes';
+import Button from '@/components/ui/Button';
 
 
 
@@ -337,9 +338,8 @@ export default function HistoryView() {
 
             <WithHoverTooltip label="Filtros" placement="bottom">
 
-            <button
+            <Button variant="none" size="none"
 
-              type="button"
 
               onClick={() => setFiltersOpen((v) => !v)}
 
@@ -373,15 +373,14 @@ export default function HistoryView() {
 
               )}
 
-            </button>
+            </Button>
 
             </WithHoverTooltip>
 
             <WithHoverTooltip label={t('history.actions.exportCsv')} placement="bottom">
 
-              <button
+              <Button variant="none" size="none"
 
-                type="button"
 
                 onClick={() => void handleExportCsv()}
 
@@ -397,7 +396,7 @@ export default function HistoryView() {
 
                 <span className="hidden sm:inline">{exporting ? t('history.exporting') : t('history.actions.exportCsv')}</span>
 
-              </button>
+              </Button>
 
             </WithHoverTooltip>
 
@@ -419,11 +418,10 @@ export default function HistoryView() {
 
               {typeFilters.map((filter) => (
 
-                <button
+                <Button variant="none" size="none"
 
                   key={filter.value}
 
-                  type="button"
 
                   onClick={() => setActiveType(filter.value)}
 
@@ -441,7 +439,7 @@ export default function HistoryView() {
 
                   {filter.label}
 
-                </button>
+                </Button>
 
               ))}
 
@@ -479,7 +477,7 @@ export default function HistoryView() {
 
             <div className="flex items-center gap-2">
 
-              <button
+              <Button variant="none" size="none"
 
                 onClick={() => void handleExportCsv(Array.from(selectedIds))}
 
@@ -493,9 +491,9 @@ export default function HistoryView() {
 
                 {exporting ? t('history.exporting') : t('history.actions.exportCsv')}
 
-              </button>
+              </Button>
 
-              <button
+              <Button variant="none" size="none"
 
                 onClick={() => void delMany()}
 
@@ -507,9 +505,9 @@ export default function HistoryView() {
 
                 {t('history.actions.deleteSelected', { count: selectedIds.size })}
 
-              </button>
+              </Button>
 
-              <button
+              <Button variant="none" size="none"
 
                 onClick={clearSelection}
 
@@ -521,7 +519,7 @@ export default function HistoryView() {
 
                 {t('history.actions.clearSelection')}
 
-              </button>
+              </Button>
 
             </div>
 
@@ -555,13 +553,13 @@ export default function HistoryView() {
 
           <div className="flex h-8 shrink-0 items-center border-t border-[var(--border-subtle)] px-4">
             {hasMoreRuns && (
-              <button
+              <Button variant="none" size="none"
                 onClick={() => void loadPage(false)}
                 disabled={loadingRuns}
                 className="inline-flex h-6 items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 text-[11px] font-medium text-[var(--text-secondary)] transition-all hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loadingRuns ? t('history.loading') : t('history.loadMore')}
-              </button>
+              </Button>
             )}
             {loadingRuns && runs.length === 0 && (
               <p className="text-[10px] text-[var(--text-muted)]">{t('history.loadingRuns')}</p>

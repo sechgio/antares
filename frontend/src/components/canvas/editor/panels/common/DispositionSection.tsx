@@ -14,6 +14,7 @@ import {
 } from '../../../ops/resizeConstraints';
 import InlineNumField from '../../InlineNumField';
 import type { SectionProps } from '../types';
+import Button from '@/components/ui/Button';
 
 export default function DispositionSection({
   layer,
@@ -51,8 +52,7 @@ export default function DispositionSection({
           placement="bottom"
           variant="dark"
         >
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-icon-btn shrink-0"
             data-active={isAspectLocked(layer.cssVars)}
             aria-label="Proporciones"
@@ -63,7 +63,7 @@ export default function DispositionSection({
             ) : (
               <Link2Off className="h-3.5 w-3.5" />
             )}
-          </button>
+          </Button>
         </WithHoverTooltip>
       </div>
       <div className="canvas-resize-anchor-row">
@@ -77,9 +77,8 @@ export default function DispositionSection({
             {RESIZE_ANCHORS.map((anchor: ResizeAnchor) => {
               const active = parseResizeAnchor(layer.cssVars['--resize-anchor']) === anchor;
               return (
-                <button
+                <Button variant="none" size="none"
                   key={anchor}
-                  type="button"
                   role="radio"
                   aria-checked={active}
                   aria-label={`Anclar ${anchor}`}

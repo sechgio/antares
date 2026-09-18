@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import Button from '@/components/ui/Button';
 
 interface CanvasToggleProps {
   checked: boolean;
@@ -9,8 +10,7 @@ interface CanvasToggleProps {
 
 function SwitchButton({ checked, onChange, label, disabled }: CanvasToggleProps) {
   return (
-    <button
-      type="button"
+    <Button variant="none" size="none"
       role="switch"
       aria-checked={checked}
       aria-label={label}
@@ -20,7 +20,7 @@ function SwitchButton({ checked, onChange, label, disabled }: CanvasToggleProps)
       onClick={() => onChange(!checked)}
     >
       <span className="canvas-switch-knob" aria-hidden />
-    </button>
+    </Button>
   );
 }
 
@@ -92,9 +92,8 @@ export function CanvasSegmented<T extends string>({
       {options.map((opt) => {
         const active = opt.value === value;
         return (
-          <button
+          <Button variant="none" size="none"
             key={opt.value}
-            type="button"
             aria-pressed={active}
             className={
               compact
@@ -113,7 +112,7 @@ export function CanvasSegmented<T extends string>({
             onClick={() => onChange(opt.value)}
           >
             {opt.label}
-          </button>
+          </Button>
         );
       })}
     </div>
@@ -133,8 +132,7 @@ export function CanvasCheckbox({ checked, onChange, label, disabled }: CanvasChe
       className="inline-flex items-center gap-2 select-none"
       style={{ opacity: disabled ? 0.45 : 1, cursor: disabled ? 'default' : 'pointer' }}
     >
-      <button
-        type="button"
+      <Button variant="none" size="none"
         role="checkbox"
         aria-checked={checked}
         aria-label={label}
@@ -148,7 +146,7 @@ export function CanvasCheckbox({ checked, onChange, label, disabled }: CanvasChe
             <path d="M3 7.5L6 10.5L11 4.5" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
-      </button>
+      </Button>
       {label && (
         <span className="text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
           {label}

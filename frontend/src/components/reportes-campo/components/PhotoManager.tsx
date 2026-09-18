@@ -3,6 +3,8 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import { ChevronDown, ImagePlus, Trash2 } from 'lucide-react';
 import type { PhotoFile } from '../types';
+import Button from '@/components/ui/Button';
+import { FileImportInput } from '@/components/ui/FileImportInput';
 
 interface PhotoManagerProps {
     photos: PhotoFile[];
@@ -46,7 +48,7 @@ export default function PhotoManager({
 
     return (
         <div className="rcampo-section">
-            <button type="button" className="rcampo-section-header" onClick={() => setIsOpen((v) => !v)} aria-expanded={isOpen}>
+            <Button variant="none" size="none" className="rcampo-section-header" onClick={() => setIsOpen((v) => !v)} aria-expanded={isOpen}>
                 <span className="rcampo-section-title">
                     Imágenes
                     {photos.length > 0 && (
@@ -58,7 +60,7 @@ export default function PhotoManager({
                 <span className={`rcampo-section-toggle ${isOpen ? 'open' : ''}`}>
                     <ChevronDown size={11} />
                 </span>
-            </button>
+            </Button>
 
             <AnimatePresence initial={false}>
                 {isOpen && (
@@ -95,15 +97,14 @@ export default function PhotoManager({
                                           ? 'Soltar aquí'
                                           : `Agregar imágenes (máx. ${maxPhotos}, grid dinámico)`}
                                 </div>
-                                <input
+                                <FileImportInput
                                     ref={inputRef}
-                                    type="file"
                                     accept="image/*"
                                     multiple
                                     className="hidden"
                                     disabled={isFull}
                                     onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => { onAdd(e.target.files); e.target.value = ''; }}
+                                    onFiles={onAdd}
                                 />
                             </div>
 
@@ -112,9 +113,9 @@ export default function PhotoManager({
                                     <span className="rcampo-photos-count">
                                         {photos.length} foto{photos.length !== 1 ? 's' : ''} &middot; {totalPages} hoja{totalPages !== 1 ? 's' : ''}
                                     </span>
-                                    <button type="button" className="rcampo-photos-clear" onClick={onClear}>
+                                    <Button variant="none" size="none" className="rcampo-photos-clear" onClick={onClear}>
                                         <Trash2 size={9} /> Limpiar
-                                    </button>
+                                    </Button>
                                 </div>
                             )}
                         </div>

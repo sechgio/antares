@@ -3,6 +3,7 @@ import { useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import { ESPACIOS_COLORS, toColorInputValue } from '../utils/colors';
+import Button from '@/components/ui/Button';
 
 interface ColorSwatchPickerProps {
   color: string;
@@ -37,9 +38,8 @@ export default function ColorSwatchPicker({ color, label, onChange }: ColorSwatc
   return (
     <div className="relative shrink-0">
       <WithHoverTooltip label={`Color de ${label}`} placement="right">
-        <button
+        <Button variant="none" size="none"
           ref={triggerRef}
-          type="button"
           aria-label={`Cambiar color de ${label}`}
           aria-expanded={open}
           aria-haspopup="dialog"
@@ -54,7 +54,7 @@ export default function ColorSwatchPicker({ color, label, onChange }: ColorSwatc
             className="h-3.5 w-3.5 rounded-full border border-black/15 shadow-sm"
             style={{ backgroundColor: safeColor }}
           />
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       {open &&
@@ -77,9 +77,8 @@ export default function ColorSwatchPicker({ color, label, onChange }: ColorSwatc
               {ESPACIOS_COLORS.map((preset) => {
                 const selected = preset.toLowerCase() === safeColor.toLowerCase();
                 return (
-                  <button
+                  <Button variant="none" size="none"
                     key={preset}
-                    type="button"
                     aria-label={`Color ${preset}`}
                     aria-pressed={selected}
                     onClick={() => selectColor(preset)}

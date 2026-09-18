@@ -3,6 +3,7 @@ import { Check, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import Button from '@/components/ui/Button';
 
 interface TaskCardActionsProps {
   title: string;
@@ -47,39 +48,36 @@ export default function TaskCardActions({
       onClick={(e) => e.stopPropagation()}
     >
       <WithHoverTooltip label={isDone ? 'Reabrir' : 'Completar'} placement="bottom">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className={`${BTN} ${isDone ? 'text-[var(--accent-green,#22c55e)]' : ''}`}
           aria-label={isDone ? `Reabrir «${title}»` : `Completar «${title}»`}
           onClick={onComplete}
         >
           <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       {onAdd && (
         <WithHoverTooltip label="Nueva tarea" placement="bottom">
-          <button type="button" className={BTN} aria-label="Nueva tarea" onClick={onAdd}>
+          <Button variant="none" size="none" className={BTN} aria-label="Nueva tarea" onClick={onAdd}>
             <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
-          </button>
+          </Button>
         </WithHoverTooltip>
       )}
 
       <WithHoverTooltip label="Editar" placement="bottom">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className={BTN}
           aria-label={`Editar «${title}»`}
           onClick={onEdit}
         >
           <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       <WithHoverTooltip label="Más" placement="bottom">
-        <button
+        <Button variant="none" size="none"
           ref={moreRef}
-          type="button"
           className={BTN}
           aria-label={`Más opciones de «${title}»`}
           aria-haspopup="menu"
@@ -88,7 +86,7 @@ export default function TaskCardActions({
           onClick={toggle}
         >
           <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={2.25} />
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       {menuOpen &&
@@ -101,8 +99,7 @@ export default function TaskCardActions({
             className="fixed z-[220] min-w-[160px] overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--bg-base)_55%,transparent)]"
             style={{ top: menuPos.top, left: menuPos.left }}
           >
-            <button
-              type="button"
+            <Button variant="none" size="none"
               role="menuitem"
               className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium text-[var(--accent-red)] transition-colors hover:bg-[var(--bg-base)]"
               onClick={() => {
@@ -112,7 +109,7 @@ export default function TaskCardActions({
             >
               <Trash2 className="h-3.5 w-3.5" />
               Eliminar
-            </button>
+            </Button>
           </div>,
           document.body,
         )}

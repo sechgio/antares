@@ -1,5 +1,5 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { supabase } from '../../../lib/supabase';
+import { getSupabaseClient } from '../../../lib/supabaseLazy';
 
 export type CanvasDocumentSavedEvent = {
   type: 'document_saved';
@@ -94,6 +94,7 @@ function presenceDisplayName(user: { email?: string; user_metadata?: UnknownReco
 }
 
 export async function getCanvasPresenceIdentity(): Promise<CanvasPresence | null> {
+  const supabase = await getSupabaseClient();
   if (!supabase) return null;
 
   try {
@@ -118,21 +119,21 @@ function statusFromSubscription(status: string): CanvasRealtimeStatus {
   return 'connecting';
 }
 
-export function subscribeCanvasDocument(
+export async function subscribeCanvasDocument(
   documentId: string,
   presence: CanvasPresence,
   handlers: CanvasRealtimeHandlers,
-): CanvasRealtimeSubscription | null {
+): Promise<CanvasRealtimeSubscription | null> {
   if (!documentId.trim()) {
     handlers.onStatus('error');
     return null;
   }
 
-  if (!supabase) {
+  const client = await getSupabaseClient();
+  if (!client) {
     handlers.onStatus('offline');
     return null;
   }
-  const client = supabase;
 
   const topic = canvasDocumentTopic(documentId);
   const previous = realtimeChannels.get(topic);
@@ -243,6 +244,7 @@ export function subscribeCanvasDocument(
 export async function broadcastCanvasDocumentSaved(
   event: CanvasDocumentSavedEvent,
 ): Promise<boolean> {
+  const supabase = await getSupabaseClient();
   if (!supabase || !isNonEmptyString(event.documentId)) return false;
 
   const channel = realtimeChannels.get(canvasDocumentTopic(event.documentId));

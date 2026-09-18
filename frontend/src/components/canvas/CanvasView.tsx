@@ -28,21 +28,22 @@ import { useCanvasBootstrap } from './hooks/useCanvasBootstrap';
 import { useDocumentLifecycle } from './hooks/useDocumentLifecycle';
 import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
+import { useLiveRef } from '../../hooks/useLiveRef';
 import { useInlineEdit } from './hooks/useInlineEdit';
 import { useCanvasQuitFlush } from './hooks/useCanvasQuitFlush';
 import { useCanvasCommandPalette } from './hooks/useCanvasCommandPalette';
 import { useCanvasKeyboard } from './hooks/useCanvasKeyboard';
+import { useCanvasStageActions } from './hooks/useCanvasStageActions';
+import { useCanvasPageActions } from './hooks/useCanvasPageActions';
+import { useCanvasClipboard } from './hooks/useCanvasClipboard';
 import { createCanvasContextActionHandler } from './hooks/canvasContextActions';
 import { CANVAS_SHORTCUTS } from './shortcuts';
 import {
   hydrateDocumentImages,
   serializeDocumentImages,
   applySavedDocumentKeepingImages,
-  clearBlobStore,
   collectImageRefsFromHistory,
   collectImageRefsFromLayers,
-  registerImageBlob,
-  releaseImageBlob,
   sweepOrphanBlobs,
   trackImageRef,
 } from './utils/imageBlobStore';
@@ -52,7 +53,6 @@ import {
   bringToFront,
   deleteLayers,
   distributeLayers,
-  duplicateLayers,
   groupLayers,
   moveLayerInTree,
   nudgeLayers,
@@ -77,21 +77,16 @@ import {
 import { applyPathToLayer, ensureLinePath, pathFromDrag } from './ops/pathGeometry';
 import { toggleLineClosed } from './ops/pathEditGestures';
 import {
-  addPage,
-  duplicatePage,
   filterSelectionToPage,
   getPageCount,
   indexLayersByPage,
-  removePage,
-  renamePage,
-  reorderPage,
   setActivePageLayers,
   syncImagesPerPage,
 } from './ops/pages';
 import { applyGridToImageSlots, applyLivePanelLayerChange } from './ops/gridLayout';
-import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from './ops/logoSide';
+import { logoSideHasConflict, withAssignedLogoSide } from './ops/logoSide';
 import { isClickPlace, placeRectCssVars, type DrawRect } from './ops/drawHelpers';
-import { clampGuidePos, moveGuide, removeGuide, upsertGuide } from './ops/guides';
+import { clampGuidePos, moveGuide } from './ops/guides';
 import { selectionBounds } from './ops/selectionTransform';
 import { instantiateComponent, bakeInstanceOverrides, findComponentMaster, syncComponentFromLayer } from './ops/components';
 import { buildSpatialIndex } from './ops/spatialIndex';
@@ -120,13 +115,6 @@ import {
   canInlineEditLayer,
   type InlineEditStartOpts,
 } from './ops/inlineEdit';
-import {
-  createClipboardCopyCoordinator,
-  parseClipboardLayers,
-  pasteToReplaceLayers,
-  writeClipboardLayersText,
-  type ClipboardCopyCoordinator,
-} from './ops/clipboardLayers';
 import { cloneDocument } from './ops/document';
 import { autosaveDelayForDoc } from './utils/autosave';
 import { usePdfImport } from './hooks/usePdfImport';
@@ -137,7 +125,6 @@ import {
   normalizeDocument,
   type CanvasDocument,
   type CanvasDocumentSummary,
-  type CanvasGuide,
   type CanvasLayer,
   type CanvasLayerType,
   type CanvasMode,
@@ -146,6 +133,8 @@ import {
   type LayerCssVars,
   newId,
 } from './types';
+import { isTextualLayerType, type AutoLayoutContainerType } from './layerKinds';
+import Button from '@/components/ui/Button';
 
 const GeneratePanel = lazy(() => import('./editor/GeneratePanel'));
 
@@ -183,15 +172,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const historyReadyRef = useRef(false);
   const restoreGenerationRef = useRef(0);
 
-  const openDirtyRef = useRef(false);
   const [mode, setMode] = useState<CanvasMode>('design');
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
-  const selectedIdsRef = useRef(selectedIds);
-  const pageIndexRef = useRef(pageIndex);
-  selectedIdsRef.current = selectedIds;
-  pageIndexRef.current = pageIndex;
+  const selectedIdsRef = useLiveRef(selectedIds);
+  const pageIndexRef = useLiveRef(pageIndex);
   const viewportNavRef = useRef<ViewportNavApi | null>(null);
   const [rightZoomSlot, setRightZoomSlot] = useState<HTMLDivElement | null>(null);
   const [stageZoomSlot, setStageZoomSlot] = useState<HTMLDivElement | null>(null);
@@ -305,7 +291,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     }
   }, []);
 
-  const guideCreateBaselineRef = useRef<CanvasDocument | null>(null);
 
   const onDeleteDocRef = useRef<() => Promise<void>>(async () => {});
 
@@ -352,11 +337,17 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const renameBaselineRef = useRef<typeof history.document | null>(null);
 
-  openDirtyRef.current = isOpenDocumentDirty(
-    history.hasUnsavedEditsRef.current,
-    panelBaselineRef.current != null,
-    gestureBaselineRef.current != null,
-    renameBaselineRef.current != null,
+  // Fuente única de "doc abierto dirty": deriva de hasUnsavedEdits + baselines
+  // en cada lectura (sin espejo manual que resincronizar).
+  const isOpenDirty = useCallback(
+    () =>
+      isOpenDocumentDirty(
+        history.hasUnsavedEditsRef.current,
+        panelBaselineRef.current != null,
+        gestureBaselineRef.current != null,
+        renameBaselineRef.current != null,
+      ),
+    [history.hasUnsavedEditsRef, panelBaselineRef, gestureBaselineRef],
   );
 
   const onConflictResolve = useCallback(
@@ -423,14 +414,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const { runCloudSync, syncing: docsSyncing, syncStatus, realtimeStatus, collaborators } = useCanvasSync({
     historyDocRef,
-    openDirtyRef,
+    isOpenDirty,
     refreshList,
     replaceDocument: history.replaceDocument,
     onConflict: handleConflict,
     active,
     documentId: history.document.id,
     documentReady: !loading,
-    openDirty: openDirtyRef.current,
     initialGuarded: true,
     onRemoteDocumentApplied: handleRemoteDocumentApplied,
   });
@@ -553,23 +543,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       flushAutosaveRef.current();
     };
   }, []);
-  const clipboardCoordinatorRef = useRef<ClipboardCopyCoordinator | null>(null);
-  if (!clipboardCoordinatorRef.current) {
-    clipboardCoordinatorRef.current = createClipboardCopyCoordinator(
-      (layers) => setClipboard(layers),
-      (layers) => {
-        setClipboard(layers);
-        writeClipboardLayersText(layers);
-      },
-      releaseImageBlob,
-    );
-  }
-
-  useEffect(() => () => {
-    clipboardCoordinatorRef.current?.invalidate();
-    clearBlobStore();
-  }, []);
-
   useEffect(() => {
     const live = collectImageRefsFromLayers(history.document.layers);
     for (const ref of collectImageRefsFromHistory(history.past)) live.add(ref);
@@ -615,7 +588,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     panelBaselineRef,
     gestureBaselineRef,
     renameBaselineRef,
-    openDirtyRef,
+    isOpenDirty,
   });
 
   const sealPanelAndAbortGesture = useCallback(() => {
@@ -765,65 +738,20 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     [history.document.layers, startInlineEdit],
   );
 
-  const applyPasteLayers = useCallback(
-    (source: CanvasLayer[], offsetMm?: number) => {
-      if (!source.length) return;
-      const withIds = source.map((l) => ({ ...l, pageIndex }));
-      const clipIds = new Set(withIds.map((l) => l.id));
-      const roots = withIds.filter((l) => !l.parentId || !clipIds.has(l.parentId));
-      const temp = [...history.document.layers, ...withIds];
-      const { layers, newIds } = duplicateLayers(
-        temp,
-        roots.map((l) => l.id),
-        offsetMm === undefined ? undefined : { offsetMm },
-      );
-      const originalClipIds = new Set(withIds.map((l) => l.id));
-      setAllLayers(assignUniqueLogoSides(layers.filter((l) => !originalClipIds.has(l.id)), newIds));
-      setSelectedIds(newIds);
-    },
-    [history.document.layers, pageIndex, setAllLayers],
-  );
-
-  const pasteClipboard = useCallback(
-    async (offsetMm?: number) => {
-      if (clipboard.length) {
-        applyPasteLayers(clipboard, offsetMm);
-        return;
-      }
-      try {
-        const text = await navigator.clipboard?.readText?.();
-        const parsed = text ? parseClipboardLayers(text) : null;
-        if (!parsed?.length) return;
-        setClipboard(parsed);
-        applyPasteLayers(parsed, offsetMm);
-      } catch {
-      }
-    },
-    [applyPasteLayers, clipboard],
-  );
-
-  const pasteReplaceClipboard = useCallback(async (targetIds?: string[]) => {
-    const targets = (targetIds ?? selectedIds).filter((id) => {
-      const layer = history.document.layers.find((l) => l.id === id);
-      return layer && !layer.locked && layer.type !== 'frame';
-    });
-    if (!targets.length) return;
-    let src = clipboard;
-    if (!src.length) {
-      try {
-        const text = await navigator.clipboard?.readText?.();
-        src = (text ? parseClipboardLayers(text) : null) ?? [];
-      } catch {
-        src = [];
-      }
-    }
-    if (!src.length) return;
-    sealPanelAndAbortGesture();
-    const result = pasteToReplaceLayers(history.document.layers, src, targets);
-    if (!result) return;
-    setAllLayers(assignUniqueLogoSides(result.layers, result.newIds));
-    setSelectedIds(result.newIds);
-  }, [clipboard, selectedIds, history.document.layers, sealPanelAndAbortGesture]);
+  const {
+    pasteClipboard,
+    pasteReplaceClipboard,
+    copyLayersToClipboard,
+  } = useCanvasClipboard({
+    documentLayers: history.document.layers,
+    pageIndex,
+    selectedIds,
+    clipboard,
+    setClipboard,
+    sealPanelAndAbortGesture,
+    setAllLayers,
+    setSelectedIds,
+  });
 
   const onEyedropperPick = useCallback(
     (color: string) => {
@@ -838,7 +766,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       sealPanelAndAbortGesture();
       const layers = history.document.layers.map((l) => {
         if (!idSet.has(l.id)) return l;
-        const textish = l.type === 'text' || l.type === 'field';
+        const textish = isTextualLayerType(l.type);
         const cssVars: LayerCssVars = { ...l.cssVars };
         if (textish) cssVars['--color'] = color;
         else {
@@ -857,49 +785,27 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     [selectedIds, history.document.layers, sealPanelAndAbortGesture],
   );
 
-  const copyLayersToClipboard = useCallback((layers: CanvasLayer[]) => {
-    const copies = layers.map((l) => ({ ...l, cssVars: { ...l.cssVars } }));
-    clipboardCoordinatorRef.current?.copy(copies, async () => {
-      const createdUrls: string[] = [];
-      const rewritten = await Promise.all(
-        copies.map(async (l) => {
-          if (
-            (l.type === 'image' || l.type === 'logo') &&
-            typeof l.value === 'string' &&
-            l.value.startsWith('data:')
-          ) {
-            try {
-              const res = await fetch(l.value);
-              const blob = await res.blob();
-              const reg = await registerImageBlob(blob);
-              createdUrls.push(reg.url);
-              return { ...l, value: reg.url };
-            } catch {
-              return l;
-            }
-          }
-          return l;
-        }),
-      );
-      return { layers: rewritten, createdUrls };
-    });
-  }, []);
-
   const onKeyDownRef = useRef<(e: KeyboardEvent) => void>(() => {});
 
   useEffect(() => {
     if (!active) return;
+    const restoreToolBeforeSpace = () => {
+      const prev = toolBeforeSpaceRef.current;
+      toolBeforeSpaceRef.current = null;
+      if (prev) setTool(prev);
+    };
     const onKeyDown = (e: KeyboardEvent) => onKeyDownRef.current(e);
     const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        restoreToolBeforeSpace();
+      }
       if (mode !== 'design') return;
       if (e.key.startsWith('Arrow')) finishKeyboardNudgeRef.current();
-      if (e.code === 'Space') {
-        const prev = toolBeforeSpaceRef.current;
-        toolBeforeSpaceRef.current = null;
-        if (prev) setTool(prev);
-      }
     };
-    const onBlur = () => finishKeyboardNudgeRef.current();
+    const onBlur = () => {
+      finishKeyboardNudgeRef.current();
+      restoreToolBeforeSpace();
+    };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
@@ -908,6 +814,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
       finishKeyboardNudgeRef.current();
+      restoreToolBeforeSpace();
     };
   }, [mode, active]);
 
@@ -929,7 +836,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const addLayerAt = useCallback((type: PlaceableTool, rect: DrawRect) => {
     const document = historyDocRef.current;
-    const layerType = type as Exclude<CanvasLayerType, 'frame' | 'group' | 'component'>;
+    const layerType = type as Exclude<CanvasLayerType, AutoLayoutContainerType>;
     let layer = createLayer(layerType);
     if (layerType === 'logo') {
       layer = withAssignedLogoSide(layer, document.layers);
@@ -1026,76 +933,20 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     setTool('select');
   }, []);
 
-  const onStageUpsertGuide = useCallback(
-    (guide: CanvasGuide) => {
-      const doc = historyDocRef.current;
-      const exists = doc.guides?.some((g) => g.id === guide.id);
-      if (!exists) {
-        guideCreateBaselineRef.current = doc;
-      }
-      updateHistorySilent(upsertGuide(doc, guide));
-    },
-    [historyDocRef, updateHistorySilent],
-  );
-
-  const onStageCommitGuideCreate = useCallback(
-    (guide: CanvasGuide) => {
-      const baseline = guideCreateBaselineRef.current;
-      guideCreateBaselineRef.current = null;
-      const next = upsertGuide(historyDocRef.current, guide);
-      if (baseline) {
-        updateHistorySilent(next);
-        commitHistoryFromBaseline(baseline);
-      } else {
-        setHistoryDocument(next);
-      }
-    },
-    [commitHistoryFromBaseline, historyDocRef, setHistoryDocument, updateHistorySilent],
-  );
-
-  const onStageMoveGuide = useCallback(
-    (id: string, posMm: number) => {
-      setHistoryDocument(moveGuide(historyDocRef.current, id, posMm));
-    },
-    [historyDocRef, setHistoryDocument],
-  );
-
-  const onStageRemoveGuide = useCallback(
-    (id: string) => {
-      setHistoryDocument(removeGuide(historyDocRef.current, id));
-    },
-    [historyDocRef, setHistoryDocument],
-  );
-
-  const onStageCancelGuideCreate = useCallback(
-    (id: string) => {
-      guideCreateBaselineRef.current = null;
-      updateHistorySilent(removeGuide(historyDocRef.current, id));
-    },
-    [historyDocRef, updateHistorySilent],
-  );
-
-  const onToggleRulers = useCallback(() => {
-    const doc = historyDocRef.current;
-    setHistoryDocument({
-      ...doc,
-      settings: {
-        ...doc.settings,
-        showRulers: doc.settings?.showRulers === false,
-      },
-    });
-  }, [historyDocRef, setHistoryDocument]);
-
-  const onToggleSnapToGrid = useCallback(() => {
-    const doc = historyDocRef.current;
-    setHistoryDocument({
-      ...doc,
-      settings: {
-        ...doc.settings,
-        snapToGrid: !doc.settings?.snapToGrid,
-      },
-    });
-  }, [historyDocRef, setHistoryDocument]);
+  const {
+    onStageUpsertGuide,
+    onStageCommitGuideCreate,
+    onStageMoveGuide,
+    onStageRemoveGuide,
+    onStageCancelGuideCreate,
+    onToggleRulers,
+    onToggleSnapToGrid,
+  } = useCanvasStageActions({
+    documentRef: historyDocRef,
+    setDocument: setHistoryDocument,
+    updateSilent: updateHistorySilent,
+    commitFromBaseline: commitHistoryFromBaseline,
+  });
 
   const onExitGroupEdit = useCallback(() => setEnteredGroupId(null), []);
 
@@ -1145,7 +996,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           : canFocusFieldBinding(layer)
             ? 'field'
             : null,
-        refIsText: layer?.type === 'text' || layer?.type === 'field',
+        refIsText: layer ? isTextualLayerType(layer.type) : false,
       });
     },
     [],
@@ -1162,20 +1013,11 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const onRenameStart = () => {
     renameBaselineRef.current = history.document;
-    openDirtyRef.current = true;
   };
   const onRenameCommit = () => {
     const baseline = renameBaselineRef.current;
     renameBaselineRef.current = null;
-    if (!baseline || baseline.name === history.document.name) {
-      openDirtyRef.current = isOpenDocumentDirty(
-        history.hasUnsavedEditsRef.current,
-        panelBaselineRef.current != null,
-        gestureBaselineRef.current != null,
-        false,
-      );
-      return;
-    }
+    if (!baseline || baseline.name === history.document.name) return;
     history.commitFromBaseline(baseline);
   };
 
@@ -1396,77 +1238,18 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     [commitInlineEdit, editingLayerId, history.document.layers, pathEditingLayerId, sealPanelAndAbortGesture],
   );
 
-  const onAddPage = useCallback(() => {
-    sealPanelAndAbortGesture();
-    if (editingLayerId) commitInlineEdit();
-    if (pathEditingLayerId) setPathEditingLayerId(null);
-    const next = syncImagesPerPage(addPage(history.document));
-    history.setDocument(next);
-    setSelectedIds([]);
-    setPageIndex(getPageCount(next) - 1);
-  }, [commitInlineEdit, editingLayerId, history, pathEditingLayerId, sealPanelAndAbortGesture]);
-
-  const onRemovePage = useCallback(
-    (index: number) => {
-      sealPanelAndAbortGesture();
-      if (editingLayerId) commitInlineEdit();
-      if (pathEditingLayerId) setPathEditingLayerId(null);
-      const next = syncImagesPerPage(removePage(history.document, index));
-      history.setDocument(next);
-      setPageIndex((prev) => {
-        const nextPageIndex =
-          index < prev
-            ? prev - 1
-            : index === prev
-              ? Math.min(prev, Math.max(0, getPageCount(next) - 1))
-              : prev;
-        setSelectedIds((ids) => filterSelectionToPage(next.layers, ids, nextPageIndex));
-        return nextPageIndex;
-      });
-    },
-    [commitInlineEdit, editingLayerId, history, pathEditingLayerId, sealPanelAndAbortGesture],
-  );
-
-  const onDuplicatePage = useCallback(
-    (index: number) => {
-      sealPanelAndAbortGesture();
-      if (editingLayerId) commitInlineEdit();
-      if (pathEditingLayerId) setPathEditingLayerId(null);
-      const next = syncImagesPerPage(duplicatePage(history.document, index));
-      history.setDocument(next);
-      setSelectedIds([]);
-      setPageIndex(index + 1);
-    },
-    [commitInlineEdit, editingLayerId, history, pathEditingLayerId, sealPanelAndAbortGesture],
-  );
-
-  const onRenamePage = useCallback(
-    (index: number, name: string) => {
-      history.setDocument(renamePage(history.document, index, name));
-    },
-    [history],
-  );
-
-  const onReorderPage = useCallback(
-    (fromIndex: number, toIndex: number) => {
-      sealPanelAndAbortGesture();
-      if (editingLayerId) commitInlineEdit();
-      if (pathEditingLayerId) setPathEditingLayerId(null);
-      const next = reorderPage(history.document, fromIndex, toIndex);
-      if (next === history.document) return;
-      history.setDocument(next);
-      setPageIndex((prev) => {
-        if (prev === fromIndex) return toIndex;
-        if (fromIndex < toIndex) {
-          if (prev > fromIndex && prev <= toIndex) return prev - 1;
-        } else if (prev >= toIndex && prev < fromIndex) {
-          return prev + 1;
-        }
-        return prev;
-      });
-    },
-    [commitInlineEdit, editingLayerId, history, pathEditingLayerId, sealPanelAndAbortGesture],
-  );
+  const { onAddPage, onRemovePage, onDuplicatePage, onRenamePage, onReorderPage } =
+    useCanvasPageActions({
+      document: history.document,
+      setDocument: setHistoryDocument,
+      sealPanelAndAbortGesture,
+      editingLayerId,
+      commitInlineEdit,
+      pathEditingLayerId,
+      setPathEditingLayerId,
+      setSelectedIds,
+      setPageIndex,
+    });
 
   const onSelectLayerById = useCallback(
     (id: string) => {
@@ -1757,14 +1540,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
                 <div className="canvas-section-title mb-2 flex items-center justify-between">
                   <span>Atajos</span>
                   <WithHoverTooltip label="Cerrar" placement="left" variant="dark">
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       className="canvas-icon-btn !h-6 !w-6"
                       onClick={() => setShowShortcuts(false)}
                       aria-label="Cerrar"
                     >
                       ×
-                    </button>
+                    </Button>
                   </WithHoverTooltip>
                 </div>
                 <ul className="space-y-1">

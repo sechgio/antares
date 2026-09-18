@@ -16,7 +16,7 @@ export interface HistoryRunRow {
   duration_ms?: number | null;
 }
 
-export interface StatField {
+interface StatField {
   key: string;
   labelKey: string;
   resolve: (

@@ -11,7 +11,7 @@ export function parseRotateDeg(layer: CanvasLayer): number {
 const layerBoundsMmCache = new WeakMap<CanvasLayer['cssVars'], RectMm>();
 const layerBoundsCache = new WeakMap<CanvasLayer['cssVars'], RectMm & { right: number; bottom: number; cx: number; cy: number }>();
 
-export function layerBoundsMm(layer: CanvasLayer): RectMm {
+function layerBoundsMm(layer: CanvasLayer): RectMm {
   const cached = layerBoundsMmCache.get(layer.cssVars);
   if (cached) return cached;
   const res: RectMm = {

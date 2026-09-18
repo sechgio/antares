@@ -97,9 +97,7 @@ export default defineConfig(({ mode }) => ({
           }
           if (n.includes('/node_modules/web-vitals/')) return 'vendor-web-vitals'
           if (n.includes('/node_modules/@fullcalendar/')) return 'vendor-fullcalendar'
-          if (n.includes('/node_modules/@supabase/') || n.includes('/src/lib/supabase')) {
-            return 'vendor-supabase'
-          }
+          if (n.includes('/node_modules/@supabase/')) return 'vendor-supabase'
           if (n.includes('/node_modules/@dnd-kit/')) return 'vendor-dnd'
           return undefined
         },

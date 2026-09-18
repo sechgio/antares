@@ -1,10 +1,9 @@
+import { reportFrontendError } from '../../../utils/observability';
+import { isIndexedDbAvailable } from '../../../utils/persistence';
 import { DEFAULT_CUADRANTE_LABEL } from '../constants';
 import type { EvidenciaSession, LocalImage, LogoAsset, StoredImage, StoredLogo, StoredSession } from '../types';
 import { migrateLegacyCuadrante } from './cuadranteRanges';
-
-export function isPersistenceAvailable(): boolean {
-  return typeof indexedDB !== 'undefined';
-}
+import { errorMessage } from '@/utils/errors';
 
 const DB_NAME = 'antares_evidencia_volanteo';
 const DB_VERSION = 1;
@@ -77,7 +76,7 @@ export function storedToSession(stored: StoredSession): EvidenciaSession {
 }
 
 export async function loadSession(): Promise<StoredSession | null> {
-  if (!isPersistenceAvailable()) return null;
+  if (!isIndexedDbAvailable()) return null;
   const db = await openDb();
   return new Promise<StoredSession | null>((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly');
@@ -88,14 +87,24 @@ export async function loadSession(): Promise<StoredSession | null> {
 }
 
 export async function saveSession(session: EvidenciaSession): Promise<void> {
-  if (!isPersistenceAvailable()) return;
-  const db = await openDb();
-  const stored = sessionToStored({ ...session, updatedAt: Date.now() });
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(stored, SESSION_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+  if (!isIndexedDbAvailable()) return;
+  try {
+    const db = await openDb();
+    const stored = sessionToStored({ ...session, updatedAt: Date.now() });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(stored, SESSION_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } catch (err) {
+    reportFrontendError({
+      kind: 'storage_error',
+      view: 'evidencia-volanteo.save',
+      name: err instanceof Error ? err.name : 'StorageError',
+      message: errorMessage(err, String(err)),
+    });
+    throw err;
+  }
 }

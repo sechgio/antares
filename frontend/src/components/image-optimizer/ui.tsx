@@ -6,6 +6,7 @@ import '../../i18n';
 import { ImageItem } from './types';
 import { formatBytes } from '../../utils/format';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
+import Button from '@/components/ui/Button';
 
 export const glassPanelClass =
   'rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]';
@@ -59,9 +60,8 @@ export function ThemeSelect({
 
   return (
     <>
-      <button
+      <Button variant="none" size="none"
         ref={triggerRef}
-        type="button"
         disabled={disabled}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
@@ -76,7 +76,7 @@ export function ThemeSelect({
           className={`shrink-0 text-[var(--text-secondary)] transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
           aria-hidden
         />
-      </button>
+      </Button>
       {open && menuBox && createPortal(
         <div
           ref={menuRef}
@@ -94,9 +94,8 @@ export function ThemeSelect({
           {options.map((opt) => {
             const active = opt.value === value;
             return (
-              <button
+              <Button variant="none" size="none"
                 key={opt.value}
-                type="button"
                 role="option"
                 aria-selected={active}
                 onClick={() => {
@@ -116,7 +115,7 @@ export function ThemeSelect({
                   className={`shrink-0 text-[var(--accent-primary)] ${active ? 'opacity-100' : 'opacity-0'}`}
                   aria-hidden
                 />
-              </button>
+              </Button>
             );
           })}
         </div>,
@@ -253,8 +252,7 @@ export function SettingSwitch({
   'aria-label'?: string;
 }) {
   return (
-    <button
-      type="button"
+    <Button variant="none" size="none"
       role="switch"
       id={id}
       aria-checked={checked}
@@ -266,7 +264,7 @@ export function SettingSwitch({
       <span
         className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-150 ease-out ${checked ? 'translate-x-3' : 'translate-x-0.5'}`}
       />
-    </button>
+    </Button>
   );
 }
 
@@ -353,13 +351,12 @@ export function OperationSection({
       style={{ borderLeftWidth: 3, borderLeftColor: enabled ? accentColor : 'var(--border-medium)' }}
     >
       {isCollapsible ? (
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={() => onToggle?.(!enabled)}
           className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--bg-input)] ${pressable}`}
         >
           {headerContent}
-        </button>
+        </Button>
       ) : (
         <div className="flex w-full items-center gap-2 px-3 py-2">
           {headerContent}
@@ -388,8 +385,7 @@ export function PillPreset({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <Button variant="none" size="none"
       onClick={onClick}
       className={`flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[10px] font-medium transition-[color,background-color,border-color,transform] duration-100 ${pressable} ${active
         ? accentClassName
@@ -397,6 +393,6 @@ export function PillPreset({
         }`}
     >
       {label}
-    </button>
+    </Button>
   );
 }

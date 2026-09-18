@@ -1,3 +1,6 @@
+import { reportFrontendError } from './observability';
+import { errorMessage } from '@/utils/errors';
+
 const STAGE_CHUNK_BYTES = 6 * 1024 * 1024;
 
 // Electron expires staged capabilities after 30 minutes.
@@ -32,10 +35,9 @@ export async function stageFileForIpc(file: File): Promise<string | null> {
   try {
     const staged = await api.fileStagedCreate(file.name, file.size);
     stagedToken = staged.token;
-    const buf = await file.arrayBuffer();
-    for (let off = 0; off < buf.byteLength; off += STAGE_CHUNK_BYTES) {
-      const end = Math.min(off + STAGE_CHUNK_BYTES, buf.byteLength);
-      await api.fileStagedAppend(staged.token, buf.slice(off, end));
+    for (let off = 0; off < file.size; off += STAGE_CHUNK_BYTES) {
+      const end = Math.min(off + STAGE_CHUNK_BYTES, file.size);
+      await api.fileStagedAppend(staged.token, await file.slice(off, end).arrayBuffer());
     }
     const done = await api.fileStagedComplete(staged.token);
     return done.file_token;
@@ -45,6 +47,12 @@ export async function stageFileForIpc(file: File): Promise<string | null> {
         await api.fileStagedAbort(stagedToken);
       } catch {}
     }
+    reportFrontendError({
+      kind: 'storage_error',
+      view: 'file_staging',
+      name: error instanceof Error ? error.name : 'StagingError',
+      message: errorMessage(error, String(error)),
+    });
     throw error;
   }
 }

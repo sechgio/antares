@@ -1,6 +1,6 @@
 import type { BoardColumn, Tarea } from '../types';
 import { localTodayString, toLocalDateString } from './dates';
-import { columnIsDone } from './statusConfig';
+import { isOverdue } from './filters';
 
 export interface GanttBar {
   tarea: Tarea;
@@ -48,9 +48,7 @@ export function isTaskOverdue(
   today = localTodayString(),
   columns: BoardColumn[] = [],
 ): boolean {
-  if (!tarea.due_date || tarea.due_date >= today) return false;
-  if (columns.length > 0) return !columnIsDone(columns, tarea.status);
-  return tarea.status !== 'done' && tarea.status !== 'closed';
+  return isOverdue(tarea, columns, today);
 }
 
 export function packLanes(
@@ -235,13 +233,13 @@ export const GANTT_ZOOM_PRESET_COL: Record<GanttZoomLevel, number> = {
   month: 26,
 };
 
-export const GANTT_ZOOM_PAD_DAYS: Record<GanttZoomLevel, number> = {
+const GANTT_ZOOM_PAD_DAYS: Record<GanttZoomLevel, number> = {
   day: 7,
   week: 14,
   month: 30,
 };
 
-export const GANTT_ZOOM_MIN_SPAN: Record<GanttZoomLevel, number> = {
+const GANTT_ZOOM_MIN_SPAN: Record<GanttZoomLevel, number> = {
   day: 21,
   week: 56,
   month: 120,

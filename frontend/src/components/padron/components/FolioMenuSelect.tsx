@@ -6,6 +6,7 @@ import {
 } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import Button from '@/components/ui/Button';
 
 export interface FolioMenuOption {
   value: string;
@@ -82,9 +83,8 @@ export default function FolioMenuSelect({
     <div
       className={`vpad-folio-menu vpad-folio-menu--${variant}${open ? ' is-open' : ''}`}
     >
-      <button
+      <Button variant="none" size="none"
         ref={triggerRef}
-        type="button"
         className="vpad-folio-menu-trigger"
         aria-label={ariaLabel}
         aria-haspopup="listbox"
@@ -101,7 +101,7 @@ export default function FolioMenuSelect({
           strokeWidth={2}
           aria-hidden
         />
-      </button>
+      </Button>
 
       {open && (
         <div
@@ -115,9 +115,8 @@ export default function FolioMenuSelect({
           {options.map((opt) => {
             const isSelected = opt.value === value;
             return (
-              <button
+              <Button variant="none" size="none"
                 key={opt.value}
-                type="button"
                 role="option"
                 aria-selected={isSelected}
                 data-value={opt.value}
@@ -135,7 +134,7 @@ export default function FolioMenuSelect({
                 <span className="vpad-folio-menu-check" aria-hidden="true">
                   {isSelected ? <Check size={13} strokeWidth={2.5} /> : null}
                 </span>
-              </button>
+              </Button>
             );
           })}
         </div>

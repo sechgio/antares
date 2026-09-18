@@ -5,6 +5,7 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { CONFIG_SECTION_DEFINITIONS, type ConfigSectionId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import Button from '@/components/ui/Button';
 
 const AppearanceView = React.lazy(() => import('./AppearanceView'));
 const HistoryView = React.lazy(() => import('../history/HistoryView'));
@@ -148,9 +149,8 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
               const Icon = def.icon;
               const isActive = section === def.id;
               return (
-                <button
+                <Button variant="none" size="none"
                   key={def.id}
-                  type="button"
                   onClick={() => onSectionChange(def.id)}
                   aria-current={isActive ? 'page' : undefined}
                   data-testid={`settings-section-${def.id}`}
@@ -173,7 +173,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
                   {isActive && (
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-primary)]" aria-hidden="true" />
                   )}
-                </button>
+                </Button>
               );
             })}
           </nav>
@@ -194,15 +194,14 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
               </span>
             </div>
             <WithHoverTooltip label="Cerrar (Esc)" placement="bottom">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={onClose}
                 aria-label="Cerrar configuración"
                 data-testid="settings-modal-close"
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
               >
                 <X size={16} strokeWidth={1.9} />
-              </button>
+              </Button>
             </WithHoverTooltip>
           </header>
 

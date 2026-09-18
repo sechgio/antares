@@ -1,5 +1,6 @@
 import { api } from '../../../api';
-import { buildTimestampedFilename, downloadBase64Blob, fileToBase64 } from '../../../utils/pdfAssets';
+import { renderAndDeliverDocument } from '../../../utils/deliverRenderedDocument';
+import { buildTimestampedFilename, fileToBase64 } from '../../../utils/pdfAssets';
 import { stageFileForIpc } from '../../../utils/stageFile';
 import { DEFAULT_CUADRANTE_LABEL, IMAGES_PER_PAGE } from '../constants';
 import type { CuadranteRange, LocalImage, LogoAsset } from '../types';
@@ -94,7 +95,6 @@ export async function exportEvidenciaDocument(
     pages.push({ cuadrante: resolveCuadranteForPage(1, cuadranteRanges), images: [] });
   }
 
-  const ext = format === 'docx' ? 'docx' : 'pdf';
   const defaultName = buildTimestampedFilename('evidencia_volanteo', format);
 
   const html = needHtml
@@ -132,31 +132,9 @@ export async function exportEvidenciaDocument(
         }),
   };
 
-  if (window.electronAPI?.invoke) {
-    const dialogResp = await api.dialogSave({
-      title: 'Guardar documento',
-      defaultPath: defaultName,
-      filters: [{ name: format === 'docx' ? 'Word' : 'PDF', extensions: [ext] }],
-    });
-    if (dialogResp.paths && dialogResp.paths.length > 0) {
-      const outputPath = dialogResp.paths[0];
-      const resp = await api.evidenciaVolanteoRender({
-        ...payload,
-        output_path: outputPath,
-      });
-      return { filename: resp.filename || outputPath };
-    }
-    return { filename: '' };
-  }
-
-  const resp = await api.evidenciaVolanteoRender(payload);
-
-  const content = resp.content_base64 || resp.pdf_base64;
-  const mimeType = format === 'docx'
-    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    : 'application/pdf';
-
-  downloadBase64Blob(content, resp.filename, mimeType);
-
-  return { filename: resp.filename };
+  return renderAndDeliverDocument(
+    payload,
+    (body, outputPath) => api.evidenciaVolanteoRender({ ...body, output_path: outputPath }),
+    { defaultName, format },
+  );
 }

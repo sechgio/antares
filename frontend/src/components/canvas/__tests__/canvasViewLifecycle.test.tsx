@@ -1,7 +1,11 @@
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createEmptyDocument, type CanvasDocument } from '../types';
+import { createEmptyDocument, type CanvasDocument, type CanvasTool } from '../types';
+import {
+  abortActivePointerGestureSession,
+  createPointerGestureSession,
+} from '../ops/pointerGestureSession';
 import { createLayer } from '../constants';
 
 const pdfImportMocks = vi.hoisted(() => ({
@@ -86,10 +90,20 @@ vi.mock('../presets/loadPresets', () => ({
 }));
 
 let latestStageDocument: CanvasDocument | null = null;
+let latestStageTool: CanvasTool | null = null;
 
 vi.mock('../editor/DesignStage', () => ({
-  default: ({ children, document }: { children?: React.ReactNode; document: CanvasDocument }) => {
+  default: ({
+    children,
+    document,
+    tool,
+  }: {
+    children?: React.ReactNode;
+    document: CanvasDocument;
+    tool: CanvasTool;
+  }) => {
     latestStageDocument = document;
+    latestStageTool = tool;
     return <div data-testid="mock-design-stage">{children}</div>;
   },
 }));
@@ -182,6 +196,7 @@ describe('CanvasView lifecycle', () => {
   });
 
   afterEach(() => {
+    abortActivePointerGestureSession();
     vi.useRealTimers();
   });
 
@@ -194,6 +209,29 @@ describe('CanvasView lifecycle', () => {
       expect(api.canvasBootstrap).toHaveBeenCalled();
     });
   }
+
+  it('restores the previous tool when focus is lost while Space is held', async () => {
+    await renderReady();
+    expect(latestStageTool).toBe('select');
+
+    fireEvent.keyDown(window, { code: 'Space', key: ' ' });
+    expect(latestStageTool).toBe('hand');
+
+    act(() => window.dispatchEvent(new Event('blur')));
+    expect(latestStageTool).toBe('select');
+  });
+
+  it('aborts an active pointer gesture before Space activates the hand tool', async () => {
+    await renderReady();
+    const onAbort = vi.fn();
+    createPointerGestureSession({ onMove: () => {}, onEnd: () => {}, onAbort });
+
+    fireEvent.keyDown(window, { code: 'Space', key: ' ' });
+
+    expect(onAbort).toHaveBeenCalledTimes(1);
+    expect(latestStageTool).toBe('hand');
+    fireEvent.keyUp(window, { code: 'Space', key: ' ' });
+  });
 
   it('skips bootstrap history when the active document changes before it resolves', async () => {
     let resolveHistory: (value: { past: CanvasDocument[]; future: CanvasDocument[] }) => void = () => {};

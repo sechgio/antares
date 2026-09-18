@@ -19,7 +19,7 @@ export interface PanelTemplateOption {
   htmlTemplate: string;
 }
 
-export const PANEL_TEMPLATE_OPTIONS: PanelTemplateOption[] = [
+const PANEL_TEMPLATE_OPTIONS: PanelTemplateOption[] = [
   { id: 'aviso-corte-ad', label: 'aviso corte ad', htmlTemplate: 'panel-aviso-corte.html' },
 ];
 

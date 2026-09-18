@@ -2,6 +2,7 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { DEFAULT_FIELD_KEYS } from '../../../constants';
 import { PropRow, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
+import Button from '@/components/ui/Button';
 
 export default function FieldSection({ layer, onChange, emitLive, onCommitLive }: SectionProps) {
   const fieldKey = layer.meta?.key || '';
@@ -21,8 +22,7 @@ export default function FieldSection({ layer, onChange, emitLive, onCommitLive }
                 placement="top"
                 variant="dark"
               >
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   className="canvas-chip canvas-field-chip"
                   data-active={active}
                   aria-pressed={active}
@@ -37,7 +37,7 @@ export default function FieldSection({ layer, onChange, emitLive, onCommitLive }
                   }
                 >
                   {f.key}
-                </button>
+                </Button>
               </WithHoverTooltip>
             );
           })}

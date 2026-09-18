@@ -92,52 +92,12 @@
     border-right: 1px solid var(--vpad-border);
 }
 
-.vpad-sidebar-header {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    height: 45px;
-    min-height: 45px;
-    max-height: 45px;
-    padding: 0 22px;
-    border-bottom: 1px solid var(--vpad-border);
-}
-
-.vpad-brand-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.vpad-brand-title {
-    font-size: 1.15rem;
-    font-weight: 800;
-    color: var(--vpad-primary);
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 0;
-}
-
-.vpad-brand-title svg {
-    color: var(--vpad-primary);
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-}
-
 .vpad-sidebar.collapsed {
     width: 0;
     min-width: 0;
     overflow: hidden;
     border-right: none;
     padding: 0;
-}
-
-.vpad-sidebar.collapsed .vpad-sidebar-header {
-    display: none;
 }
 
 .vpad-sidebar.collapsed .vpad-config-panel {
@@ -349,13 +309,6 @@
     justify-content: flex-start;
 }
 
-.vpad-card {
-    background: var(--vpad-elevated);
-    border: 1px solid var(--vpad-border);
-    border-radius: 8px;
-    padding: 10px 12px;
-}
-
 .vpad-upload-zone {
     display: flex;
     align-items: center;
@@ -503,26 +456,6 @@
 .vpad-field textarea {
     resize: vertical;
     min-height: 44px;
-}
-
-.vpad-field-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px;
-}
-
-.vpad-field-row-two {
-    grid-template-columns: 1fr 1fr;
-}
-
-.vpad-form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px 8px;
-}
-
-.vpad-form-grid .wide {
-    grid-column: span 2;
 }
 
 .vpad-action-box {
@@ -1279,11 +1212,6 @@
     font-size: 14px;
 }
 
-.vpad-folio-active {
-    font-weight: 800;
-    color: #000;
-}
-
 .vpad-volanteo-section {
     margin-top: 8px;
     padding-top: 6px;
@@ -2021,11 +1949,6 @@
     position: relative;
     min-width: 0;
     z-index: 1;
-}
-
-.vpad-folio-menu--setting {
-    max-width: 62%;
-    margin-left: auto;
 }
 
 .vpad-folio-menu.is-open {

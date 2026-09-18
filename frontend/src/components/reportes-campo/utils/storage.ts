@@ -8,10 +8,9 @@ import type {
     StoredPanel,
     StoredPhoto,
 } from '../types';
-
-export function isPersistenceAvailable(): boolean {
-    return typeof indexedDB !== 'undefined';
-}
+import { reportFrontendError } from '../../../utils/observability';
+import { isIndexedDbAvailable } from '../../../utils/persistence';
+import { errorMessage } from '@/utils/errors';
 
 export function photoFileToStored(photo: PhotoFile): StoredPhoto {
     return {
@@ -106,12 +105,20 @@ const TYPE_INDEX = 'by_type';
 
 let writeChain: Promise<void> = Promise.resolve();
 
-function enqueueWrite(op: () => Promise<void>): Promise<void> {
+function enqueueWrite(op: () => Promise<void>, opName: string): Promise<void> {
     writeChain = writeChain.then(op, op);
+    writeChain.catch((err) => {
+        reportFrontendError({
+            kind: 'storage_error',
+            view: `reportes-campo.${opName}`,
+            name: err instanceof Error ? err.name : 'StorageError',
+            message: errorMessage(err, String(err)),
+        });
+    });
     return writeChain;
 }
 
-export async function waitForPendingWrites(): Promise<void> {
+async function waitForPendingWrites(): Promise<void> {
     await writeChain;
 }
 
@@ -134,7 +141,7 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 export async function loadPanelsByType(reportType: ReportType): Promise<StoredPanel[]> {
-    if (!isPersistenceAvailable()) return [];
+    if (!isIndexedDbAvailable()) return [];
     await waitForPendingWrites();
     const db = await openDb();
     return new Promise<StoredPanel[]>((resolve, reject) => {
@@ -151,7 +158,7 @@ export async function loadPanelsByType(reportType: ReportType): Promise<StoredPa
 }
 
 export async function savePanel(stored: StoredPanel): Promise<void> {
-    if (!isPersistenceAvailable()) return;
+    if (!isIndexedDbAvailable()) return;
     return enqueueWrite(async () => {
         const db = await openDb();
         await new Promise<void>((resolve, reject) => {
@@ -161,11 +168,11 @@ export async function savePanel(stored: StoredPanel): Promise<void> {
             tx.onerror = () => reject(tx.error);
             tx.onabort = () => reject(tx.error);
         });
-    });
+    }, 'savePanel');
 }
 
 export async function deleteStoredPanel(id: string): Promise<void> {
-    if (!isPersistenceAvailable()) return;
+    if (!isIndexedDbAvailable()) return;
     return enqueueWrite(async () => {
         const db = await openDb();
         await new Promise<void>((resolve, reject) => {
@@ -175,11 +182,11 @@ export async function deleteStoredPanel(id: string): Promise<void> {
             tx.onerror = () => reject(tx.error);
             tx.onabort = () => reject(tx.error);
         });
-    });
+    }, 'deletePanel');
 }
 
 export async function loadBranding(reportType: ReportType): Promise<StoredBranding | null> {
-    if (!isPersistenceAvailable()) return null;
+    if (!isIndexedDbAvailable()) return null;
     await waitForPendingWrites();
     const db = await openDb();
     return new Promise<StoredBranding | null>((resolve, reject) => {
@@ -191,7 +198,7 @@ export async function loadBranding(reportType: ReportType): Promise<StoredBrandi
 }
 
 export async function saveBranding(stored: StoredBranding): Promise<void> {
-    if (!isPersistenceAvailable()) return;
+    if (!isIndexedDbAvailable()) return;
     return enqueueWrite(async () => {
         const db = await openDb();
         await new Promise<void>((resolve, reject) => {
@@ -201,5 +208,5 @@ export async function saveBranding(stored: StoredBranding): Promise<void> {
             tx.onerror = () => reject(tx.error);
             tx.onabort = () => reject(tx.error);
         });
-    });
+    }, 'saveBranding');
 }

@@ -14,6 +14,7 @@ import {
     resolveTituloStyle,
     stepTituloSize,
 } from '../utils/tituloStyle';
+import Button from '@/components/ui/Button';
 
 interface HeaderFormProps {
     config: ReportTypeConfig;
@@ -135,7 +136,7 @@ export default function HeaderForm({
     return (
         <>
             <div className={`rcampo-section ${openSections.generales ? 'is-open' : ''}`}>
-                <button type="button" className="rcampo-section-header" onClick={() => toggle('generales')} aria-expanded={openSections.generales}>
+                <Button variant="none" size="none" className="rcampo-section-header" onClick={() => toggle('generales')} aria-expanded={openSections.generales}>
                     <span className="rcampo-section-title">
                         <span className="rcampo-section-icon">{sectionIcons.generales}</span>
                         {sectionLabels.generales}
@@ -146,7 +147,7 @@ export default function HeaderForm({
                             <ChevronDown size={11} />
                         </span>
                     </span>
-                </button>
+                </Button>
                 <AnimatePresence initial={false}>
                     {openSections.generales && (
                         <motion.div
@@ -169,8 +170,7 @@ export default function HeaderForm({
                                         />
                                         <div className="rcampo-titulo-toolbar" data-testid="titulo-style-controls">
                                             <div className="rcampo-titulo-stepper" title="Tamaño del título">
-                                                <button
-                                                    type="button"
+                                                <Button variant="none" size="none"
                                                     className="rcampo-titulo-step"
                                                     disabled={!canDecreaseSize}
                                                     aria-label="Reducir tamaño del título"
@@ -182,12 +182,11 @@ export default function HeaderForm({
                                                     }
                                                 >
                                                     <Minus size={11} strokeWidth={2.5} />
-                                                </button>
+                                                </Button>
                                                 <span className="rcampo-titulo-size-value" aria-live="polite">
                                                     {tituloStyle.fontSizePx}
                                                 </span>
-                                                <button
-                                                    type="button"
+                                                <Button variant="none" size="none"
                                                     className="rcampo-titulo-step"
                                                     disabled={!canIncreaseSize}
                                                     aria-label="Aumentar tamaño del título"
@@ -199,7 +198,7 @@ export default function HeaderForm({
                                                     }
                                                 >
                                                     <Plus size={11} strokeWidth={2.5} />
-                                                </button>
+                                                </Button>
                                             </div>
 
                                             <span className="rcampo-titulo-sep" aria-hidden="true" />
@@ -222,8 +221,7 @@ export default function HeaderForm({
                                                 <>
                                                     <span className="rcampo-titulo-sep" aria-hidden="true" />
                                                     <WithHoverTooltip label="Restablecer estilo" placement="bottom">
-                                                        <button
-                                                            type="button"
+                                                        <Button variant="none" size="none"
                                                             className="rcampo-titulo-reset"
                                                             aria-label="Restablecer estilo del título"
                                                             onClick={() => {
@@ -232,7 +230,7 @@ export default function HeaderForm({
                                                             }}
                                                         >
                                                             <RotateCcw size={11} strokeWidth={2.25} />
-                                                        </button>
+                                                        </Button>
                                                     </WithHoverTooltip>
                                                 </>
                                             )}
@@ -268,14 +266,13 @@ export default function HeaderForm({
                                                 </span>
                                             )}
                                             {logoLeft && (
-                                                <button
-                                                    type="button"
+                                                <Button variant="none" size="none"
                                                     className="rcampo-logo-remove"
                                                     aria-label="Quitar logo izquierdo"
                                                     onClick={(e) => { e.stopPropagation(); onLogoRemove('left'); }}
                                                 >
                                                     <X size={7} />
-                                                </button>
+                                                </Button>
                                             )}
                                         </div>
                                         <input ref={logoLeftRef} type="file" accept="image/*" className="hidden" onChange={(e) => onLogoChange('left', e.target.files)} />
@@ -307,14 +304,13 @@ export default function HeaderForm({
                                                 </span>
                                             )}
                                             {logoRight && (
-                                                <button
-                                                    type="button"
+                                                <Button variant="none" size="none"
                                                     className="rcampo-logo-remove"
                                                     aria-label="Quitar logo derecho"
                                                     onClick={(e) => { e.stopPropagation(); onLogoRemove('right'); }}
                                                 >
                                                     <X size={7} />
-                                                </button>
+                                                </Button>
                                             )}
                                         </div>
                                         <input ref={logoRightRef} type="file" accept="image/*" className="hidden" onChange={(e) => onLogoChange('right', e.target.files)} />
@@ -338,7 +334,7 @@ export default function HeaderForm({
                     return (
                         <React.Fragment key={section}>
                             <div className={`rcampo-section ${isOpen ? 'is-open' : ''}`}>
-                                <button type="button" className="rcampo-section-header" onClick={() => toggle(section)} aria-expanded={isOpen}>
+                                <Button variant="none" size="none" className="rcampo-section-header" onClick={() => toggle(section)} aria-expanded={isOpen}>
                                     <span className="rcampo-section-title">
                                         <span className="rcampo-section-icon">{sectionIcons[section]}</span>
                                         {sectionLabels[section]}
@@ -349,7 +345,7 @@ export default function HeaderForm({
                                             <ChevronDown size={11} />
                                         </span>
                                     </span>
-                                </button>
+                                </Button>
                                 <AnimatePresence initial={false}>
                                     {isOpen && (
                                         <motion.div

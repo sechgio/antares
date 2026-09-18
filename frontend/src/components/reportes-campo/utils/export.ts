@@ -3,10 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { api } from '../../../api';
 import { mapWithConcurrencyLimit } from '../../../utils/mapWithConcurrencyLimit';
 import { fileToPdfImageSource } from '../../../utils/pdfAssets';
+import { isoDateStamp } from '../../../utils/dates';
 import SheetPreview from '../components/SheetPreview';
 import { CHUNK_SIZE, chunkArray } from '../constants';
 import type { CampoPanel, LogoData, PhotoFile, ReportTypeConfig } from '../types';
-import { safeFilenamePart } from './panelLabel';
+import { safeFilenamePart } from '../../../utils/filename';
 
 export interface ExportReportPdfResult {
     cancelled?: boolean;
@@ -163,12 +164,12 @@ export function buildConsolidatedReportPdfHtml({
 
 export function buildIndividualFilename(config: ReportTypeConfig, label: string): string {
     const base = config.filename.replace(/\.pdf$/i, '');
-    return `${safeFilenamePart(base)}_${safeFilenamePart(label)}.pdf`;
+    return `${safeFilenamePart(base, 'panel')}_${safeFilenamePart(label, 'panel')}.pdf`;
 }
 
 export function buildConsolidatedFilename(config: ReportTypeConfig, date = new Date()): string {
     const base = config.filename.replace(/\.pdf$/i, '');
-    return `${safeFilenamePart(base)}_consolidado_${date.toISOString().slice(0, 10)}.pdf`;
+    return `${safeFilenamePart(base, 'panel')}_consolidado_${isoDateStamp(date)}.pdf`;
 }
 
 export async function exportReportPdf(

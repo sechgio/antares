@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import Button from '@/components/ui/Button';
 
-export interface CanvasSelectOption {
+interface CanvasSelectOption {
   value: string;
   label: string;
   icon?: React.ReactNode;
@@ -95,8 +96,7 @@ export default function CanvasSelect({
         ))}
       </select>
 
-      <button
-        type="button"
+      <Button variant="none" size="none"
         onClick={() => {
           if (disabled) return;
           if (isOpen) close();
@@ -120,7 +120,7 @@ export default function CanvasSelect({
             isOpen ? 'rotate-180 text-[var(--cv-accent)]' : ''
           }`}
         />
-      </button>
+      </Button>
 
       {isOpen &&
         portalRoot &&
@@ -145,9 +145,8 @@ export default function CanvasSelect({
             {options.map((opt) => {
               const isSelected = opt.value === value;
               return (
-                <button
+                <Button variant="none" size="none"
                   key={opt.value}
-                  type="button"
                   role="option"
                   aria-selected={isSelected}
                   onClick={() => handleSelect(opt.value)}
@@ -162,7 +161,7 @@ export default function CanvasSelect({
                     <span className="truncate">{opt.label}</span>
                   </span>
                   {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-[var(--cv-accent,#0d99ff)]" />}
-                </button>
+                </Button>
               );
             })}
           </div>,

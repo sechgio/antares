@@ -23,6 +23,7 @@ import {
   parseLetterSpacingPx,
   parseLineHeight,
 } from '../../../ops/textTypography';
+import Button from '@/components/ui/Button';
 
 const TEXT_H_ALIGN = [
   { icon: AlignLeft, align: 'left', label: 'Alinear izquierda' },
@@ -98,15 +99,14 @@ export default function TextSection({
           <div className="canvas-z-order canvas-z-order--compact shrink-0">
             {TEXT_STYLE_TOGGLES.map(({ icon: Icon, key, on, label }) => (
               <WithHoverTooltip key={on} label={label} placement="bottom" variant="dark">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   className="canvas-icon-btn"
                   aria-label={label}
                   data-active={v[key] === on}
                   onClick={() => setVar(key, v[key] === on ? '' : on)}
                 >
                   <Icon className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               </WithHoverTooltip>
             ))}
           </div>
@@ -131,15 +131,14 @@ export default function TextSection({
           <div role="group" aria-label="Alineación horizontal">
             {TEXT_H_ALIGN.map(({ icon: Icon, align, label }) => (
               <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   className="canvas-icon-btn"
                   aria-label={label}
                   data-active={v['--text-align'] === align}
                   onClick={() => setVar('--text-align', align)}
                 >
                   <Icon className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               </WithHoverTooltip>
             ))}
           </div>
@@ -147,15 +146,14 @@ export default function TextSection({
           <div role="group" aria-label="Alineación vertical">
             {TEXT_V_ALIGN.map(({ icon: Icon, align, label }) => (
               <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   className="canvas-icon-btn"
                   aria-label={label}
                   data-active={(v['--text-valign'] || 'center') === align}
                   onClick={() => setVar('--text-valign', align)}
                 >
                   <Icon className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               </WithHoverTooltip>
             ))}
           </div>

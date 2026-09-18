@@ -1,3 +1,5 @@
+import { reportFrontendError } from "../../../utils/observability";
+import { isIndexedDbAvailable } from "../../../utils/persistence";
 import { DEFAULT_BRAND, DEFAULT_ENCABEZADOS, DEFAULT_FOOTER, DEFAULT_HEADING } from "../constants";
 import type {
   BrandConfig,
@@ -10,6 +12,7 @@ import type {
   StoredVolantesDraft,
   VolantesDraft,
 } from "../types";
+import { errorMessage } from '@/utils/errors';
 
 export const VOLANTES_DRAFT_STORAGE_KEY = "antares:volantes:draft";
 
@@ -220,10 +223,6 @@ function storedToDraft(stored: StoredVolantesDraft): VolantesDraft {
   };
 }
 
-function isIndexedDbAvailable(): boolean {
-  return typeof indexedDB !== "undefined";
-}
-
 function isLocalStorageAvailable(): boolean {
   try {
     return typeof localStorage !== "undefined";
@@ -249,8 +248,18 @@ function writeFallbackDraft(stored: StoredVolantesDraft): void {
   localStorage.setItem(VOLANTES_DRAFT_STORAGE_KEY, JSON.stringify(stored));
 }
 
-function enqueueWrite(operation: () => Promise<void>): Promise<void> {
+function reportStorageError(op: string, err: unknown): void {
+  reportFrontendError({
+    kind: "storage_error",
+    view: `volantes.${op}`,
+    name: err instanceof Error ? err.name : "StorageError",
+    message: errorMessage(err, String(err)),
+  });
+}
+
+function enqueueWrite(operation: () => Promise<void>, opName: string): Promise<void> {
   writeChain = writeChain.then(operation, operation);
+  writeChain.catch((err) => reportStorageError(opName, err));
   return writeChain;
 }
 
@@ -347,7 +356,8 @@ export async function loadVolantesDraft(): Promise<VolantesDraft | null> {
   if (isIndexedDbAvailable()) {
     try {
       indexedDraft = await readIndexedDbDraft();
-    } catch {
+    } catch (err) {
+      reportStorageError("load", err);
       indexedDraft = null;
     }
   }
@@ -365,12 +375,13 @@ export function saveVolantesDraft(draft: VolantesDraft): Promise<void> {
         await writeIndexedDbDraft(stored);
         return;
       } catch (error) {
+        reportStorageError("save-indexeddb", error);
         if (!isLocalStorageAvailable()) throw error;
       }
     }
 
     writeFallbackDraft(stored);
-  });
+  }, "save");
 }
 
 export function clearVolantesDraft(): Promise<void> {
@@ -398,5 +409,5 @@ export function clearVolantesDraft(): Promise<void> {
         ? firstError
         : new Error("No se pudo limpiar la persistencia local.");
     }
-  });
+  }, "clear");
 }

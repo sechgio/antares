@@ -11,6 +11,7 @@ import {
   renderMappingPageToDataUrl,
   withMappingLoadTimeout,
 } from './mappingPdfRender';
+import Button from '@/components/ui/Button';
 
 interface MappingPreviewPanelProps {
   formatId: string;
@@ -210,8 +211,7 @@ export default function MappingPreviewPanel({
         <p className="max-w-[320px] text-center text-[11px] text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
           {error}
         </p>
-        <button
-          type="button"
+        <Button variant="none" size="none"
           onClick={() => {
             cachedImageRef.current = null;
             setRenderKey((value) => value + 1);
@@ -221,7 +221,7 @@ export default function MappingPreviewPanel({
         >
           <RefreshCw size={11} />
           Reintentar
-        </button>
+        </Button>
       </div>
     );
   }

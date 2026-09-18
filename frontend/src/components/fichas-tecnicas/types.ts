@@ -1,3 +1,5 @@
+import { isoDateStamp } from '../../utils/dates';
+
 export interface ProductoQuimico {
   producto: string;
   composicion: string;
@@ -23,7 +25,7 @@ export interface TiposTratamiento {
   otros: string;
 }
 
-export interface ObservacionesRecomendaciones {
+interface ObservacionesRecomendaciones {
   observacion_a: string;
   observacion_b: string;
   observacion_c: string;
@@ -116,7 +118,7 @@ export const createEmptyFicha = (): FichaTecnica => ({
 });
 
 export function createTemplatePlaceholderFicha(): FichaTecnica {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = isoDateStamp();
   return {
     ...createEmptyFicha(),
     id: 'XXXXXXXX',

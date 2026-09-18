@@ -22,6 +22,8 @@ import ArrastreViewer from './components/ArrastreViewer';
 import AutoImgSidebarHeader from './components/AutoImgSidebarHeader';
 import { SidebarShell } from './components/shared';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import Button from '@/components/ui/Button';
+import { errorMessage } from '@/utils/errors';
 
 const TABS: { id: AutoImgTab; label: string; icon: LucideIcon; hint: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, hint: 'Resumen y sync' },
@@ -83,7 +85,7 @@ export default function AutoIMGApp() {
       } catch (e) {
         if (requestId !== bootstrapRequestRef.current) return;
         setStatus(null);
-        const msg = e instanceof Error ? e.message : 'Error al cargar AutoIMG';
+        const msg = errorMessage(e, 'Error al cargar AutoIMG');
         setBootstrapError(msg);
         if (/expiró|revocad|Conectar con Google|invalid_grant|No autenticado/i.test(msg)) {
           setGoogleConnected(false);
@@ -194,8 +196,7 @@ export default function AutoIMGApp() {
               const Icon = tab.icon;
               return (
                 <WithHoverTooltip key={tab.id} label={tab.hint} placement="bottom">
-                  <button
-                    type="button"
+                  <Button variant="none" size="none"
                     onClick={() => setActiveTab(tab.id)}
                     className={`relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
                       isActive
@@ -209,7 +210,7 @@ export default function AutoIMGApp() {
                       className={isActive ? 'text-[var(--accent-primary-hover)]' : ''}
                     />
                     {tab.label}
-                  </button>
+                  </Button>
                 </WithHoverTooltip>
               );
             })}

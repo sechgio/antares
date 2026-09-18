@@ -4,6 +4,14 @@ import TaskForm from '../components/TaskForm';
 import type { Tarea } from '../types';
 import { fallbackBoardColumns } from '../utils/statusConfig';
 
+vi.mock('../api/realtime', () => ({
+  subscribeEspaciosSync: () => null,
+  subscribeDueNotifications: () => null,
+  subscribeTaskActivity: () => null,
+  subscribeMyTasks: () => null,
+  unsubscribeEspaciosSync: () => {},
+}));
+
 // Exercise the real shell, focus trap and portalled pickers (no primitive mocks).
 afterEach(cleanup);
 

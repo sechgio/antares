@@ -29,7 +29,7 @@ export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function getAspectRatioValue(ratio: AspectRatio): number | null {
+function getAspectRatioValue(ratio: AspectRatio): number | null {
   const option = ASPECT_RATIO_OPTIONS.find((item) => item.value === ratio);
   return option?.ratio ?? null;
 }
@@ -51,7 +51,7 @@ export function getOutputMimeType(format: OutputFormat, originalType: string): s
   }
 }
 
-export function getExtensionForFormat(format: OutputFormat, originalName: string): string {
+function getExtensionForFormat(format: OutputFormat, originalName: string): string {
   const originalExtension = (originalName.split('.').pop() || 'jpg').toLowerCase();
   switch (format) {
     case 'jpeg':
@@ -69,7 +69,7 @@ export function getExtensionForFormat(format: OutputFormat, originalName: string
   }
 }
 
-export function splitFilename(filename: string): { base: string; extension: string } {
+function splitFilename(filename: string): { base: string; extension: string } {
   const sanitized = filename.trim().replace(/[\\/:*?"<>|]+/g, '-');
   const match = sanitized.match(/^(.*?)(?:\.([^.]+))?$/);
   const base = (match?.[1] || 'archivo').trim() || 'archivo';
@@ -261,7 +261,7 @@ function buildFilenameCore(item: ImageItem, index: number, total: number, settin
   return `${base}.${extension}`;
 }
 
-export function dedupeFilenames(filenames: string[]): string[] {
+function dedupeFilenames(filenames: string[]): string[] {
   const seen = new Map<string, number>();
   return filenames.map((filename) => {
     const { base, extension } = splitFilename(filename);
@@ -434,8 +434,13 @@ export function revokeItemUrls(item: ImageItem): void {
 }
 
 export const SAVE_CHUNK_SIZE = 25;
+const SAVE_CHUNK_MAX_BYTES = 48 * 1024 * 1024;
 
-export type OptimizerSaveFilePayload = { filename: string; content_b64: string };
+type OptimizerSaveFilePayload = {
+  filename: string;
+  file_token?: string;
+  content_b64?: string;
+};
 
 export type OptimizerSaveFilesFn = (body: {
   files: OptimizerSaveFilePayload[];
@@ -453,8 +458,11 @@ export async function saveEntriesInChunks(options: {
   outputFolder: string;
   saveFiles: OptimizerSaveFilesFn;
   chunkSize?: number;
+  maxChunkBytes?: number;
   shouldCancel?: () => boolean;
   onProgress?: (current: number, total: number) => void;
+  stageBlob?: (blob: Blob, filename: string) => Promise<string | null>;
+  cleanupToken?: (token: string) => Promise<unknown>;
   encodeBuffer?: (buffer: ArrayBuffer) => string;
 }): Promise<SaveEntriesInChunksResult> {
   const {
@@ -462,8 +470,11 @@ export async function saveEntriesInChunks(options: {
     outputFolder,
     saveFiles,
     chunkSize = SAVE_CHUNK_SIZE,
+    maxChunkBytes = SAVE_CHUNK_MAX_BYTES,
     shouldCancel,
     onProgress,
+    stageBlob,
+    cleanupToken,
     encodeBuffer = arrayBufferToBase64,
   } = options;
 
@@ -474,33 +485,55 @@ export async function saveEntriesInChunks(options: {
 
   onProgress?.(0, total);
 
-  for (let start = 0; start < total; start += chunkSize) {
+  for (let start = 0; start < total;) {
     if (shouldCancel?.()) {
       return { saved_count: savedCount, skipped_count: skippedCount, cancelled: true };
     }
 
-    const slice = entries.slice(start, start + chunkSize);
+    let end = start;
+    let chunkBytes = 0;
+    while (end < total && end - start < chunkSize) {
+      const nextBytes = entries[end].blob.size;
+      if (end > start && chunkBytes + nextBytes > maxChunkBytes) break;
+      chunkBytes += nextBytes;
+      end += 1;
+    }
+    const slice = entries.slice(start, end);
+    start = end;
     const files: OptimizerSaveFilePayload[] = [];
-    for (const entry of slice) {
+    const stagedTokens: string[] = [];
+    try {
+      for (const entry of slice) {
+        if (shouldCancel?.()) {
+          return { saved_count: savedCount, skipped_count: skippedCount, cancelled: true };
+        }
+        const token = await stageBlob?.(entry.blob, entry.filename);
+        if (token) {
+          stagedTokens.push(token);
+          files.push({ filename: entry.filename, file_token: token });
+        } else {
+          const buffer = await entry.blob.arrayBuffer();
+          files.push({
+            filename: entry.filename,
+            content_b64: encodeBuffer(buffer),
+          });
+        }
+        completed += 1;
+        onProgress?.(completed, total);
+      }
+
       if (shouldCancel?.()) {
         return { saved_count: savedCount, skipped_count: skippedCount, cancelled: true };
       }
-      const buffer = await entry.blob.arrayBuffer();
-      files.push({
-        filename: entry.filename,
-        content_b64: encodeBuffer(buffer),
-      });
-      completed += 1;
-      onProgress?.(completed, total);
-    }
 
-    if (shouldCancel?.()) {
-      return { saved_count: savedCount, skipped_count: skippedCount, cancelled: true };
+      const result = await saveFiles({ files, output_folder: outputFolder });
+      savedCount += result?.saved_count ?? 0;
+      skippedCount += result?.skipped_count ?? 0;
+    } finally {
+      if (cleanupToken && stagedTokens.length > 0) {
+        await Promise.allSettled(stagedTokens.map((token) => cleanupToken(token)));
+      }
     }
-
-    const result = await saveFiles({ files, output_folder: outputFolder });
-    savedCount += result?.saved_count ?? 0;
-    skippedCount += result?.skipped_count ?? 0;
   }
 
   return { saved_count: savedCount, skipped_count: skippedCount, cancelled: false };

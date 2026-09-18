@@ -21,6 +21,7 @@ import {
 import type { HistoryRun } from '../history/RunList';
 import { getElectronFilePath } from '../../utils/pdfAssets';
 import { useConversionFileRefs } from './useConversionFileRefs';
+import { errorMessage } from '@/utils/errors';
 
 export default function ConversionView() {
   const [files, setFiles] = useState<string[]>([]);
@@ -344,7 +345,7 @@ export default function ConversionView() {
         setMappingRenameColumn(result.rename_column ?? renameColumn);
       } catch (err) {
         if (token !== mappingReloadToken.current) return;
-        addToast({ message: err instanceof Error ? err.message : String(err), type: 'error' });
+        addToast({ message: errorMessage(err, String(err)), type: 'error' });
       }
     },
     [mappingPath, files, resolveFileRefs, addToast],
@@ -394,7 +395,7 @@ export default function ConversionView() {
       }
     } catch (err) {
       if (!isMappingSchemaMismatch(err)) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err, String(err));
         addToast({ message: `Error importando Excel: ${msg}`, type: 'error' });
         return;
       }
@@ -411,7 +412,7 @@ export default function ConversionView() {
         : `Base de datos importada: ${inserted} registros`;
       addToast({ message: msg, type: 'success' });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err, String(err));
       addToast({ message: `Error importando Excel: ${msg}`, type: 'error' });
     }
   };
@@ -513,7 +514,7 @@ export default function ConversionView() {
         setRenamePreview([]);
         setPreviewTruncated(false);
         setPreviewTotalFiles(null);
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err, String(err));
         addToast({ message: `Error en vista previa de renombre: ${msg}`, type: 'error' });
       } finally {
         previewInFlightRef.current = false;
@@ -623,7 +624,7 @@ export default function ConversionView() {
         addToast({ message: messages[reason] ?? `No se pudo iniciar: ${reason}`, type: reason === 'already_running' ? 'info' : 'error' });
       }
     } catch (err) {
-      addToast({ message: err instanceof Error ? err.message : String(err), type: 'error' });
+      addToast({ message: errorMessage(err, String(err)), type: 'error' });
     }
   };
 
@@ -718,7 +719,7 @@ export default function ConversionView() {
         centerControls={!isEmpty ? (
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <ConversionPresets currentConfig={currentConfig} onLoadConfig={handleLoadConfig} className="hidden sm:block shrink-0" />
-            <button
+            <Button variant="none" size="none"
               onClick={selectDest}
               className="inline-flex min-w-0 max-w-[min(280px,100%)] items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-all hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] group"
             >
@@ -727,7 +728,7 @@ export default function ConversionView() {
                 {destino ? destinoLabel : 'carpeta de destino'}
               </span>
               {!destino && <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[var(--accent-yellow)]" />}
-            </button>
+            </Button>
           </div>
         ) : undefined}
         conversionAction={!isEmpty ? (
@@ -780,19 +781,19 @@ export default function ConversionView() {
                 </div>
                 <div className="flex items-center gap-2">
                   {selectedFiles.size > 0 && (
-                    <button
+                    <Button variant="none" size="none"
                       onClick={removeSelectedFiles}
                       className="text-[11px] font-medium text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 px-2.5 py-1 rounded-lg transition-colors"
                     >
                       Eliminar {selectedFiles.size}
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button variant="none" size="none"
                     onClick={selectAllFiles}
                     className="text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-2.5 py-1 rounded-lg hover:bg-[var(--bg-elevated)] transition-colors"
                   >
                     {selectedFiles.size === files.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
-                  </button>
+                  </Button>
                 </div>
               </div>
 

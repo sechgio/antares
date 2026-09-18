@@ -1,5 +1,5 @@
 
-export type CanvasFontSource = 'system' | 'google';
+type CanvasFontSource = 'system' | 'google';
 
 export interface CanvasFontEntry {
   id: string;

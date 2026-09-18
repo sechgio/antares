@@ -36,7 +36,7 @@ export function removeGuide(doc: CanvasDocument, id: string): CanvasDocument {
   return { ...doc, guides: (doc.guides ?? []).filter((g) => g.id !== id) };
 }
 
-export const GUIDE_REMOVE_SLACK_PX = 4;
+const GUIDE_REMOVE_SLACK_PX = 4;
 const GAP_MATCH_TOLERANCE_MM = 0.1;
 
 export function clampGuidePos(posMm: number, maxMm: number): number {

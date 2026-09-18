@@ -30,7 +30,7 @@ function pollErrorMessage(err: unknown): string {
   return String(err);
 }
 
-export type ProcessRunnerState =
+type ProcessRunnerState =
   | { phase: 'idle'; status: ProcessStatus | null; pollError: string | null }
   | { phase: 'running'; status: ProcessStatus; pollError: string | null }
   | { phase: 'completed'; status: ProcessStatus; cancelled: boolean; pollError: string | null };

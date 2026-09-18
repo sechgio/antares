@@ -1,6 +1,6 @@
 import type { CanvasDocument, CanvasLayer, LayerCssVars, LayerMeta } from '../types';
 
-export interface LayerPatch {
+interface LayerPatch {
   id: string;
   changes: Partial<CanvasLayer>;
 }

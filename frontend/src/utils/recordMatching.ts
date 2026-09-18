@@ -2,7 +2,7 @@ export function normalizeRecordId(recordId: string): string {
   return String(recordId).trim().toLowerCase();
 }
 
-export function imageNameCandidates(filename: string): string[] {
+function imageNameCandidates(filename: string): string[] {
   const base = filename.replace(/\.[^.]+$/, '');
   const numbered = base.match(/^(.*)[-_]\d+$/);
   return numbered ? [base, numbered[1]] : [base];
@@ -14,7 +14,7 @@ export function matchesRecordId(filename: string, recordId: string | number): bo
   return imageNameCandidates(filename).some((candidate) => normalizeRecordId(candidate) === id);
 }
 
-export function naturalSortByName(a: string, b: string): number {
+function naturalSortByName(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 

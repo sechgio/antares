@@ -1,6 +1,7 @@
 import type { BatchSettings, CropOffset } from './types';
 import type { ProcessWorkerRequest, ProcessWorkerResponse } from './imageProcess.worker';
 import { availableCores, createAbortError, throwIfAborted } from './concurrency';
+import { reportFrontendError, reportFrontendEvent } from '../../utils/observability';
 type Pending = {
   resolve: (value: ProcessWorkerResponse) => void;
   reject: (reason?: unknown) => void;
@@ -79,6 +80,24 @@ function retireWorker(entry: PooledWorker, error: unknown): void {
 
   if (normalizeWorkerFailure(error).name !== 'AbortError') {
     console.warn('[image-optimizer] worker error', error);
+    const normalized = normalizeWorkerFailure(error);
+    reportFrontendError({
+      kind: 'worker_error',
+      view: 'image-optimizer',
+      name: normalized.name,
+      message: normalized.message,
+    });
+    reportFrontendEvent({
+      event: 'worker.error',
+      level: 'WARN',
+      outcome: 'failed',
+      reason: /timed out/i.test(normalized.message)
+        ? 'worker_timeout'
+        : normalized.name === 'Error'
+          ? 'worker_crashed'
+          : normalized.name,
+      view: 'image-optimizer',
+    });
   }
   entry.worker.terminate();
 

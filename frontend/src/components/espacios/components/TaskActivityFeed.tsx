@@ -17,6 +17,7 @@ import Textarea from '../../ui/Textarea';
 import { useTaskActivity } from '../hooks/useTaskActivity';
 import type { BoardColumn, TaskActivity, TeamMember } from '../types';
 import { activityDescription } from '../utils/taskActivity';
+import { errorMessage } from '@/utils/errors';
 
 const timeFormatter = new Intl.DateTimeFormat('es', {
   day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
@@ -65,7 +66,7 @@ export default function TaskActivityFeed({ tareaId, userId, members, columns }: 
       await feed.sendComment(body);
       setDraft('');
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'No se pudo enviar el comentario');
+      setLocalError(errorMessage(error, 'No se pudo enviar el comentario'));
     }
   };
 

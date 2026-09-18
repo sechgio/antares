@@ -2,6 +2,7 @@ import { Link2, Minus, Plus, Sparkles, Type } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { SectionHeader } from './panels/shared';
 import type { CanvasLayer, CanvasSharedStyle, CanvasStyleKind } from '../types';
+import Button from '@/components/ui/Button';
 
 const KINDS: Array<{ kind: CanvasStyleKind; label: string }> = [
   { kind: 'color', label: 'Color' },
@@ -78,14 +79,13 @@ export default function StylesSection({
                     placement="left"
                     variant="dark"
                   >
-                    <button
-                      type="button"
+                    <Button variant="none" size="none"
                       className="canvas-paint-icon"
                       aria-label={`Crear estilo ${label}`}
                       onClick={() => onCreate(kind)}
                     >
                       <Plus className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </WithHoverTooltip>
                 )}
               </div>
@@ -118,25 +118,23 @@ export default function StylesSection({
                               placement="left"
                               variant="dark"
                             >
-                              <button
-                                type="button"
+                              <Button variant="none" size="none"
                                 className="canvas-paint-icon"
                                 aria-label={linked ? 'Desvincular estilo' : 'Aplicar estilo'}
                                 onClick={() => (linked ? onDetach(kind) : onApply(style.id))}
                               >
                                 <Link2 className="h-3 w-3" />
-                              </button>
+                              </Button>
                             </WithHoverTooltip>
                           )}
                           <WithHoverTooltip label="Eliminar estilo" placement="left" variant="dark">
-                            <button
-                              type="button"
+                            <Button variant="none" size="none"
                               className="canvas-paint-icon"
                               aria-label="Eliminar estilo"
                               onClick={() => onRemove(style.id)}
                             >
                               <Minus className="h-3 w-3" />
-                            </button>
+                            </Button>
                           </WithHoverTooltip>
                         </div>
                       </li>

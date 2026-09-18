@@ -31,7 +31,7 @@ export function mmToPxLength(mmVal: number): number {
   return mmVal * MM_TO_PX;
 }
 
-export function parseBorderWidthPx(vars: LayerCssVars, fallback = 0): number {
+function parseBorderWidthPx(vars: LayerCssVars, fallback = 0): number {
   const raw = vars['--border-width'];
   if (raw == null || raw === '') return fallback;
   const n = parseFloat(raw);
@@ -121,7 +121,7 @@ export function lineVisualCssVars(vars: LayerCssVars): LayerCssVars {
   };
 }
 
-export const SHAPE_TYPES = new Set<CanvasLayerType>([
+const SHAPE_TYPES = new Set<CanvasLayerType>([
   'rect',
   'ellipse',
   'line',
@@ -133,7 +133,7 @@ export const SHAPE_TYPES = new Set<CanvasLayerType>([
   'pentagon',
 ]);
 
-export const LAYER_TYPE_LABELS: Record<CanvasLayerType, string> = {
+const LAYER_TYPE_LABELS: Record<CanvasLayerType, string> = {
   text: 'Texto',
   image: 'Imagen',
   frame: 'Página',
@@ -304,7 +304,7 @@ export function imageContentInlineStyle(vars: LayerCssVars): string {
 
 export type CornerId = 'tl' | 'tr' | 'br' | 'bl';
 
-export function parseRadiusPx(value: string | undefined): number {
+function parseRadiusPx(value: string | undefined): number {
   if (!value || value.includes('%')) return 0;
   const n = parseFloat(value);
   return Number.isFinite(n) ? Math.max(0, n) : 0;

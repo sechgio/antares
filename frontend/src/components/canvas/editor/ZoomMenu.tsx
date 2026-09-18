@@ -4,6 +4,7 @@ import { Check, ChevronDown } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import { clampZoom, nextZoomPreset } from '../ops/viewportNav';
+import Button from '@/components/ui/Button';
 
 interface ZoomMenuProps {
   zoom: number;
@@ -178,8 +179,7 @@ export default function ZoomMenu({
   return (
     <div ref={rootRef} className="relative shrink-0">
       <WithHoverTooltip label="Zoom" placement="bottom" variant="dark">
-        <button
-          type="button"
+        <Button variant="none" size="none"
           className="canvas-zoom-trigger"
           aria-label="Zoom"
           aria-haspopup="menu"
@@ -189,7 +189,7 @@ export default function ZoomMenu({
         >
           <span>{pct}%</span>
           <ChevronDown className="h-2.5 w-2.5 opacity-70" strokeWidth={2.5} aria-hidden />
-        </button>
+        </Button>
       </WithHoverTooltip>
 
       {open &&
@@ -233,9 +233,8 @@ export default function ZoomMenu({
 
             <div className="canvas-zoom-menu-pad py-1">
               {actions.map((item) => (
-                <button
+                <Button variant="none" size="none"
                   key={item.id}
-                  type="button"
                   role="menuitem"
                   className="canvas-zoom-menu-item"
                   onClick={() => runAndClose(item.run)}
@@ -245,7 +244,7 @@ export default function ZoomMenu({
                   </span>
                   <span className="min-w-0 flex-1 text-left">{item.label}</span>
                   {item.tip ? <span className="canvas-zoom-menu-tip">{item.tip}</span> : null}
-                </button>
+                </Button>
               ))}
             </div>
           </div>,

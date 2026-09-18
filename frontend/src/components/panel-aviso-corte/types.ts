@@ -1,11 +1,11 @@
 import type { ImageAsset } from '../../types/imageAssets';
 
-export type MatchStrategy = 'prefix' | 'contains' | 'exact' | 'regex';
+type MatchStrategy = 'prefix' | 'contains' | 'exact' | 'regex';
 
 export type LogoAsset = ImageAsset;
 export type LocalImage = ImageAsset;
 
-export interface ExcelRow {
+interface ExcelRow {
   [column: string]: string;
 }
 
@@ -23,7 +23,7 @@ export interface MatchRule {
   regexPattern?: string;
 }
 
-export interface PanelImageRefVM {
+interface PanelImageRefVM {
   filename: string;
   caption: string;
   position: number;
@@ -37,7 +37,7 @@ export interface PanelVM {
   sourceRowIndex: number | null;
 }
 
-export interface MatchSummary {
+interface MatchSummary {
   totalRows: number;
   rowsWithImages: number;
   rowsWithoutImages: number;
@@ -60,7 +60,7 @@ export interface HeaderFormState {
   motivo: string;
 }
 
-export interface PanelMatchImageRefResponse {
+interface PanelMatchImageRefResponse {
   filename: string;
   caption: string;
   position: number;
@@ -74,7 +74,7 @@ export interface PanelMatchPanelResponse {
   source_row_index: number | null;
 }
 
-export interface PanelMatchSummaryResponse {
+interface PanelMatchSummaryResponse {
   total_rows: number;
   rows_with_images: number;
   rows_without_images: number;

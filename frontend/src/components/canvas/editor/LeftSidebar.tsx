@@ -63,10 +63,12 @@ import {
 import { clampLeftPanelWidth } from '../ops/panelChrome';
 import { createGestureRaf } from '../ops/gestureRaf';
 import type { CanvasDocumentSummary, CanvasLayer } from '../types';
+import { isImageLayerType, isTextualLayerType } from '../layerKinds';
 import { getThumbnailUrl } from '../utils/imageBlobStore';
 import { VisibilityIcon } from './VisibilityIcon';
 import PageContextMenu, { type PageContextMenuState } from './PageContextMenu';
 import CanvasSelect from './CanvasSelect';
+import Button from '@/components/ui/Button';
 
 interface LeftSidebarProps {
   documentName: string;
@@ -131,7 +133,7 @@ function layerIcon(type: CanvasLayer['type'], value?: string) {
       return <img src={thumb} className="h-3 w-3 object-cover rounded-[2px]" alt="" />;
     }
   }
-  if (type === 'text' || type === 'field') return <Type className="h-3 w-3" />;
+  if (isTextualLayerType(type)) return <Type className="h-3 w-3" />;
   if (type === 'rect') return <Square className="h-3 w-3" />;
   if (type === 'table') return <Table2 className="h-3 w-3" />;
   if (type === 'grid') return <Grid3X3 className="h-3 w-3" />;
@@ -148,7 +150,7 @@ function layerIcon(type: CanvasLayer['type'], value?: string) {
   if (type === 'diamond') return <Diamond className="h-3 w-3" />;
   if (type === 'hexagon') return <Hexagon className="h-3 w-3" />;
   if (type === 'pentagon') return <Pentagon className="h-3 w-3" />;
-  if (type === 'imageSlot' || type === 'image' || type === 'logo') return <ImageIcon className="h-3 w-3" />;
+  if (isImageLayerType(type)) return <ImageIcon className="h-3 w-3" />;
   return <Layers className="h-3 w-3" />;
 }
 
@@ -258,8 +260,7 @@ const LayerRow = memo(function LayerRow({
         style={{ paddingLeft: `${8 + depth * 16}px` }}
       >
         {hasChildren ? (
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-list-chevron"
             aria-label={expanded ? 'Colapsar' : 'Expandir'}
             aria-expanded={expanded}
@@ -268,7 +269,7 @@ const LayerRow = memo(function LayerRow({
             onClick={() => onToggleExpanded(layer.id)}
           >
             {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          </button>
+          </Button>
         ) : (
           <span className="canvas-list-chevron-spacer" aria-hidden />
         )}
@@ -319,8 +320,7 @@ const LayerRow = memo(function LayerRow({
           </div>
         )}
         <div className="canvas-list-row-actions">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-list-action"
             aria-label={locked ? 'Desbloquear' : 'Bloquear'}
             aria-pressed={locked}
@@ -330,9 +330,8 @@ const LayerRow = memo(function LayerRow({
             onClick={() => onToggleLocked(layer.id, !locked)}
           >
             {locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button variant="none" size="none"
             className="canvas-list-action"
             aria-label="Visibilidad"
             aria-pressed={!hidden}
@@ -342,7 +341,7 @@ const LayerRow = memo(function LayerRow({
             onClick={() => onToggleVisible(layer.id, hidden)}
           >
             <VisibilityIcon visible={!hidden} className="h-3 w-3" />
-          </button>
+          </Button>
         </div>
       </div>
     </li>
@@ -709,37 +708,34 @@ export default memo(function LeftSidebar({
           <span className="canvas-section-title">Archivos</span>
           <div className="flex gap-0.5">
             <WithHoverTooltip label="Nuevo" placement="bottom" variant="dark">
-              <button type="button" className="canvas-icon-btn !h-6 !w-6" onClick={onNew} aria-label="Nuevo">
+              <Button variant="none" size="none" className="canvas-icon-btn !h-6 !w-6" onClick={onNew} aria-label="Nuevo">
                 <Plus className="h-3 w-3" />
-              </button>
+              </Button>
             </WithHoverTooltip>
             {onOpenTemplates && (
               <WithHoverTooltip label="Plantillas" placement="bottom" variant="dark">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   className="canvas-icon-btn !h-6 !w-6"
                   onClick={onOpenTemplates}
                   aria-label="Plantillas"
                   data-testid="canvas-open-templates"
                 >
                   <LayoutTemplate className="h-3 w-3" />
-                </button>
+                </Button>
               </WithHoverTooltip>
             )}
             <WithHoverTooltip label="Eliminar" placement="bottom" variant="dark">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-icon-btn !h-6 !w-6"
                 onClick={onDeleteDoc}
                 aria-label="Eliminar documento"
               >
                 <Trash2 className="h-3 w-3" />
-              </button>
+              </Button>
             </WithHoverTooltip>
             {onHidePanel && (
               <WithHoverTooltip label="Ocultar panel izquierdo" placement="bottom" variant="dark">
-                <button
-                  type="button"
+                <Button variant="none" size="none"
                   className="canvas-icon-btn !h-6 !w-6"
                   data-testid="canvas-toggle-left-panel"
                   disabled={hidePanelDisabled}
@@ -747,7 +743,7 @@ export default memo(function LeftSidebar({
                   aria-label="Ocultar panel izquierdo"
                 >
                   <PanelLeftClose className="h-3 w-3" />
-                </button>
+                </Button>
               </WithHoverTooltip>
             )}
           </div>
@@ -777,20 +773,19 @@ export default memo(function LeftSidebar({
           </span>
           <div className="flex gap-0.5">
             <WithHoverTooltip label="Añadir página" placement="bottom" variant="dark">
-              <button type="button" className="canvas-icon-btn !h-6 !w-6" onClick={onAddPage} aria-label="Añadir página">
+              <Button variant="none" size="none" className="canvas-icon-btn !h-6 !w-6" onClick={onAddPage} aria-label="Añadir página">
                 <Plus className="h-3 w-3" />
-              </button>
+              </Button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Quitar página" placement="bottom" variant="dark">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-icon-btn !h-6 !w-6"
                 onClick={() => onRemovePage(pageIndex)}
                 aria-label="Quitar página"
                 disabled={pageCount <= 1}
               >
                 <Minus className="h-3 w-3" />
-              </button>
+              </Button>
             </WithHoverTooltip>
           </div>
         </div>
@@ -817,9 +812,8 @@ export default memo(function LeftSidebar({
                 }}
               />
             ) : (
-              <button
+              <Button variant="none" size="none"
                 key={pages?.[i]?.id ?? i}
-                type="button"
                 onClick={() => onPageChange(i)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -866,7 +860,7 @@ export default memo(function LeftSidebar({
                 <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 <span className="min-w-0 flex-1 truncate">{pageLabel(i)}</span>
                 <span className="canvas-page-format">A4</span>
-              </button>
+              </Button>
             )
           ))}
         </div>
@@ -899,26 +893,24 @@ export default memo(function LeftSidebar({
             {rows.length}
           </span>
           <WithHoverTooltip label="Agrupar (Ctrl+G)" placement="bottom" variant="dark">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               className="canvas-icon-btn !h-6 !w-6"
               aria-label="Agrupar"
               disabled={!canGroupSelected}
               onClick={onGroupSelected}
             >
               <Group className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </WithHoverTooltip>
           <WithHoverTooltip label="Desagrupar (Ctrl+Shift+G)" placement="bottom" variant="dark">
-            <button
-              type="button"
+            <Button variant="none" size="none"
               className="canvas-icon-btn !h-6 !w-6"
               aria-label="Desagrupar"
               disabled={!canUngroupSelected}
               onClick={onUngroupSelected}
             >
               <Ungroup className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </WithHoverTooltip>
         </div>
         <div className="canvas-layer-search">

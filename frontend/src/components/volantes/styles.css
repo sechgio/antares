@@ -197,18 +197,6 @@
     margin-right: -8px;
 }
 
-.vgen-sidebar-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-}
-
-.vgen-sidebar-actions > div,
-.vgen-sidebar-actions .v-btn {
-    min-width: 0;
-    width: 100%;
-}
-
 .v-btn {
     display: inline-flex;
     align-items: center;
@@ -296,37 +284,6 @@
     }
 }
 
-.vgen-tabs {
-    display: flex;
-    padding: 0 24px;
-    gap: 24px;
-    border-bottom: 1px solid var(--vgen-line);
-    background: var(--vgen-bg-canvas);
-}
-
-.vgen-tabs button {
-    border: none;
-    background: transparent;
-    padding: 16px 0;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--vgen-ink-soft);
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s;
-    margin-bottom: -1px;
-    cursor: pointer;
-    font-family: inherit;
-}
-
-.vgen-tabs button:hover {
-    color: var(--vgen-ink);
-}
-
-.vgen-tabs button.active {
-    color: var(--vgen-ink);
-    border-bottom-color: var(--vgen-accent);
-}
-
 .vgen-sidebar-content {
     flex: 1;
     overflow-y: auto;
@@ -349,19 +306,6 @@
         opacity: 1;
         transform: none;
     }
-}
-
-.vgen-form-group {
-    margin-bottom: 20px;
-}
-
-.vgen-form-group label {
-    display: block;
-    font-size: 0.72rem;
-    font-weight: 500;
-    letter-spacing: 0;
-    color: var(--vgen-ink-soft);
-    margin-bottom: 6px;
 }
 
 .vgen-input {
@@ -396,12 +340,6 @@ textarea.vgen-input {
     min-height: 64px;
     resize: vertical;
     line-height: 1.35;
-}
-
-.vgen-grid-2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
 }
 
 .vgen-actions-row {
@@ -540,10 +478,7 @@ textarea.vgen-input {
     height: 100%;
     max-height: 44px;
     object-fit: contain;
-}
-
-.v-upload-box:hover,
-.v-upload-box.drag-over {
+}.v-upload-box:hover{
     border-color: var(--vgen-accent);
     background: var(--vgen-bg-panel);
 }
@@ -597,12 +532,6 @@ textarea.vgen-input {
     box-shadow: none;
 }
 
-.vgen-section-grow {
-    flex: 0 0 auto;
-    display: flex;
-    flex-direction: column;
-}
-
 .vgen-group-title {
     font-size: 0.68rem;
     font-weight: 600;
@@ -646,12 +575,6 @@ textarea.vgen-input {
     color: var(--vgen-ink-soft);
     margin-bottom: 3px;
     user-select: none;
-}
-
-.vgen-section-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
 }
 
 .vgen-inset-list {
@@ -717,28 +640,7 @@ textarea.vgen-input {
 
 .vgen-compact-schedule .vgen-label-sm {
     margin-bottom: 3px;
-}
-
-.vgen-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-}
-
-.vgen-field {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.vgen-field-13 {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.vgen-textarea-flex,
-.vgen-textarea-compact {
+}.vgen-textarea-compact{
     flex: none;
     min-height: 56px;
     max-height: 96px;
@@ -1317,21 +1219,11 @@ textarea.vgen-input {
 .sheet-page.layout-two.is-export {
     height: 794px;
     overflow: hidden;
-}
-
-.sheet-page.layout-two.is-preview .sheet-flyer-slot,
-.sheet-page.layout-two.is-preview .sheet-empty-slot {
+}.sheet-page.layout-two.is-preview .sheet-flyer-slot{
     width: auto;
-}
-
-.sheet-page.layout-two .sheet-flyer-slot,
-.sheet-page.layout-two .sheet-empty-slot {
+}.sheet-page.layout-two .sheet-flyer-slot{
     width: 100%;
     align-items: flex-start;
-}
-
-.sheet-page.layout-two .sheet-empty-slot {
-    min-height: 753px;
 }
 
 .sheet-page.layout-two .flyer-card {
@@ -1589,21 +1481,11 @@ textarea.vgen-input {
 .sheet-page.layout-three.is-export {
     height: 794px;
     overflow: hidden;
-}
-
-.sheet-page.layout-three.is-preview .sheet-flyer-slot,
-.sheet-page.layout-three.is-preview .sheet-empty-slot {
+}.sheet-page.layout-three.is-preview .sheet-flyer-slot{
     width: auto;
-}
-
-.sheet-page.layout-three .sheet-flyer-slot,
-.sheet-page.layout-three .sheet-empty-slot {
+}.sheet-page.layout-three .sheet-flyer-slot{
     width: 100%;
     align-items: flex-start;
-}
-
-.sheet-page.layout-three .sheet-empty-slot {
-    min-height: 753px;
 }
 
 .sheet-page.layout-three .flyer-card {

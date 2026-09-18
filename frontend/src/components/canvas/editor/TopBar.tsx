@@ -6,6 +6,7 @@ import BrandFace from './BrandFace';
 import { CanvasSegmented } from './CanvasControls';
 import PreviewButton from './PreviewButton';
 import SaveButton from './SaveButton';
+import Button from '@/components/ui/Button';
 
 interface TopBarProps {
   name: string;
@@ -100,51 +101,47 @@ function TopBar({
 
       <div className="canvas-topbar-tools px-1.5">
         <WithHoverTooltip label="Deshacer" shortcut="Ctrl+Z" placement="bottom" variant="dark">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-icon-btn"
             disabled={!canUndo}
             onClick={onUndo}
             aria-label="Deshacer"
           >
             <Undo2 className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </WithHoverTooltip>
         <WithHoverTooltip label="Rehacer" shortcut="Ctrl+Shift+Z" placement="bottom" variant="dark">
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-icon-btn"
             disabled={!canRedo}
             onClick={onRedo}
             aria-label="Rehacer"
           >
             <Redo2 className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </WithHoverTooltip>
         <TopBarDivider />
         <div className="canvas-topbar-secondary">
           <WithHoverTooltip label="Duplicar" placement="bottom" variant="dark">
-            <button type="button" className="canvas-icon-btn" onClick={onDuplicate} aria-label="Duplicar documento">
+            <Button variant="none" size="none" className="canvas-icon-btn" onClick={onDuplicate} aria-label="Duplicar documento">
               <Copy className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </WithHoverTooltip>
           {onImportPdf ? (
             <WithHoverTooltip label="Importar PDF" placement="bottom" variant="dark">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-icon-btn"
                 onClick={onImportPdf}
                 disabled={importDisabled}
                 aria-label="Importar PDF"
               >
                 <Upload className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </WithHoverTooltip>
           ) : null}
           {mode === 'design' && onToggleShortcuts && (
             <WithHoverTooltip label="Atajos" shortcut="?" placement="bottom" variant="dark">
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-icon-btn"
                 data-active={showShortcuts}
                 onClick={onToggleShortcuts}
@@ -152,7 +149,7 @@ function TopBar({
                 aria-pressed={showShortcuts}
               >
                 <Keyboard className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </WithHoverTooltip>
           )}
         </div>
@@ -164,8 +161,7 @@ function TopBar({
               placement="bottom"
               variant="dark"
             >
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="canvas-icon-btn"
                 data-active={uiLocked}
                 data-testid="canvas-ui-lock"
@@ -174,7 +170,7 @@ function TopBar({
                 aria-pressed={uiLocked}
               >
                 {uiLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-              </button>
+              </Button>
             </WithHoverTooltip>
           </>
         )}

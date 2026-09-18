@@ -33,13 +33,13 @@ export function createEmptyPanel(config: ReportTypeConfig): CampoPanel {
 const SAVE_DEBOUNCE_MS = 400;
 const STYLE_SAVE_DEBOUNCE_MS = 900;
 
-export interface CampoPanelsSelectionState {
+interface CampoPanelsSelectionState {
     selectedPanel: CampoPanel | null;
     selectedPanelId: string | null;
     currentPanelIndex: number;
 }
 
-export interface CampoPanelsActions {
+interface CampoPanelsActions {
     createPanel: () => CampoPanel;
     selectPanel: (id: string) => void;
     updateHeader: (key: string, value: string) => void;

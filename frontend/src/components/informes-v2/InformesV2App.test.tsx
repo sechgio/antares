@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   addToast: vi.fn(),
   confirm: vi.fn(),
+  saveFeatureHistory: vi.fn(),
   api: {
+    dialogSave: vi.fn(),
     informesV2List: vi.fn(),
     informesV2Get: vi.fn(),
     informesV2Create: vi.fn(),
@@ -22,6 +24,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast: mocks.addToast }) }));
 vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm: mocks.confirm }) }));
 vi.mock('../../api', () => ({ api: mocks.api }));
+vi.mock('../../utils/history', () => ({ saveFeatureHistory: mocks.saveFeatureHistory }));
 
 import InformesV2App from './InformesV2App';
 import { createEmptyInforme } from './types';
@@ -40,12 +43,16 @@ describe('InformesV2App', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.confirm.mockResolvedValue(true);
-    mocks.api.informesV2List.mockResolvedValue({ reports: [listItem] });
-    mocks.api.informesV2Get.mockResolvedValue({ report });
-    mocks.api.informesV2Update.mockResolvedValue({ success: true, report });
-    mocks.api.informesV2Delete.mockResolvedValue({ deleted: true });
+    mocks.api.informesV2List.mockResolvedValue({ items: [listItem] });
+    mocks.api.informesV2Get.mockResolvedValue({ item: report });
+    mocks.api.informesV2Update.mockResolvedValue({ success: true, item: report });
+    mocks.api.informesV2Delete.mockResolvedValue({ deleted_id: 'R-1' });
     mocks.api.informesV2Clear.mockResolvedValue({});
     mocks.api.informesV2ImportFile.mockResolvedValue({ imported_count: 2 });
+    mocks.api.dialogSave.mockResolvedValue({ paths: ['C:\\salida.pdf'] });
+    mocks.api.informesV2RenderConsolidatedHtml.mockResolvedValue({ html: '<html></html>', filename: 'salida.pdf', count: 1 });
+    mocks.api.htmlToPdf.mockResolvedValue({ filename: 'salida.pdf', saved_path: 'C:\\salida.pdf' });
+    mocks.saveFeatureHistory.mockResolvedValue(undefined);
   });
 
   it('lists reports on mount and opens one on click', async () => {
@@ -121,5 +128,17 @@ describe('InformesV2App', () => {
 
     expect(mocks.addToast).toHaveBeenCalledWith({ message: 'backend caído', type: 'error' });
     expect(screen.getByText('No hay informes para mostrar')).toBeInTheDocument();
+  });
+
+  it('exports the consolidated report from summaries without loading every full report', async () => {
+    render(<InformesV2App />);
+    await screen.findByText('ESTACION 1');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Consolidado' }));
+    });
+
+    await waitFor(() => expect(mocks.api.informesV2RenderConsolidatedHtml).toHaveBeenCalled());
+    expect(mocks.api.informesV2Get).not.toHaveBeenCalled();
   });
 });

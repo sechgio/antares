@@ -198,8 +198,7 @@ describe('ConversionView rename preview single-flight', () => {
     expect(mockApi.preview.mock.calls.length).toBeLessThanOrEqual(2);
 
     await waitFor(() => {
-      const select = screen.getByRole('combobox');
-      expect((select as HTMLSelectElement).value).toBe('codigo');
+      expect(screen.getByLabelText('Columna ID')).toHaveTextContent('codigo');
     });
   });
 
@@ -239,9 +238,11 @@ describe('ConversionView rename preview single-flight', () => {
     });
     const callsAfterDetect = mockApi.preview.mock.calls.length;
 
-    const select = screen.getByRole('combobox') as HTMLSelectElement;
     await act(async () => {
-      fireEvent.change(select, { target: { value: 'nombre' } });
+      fireEvent.click(screen.getByLabelText('Columna ID'));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('option', { name: 'nombre' }));
     });
 
     await act(async () => {

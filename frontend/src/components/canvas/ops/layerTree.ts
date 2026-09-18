@@ -1,4 +1,5 @@
 import type { CanvasLayer } from '../types';
+import { isNestingLayerType } from '../layerKinds';
 
 export interface LayerTreeNode {
   layer: CanvasLayer;
@@ -11,10 +12,8 @@ export interface FlatLayerRow {
   hasChildren: boolean;
 }
 
-const CONTAINER_TYPES = new Set(['group', 'grid', 'frame', 'component']);
-
 export function isLayerContainer(layer: CanvasLayer): boolean {
-  return CONTAINER_TYPES.has(layer.type);
+  return isNestingLayerType(layer.type);
 }
 
 export function expandWithDescendants(layers: CanvasLayer[], ids: string[]): string[] {

@@ -26,6 +26,7 @@ import BlankCanvasCard from './BlankCanvasCard';
 import TemplateCard from './TemplateCard';
 import TemplateLightbox from './TemplateLightbox';
 import './templatePicker.css';
+import Button from '@/components/ui/Button';
 
 const CATEGORY_ICONS: Record<PresetCategory | 'all', LucideIcon> = {
   all: LayoutGrid,
@@ -186,8 +187,7 @@ export default function TemplatePickerModal({
               data-testid="tpl-search"
             />
             {query ? (
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="tpl-search-clear"
                 onClick={() => {
                   setQuery('');
@@ -196,26 +196,24 @@ export default function TemplatePickerModal({
                 aria-label="Limpiar búsqueda"
               >
                 <X className="h-2.5 w-2.5" />
-              </button>
+              </Button>
             ) : null}
           </div>
           <kbd className="canvas-kbd">Esc</kbd>
-          <button
-            type="button"
+          <Button variant="none" size="none"
             className="canvas-icon-btn"
             onClick={onClose}
             aria-label="Cerrar explorador de plantillas"
           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </header>
 
         <div className="tpl-body">
           <aside className="tpl-rail custom-scrollbar" aria-label="Filtros de plantillas">
             <div className="tpl-rail-group">
               <div className="tpl-rail-label">Categorías</div>
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 className="tpl-nav-item"
                 data-active={category === 'all'}
                 aria-pressed={category === 'all'}
@@ -224,15 +222,14 @@ export default function TemplatePickerModal({
                 <LayoutGrid className="h-3 w-3" aria-hidden="true" />
                 <span className="tpl-nav-label">Todas</span>
                 <span className="tpl-nav-count">{presets?.length ?? 0}</span>
-              </button>
+              </Button>
               {PRESET_CATEGORY_ORDER.map((cat) => {
                 const count = categoryCounts.get(cat) ?? 0;
                 if (!count) return null;
                 const Icon = CATEGORY_ICONS[cat];
                 return (
-                  <button
+                  <Button variant="none" size="none"
                     key={cat}
-                    type="button"
                     className="tpl-nav-item"
                     data-active={category === cat}
                     aria-pressed={category === cat}
@@ -241,7 +238,7 @@ export default function TemplatePickerModal({
                     <Icon className="h-3 w-3" aria-hidden="true" />
                     <span className="tpl-nav-label">{PRESET_CATEGORY_LABELS[cat]}</span>
                     <span className="tpl-nav-count">{count}</span>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -251,9 +248,8 @@ export default function TemplatePickerModal({
                 const count = districtCounts.get(zone) ?? 0;
                 if (!count) return null;
                 return (
-                  <button
+                  <Button variant="none" size="none"
                     key={zone}
-                    type="button"
                     className="tpl-nav-item"
                     data-active={district === zone}
                     aria-pressed={district === zone}
@@ -262,7 +258,7 @@ export default function TemplatePickerModal({
                     <span className="tpl-nav-dot" aria-hidden="true" />
                     <span className="tpl-nav-label">{zone}</span>
                     <span className="tpl-nav-count">{count}</span>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -271,9 +267,9 @@ export default function TemplatePickerModal({
           <div className="tpl-content">
             {hasFilters ? (
               <div className="tpl-content-bar">
-                <button type="button" className="tpl-clear" onClick={clearFilters}>
+                <Button variant="none" size="none" className="tpl-clear" onClick={clearFilters}>
                   Limpiar filtros
-                </button>
+                </Button>
               </div>
             ) : null}
             <div className="tpl-grid custom-scrollbar">

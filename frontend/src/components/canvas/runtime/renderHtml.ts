@@ -1,10 +1,10 @@
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { parseMm } from '../types';
+import { isTextualLayerType, isVectorShapeLayerType } from '../layerKinds';
 import { fieldDesignLabel, justifyContentForTextAlign } from '../ops/inlineEdit';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import {
   buildLayerTransform,
-  cssVarsToStyleParts,
   imageContentInlineStyle,
 } from '../ops/layerStyle';
 import {
@@ -18,7 +18,6 @@ import { ensureLinePath } from '../ops/pathGeometry';
 import { parseTableData } from '../ops/tableData';
 import { applyInstanceOverrides } from '../ops/components';
 
-export { cssVarsToStyleParts };
 
 const SIGNATURE_PAD = '1px';
 const TABLE_CELL_PAD = '1px 2px';
@@ -168,16 +167,7 @@ function resolveLayerContent(
       html: `<img src="${escapeHtml(layer.value)}" alt="" style="${imgStyle}" />`,
     };
   }
-  if (
-    layer.type === 'rect' ||
-    layer.type === 'ellipse' ||
-    layer.type === 'arrow' ||
-    layer.type === 'polygon' ||
-    layer.type === 'diamond' ||
-    layer.type === 'hexagon' ||
-    layer.type === 'pentagon' ||
-    layer.type === 'star'
-  ) {
+  if (isVectorShapeLayerType(layer.type)) {
     return { kind: 'empty', html: '' };
   }
   if (layer.type === 'line') {
@@ -301,7 +291,7 @@ export function renderCanvasHtml(
       const clipRadius = clip ? 'border-radius:0;' : '';
       const overflow = ensured.type === 'line' ? 'visible' : 'hidden';
       const justify = justifyContentForTextAlign(ensured.cssVars['--text-align']);
-      const isTextBox = ensured.type === 'text' || ensured.type === 'field';
+      const isTextBox = isTextualLayerType(ensured.type);
       const pad = isTextBox ? 'padding:2px 6px;' : 'padding:0;';
       const valign = isTextBox ? ensured.cssVars['--text-valign'] || 'center' : 'center';
       const flex = `display:flex;align-items:${valign};justify-content:${justify};`;
@@ -324,7 +314,7 @@ export function renderCanvasHtml(
           textTransform && textTransform !== 'none' ? `text-transform:${textTransform};` : '',
         ].join('');
         const innerSpan =
-          ensured.type === 'field' || ensured.type === 'text'
+          isTextualLayerType(ensured.type)
             ? `width:100%;line-height:${lineHeight};white-space:pre-wrap;font-family:${fontFamily};font-size:inherit;color:inherit;text-align:${align};${typo}`
             : `width:100%;line-height:${lineHeight};white-space:pre-wrap;`;
         return `<div data-layer="${escapeHtml(ensured.id)}" style="${box}"><span style="${innerSpan}">${resolved.html}</span></div>`;

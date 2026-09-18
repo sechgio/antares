@@ -1,4 +1,4 @@
-export type PhotoGridCell = number | null;
+type PhotoGridCell = number | null;
 
 export type PhotoImageSizing = 'aspectPreserve' | 'fill';
 

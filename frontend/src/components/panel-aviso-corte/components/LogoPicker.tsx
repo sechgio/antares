@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ImagePlus, X, Upload } from 'lucide-react';
 import { ARIA_LABELS, ACCEPTED_IMAGE_TYPES, ACCEPTED_IMAGE_EXTENSIONS } from '../constants';
 import type { LogoAsset } from '../types';
+import Button from '@/components/ui/Button';
 
 interface Props {
   right: LogoAsset | null;
@@ -81,14 +82,13 @@ export default function LogoPicker({ right, onRight }: Props) {
                 {(right.file.size / 1024).toFixed(0)} KB · Click para cambiar
               </span>
             </div>
-            <button
-              type="button"
+            <Button variant="none" size="none"
               onClick={handleRemove}
               className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 transition-colors shrink-0"
               aria-label="Quitar logo"
             >
               <X size={13} />
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="flex items-center gap-2.5 p-2">

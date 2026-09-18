@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchTeamMembers } from '../api/espaciosApi';
 import type { TeamMember } from '../types';
+import { errorMessage } from '@/utils/errors';
 
 export function useTeamMembers() {
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -14,7 +15,7 @@ export function useTeamMembers() {
       })
       .catch((err) => {
         setMembers([]);
-        setError(err instanceof Error ? err.message : 'No se pudieron cargar los miembros del equipo');
+        setError(errorMessage(err, 'No se pudieron cargar los miembros del equipo'));
       });
   }, []);
 

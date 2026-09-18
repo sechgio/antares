@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Thumbnail from '../Thumbnail';
 import Badge from '../ui/Badge';
+import Button from '@/components/ui/Button';
 
 interface FileCardProps {
   path: string;
@@ -61,7 +62,7 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
           )}
         </div>
 
-        <button
+        <Button variant="none" size="none"
           onClick={onRemove}
           className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-primary)] backdrop-blur-sm transition-all duration-200 hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)] shadow-sm ${
             showRemove || isPrimary ? 'opacity-100' : 'opacity-0'
@@ -69,7 +70,7 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
           style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+        </Button>
 
         <div className={`absolute inset-0 bg-[var(--accent-primary)]/5 transition-opacity duration-200 pointer-events-none ${isPrimary ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
       </div>

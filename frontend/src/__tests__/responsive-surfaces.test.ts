@@ -51,6 +51,8 @@ describe('responsive surface contracts', () => {
     const fichasPreview = readSource('components/fichas-tecnicas/PreviewPanel.tsx');
     const panelImages = readSource('components/panel-aviso-corte/components/ImageUploader.tsx');
     const evidenciaImages = readSource('components/evidencia-volanteo/components/ImageUploader.tsx');
+    const sharedImageUploader = readSource('components/ui/ImageUploader.tsx');
+    const reportShell = readSource('components/report-workspace/ReportWorkspaceShell.tsx');
 
     expect(formatos).toContain('data-surface="formatos"');
     expect(formatos).toContain('data-surface-part="preview"');
@@ -60,19 +62,19 @@ describe('responsive surface contracts', () => {
     expect(optimizer).toContain('data-surface="image-optimizer"');
     expect(optimizer).toContain('data-surface-part="workspace"');
     expect(autoimg).toContain('data-surface="autoimg"');
-    expect(technicalReports).toContain('data-surface="technical-reports"');
-    expect(technicalReports).toContain('role="tablist"');
-    expect(technicalReports).toContain('aria-selected={mobileTab ===');
+    expect(technicalReports).toContain('surface="technical-reports"');
+    expect(reportShell).toContain('role="tablist"');
+    expect(reportShell).toContain('aria-selected={mobileTab ===');
     expect(reportesCampo).toContain('data-surface="reportes-campo"');
     expect(reportesCampo).toContain('useReducedMotion');
     expect(reportesHeader).toContain('useReducedMotion');
     expect(reportesPhotos).toContain('useReducedMotion');
     expect(evidencia).toContain('data-surface="evidencia-volanteo"');
-    expect(fichas).toContain('data-surface="fichas-tecnicas"');
-    expect(fichas).toContain('data-mobile-tab={mobileTab}');
-    expect(fichas).toContain('data-focus-mode={focusMode ? \'on\' : \'off\'}');
+    expect(fichas).toContain('surface="fichas-tecnicas"');
+    expect(reportShell).toContain('data-mobile-tab={mobileTab}');
+    expect(fichas).toContain('"data-focus-mode": focusMode ? "on" : "off"');
     expect(fichas).not.toContain("gridTemplateColumns: '0px 1fr 0px'");
-    expect(fichas).toContain('role="tablist"');
+    expect(reportShell).toContain('role="tablist"');
     const fichasCss = readSource('components/technical-reports/technical-reports.css');
     expect(fichasCss).toContain('.ft-app .tr-workspace.is-focus');
     expect(fichasCss).toContain('grid-template-columns: minmax(0, 1fr)');
@@ -82,8 +84,10 @@ describe('responsive surface contracts', () => {
     expect(fichasPreview).toContain('tr-preview-wrap');
     expect(reportesPhotos).toContain('role="button"');
     expect(reportesPhotos).toContain('inputRef.current?.click()');
-    expect(panelImages).toContain('role="button"');
-    expect(evidenciaImages).toContain('role="button"');
+    expect(panelImages).toContain('SharedImageUploader');
+    expect(evidenciaImages).toContain('SharedImageUploader');
+    expect(sharedImageUploader).toContain('role="button"');
+    expect(sharedImageUploader).toContain('tabIndex={0}');
   });
 
   it('uses theme tokens for Volantes responsive controls', () => {

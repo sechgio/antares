@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CANVAS_PRESETS } from '../presets';
+import { isTextualLayerType } from '../layerKinds';
 
 const EXPECTED_PRESETS = [
   { id: 'report', label: 'Panel fotográfico' },
@@ -49,7 +50,7 @@ describe('CANVAS_PRESETS from backend/templates root', () => {
     } else {
       expect(doc.layers.some((l) => l.type === 'logo')).toBe(true);
       expect(doc.layers.some((l) => l.type === 'imageSlot')).toBe(true);
-      expect(doc.layers.some((l) => l.type === 'field' || l.type === 'text')).toBe(true);
+      expect(doc.layers.some((l) => isTextualLayerType(l.type))).toBe(true);
     }
   });
 });

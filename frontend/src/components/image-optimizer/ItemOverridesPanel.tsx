@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ImageItem, PresetId } from './types';
 import { IMAGE_OPTIMIZER_PRESETS } from './presets';
 import { FormField, SettingSwitchRow, ThemeSelect, formControlClassName } from './ui';
+import Button from '@/components/ui/Button';
 
 interface ItemOverridesPanelProps {
   item: ImageItem;
@@ -54,13 +55,12 @@ export default function ItemOverridesPanel({
           <div className="flex items-center justify-between gap-2">
             <span className="text-[10px] font-medium text-[var(--text-secondary)]">{t('optimizer.item.localPreset')}</span>
             {item.overrides.presetId ? (
-              <button
-                type="button"
+              <Button variant="none" size="none"
                 onClick={() => onClearPresetOverride(item.id)}
                 className="text-[10px] font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
               >
                 {t('optimizer.queue.clearSelection')}
-              </button>
+              </Button>
             ) : null}
           </div>
           <ThemeSelect

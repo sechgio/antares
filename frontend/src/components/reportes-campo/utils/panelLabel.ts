@@ -11,8 +11,3 @@ export function derivePanelLabel(header: HeaderMap): string {
     if (parts.length === 0) return 'Panel nuevo';
     return parts.join(' · ');
 }
-
-export function safeFilenamePart(value: string): string {
-    const text = value.trim();
-    return text.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_') || 'panel';
-}
