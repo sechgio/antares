@@ -61,9 +61,10 @@ def formatos_upload(params: dict[str, Any]) -> dict[str, Any]:
     return {"format": result}
 
 @with_locale
-def formatos_delete(params: dict[str, Any]) -> dict[str, bool]:
+def formatos_delete(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.formatos import delete_format
-    return {"deleted": delete_format(params.get("format_id", ""))}
+    format_id = params.get("format_id", "")
+    return {"deleted_id": format_id if delete_format(format_id) else None}
 
 @with_locale
 def formatos_get_template(params: dict[str, Any]) -> dict[str, str]:

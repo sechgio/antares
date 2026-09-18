@@ -6,7 +6,7 @@ from concurrent.futures import CancelledError, Future
 from pathlib import Path
 
 from backend.core.jobs import Job
-from backend.handlers import conversion
+from backend.handlers import conversion, conversion_job
 
 
 class _ImmediateFuture:
@@ -39,10 +39,10 @@ def test_conversion_prepares_work_incrementally(monkeypatch) -> None:
     scheduler = _RecordingScheduler()
     seen_batches: list[list[str]] = []
 
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "convertir_imagen", lambda *args, **kwargs: None)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 2)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "convertir_imagen", lambda *args, **kwargs: None)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 2)
 
     def fake_lookup(codes):  # type: ignore[no-untyped-def]
         seen_batches.append(list(codes))
@@ -99,11 +99,11 @@ def test_conversion_prefetches_next_chunk_while_heavy_runs(monkeypatch) -> None:
                 prepare_during_heavy.set()
             return _ImmediateFuture(fn(*args, **kwargs))
 
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: _OverlapScheduler())
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "convertir_imagen", lambda *args, **kwargs: None)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda *args, **kwargs: Path(args[1]))
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 1)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: _OverlapScheduler())
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "convertir_imagen", lambda *args, **kwargs: None)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda *args, **kwargs: Path(args[1]))
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 1)
     monkeypatch.setattr("backend.core.database.buscar_lote_por_codigos", lambda _codes: {})
 
     job = Job(
@@ -171,11 +171,11 @@ def test_conversion_cancel_discards_prefetched_chunk(monkeypatch, tmp_path) -> N
         Path(dest).write_bytes(b"x")
         return Path(dest)
 
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: _CancelScheduler())
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "copiar_archivo", tracking_copy)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 1)
-    monkeypatch.setattr(conversion, "_CANCEL_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: _CancelScheduler())
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", tracking_copy)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 1)
+    monkeypatch.setattr(conversion_job, "_CANCEL_GRACE_SECONDS", 0.05)
     monkeypatch.setattr("backend.core.database.buscar_lote_por_codigos", lambda _codes: {})
 
     job = Job(
@@ -222,10 +222,10 @@ def test_conversion_cancel_releases_visible_state_without_waiting_for_slow_worke
             threading.Thread(target=_complete_later, daemon=True).start()
             return future
 
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: _SlowScheduler())
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 1)
-    monkeypatch.setattr(conversion, "_CANCEL_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: _SlowScheduler())
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 1)
+    monkeypatch.setattr(conversion_job, "_CANCEL_GRACE_SECONDS", 0.05)
     monkeypatch.setattr("backend.core.database.buscar_lote_por_codigos", lambda _codes: {})
 
     job = Job(
@@ -264,20 +264,20 @@ def test_progress_notifications_throttled_by_interval(monkeypatch, tmp_path) -> 
         def heavy_capacity(self) -> int:
             return 4
 
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: _Immediate())
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda *_a, **_k: None)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 50)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: _Immediate())
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda *_a, **_k: None)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 50)
     monkeypatch.setattr(
-        conversion,
+        conversion_job,
         "_emit_progress_notifications",
         lambda _jid, data, _default: notifies.append(dict(data)),
     )
-    monkeypatch.setattr(conversion, "_emit_heartbeat", lambda *_a, **_k: None)
+    monkeypatch.setattr(conversion_job, "_emit_heartbeat", lambda *_a, **_k: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_k: None)
 
     times = iter([1000.0] + [1000.1] * 200)
-    monkeypatch.setattr(conversion.time, "time", lambda: next(times, 1000.1))
+    monkeypatch.setattr(conversion_job.time, "time", lambda: next(times, 1000.1))
 
     n = 50
     dest = tmp_path / "out"
@@ -319,12 +319,12 @@ def test_save_run_receives_duration_ms(monkeypatch, tmp_path) -> None:
         captured.update(kwargs)
         return 1
 
-    monkeypatch.setattr(conversion, "get_scheduler", lambda: _Immediate())
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda *_a, **_k: None)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "_emit_heartbeat", lambda *_a, **_k: None)
-    monkeypatch.setattr(conversion, "send_notification", lambda *_a, **_k: None)
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: _Immediate())
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda *_a, **_k: None)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 10)
+    monkeypatch.setattr(conversion_job, "_emit_heartbeat", lambda *_a, **_k: None)
+    monkeypatch.setattr(conversion_job, "send_notification", lambda *_a, **_k: None)
     monkeypatch.setattr("backend.core.history.save_run", fake_save_run)
 
     dest = tmp_path / "out"
@@ -351,9 +351,9 @@ def test_save_run_receives_duration_ms(monkeypatch, tmp_path) -> None:
     def fake_notify(job, ok, err, **_kwargs):  # type: ignore[no-untyped-def]
         completes.append((ok, err))
 
-    monkeypatch.setattr(conversion, "_notify_complete", fake_notify)
-    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 1)
+    monkeypatch.setattr(conversion_job, "_notify_complete", fake_notify)
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 1)
 
     def boom(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise RuntimeError("mapping exploded")

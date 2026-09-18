@@ -82,9 +82,10 @@ def history_get(params: dict[str, Any]) -> dict[str, Any]:
 
 
 @with_locale
-def history_delete(params: dict[str, Any]) -> dict[str, bool]:
+def history_delete(params: dict[str, Any]) -> dict[str, Any]:
     core = _core_history()
-    return {"deleted": core.delete_run(params.get("id", 0))}
+    run_id = params.get("id", 0)
+    return {"deleted_id": run_id if core.delete_run(run_id) else None}
 
 
 @with_locale
@@ -96,7 +97,7 @@ def history_delete_many(params: dict[str, Any]) -> dict[str, int]:
         rid = _safe_int(run_id)
         if rid is not None and core.delete_run(rid):
             deleted += 1
-    return {"deleted": deleted, "requested": len(ids)}
+    return {"deleted_count": deleted, "requested": len(ids)}
 
 
 @with_locale

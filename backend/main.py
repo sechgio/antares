@@ -41,10 +41,17 @@ from backend.core.exceptions import (
     CapacityExceededError,
     MemoryPressureError,
     MethodNotFoundError,
+    NotFoundError,
+    ValidationError,
 )
 from backend.core.ipc_catalog import HEAVY_METHODS, SYNC_METHODS, lane_for
-from backend.core.observability import configure_logging, get_context, request_context
-from backend.core.plugins import load_plugins_from_dir
+from backend.core.observability import (
+    configure_logging,
+    get_context,
+    install_exception_hooks,
+    log_event,
+    request_context,
+)
 from backend.core.repository import close_connection
 from backend.core.scheduler import (
     MEMORY_PRESSURE_RETRY_AFTER_MS,
@@ -76,6 +83,7 @@ if hasattr(signal, "SIGHUP"):
 
 
 configure_logging(sys.stderr)
+install_exception_hooks()
 logger = logging.getLogger(__name__)
 
 _WARM_WAIT_METHODS = frozenset(HEAVY_METHODS | {"preview"})
@@ -114,14 +122,16 @@ def _validate_encoding() -> None:
 _validate_encoding()
 
 
-def _user_error_message(exc: Exception) -> str | AntaresBaseException:
+def _user_error_message(exc: Exception) -> AntaresBaseException:
     if isinstance(exc, AntaresBaseException):
         return exc
     if isinstance(exc, FileNotFoundError):
-        return "Archivo no encontrado"
-    if isinstance(exc, (ValueError, ImportError)):
-        return str(exc)
-    return "Error interno del servidor"
+        return NotFoundError("Archivo no encontrado")
+    if isinstance(exc, ValueError):
+        return ValidationError(str(exc))
+    if isinstance(exc, ImportError):
+        return AntaresBaseException(str(exc))
+    return AntaresBaseException("Error interno del servidor")
 
 
 def _ipc_telemetry_verbose() -> bool:
@@ -297,13 +307,6 @@ def main() -> None:
     if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
         HANDLERS.warm_deferred()
 
-    if os.environ.get("ANTARES_ENABLE_PLUGINS") == "1":
-        try:
-            load_plugins_from_dir()
-        except Exception as exc:
-            logger.exception("load_plugins_from_dir failed during startup: %s", exc)
-
-
     scheduler = get_scheduler()
 
     _consecutive_errors = 0
@@ -355,6 +358,14 @@ def main() -> None:
                     def _deferred_resolver(params, _method=msg.method):
                         h = HANDLERS.get(_method)
                         if h is None:
+                            log_event(
+                                logger,
+                                logging.WARNING,
+                                "backend.ipc.unknown_method",
+                                method=_method,
+                                outcome="rejected",
+                                message=f"Método desconocido: {_method}",
+                            )
                             raise MethodNotFoundError(f"Método desconocido: {_method}")
                         return h(params)
                     deferred = _deferred_resolver
@@ -369,6 +380,14 @@ def main() -> None:
                 elif deferred is not None:
                     _submit_handler(deferred, msg.params, msg.id, msg.method)
                 else:
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "backend.ipc.unknown_method",
+                        method=msg.method,
+                        outcome="rejected",
+                        message=f"Método IPC no reconocido: {msg.method}",
+                    )
                     ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="-", ok=False)
                     send_response(None, msg.id, error=MethodNotFoundError(f"Método desconocido: {msg.method}"))
                 _consecutive_errors = 0

@@ -4,6 +4,7 @@ import base64
 import binascii
 import contextlib
 import os
+import shutil
 import tempfile
 from io import BytesIO
 from pathlib import Path
@@ -69,8 +70,9 @@ def image_optimizer_save_files(params: dict[str, Any]) -> dict[str, Any]:
 
     for file_info in files:
         raw_name = str(file_info.get("filename", "") or "archivo")
+        file_token = str(file_info.get("file_token", "") or "").strip()
         content_b64 = str(file_info.get("content_b64", "") or "")
-        if not content_b64:
+        if not file_token and not content_b64:
             skipped.append({"filename": raw_name, "reason": "empty_content"})
             continue
 
@@ -92,7 +94,14 @@ def image_optimizer_save_files(params: dict[str, Any]) -> dict[str, Any]:
         tmp_target = Path(tmp_name)
         try:
             with tmp_target.open("wb") as out:
-                base64.decode(BytesIO(content_b64.encode("ascii")), out)
+                if file_token:
+                    source = Path(file_token).expanduser()
+                    if source.is_symlink() or not source.is_file():
+                        raise ValueError("file_token inválido")
+                    with source.open("rb") as input_file:
+                        shutil.copyfileobj(input_file, out, length=1024 * 1024)
+                else:
+                    base64.decode(BytesIO(content_b64.encode("ascii")), out)
             try:
                 os.rename(tmp_target, target)
             except FileExistsError:

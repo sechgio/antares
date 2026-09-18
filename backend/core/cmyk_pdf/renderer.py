@@ -9,8 +9,9 @@ import math
 import os
 import re
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, cast
 
 import pymupdf as fitz
@@ -272,6 +273,30 @@ def _resolve_image_src(layer: dict[str, Any], ctx: dict[str, Any]) -> str:
     return str(layer.get("value") or "")
 
 
+@dataclass(frozen=True)
+class _LayerPaint:
+    rect: fitz.Rect
+    x: float
+    y: float
+    w: float
+    h: float
+    rotate_deg: float
+    bg_cmyk: tuple[float, float, float, float] | None
+    border_cmyk: tuple[float, float, float, float] | None
+    border_width_pt: float
+
+
+@dataclass(frozen=True)
+class _LayerRenderCall:
+    page: fitz.Page
+    shape: fitz.Shape
+    layer: dict[str, Any]
+    ctx: dict[str, Any]
+    css_vars: dict[str, Any]
+    paint: _LayerPaint
+    local_image_paths: dict[str, str]
+
+
 class CanvasCmykRenderer:
 
     def _prepare_image_for_rect_cached(
@@ -331,6 +356,19 @@ class CanvasCmykRenderer:
         self.pair_context_pages = pair_context_pages
         self._image_cache: OrderedDict[tuple[Any, ...], tuple[bytes, int, int]] = OrderedDict()
         self._image_cache_max = 128
+        self._layer_renderers: dict[str, Callable[[_LayerRenderCall], None]] = {
+            "rect": self._render_rect_frame,
+            "frame": self._render_rect_frame,
+            "ellipse": self._render_ellipse,
+            "line": self._render_line,
+            "arrow": self._render_line,
+            "text": self._render_text,
+            "field": self._render_text,
+            "image": self._render_image,
+            "logo": self._render_image,
+            "imageSlot": self._render_image,
+            "group": self._render_noop,
+        }
 
         page_meta = document.get("page", {})
         self.page_w_mm = float(page_meta.get("widthMm", 210))
@@ -463,6 +501,119 @@ class CanvasCmykRenderer:
         shape.finish(color=cmyk_black, width=0.5)
         shape.commit()
 
+    def _render_rect_frame(self, call: _LayerRenderCall) -> None:
+        paint = call.paint
+        _draw_shape_rect(
+            call.shape,
+            paint.rect,
+            paint.rotate_deg,
+            bg_cmyk=paint.bg_cmyk,
+            border_cmyk=paint.border_cmyk,
+            border_width_pt=paint.border_width_pt,
+        )
+
+    def _render_ellipse(self, call: _LayerRenderCall) -> None:
+        paint = call.paint
+        if paint.rotate_deg:
+            logger.warning("CMYK renderer skips rotation for ellipse layers (not a true rotated oval)")
+        call.shape.draw_oval(paint.rect)
+        if paint.bg_cmyk or paint.border_cmyk:
+            call.shape.finish(
+                color=paint.border_cmyk,
+                fill=paint.bg_cmyk,
+                width=paint.border_width_pt or 1.0,
+            )
+
+    def _render_line(self, call: _LayerRenderCall) -> None:
+        paint = call.paint
+        p1 = fitz.Point(paint.x, paint.y + paint.h / 2)
+        p2 = fitz.Point(paint.x + paint.w, paint.y + paint.h / 2)
+        call.shape.draw_line(p1, p2)
+        stroke_cmyk = paint.border_cmyk or (0.0, 0.0, 0.0, 1.0)
+        call.shape.finish(color=stroke_cmyk, width=max(1.0, paint.border_width_pt))
+
+    def _render_text(self, call: _LayerRenderCall) -> None:
+        paint = call.paint
+        raw_val = str(call.layer.get("value") or "")
+        if not raw_val:
+            key = (call.layer.get("meta") or {}).get("key")
+            if key:
+                data = call.ctx.get("data") or {}
+                raw_val = str(data.get(key) or "")
+        text_val = _resolve_template_value(raw_val, call.ctx)
+
+        if paint.bg_cmyk or paint.border_cmyk:
+            _draw_shape_rect(
+                call.shape,
+                paint.rect,
+                paint.rotate_deg,
+                bg_cmyk=paint.bg_cmyk,
+                border_cmyk=paint.border_cmyk,
+                border_width_pt=paint.border_width_pt,
+            )
+
+        color_str = call.css_vars.get("--color") or call.css_vars.get("color") or "#000000"
+        text_cmyk = css_color_to_cmyk(color_str)
+        font_size_pt = _parse_length_pt(call.css_vars.get("--font-size"), 4)
+        font_size_pt = max(6.0, font_size_pt)
+
+        call.page.insert_textbox(
+            paint.rect,
+            text_val,
+            fontsize=font_size_pt,
+            fontname=_map_font_family(call.css_vars.get("--font-family")),
+            fill=text_cmyk,
+            align=_text_align(call.css_vars),
+            rotate=round(paint.rotate_deg),
+        )
+
+    def _render_image(self, call: _LayerRenderCall) -> None:
+        paint = call.paint
+        resolved_src = _resolve_image_src(call.layer, call.ctx)
+        if resolved_src:
+            resolved_src = _resolve_template_value(resolved_src, call.ctx)
+
+        object_fit = call.css_vars.get("--object-fit")
+        if resolved_src:
+            try:
+                prepared = self._prepare_image_for_rect_cached(
+                    resolved_src,
+                    call.local_image_paths,
+                    paint.rect,
+                    object_fit,
+                )
+            except Exception:
+                prepared = None
+            if prepared is not None:
+                cmyk_bytes, insert_rect = prepared
+                call.page.insert_image(
+                    insert_rect,
+                    stream=cmyk_bytes,
+                    rotate=round(paint.rotate_deg),
+                )
+            else:
+                call.shape.draw_rect(paint.rect)
+                call.shape.finish(color=(0, 0, 0, 0.5))
+        else:
+            call.shape.draw_rect(paint.rect)
+            call.shape.finish(color=(0, 0, 0, 0.5))
+
+    def _render_noop(self, call: _LayerRenderCall) -> None:
+        return
+
+    def _render_fallback(self, call: _LayerRenderCall) -> None:
+        paint = call.paint
+        if paint.bg_cmyk or paint.border_cmyk:
+            call.shape.draw_rect(paint.rect)
+            call.shape.finish(
+                color=paint.border_cmyk,
+                fill=paint.bg_cmyk,
+                width=paint.border_width_pt or 1.0,
+            )
+        else:
+            call.shape.draw_rect(paint.rect)
+            call.shape.finish(color=(0.0, 0.0, 0.0, 0.35), width=0.5)
+
     def _render_layer(
         self,
         page: fitz.Page,
@@ -488,112 +639,27 @@ class CanvasCmykRenderer:
         bg_cmyk = css_color_to_cmyk(bg_color_str) if bg_color_str and bg_color_str != "transparent" else None
         border_cmyk = css_color_to_cmyk(border_color_str) if border_color_str and border_width_pt > 0 else None
 
-        rect = fitz.Rect(x, y, x + w, y + h)
-        rotate_deg = _parse_rotate_deg(css_vars)
+        paint = _LayerPaint(
+            rect=fitz.Rect(x, y, x + w, y + h),
+            x=x,
+            y=y,
+            w=w,
+            h=h,
+            rotate_deg=_parse_rotate_deg(css_vars),
+            bg_cmyk=bg_cmyk,
+            border_cmyk=border_cmyk,
+            border_width_pt=border_width_pt,
+        )
 
-        if l_type in ("rect", "frame"):
-            _draw_shape_rect(
-                shape,
-                rect,
-                rotate_deg,
-                bg_cmyk=bg_cmyk,
-                border_cmyk=border_cmyk,
-                border_width_pt=border_width_pt,
+        handler = self._layer_renderers.get(l_type, self._render_fallback)
+        handler(
+            _LayerRenderCall(
+                page=page,
+                shape=shape,
+                layer=layer,
+                ctx=ctx,
+                css_vars=css_vars,
+                paint=paint,
+                local_image_paths=local_image_paths,
             )
-
-        elif l_type == "ellipse":
-            if rotate_deg:
-                logger.warning("CMYK renderer skips rotation for ellipse layers (not a true rotated oval)")
-            shape.draw_oval(rect)
-            if bg_cmyk or border_cmyk:
-                shape.finish(
-                    color=border_cmyk,
-                    fill=bg_cmyk,
-                    width=border_width_pt or 1.0,
-                )
-
-        elif l_type in ("line", "arrow"):
-            p1 = fitz.Point(x, y + h / 2)
-            p2 = fitz.Point(x + w, y + h / 2)
-            shape.draw_line(p1, p2)
-            stroke_cmyk = border_cmyk or (0.0, 0.0, 0.0, 1.0)
-            shape.finish(color=stroke_cmyk, width=max(1.0, border_width_pt))
-
-        elif l_type in ("text", "field"):
-            raw_val = str(layer.get("value") or "")
-            if not raw_val:
-                key = (layer.get("meta") or {}).get("key")
-                if key:
-                    data = ctx.get("data") or {}
-                    raw_val = str(data.get(key) or "")
-            text_val = _resolve_template_value(raw_val, ctx)
-
-            if bg_cmyk or border_cmyk:
-                _draw_shape_rect(
-                    shape,
-                    rect,
-                    rotate_deg,
-                    bg_cmyk=bg_cmyk,
-                    border_cmyk=border_cmyk,
-                    border_width_pt=border_width_pt,
-                )
-
-            color_str = css_vars.get("--color") or css_vars.get("color") or "#000000"
-            text_cmyk = css_color_to_cmyk(color_str)
-            font_size_pt = _parse_length_pt(css_vars.get("--font-size"), 4)
-            font_size_pt = max(6.0, font_size_pt)
-
-            page.insert_textbox(
-                rect,
-                text_val,
-                fontsize=font_size_pt,
-                fontname=_map_font_family(css_vars.get("--font-family")),
-                fill=text_cmyk,
-                align=_text_align(css_vars),
-                rotate=round(rotate_deg),
-            )
-
-        elif l_type in ("image", "logo", "imageSlot"):
-            resolved_src = _resolve_image_src(layer, ctx)
-            if resolved_src:
-                resolved_src = _resolve_template_value(resolved_src, ctx)
-
-            object_fit = css_vars.get("--object-fit")
-            if resolved_src:
-                try:
-                    prepared = self._prepare_image_for_rect_cached(
-                        resolved_src,
-                        local_image_paths,
-                        rect,
-                        object_fit,
-                    )
-                except Exception:
-                    prepared = None
-                if prepared is not None:
-                    cmyk_bytes, insert_rect = prepared
-                    page.insert_image(
-                        insert_rect,
-                        stream=cmyk_bytes,
-                        rotate=round(rotate_deg),
-                    )
-                else:
-                    shape.draw_rect(rect)
-                    shape.finish(color=(0, 0, 0, 0.5))
-            else:
-                shape.draw_rect(rect)
-                shape.finish(color=(0, 0, 0, 0.5))
-
-        elif l_type == "group":
-            return
-
-        else:
-            if bg_cmyk or border_cmyk:
-                shape.draw_rect(rect)
-                shape.finish(
-                    color=border_cmyk,
-                    fill=bg_cmyk,
-                    width=border_width_pt or 1.0,
-                )
-            else:
-                shape.draw_rect(rect)
-                shape.finish(color=(0.0, 0.0, 0.0, 0.35), width=0.5)
+        )

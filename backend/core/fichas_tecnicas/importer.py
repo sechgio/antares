@@ -17,6 +17,8 @@ from backend.core.fichas_tecnicas.models import (
     create_empty_ficha,
     ficha_id_from_number,
 )
+from backend.core.tabular_report_import import import_reports
+from backend.utils.coercion import safe_int as _safe_int
 
 
 def _normalize_header(value: Any) -> str:
@@ -174,17 +176,14 @@ def _row_to_ficha(row: dict[str, Any], number: int) -> dict[str, Any]:
 
 
 def import_fichas_from_bytes(filename: str, content: bytes) -> list[dict[str, Any]]:
-    lower = filename.lower()
-    if lower.endswith(".csv"):
-        rows = parse_csv_bytes(content)
-    elif lower.endswith(".xlsx"):
-        rows = parse_xlsx_bytes(content)
-    else:
-        msg = "Formato no soportado. Use archivos .csv o .xlsx"
-        raise ValueError(msg)
-
-    if not rows:
-        msg = "El archivo está vacío o no tiene datos válidos"
-        raise ValueError(msg)
-
-    return [_row_to_ficha(row, idx + 1) for idx, row in enumerate(rows)]
+    # Los parsers son propios: el CSV conserva la heurística de delimitador y el
+    # XLSX lee cell.number_format para concentración (parse_xlsx_rows usa
+    # values_only y la perdería).
+    return import_reports(
+        filename,
+        content,
+        parse_csv=parse_csv_bytes,
+        parse_xlsx=parse_xlsx_bytes,
+        transform_row=_row_to_ficha,
+        to_int=_safe_int,
+    )

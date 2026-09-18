@@ -1,9 +1,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 import jsonschema  # type: ignore
@@ -444,32 +446,36 @@ def _ficha_tecnica_stats() -> tuple[StatField, ...]:
     )
 
 
-def _opt(run: dict[str, Any], key: str) -> Any:
-    import json
-
-    raw = run.get("options_json")
-    if not raw:
-        return None
+@lru_cache(maxsize=256)
+def _parse_options_json(raw: str | bytes) -> dict[str, Any]:
     try:
         data = json.loads(raw)
     except (TypeError, ValueError):
-        return None
-    if isinstance(data, dict):
-        return data.get(key)
-    return None
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
-def _files(run: dict[str, Any]) -> list[str]:
-    import json
-
-    raw = run.get("files_json")
-    if not raw:
-        return []
+@lru_cache(maxsize=256)
+def _parse_files_json(raw: str | bytes) -> list[str]:
     try:
         data = json.loads(raw)
     except (TypeError, ValueError):
         return []
     return data if isinstance(data, list) else []
+
+
+def _opt(run: dict[str, Any], key: str) -> Any:
+    raw = run.get("options_json")
+    if not isinstance(raw, (str, bytes)) or not raw:
+        return None
+    return _parse_options_json(raw).get(key)
+
+
+def _files(run: dict[str, Any]) -> list[str]:
+    raw = run.get("files_json")
+    if not isinstance(raw, (str, bytes)) or not raw:
+        return []
+    return _parse_files_json(raw)
 
 
 RUN_TYPE_REGISTRY: dict[str, RunTypeMeta] = {

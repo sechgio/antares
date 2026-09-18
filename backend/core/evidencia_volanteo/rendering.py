@@ -11,6 +11,16 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from backend.core.docx_helpers import (
+    cm_to_twips,
+    format_run,
+    reset_cell_paragraph,
+    set_cell_margins_pt,
+    set_cell_width,
+    set_row_height,
+    set_table_no_cell_margins,
+    set_vertical_align,
+)
 from backend.utils.image_data import (
     build_image_uris,
     contain_fit_cm,
@@ -268,89 +278,7 @@ def render_docx(
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml import parse_xml
     from docx.oxml.ns import qn
-    from docx.shared import Cm, Pt, RGBColor
-
-    def cm_to_twips(cm: float) -> int:
-        return round(cm * 567)
-
-    def set_cell_width(cell: Any, width_cm: float) -> None:
-        tc = cell._tc
-        tcPr = tc.get_or_add_tcPr()
-        for old in tcPr.findall(qn("w:tcW")):
-            tcPr.remove(old)
-        tcPr.append(parse_xml(
-            f'<w:tcW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:w="{cm_to_twips(width_cm)}" w:type="dxa"/>',
-        ))
-
-    def set_row_height(row: Any, height_cm: float, *, rule: str = "exact") -> None:
-        tr = row._tr
-        trPr = tr.get_or_add_trPr()
-        for old in trPr.findall(qn("w:trHeight")):
-            trPr.remove(old)
-        trPr.append(parse_xml(
-            f'<w:trHeight xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:val="{cm_to_twips(height_cm)}" w:hRule="{rule}"/>',
-        ))
-
-    def set_vertical_align(cell: Any, align: str) -> None:
-        tc = cell._tc
-        tcPr = tc.get_or_add_tcPr()
-        for old in tcPr.findall(qn("w:vAlign")):
-            tcPr.remove(old)
-        tcPr.append(parse_xml(
-            f'<w:vAlign xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:val="{align}"/>',
-        ))
-
-    def format_run(run: Any, size_pt: float, *, bold: bool = False) -> None:
-        run.bold = bold
-        run.font.size = Pt(size_pt)
-        run.font.name = DOC_FONT
-        run._element.rPr.rFonts.set(qn("w:eastAsia"), DOC_FONT)
-
-    def reset_cell_paragraph(paragraph: Any, *, line_spacing: float = 1.0) -> None:
-        pf = paragraph.paragraph_format
-        pf.space_before = Pt(0)
-        pf.space_after = Pt(0)
-        pf.line_spacing = line_spacing
-
-    def pt_to_twips(pt: float) -> int:
-        return round(pt * 20)
-
-    def set_cell_margins(
-        cell: Any,
-        *,
-        top_pt: float = 0,
-        left_pt: float = 0,
-        bottom_pt: float = 0,
-        right_pt: float = 0,
-    ) -> None:
-        tc = cell._tc
-        tcPr = tc.get_or_add_tcPr()
-        for old in tcPr.findall(qn("w:tcMar")):
-            tcPr.remove(old)
-        tcPr.append(parse_xml(
-            '<w:tcMar xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            f'<w:top w:w="{pt_to_twips(top_pt)}" w:type="dxa"/>'
-            f'<w:left w:w="{pt_to_twips(left_pt)}" w:type="dxa"/>'
-            f'<w:bottom w:w="{pt_to_twips(bottom_pt)}" w:type="dxa"/>'
-            f'<w:right w:w="{pt_to_twips(right_pt)}" w:type="dxa"/>'
-            '</w:tcMar>',
-        ))
-
-    def set_table_no_cell_margins(table: Any) -> None:
-        tblPr = table._tbl.tblPr
-        for old in tblPr.findall(qn("w:tblCellMar")):
-            tblPr.remove(old)
-        tblPr.append(parse_xml(
-            '<w:tblCellMar xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            '<w:top w:w="0" w:type="dxa"/>'
-            '<w:left w:w="0" w:type="dxa"/>'
-            '<w:bottom w:w="0" w:type="dxa"/>'
-            '<w:right w:w="0" w:type="dxa"/>'
-            '</w:tblCellMar>',
-        ))
+    from docx.shared import Cm, RGBColor
 
     doc = Document()
     section = doc.sections[0]
@@ -433,7 +361,7 @@ def render_docx(
 
         merged_left = header_table.cell(0, 0)
         set_cell_width(merged_left, HEADER_LOGO_WIDTH_CM)
-        set_cell_margins(merged_left, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
+        set_cell_margins_pt(merged_left, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
         set_vertical_align(merged_left, "center")
         merged_left.paragraphs[0].clear()
         reset_cell_paragraph(merged_left.paragraphs[0])
@@ -444,7 +372,7 @@ def render_docx(
 
         title_cell = header_table.cell(0, 1)
         set_cell_width(title_cell, HEADER_TITLE_WIDTH_CM)
-        set_cell_margins(title_cell, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
+        set_cell_margins_pt(title_cell, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
         set_vertical_align(title_cell, "center")
         title_cell.paragraphs[0].clear()
         reset_cell_paragraph(title_cell.paragraphs[0], line_spacing=1.25)
@@ -454,12 +382,12 @@ def render_docx(
             if idx > 0:
                 title_cell.paragraphs[0].add_run('\n')
             run = title_cell.paragraphs[0].add_run(line)
-            format_run(run, TITLE_FONT_PT, bold=True)
+            format_run(run, TITLE_FONT_PT, bold=True, font_name=DOC_FONT)
             run.underline = True
 
         merged_right = header_table.cell(0, 2)
         set_cell_width(merged_right, HEADER_LOGO_WIDTH_CM)
-        set_cell_margins(merged_right, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
+        set_cell_margins_pt(merged_right, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
         set_vertical_align(merged_right, "center")
         merged_right.paragraphs[0].clear()
         reset_cell_paragraph(merged_right.paragraphs[0])
@@ -470,7 +398,7 @@ def render_docx(
 
         info_cell = header_table.cell(1, 1)
         set_cell_width(info_cell, HEADER_TITLE_WIDTH_CM)
-        set_cell_margins(info_cell, top_pt=3, left_pt=5, bottom_pt=3, right_pt=5)
+        set_cell_margins_pt(info_cell, top_pt=3, left_pt=5, bottom_pt=3, right_pt=5)
         set_vertical_align(info_cell, "center")
         info_cell.paragraphs[0].clear()
         reset_cell_paragraph(info_cell.paragraphs[0])
@@ -478,11 +406,11 @@ def render_docx(
         resolved_label = (document.cuadrante_label or CUADRANTE_LABEL).strip()
         if document.show_cuadrante_label and resolved_label:
             label_run = info_cell.paragraphs[0].add_run(resolved_label)
-            format_run(label_run, INFO_FONT_PT, bold=True)
+            format_run(label_run, INFO_FONT_PT, bold=True, font_name=DOC_FONT)
             info_cell.paragraphs[0].add_run("\n")
         page_cuadrante = _breakable_text(_display_cuadrante(page.cuadrante or document.cuadrante))
         value_run = info_cell.paragraphs[0].add_run(page_cuadrante)
-        format_run(value_run, INFO_FONT_PT, bold=True)
+        format_run(value_run, INFO_FONT_PT, bold=True, font_name=DOC_FONT)
 
         spacer = doc.add_table(rows=1, cols=1)
         spacer.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -507,7 +435,7 @@ def render_docx(
         set_row_height(spacer.rows[0], GAP_UNDER_HEADER_CM)
         sp_cell = spacer.cell(0, 0)
         set_cell_width(sp_cell, TABLE_WIDTH_CM)
-        set_cell_margins(sp_cell)
+        set_cell_margins_pt(sp_cell)
         sp_cell.paragraphs[0].clear()
         reset_cell_paragraph(sp_cell.paragraphs[0])
         tc_pr = sp_cell._tc.get_or_add_tcPr()
@@ -573,12 +501,12 @@ def render_docx(
             right: bool = False,
         ) -> None:
             set_cell_width(cell, width_cm)
-            set_cell_margins(cell)
+            set_cell_margins_pt(cell)
             set_vertical_align(cell, "center")
             cell.paragraphs[0].clear()
             reset_cell_paragraph(cell.paragraphs[0])
             run = cell.paragraphs[0].add_run("")
-            format_run(run, 1)
+            format_run(run, 1, font_name=DOC_FONT)
             _set_cell_frame(cell, top=top, bottom=bottom, left=left, right=right)
 
         last_col = PHOTO_TABLE_COLS - 1
@@ -603,7 +531,7 @@ def render_docx(
                 position = row_idx * PHOTO_COLS + col_idx + 1
                 cell = photo_row.cells[table_col_idx]
                 set_cell_width(cell, PHOTO_WIDTH_CM)
-                set_cell_margins(cell)
+                set_cell_margins_pt(cell)
                 set_vertical_align(cell, "top")
                 cell.paragraphs[0].clear()
                 reset_cell_paragraph(cell.paragraphs[0])
@@ -620,7 +548,7 @@ def render_docx(
                     )
                 else:
                     run = cell.paragraphs[0].add_run("Sin imagen")
-                    format_run(run, 8)
+                    format_run(run, 8, font_name=DOC_FONT)
                     run.italic = True
                     run.font.color.rgb = RGBColor(0xBB, 0xBB, 0xBB)
 

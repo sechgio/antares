@@ -138,7 +138,10 @@ def test_dispatch_prefers_user_facing_value_error(monkeypatch) -> None:
 
     backend_main._dispatch(boom, {}, "42", "test_method")
     assert sent
-    assert sent[0]["error"] == "Parámetro inválido"
+    err = sent[0]["error"]
+    assert hasattr(err, "to_dict")
+    assert err.to_dict()["message"] == "Parámetro inválido"
+    assert err.to_dict()["category"] == "VALIDATION_ERROR"
 
 
 def test_dispatch_structured_exception(monkeypatch) -> None:

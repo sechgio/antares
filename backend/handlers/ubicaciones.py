@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from backend.core.observability import log_event
 from backend.core.ubicaciones import cache as _ubic_cache
 from backend.core.ubicaciones import client as _ubic_client
 from backend.core.ubicaciones import composer as _ubic_composer
@@ -238,7 +239,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
         consolidated_writer = create_consolidated_writer()
 
     def _render_one(d: dict) -> tuple[bool, str | None]:
-        logger.info(f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}...")
+        log_event(logger, logging.INFO, "ubicaciones.item_start", message=f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}")
         t0 = time.perf_counter()
         try:
             if not consolidado:
@@ -262,12 +263,23 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
                 raise
         except Exception:
             logger.exception("Error renderizando ubicación %s; se omite", d["cod_componente"])
+            log_event(
+                logger,
+                logging.ERROR,
+                "ubicaciones.render_failed",
+                outcome="failed",
+                message=f"Error renderizando ubicación {d['cod_componente']}; se omite",
+            )
             return (False, None)
         finally:
-            logger.info(
-                "Ubicacion %s renderizada en %.1fs",
-                d["cod_componente"],
-                time.perf_counter() - t0,
+            elapsed_ms = round((time.perf_counter() - t0) * 1000)
+            log_event(
+                logger,
+                logging.INFO,
+                "ubicaciones.item_complete",
+                outcome="success",
+                duration_ms=elapsed_ms,
+                message=f"Ubicacion {d['cod_componente']} renderizada",
             )
 
     temp_ctx = (
@@ -288,6 +300,13 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
                         append_page_to_writer(consolidated_writer, page_path)
                     except Exception:
                         logger.exception("Error agregando página al PDF consolidado; se omite")
+                        log_event(
+                            logger,
+                            logging.ERROR,
+                            "ubicaciones.page_append_failed",
+                            outcome="failed",
+                            message="Error agregando página al PDF consolidado; se omite",
+                        )
                         fallidos += 1
                     else:
                         generados += 1
@@ -302,7 +321,14 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
         try:
             if generados:
                 consolidated_path = _save_consolidated_writer(consolidated_writer, output_dir)
-                logger.info(f"PDF consolidado generado: {consolidated_path} ({generados} paginas)")
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "ubicaciones.consolidated_generated",
+                    outcome="success",
+                    count=generados,
+                    message=f"PDF consolidado generado: {consolidated_path} ({generados} paginas)",
+                )
         finally:
             close_consolidated_writer(consolidated_writer)
 

@@ -10,13 +10,13 @@ import os
 import stat
 import tempfile
 import threading
-import uuid
 import zipfile
 from collections import OrderedDict
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
+from backend.core.spreadsheet_spill import SpreadsheetResultBuilder, is_indexed_sheet_cache, load_indexed_sheet_page
 from backend.handlers.common import with_locale
 from backend.utils.atomic_write import atomic_output_file
 
@@ -50,13 +50,6 @@ def _spill_dir() -> Path:
     if not stat.S_ISDIR(out.lstat().st_mode):
         raise RuntimeError("antares-spreadsheet-results no es un directorio seguro")
     return out
-
-
-def _write_sheet_cache(name: str, sheets: list[dict[str, Any]], warnings: list[str]) -> Path:
-    payload = {"workbookName": name, "sheets": sheets, "warnings": warnings}
-    out_path = _spill_dir() / f"{uuid.uuid4().hex}.json"
-    out_path.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
-    return out_path
 
 
 def _load_sheet_cache(path: Path) -> dict[str, Any]:
@@ -265,14 +258,13 @@ def _resolve_format(params: dict[str, Any], path: Path) -> tuple[str, str]:
     raise ValueError(msg)
 
 
-def _parse_xlsx(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
+def _parse_xlsx(path: Path, result: SpreadsheetResultBuilder) -> list[str]:
     import openpyxl
 
     _validate_zip_bomb(path)
     with path.open("rb") as source:
         wb = openpyxl.load_workbook(source, read_only=True, data_only=True)
         warnings: list[str] = []
-        sheets: list[dict[str, Any]] = []
         total_cells = 0
         sheet_count = 0
         try:
@@ -281,7 +273,7 @@ def _parse_xlsx(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
                 if sheet_count > MAX_SHEETS:
                     warnings.append(f"Se truncó a {MAX_SHEETS} hojas")
                     break
-                rows: list[list[Any]] = []
+                sheet_index = result.start_sheet(ws.title)
                 for row in ws.iter_rows(values_only=True):
                     if row is None:
                         continue
@@ -292,28 +284,26 @@ def _parse_xlsx(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
                     if total_cells > MAX_CELLS:
                         warnings.append("Se alcanzó el límite de celdas (2M)")
                         break
-                    rows.append(vals)
-                sheets.append({"name": ws.title, "rows": rows})
+                    result.append_row(sheet_index, vals)
                 if total_cells > MAX_CELLS:
                     break
         finally:
             with contextlib.suppress(Exception):
                 wb.close()
-    return (path.name, sheets, warnings)
+    return warnings
 
 
-def _parse_xls(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
+def _parse_xls(path: Path, result: SpreadsheetResultBuilder) -> list[str]:
     import xlrd  # type: ignore
 
     book = xlrd.open_workbook(str(path))
     warnings: list[str] = []
-    sheets: list[dict[str, Any]] = []
     total_cells = 0
     if book.nsheets > MAX_SHEETS:
         warnings.append(f"Se truncó a {MAX_SHEETS} hojas")
     for idx in range(min(book.nsheets, MAX_SHEETS)):
         sh = book.sheet_by_index(idx)
-        rows: list[list[Any]] = []
+        sheet_index = result.start_sheet(sh.name)
         for r in range(sh.nrows):
             vals = _trim_row(
                 [
@@ -327,16 +317,16 @@ def _parse_xls(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
             if total_cells > MAX_CELLS:
                 warnings.append("Se alcanzó el límite de celdas (2M)")
                 break
-            rows.append(vals)
-        sheets.append({"name": sh.name, "rows": rows})
+            result.append_row(sheet_index, vals)
         if total_cells > MAX_CELLS:
             break
-    return (path.name, sheets, warnings)
+    return warnings
 
 
-def _parse_csv(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
+def _parse_csv(path: Path, result: SpreadsheetResultBuilder) -> list[str]:
     warnings: list[str] = []
-    rows: list[list[Any]] = []
+    sheet_index = result.start_sheet(path.stem)
+    row_count = 0
     total_cells = 0
     with path.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.reader(f)
@@ -348,54 +338,70 @@ def _parse_csv(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
             if total_cells > MAX_CELLS:
                 warnings.append("Se alcanzó el límite de celdas (2M)")
                 break
-            if len(rows) > 200_000:
+            if row_count > 200_000:
                 warnings.append("CSV truncado a 200k filas")
                 break
-            rows.append(vals)
-    return (path.name, [{"name": path.stem, "rows": rows}], warnings)
+            result.append_row(sheet_index, vals)
+            row_count += 1
+    return warnings
 
 
 @with_locale
 def spreadsheet_parse(params: dict[str, Any]) -> dict[str, Any]:
     p, is_temp = _resolve_input_path(params)
+    result: SpreadsheetResultBuilder | None = None
     try:
         fmt, token_name = _resolve_format(params, p)
+        result = SpreadsheetResultBuilder(
+            token_name or p.name,
+            inline_max_bytes=INLINE_RESULT_MAX_BYTES,
+            spill_dir=_spill_dir(),
+        )
         if fmt == "xlsx":
-            name, sheets, warnings = _parse_xlsx(p)
+            warnings = _parse_xlsx(p, result)
         elif fmt == "xls":
-            name, sheets, warnings = _parse_xls(p)
+            warnings = _parse_xls(p, result)
         else:
-            name, sheets, warnings = _parse_csv(p)
+            warnings = _parse_csv(p, result)
+        return result.finish(warnings)
+    except Exception:
+        if result is not None:
+            result.abort()
+        raise
     finally:
         if is_temp:
             with contextlib.suppress(OSError):
                 p.unlink(missing_ok=True)
-    if token_name:
-        name = token_name
-    payload: dict[str, Any] = {"workbookName": name, "sheets": sheets, "warnings": warnings}
-    encoded = json.dumps(payload, ensure_ascii=False, default=str)
-    if len(encoded.encode("utf-8")) <= INLINE_RESULT_MAX_BYTES:
-        return payload
-
-    out_path = _write_sheet_cache(name, sheets, warnings)
-    return {
-        "workbookName": name,
-        "sheets": [],
-        "warnings": warnings,
-        "result_path": str(out_path),
-        "sheet_meta": [{"name": s["name"], "rowCount": len(s["rows"])} for s in sheets],
-    }
 
 
 @with_locale
 def spreadsheet_get_rows(params: dict[str, Any]) -> dict[str, Any]:
     cache_path = _resolve_cache_path(params)
+    try:
+        offset = max(0, int(params.get("offset") or 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("offset inválido") from exc
+    try:
+        limit = int(params.get("limit") or DEFAULT_GET_ROWS_LIMIT)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("limit inválido") from exc
+    limit = max(1, min(limit, MAX_GET_ROWS_LIMIT))
+
+    sheet_name = params.get("sheet") or params.get("sheet_name")
+    if is_indexed_sheet_cache(cache_path):
+        return load_indexed_sheet_page(
+            cache_path,
+            sheet_name=sheet_name if isinstance(sheet_name, str) and sheet_name else None,
+            sheet_index=params.get("sheet_index"),
+            offset=offset,
+            limit=limit,
+        )
+
     data = _load_sheet_cache(cache_path)
     sheets: list[dict[str, Any]] = data["sheets"]
     if not sheets:
         return {"name": "", "rows": [], "offset": 0, "limit": 0, "total": 0, "has_more": False}
 
-    sheet_name = params.get("sheet") or params.get("sheet_name")
     sheet_index = params.get("sheet_index")
     chosen: dict[str, Any] | None = None
     if isinstance(sheet_name, str) and sheet_name:
@@ -416,16 +422,6 @@ def spreadsheet_get_rows(params: dict[str, Any]) -> dict[str, Any]:
 
     raw_rows = chosen.get("rows")
     rows: list[Any] = raw_rows if isinstance(raw_rows, list) else []
-    try:
-        offset = max(0, int(params.get("offset") or 0))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("offset inválido") from exc
-    try:
-        limit = int(params.get("limit") or DEFAULT_GET_ROWS_LIMIT)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("limit inválido") from exc
-    limit = max(1, min(limit, MAX_GET_ROWS_LIMIT))
-
     page = rows[offset : offset + limit]
     total = len(rows)
     return {

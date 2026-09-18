@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import sqlite3
 import tempfile
 from datetime import date, datetime
 from pathlib import Path
@@ -148,6 +149,7 @@ def test_parse_csv_via_hint_with_tmp_suffix(tmp_path: Path) -> None:
 
 def test_parse_spills_large_result_to_disk(tmp_path: Path, monkeypatch) -> None:
     from backend.handlers import spreadsheet as ss
+    from backend.handlers.spreadsheet import spreadsheet_get_rows
 
     monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 2_000)
 
@@ -161,8 +163,8 @@ def test_parse_spills_large_result_to_disk(tmp_path: Path, monkeypatch) -> None:
     assert result["sheets"] == []
     assert "result_path" in result
     assert Path(result["result_path"]).is_file()
-    spilled = json.loads(Path(result["result_path"]).read_text(encoding="utf-8"))
-    assert len(spilled["sheets"][0]["rows"]) == 50
+    page = spreadsheet_get_rows({"result_path": result["result_path"], "sheet_index": 0, "limit": 50})
+    assert len(page["rows"]) == 50
     assert result["sheet_meta"][0]["rowCount"] == 50
     assert result["workbookName"]
 
@@ -350,7 +352,7 @@ def test_b64_inline_rejects_oversized_payload(monkeypatch) -> None:
         ss._resolve_input_path({"xlsx_b64": oversized_b64})
 
 
-def test_get_rows_serves_pages_from_cached_spill(tmp_path: Path, monkeypatch) -> None:
+def test_get_rows_does_not_read_indexed_spill_as_text(tmp_path: Path, monkeypatch) -> None:
     from backend.handlers import spreadsheet as ss
     from backend.handlers.spreadsheet import spreadsheet_get_rows
 
@@ -386,10 +388,10 @@ def test_get_rows_serves_pages_from_cached_spill(tmp_path: Path, monkeypatch) ->
     assert page2["rows"][0][0] == "9"
 
     spill_reads = [p for p in reads if p == str(spill_path)]
-    assert len(spill_reads) == 1, f"el spill se releyó por página: {spill_reads}"
+    assert spill_reads == []
 
 
-def test_get_rows_cache_invalidated_when_spill_changes(tmp_path: Path, monkeypatch) -> None:
+def test_get_rows_observes_indexed_spill_changes(tmp_path: Path, monkeypatch) -> None:
     from backend.handlers import spreadsheet as ss
     from backend.handlers.spreadsheet import spreadsheet_get_rows
 
@@ -408,9 +410,12 @@ def test_get_rows_cache_invalidated_when_spill_changes(tmp_path: Path, monkeypat
     )
     assert first["total"] == 31
 
-    payload = json.loads(spill_path.read_text(encoding="utf-8"))
-    payload["sheets"][0]["rows"].append(["nueva", "fila"])
-    spill_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    with sqlite3.connect(spill_path) as conn:
+        conn.execute(
+            "INSERT INTO rows (sheet_index, row_index, row_json) VALUES (?, ?, ?)",
+            (0, 31, json.dumps(["nueva", "fila"], ensure_ascii=False)),
+        )
+        conn.execute("UPDATE sheets SET row_count = 32 WHERE sheet_index = 0")
 
     second = spreadsheet_get_rows(
         {"result_path": parsed["result_path"], "offset": 0, "limit": 10},
@@ -423,13 +428,14 @@ def test_clear_spreadsheet_caches_empties_cache(tmp_path: Path, monkeypatch) -> 
     from backend.handlers import spreadsheet as ss
     from backend.handlers.spreadsheet import spreadsheet_get_rows
 
-    monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 50)
-    staged = tmp_path / "clear_test.xlsx"
-    rows = [["A", "B"], ["1", "2"]]
-    _write_xlsx(staged, rows)
+    monkeypatch.setattr(ss, "_spill_dir", lambda: tmp_path)
+    spill_path = tmp_path / "legacy.json"
+    spill_path.write_text(
+        json.dumps({"workbookName": "legacy.xlsx", "sheets": [{"name": "S", "rows": [["A"]]}], "warnings": []}),
+        encoding="utf-8",
+    )
 
-    parsed = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
-    spreadsheet_get_rows({"result_path": parsed["result_path"], "offset": 0, "limit": 10})
+    spreadsheet_get_rows({"result_path": str(spill_path), "offset": 0, "limit": 10})
 
     assert len(ss._spill_cache) > 0
     ss._clear_spreadsheet_caches()

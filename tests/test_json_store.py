@@ -64,6 +64,69 @@ def test_get_all_returns_deep_copies(tmp_path) -> None:
     assert stored["title"] == "ok"
 
 
+def test_reads_do_not_serialize_documents_to_copy_them(tmp_path, monkeypatch) -> None:
+    from backend.core import json_store
+
+    db = JsonDocumentStore(tmp_path / "docs.json", _normalize)
+    db.insert({"id": "doc-1", "title": "ok", "nested": {"flag": True}})
+
+    def fail_dumps(*_args: object, **_kwargs: object) -> str:
+        raise AssertionError("reads must not serialize documents just to detach them")
+
+    monkeypatch.setattr(json_store.json, "dumps", fail_dumps)
+
+    assert db.get("doc-1") == {"id": "doc-1", "title": "ok", "nested": {"flag": True}}
+    assert db.get_all() == [{"id": "doc-1", "title": "ok", "nested": {"flag": True}}]
+
+
+def test_get_many_copies_only_requested_documents(tmp_path) -> None:
+    db = JsonDocumentStore(tmp_path / "docs.json", _normalize)
+    db.insert({"id": "doc-1", "title": "one"})
+    db.insert({"id": "doc-2", "title": "two"})
+
+    get_many = getattr(db, "get_many", lambda _ids: None)
+    selected = get_many(["doc-2", "missing"])
+
+    assert selected == [{"id": "doc-2", "title": "two"}]
+
+
+def test_project_all_returns_detached_projections(tmp_path) -> None:
+    db = JsonDocumentStore(tmp_path / "docs.json", _normalize)
+    db.insert({"id": "doc-1", "title": "one", "nested": {"flag": True}})
+
+    project_all = getattr(db, "project_all", lambda _projector: None)
+    projected = project_all(lambda item: {"id": item["id"], "flag": item["nested"]["flag"]})
+
+    assert projected == [{"id": "doc-1", "flag": True}]
+
+
+def test_repeated_updates_reuse_unchanged_serialized_documents(tmp_path, monkeypatch) -> None:
+    from backend.core import json_store
+
+    db = JsonDocumentStore(tmp_path / "docs.json", _normalize)
+    db.insert({"id": "doc-1", "title": "one", "nested": {"value": "a" * 1000}})
+    db.insert({"id": "doc-2", "title": "two", "nested": {"value": "b" * 1000}})
+    db.update("doc-1", {"title": "warm", "nested": {"value": "c" * 1000}})
+    real_dumps = json_store.json.dumps
+    serialized_full_store = 0
+    serialized_documents: list[str] = []
+
+    def tracking_dumps(value, *args, **kwargs):
+        nonlocal serialized_full_store
+        if isinstance(value, dict) and {"doc-1", "doc-2"}.issubset(value):
+            serialized_full_store += 1
+        if isinstance(value, dict) and value.get("id"):
+            serialized_documents.append(str(value["id"]))
+        return real_dumps(value, *args, **kwargs)
+
+    monkeypatch.setattr(json_store.json, "dumps", tracking_dumps)
+
+    db.update("doc-1", {"title": "changed", "nested": {"value": "d" * 1000}})
+
+    assert serialized_full_store == 0
+    assert serialized_documents == ["doc-1"]
+
+
 def test_caller_mutation_after_insert_does_not_corrupt_store(tmp_path) -> None:
     db = JsonDocumentStore(tmp_path / "docs.json", _normalize)
     payload = {"id": "doc-1", "title": "ok", "nested": {"flag": True}}

@@ -3,7 +3,6 @@ from __future__ import annotations
 from functools import wraps
 from typing import TYPE_CHECKING, Any, cast
 
-from backend.core.state import ProcessState
 from backend.utils.i18n import set_locale
 from backend.utils.image_data import decode_b64_payload
 from backend.utils.validators import is_safe_user_path, path_param_violations
@@ -122,6 +121,20 @@ def filter_by_optional_ids(
     return selected
 
 
+def get_items_by_optional_ids(
+    store: Any,
+    raw_ids: Any,
+    empty_message: str,
+) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
+    if isinstance(raw_ids, list) and raw_ids:
+        items = store.get_many([str(item_id) for item_id in raw_ids])
+    else:
+        items = store.get_all()
+    if not items:
+        raise ValueError(empty_message)
+    return cast(list[dict[str, Any]], items)  # allowlist: dict[str, Any]
+
+
 def parse_positive_int(value: Any, label: str, *, maximum: int | None = None) -> int:
     try:
         parsed = int(value)
@@ -159,27 +172,3 @@ def _validate_path(path: str) -> None:
     if not is_safe_user_path(path):
         msg = f"Path traversal detected: {path}"
         raise ValueError(msg)
-
-
-process_state = ProcessState()
-
-
-def reset_state(state: ProcessState | None = None) -> None:
-    target = state or process_state
-    with target._lock:
-        target.running = False
-        target.progress = 0
-        target.total = 0
-        target.current_file = ""
-        target.ok_count = 0
-        target.err_count = 0
-        target.logs = []
-        target.cancel_requested = False
-
-
-def log_message(msg: str, tag: str = "info", state: ProcessState | None = None) -> None:
-    target = state or process_state
-    with target._lock:
-        target.logs.insert(0, {"message": msg, "tag": tag})
-        if len(target.logs) > 100:
-            del target.logs[100:]

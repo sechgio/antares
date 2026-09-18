@@ -5,7 +5,7 @@ from pathlib import Path
 
 from backend.core.naming import resolve_rename_plan
 from backend.core.renamer import RenamerEngine
-from backend.handlers import conversion
+from backend.handlers import conversion, conversion_job
 
 
 def test_resolve_rename_plan_key_column_prefiere_stem(monkeypatch, tmp_path) -> None:
@@ -93,7 +93,7 @@ def test_parity_preview_vs_process_key_column(monkeypatch, tmp_path) -> None:
         "use_filename_seq": True,
     })
     engine = RenamerEngine(patron, 1, sequence_mode="filename")
-    tasks = conversion._prepare_chunk_tasks(
+    tasks = conversion_job._prepare_chunk_tasks(
         files,
         destino=str(tmp_path / "out"),
         engine=engine,
@@ -129,7 +129,7 @@ def test_parity_preview_vs_process_lote_record(monkeypatch, tmp_path) -> None:
         "use_filename_seq": False,
     })
     engine = RenamerEngine(patron, 1, sequence_mode="record")
-    tasks = conversion._prepare_chunk_tasks(
+    tasks = conversion_job._prepare_chunk_tasks(
         files,
         destino=str(tmp_path / "out"),
         engine=engine,
@@ -168,7 +168,7 @@ def test_parity_preview_vs_process_posicional_entre_chunks(monkeypatch, tmp_path
         "use_filename_seq": True,
     })
     engine = RenamerEngine(patron, 1, sequence_mode="global")
-    chunk0 = conversion._prepare_chunk_tasks(
+    chunk0 = conversion_job._prepare_chunk_tasks(
         files[:2],
         destino=str(tmp_path / "out"),
         engine=engine,
@@ -178,7 +178,7 @@ def test_parity_preview_vs_process_posicional_entre_chunks(monkeypatch, tmp_path
         use_column_rename=True,
         global_offset=0,
     )
-    chunk1 = conversion._prepare_chunk_tasks(
+    chunk1 = conversion_job._prepare_chunk_tasks(
         files[2:],
         destino=str(tmp_path / "out"),
         engine=engine,

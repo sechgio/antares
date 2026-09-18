@@ -8,6 +8,8 @@ import math
 import os
 import re
 import sys
+import threading
+import traceback
 import uuid
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -58,6 +60,7 @@ _EVENT_FIELDS = {
     "rum_value",
     "status_class",
     "stream",
+    "timeout_ms",
     "view",
 }
 _TEXT_REDACTIONS = (
@@ -190,7 +193,7 @@ def _safe_field(key: str, value: Any) -> tuple[bool, Any]:
         return True, redact_text(value)
     if key == "outcome":
         return (True, value) if value in _OUTCOMES else (False, None)
-    if key in {"pid", "backend_pid", "bytes", "attempt"}:
+    if key in {"pid", "backend_pid", "bytes", "attempt", "timeout_ms"}:
         return (True, value) if isinstance(value, int) and value >= 0 else (False, None)
     if key == "duration_ms":
         return (
@@ -258,11 +261,13 @@ def log_event(
     event: str,
     *,
     message: Any | None = None,
+    exc_info: Any = None,
     **fields: Any,
 ) -> None:
     logger.log(
         level,
         "" if message is None else str(message),
+        exc_info=exc_info,
         extra={"observability_event": event, "observability_fields": fields},
     )
 
@@ -279,3 +284,60 @@ def configure_logging(stream: Any = None) -> None:
     for h in root.handlers:
         if isinstance(h, logging.StreamHandler):
             h.setFormatter(JsonLogFormatter())
+
+
+_CRASH_LOGGER = logging.getLogger("backend.crash")
+
+
+def install_exception_hooks() -> None:
+    original_sys_excepthook = sys.excepthook
+    original_thread_excepthook = getattr(threading, "excepthook", None)
+
+    def _unhandled_sys_exception(
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_tb: Any,
+    ) -> None:
+        if issubclass(exc_type, KeyboardInterrupt):
+            original_sys_excepthook(exc_type, exc_value, exc_tb)
+            return
+
+        tb_lines = traceback.format_exception(exc_type, exc_value, exc_tb)
+        tb_text = "".join(tb_lines)
+        log_event(
+            _CRASH_LOGGER,
+            logging.CRITICAL,
+            "backend.crash",
+            message=f"Uncaught exception: {exc_type.__name__}: {exc_value}\n{tb_text}",
+            outcome="failed",
+            reason="uncaught_exception",
+            error_code=exc_type.__name__,
+        )
+        sys.stderr.flush()
+        original_sys_excepthook(exc_type, exc_value, exc_tb)
+
+    def _unhandled_thread_exception(args: threading.ExceptHookArgs) -> None:
+        if issubclass(args.exc_type, KeyboardInterrupt):
+            if original_thread_excepthook:
+                original_thread_excepthook(args)
+            return
+
+        tb_lines = traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)
+        tb_text = "".join(tb_lines)
+        thread_name = args.thread.name if args.thread else "unknown"
+        log_event(
+            _CRASH_LOGGER,
+            logging.CRITICAL,
+            "backend.crash",
+            message=f"Uncaught thread exception in {thread_name}: {args.exc_type.__name__}: {args.exc_value}\n{tb_text}",
+            outcome="failed",
+            reason="uncaught_thread_exception",
+            error_code=args.exc_type.__name__,
+        )
+        sys.stderr.flush()
+        if original_thread_excepthook:
+            original_thread_excepthook(args)
+
+    sys.excepthook = _unhandled_sys_exception
+    if original_thread_excepthook is not None:
+        threading.excepthook = _unhandled_thread_exception

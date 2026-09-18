@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from backend.core import config_patterns
 from backend.core.config_patterns import DEFAULT_PATTERNS, load_patterns, save_patterns
 
 
@@ -10,7 +11,7 @@ class TestConfigPatterns:
             "backend.core.config_patterns._config_file",
             lambda: tmp_path / "missing.json",
         )
-        monkeypatch.setattr("backend.core.config_patterns._cached_patterns", None)
+        config_patterns._store.invalidate()
         patterns = load_patterns()
         assert len(patterns) == len(DEFAULT_PATTERNS)
 
@@ -20,7 +21,7 @@ class TestConfigPatterns:
             "backend.core.config_patterns._config_file",
             lambda: config_path,
         )
-        monkeypatch.setattr("backend.core.config_patterns._cached_patterns", None)
+        config_patterns._store.invalidate()
         monkeypatch.setattr(
             "backend.core.config_patterns.get_field_names",
             lambda: ["codigo", "nombre"],
@@ -33,7 +34,7 @@ class TestConfigPatterns:
         assert config_path.exists()
         assert not config_path.with_suffix(config_path.suffix + ".tmp").exists()
 
-        monkeypatch.setattr("backend.core.config_patterns._cached_patterns", None)
+        config_patterns._store.invalidate()
         loaded = load_patterns()
         assert loaded[0]["id"] == "custom"
         assert loaded[0]["pattern"] == "{codigo}_{seq}{ext}"

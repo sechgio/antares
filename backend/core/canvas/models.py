@@ -19,32 +19,15 @@ def _load_canvas_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
             return cast("dict[str, Any]", json.loads(p.read_text(encoding="utf-8")))  # allowlist: dict[str, Any]
     except Exception:
         pass
+    # Fallback cuando el schema no es legible (p.ej. recurso no empaquetado):
+    # los tipos de capa se derivan del Literal de types.py — mismo conjunto que
+    # valida test_canvas_schema_parity, sin lista duplicada.
+    from typing import get_args
+
+    from backend.core.canvas.types import CanvasLayerType
     return {
         "documentVersion": 2,
-        "layerTypes": [
-            "text",
-            "image",
-            "frame",
-            "component",
-            "field",
-            "logo",
-            "imageSlot",
-            "rect",
-            "grid",
-            "group",
-            "table",
-            "checkbox",
-            "signature",
-            "line",
-            "ellipse",
-            "arrow",
-            "polygon",
-            "star",
-            "diamond",
-            "hexagon",
-            "pentagon",
-            "boolean",
-        ],
+        "layerTypes": [str(t) for t in get_args(CanvasLayerType)],
         "a4": {"widthMm": 210, "heightMm": 297},
         "guideAxes": ["x", "y"],
     }

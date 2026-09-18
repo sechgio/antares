@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.core.observability import log_event
+from backend.utils.lazy import LazySingleton
 
 logger = logging.getLogger(__name__)
 
@@ -473,15 +474,14 @@ class WorkScheduler:
         self._heavy_executor.shutdown(wait=wait, cancel_futures=True)
 
 
-_scheduler: WorkScheduler | None = None
-_scheduler_lock = threading.Lock()
+def _create_scheduler() -> WorkScheduler:
+    scheduler = WorkScheduler.autodetected()
+    log_event(logger, logging.INFO, "scheduler.initialized")
+    return scheduler
+
+
+_scheduler_singleton = LazySingleton(_create_scheduler)
 
 
 def get_scheduler() -> WorkScheduler:
-    global _scheduler
-    if _scheduler is None:
-        with _scheduler_lock:
-            if _scheduler is None:
-                _scheduler = WorkScheduler.autodetected()
-                log_event(logger, logging.INFO, "scheduler.initialized")
-    return _scheduler
+    return _scheduler_singleton.get()

@@ -33,8 +33,7 @@ def _read_items(path: Path, normalizer: Callable[[dict[str, Any]], dict[str, Any
 
 
 def _copy_item(item: dict[str, Any]) -> dict[str, Any]:
-    copied: dict[str, Any] = json.loads(json.dumps(item, ensure_ascii=False))
-    return copied
+    return deepcopy(item)
 
 
 def _migration_marker_path(target_path: Path) -> Path:
@@ -111,6 +110,7 @@ class JsonDocumentStore:
         self._normalizer = normalizer
         self._lock = threading.RLock()
         self._items: dict[str, dict[str, Any]] = {}
+        self._encoded_items: dict[str, str] = {}
         migrate_legacy_json_store(self.db_path, legacy_path, normalizer)
         self._load()
 
@@ -118,6 +118,7 @@ class JsonDocumentStore:
         with self._lock:
             if not self.db_path.exists():
                 self._items = {}
+                self._encoded_items = {}
                 return
             try:
                 raw = json.loads(self.db_path.read_text(encoding="utf-8"))
@@ -144,14 +145,43 @@ class JsonDocumentStore:
                 }
             else:
                 self._items = {}
+            self._encoded_items = {}
 
     def _save(self, items: dict[str, dict[str, Any]]) -> None:
-        content = json.dumps(items, ensure_ascii=False, separators=(",", ":"))
+        encoded_items: dict[str, str] = {}
+        parts: list[str] = []
+        for item_id, item in items.items():
+            encoded = (
+                self._encoded_items[item_id]
+                if self._items.get(item_id) is item and item_id in self._encoded_items
+                else json.dumps(item, ensure_ascii=False, separators=(",", ":"))
+            )
+            encoded_items[item_id] = encoded
+            parts.append(f"{json.dumps(item_id, ensure_ascii=False)}:{encoded}")
+        content = "{" + ",".join(parts) + "}"
         atomic_write_text(self.db_path, content)
+        self._encoded_items = encoded_items
 
     def get_all(self) -> list[dict[str, Any]]:
         with self._lock:
             return [_copy_item(item) for item in self._items.values()]
+
+    def get_many(self, item_ids: list[str]) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
+        allowed = {str(item_id) for item_id in item_ids}
+        with self._lock:
+            return [_copy_item(item) for item_id, item in self._items.items() if item_id in allowed]
+
+    def project_all(
+        self,
+        projector: Callable[[dict[str, Any]], dict[str, Any]],  # allowlist: dict[str, Any]
+        predicate: Callable[[dict[str, Any]], bool] | None = None,  # allowlist: dict[str, Any]
+    ) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
+        with self._lock:
+            return [
+                deepcopy(projector(item))
+                for item in self._items.values()
+                if predicate is None or predicate(item)
+            ]
 
     def get(self, item_id: str) -> dict[str, Any] | None:
         with self._lock:

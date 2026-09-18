@@ -16,22 +16,22 @@ def test_create_list_update_delete_clear(monkeypatch, tmp_path) -> None:
     from backend.core.fichas_tecnicas import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "fichas_tecnicas.json")
-    db_module._db_instance = None
+    db_module._db_singleton.reset()
 
-    created = HANDLERS["fichas_tecnicas_create"]({})["ficha"]
+    created = HANDLERS["fichas_tecnicas_create"]({})["item"]
     assert created["id"].startswith("FT-")
 
     listed = HANDLERS["fichas_tecnicas_list"]({"summary": True})
     assert listed["total"] == 1
-    assert listed["fichas"][0]["id"] == created["id"]
+    assert listed["items"][0]["id"] == created["id"]
 
     created["cliente"] = "Cliente Demo"
     created["servicio"]["desinfeccion"] = True
-    updated = HANDLERS["fichas_tecnicas_update"]({"id": created["id"], "ficha": created})["ficha"]
+    updated = HANDLERS["fichas_tecnicas_update"]({"id": created["id"], "ficha": created})["item"]
     assert updated["cliente"] == "Cliente Demo"
     assert updated["servicio"]["desinfeccion"] is True
 
-    got = HANDLERS["fichas_tecnicas_get"]({"id": created["id"]})["ficha"]
+    got = HANDLERS["fichas_tecnicas_get"]({"id": created["id"]})["item"]
     assert got["cliente"] == "Cliente Demo"
 
     deleted = HANDLERS["fichas_tecnicas_delete"]({"id": created["id"]})
@@ -49,7 +49,7 @@ def test_crud_errors_preserve_public_messages(monkeypatch, tmp_path) -> None:
     from backend.core.fichas_tecnicas import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "fichas_tecnicas.json")
-    db_module._db_instance = None
+    db_module._db_singleton.reset()
 
     with pytest.raises(ValueError, match="Ficha no encontrada: missing"):
         HANDLERS["fichas_tecnicas_get"]({"id": "missing"})
@@ -65,7 +65,7 @@ def test_import_file_handler_imports_csv(monkeypatch, tmp_path) -> None:
     from backend.core.fichas_tecnicas import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "fichas_tecnicas.json")
-    db_module._db_instance = None
+    db_module._db_singleton.reset()
 
     csv_body = (
         "os_numero;cliente;fecha;direccion;distrito;servicio_desinfeccion\n"
@@ -79,9 +79,9 @@ def test_import_file_handler_imports_csv(monkeypatch, tmp_path) -> None:
 
     assert result["imported_count"] == 1
     listed = HANDLERS["fichas_tecnicas_list"]({"summary": True})
-    assert listed["fichas"][0]["id"] == "FT-00001"
-    assert listed["fichas"][0]["cliente"] == "ACME"
-    full = HANDLERS["fichas_tecnicas_get"]({"id": "FT-00001"})["ficha"]
+    assert listed["items"][0]["id"] == "FT-00001"
+    assert listed["items"][0]["cliente"] == "ACME"
+    full = HANDLERS["fichas_tecnicas_get"]({"id": "FT-00001"})["item"]
     assert full["servicio"]["desinfeccion"] is True
     assert full["distrito"] == "Surco"
 
@@ -90,7 +90,7 @@ def test_import_csv_semicolon_with_few_columns(monkeypatch, tmp_path) -> None:
     from backend.core.fichas_tecnicas import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "fichas_tecnicas.json")
-    db_module._db_instance = None
+    db_module._db_singleton.reset()
 
     csv_body = "os_numero;cliente;servicio_desinfeccion\nN1;Importado;SI\n"
     content = base64.b64encode(csv_body.encode("utf-8")).decode("ascii")
@@ -98,7 +98,7 @@ def test_import_csv_semicolon_with_few_columns(monkeypatch, tmp_path) -> None:
         {"filename": "min.csv", "content_b64": content}
     )
     assert result["imported_count"] == 1
-    full = HANDLERS["fichas_tecnicas_get"]({"id": "FT-00001"})["ficha"]
+    full = HANDLERS["fichas_tecnicas_get"]({"id": "FT-00001"})["item"]
     assert full["cliente"] == "Importado"
     assert full["servicio"]["desinfeccion"] is True
 
@@ -107,7 +107,7 @@ def test_render_html_template_and_inline(monkeypatch, tmp_path) -> None:
     from backend.core.fichas_tecnicas import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "fichas_tecnicas.json")
-    db_module._db_instance = None
+    db_module._db_singleton.reset()
 
     template = HANDLERS["fichas_tecnicas_render_html"]({"template": True})
     assert "FICHA TÉCNICA DE EVALUACIÓN DE ACTIVIDADES" in template["html"]
@@ -121,7 +121,7 @@ def test_render_html_template_and_inline(monkeypatch, tmp_path) -> None:
     assert "padding: 8px" in template["html"]
     assert "border: 2px solid #333" in template["html"]
 
-    created = HANDLERS["fichas_tecnicas_create"]({})["ficha"]
+    created = HANDLERS["fichas_tecnicas_create"]({})["item"]
     created["cliente"] = "Cliente Inline"
     created["tratamiento"]["pulverizado"] = True
     rendered = HANDLERS["fichas_tecnicas_render_html"](
@@ -135,10 +135,10 @@ def test_render_consolidated_html(monkeypatch, tmp_path) -> None:
     from backend.core.fichas_tecnicas import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "fichas_tecnicas.json")
-    db_module._db_instance = None
+    db_module._db_singleton.reset()
 
-    a = HANDLERS["fichas_tecnicas_create"]({})["ficha"]
-    b = HANDLERS["fichas_tecnicas_create"]({})["ficha"]
+    a = HANDLERS["fichas_tecnicas_create"]({})["item"]
+    b = HANDLERS["fichas_tecnicas_create"]({})["item"]
     a["cliente"] = "A"
     b["cliente"] = "B"
     HANDLERS["fichas_tecnicas_update"]({"id": a["id"], "ficha": a})

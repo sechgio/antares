@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from typing import get_args, get_type_hints
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -54,6 +55,20 @@ def test_canvas_document_version_matches_frontend() -> None:
         text = frontend_types.read_text(encoding="utf-8")
         assert "shared/canvas-schema.json" in text, "frontend types.ts must import single source shared/canvas-schema.json"
         assert "DOCUMENT_VERSION = 2" not in text or "schema.documentVersion" in text
+
+
+def test_frontend_layer_type_union_matches_schema() -> None:
+    text = (ROOT / "frontend" / "src" / "components" / "canvas" / "types.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"export type CanvasLayerType\s*=\s*([^;]+);", text)
+    assert match, "CanvasLayerType union not found in frontend types.ts"
+    union_members = set(re.findall(r"'([^']+)'", match.group(1)))
+    schema_types = frozenset(_shared_json("canvas-schema.json")["layerTypes"])
+    assert union_members == schema_types, (
+        f"frontend CanvasLayerType drift: extra={sorted(union_members - schema_types)} "
+        f"missing={sorted(schema_types - union_members)}"
+    )
 
 
 def test_canvas_guide_axes_match_shared_contract() -> None:
