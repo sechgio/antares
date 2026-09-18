@@ -7,8 +7,7 @@
  *   node scripts/review-policy-check.js --pr 42 [--enforce] [--comment] [--json]
  */
 
-const { execFileSync } = require('child_process');
-const { ROOT, detectRepo } = require('./lib/loop-utils');
+const { detectRepo, gh, ghApi: ghApiBase, parseCliArgs } = require('./lib/loop-utils');
 
 const SIZE_WARN = 400;
 const SIZE_BLOCK = 1000;
@@ -229,24 +228,23 @@ function renderReport(pr, result) {
 }
 
 function parseArgs(argv) {
-  const args = { pr: null, enforce: false, comment: false, json: false, repo: null };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--enforce') args.enforce = true;
-    else if (a === '--comment') args.comment = true;
-    else if (a === '--json') args.json = true;
-    else if (a === '--pr') args.pr = argv[++i];
-    else if (a === '--repo') args.repo = argv[++i];
-  }
-  return args;
+  return parseCliArgs(argv, {
+    defaults: { pr: null, enforce: false, comment: false, json: false, repo: null },
+    flags: {
+      '--enforce': { key: 'enforce' },
+      '--comment': { key: 'comment' },
+      '--json': { key: 'json' },
+      '--pr': { key: 'pr', value: true },
+      '--repo': { key: 'repo', value: true },
+    },
+  });
 }
 
 function currentBranchPr(repo) {
   try {
-    const out = execFileSync(
-      'gh',
+    const out = gh(
       ['pr', 'view', '--json', 'number', ...(repo ? ['--repo', repo] : [])],
-      { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', timeout: REVIEW_TIMEOUT_MS },
+      { timeout: REVIEW_TIMEOUT_MS },
     );
     return JSON.parse(out).number;
   } catch {
@@ -256,22 +254,15 @@ function currentBranchPr(repo) {
 
 function fetchPr(number, repo) {
   const fields = 'number,title,body,additions,deletions,reviews,comments,labels,author,isDraft,state';
-  const out = execFileSync(
-    'gh',
+  const out = gh(
     ['pr', 'view', String(number), '--json', fields, ...(repo ? ['--repo', repo] : [])],
-    { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', timeout: REVIEW_TIMEOUT_MS, maxBuffer: 20 * 1024 * 1024 },
+    { timeout: REVIEW_TIMEOUT_MS, maxBuffer: 20 * 1024 * 1024 },
   );
   return JSON.parse(out);
 }
 
 function ghApi(args) {
-  return execFileSync('gh', ['api', ...args], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: 'pipe',
-    timeout: REVIEW_TIMEOUT_MS,
-    maxBuffer: 40 * 1024 * 1024,
-  });
+  return ghApiBase(args, { timeout: REVIEW_TIMEOUT_MS });
 }
 
 function fetchPrFiles(number, repo) {

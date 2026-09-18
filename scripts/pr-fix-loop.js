@@ -3,8 +3,9 @@
 const {
   BASE_BRANCH,
   ROOT,
-  sh,
   trySh,
+  parseLoopArgs,
+  printLoopBanner,
   step,
   skip,
   die,
@@ -13,6 +14,8 @@ const {
   workingTreeDirty,
   findOpenPrNumber,
   mergePr,
+  commitAll,
+  pushBranch,
   sleepMs,
 } = require('./lib/loop-utils');
 
@@ -21,19 +24,12 @@ const SKIP_TAG = '[skip-ci-fix]';
 const COMMIT_MSG = `fix(pr): auto-fix CI errors ${SKIP_TAG}`;
 
 function parseArgs(argv) {
-  const args = argv.slice(2);
-  const getValue = (flag) => {
-    const idx = args.indexOf(flag);
-    if (idx === -1) return null;
-    const v = args[idx + 1];
-    return v && !v.startsWith('--') ? v : null;
-  };
-
+  const parsed = parseLoopArgs(argv);
   return {
-    isShip: args.includes('--ship'),
-    doMerge: args.includes('--merge'),
-    prNumber: getValue('--pr'),
-    maxIter: getValue('--max') ? Number(getValue('--max')) : MAX_ITER_DEFAULT,
+    isShip: parsed.isShip,
+    doMerge: parsed.doMerge,
+    prNumber: parsed.value('--pr'),
+    maxIter: parsed.value('--max') ? Number(parsed.value('--max')) : MAX_ITER_DEFAULT,
   };
 }
 
@@ -136,15 +132,8 @@ function commitAndPush(branch) {
     console.log('    Sin cambios para commitear despues de heuristicas.');
     return false;
   }
-  trySh('git add -A');
-  trySh(`git commit -m "${COMMIT_MSG}" 2>&1`);
-
-  const upstream = trySh(`git rev-parse --abbrev-ref "${branch}@{upstream}" 2>&1`);
-  if (upstream && !upstream.includes('fatal')) {
-    sh(`git push origin "${branch}"`);
-  } else {
-    sh(`git push -u origin "${branch}"`);
-  }
+  commitAll(COMMIT_MSG);
+  pushBranch(branch);
   console.log(`    Commit [skip-ci-fix] pusheado a ${branch}.`);
   return true;
 }
@@ -287,14 +276,7 @@ function runLoop(options) {
 
 function main() {
   const options = parseArgs(process.argv);
-  const mode = options.isShip
-    ? '🚀 SHIP MODE (aplica fixes reales)'
-    : '🔍 DRY-RUN (sin side effects)';
-
-  console.log('\n════════════════════════════════════════════');
-  console.log('  Antares PR Fix Loop (auto-correction + auto-merge guard)');
-  console.log(`  ${mode}`);
-  console.log('════════════════════════════════════════════\n');
+  printLoopBanner('Antares PR Fix Loop (auto-correction + auto-merge guard)', options.isShip, 'aplica fixes reales');
 
   try {
     step('Entorno (gh auth, fetch)', () => {

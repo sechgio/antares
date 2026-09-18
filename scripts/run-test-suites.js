@@ -18,6 +18,7 @@ const CONTRACT_TESTS = [
   'test-quality-ratchet.js',
   'test-review-policy.js',
   'test-admin-create-user-contract.js',
+  'test-admin-delete-user-contract.js',
 ];
 
 const allNodeTests = fs

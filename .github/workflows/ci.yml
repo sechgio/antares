@@ -30,3 +30,39 @@ jobs:
 
       - name: Run CI checks
         run: npm run ci
+
+  test-windows:
+    name: Test on Windows
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup CI toolchain
+        uses: ./.github/actions/setup-ci
+
+      - name: Cache MSYS2 packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\msys64\var\cache\pacman\pkg
+          key: msys2-pango-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            msys2-pango-${{ runner.os }}-
+
+      - name: Install Pango/GTK via MSYS2 (for WeasyPrint)
+        run: |
+          C:\msys64\usr\bin\bash -lc 'pacman -S mingw-w64-x86_64-pango --noconfirm --needed'
+          echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          if (Test-Path "C:\msys64\mingw64\bin\python.exe") {
+            Remove-Item "C:\msys64\mingw64\bin\python.exe" -Force
+          }
+          echo "WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Run test suites
+        run: node scripts/run-test-suites.js
+
+      - name: Run slow stress tests (excluded from the default gate)
+        run: uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py -m slow -q
