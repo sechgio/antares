@@ -1,104 +1,33 @@
-const { EventEmitter } = require('events');
-const childProcess = require('child_process');
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
-
-async function flushAsyncTurns(turns = 1) {
-  for (let i = 0; i < turns; i++) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-}
+const {
+  assert, finish, flushAsyncTurns, stubBackendCommand, evictModule,
+  makeFakeProc, patchSpawn, installInertTimers, emitBackendReady,
+} = require('./helpers/harness');
 
 async function run() {
   console.log('Testing backend spawner manual restart preemption...\n');
 
-  const backendCommandPath = require.resolve('../electron/backend-command.js');
-  require.cache[backendCommandPath] = {
-    id: backendCommandPath,
-    filename: backendCommandPath,
-    loaded: true,
-    exports: {
-      getBackendCommand: () => ({ cmd: 'python', args: [] }),
-    },
-  };
+  stubBackendCommand();
 
-  const originalSpawn = childProcess.spawn;
-  const originalSetTimeout = global.setTimeout;
-  const originalClearTimeout = global.clearTimeout;
-  const originalSetInterval = global.setInterval;
-  const originalClearInterval = global.clearInterval;
-  let spawnCount = 0;
   let failHandshakeCount = 0;
-  let activeInterval = null;
-  const inertTimers = new Set();
-
-  childProcess.spawn = () => {
-    spawnCount++;
+  const spawn = patchSpawn(() => {
     const failThisSpawn = failHandshakeCount > 0;
     if (failThisSpawn) failHandshakeCount--;
 
-    const fakeProcess = new EventEmitter();
-    fakeProcess.stdout = new EventEmitter();
-    fakeProcess.stderr = new EventEmitter();
-    fakeProcess.stdin = new EventEmitter();
-    fakeProcess.stdin.end = () => {};
-    fakeProcess.killed = false;
-    fakeProcess.pid = 20000 + spawnCount;
-    fakeProcess.kill = () => {
-      fakeProcess.killed = true;
-    };
+    const fakeProcess = makeFakeProc({ pid: 20000 + spawn.count, ready: false, closeOnKill: false });
 
     process.nextTick(() => {
       if (failThisSpawn) {
         setImmediate(() => fakeProcess.emit('close', 1, null));
         return;
       }
-      fakeProcess.stdout.emit(
-        'data',
-        Buffer.from('{"jsonrpc":"2.0","method":"ready","params":{"status":"ok"}}\n'),
-      );
+      emitBackendReady(fakeProcess);
     });
 
     return fakeProcess;
-  };
+  });
+  const timers = installInertTimers();
 
-  global.setTimeout = (fn, delay, ...args) => {
-    if (delay === 30_000 || delay === 60_000) {
-      const timer = { fn, delay, args };
-      inertTimers.add(timer);
-      return timer;
-    }
-    return originalSetTimeout(fn, 0, ...args);
-  };
-  global.clearTimeout = (timer) => {
-    if (inertTimers.has(timer)) {
-      inertTimers.delete(timer);
-      return undefined;
-    }
-    return originalClearTimeout(timer);
-  };
-  global.setInterval = (fn, delay, ...args) => {
-    activeInterval = originalSetInterval(fn, delay, ...args);
-    return activeInterval;
-  };
-  global.clearInterval = (timer) => {
-    if (timer === activeInterval) activeInterval = null;
-    return originalClearInterval(timer);
-  };
-
-  const backendSpawnerPath = require.resolve('../electron/backend-spawner.js');
-  delete require.cache[backendSpawnerPath];
+  evictModule('electron/backend-spawner.js');
   const {
     startPythonBackend,
     manualRestart,
@@ -127,22 +56,15 @@ async function run() {
     const thirdManual = await manualRestart(true, { force: true });
     assert(thirdManual, 'manual restart should remain available after the preempted cycle settles');
     assert(isReady(), 'backend should still be ready after preempted cycle settles');
-    assert(spawnCount >= 3, 'manual restart should spawn fresh backend processes');
+    assert(spawn.count >= 3, 'manual restart should spawn fresh backend processes');
   } finally {
     killPython();
-    childProcess.spawn = originalSpawn;
-    global.setTimeout = originalSetTimeout;
-    global.clearTimeout = originalClearTimeout;
-    global.setInterval = originalSetInterval;
-    global.clearInterval = originalClearInterval;
-    if (activeInterval) clearInterval(activeInterval);
+    spawn.restore();
+    timers.restore();
+    if (timers.activeInterval) clearInterval(timers.activeInterval);
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

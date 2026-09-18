@@ -2,21 +2,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const { assert, finish } = require('./helpers/harness');
+
 const ROOT = path.join(__dirname, '..');
 const ratchet = require(path.join(ROOT, 'scripts', 'quality-ratchet.js'));
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
 
 function eq(actual, expected, message) {
   assert(
@@ -171,11 +160,7 @@ function run() {
     cleanup();
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run();

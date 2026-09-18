@@ -4,9 +4,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const API_PATH = path.join(ROOT, 'frontend', 'src', 'api.ts');
-const API_EXTRA_SOURCES = [
-  { path: path.join(ROOT, 'frontend', 'src', 'api', 'autoimgApi.ts'), callee: /\binvoke\b/g },
-];
+const API_DIR = path.join(ROOT, 'frontend', 'src', 'api');
 const PRELOAD_PATH = path.join(ROOT, 'electron', 'preload.js');
 const ALLOWLIST_PATH = path.join(ROOT, 'electron', 'ipc-methods.js');
 const CATALOG_PATH = path.join(ROOT, 'shared', 'ipc-method-catalog.js');
@@ -73,10 +71,14 @@ function main() {
   const allowlistModule = require(ALLOWLIST_PATH);
   const catalog = require(CATALOG_PATH);
 
+  // api.ts es una fachada: los invokes reales viven en frontend/src/api/*.ts.
+  // Se aplican ambos patrones a cada archivo (_invoke para los wrappers y
+  // invoke para autoimgApi, que recibe el callee inyectado).
   const apiMethods = extractApiMethods(apiSource);
-  for (const extra of API_EXTRA_SOURCES) {
-    const extraSource = fs.readFileSync(extra.path, 'utf8');
-    for (const m of extractApiMethods(extraSource, extra.callee)) apiMethods.add(m);
+  for (const file of fs.readdirSync(API_DIR).filter((f) => f.endsWith('.ts'))) {
+    const moduleSource = fs.readFileSync(path.join(API_DIR, file), 'utf8');
+    for (const m of extractApiMethods(moduleSource)) apiMethods.add(m);
+    for (const m of extractApiMethods(moduleSource, /\binvoke\b/g)) apiMethods.add(m);
   }
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'autoimg_scan_all']);
@@ -136,7 +138,7 @@ function main() {
 
   if (missingFromAllowlist.length > 0) {
     console.error(
-      `[FAIL] Métodos usados en api.ts pero no en ALLOWED_RENDERER_METHODS:\n  - ${missingFromAllowlist.join('\n  - ')}`
+      `[FAIL] Métodos usados en api.ts/api/*.ts pero no en ALLOWED_RENDERER_METHODS:\n  - ${missingFromAllowlist.join('\n  - ')}`
     );
     failed = true;
   }
@@ -164,13 +166,13 @@ function main() {
 
   if (unexpectedInAllowlist.length > 0) {
     console.warn(
-      `[WARN] Métodos en ALLOWED_RENDERER_METHODS no usados en api.ts (pueden ser legacy):\n  - ${unexpectedInAllowlist.join('\n  - ')}`
+      `[WARN] Métodos en ALLOWED_RENDERER_METHODS no usados en api.ts/api/*.ts (pueden ser legacy):\n  - ${unexpectedInAllowlist.join('\n  - ')}`
     );
   }
 
   if (!failed) {
     console.log(
-      `[PASS] Catálogo IPC sincronizado: ${apiMethods.size} métodos de api.ts presentes; ` +
+      `[PASS] Catálogo IPC sincronizado: ${apiMethods.size} métodos de api.ts/api/*.ts presentes; ` +
       `${catalog.METHOD_NAMES.size} métodos en catálogo (${catalog.BACKEND_METHODS.length} backend, ` +
       `${catalog.LONG_RUNNING_METHODS.size} long-running, ${catalog.HEAVY_TIMEOUT_METHODS.size} heavy-timeout).`
     );

@@ -16,6 +16,7 @@ const {
   isInvalidGrantResponse,
   REAUTH_REQUIRED_MESSAGE,
 } = require('./google-session');
+const { googleApiFetch } = require('./google-api-fetch');
 const {
   findAvailablePort,
   startCallbackServer,
@@ -249,26 +250,10 @@ async function revokeAuth() {
 
 async function _apiFetch(url, options = {}) {
   const session = _captureAuthSession();
-  const tokens = await getValidTokens(session);
-  if (!tokens) throw new Error('No autenticado con Google. Conecta tu cuenta en AutoIMG.');
-  _assertAuthSessionCurrent(session);
-  const headers = { ...(options.headers || {}), Authorization: `Bearer ${tokens.access_token}` };
-  const res = await fetchWithRetry(url, { ...options, headers });
-  _assertAuthSessionCurrent(session);
-  if (res.status === 401 && tokens.refresh_token) {
-    try {
-      const refreshed = await refreshAccessToken(tokens, session);
-      headers.Authorization = `Bearer ${refreshed.access_token}`;
-      const retried = await fetchWithRetry(url, { ...options, headers });
-      _assertAuthSessionCurrent(session);
-      return retried;
-    } catch (err) {
-      if (err instanceof Error && err.message === REAUTH_REQUIRED_MESSAGE) {
-        throw err;
-      }
-      throw err;
-    }
-  }
+  const res = await googleApiFetch(url, options, {
+    session,
+    authErrorMessage: 'No autenticado con Google. Conecta tu cuenta en AutoIMG.',
+  });
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Google API error (${res.status}): ${err}`);
@@ -484,7 +469,6 @@ module.exports = {
   batchWriteRanges,
   getValidTokens,
   refreshAccessToken,
-  ensureAutoImgTabs,
   isInvalidGrantResponse,
   REAUTH_REQUIRED_MESSAGE,
   getActiveUserPublic,

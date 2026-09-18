@@ -1,5 +1,7 @@
 const assert = require('assert/strict');
 
+const { evictModule } = require('./helpers/harness');
+
 function installMock(resolvedPath, exports) {
   require.cache[resolvedPath] = {
     id: resolvedPath,
@@ -13,8 +15,7 @@ async function main() {
   const sheetsPath = require.resolve('../electron/google-sheets-service');
   const drivePath = require.resolve('../electron/google-drive-service');
   const windowManagerPath = require.resolve('../electron/window-manager');
-  const enginePath = require.resolve('../electron/autoimg-sync-engine');
-  const originalSetInterval = global.setInterval;
+    const originalSetInterval = global.setInterval;
   const originalClearInterval = global.clearInterval;
 
   installMock(sheetsPath, {
@@ -27,7 +28,7 @@ async function main() {
   });
   installMock(drivePath, {});
   installMock(windowManagerPath, { getMainWindow: () => null });
-  delete require.cache[enginePath];
+  evictModule('electron/autoimg-sync-engine');
 
   global.setInterval = () => ({ fake: true });
   global.clearInterval = () => {};

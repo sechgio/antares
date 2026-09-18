@@ -1,10 +1,6 @@
 
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
+
+const { assertOrExit:assert, evictModule } = require('./helpers/harness');
 
 async function main() {
   const { findAvailablePort } = require('../electron/autoimg-oauth-flow');
@@ -96,7 +92,7 @@ async function main() {
     };
     require.cache[storePath] = { id: storePath, filename: storePath, loaded: true, exports: fakeStore };
     require.cache[scopePath] = { id: scopePath, filename: scopePath, loaded: true, exports: fakeScope };
-    delete require.cache[sheetsPath];
+    evictModule('electron/google-sheets-service');
     const svc = require(sheetsPath);
 
     const realFetch = global.fetch;

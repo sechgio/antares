@@ -2,75 +2,46 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
 
 function loadRouter({ documentsDir, downloadsDir, userDataDir }) {
-  const electronPath = require.resolve('electron');
-  require.cache[electronPath] = {
-    id: electronPath,
-    filename: electronPath,
-    loaded: true,
-    exports: {
-      ipcMain: { handle: () => {}, removeHandler: () => {} },
-      dialog: {},
-      app: {
-        isPackaged: true,
-        getPath: (name) => {
-          if (name === 'documents') return documentsDir;
-          if (name === 'downloads') return downloadsDir;
-          if (name === 'userData') return userDataDir;
-          throw new Error(`unknown path: ${name}`);
-        },
+  stubModule('electron', {
+    ipcMain: { handle: () => {}, removeHandler: () => {} },
+    dialog: {},
+    app: {
+      isPackaged: true,
+      getPath: (name) => {
+        if (name === 'documents') return documentsDir;
+        if (name === 'downloads') return downloadsDir;
+        if (name === 'userData') return userDataDir;
+        throw new Error(`unknown path: ${name}`);
       },
     },
-  };
+  });
 
-  const spawnerPath = require.resolve('../electron/backend-spawner');
-  require.cache[spawnerPath] = {
-    id: spawnerPath,
-    filename: spawnerPath,
-    loaded: true,
-    exports: {
-      getProcess: () => null,
-      isReady: () => true,
-      waitForReady: async () => true,
-      getState: () => 'ready',
-      getLastError: () => null,
-      getStderrTail: () => '',
-      manualRestart: async () => true,
-      incrementPendingRequests: () => {},
-      decrementPendingRequests: () => {},
-      noteJobActivity: () => {},
-      clearJobActivity: () => {},
-      STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-    },
-  };
+  stubModule('electron/backend-spawner', {
+    getProcess: () => null,
+    isReady: () => true,
+    waitForReady: async () => true,
+    getState: () => 'ready',
+    getLastError: () => null,
+    getStderrTail: () => '',
+    manualRestart: async () => true,
+    incrementPendingRequests: () => {},
+    decrementPendingRequests: () => {},
+    noteJobActivity: () => {},
+    clearJobActivity: () => {},
+    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
+  });
 
-  const wmPath = require.resolve('../electron/window-manager');
-  require.cache[wmPath] = {
-    id: wmPath,
-    filename: wmPath,
-    loaded: true,
-    exports: {
-      getMainWindow: () => null,
-      buildAppMenu: () => ({ popup: () => {} }),
-      getIsDev: () => true,
-    },
-  };
+  stubModule('electron/window-manager', {
+    getMainWindow: () => null,
+    buildAppMenu: () => ({ popup: () => {} }),
+    getIsDev: () => true,
+  });
 
   const routerPath = require.resolve('../electron/ipc-router');
-  delete require.cache[routerPath];
+  evictModule('electron/ipc-router');
   return require(routerPath);
 }
 
@@ -182,7 +153,7 @@ async function run() {
       JSON.stringify([persistedRoot]),
     );
     const dialogHandlersPath = require.resolve('../electron/dialog-handlers');
-    delete require.cache[dialogHandlersPath];
+    evictModule('electron/dialog-handlers');
     const router2 = loadRouter({ documentsDir: docsDir, downloadsDir: dlDir, userDataDir });
     const p8 = router2._validateAndResolveWriteParams({ outputDir: path.join(persistedRoot, 'salidas') }, null);
     assert(
@@ -206,7 +177,7 @@ async function run() {
       },
     };
     await fs.promises.mkdir(path.join(tmpRoot, 'nueva-raiz'), { recursive: true });
-    delete require.cache[dialogHandlersPath];
+    evictModule('electron/dialog-handlers');
     const { handleDialogCall: freshHandleDialogCall } = require(dialogHandlersPath);
     await freshHandleDialogCall('dialog_folder', { pickOnly: true }, dialog2, { id: 1 });
     const persisted = JSON.parse(
@@ -336,6 +307,19 @@ async function run() {
     assert(
       optimizerPayload.files[0].content_b64 === 'AAAA/AAAA',
       'opaque file records are not mistaken for read paths',
+    );
+
+    const optimizerStaged = createStagedSession({ name: 'optimizer.jpg', size: 4, webContentsId: 1 });
+    await appendStagedChunk(optimizerStaged.token, Buffer.from('jpeg'), 1);
+    const optimizerCap = await completeStagedSession(optimizerStaged.token, 1);
+    const optimizerTokenPayload = router2._maybeResolveFileTokens(
+      { files: [{ filename: '../foto.jpg', file_token: optimizerCap.token }] },
+      { webContents: { id: 1 } },
+      'image_optimizer_save_files',
+    );
+    assert(
+      optimizerTokenPayload.files[0].file_token === optimizerCap.path,
+      'optimizer file token se resuelve a ruta real',
     );
 
     const registeredInput = path.join(arbitraryDir, 'approved.jpg');
@@ -619,7 +603,7 @@ async function run() {
       path.join(userDataDir, 'antares-write-roots.json'),
       JSON.stringify(overCapRoots),
     );
-    delete require.cache[dialogHandlersPath];
+    evictModule('electron/dialog-handlers');
     const reloadedHandlers = require(dialogHandlersPath);
     assert(
       !reloadedHandlers.isUnderAllowedWriteRoot(path.join(tmpRoot, 'bulk', 'r0')),
@@ -639,8 +623,7 @@ async function run() {
     await fs.promises.rm(tmpRoot, { recursive: true, force: true });
   }
 
-  console.log(`\n[PASS] ${passed} checks, ${failed} failures.`);
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

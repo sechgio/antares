@@ -168,6 +168,5 @@ module.exports = {
   onActiveUserChange,
   scopedFilename,
   scopedNamespace,
-  migrateLegacyIntoActiveUser,
   getActiveUserPublic,
 };

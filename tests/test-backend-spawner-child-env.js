@@ -1,31 +1,13 @@
 const path = require('path');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
 
 function run() {
   console.log('Testing backend child env whitelist...\n');
 
-  const backendCommandPath = require.resolve('../electron/backend-command.js');
-  require.cache[backendCommandPath] = {
-    id: backendCommandPath,
-    filename: backendCommandPath,
-    loaded: true,
-    exports: { getBackendCommand: () => ({ cmd: 'python', args: [] }) },
-  };
+  stubModule('electron/backend-command.js', { getBackendCommand: () => ({ cmd: 'python', args: [] }) });
 
-  const spawnerPath = require.resolve('../electron/backend-spawner.js');
-  delete require.cache[spawnerPath];
+  evictModule('electron/backend-spawner.js');
   const { _buildChildEnv } = require('../electron/backend-spawner.js');
 
   const prev = {
@@ -79,10 +61,7 @@ function run() {
     delete process.env.VIRTUAL_ENV;
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run();

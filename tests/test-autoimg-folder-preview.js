@@ -1,15 +1,9 @@
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
 
-const sessionPath = require.resolve('../electron/google-session');
-const drivePath = require.resolve('../electron/google-drive-service');
+const { assertOrExit:assert, stubModule, evictModule } = require('./helpers/harness');
+
 const scopePath = require.resolve('../electron/autoimg-user-scope');
 
-delete require.cache[drivePath];
+evictModule('electron/google-drive-service');
 
 let activeTokens = { access_token: 'tok', refresh_token: 'r' };
 
@@ -30,11 +24,7 @@ const fakeScope = {
   },
 };
 require.cache[scopePath] = { id: scopePath, filename: scopePath, loaded: true, exports: fakeScope };
-require.cache[sessionPath] = {
-  id: sessionPath,
-  filename: sessionPath,
-  loaded: true,
-  exports: {
+stubModule('electron/google-session', {
     getValidTokens: async () => activeTokens,
     refreshAccessToken: async (tokens) => tokens,
     assertAuthSessionCurrent: (session) => {
@@ -42,8 +32,7 @@ require.cache[sessionPath] = {
         throw new Error('La sesión de Google cambió durante la operación.');
       }
     },
-  },
-};
+  });
 
 function changeUser(userKey) {
   const previousKey = activeUserKey;

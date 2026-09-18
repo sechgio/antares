@@ -1,22 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
+const { assert, finish } = require('./helpers/harness');
+
 const ROOT = path.join(__dirname, '..');
 const policy = require(path.join(ROOT, 'scripts', 'review-policy-check.js'));
 const metrics = require(path.join(ROOT, 'scripts', 'review-metrics.js'));
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
 
 function eq(actual, expected, message) {
   assert(
@@ -501,11 +490,7 @@ function run() {
   testEvaluatePolicy();
   testMetrics();
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run();

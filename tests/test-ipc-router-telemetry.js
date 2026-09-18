@@ -1,66 +1,37 @@
 const { EventEmitter } = require('events');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
 
 function loadRouter() {
-  const electronPath = require.resolve('electron');
-  require.cache[electronPath] = {
-    id: electronPath,
-    filename: electronPath,
-    loaded: true,
-    exports: {
-      ipcMain: { handle: () => {}, removeHandler: () => {} },
-      dialog: {},
-      app: { isPackaged: true },
-    },
-  };
+  stubModule('electron', {
+    ipcMain: { handle: () => {}, removeHandler: () => {} },
+    dialog: {},
+    app: { isPackaged: true },
+  });
 
-  const spawnerPath = require.resolve('../electron/backend-spawner');
-  require.cache[spawnerPath] = {
-    id: spawnerPath,
-    filename: spawnerPath,
-    loaded: true,
-    exports: {
-      getProcess: () => null,
-      isReady: () => true,
-      waitForReady: async () => true,
-      getState: () => 'ready',
-      getLastError: () => null,
-      getStderrTail: () => '',
-      manualRestart: async () => true,
-      incrementPendingRequests: () => {},
-      decrementPendingRequests: () => {},
-      noteJobActivity: () => {},
-      clearJobActivity: () => {},
-      STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-    },
-  };
+  stubModule('electron/backend-spawner', {
+    getProcess: () => null,
+    isReady: () => true,
+    waitForReady: async () => true,
+    getState: () => 'ready',
+    getLastError: () => null,
+    getStderrTail: () => '',
+    manualRestart: async () => true,
+    incrementPendingRequests: () => {},
+    decrementPendingRequests: () => {},
+    noteJobActivity: () => {},
+    clearJobActivity: () => {},
+    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
+  });
 
-  const wmPath = require.resolve('../electron/window-manager');
-  require.cache[wmPath] = {
-    id: wmPath,
-    filename: wmPath,
-    loaded: true,
-    exports: {
-      getMainWindow: () => null,
-      buildAppMenu: () => ({ popup: () => {} }),
-      getIsDev: () => true,
-    },
-  };
+  stubModule('electron/window-manager', {
+    getMainWindow: () => null,
+    buildAppMenu: () => ({ popup: () => {} }),
+    getIsDev: () => true,
+  });
 
   const routerPath = require.resolve('../electron/ipc-router');
-  delete require.cache[routerPath];
+  evictModule('electron/ipc-router');
   return require(routerPath);
 }
 
@@ -148,17 +119,29 @@ async function run() {
     console.warn = (line) => warnings.push(line);
     try {
       _logIpcTelemetry({ method: 'version', elapsedMs: 0, outcome: 'error' });
-      assert(warnings.length === 0, 'ordinary fast IPC errors remain filtered without verbose telemetry');
+      assert(
+        warnings.some((line) => line.includes('outcome=failed')),
+        'fast IPC errors are always logged (normalized to failed)',
+      );
 
+      warnings.length = 0;
       _logIpcTelemetry({ method: 'version', elapsedMs: 0, outcome: 'rejected' });
       assert(warnings.some((line) => line.includes('outcome=rejected')), 'admission rejections bypass cheap telemetry filtering');
+
+      _logIpcTelemetry({
+        method: 'canvas_asset_put',
+        elapsedMs: 12,
+        requestBytes: 128,
+        responseBytes: 0,
+        outcome: 'rejected',
+      });
+      assert(warnings.some((line) => line.includes('method=canvas_asset_put') && line.includes('outcome=rejected')), 'native rejection logs to telemetry');
     } finally {
       console.warn = originalWarn;
     }
   }
 
-  console.log(`\n${passed} passed, ${failed} failed`);
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

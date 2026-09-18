@@ -1,12 +1,7 @@
 
 const path = require('path');
 
-function assert(condition, message) {
-  if (!condition) {
-    console.error(`[FAIL] ${message}`);
-    process.exit(1);
-  }
-}
+const { assertOrExit:assert, evictModule } = require('./helpers/harness');
 
 function installMock(resolvedPath, exports) {
   require.cache[resolvedPath] = {
@@ -29,7 +24,6 @@ async function main() {
   const sheetsPath = require.resolve('../electron/google-sheets-service');
   const drivePath = require.resolve('../electron/google-drive-service');
   const wmPath = require.resolve('../electron/window-manager');
-  const enginePath = require.resolve('../electron/autoimg-sync-engine');
 
   let sheetModifiedTime = '2026-08-06T10:00:00.000Z';
   let readRangesCalls = 0;
@@ -126,7 +120,7 @@ async function main() {
   installMock(wmPath, { getMainWindow: () => null });
 
   clearAutoimgModules();
-  delete require.cache[enginePath];
+  evictModule('electron/autoimg-sync-engine');
   const engine = require('../electron/autoimg-sync-engine');
 
   assert(engine.SHEET_CACHE_BUDGET_BYTES === 32 * 1024 * 1024, 'presupuesto por defecto 32 MiB');

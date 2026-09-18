@@ -1,4 +1,5 @@
 const { getValidTokens, refreshAccessToken, assertAuthSessionCurrent } = require('./google-session');
+const { googleApiFetch } = require('./google-api-fetch');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const nis = require('./autoimg-nis');
 const {
@@ -19,27 +20,20 @@ const DRIVE_SHARED_PARAMS = {
 async function _driveRequest(
   path,
   { method = 'GET', params = {}, body } = {},
-  retried = false,
   session = getActiveUserSnapshot(),
 ) {
-  const tokens = await getValidTokens(session);
-  if (!tokens) throw new Error('No autenticado con Google');
-  assertAuthSessionCurrent(session);
   const qs = new URLSearchParams({ ...DRIVE_SHARED_PARAMS, ...params });
   const url = `https://www.googleapis.com/drive/v3/${path}?${qs.toString()}`;
-  const headers = { Authorization: `Bearer ${tokens.access_token}` };
-  const options = { method, headers };
+  const options = { method, headers: {} };
   if (body !== undefined) {
-    headers['Content-Type'] = 'application/json';
+    options.headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(body);
   }
-  const res = await fetchWithRetry(url, options, {
-    rateLimitMessage: 'Rate limit excedido en Drive API',
+  const res = await googleApiFetch(url, options, {
+    session,
+    authErrorMessage: 'No autenticado con Google',
+    fetchOpts: { rateLimitMessage: 'Rate limit excedido en Drive API' },
   });
-  if (res.status === 401 && !retried && tokens.refresh_token) {
-    await refreshAccessToken(tokens, session);
-    return _driveRequest(path, { method, params, body }, true, session);
-  }
   if (!res.ok) throw new Error(`Drive API error (${res.status}): ${await res.text()}`);
   if (res.status === 204) {
     assertAuthSessionCurrent(session);
@@ -56,7 +50,7 @@ async function _driveRequest(
 }
 
 async function _driveFetch(path, params = {}, session = getActiveUserSnapshot()) {
-  return _driveRequest(path, { method: 'GET', params }, false, session);
+  return _driveRequest(path, { method: 'GET', params }, session);
 }
 
 function parseFolderId(input) {

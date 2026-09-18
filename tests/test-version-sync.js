@@ -1,18 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish } = require('./helpers/harness');
 
 function readPyprojectVersion() {
   const content = fs.readFileSync(path.join(__dirname, '..', 'pyproject.toml'), 'utf8');
@@ -53,11 +42,7 @@ function run() {
     assert(/^\d+\.\d+\.\d+$/.test(version), `${file} version looks like semver (${version})`);
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run();

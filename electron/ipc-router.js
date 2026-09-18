@@ -95,6 +95,7 @@ function _toRendererIpcError(err) {
     code: err && err.code !== undefined ? err.code : -32000,
     category: err && err.category !== undefined ? err.category : 'INTERNAL_ERROR',
     details: err && err.details !== undefined ? err.details : undefined,
+    request_id: err && typeof err.ipc_request_id === 'string' ? err.ipc_request_id : undefined,
   };
   return new Error(ANTARES_IPC_ERROR_PREFIX + JSON.stringify(payload));
 }
@@ -117,6 +118,16 @@ function _isAllowedIpcSender(event) {
     }
   }
   return isTrustedRendererFrame(event, getMainWindow(), isDev);
+}
+
+function _logSecurityRejection(reason, method, message) {
+  appendLogEvent('WARN', 'security.rejected', {
+    component: 'electron',
+    outcome: 'rejected',
+    reason,
+    method: typeof method === 'string' && method ? method : undefined,
+    message,
+  });
 }
 
 function _handleBackendTermination(proc) {
@@ -350,7 +361,7 @@ function _logIpcTelemetry({
   const normalizedOutcome = outcome === 'ok' ? 'success' : outcome === 'error' ? 'failed' : outcome;
   const baselineSample = normalizedOutcome === 'success'
     && ((elapsedMs ^ Math.imul(requestBytes + responseBytes, 2654435761)) >>> 0) % 100 === 0;
-  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && normalizedOutcome !== 'rejected' && !baselineSample) return;
+  if (normalizedOutcome === 'success' && !_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && !baselineSample) return;
 
   const safeRequestId = requestId === null || requestId === undefined
     ? ''
@@ -360,7 +371,11 @@ function _logIpcTelemetry({
     `response_bytes=${responseBytes} outcome=${normalizedOutcome}` +
     (waitedForDrain ? ' backpressure=1' : '');
   appendLogEvent(
-    normalizedOutcome === 'success' && !slow && !large && !waitedForDrain ? 'INFO' : 'WARN',
+    normalizedOutcome === 'failed' || normalizedOutcome === 'timeout'
+      ? 'ERROR'
+      : normalizedOutcome === 'success' && !slow && !large && !waitedForDrain
+        ? 'INFO'
+        : 'WARN',
     'ipc.request',
     {
       request_id: safeRequestId || undefined,
@@ -447,8 +462,10 @@ function _sendRequest(method, params) {
   const startedAt = Date.now();
   const reservation = _reservePendingRequest(method);
   if (reservation.error) {
+    try { reservation.error.ipc_request_id = id; } catch {}
     _logIpcTelemetry({
       method,
+      requestId: id,
       elapsedMs: Date.now() - startedAt,
       requestBytes,
       outcome: 'rejected',
@@ -499,6 +516,9 @@ function _sendRequest(method, params) {
       },
       reject: (err) => {
         const outcome = err && err.message && /timeout/i.test(err.message) ? 'timeout' : 'error';
+        if (err && typeof err === 'object') {
+          try { err.ipc_request_id = id; } catch {}
+        }
         _logIpcTelemetry({
           method,
           requestId: id,
@@ -566,6 +586,13 @@ function _buildUnavailableError() {
   return err;
 }
 
+function _isTransientBackendError(err) {
+  const msg = err.message || '';
+  return msg.includes('Backend process exited')
+    || msg.includes('Backend process not available')
+    || msg.includes('stdin write failed');
+}
+
 async function _callBackend(method, params) {
     if (!isReady()) {
       if (getState() === STATE.FATAL) throw _buildUnavailableError();
@@ -580,13 +607,10 @@ async function _callBackend(method, params) {
         return await _sendRequest(method, params);
       } catch (err) {
         lastErr = err;
-        const msg = err.message || '';
-        const transient = msg.includes('Backend process exited')
-          || msg.includes('Backend process not available')
-          || msg.includes('stdin write failed');
-        if (!transient || !_isIdempotentMethod(method) || attempt === MID_FLIGHT_RETRIES) {
+        if (!_isTransientBackendError(err) || !_isIdempotentMethod(method) || attempt === MID_FLIGHT_RETRIES) {
           throw err;
         }
+        const msg = err.message || '';
 
         appendLogEvent('WARN', 'ipc.retry', {
           component: 'electron',
@@ -654,9 +678,11 @@ function registerIpcHandlers() {
 
   ipcMain.handle('ipc-call', async (event, method, params) => {
     if (!_isAllowedIpcSender(event)) {
+      _logSecurityRejection('untrusted_sender', typeof method === 'string' ? method : undefined);
       throw new Error('IPC call rejected: untrusted sender frame');
     }
     if (typeof method !== 'string' || !_getAllowedMethods().has(method)) {
+      _logSecurityRejection('method_not_allowed', typeof method === 'string' ? method : undefined);
       const hint = ' Reinicia Antares por completo (cierra todas las ventanas) para recargar la allowlist IPC.';
       throw new Error(`IPC method not allowed: ${method}.${hint}`);
     }
@@ -667,6 +693,8 @@ function registerIpcHandlers() {
       const nativeHandler = _ipcCatalog().nativeDispatchFor(method);
       if (nativeHandler) {
         let nativeParams = params;
+        const startedAt = Date.now();
+        const requestBytes = _estimateJsonBytes(params);
         try {
           const { _assertNoRawAbsolutePaths } = require('./file-capabilities');
           const catalog = _ipcCatalog();
@@ -683,11 +711,40 @@ function registerIpcHandlers() {
             err.code = -32602;
             err.category = 'VALIDATION_ERROR';
           }
+          _logSecurityRejection('file_policy', method, err && err.message ? err.message : undefined);
+          _logIpcTelemetry({
+            method,
+            elapsedMs: Date.now() - startedAt,
+            requestBytes,
+            responseBytes: 0,
+            outcome: 'rejected',
+          });
           throw err;
         }
         const nativeCall = _NATIVE_CALLS[nativeHandler];
-        const result = await nativeCall(method, nativeParams, win, { BrowserWindow, session, nativeImage });
-        if (result.handled) return result.result;
+        try {
+          const result = await nativeCall(method, nativeParams, win, { BrowserWindow, session, nativeImage });
+          if (result && result.handled) {
+            const responseBytes = _estimateJsonBytes(result.result);
+            _logIpcTelemetry({
+              method,
+              elapsedMs: Date.now() - startedAt,
+              requestBytes,
+              responseBytes,
+              outcome: 'success',
+            });
+            return result.result;
+          }
+        } catch (err) {
+          _logIpcTelemetry({
+            method,
+            elapsedMs: Date.now() - startedAt,
+            requestBytes,
+            responseBytes: 0,
+            outcome: 'error',
+          });
+          throw err;
+        }
       }
     } catch (err) {
       throw _toRendererIpcError(err);
@@ -701,6 +758,8 @@ function registerIpcHandlers() {
         err.code = -32602;
         err.category = 'VALIDATION_ERROR';
       }
+      _logSecurityRejection('file_policy', method, err && err.message ? err.message : undefined);
+      _logIpcTelemetry({ method, elapsedMs: 0, requestBytes: _estimateJsonBytes(params), outcome: 'rejected' });
       throw _toRendererIpcError(err);
     }
 
@@ -720,6 +779,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('backend-status', async (event) => {
     if (!_isAllowedIpcSender(event)) {
+      _logSecurityRejection('untrusted_sender', 'backend-status');
       throw new Error('IPC call rejected: untrusted sender frame');
     }
     const isPackaged = _isPackaged();
@@ -734,6 +794,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('backend-restart', async (event) => {
     if (!_isAllowedIpcSender(event)) {
+      _logSecurityRejection('untrusted_sender', 'backend-restart');
       throw new Error('IPC call rejected: untrusted sender frame');
     }
     const now = Date.now();
@@ -769,6 +830,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('window-control', async (event, action) => {
     if (!_isAllowedIpcSender(event)) {
+      _logSecurityRejection('untrusted_sender', 'window-control');
       throw new Error('IPC call rejected: untrusted sender frame');
     }
     const win = getMainWindow();
@@ -781,6 +843,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('app-menu-popup', async (event, menuIndex, position) => {
     if (!_isAllowedIpcSender(event)) {
+      _logSecurityRejection('untrusted_sender', 'app-menu-popup');
       throw new Error('IPC call rejected: untrusted sender frame');
     }
     const win = getMainWindow();
@@ -808,10 +871,6 @@ module.exports = {
   _isIdempotentMethod,
   _toRendererIpcError,
   _writeStdinWithBackpressure,
-  MAX_PENDING_REQUESTS,
-  MAX_PENDING_PER_METHOD,
-  DEFAULT_MAX_PENDING_REQUESTS,
-  DEFAULT_MAX_PENDING_PER_METHOD,
   _getPendingRequestLimits,
   _logIpcTelemetry,
   _estimateJsonBytes,
@@ -819,5 +878,4 @@ module.exports = {
   getIpcBackpressureWaits,
   resetIpcBackpressureWaits,
   ANTARES_IPC_ERROR_PREFIX,
-  reloadIpcMethods,
 };

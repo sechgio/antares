@@ -1,109 +1,34 @@
-const { EventEmitter } = require('events');
-const childProcess = require('child_process');
-
-let passed = 0;
-let failed = 0;
-
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
-
-async function flushAsyncTurns(turns = 1) {
-  for (let i = 0; i < turns; i++) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-}
-
-function emitReady(proc) {
-  proc.stdout.emit(
-    'data',
-    Buffer.from('{"jsonrpc":"2.0","method":"ready","params":{"status":"ok"}}\n'),
-  );
-}
+const {
+  assert, finish, flushAsyncTurns, stubBackendCommand, evictModule,
+  makeFakeProc, patchSpawn, installInertTimers, emitBackendReady,
+} = require('./helpers/harness');
 
 async function run() {
   console.log('Testing post-handshake preempt ownership (aborted cycle vs successor)...\n');
 
-  const backendCommandPath = require.resolve('../electron/backend-command.js');
-  require.cache[backendCommandPath] = {
-    id: backendCommandPath,
-    filename: backendCommandPath,
-    loaded: true,
-    exports: {
-      getBackendCommand: () => ({ cmd: 'python', args: [] }),
-    },
-  };
+  stubBackendCommand();
 
-  const originalSpawn = childProcess.spawn;
-  const originalSetTimeout = global.setTimeout;
-  const originalClearTimeout = global.clearTimeout;
-  const originalSetInterval = global.setInterval;
-  const originalClearInterval = global.clearInterval;
-  let spawnCount = 0;
   let processA = null;
   let processB = null;
   let releaseB = null;
-  let activeInterval = null;
-  const inertTimers = new Set();
 
-  childProcess.spawn = () => {
-    spawnCount++;
-    const fakeProcess = new EventEmitter();
-    fakeProcess.stdout = new EventEmitter();
-    fakeProcess.stderr = new EventEmitter();
-    fakeProcess.stdin = new EventEmitter();
-    fakeProcess.stdin.end = () => {};
-    fakeProcess.stdin.write = () => true;
-    fakeProcess.killed = false;
-    fakeProcess.pid = 40000 + spawnCount;
-    fakeProcess.kill = () => {
-      fakeProcess.killed = true;
-    };
+  const spawn = patchSpawn(() => {
+    const fakeProcess = makeFakeProc({ pid: 40000 + spawn.count, ready: false, closeOnKill: false });
 
-    if (spawnCount === 1) {
+    if (spawn.count === 1) {
       processA = fakeProcess;
-    } else if (spawnCount === 2) {
+    } else if (spawn.count === 2) {
       processB = fakeProcess;
-      releaseB = () => emitReady(fakeProcess);
+      releaseB = () => emitBackendReady(fakeProcess);
     } else {
-      process.nextTick(() => emitReady(fakeProcess));
+      process.nextTick(() => emitBackendReady(fakeProcess));
     }
 
     return fakeProcess;
-  };
+  });
+  const timers = installInertTimers({ isInert: (delay) => delay === 30_000 || delay === 60_000 || delay >= 1000 });
 
-  global.setTimeout = (fn, delay, ...args) => {
-    if (delay === 30_000 || delay === 60_000 || delay >= 1000) {
-      const timer = { fn, delay, args };
-      inertTimers.add(timer);
-      return timer;
-    }
-    return originalSetTimeout(fn, 0, ...args);
-  };
-  global.clearTimeout = (timer) => {
-    if (inertTimers.has(timer)) {
-      inertTimers.delete(timer);
-      return undefined;
-    }
-    return originalClearTimeout(timer);
-  };
-  global.setInterval = (fn, delay, ...args) => {
-    activeInterval = originalSetInterval(fn, delay, ...args);
-    return activeInterval;
-  };
-  global.clearInterval = (timer) => {
-    if (timer === activeInterval) activeInterval = null;
-    return originalClearInterval(timer);
-  };
-
-  const backendSpawnerPath = require.resolve('../electron/backend-spawner.js');
-  delete require.cache[backendSpawnerPath];
+  evictModule('electron/backend-spawner.js');
   const {
     startPythonBackend,
     manualRestart,
@@ -116,7 +41,7 @@ async function run() {
   try {
     const cycleA = startPythonBackend(true);
     await flushAsyncTurns(4);
-    assert(spawnCount === 1, 'cycle A should spawn once and wait for handshake');
+    assert(spawn.count === 1, 'cycle A should spawn once and wait for handshake');
     assert(getState() === 'starting', 'cycle A should be in starting while handshake is held');
     assert(processA && !processA.killed, 'cycle A process should still be alive before preempt');
 
@@ -129,13 +54,13 @@ async function run() {
     });
 
     await flushAsyncTurns(8);
-    assert(spawnCount === 2, 'manual restart should spawn successor cycle B');
+    assert(spawn.count === 2, 'manual restart should spawn successor cycle B');
     assert(processB != null, 'cycle B process should exist');
     assert(getProcess() === processB, 'pythonProcess should belong to cycle B');
     assert(getState() === 'starting', 'cycle B should still be in handshake');
     assert(!manualSettled, 'manualRestart should still be awaiting cycle B handshake');
 
-    emitReady(processA);
+    emitBackendReady(processA);
     await cycleA;
     await flushAsyncTurns(8);
 
@@ -154,19 +79,12 @@ async function run() {
     assert(!processB.killed, 'cycle B process must remain alive after full settle');
   } finally {
     killPython();
-    childProcess.spawn = originalSpawn;
-    global.setTimeout = originalSetTimeout;
-    global.clearTimeout = originalClearTimeout;
-    global.setInterval = originalSetInterval;
-    global.clearInterval = originalClearInterval;
-    if (activeInterval) clearInterval(activeInterval);
+    spawn.restore();
+    timers.restore();
+    if (timers.activeInterval) clearInterval(timers.activeInterval);
   }
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {

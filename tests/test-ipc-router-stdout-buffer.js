@@ -1,54 +1,38 @@
 const assert = require('assert');
 const path = require('path');
 
+const { stubModule, evictModule } = require('./helpers/harness');
+
 function loadRouter() {
-  const electronPath = require.resolve('electron');
-  require.cache[electronPath] = {
-    id: electronPath,
-    filename: electronPath,
-    loaded: true,
-    exports: {
-      ipcMain: { handle: () => {}, removeHandler: () => {} },
-      dialog: {},
-      app: { isPackaged: true },
-    },
-  };
+  stubModule('electron', {
+    ipcMain: { handle: () => {}, removeHandler: () => {} },
+    dialog: {},
+    app: { isPackaged: true },
+  });
 
-  const spawnerPath = require.resolve('../electron/backend-spawner');
-  require.cache[spawnerPath] = {
-    id: spawnerPath,
-    filename: spawnerPath,
-    loaded: true,
-    exports: {
-      getProcess: () => null,
-      isReady: () => false,
-      waitForReady: async () => false,
-      getState: () => 'starting',
-      getLastError: () => null,
-      getStderrTail: () => '',
-      manualRestart: async () => false,
-      incrementPendingRequests: () => {},
-      decrementPendingRequests: () => {},
-      noteJobActivity: () => {},
-      clearJobActivity: () => {},
-      STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-    },
-  };
+  stubModule('electron/backend-spawner', {
+    getProcess: () => null,
+    isReady: () => false,
+    waitForReady: async () => false,
+    getState: () => 'starting',
+    getLastError: () => null,
+    getStderrTail: () => '',
+    manualRestart: async () => false,
+    incrementPendingRequests: () => {},
+    decrementPendingRequests: () => {},
+    noteJobActivity: () => {},
+    clearJobActivity: () => {},
+    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
+  });
 
-  const wmPath = require.resolve('../electron/window-manager');
-  require.cache[wmPath] = {
-    id: wmPath,
-    filename: wmPath,
-    loaded: true,
-    exports: {
-      getMainWindow: () => null,
-      buildAppMenu: () => ({ popup: () => {} }),
-      getIsDev: () => true,
-    },
-  };
+  stubModule('electron/window-manager', {
+    getMainWindow: () => null,
+    buildAppMenu: () => ({ popup: () => {} }),
+    getIsDev: () => true,
+  });
 
   const routerPath = require.resolve('../electron/ipc-router');
-  delete require.cache[routerPath];
+  evictModule('electron/ipc-router');
   return require(routerPath);
 }
 

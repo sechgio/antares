@@ -1,35 +1,18 @@
-let passed = 0;
-let failed = 0;
 
-function assert(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
 
 function run() {
   console.log('Testing ubicaciones API key resolve cache...\n');
 
-  const storagePath = require.resolve('../electron/autoimg-secure-storage.js');
-  let stored = {};
-  require.cache[storagePath] = {
-    id: storagePath,
-    filename: storagePath,
-    loaded: true,
-    exports: {
+    let stored = {};
+  stubModule('electron/autoimg-secure-storage.js', {
       readSecureJson: () => ({ ...stored }),
       writeSecureJson: (_file, _ns, data) => {
         stored = { ...data };
       },
-    },
-  };
+    });
 
-  const keysPath = require.resolve('../electron/ubicaciones-secure-keys.js');
-  delete require.cache[keysPath];
+  evictModule('electron/ubicaciones-secure-keys.js');
   const {
     resolveProviderApiKey,
     setUbicacionesApiKeys,
@@ -50,10 +33,7 @@ function run() {
   const afterRotate = resolveProviderApiKey('google', '');
   assert(afterRotate === 'rotated-key', 'rotated key is visible after second set');
 
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(50));
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 run();

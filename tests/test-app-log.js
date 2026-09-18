@@ -22,6 +22,8 @@ function makeDir(name, contentMtime) {
   return p;
 }
 
+async function main() {
+
 makeDir('antares-staged-99999999', OLD);
 makeDir(`antares-staged-${process.pid}`, OLD);
 makeDir('antares-staged-88888888', FRESH);
@@ -39,7 +41,16 @@ assert(fs.existsSync(path.join(tmp, 'antares-backend-command-abc')) === false, '
 console.log('cleanStaleTempDirs: 5/5 escenarios OK');
 
 const dir = l.initAppLogs();
+let syncAppendCalls = 0;
+const originalAppendFileSync = fs.appendFileSync;
+fs.appendFileSync = (...args) => {
+  syncAppendCalls += 1;
+  return originalAppendFileSync(...args);
+};
 l.appendLogLine('INFO', 'linea normal con\nsalto de linea inyectado');
+await l.flushLogQueue();
+fs.appendFileSync = originalAppendFileSync;
+assert.strictEqual(syncAppendCalls, 0, 'logging frecuente no debe usar appendFileSync');
 const d = new Date();
 const yyyy = d.getFullYear();
 const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -54,6 +65,7 @@ try {
   fs.unlinkSync(logFile);
   fs.symlinkSync(path.join(dir, 'victima.txt'), logFile, 'file');
   l.appendLogLine('INFO', 'tras symlink');
+  await l.flushLogQueue();
   const st = fs.lstatSync(logFile);
   assert(!st.isSymbolicLink(), 'el symlink debe haberse eliminado');
   const c2 = fs.readFileSync(logFile, 'utf8');
@@ -73,3 +85,9 @@ for (const name of ['antares-staged-99999999', `antares-staged-${process.pid}`, 
 }
 fs.rmSync(process.env.LOCALAPPDATA, { recursive: true, force: true });
 console.log('TODO OK');
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

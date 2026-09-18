@@ -251,7 +251,7 @@ const GENERIC_OUTPUT_KEYS = [
 ];
 
 function _assertAllowedRawOutputPath(outRaw) {
-  const { isPathInside, isAllowedReadPath } = require('./path-allowlist');
+  const { isAllowedReadPath } = require('./path-allowlist');
   try {
     const resolved = path.resolve(outRaw);
     if (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink()) {
@@ -260,21 +260,8 @@ function _assertAllowedRawOutputPath(outRaw) {
     const dir = fs.existsSync(resolved)
       ? (fs.lstatSync(resolved).isDirectory() ? resolved : path.dirname(resolved))
       : path.dirname(resolved);
-    let allowed = false;
-    try {
-      const { app } = require('electron');
-      for (const name of ['documents', 'downloads']) {
-        try {
-          const stdRoot = app.getPath(name);
-          if (stdRoot && isPathInside(stdRoot, dir)) { allowed = true; break; }
-        } catch {}
-      }
-    } catch {}
-    if (!allowed) {
-      const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
-      if (isUnderAllowedWriteRoot(dir)) allowed = true;
-    }
-    if (!allowed && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
+    const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
+    if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
       throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
     }
     const { hasSymlinkAncestor } = require('./path-allowlist');

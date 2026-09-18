@@ -58,5 +58,4 @@ module.exports = {
   ipcTempDirs,
   cleanupSpreadsheetSpillFile,
   sweepIpcTempDirs,
-  isUnderDir,
 };

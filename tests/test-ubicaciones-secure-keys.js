@@ -4,11 +4,20 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const UBICACIONES_VIEW = path.join(ROOT, 'frontend', 'src', 'components', 'UbicacionesView.tsx');
+const UBICACIONES_DIR = path.join(ROOT, 'frontend', 'src', 'components', 'ubicaciones');
+
+function readUbicacionesSource() {
+  const files = [UBICACIONES_VIEW];
+  for (const entry of fs.readdirSync(UBICACIONES_DIR)) {
+    if (/\.(ts|tsx)$/.test(entry)) files.push(path.join(UBICACIONES_DIR, entry));
+  }
+  return files.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
+}
 
 function main() {
   let failed = false;
 
-  const source = fs.readFileSync(UBICACIONES_VIEW, 'utf8');
+  const source = readUbicacionesSource();
   if (/localStorage\.setItem\(\s*['"]antares:ubicaciones:apiKeys['"]/.test(source)) {
     console.error('[FAIL] UbicacionesView still writes apiKeys to localStorage');
     failed = true;

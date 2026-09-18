@@ -141,5 +141,4 @@ module.exports = {
   findAvailablePort,
   startCallbackServer,
   stopCallbackServer,
-  FLOW_TIMEOUT_MS,
 };

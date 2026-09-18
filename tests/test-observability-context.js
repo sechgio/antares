@@ -20,6 +20,7 @@ function readEvents() {
     .map((line) => JSON.parse(line)));
 }
 
+async function main() {
 try {
   assert.strictEqual(contract.schema_version, 1, 'contrato versionado');
   for (const field of ['event', 'level', 'component', 'timestamp', 'app_version', 'session_id']) {
@@ -41,11 +42,13 @@ try {
     stream: 'stderr',
     outcome: 'failed',
     request_id: '11111111-1111-4111-8111-111111111111',
+    timeout_ms: 5000,
     message: 'Authorization: Bearer secret-value access_token=token-value en C:\\Users\\Alice\\secret.txt alice@example.com',
     token: 'must-not-be-serialized',
     path: 'C:\\Users\\Alice\\secret.txt',
   });
   appLog.appendLogLine('INFO', 'linea con salto\ninterno');
+  await appLog.flushLogQueue();
 
   const events = readEvents();
   const firstEvent = events.find((event) => event.event === 'backend.stderr');
@@ -53,6 +56,7 @@ try {
   assert.strictEqual(firstEvent.schema_version, 1, 'evento usa el schema versionado');
   assert.strictEqual(firstEvent.component, 'backend', 'evento identifica el backend');
   assert.strictEqual(firstEvent.backend_pid, 1234, 'evento conserva el PID del backend');
+  assert.strictEqual(firstEvent.timeout_ms, 5000, 'evento conserva timeout_ms entero');
   assert.strictEqual(firstEvent.app_version, '0.10.20-test', 'evento conserva versión de app');
   assert.strictEqual(firstEvent.backend_version, '0.10.20-backend', 'evento conserva versión de backend');
   assert.strictEqual(firstEvent.session_id, firstSession, 'evento conserva la sesión');
@@ -66,17 +70,19 @@ try {
   for (let i = 0; i < 4; i += 1) {
     appLog.appendLogEvent('INFO', `test.rotation.${i}`, { message: 'x'.repeat(180) });
   }
+  await appLog.flushLogQueue();
   const rotatedFiles = fs.readdirSync(appLog.getLogsDir())
     .filter((name) => /\.jsonl$/.test(name));
   assert(rotatedFiles.length > 1, 'el JSONL rota por tamaño');
 
   const droppedBefore = appLog.getDroppedEventCount();
-  const originalAppend = fs.appendFileSync;
-  fs.appendFileSync = () => { throw new Error('simulated unwritable sink'); };
+  const originalAppend = fs.promises.appendFile;
+  fs.promises.appendFile = async () => { throw new Error('simulated unwritable sink'); };
   try {
     appLog.appendLogEvent('ERROR', 'test.sink_failure', { message: 'must remain fail-open' });
+    await appLog.flushLogQueue();
   } finally {
-    fs.appendFileSync = originalAppend;
+    fs.promises.appendFile = originalAppend;
   }
   assert(appLog.getDroppedEventCount() > droppedBefore, 'cuenta eventos descartados sin bloquear');
 
@@ -85,6 +91,7 @@ try {
     Buffer.from('[ERROR] Python exception in C:\\Users\\Alice\\private.txt\n'),
     5678,
   );
+  await appLog.flushLogQueue();
   const stderrEvent = readEvents().find((event) => event.event === 'backend.stderr' && event.backend_pid === 5678);
   assert(stderrEvent, 'stderr del backend llega al sink durable');
   assert.strictEqual(stderrEvent.stream, 'stderr', 'stderr identifica el stream');
@@ -104,6 +111,7 @@ try {
     })}\n`),
     5679,
   );
+  await appLog.flushLogQueue();
   const structuredEvent = readEvents().find((event) => event.event === 'backend.ipc');
   assert(structuredEvent, 'el spawner conserva eventos JSON del backend');
   assert.strictEqual(structuredEvent.request_id, 'req-2', 'evento conserva request_id');
@@ -118,8 +126,15 @@ try {
   const humanContent = fs.readFileSync(path.join(appLog.getLogsDir(), humanLog), 'utf8');
   assert(humanContent.includes(`session_id=${firstSession}`), 'log humano incluye contexto de sesión');
   assert(!humanContent.includes('\ninterno'), 'log humano no permite inyección de líneas');
+  assert(!humanContent.includes('Python exception'), 'stderr del backend no se duplica en el log humano');
 
   console.log('observability context/sink: TODO OK');
 } finally {
   fs.rmSync(dataRoot, { recursive: true, force: true });
 }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

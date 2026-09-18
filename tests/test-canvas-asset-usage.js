@@ -3,6 +3,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const { evictModule } = require('./helpers/harness');
+
 async function main() {
   console.log('Testing canvas asset usage accounting...\n');
 
@@ -29,7 +31,7 @@ async function main() {
   };
 
   try {
-    delete require.cache[require.resolve('../electron/canvas-assets.js')];
+    evictModule('electron/canvas-assets.js');
     const {
       putCanvasAsset,
       assetsDir,

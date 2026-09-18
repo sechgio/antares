@@ -5,10 +5,21 @@ const ALLOWED_KINDS = new Set([
   'react_error',
   'global_error',
   'unhandled_rejection',
+  'toast_error',
+  'api_error',
+  'app_error',
+  'sync_error',
+  'storage_error',
+  'worker_error',
 ]);
 const ALLOWED_EVENT_NAMES = new Set([
   'canvas.realtime',
   'canvas.quit_flush',
+  'canvas.push',
+  'canvas.cloud_sync',
+  'espacios.sync',
+  'storage.local',
+  'worker.error',
 ]);
 const ALLOWED_EVENT_FIELDS = new Set([
   'view',
@@ -46,6 +57,7 @@ function sanitizeRendererError(payload = {}) {
   const message = _safeText(source.message);
   const stack = _safeText(source.stack);
   const componentStack = _safeText(source.componentStack ?? source.component_stack);
+  const requestId = _safeToken(source.request_id ?? source.requestId, null);
   const parts = [
     name && `name=${name}`,
     message && `message=${message}`,
@@ -55,6 +67,7 @@ function sanitizeRendererError(payload = {}) {
   return {
     kind,
     view,
+    request_id: requestId,
     message: parts.join(' | ').slice(0, MAX_RENDERER_MESSAGE_LENGTH) || 'renderer error',
   };
 }
@@ -66,6 +79,7 @@ function recordRendererError(payload) {
     outcome: 'failed',
     reason: safe.kind,
     view: safe.view,
+    request_id: safe.request_id ?? undefined,
     message: safe.message,
   });
   return safe;
@@ -115,7 +129,15 @@ function registerRendererObservability(ipcMain) {
       const { getMainWindow } = require('./window-manager');
       const { isTrustedRendererFrame } = require('./renderer-trust');
       const isDev = !app.isPackaged;
-      if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) return;
+      if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) {
+        appendLogEvent('WARN', 'security.rejected', {
+          component: 'electron',
+          outcome: 'rejected',
+          reason: 'untrusted_sender',
+          method: 'renderer-error',
+        });
+        return;
+      }
       recordRendererError(payload);
     } catch {
     }
@@ -126,7 +148,15 @@ function registerRendererObservability(ipcMain) {
       const { getMainWindow } = require('./window-manager');
       const { isTrustedRendererFrame } = require('./renderer-trust');
       const isDev = !app.isPackaged;
-      if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) return;
+      if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) {
+        appendLogEvent('WARN', 'security.rejected', {
+          component: 'electron',
+          outcome: 'rejected',
+          reason: 'untrusted_sender',
+          method: 'renderer-event',
+        });
+        return;
+      }
       recordRendererEvent(payload);
     } catch {
     }
