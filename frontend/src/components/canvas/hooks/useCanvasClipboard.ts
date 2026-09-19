@@ -15,7 +15,7 @@ import {
 import { assignUniqueLogoSides } from '../ops/logoSide';
 import { deleteLayers, duplicateLayers } from '../ops/layerOps';
 import { expandWithDescendants } from '../ops/layerTree';
-import type { CanvasLayer } from '../types';
+import { newId, type CanvasLayer } from '../types';
 
 interface CanvasClipboardParams {
   documentLayers: CanvasLayer[];
@@ -59,16 +59,24 @@ export function useCanvasClipboard({
     (source: CanvasLayer[], offsetMm?: number) => {
       if (!source.length) return;
       const withIds = source.map((l) => ({ ...l, pageIndex }));
-      const clipIds = new Set(withIds.map((l) => l.id));
-      const roots = withIds.filter((l) => !l.parentId || !clipIds.has(l.parentId));
-      const temp = [...documentLayers, ...withIds];
+      // El portapapeles conserva los ids de las capas copiadas. duplicateLayers
+      // emite un clon por cada aparición en el array, así que un id que también
+      // está en el documento borraría el original y clonaría dos veces.
+      const rekeyed = new Map(withIds.map((l) => [l.id, newId()]));
+      const incoming = withIds.map((l) => ({
+        ...l,
+        id: rekeyed.get(l.id)!,
+        parentId: l.parentId ? (rekeyed.get(l.parentId) ?? l.parentId) : l.parentId,
+      }));
+      const incomingIds = new Set(incoming.map((l) => l.id));
+      const roots = incoming.filter((l) => !l.parentId || !incomingIds.has(l.parentId));
+      const temp = [...documentLayers, ...incoming];
       const { layers, newIds } = duplicateLayers(
         temp,
         roots.map((l) => l.id),
         offsetMm === undefined ? undefined : { offsetMm },
       );
-      const originalClipIds = new Set(withIds.map((l) => l.id));
-      setAllLayers(assignUniqueLogoSides(layers.filter((l) => !originalClipIds.has(l.id)), newIds));
+      setAllLayers(assignUniqueLogoSides(layers.filter((l) => !incomingIds.has(l.id)), newIds));
       setSelectedIds(newIds);
     },
     [documentLayers, pageIndex, setAllLayers, setSelectedIds],
