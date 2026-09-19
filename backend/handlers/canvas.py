@@ -273,7 +273,14 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     if len(contexts) > 50:
         raise ValueError("Demasiados contextos (máx 50)")
     pages = document.get("pages") or []
-    if len(contexts) * max(1, len(pages)) > 200:
+    pair_context_pages = bool(params.get("pair_context_pages", False))
+    # Misma condición que usa CanvasCmykRenderer.render: pareado se emite una
+    # página por contexto, si no el producto contexto x página.
+    if pair_context_pages and len(contexts) == len(pages):
+        output_pages = len(pages)
+    else:
+        output_pages = len(contexts) * max(1, len(pages))
+    if output_pages > 200:
         raise ValueError("Demasiadas páginas a exportar (máx 200)")
     if isinstance(params.get("localImagePaths"), dict) and len(params["localImagePaths"]) > 64:
         raise ValueError("Demasiadas imágenes locales (máx 64)")
@@ -286,7 +293,6 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     dpi = int(params.get("dpi") or 300)
     bleed_mm = float(params.get("bleed_mm") or 0.0)
     show_crop_marks = bool(params.get("show_crop_marks", False))
-    pair_context_pages = bool(params.get("pair_context_pages", False))
     canvas_manifest_b64 = params.get("canvas_manifest_b64")
     filename = sanitizar_nombre(Path(str(params.get("filename") or "canvas_cmyk.pdf")).name) or "canvas_cmyk.pdf"
     if not filename.lower().endswith(".pdf"):
