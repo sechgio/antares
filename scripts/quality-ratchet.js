@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Falla si type:ignore, any, dict[str, Any] sin allowlist en backend
- * o archivos grandes suben respecto a .quality-baseline.json. Sin baseline sale 0.
+ * o archivos grandes suben respecto al techo de .quality-baseline.json. Sin baseline sale 0.
+ * El techo que se juzga es el commiteado en HEAD, no el del árbol de trabajo.
  *
  *   node scripts/quality-ratchet.js [--json]
  *   node scripts/quality-ratchet.js --update [--force]
@@ -9,9 +10,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { ROOT } = require('./lib/loop-utils');
 
 const BASELINE_PATH = path.join(ROOT, '.quality-baseline.json');
+const BASELINE_REL = path.relative(ROOT, BASELINE_PATH).split(path.sep).join('/');
 const LARGE_FILE_LINES = 500;
 
 const SKIP_DIRS = new Set([
@@ -143,7 +146,7 @@ function evaluate(current, baseline) {
   });
 }
 
-function renderReport(rows, { baselineMissing = false } = {}) {
+function renderReport(rows, { baselineMissing = false, baselineSource = null } = {}) {
   const icon = { ok: '=', regression: '✗', improved: '↓', nodata: '?' };
   const lines = [
     '## Trinquete de calidad — Antares',
@@ -159,8 +162,9 @@ function renderReport(rows, { baselineMissing = false } = {}) {
   if (baselineMissing) {
     lines.push('> Sin baseline. Ejecuta `node scripts/quality-ratchet.js --update` para fijar los techos de hoy.');
   } else {
+    if (baselineSource) lines.push(`> Techo leído de \`${baselineSource}\`.`);
     lines.push('> `=` igual · `↓` bajó · `✗` subió (bloquea) · `?` sin datos');
-    lines.push('> Bajar un techo: `node scripts/quality-ratchet.js --update`. Subirlo exige `--force` y una razón.');
+    lines.push('> Bajar un techo: `node scripts/quality-ratchet.js --update`. Subirlo exige `--force` y commit del baseline.');
   }
   return lines.join('\n');
 }
@@ -191,16 +195,66 @@ function loadBaseline() {
   }
 }
 
+function readCommittedBaseline() {
+  try {
+    const raw = execFileSync('git', ['show', `HEAD:${BASELINE_REL}`], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * El techo que juzga es el commiteado: si se leyera el archivo del árbol de
+ * trabajo, subir un techo localmente bastaría para pasar la puerta sin que nadie
+ * lo vea. El archivo local manda sólo cuando no hay baseline en HEAD.
+ */
+function chooseBaseline({ committed, local }) {
+  if (committed) return { baseline: committed, source: 'HEAD' };
+  if (local) return { baseline: local, source: 'worktree' };
+  return { baseline: null, source: null };
+}
+
+function loosenedCeilings(committed, local) {
+  const head = committed && committed.metrics;
+  const here = local && local.metrics;
+  if (!head || !here) return [];
+  const out = [];
+  for (const metric of METRICS) {
+    const before = head[metric.id];
+    const now = here[metric.id];
+    if (
+      before && now && Number.isFinite(before.value) &&
+      Number.isFinite(now.value) && now.value > before.value
+    ) {
+      out.push({ id: metric.id, head: before.value, local: now.value });
+    }
+  }
+  return out;
+}
+
+function committedBaseline() {
+  return chooseBaseline({ committed: readCommittedBaseline(), local: loadBaseline() });
+}
+
+function loosenedInWorktree(committed) {
+  return loosenedCeilings(committed, loadBaseline());
+}
+
 function run() {
   const argv = process.argv.slice(2);
   const asJson = argv.includes('--json');
   const update = argv.includes('--update');
   const force = argv.includes('--force');
   const current = measure(ROOT);
+  const { baseline: ceiling, source } = committedBaseline();
 
   if (update) {
-    const previous = loadBaseline();
-    const { baseline, blocked } = nextBaseline(current, previous, { force });
+    const { baseline, blocked } = nextBaseline(current, ceiling, { force });
     if (blocked.length > 0) {
       console.error('\n✗ Estos techos subirían; usa --force sólo si es una decisión consciente:\n');
       for (const b of blocked) console.error(`  ${b.id}: ${b.from} → ${b.to}`);
@@ -208,20 +262,32 @@ function run() {
       process.exit(1);
     }
     fs.writeFileSync(BASELINE_PATH, `${JSON.stringify(baseline, null, 2)}\n`);
-    console.log(renderReport(evaluate(current, baseline)));
+    console.log(renderReport(evaluate(current, baseline), { baselineSource: source }));
     console.log(`\n✓ Baseline actualizado en ${path.relative(ROOT, BASELINE_PATH)}`);
     process.exit(0);
   }
 
-  const baseline = loadBaseline();
-  const rows = evaluate(current, baseline);
+  const rows = evaluate(current, ceiling);
   if (asJson) {
-    console.log(JSON.stringify({ current, rows, baselineMissing: baseline === null }, null, 2));
+    console.log(
+      JSON.stringify({ current, rows, baselineSource: source, baselineMissing: ceiling === null }, null, 2),
+    );
   } else {
-    console.log(renderReport(rows, { baselineMissing: baseline === null }));
+    console.log(renderReport(rows, { baselineMissing: ceiling === null, baselineSource: source }));
   }
 
-  if (baseline === null) process.exit(0);
+  if (source === 'HEAD') {
+    const loosened = loosenedInWorktree(ceiling);
+    if (loosened.length > 0) {
+      console.error(
+        `\n⚠ El árbol de trabajo sube techos que HEAD no autoriza: ${loosened
+          .map((l) => `${l.id} ${l.head} → ${l.local}`)
+          .join(', ')}. Se juzga contra HEAD; súbelos en el mismo commit si es intencional.`,
+      );
+    }
+  }
+
+  if (ceiling === null) process.exit(0);
   const blocking = rows.filter((r) => r.status === 'regression');
   if (blocking.length > 0) {
     console.error(`\n✗ ${blocking.length} métrica(s) empeoraron: ${blocking.map((r) => r.id).join(', ')}`);
@@ -245,6 +311,10 @@ module.exports = {
   evaluate,
   renderReport,
   nextBaseline,
+  loadBaseline,
+  readCommittedBaseline,
+  chooseBaseline,
+  loosenedCeilings,
 };
 
 if (require.main === module) run();

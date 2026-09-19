@@ -1,35 +1,54 @@
 #!/usr/bin/env node
 /**
- * Intención, tamaño, tests, aprobación, taxonomía.
- * Sin gh o sin PR: sale 0. --enforce sale 1 si algún check bloquea.
- * En borrador los checks de bloqueo degradan a aviso.
+ * Auditoría de la política de revisión de un PR: intención, tamaño, tests, aprobación, taxonomía.
  *
- *   node scripts/review-policy-check.js --pr 42 [--enforce] [--comment] [--json]
+ * Severidades: solo los checks `blocking` pueden tumbar el job. Bloquean la intención vacía y el
+ * tamaño grande sin declarar (etiqueta `size/exempt`); el resto son señales para el revisor humano.
+ * La puerta falla abierta ante problemas de infraestructura (sin `gh`, API caída, PR cerrado) y
+ * falla cerrada ante errores de uso (repo o número de PR imposibles, `--fail-on` inválido).
+ *
+ *   node scripts/review-policy-check.js --pr 42 [--comment] [--json]
+ *                                       [--fail-on blocking|advisory|never]
+ *
+ * `--enforce` es un alias de `--fail-on blocking`. Sin ninguna de las dos la auditoría informa y sale 0.
+ * Exit 1 solo cuando `--fail-on` encuentra checks en su umbral, o ante un error de uso.
  */
 
-const { detectRepo, gh, ghApi: ghApiBase, parseCliArgs } = require('./lib/loop-utils');
+const { parseCliArgs, detectRepo } = require('./lib/loop-utils');
+const {
+  COMMENT_MARKER,
+  currentBranchPr,
+  fetchPrData,
+  ghErrorMessage,
+  isMissingGh,
+  upsertPolicyComment,
+} = require('./lib/pr-audit');
 
 const SIZE_WARN = 400;
-const SIZE_BLOCK = 1000;
+const SIZE_LARGE = 2000;
 const MAX_NEW_FILE_LINES = 500;
 const MIN_BODY_CHARS = 120;
 const EXEMPT_LABEL = 'size/exempt';
 const COMMENT_PREFIXES = ['blocking', 'suggestion', 'nit', 'question', 'praise'];
 const TAXONOMY_TARGET = 0.8;
-const REVIEW_TIMEOUT_MS = 20000;
-const COMMENT_MARKER = 'antares-review-policy:';
+const BLOCKING = 'blocking';
+const ADVISORY = 'advisory';
+const FAIL_MODES = [BLOCKING, 'advisory', 'never'];
+const STATUS_ICON = { pass: '✅', warn: '⚠️', fail: '❌', skip: '⏭️' };
+const VERDICT_ICON = { blocked: '❌', warning: '⚠️', ok: '✅' };
 const GENERATED_PATHS = [
-  /(^|\/)(package-lock\.json|uv\.lock|pnpm-lock\.yaml|yarn\.lock|poetry\.lock|Cargo\.lock|composer\.lock|Gemfile\.lock)$/,
+  /(^|\/)(package-lock\.json|uv\.lock|pnpm-lock\.yaml|yarn\.lock|poetry\.lock|Cargo\.lock|composer\.lock|Gemfile\.lock|go\.sum)$/,
   /(^|\/)__snapshots__\//,
   /\.snap$/,
   /\.min\.(js|css)$/,
+  /\.map$/,
+  /(^|\/)(dist|build|release|coverage|node_modules|vendor|__pycache__)\//,
 ];
-const ICON = { pass: '✅', warn: '⚠️', fail: '❌', skip: '⏭️' };
 
 function classifySize(changedLines) {
   if (!Number.isFinite(changedLines)) return 'unknown';
   if (changedLines <= SIZE_WARN) return 'ok';
-  if (changedLines < SIZE_BLOCK) return 'warn';
+  if (changedLines < SIZE_LARGE) return 'warn';
   return 'block';
 }
 
@@ -46,6 +65,13 @@ function isTestPath(filePath) {
 function isGeneratedPath(filePath) {
   const p = (filePath || '').replace(/\\/g, '/');
   return GENERATED_PATHS.some((re) => re.test(p));
+}
+
+function isNewFile(file) {
+  const status = String(file.status || '').toLowerCase();
+  if (status) return status === 'added';
+  // Payloads sin `status` (pruebas unitarias): un archivo puramente nuevo no tiene borrados.
+  return (Number(file.deletions) || 0) === 0;
 }
 
 function effectiveBodyLength(body) {
@@ -67,7 +93,10 @@ function effectiveBodyLength(body) {
 }
 
 function isBot(user) {
-  return !!(user && (user.is_bot || /\[bot\]$/i.test(String(user.login || ''))));
+  if (!user) return false;
+  return Boolean(
+    user.is_bot || user.type === 'Bot' || /\[bot\]$/i.test(String(user.login || '')),
+  );
 }
 
 function hasThirdPartyApproval(pr) {
@@ -79,7 +108,12 @@ function hasThirdPartyApproval(pr) {
 
 function humanComments(comments) {
   return (comments || []).filter(
-    (c) => c && c.body && String(c.body).trim().length > 0 && !isBot(c.author),
+    (c) =>
+      c &&
+      c.body &&
+      String(c.body).trim().length > 0 &&
+      !isBot(c.author) &&
+      !String(c.body).includes(COMMENT_MARKER),
   );
 }
 
@@ -93,64 +127,99 @@ function taxonomyCompliance(comments) {
   return { total: list.length, prefixed, ratio: prefixed / list.length };
 }
 
-function evaluatePolicy(pr) {
+function summarizeFiles(files) {
+  let generatedLines = 0;
+  const bigNewFiles = [];
+  for (const f of files) {
+    const lines = (Number(f.additions) || 0) + (Number(f.deletions) || 0);
+    if (isGeneratedPath(f.path)) {
+      generatedLines += lines;
+    } else if (isNewFile(f) && (Number(f.additions) || 0) > MAX_NEW_FILE_LINES && !isTestPath(f.path)) {
+      bigNewFiles.push(f);
+    }
+  }
+  bigNewFiles.sort((a, b) => (Number(b.additions) || 0) - (Number(a.additions) || 0));
+  return { generatedLines, bigNewFiles };
+}
+
+function evaluatePolicy(pr, meta = {}) {
   const data = pr || {};
   const files = data.files || [];
   const body = String(data.body || '').trim();
+  const isDraft = Boolean(data.isDraft);
   const labels = (data.labels || []).map((l) => (l && l.name) || l).filter(Boolean);
   const changedLines = (Number(data.additions) || 0) + (Number(data.deletions) || 0);
-  const generatedLines = files.reduce(
-    (acc, f) => acc + (isGeneratedPath(f.path) ? (Number(f.additions) || 0) + (Number(f.deletions) || 0) : 0),
-    0,
-  );
+  const changedFiles = Number(data.changedFiles) || files.length;
+  const sizeUnknown = Boolean(meta.partial) && files.length < changedFiles;
+  const { generatedLines, bigNewFiles } = summarizeFiles(files);
   const effectiveLines = files.length > 0 ? Math.max(0, changedLines - generatedLines) : changedLines;
   const sizeExempt = labels.includes(EXEMPT_LABEL);
   const checks = [];
-  const add = (id, label, status, detail) => checks.push({ id, label, status, detail });
-  const block = (status) => (data.isDraft && status === 'fail' ? 'warn' : status);
+
+  // Un check no bloqueante nunca produce `fail`; un borrador tampoco.
+  const add = (id, label, status, detail, blocking = false) => {
+    const fails = blocking && status === 'fail' && !isDraft;
+    checks.push({
+      id,
+      label,
+      severity: blocking ? BLOCKING : ADVISORY,
+      status: fails ? 'fail' : status === 'fail' ? 'warn' : status,
+      detail,
+    });
+  };
 
   const intentLen = effectiveBodyLength(body);
+  const intentOk = intentLen >= MIN_BODY_CHARS;
   add(
     'intencion',
     'Intención declarada',
-    block(intentLen >= MIN_BODY_CHARS ? 'pass' : 'fail'),
-    intentLen >= MIN_BODY_CHARS
+    intentOk ? 'pass' : 'fail',
+    intentOk
       ? `${intentLen} caracteres de contenido`
-      : `Descripción efectiva de ${intentLen} caracteres (mínimo ${MIN_BODY_CHARS}; la plantilla sin rellenar no cuenta). Explica el *por qué*.`,
+      : `${intentLen} caracteres efectivos (mínimo ${MIN_BODY_CHARS}; la plantilla sin rellenar no cuenta). Explica el *por qué* en "What / Why".`,
+    true,
   );
 
-  const sizeDetail = generatedLines > 0
-    ? `${effectiveLines} líneas efectivas (${generatedLines} generadas excluidas)`
-    : `${effectiveLines} líneas`;
+  const sizeDetail =
+    generatedLines > 0 ? `${effectiveLines} efectivas (${generatedLines} generadas excluidas)` : `${effectiveLines} líneas`;
   const size = classifySize(effectiveLines);
-  if (size === 'ok') {
-    add('tamano', 'Tamaño del PR', 'pass', sizeDetail);
+  if (sizeUnknown) {
+    add(
+      'tamano',
+      'Tamaño del PR',
+      'skip',
+      `Listado de archivos incompleto (${files.length}/${changedFiles}): no se puede medir ni bloquear por tamaño.`,
+    );
+  } else if (size === 'ok') {
+    add('tamano', 'Tamaño del PR', 'pass', `${sizeDetail} en ${files.length} archivo(s)`);
   } else if (size === 'warn') {
-    add('tamano', 'Tamaño del PR', 'warn', `${sizeDetail} (>${SIZE_WARN}). Considera partirlo en PRs apilados.`);
+    add('tamano', 'Tamaño del PR', 'warn', `${sizeDetail} (>${SIZE_WARN}): considera partirlo en PRs apilados.`);
   } else if (sizeExempt) {
-    add('tamano', 'Tamaño del PR', 'warn', `${sizeDetail} (≥${SIZE_BLOCK}) con exención \`${EXEMPT_LABEL}\`.`);
+    add('tamano', 'Tamaño del PR', 'warn', `${sizeDetail} (≥${SIZE_LARGE}) declarado con la etiqueta \`${EXEMPT_LABEL}\`.`);
   } else {
-    add('tamano', 'Tamaño del PR', block('fail'), `${sizeDetail} (≥${SIZE_BLOCK}). Parte el cambio o aplica la etiqueta \`${EXEMPT_LABEL}\`.`);
+    add(
+      'tamano',
+      'Tamaño del PR',
+      'fail',
+      `${sizeDetail} (≥${SIZE_LARGE}). Parte el cambio o aplica la etiqueta \`${EXEMPT_LABEL}\` para declarar que es deliberadamente grande.`,
+      true,
+    );
   }
 
-  const bigNew = files.filter(
-    (f) =>
-      (Number(f.additions) || 0) > MAX_NEW_FILE_LINES &&
-      (Number(f.deletions) || 0) === 0 &&
-      !isGeneratedPath(f.path) &&
-      !isTestPath(f.path),
+  const oversized = bigNewFiles.slice(0, 5).map((f) => `${f.path} (+${f.additions})`);
+  if (bigNewFiles.length > oversized.length) oversized.push(`+${bigNewFiles.length - oversized.length} más`);
+  add(
+    'archivos',
+    'Archivos nuevos asumibles',
+    bigNewFiles.length === 0 ? 'pass' : 'fail',
+    bigNewFiles.length === 0
+      ? `Ningún archivo nuevo supera ${MAX_NEW_FILE_LINES} líneas`
+      : `${oversized.join(', ')} superan ${MAX_NEW_FILE_LINES} líneas. Revisa su tamaño o divídelos.`,
   );
-  if (bigNew.length === 0) {
-    add('archivos', 'Sin archivos nuevos > 500 líneas', 'pass', 'OK');
-  } else if (sizeExempt) {
-    add('archivos', 'Sin archivos nuevos > 500 líneas', 'warn', `${bigNew.map((f) => f.path).join(', ')} (exentos)`);
-  } else {
-    add('archivos', 'Sin archivos nuevos > 500 líneas', block('fail'), bigNew.map((f) => `${f.path} (+${f.additions})`).join(', '));
-  }
 
   const gate = (id, label, pass, passDetail, warnDetail) => {
     if (pass) add(id, label, 'pass', passDetail);
-    else if (data.isDraft) add(id, label, 'skip', 'PR en borrador');
+    else if (isDraft) add(id, label, 'skip', 'PR en borrador');
     else add(id, label, 'warn', warnDetail);
   };
 
@@ -159,7 +228,7 @@ function evaluatePolicy(pr) {
     'Sección de riesgo completada',
     /##\s*Risk/i.test(body) && /- \[[xX]\]/.test(body),
     'OK',
-    'No se detectó la sección de riesgo de la plantilla. Complétala antes de pedir revisión.',
+    'Falta la sección "Risk" de la plantilla marcada. Complétala antes de pedir revisión.',
   );
 
   const touchedTests = files.filter((f) => isTestPath(f.path));
@@ -181,14 +250,14 @@ function evaluatePolicy(pr) {
 
   const tax = taxonomyCompliance((data.reviews || []).concat(data.comments || []));
   if (tax.total === 0) {
-    add('taxonomia', 'Taxonomía de comentarios', 'skip', 'Sin comentarios aún');
+    add('taxonomia', 'Taxonomía de comentarios', 'skip', 'Sin comentarios de revisión aún');
   } else {
     const pct = Math.round(tax.ratio * 100);
     add(
       'taxonomia',
       'Taxonomía de comentarios',
       tax.ratio >= TAXONOMY_TARGET ? 'pass' : 'warn',
-      `${tax.prefixed}/${tax.total} comentarios con prefijo (${pct}%, objetivo ${Math.round(TAXONOMY_TARGET * 100)}%)`,
+      `${tax.prefixed}/${tax.total} comentarios con prefijo (${pct}%, objetivo ${Math.round(TAXONOMY_TARGET * 100)}%): \`blocking:\` / \`suggestion:\` / \`nit:\` / \`question:\` / \`praise:\``,
     );
   }
 
@@ -200,178 +269,178 @@ function evaluatePolicy(pr) {
     checks,
     stats: {
       files: files.length,
+      changedFiles,
       testsTouched: touchedTests.length,
       taxonomy: tax,
       sizeExempt,
+      sizeUnknown,
       effectiveLines,
       generatedLines,
     },
   };
 }
 
-function renderReport(pr, result) {
-  return [
-    '## Revisión de código — política automática',
+function checkRow(c) {
+  return `| ${c.label} | ${STATUS_ICON[c.status]} ${c.status} | ${c.detail} |`;
+}
+
+function checkSection(title, checks) {
+  if (checks.length === 0) return [];
+  return ['', `### ${title}`, '', '| Check | Estado | Detalle |', '| --- | --- | --- |', ...checks.map(checkRow)];
+}
+
+function renderReport(pr, result, extra = {}) {
+  const { checks, stats } = result;
+  const blocked = checks.filter((c) => c.status === 'fail');
+  const warnings = checks.filter((c) => c.status === 'warn');
+  const resolved = checks.filter((c) => c.status === 'pass' || c.status === 'skip');
+  const lines = [
+    `## ${VERDICT_ICON[result.verdict]} Política de revisión — PR #${pr && pr.number ? pr.number : '?'}`,
     '',
-    `**Veredicto:** \`${result.verdict}\` · **${result.changedLines}** líneas cambiadas${
-      result.stats.generatedLines > 0 ? ` (**${result.stats.effectiveLines}** efectivas tras excluir generadas)` : ''
-    } en **${result.stats.files}** archivo(s)`,
+    `**Veredicto:** \`${result.verdict}\` · **${stats.effectiveLines}** líneas efectivas en **${stats.files}** archivo(s)`,
+    `Brutas: ${result.changedLines}${stats.generatedLines > 0 ? ` · generadas excluidas: ${stats.generatedLines}` : ''} · autor: @${(pr && pr.author && pr.author.login) || '?'}`,
+  ];
+  if (extra.headSha && pr) {
+    lines.push(`Commit auditado: \`${String(extra.headSha).slice(0, 7)}\` · \`${pr.baseRefName || 'main'}\` ← \`${pr.headRefName || ''}\``);
+  }
+  lines.push(
+    ...checkSection('Bloqueantes', blocked),
+    ...checkSection('Avisos para el revisor', warnings),
+    ...checkSection('Correctos', resolved),
     '',
-    '| Check | Estado | Detalle |',
-    '| --- | --- | --- |',
-    ...result.checks.map((c) => `| ${c.label} | ${ICON[c.status]} ${c.status} | ${c.detail} |`),
+    `> Solo la intención vacía y el tamaño sin \`${EXEMPT_LABEL}\` bloquean el job; el resto orienta la revisión humana.`,
     '',
-    '> Un check automático que nadie puede esquivar vale más que una norma escrita.',
-    '',
-    `<!-- ${COMMENT_MARKER}pr=${pr ? pr.number : 'n/a'} -->`,
-  ].join('\n');
+    `<!-- ${COMMENT_MARKER}pr=${pr && pr.number ? pr.number : 'n/a'} -->`,
+  );
+  return lines.join('\n');
+}
+
+function annotate(result) {
+  if (process.env.GITHUB_ACTIONS !== 'true') return;
+  for (const c of result.checks) {
+    const detail = String(c.detail).replace(/\r?\n/g, ' ');
+    if (c.status === 'fail') console.log(`::error title=Política de revisión · ${c.id}::${detail}`);
+    if (c.status === 'warn') console.log(`::warning title=Política de revisión · ${c.id}::${detail}`);
+  }
+}
+
+function shouldFail(result, mode) {
+  if (mode === 'never') return false;
+  if (result.verdict === 'blocked') return true;
+  return mode === 'advisory' && result.verdict === 'warning';
 }
 
 function parseArgs(argv) {
   return parseCliArgs(argv, {
-    defaults: { pr: null, enforce: false, comment: false, json: false, repo: null },
+    defaults: { pr: null, comment: false, json: false, repo: null, failOn: 'never', enforce: false },
     flags: {
       '--enforce': { key: 'enforce' },
       '--comment': { key: 'comment' },
       '--json': { key: 'json' },
       '--pr': { key: 'pr', value: true },
       '--repo': { key: 'repo', value: true },
+      '--fail-on': { key: 'failOn', value: true },
     },
   });
 }
 
-function currentBranchPr(repo) {
-  try {
-    const out = gh(
-      ['pr', 'view', '--json', 'number', ...(repo ? ['--repo', repo] : [])],
-      { timeout: REVIEW_TIMEOUT_MS },
-    );
-    return JSON.parse(out).number;
-  } catch {
-    return null;
-  }
+function usageError(message) {
+  console.error(`✗ ${message}`);
+  process.exit(1);
 }
 
-function fetchPr(number, repo) {
-  const fields = 'number,title,body,additions,deletions,reviews,comments,labels,author,isDraft,state';
-  const out = gh(
-    ['pr', 'view', String(number), '--json', fields, ...(repo ? ['--repo', repo] : [])],
-    { timeout: REVIEW_TIMEOUT_MS, maxBuffer: 20 * 1024 * 1024 },
-  );
-  return JSON.parse(out);
-}
-
-function ghApi(args) {
-  return ghApiBase(args, { timeout: REVIEW_TIMEOUT_MS });
-}
-
-function fetchPrFiles(number, repo) {
-  const out = ghApi([`repos/${repo}/pulls/${number}/files?per_page=100`, '--paginate', '--slurp']);
-  return JSON.parse(out || '[]')
-    .flat()
-    .map((f) => ({ path: f.filename, additions: Number(f.additions) || 0, deletions: Number(f.deletions) || 0 }));
-}
-
-function selectPolicyComment(comments) {
-  const marked = (comments || [])
-    .filter((c) => c && c.id && String(c.body || '').includes(COMMENT_MARKER))
-    .sort((a, b) => Number(a.id) - Number(b.id));
-  return { update: marked[marked.length - 1] || null, remove: marked.slice(0, -1) };
-}
-
-function upsertPolicyComment(repo, prNumber, report) {
-  const out = ghApi([`repos/${repo}/issues/${prNumber}/comments?per_page=100`, '--paginate', '--slurp']);
-  const { update, remove } = selectPolicyComment(JSON.parse(out || '[]').flat());
-  for (const stale of remove) {
-    ghApi(['-X', 'DELETE', `repos/${repo}/issues/comments/${stale.id}`]);
-  }
-  if (update) {
-    ghApi(['-X', 'PATCH', `repos/${repo}/issues/comments/${update.id}`, '-f', `body=${report}`]);
-    return 'actualizado';
-  }
-  ghApi(['-X', 'POST', `repos/${repo}/issues/${prNumber}/comments`, '-f', `body=${report}`]);
-  return 'creado';
-}
-
-function run() {
+async function run() {
+  const startedAt = Date.now();
   const args = parseArgs(process.argv.slice(2));
+  const mode = args.enforce ? BLOCKING : args.failOn;
+  if (!FAIL_MODES.includes(mode)) usageError(`--fail-on vale ${FAIL_MODES.join(', ')}; recibido "${args.failOn}".`);
+
   const repo = args.repo || detectRepo();
+  if (!repo) usageError('No se pudo determinar el repositorio. Usa --repo owner/name');
 
-  if (!repo) {
-    console.error('✗ No se pudo determinar el repositorio. Usa --repo owner/name');
-    process.exit(args.enforce ? 1 : 0);
+  const number = args.pr ? Number(args.pr) : await currentBranchPr(repo);
+  if (!Number.isInteger(number) || number <= 0) {
+    usageError(`No se encontró un PR para la rama actual en ${repo}. Usa --pr <numero>.`);
   }
 
-  const number = args.pr ? Number(args.pr) : currentBranchPr(repo);
-  if (!number) {
-    console.error('✗ No se encontró un PR. Usa --pr <numero>');
-    process.exit(args.enforce ? 1 : 0);
-  }
-
-  let pr;
+  let data;
   try {
-    pr = fetchPr(number, repo);
-    pr.files = fetchPrFiles(number, repo);
+    data = await fetchPrData(number, repo);
   } catch (err) {
-    const msg = String(err && err.message ? err.message : err);
-    if (/command failed|ENOENT|not found|Could not resolve/i.test(msg)) {
-      console.warn(`⚠️  \`gh\` no disponible o sin acceso a ${repo}#${number}. Check omitido.`);
-      process.exit(0);
-    }
-    console.error(`✗ No se pudo leer el PR ${repo}#${number}: ${msg.split('\n')[0]}`);
-    process.exit(args.enforce ? 1 : 0);
+    const message = ghErrorMessage(err);
+    const reason = isMissingGh(message) ? '`gh` no está disponible o sin acceso' : 'no se pudo leer el PR';
+    console.warn(`⚠️  ${reason} (${repo}#${number}): ${message.split('\n').pop()}. Check omitido.`);
+    process.exit(0);
   }
 
-  const result = evaluatePolicy(pr);
-  const report = renderReport(pr, result);
+  const pr = data.pr;
+  if (pr.state !== 'OPEN') {
+    console.log(`⏭️  PR ${repo}#${pr.number} en estado ${pr.state.toLowerCase()}: política de revisión omitida.`);
+    process.exit(0);
+  }
+
+  const result = evaluatePolicy(pr, { partial: data.partial });
+  const report = renderReport(pr, result, { headSha: pr.headRefOid });
+  const timingMs = Date.now() - startedAt;
 
   if (args.json) {
-    console.log(JSON.stringify({ repo, pr: pr.number, ...result }, null, 2));
+    console.log(
+      JSON.stringify(
+        { repo, pr: { number: pr.number, title: pr.title, url: pr.url, author: pr.author && pr.author.login }, ...result, timingMs },
+        null,
+        2,
+      ),
+    );
   } else {
     console.log(`\nPolítica de revisión — ${repo}#${pr.number}: ${pr.title}\n`);
     console.log(report);
-    console.log('');
+    console.log(`\nAuditado en ${(timingMs / 1000).toFixed(1)} s · --fail-on=${mode}${data.partial ? ' · datos parciales' : ''}.`);
   }
+  annotate(result);
 
   if (args.comment) {
     try {
-      const action = upsertPolicyComment(repo, pr.number, report);
+      const action = await upsertPolicyComment(repo, pr, report);
       console.log(`Informe ${action} en el PR.`);
     } catch (err) {
-      console.warn(`⚠️  No se pudo comentar en el PR: ${String(err.message).split('\n')[0]}`);
+      console.warn(`⚠️  No se pudo comentar en el PR: ${ghErrorMessage(err).split('\n').pop()}`);
     }
   }
 
-  if (args.enforce && result.verdict === 'blocked') {
-    const failed = result.checks.filter((c) => c.status === 'fail');
-    console.error(`\n✗ ${failed.length} check(s) bloquean el PR: ${failed.map((c) => c.id).join(', ')}`);
+  if (shouldFail(result, mode)) {
+    const blockers = result.checks.filter(
+      (c) => c.status === 'fail' || (mode === 'advisory' && c.status === 'warn'),
+    );
+    console.error(`\n✗ ${blockers.length} check(s) con modo --fail-on=${mode}: ${blockers.map((c) => c.id).join(', ')}`);
     process.exit(1);
   }
-
   process.exit(0);
 }
 
 module.exports = {
   SIZE_WARN,
-  SIZE_BLOCK,
+  SIZE_LARGE,
   MAX_NEW_FILE_LINES,
   MIN_BODY_CHARS,
   EXEMPT_LABEL,
   COMMENT_PREFIXES,
-  COMMENT_MARKER,
   GENERATED_PATHS,
   TAXONOMY_TARGET,
+  BLOCKING,
+  ADVISORY,
   classifySize,
   isTestPath,
   isGeneratedPath,
+  isNewFile,
   effectiveBodyLength,
   isBot,
   hasThirdPartyApproval,
   humanComments,
   taxonomyCompliance,
+  summarizeFiles,
   evaluatePolicy,
   renderReport,
-  selectPolicyComment,
+  shouldFail,
 };
 
-if (require.main === module) run();
+if (require.main === module) run().catch((err) => usageError(ghErrorMessage(err)));
