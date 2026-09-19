@@ -20,21 +20,12 @@ export function formatDateValue(value: string | number | undefined): string {
   return text;
 }
 
-export { formatExcelSerialDMY as excelSerialToDate } from '../../utils/excel';
-
 export function isDateColumn(header: string): boolean {
   const h = header.toLowerCase();
   return h.includes('fecha') || h.includes('date') || h.includes('corte') || h.includes('trabajo');
 }
 
-export function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+export { escapeHtml } from '../../utils/html';
 
 export function normalizePreviewValue(value: unknown, fallback = '-'): string {
   if (value === null || value === undefined) return fallback;
@@ -42,13 +33,7 @@ export function normalizePreviewValue(value: unknown, fallback = '-'): string {
   return text ? text : fallback;
 }
 
-export function chunkItems<T>(items: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
-  }
-  return chunks;
-}
+export { chunkArray as chunkItems } from '../../utils/chunk';
 
 export function validateTemplateStructure(content: string): { valid: boolean; error: string } {
   const validPatterns = [

@@ -8,6 +8,7 @@ import SheetPreview from '../components/SheetPreview';
 import { CHUNK_SIZE, chunkArray } from '../constants';
 import type { CampoPanel, LogoData, PhotoFile, ReportTypeConfig } from '../types';
 import { safeFilenamePart } from '../../../utils/filename';
+import { askPdfSavePath } from '../../../utils/deliverRenderedDocument';
 
 export interface ExportReportPdfResult {
     cancelled?: boolean;
@@ -185,15 +186,7 @@ export async function exportReportPdf(
     }
 
     const defaultFilename = options?.defaultFilename ?? config.filename;
-    const saveTarget = await api.dialogSave({
-        title: 'Guardar PDF',
-        defaultPath: defaultFilename,
-        filters: [
-            { name: 'PDF', extensions: ['pdf'] },
-            { name: 'Todos los archivos', extensions: ['*'] },
-        ],
-    });
-    const outputPath = saveTarget.paths[0];
+    const outputPath = await askPdfSavePath(defaultFilename, 'Guardar PDF');
     if (!outputPath) {
         return { cancelled: true };
     }
@@ -238,15 +231,7 @@ export async function exportConsolidatedReportPdf(
     }
 
     const defaultFilename = buildConsolidatedFilename(config);
-    const saveTarget = await api.dialogSave({
-        title: 'Guardar PDF consolidado',
-        defaultPath: defaultFilename,
-        filters: [
-            { name: 'PDF', extensions: ['pdf'] },
-            { name: 'Todos los archivos', extensions: ['*'] },
-        ],
-    });
-    const outputPath = saveTarget.paths[0];
+    const outputPath = await askPdfSavePath(defaultFilename, 'Guardar PDF consolidado');
     if (!outputPath) {
         return { cancelled: true };
     }

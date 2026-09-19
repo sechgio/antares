@@ -5,7 +5,11 @@ import {
   type CanvasPaletteInput,
 } from '../hooks/useCanvasCommandPalette';
 import { createLayer } from '../constants';
+import { createGuide } from '../ops/guides';
 import { createEmptyDocument, type CanvasDocument, type CanvasLayer } from '../types';
+
+const { exportPagePng } = vi.hoisted(() => ({ exportPagePng: vi.fn() }));
+vi.mock('../ops/exportPng', () => ({ exportPagePng, PAGE_PNG_SCALE: 2 }));
 
 function makeDoc(layers: CanvasLayer[]): CanvasDocument {
   const doc = createEmptyDocument('test');
@@ -21,6 +25,7 @@ function makeInput(doc: CanvasDocument, overrides: Partial<CanvasPaletteInput> =
     setDocument: vi.fn(),
     selectedIds: [],
     pageIndex: 0,
+    setPageIndex: vi.fn(),
     pageLayers: doc.layers.filter((l) => (l.pageIndex ?? 0) === 0),
     uiLocked: false,
     runUndo: vi.fn(),
@@ -28,6 +33,7 @@ function makeInput(doc: CanvasDocument, overrides: Partial<CanvasPaletteInput> =
     pasteClipboard: vi.fn(),
     pasteReplaceClipboard: vi.fn(),
     copyLayersToClipboard: vi.fn(),
+    cutLayersToClipboard: vi.fn(() => [] as string[]),
     setAllLayers: vi.fn(),
     sealPanelAndAbortGesture: vi.fn(),
     onAddPage: vi.fn(),
@@ -135,6 +141,20 @@ describe('useCanvasCommandPalette', () => {
     expect(input.setSelectedIds).toHaveBeenCalledWith([]);
   });
 
+  it('runner cut corta la selección y limpia cuando algo se elimina', () => {
+    const a = createLayer('rect');
+    const doc = makeDoc([a]);
+    const cutLayersToClipboard = vi.fn(() => [a.id]);
+    const input = makeInput(doc, { selectedIds: [a.id], cutLayersToClipboard });
+    palette(input).runners.get('cut')!();
+    expect(cutLayersToClipboard).toHaveBeenCalledWith([a.id]);
+    expect(input.setSelectedIds).toHaveBeenCalledWith([]);
+
+    const noOp = makeInput(doc, { selectedIds: [], cutLayersToClipboard: vi.fn(() => []) });
+    palette(noOp).runners.get('cut')!();
+    expect(noOp.setSelectedIds).not.toHaveBeenCalled();
+  });
+
   it('runner group agrupa y runner ungroup se habilita con un grupo', () => {
     const a = createLayer('rect');
     const b = createLayer('ellipse');
@@ -179,6 +199,19 @@ describe('useCanvasCommandPalette', () => {
     });
     palette(input).runners.get('selectAll')!();
     expect(input.setSelectedIds).toHaveBeenCalledWith([a.id]);
+  });
+
+  it('runner selection:invert invierte las capas seleccionables de la página', () => {
+    const a = createLayer('rect');
+    const b = createLayer('ellipse');
+    const locked = createLayer('text', { locked: true });
+    const doc = makeDoc([a, b, locked]);
+    const input = makeInput(doc, {
+      selectedIds: [a.id],
+      pageLayers: doc.layers.filter((l) => (l.pageIndex ?? 0) === 0),
+    });
+    palette(input).runners.get('selection:invert')!();
+    expect(input.setSelectedIds).toHaveBeenCalledWith([b.id]);
   });
 
   it('runner page:remove se deshabilita con una sola página', () => {
@@ -232,6 +265,18 @@ describe('useCanvasCommandPalette', () => {
     expect(rulers.settings?.showRulers).toBe(false);
   });
 
+  it('guides:clear se deshabilita sin guías y las elimina todas', () => {
+    const doc = makeDoc([]);
+    const withoutGuides = palette(makeInput(doc));
+    const byId = new Map(withoutGuides.commands.map((c) => [c.id, c]));
+    expect(byId.get('guides:clear')!.disabled).toBe(true);
+
+    const input = makeInput({ ...doc, guides: [createGuide('x', 10, 0), createGuide('y', 20, 1)] });
+    palette(input).runners.get('guides:clear')!();
+    const next = vi.mocked(input.setDocument).mock.calls[0][0] as CanvasDocument;
+    expect(next.guides).toEqual([]);
+  });
+
   it('doc:generate cambia a modo generate y doc:importPdf respeta pdfImporting', () => {
     const doc = makeDoc([]);
     const input = makeInput(doc, {
@@ -242,6 +287,41 @@ describe('useCanvasCommandPalette', () => {
     expect(input.setMode).toHaveBeenCalledWith('generate');
     const byId = new Map(p.commands.map((c) => [c.id, c]));
     expect(byId.get('doc:importPdf')!.disabled).toBe(true);
+  });
+
+  it('export:pagePng exporta la página actual con el nombre del documento', () => {
+    exportPagePng.mockClear();
+    const doc = { ...makeDoc([]), name: 'informe' };
+    palette(makeInput(doc, { pageIndex: 1 })).runners.get('export:pagePng')!();
+    expect(exportPagePng).toHaveBeenCalledWith('informe-pagina-2', 2);
+  });
+
+  it('export:documentPng recorre las páginas y restaura la página inicial', async () => {
+    exportPagePng.mockClear();
+    const doc = {
+      ...makeDoc([]),
+      name: 'informe',
+      pages: [
+        { id: 'p1', name: 'Uno' },
+        { id: 'p2', name: 'Dos' },
+        { id: 'p3', name: 'Tres' },
+      ],
+    };
+    const setPageIndex = vi.fn();
+    palette(makeInput(doc, { pageIndex: 1, setPageIndex })).runners.get('export:documentPng')!();
+
+    await vi.waitFor(() => expect(exportPagePng).toHaveBeenCalledTimes(3));
+    expect(exportPagePng.mock.calls.map(([name]) => name)).toEqual([
+      'informe-pagina-1',
+      'informe-pagina-2',
+      'informe-pagina-3',
+    ]);
+    expect(setPageIndex.mock.calls.map(([index]) => index)).toEqual([0, 1, 2, 1]);
+  });
+
+  it('export:documentPng se deshabilita cuando el documento tiene una página', () => {
+    const byId = new Map(palette(makeInput(makeDoc([]))).commands.map((c) => [c.id, c]));
+    expect(byId.get('export:documentPng')!.disabled).toBe(true);
   });
 
   it('runner copy expande la selección con descendientes', () => {

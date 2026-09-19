@@ -32,7 +32,7 @@ export const EmptyPreviewPanel: React.FC<{ formato: string }> = ({ formato }) =>
             'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23666666\' fill-opacity=\'0.5\' fill-rule=\'evenodd\'%3E%3Ccircle cx=\'3\' cy=\'3\' r=\'3\'/%3E%3Ccircle cx=\'13\' cy=\'13\' r=\'3\'/%3E%3C/g%3E%3C/svg%3E")',
         }}
       />
-      <div className="absolute inset-0 bg-[var(--bg-base)]/30" />
+      <div className="absolute inset-0 bg-[color:color-mix(in_srgb,var(--bg-base)_30%,transparent)]" />
       <div className="relative z-10 flex flex-col items-center w-full h-full p-2">
         <div className="w-3/4 h-2.5 bg-[var(--text-primary)] rounded-sm mt-2 mb-3" />
         <div className="w-5/6 h-1.5 bg-[var(--text-secondary)] rounded-sm mb-1" />
@@ -148,7 +148,7 @@ export const RealPreviewPanel: React.FC<{
     <div className="flex-1 overflow-hidden flex items-center justify-center bg-[var(--bg-elevated)] p-6 relative">
       {error ? (
         <div className="flex flex-col items-center gap-3 max-w-sm">
-          <div className="w-12 h-12 rounded-full bg-[var(--accent-red)]/15 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-[color:color-mix(in_srgb,var(--accent-red)_15%,transparent)] flex items-center justify-center">
             <AlertCircle size={24} className="text-[var(--accent-red)]" />
           </div>
           <p className="text-sm font-medium text-[var(--accent-red)]">Error en vista previa</p>
@@ -164,7 +164,7 @@ export const RealPreviewPanel: React.FC<{
         <div className="flex flex-col items-center gap-4 w-full h-full relative">
           <div className="flex-1 w-full flex items-center justify-center overflow-hidden relative">
             {loading && (
-              <div className="absolute top-3 right-3 z-10 flex items-center gap-2 rounded-lg bg-[var(--bg-base)]/90 border border-[var(--border-subtle)] px-2.5 py-1.5 shadow-sm">
+              <div className="absolute top-3 right-3 z-10 flex items-center gap-2 rounded-lg bg-[color:color-mix(in_srgb,var(--bg-base)_90%,transparent)] border border-[var(--border-subtle)] px-2.5 py-1.5 shadow-sm">
                 <Loader2 size={14} className="animate-spin text-[var(--accent-primary)]" />
                 <span className="text-[10px] text-[var(--text-muted)]">Actualizando...</span>
               </div>
@@ -237,7 +237,7 @@ export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ r
     const allFailed = generados === 0 && fallidos > 0;
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8">
-        <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${allFailed ? 'bg-[var(--accent-yellow)]/15' : 'bg-[var(--accent-green)]/15'}`}>
+        <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${allFailed ? 'bg-[color:color-mix(in_srgb,var(--accent-yellow)_15%,transparent)]' : 'bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)]'}`}>
           {allFailed ? (
             <AlertCircle size={32} className="text-amber-400" />
           ) : (
@@ -287,12 +287,12 @@ export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ r
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8">
-      <div className="w-16 h-16 rounded-full bg-[var(--accent-red)]/15 flex items-center justify-center mb-5">
+      <div className="w-16 h-16 rounded-full bg-[color:color-mix(in_srgb,var(--accent-red)_15%,transparent)] flex items-center justify-center mb-5">
         <AlertCircle size={32} className="text-[var(--accent-red)]" />
       </div>
       <p className="text-lg font-semibold text-[var(--accent-red)] mb-3">Error</p>
-      <div className="max-w-md w-full rounded-xl border border-[var(--accent-red)]/20 bg-[var(--accent-red)]/5 p-4">
-        <p className="text-sm text-[var(--accent-red)]/90 break-words leading-relaxed">{result.error}</p>
+      <div className="max-w-md w-full rounded-xl border border-[color:color-mix(in_srgb,var(--accent-red)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_5%,transparent)] p-4">
+        <p className="text-sm text-[color:color-mix(in_srgb,var(--accent-red)_90%,transparent)] break-words leading-relaxed">{result.error}</p>
       </div>
     </div>
   );

@@ -22,7 +22,7 @@ export default function ViewStatsBar({ scheduled, unscheduled, overdue }: ViewSt
         </span>
       )}
       {overdue > 0 && (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent-red)]/25 bg-[var(--accent-red)]/8 px-2.5 py-1 text-[11px] text-[var(--accent-red)]">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-red)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_8%,transparent)] px-2.5 py-1 text-[11px] text-[var(--accent-red)]">
           <AlertCircle className="h-3 w-3" />
           <span className="font-medium">{overdue}</span>
           atrasadas

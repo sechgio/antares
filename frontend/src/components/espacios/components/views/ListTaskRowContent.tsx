@@ -1,10 +1,9 @@
-import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { Pencil, Trash2 } from 'lucide-react';
 import StatusPicker from '../StatusPicker';
 import type { BoardColumn, Tarea, TeamMember } from '../../types';
 import { formatDisplayDate } from '../../utils/dates';
 import { isOverdue } from '../../utils/filters';
 import { memberLabel } from '../../utils/members';
+import { TaskRowActions, TaskSelectCheckbox } from './TaskRowPrimitives';
 import Button from '@/components/ui/Button';
 
 interface ListTaskRowContentProps {
@@ -37,42 +36,13 @@ export default function ListTaskRowContent({
   const overdue = isOverdue(tarea, columns);
   const selected = selectedIds?.has(tarea.id) ?? false;
 
-  const actions = (
-    <>
-      {onEdit && (
-        <WithHoverTooltip label="Editar" placement="bottom">
-          <Button variant="none" size="none"
-            onClick={() => onEdit(tarea)}
-            className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            aria-label={`Editar ${tarea.title}`}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-        </WithHoverTooltip>
-      )}
-      <WithHoverTooltip label="Eliminar" placement="bottom">
-        <Button variant="none" size="none"
-          onClick={() => onDelete(tarea.id)}
-          className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red)]"
-          aria-label={`Eliminar ${tarea.title}`}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </WithHoverTooltip>
-    </>
-  );
+  const actions = <TaskRowActions tarea={tarea} onEdit={onEdit} onDelete={onDelete} />;
 
   return (
     <>
       {selectable ? (
         <Cell className={isTable ? 'px-3 py-3' : 'px-1'}>
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={() => onToggleSelect?.(tarea.id)}
-            aria-label={`Seleccionar ${tarea.title}`}
-            className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
-          />
+          <TaskSelectCheckbox tarea={tarea} selected={selected} onToggle={onToggleSelect} />
         </Cell>
       ) : (
         !isTable && <span />

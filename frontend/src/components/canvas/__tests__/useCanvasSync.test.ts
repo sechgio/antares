@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { useRef } from 'react';
-import type { SyncConflict, SyncResult } from '../sync/canvasCloudSync';
+import type { SyncConflict, SyncResult } from '../sync/syncCompare';
 import { useCanvasSync } from '../hooks/useCanvasSync';
 import { createEmptyDocument } from '../types';
 import { api } from '../../../api';

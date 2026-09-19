@@ -157,7 +157,7 @@ export default function StampPlacementEditor({
         className="pointer-events-none h-full w-full select-none object-contain"
         draggable={false}
       />
-      <div className="pointer-events-none absolute inset-0 rounded border-2 border-[var(--accent-primary)] bg-[var(--accent-primary)]/10" />
+      <div className="pointer-events-none absolute inset-0 rounded border-2 border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)]" />
       <div
         aria-label="Redimensionar sello"
         className="absolute -bottom-2 -right-2 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-[var(--accent-primary)] shadow"

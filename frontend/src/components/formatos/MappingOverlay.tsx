@@ -230,8 +230,8 @@ export default function MappingOverlay({
         <div
           className={`pointer-events-none absolute inset-0 rounded transition-opacity ${
             showEditChrome
-              ? 'border-2 border-dashed border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 opacity-100'
-              : 'border border-[var(--accent-primary)]/25 opacity-0 hover:opacity-100'
+              ? 'border-2 border-dashed border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] opacity-100'
+              : 'border border-[color:color-mix(in_srgb,var(--accent-primary)_25%,transparent)] opacity-0 hover:opacity-100'
           }`}
         />
         <div

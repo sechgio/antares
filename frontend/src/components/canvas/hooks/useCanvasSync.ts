@@ -40,8 +40,15 @@ export function isOpenDocumentDirty(
   hasPanelBaseline: boolean,
   hasGestureBaseline: boolean,
   hasRenameBaseline = false,
+  hasPendingInlineEdit = false,
 ): boolean {
-  return hasUnsavedEdits || hasPanelBaseline || hasGestureBaseline || hasRenameBaseline;
+  return (
+    hasUnsavedEdits ||
+    hasPanelBaseline ||
+    hasGestureBaseline ||
+    hasRenameBaseline ||
+    hasPendingInlineEdit
+  );
 }
 
 function isLaterTimestamp(next: string, previous?: string | null): boolean {

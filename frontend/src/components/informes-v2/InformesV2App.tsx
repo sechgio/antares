@@ -13,9 +13,10 @@ import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
 import { downloadBase64Blob, downloadBase64Pdf, fileToDataUrl } from '../../utils/pdfAssets';
+import { changeLogoFile } from '../../utils/logoFile';
+import { askPdfSavePath } from '../../utils/deliverRenderedDocument';
 import { informesV2Api } from './api';
 import {
-  askPdfSavePath,
   logoToPdfPath,
   preparePhotosForExport,
   type LogoAsset,
@@ -72,19 +73,16 @@ export default function InformesV2App() {
   }, [addToast, runOperation]);
 
   const changeLogo = useCallback(async (side: 'left' | 'right', file: File | null) => {
-    if (!file) {
-      if (side === 'left') setLogoLeft(null);
-      else setLogoRight(null);
-      return;
-    }
-    try {
-      const url = await fileToDataUrl(file);
-      const asset: LogoAsset = { src: url, file };
-      if (side === 'left') setLogoLeft(asset);
-      else setLogoRight(asset);
-    } catch (error) {
-      addToast({ message: errorMessage(error, 'No se pudo cargar el logo'), type: 'error' });
-    }
+    await changeLogoFile(
+      file,
+      (url, picked) => {
+        const asset: LogoAsset | null = url && picked ? { src: url, file: picked } : null;
+        if (side === 'left') setLogoLeft(asset);
+        else setLogoRight(asset);
+      },
+      (error) =>
+        addToast({ message: errorMessage(error, 'No se pudo cargar el logo'), type: 'error' }),
+    );
   }, [addToast]);
 
   const loadPhotos = useCallback(async (files: FileList | null) => {

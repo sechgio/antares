@@ -231,7 +231,7 @@ export default function MappingPreviewPanel({
       <div className="flex flex-col items-center px-4 py-6">
         {loading && !pageImageUrl ? (
           <div className="flex items-center gap-2 py-16 text-[var(--text-muted)]">
-            <Loader2 size={16} className="animate-spin text-[var(--accent-primary)]/40" />
+            <Loader2 size={16} className="animate-spin text-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)]" />
             <span className="text-[10px] tracking-widest" style={{ fontFamily: "'Roboto Mono', monospace" }}>
               {stage === 'rendering' ? 'renderizando página…' : 'cargando template…'}
             </span>
@@ -260,7 +260,7 @@ export default function MappingPreviewPanel({
               />
             </div>
             <div
-              className="pointer-events-none absolute bottom-3 right-3 rounded border border-[var(--accent-primary)]/25 px-2 py-1"
+              className="pointer-events-none absolute bottom-3 right-3 rounded border border-[color:color-mix(in_srgb,var(--accent-primary)_25%,transparent)] px-2 py-1"
               style={{
                 backgroundColor: 'color-mix(in srgb, var(--bg-base) 80%, transparent)',
                 fontFamily: "'Roboto Mono', monospace",

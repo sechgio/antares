@@ -183,7 +183,7 @@ export default function PdfPagePreview({
   const showSpinner = loading && !pageImageUrl;
 
   return (
-    <div className={`relative w-full overflow-hidden rounded-lg border border-[var(--accent-primary)]/30 bg-white ${className}`}>
+    <div className={`relative w-full overflow-hidden rounded-lg border border-[color:color-mix(in_srgb,var(--accent-primary)_30%,transparent)] bg-white ${className}`}>
       {pageImageUrl ? (
         <div className="relative">
           <img

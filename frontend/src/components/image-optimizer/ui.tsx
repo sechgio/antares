@@ -68,7 +68,7 @@ export function ThemeSelect({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         onClick={toggle}
-        className={`flex h-8 w-full items-center gap-2 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 text-left text-[11px] font-medium text-[var(--text-primary)] outline-none transition-[border-color] duration-100 hover:border-[var(--accent-primary)]/45 focus:border-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-40 ${open ? 'border-[var(--accent-primary)]' : ''}`}
+        className={`flex h-8 w-full items-center gap-2 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 text-left text-[11px] font-medium text-[var(--text-primary)] outline-none transition-[border-color] duration-100 hover:border-[color:color-mix(in_srgb,var(--accent-primary)_45%,transparent)] focus:border-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-40 ${open ? 'border-[var(--accent-primary)]' : ''}`}
       >
         <span className="min-w-0 flex-1 truncate">{selected?.label ?? '—'}</span>
         <ChevronDown
@@ -150,7 +150,7 @@ export function BeforeAfterSlider({ before, after, alt }: { before: string; afte
           <img src={after} alt={`${alt} ${t('optimizer.preview.result')}`} className="h-full w-full object-contain" />
         </div>
         <div className="absolute inset-y-0" style={{ left: `calc(${position}% - 0.5px)` }}>
-          <div className="h-full w-px bg-[var(--text-primary)]/70" />
+          <div className="h-full w-px bg-[color:color-mix(in_srgb,var(--text-primary)_70%,transparent)]" />
         </div>
         <div className="absolute left-2 top-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-primary)]">
           {t('optimizer.preview.original')}
@@ -207,7 +207,7 @@ export function ItemSummary({ item }: { item: ImageItem }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-x-3 gap-y-1 py-1 sm:grid-cols-4 sm:gap-x-0 sm:divide-x sm:divide-[var(--border-medium)]/20">
+    <div className="grid grid-cols-2 gap-x-3 gap-y-1 py-1 sm:grid-cols-4 sm:gap-x-0 sm:divide-x sm:divide-[color:color-mix(in_srgb,var(--border-medium)_20%,transparent)]">
       {stats.map((stat) => (
         <div key={stat.label} className="min-w-0 sm:px-3 first:sm:pl-0 last:sm:pr-0">
           <p className="text-[9px] font-medium text-[var(--text-secondary)]">{stat.label}</p>

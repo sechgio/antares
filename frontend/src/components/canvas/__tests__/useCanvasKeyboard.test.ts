@@ -79,6 +79,7 @@ function makeInput(doc: CanvasDocument, overrides: Partial<CanvasKeyboardInput> 
     runUndo: vi.fn(),
     runRedo: vi.fn(),
     copyLayersToClipboard: vi.fn(),
+    cutLayersToClipboard: vi.fn(() => [] as string[]),
     pasteClipboard: vi.fn(),
     pasteReplaceClipboard: vi.fn(),
     sealPanelAndAbortGesture: vi.fn(),
@@ -279,6 +280,22 @@ describe('useCanvasKeyboard', () => {
     expect(vi.mocked(input.setSelectedIds).mock.calls[0][0]).toEqual([a.id]);
   });
 
+  it('Ctrl+Shift+I invierte la selección de la página', () => {
+    const a = createLayer('rect');
+    const b = createLayer('ellipse');
+    const locked = createLayer('text', { locked: true });
+    const otherPage = createLayer('boolean', { pageIndex: 1 });
+    const doc = makeDoc([a, b, locked, otherPage]);
+    const input = makeInput(doc, {
+      selectedIds: [a.id],
+      pageLayers: doc.layers.filter((l) => (l.pageIndex ?? 0) === 0),
+    });
+    renderHook(() => useCanvasKeyboard(input));
+    const e = press(input, { key: 'I', code: 'KeyI', ctrlKey: true, shiftKey: true });
+    expect(e.defaultPrevented).toBe(true);
+    expect(input.setSelectedIds).toHaveBeenCalledWith([b.id]);
+  });
+
   it('Escape sale del grupo entrado y lo selecciona', () => {
     const doc = makeDoc([]);
     const input = makeInput(doc, { enteredGroupId: 'g1' });
@@ -389,6 +406,352 @@ describe('useCanvasKeyboard', () => {
       press(input, { key: 'z', code: 'KeyZ', ctrlKey: true });
       expect(input.commitInlineEdit).toHaveBeenCalledTimes(1);
       expect(input.runUndo).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('atajos restantes', () => {
+    it('cada tecla de herramienta activa su herramienta', () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc);
+      renderHook(() => useCanvasKeyboard(input));
+      const cases: Array<[string, boolean, string]> = [
+        ['v', false, 'select'],
+        ['o', false, 'ellipse'],
+        ['f', false, 'field'],
+        ['l', false, 'line'],
+        ['L', true, 'arrow'],
+        ['u', false, 'lasso'],
+        ['i', false, 'imageSlot'],
+        ['g', false, 'grid'],
+        ['b', false, 'table'],
+        ['m', false, 'image'],
+        ['P', true, 'polygon'],
+        ['S', true, 'star'],
+        ['D', true, 'diamond'],
+        ['H', true, 'hexagon'],
+        ['N', true, 'pentagon'],
+      ];
+      for (const [key, shift, expected] of cases) {
+        vi.mocked(input.setTool).mockClear();
+        press(input, { key, shiftKey: shift });
+        expect(input.setTool, key).toHaveBeenCalledWith(expected);
+      }
+    });
+
+    it('c / p activan edición de path solo cuando hay una línea seleccionada', () => {
+      const line = createLayer('line');
+      const doc = makeDoc([line]);
+      const input = makeInput(doc, { selectedIds: [line.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'c' });
+      expect(input.setPathEditingLayerId).toHaveBeenCalledWith(line.id);
+      expect(input.setTool).toHaveBeenCalledWith('cut');
+      vi.mocked(input.setTool).mockClear();
+      press(input, { key: 'p' });
+      expect(input.setTool).toHaveBeenCalledWith('bend');
+      vi.mocked(input.setTool).mockClear();
+      const empty = makeInput(makeDoc([]));
+      renderHook(() => useCanvasKeyboard(empty));
+      press(empty, { key: 'c' });
+      press(empty, { key: 'p' });
+      expect(empty.setTool).not.toHaveBeenCalled();
+    });
+
+    it('Ctrl+Shift+K activa la herramienta imagen', () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc);
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'K', ctrlKey: true, shiftKey: true });
+      expect(input.setTool).toHaveBeenCalledWith('image');
+    });
+
+    it('Ctrl+\\ alterna ambos paneles', () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc);
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: '\\', ctrlKey: true });
+      expect(input.toggleBothPanels).toHaveBeenCalledTimes(1);
+    });
+
+    it('Ctrl+P y Ctrl+/ también alternan la paleta', () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc);
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'p', code: 'KeyP', ctrlKey: true });
+      press(input, { key: '/', code: 'Slash', ctrlKey: true });
+      expect(input.setPaletteOpen).toHaveBeenCalledTimes(2);
+    });
+
+    it('Ctrl+=, Ctrl+- y Ctrl+0 animan el zoom cuando hay viewport nav', () => {
+      const doc = makeDoc([]);
+      const animateTo = vi.fn();
+      const input = makeInput(doc, {
+        viewportNavRef: {
+          current: { animateTo, getZoom: () => 1, getPan: () => ({ x: 0, y: 0 }) } as never,
+        },
+      });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: '=', ctrlKey: true });
+      press(input, { key: '-', ctrlKey: true });
+      press(input, { key: '0', ctrlKey: true });
+      expect(animateTo).toHaveBeenCalledTimes(3);
+      expect(animateTo.mock.calls[2][0].zoom).toBe(1);
+    });
+
+    it('Ctrl+=/- /0 sin viewport nav no lanzan error', () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc);
+      renderHook(() => useCanvasKeyboard(input));
+      const e = press(input, { key: '=', ctrlKey: true });
+      expect(e.defaultPrevented).toBe(true);
+    });
+
+    it('Ctrl+Shift+L bloquea y desbloquea las capas seleccionadas', () => {
+      const a = createLayer('rect');
+      const doc = makeDoc([a]);
+      const input = makeInput(doc, { selectedIds: [a.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'L', ctrlKey: true, shiftKey: true });
+      let layers = vi.mocked(input.setAllLayers).mock.calls[0][0] as CanvasLayer[];
+      expect(layers.find((l) => l.id === a.id)?.locked).toBe(true);
+      const docLocked = makeDoc([{ ...a, locked: true }]);
+      const inputLocked = makeInput(docLocked, { selectedIds: [a.id] });
+      renderHook(() => useCanvasKeyboard(inputLocked));
+      press(inputLocked, { key: 'L', ctrlKey: true, shiftKey: true });
+      layers = vi.mocked(inputLocked.setAllLayers).mock.calls[0][0] as CanvasLayer[];
+      expect(layers.find((l) => l.id === a.id)?.locked).toBe(false);
+    });
+
+    it('Ctrl+Shift+H alterna visibilidad de las capas seleccionadas', () => {
+      const a = createLayer('rect');
+      const doc = makeDoc([a]);
+      const input = makeInput(doc, { selectedIds: [a.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'H', ctrlKey: true, shiftKey: true });
+      const layers = vi.mocked(input.setAllLayers).mock.calls[0][0] as CanvasLayer[];
+      expect(layers.find((l) => l.id === a.id)?.visible).toBe(false);
+    });
+
+    it('Ctrl+Shift+L/H sin capas elegibles no toca las capas', () => {
+      const frame = createLayer('frame');
+      const doc = makeDoc([frame]);
+      const input = makeInput(doc, { selectedIds: [frame.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'L', ctrlKey: true, shiftKey: true });
+      press(input, { key: 'H', ctrlKey: true, shiftKey: true });
+      expect(input.setAllLayers).not.toHaveBeenCalled();
+    });
+
+    it('Alt+c activa el cuentagotas cuando hay selección', () => {
+      const a = createLayer('rect');
+      const doc = makeDoc([a]);
+      const input = makeInput(doc, { selectedIds: [a.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'c', altKey: true });
+      expect(input.setEyedropperActive).toHaveBeenCalledWith(true);
+    });
+
+    it('Alt+a/d/w/s/h/v alinea y Alt+x/y distribuye con 3+ capas', () => {
+      const layers = [createLayer('rect'), createLayer('ellipse'), createLayer('text')];
+      const doc = makeDoc(layers);
+      const ids = layers.map((l) => l.id);
+      const input = makeInput(doc, { selectedIds: ids });
+      renderHook(() => useCanvasKeyboard(input));
+      for (const key of ['a', 'd', 'w', 's', 'h', 'v', 'x', 'y']) {
+        vi.mocked(input.setAllLayers).mockClear();
+        press(input, { key, altKey: true });
+        expect(input.setAllLayers, `Alt+${key}`).toHaveBeenCalled();
+      }
+      const few = makeInput(doc, { selectedIds: ids.slice(0, 2) });
+      renderHook(() => useCanvasKeyboard(few));
+      press(few, { key: 'x', altKey: true });
+      expect(few.setAllLayers).not.toHaveBeenCalled();
+    });
+
+    it('Ctrl+Alt+C copia estilos y Ctrl+Alt+V los aplica', () => {
+      const a = createLayer('rect');
+      const doc = makeDoc([a]);
+      const propsRef = { current: null as Record<string, string> | null };
+      const input = makeInput(doc, {
+        selectedIds: [a.id],
+        propsClipboardRef: propsRef as never,
+      });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'c', ctrlKey: true, altKey: true });
+      expect(propsRef.current).not.toBeNull();
+      press(input, { key: 'v', ctrlKey: true, altKey: true });
+      expect(input.setAllLayers).toHaveBeenCalled();
+    });
+
+    it('Ctrl+C copia con descendientes y Ctrl+V / Ctrl+Shift+V pegan', () => {
+      const group = createLayer('group');
+      const child = createLayer('rect', { parentId: group.id });
+      const doc = makeDoc([group, child]);
+      const input = makeInput(doc, { selectedIds: [group.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'c', ctrlKey: true });
+      expect(input.copyLayersToClipboard).toHaveBeenCalledTimes(1);
+      const copies = vi.mocked(input.copyLayersToClipboard).mock.calls[0][0] as CanvasLayer[];
+      expect(copies.map((l) => l.id)).toContain(child.id);
+      press(input, { key: 'v', ctrlKey: true });
+      press(input, { key: 'v', ctrlKey: true, shiftKey: true });
+      expect(input.pasteClipboard).toHaveBeenNthCalledWith(1, undefined);
+      expect(input.pasteClipboard).toHaveBeenNthCalledWith(2, 0);
+    });
+
+    it('Ctrl+X corta la selección editable y limpia la selección', () => {
+      const a = createLayer('rect');
+      const doc = makeDoc([a]);
+      const cutLayersToClipboard = vi.fn(() => [a.id]);
+      const input = makeInput(doc, { selectedIds: [a.id], cutLayersToClipboard });
+      renderHook(() => useCanvasKeyboard(input));
+      const e = press(input, { key: 'x', code: 'KeyX', ctrlKey: true });
+      expect(e.defaultPrevented).toBe(true);
+      expect(cutLayersToClipboard).toHaveBeenCalledWith([a.id]);
+      expect(input.setSelectedIds).toHaveBeenCalledWith([]);
+    });
+
+    it('Ctrl+X no deselecciona cuando el corte no elimina nada', () => {
+      const locked = createLayer('rect', { locked: true });
+      const doc = makeDoc([locked]);
+      const cutLayersToClipboard = vi.fn(() => [] as string[]);
+      const input = makeInput(doc, { selectedIds: [locked.id], cutLayersToClipboard });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'x', code: 'KeyX', ctrlKey: true });
+      expect(cutLayersToClipboard).toHaveBeenCalledWith([]);
+      expect(input.setSelectedIds).not.toHaveBeenCalled();
+    });
+
+    it('Ctrl+Shift+R pega reemplazando', () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc);
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'R', ctrlKey: true, shiftKey: true });
+      expect(input.pasteReplaceClipboard).toHaveBeenCalledTimes(1);
+    });
+
+    it("Shift+R alterna reglas y Shift+' alterna snap", () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc);
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'R', shiftKey: true });
+      const withRulers = vi.mocked(input.setDocument).mock.calls[0][0] as CanvasDocument;
+      expect(withRulers.settings?.showRulers).toBe(false);
+      press(input, { key: "'", code: 'Quote', shiftKey: true });
+      const withSnap = vi.mocked(input.setDocument).mock.calls[1][0] as CanvasDocument;
+      expect(withSnap.settings?.snapToGrid).toBe(true);
+    });
+
+    it('] y [ sin Ctrl llevan al frente/fondo', () => {
+      const a = createLayer('rect');
+      const b = createLayer('ellipse');
+      const doc = makeDoc([a, b]);
+      const input = makeInput(doc, { selectedIds: [a.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: ']' });
+      let layers = vi.mocked(input.setAllLayers).mock.calls[0][0] as CanvasLayer[];
+      expect(layers[layers.length - 1].id).toBe(a.id);
+      const backInput = makeInput(doc, { selectedIds: [b.id] });
+      renderHook(() => useCanvasKeyboard(backInput));
+      press(backInput, { key: '[' });
+      layers = vi.mocked(backInput.setAllLayers).mock.calls[0][0] as CanvasLayer[];
+      expect(layers.findIndex((l) => l.id === b.id)).toBeLessThan(
+        doc.layers.findIndex((l) => l.id === b.id),
+      );
+    });
+
+    it('? y Shift+/ alternan la ayuda de atajos', () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc);
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: '?' });
+      press(input, { key: '/', shiftKey: true });
+      expect(input.setShowShortcuts).toHaveBeenCalledTimes(2);
+    });
+
+    it('Enter inicia edición inline en capa editable y path en línea', () => {
+      const text = createLayer('text');
+      const line = createLayer('line');
+      const doc = makeDoc([text, line]);
+      const input = makeInput(doc, { selectedIds: [text.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'Enter' });
+      expect(input.startContainerOrInlineEdit).toHaveBeenCalledWith(text.id);
+      const lineInput = makeInput(doc, { selectedIds: [line.id] });
+      renderHook(() => useCanvasKeyboard(lineInput));
+      press(lineInput, { key: 'Enter' });
+      expect(lineInput.setPathEditingLayerId).toHaveBeenCalledWith(line.id);
+      expect(lineInput.setTool).toHaveBeenCalledWith('select');
+    });
+
+    it('Escape respeta la prioridad: gesto, panel, cuentagotas, preview', () => {
+      const doc = makeDoc([]);
+      const gesture = makeInput(doc, { gestureBaselineRef: { current: {} } as never });
+      renderHook(() => useCanvasKeyboard(gesture));
+      press(gesture, { key: 'Escape' });
+      expect(gesture.cancelPageLayersGesture).toHaveBeenCalledTimes(1);
+      expect(gesture.setGestureAbortToken).toHaveBeenCalledTimes(1);
+
+      const panel = makeInput(doc, { panelBaselineRef: { current: {} } as never });
+      renderHook(() => useCanvasKeyboard(panel));
+      press(panel, { key: 'Escape' });
+      expect(panel.onPanelCommitLive).toHaveBeenCalledTimes(1);
+
+      const eyedrop = makeInput(doc, { eyedropperActive: true });
+      renderHook(() => useCanvasKeyboard(eyedrop));
+      press(eyedrop, { key: 'Escape' });
+      expect(eyedrop.setEyedropperActive).toHaveBeenCalledWith(false);
+
+      const preview = makeInput(doc, { previewOpen: true });
+      renderHook(() => useCanvasKeyboard(preview));
+      press(preview, { key: 'Escape' });
+      expect(preview.setPreviewOpen).toHaveBeenCalledWith(false);
+    });
+
+    it('Escape sube al padre cuando todas las seleccionadas comparten padre', () => {
+      const group = createLayer('group');
+      const child = createLayer('rect', { parentId: group.id });
+      const doc = makeDoc([group, child]);
+      const input = makeInput(doc, { selectedIds: [child.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'Escape' });
+      expect(input.setSelectedIds).toHaveBeenCalledWith([group.id]);
+    });
+
+    it('Space sobre un botón no roba la herramienta', () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc, { tool: 'rect' });
+      renderHook(() => useCanvasKeyboard(input));
+      const button = document.createElement('button');
+      press(input, { key: ' ', code: 'Space', target: button });
+      expect(input.setTool).not.toHaveBeenCalled();
+    });
+
+    it('tecla de texto con una línea seleccionada no inicia edición inline', () => {
+      const line = createLayer('line');
+      const doc = makeDoc([line]);
+      const input = makeInput(doc, { selectedIds: [line.id] });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'x' });
+      expect(input.startInlineEdit).not.toHaveBeenCalled();
+    });
+
+    it('Escape en edición de path vuelve a select', () => {
+      const doc = makeDoc([]);
+      const input = makeInput(doc, { pathEditingLayerId: 'line-1' });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'Escape' });
+      expect(input.setPathEditingLayerId).toHaveBeenCalledWith(null);
+      expect(input.setTool).toHaveBeenCalledWith('select');
+    });
+
+    it('escribir durante edición inline agrega el carácter al valor', () => {
+      const text = createLayer('text', { id: 'edit-1', value: 'ab' });
+      const doc = makeDoc([text]);
+      const input = makeInput(doc, { editingLayerId: 'edit-1' });
+      renderHook(() => useCanvasKeyboard(input));
+      press(input, { key: 'c' });
+      expect(input.onInlineEditValue).toHaveBeenCalledWith('edit-1', 'abc');
     });
   });
 });

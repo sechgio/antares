@@ -50,13 +50,7 @@ function asHtmlElement(el: EventTarget | null): HTMLElement | null {
   return el as HTMLElement;
 }
 
-export function isEditableKeyboardTarget(el: EventTarget | null): boolean {
-  const node = asHtmlElement(el);
-  if (!node) return false;
-  const tag = node.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-  return Boolean(node.isContentEditable);
-}
+export { isEditableKeyboardTarget } from '../../../utils/dom';
 
 export function isLayerListKeyboardTarget(el: EventTarget | null): boolean {
   const node = asHtmlElement(el);

@@ -24,8 +24,12 @@ describe('isOpenDocumentDirty', () => {
     expect(isOpenDocumentDirty(false, false, false, true)).toBe(true);
   });
 
+  it('is dirty while an inline text edit is open without a commit', () => {
+    expect(isOpenDocumentDirty(false, false, false, false, true)).toBe(true);
+  });
+
   it('is clean when undo history alone would have been true but unsaved is false', () => {
-    expect(isOpenDocumentDirty(false, false, false)).toBe(false);
+    expect(isOpenDocumentDirty(false, false, false, false, false)).toBe(false);
   });
 });
 

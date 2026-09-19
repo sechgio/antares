@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import ReportFormEmptyState from '../report-workspace/ReportFormEmptyState';
 import ReportFormHeader from '../report-workspace/ReportFormHeader';
 import Button from '../ui/Button';
@@ -32,6 +34,8 @@ const INSPECTION_ROWS: Array<[keyof InspeccionDescripcion, string, string, strin
   ['descarga', 'Descarga', 'observaciones_descarga', 'sugerencias_descarga'],
 ];
 
+const INSPECTION_PREVIEW_COUNT = 3;
+
 const VALVE_SECTIONS: Array<[keyof ValvulasData, string, string]> = [
   ['diametros', 'Conducción', 'conduccion'],
   ['impulsion', 'Impulsión', 'impulsion'],
@@ -59,6 +63,8 @@ interface Props {
 }
 
 export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRight, onChange, onSave, onDelete, onLogoChange }: Props) {
+  const [showAllInspection, setShowAllInspection] = useState(false);
+
   if (!report) {
     return <ReportFormEmptyState />;
   }
@@ -73,6 +79,15 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
   const patchInspection = (key: string, value: string) => {
     patch({ inspeccion: { ...report.inspeccion, [key]: value } });
   };
+
+  const inspectionDone = INSPECTION_ROWS.filter(([key]) => report.inspeccion[key] !== 'unchecked').length;
+  const inspectionHiddenCount = INSPECTION_ROWS.filter(
+    ([key, , obsKey, sugKey], index) =>
+      index >= INSPECTION_PREVIEW_COUNT &&
+      report.inspeccion[key] === 'unchecked' &&
+      !report.inspeccion[obsKey] &&
+      !report.inspeccion[sugKey],
+  ).length;
 
   return (
     <aside className="tr-panel tr-form">
@@ -142,29 +157,55 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
           </label>
         </Section>
 
-        <Section title="Inspección">
-          {INSPECTION_ROWS.map(([key, label, obsKey, sugKey]) => (
-            <div className="tr-inspection-row" key={String(key)}>
-              <div>
-                <strong>{label}</strong>
-                <div className="tr-segment">
-                  {(['unchecked', 'normal', 'critico'] as CheckState[]).map((state) => (
-                    <Button
-                      key={state}
-                      variant="none"
-                      size="none"
-                      className={report.inspeccion[key] === state ? 'active' : ''}
-                      onClick={() => patchInspection(String(key), state)}
-                    >
-                      {state === 'unchecked' ? '-' : state === 'normal' ? 'Normal' : 'Crítico'}
-                    </Button>
-                  ))}
+        <Section title="Inspección" meta={`${inspectionDone}/${INSPECTION_ROWS.length}`}>
+          {INSPECTION_ROWS.map(([key, label, obsKey, sugKey], index) => {
+            const state = report.inspeccion[key];
+            const obs = String(report.inspeccion[obsKey] || '');
+            const sug = String(report.inspeccion[sugKey] || '');
+            const marked = state !== 'unchecked';
+            if (!showAllInspection && index >= INSPECTION_PREVIEW_COUNT && !marked && !obs && !sug) {
+              return null;
+            }
+            return (
+              <div className="tr-insp-row" key={String(key)}>
+                <div className="tr-insp-head">
+                  <strong>{label}</strong>
+                  <div className="tr-segment">
+                    {(['unchecked', 'normal', 'critico'] as CheckState[]).map((option) => (
+                      <Button
+                        key={option}
+                        variant="none"
+                        size="none"
+                        className={`tr-seg-${option}${state === option ? ' active' : ''}`}
+                        aria-pressed={state === option}
+                        onClick={() => patchInspection(String(key), option)}
+                      >
+                        {option === 'unchecked' ? '—' : option === 'normal' ? 'Normal' : 'Crítico'}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
+                {(marked || obs || sug) && (
+                  <div className="tr-insp-fields">
+                    <Field label="Observaciones" value={obs} onChange={(value) => patchInspection(obsKey, value)} />
+                    <Field label="Sugerencias" value={sug} onChange={(value) => patchInspection(sugKey, value)} />
+                  </div>
+                )}
               </div>
-              <Field label="Obs." value={String(report.inspeccion[obsKey] || '')} onChange={(value) => patchInspection(obsKey, value)} />
-              <Field label="Sug." value={String(report.inspeccion[sugKey] || '')} onChange={(value) => patchInspection(sugKey, value)} />
-            </div>
-          ))}
+            );
+          })}
+          {(inspectionHiddenCount > 0 || showAllInspection) && (
+            <Button
+              variant="none"
+              size="none"
+              className="tr-insp-more"
+              onClick={() => setShowAllInspection((value) => !value)}
+              aria-expanded={showAllInspection}
+            >
+              <ChevronDown size={12} strokeWidth={2.25} className={`tr-insp-more-chevron${showAllInspection ? ' tr-insp-more-chevron--open' : ''}`} />
+              {showAllInspection ? 'Mostrar menos' : `${inspectionHiddenCount} elementos más`}
+            </Button>
+          )}
         </Section>
 
         <Section title="Válvulas">

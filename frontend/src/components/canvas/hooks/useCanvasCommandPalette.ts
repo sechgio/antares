@@ -19,6 +19,9 @@ import {
 } from '../ops/layerOps';
 import { assignUniqueLogoSides } from '../ops/logoSide';
 import { applyAppearanceVars, extractAppearanceVars } from '../ops/clipboardLayers';
+import { clearGuides } from '../ops/guides';
+import { exportPagePng, PAGE_PNG_SCALE } from '../ops/exportPng';
+import { invertSelectableIds } from '../ops/selectSame';
 import { getPageCount } from '../ops/pages';
 import { nextZoomPreset } from '../ops/viewportNav';
 import type {
@@ -37,6 +40,7 @@ export interface CanvasPaletteInput {
   setDocument: (doc: CanvasDocument) => void;
   selectedIds: string[];
   pageIndex: number;
+  setPageIndex: (index: number) => void;
   pageLayers: CanvasLayer[];
   uiLocked: boolean;
   runUndo: () => void;
@@ -44,6 +48,7 @@ export interface CanvasPaletteInput {
   pasteClipboard: (offsetMm?: number) => unknown;
   pasteReplaceClipboard: () => unknown;
   copyLayersToClipboard: (layers: CanvasLayer[]) => unknown;
+  cutLayersToClipboard: (rootIds: string[]) => string[];
   setAllLayers: (layers: CanvasLayer[]) => void;
   sealPanelAndAbortGesture: () => void;
   onAddPage: () => void;
@@ -81,6 +86,7 @@ export function useCanvasCommandPalette(
     setDocument: setPaletteDocument,
     selectedIds,
     pageIndex,
+    setPageIndex,
     pageLayers,
     uiLocked,
     runUndo,
@@ -88,6 +94,7 @@ export function useCanvasCommandPalette(
     pasteClipboard,
     pasteReplaceClipboard,
     copyLayersToClipboard,
+    cutLayersToClipboard,
     setAllLayers,
     sealPanelAndAbortGesture,
     onAddPage,
@@ -166,6 +173,16 @@ export function useCanvasCommandPalette(
       { id: 'undo', label: 'Deshacer', hint: 'Ctrl+Z', group: 'Editar', disabled: !canUndo, run: runUndo },
       { id: 'redo', label: 'Rehacer', hint: 'Ctrl+Shift+Z', group: 'Editar', disabled: !canRedo, run: runRedo },
       { id: 'copy', label: 'Copiar', hint: 'Ctrl+C', group: 'Editar', disabled: !editableSel, run: copySelection },
+      {
+        id: 'cut',
+        label: 'Cortar',
+        hint: 'Ctrl+X',
+        group: 'Editar',
+        disabled: !editableSel,
+        run: () => {
+          if (cutLayersToClipboard(editableIds).length) setSelectedIds([]);
+        },
+      },
       { id: 'paste', label: 'Pegar', hint: 'Ctrl+V', group: 'Editar', run: () => void pasteClipboard() },
       { id: 'pasteInPlace', label: 'Pegar en el sitio', hint: 'Ctrl+Shift+V', group: 'Editar', run: () => void pasteClipboard(0) },
       {
@@ -224,6 +241,13 @@ export function useCanvasCommandPalette(
         group: 'Editar',
         run: () =>
           setSelectedIds(pageLayers.filter((l) => l.type !== 'frame' && !l.locked).map((l) => l.id)),
+      },
+      {
+        id: 'selection:invert',
+        label: 'Invertir selección',
+        hint: 'Ctrl+Shift+I',
+        group: 'Editar',
+        run: () => setSelectedIds(invertSelectableIds(pageLayers, selectedIds)),
       },
       {
         id: 'delete',
@@ -461,6 +485,13 @@ export function useCanvasCommandPalette(
         run: toggleBothPanels,
       },
       {
+        id: 'guides:clear',
+        label: 'Eliminar todas las guías',
+        group: 'Vista',
+        disabled: !doc.guides?.length,
+        run: () => setPaletteDocument(clearGuides(doc)),
+      },
+      {
         id: 'view:lockUi',
         label: uiLocked ? 'Desbloquear interfaz' : 'Bloquear interfaz',
         group: 'Vista',
@@ -494,6 +525,30 @@ export function useCanvasCommandPalette(
         group: 'Documento',
         run: () => setMode('generate'),
       },
+      {
+        id: 'export:pagePng',
+        label: 'Exportar página actual (PNG)',
+        group: 'Documento',
+        run: () => void exportPagePng(`${doc.name}-pagina-${pageIndex + 1}`, PAGE_PNG_SCALE),
+      },
+      {
+        id: 'export:documentPng',
+        label: 'Exportar documento (PNG)',
+        group: 'Documento',
+        disabled: pageCount <= 1,
+        run: () => {
+          void (async () => {
+            for (let page = 0; page < pageCount; page++) {
+              setPageIndex(page);
+              await new Promise((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(resolve)),
+              );
+              await exportPagePng(`${doc.name}-pagina-${page + 1}`, PAGE_PNG_SCALE);
+            }
+            setPageIndex(pageIndex);
+          })();
+        },
+      },
     );
 
     const runners = new Map(items.map((c) => [c.id, c.run]));
@@ -526,6 +581,7 @@ export function useCanvasCommandPalette(
     pdfImport,
     sealPanelAndAbortGesture,
     copyLayersToClipboard,
+    cutLayersToClipboard,
     pasteReplaceClipboard,
     setAllLayers,
   ]);

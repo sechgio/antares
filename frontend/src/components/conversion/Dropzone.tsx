@@ -76,9 +76,9 @@ export default function Dropzone({
       <div
         className={`rounded-2xl border transition-colors duration-300 ${
           dragOver
-            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 shadow-[0_0_24px_var(--accent-primary-glow)]'
+            ? 'border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] shadow-[0_0_24px_var(--accent-primary-glow)]'
             : pasting
-            ? 'border-[var(--accent-green)] bg-[var(--accent-green)]/10'
+            ? 'border-[var(--accent-green)] bg-[color:color-mix(in_srgb,var(--accent-green)_10%,transparent)]'
             : 'bg-[var(--bg-surface)] border-[var(--border-subtle)]'
         }`}
       >
@@ -140,10 +140,10 @@ export default function Dropzone({
       <div
         className={`flex aspect-square w-[min(380px,calc(100vw-2rem))] max-h-[min(380px,calc(100vh-12rem))] flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-5 text-center transition-all duration-500 ${
           dragOver
-            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5 shadow-[0_0_40px_var(--accent-primary-glow)] scale-[1.02]'
+            ? 'border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_5%,transparent)] shadow-[0_0_40px_var(--accent-primary-glow)] scale-[1.02]'
             : pasting
-            ? 'border-[var(--accent-green)] bg-[var(--accent-green)]/5'
-            : 'border-[var(--border-medium)] bg-[var(--bg-surface)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]/30'
+            ? 'border-[var(--accent-green)] bg-[color:color-mix(in_srgb,var(--accent-green)_5%,transparent)]'
+            : 'border-[var(--border-medium)] bg-[var(--bg-surface)] hover:border-[var(--border-medium)] hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_30%,transparent)]'
         }`}
       >
         <div className="mb-3 w-full min-w-0 px-1">

@@ -101,10 +101,10 @@ const MemoizedRunListItem = React.memo(function RunListItem({
           <span
             className={`inline-flex h-5 shrink-0 items-center rounded-full px-1.5 text-[10px] font-bold ${
               allErrors
-                ? 'bg-[color:var(--accent-red)]/15 text-[var(--accent-red)]'
+                ? 'bg-[color:color-mix(in_srgb,var(--accent-red)_15%,transparent)] text-[var(--accent-red)]'
                 : hasErrors
-                  ? 'bg-[color:var(--accent-yellow)]/15 text-[var(--accent-yellow)]'
-                  : 'bg-[color:var(--accent-green)]/15 text-[var(--accent-green)]'
+                  ? 'bg-[color:color-mix(in_srgb,var(--accent-yellow)_15%,transparent)] text-[var(--accent-yellow)]'
+                  : 'bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] text-[var(--accent-green)]'
             }`}
             title={`${successRate}% éxito`}
           >

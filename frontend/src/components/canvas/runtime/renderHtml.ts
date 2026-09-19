@@ -17,6 +17,8 @@ import { buildLineSvgContent } from '../ops/lineSvg';
 import { ensureLinePath } from '../ops/pathGeometry';
 import { parseTableData } from '../ops/tableData';
 import { applyInstanceOverrides } from '../ops/components';
+import { escapeHtml } from '../../../utils/html';
+import { MM_TO_PX } from '../ops/drawHelpers';
 
 
 const SIGNATURE_PAD = '1px';
@@ -33,15 +35,6 @@ export interface FillContext {
 
 const CHROME_PLACEHOLDER_STYLE =
   'width:100%;text-align:center;color:#94a3b8;font-size:10px;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;';
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 function paintVarsToInline(vars: CanvasLayer['cssVars']): string {
   const paint = buildLayerPaintStyle(vars, { scale: 1 });
@@ -258,7 +251,6 @@ export function renderCanvasHtml(
 ): string {
   const { widthMm, heightMm } = document.page;
   const forScreen = options?.forScreen ?? false;
-  const MM_TO_PX = 96 / 25.4;
   const u = (mmVal: number) => (forScreen ? `${Math.round(mmVal * MM_TO_PX)}px` : `${mmVal}mm`);
   const pageW = forScreen ? `${Math.round(widthMm * MM_TO_PX)}px` : `${widthMm}mm`;
   const pageH = forScreen ? `${Math.round(heightMm * MM_TO_PX)}px` : `${heightMm}mm`;

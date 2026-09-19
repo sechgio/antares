@@ -277,7 +277,7 @@ export function newId(): string {
   return `id-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function pageCountFromDoc(doc: CanvasDocument): number {
+export function pageCountFromDoc(doc: CanvasDocument): number {
   if (doc.pages?.length) return doc.pages.length;
   const indices = doc.layers.map((l) => l.pageIndex ?? 0);
   return indices.length ? Math.max(...indices) + 1 : 1;

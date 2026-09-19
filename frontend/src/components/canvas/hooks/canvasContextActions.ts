@@ -30,6 +30,7 @@ export interface CanvasContextActionsInput {
   pasteClipboard: (offsetMm?: number) => unknown;
   pasteReplaceClipboard: (targetIds?: string[]) => unknown;
   copyLayersToClipboard: (layers: CanvasLayer[]) => unknown;
+  cutLayersToClipboard: (rootIds: string[]) => string[];
   sealPanelAndAbortGesture: () => void;
   startContainerOrInlineEdit: (id: string, opts?: InlineEditStartOpts) => void;
   setSelectedIds: Dispatch<SetStateAction<string[]>>;
@@ -50,6 +51,7 @@ export function createCanvasContextActionHandler(
     pasteClipboard,
     pasteReplaceClipboard,
     copyLayersToClipboard,
+    cutLayersToClipboard,
     sealPanelAndAbortGesture,
     startContainerOrInlineEdit,
     setSelectedIds,
@@ -119,6 +121,12 @@ export function createCanvasContextActionHandler(
       const deepIdSet = new Set(deepIds);
       const copies = layers.filter((candidate) => deepIdSet.has(candidate.id));
       copyLayersToClipboard(copies);
+      return;
+    }
+    if (action === 'cut') {
+      const removed = cutLayersToClipboard(contextRoots);
+      if (!removed.length) return;
+      setSelectedIds((prev) => prev.filter((selectedId) => !removed.includes(selectedId)));
       return;
     }
     if (action === 'copyProps') {

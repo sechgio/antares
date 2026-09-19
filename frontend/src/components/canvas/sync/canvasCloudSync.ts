@@ -4,7 +4,6 @@ import type { CanvasDocument } from '../types';
 import { normalizeDocument } from '../types';
 import {
   isNewer,
-  shouldPushCanvasRow,
   type CanvasRemoteMeta,
   type SyncConflict,
   type SyncResult,
@@ -14,9 +13,6 @@ import { TimerScheduler } from './timerScheduler';
 import { reportFrontendError, reportFrontendEvent } from '../../../utils/observability';
 import { errorMessage } from '@/utils/errors';
 import { withTimeout } from '@/utils/async';
-
-export type { CanvasRemoteMeta, SyncConflict, SyncResult };
-export { isNewer, shouldPushCanvasRow, withTimeout };
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
@@ -702,25 +698,36 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     }
   }
 
+  const pushCandidates: LocalSummary[] = [];
   for (const local of localById.values()) {
     const r = remoteById.get(local.id);
     if (r?.deleted_at) continue;
     const localTime = local.updatedAt || '';
     const localIsNewer = !localTime ? Boolean(r) : isNewer(localTime, r?.updated_at);
     if (r && !localIsNewer) continue;
-    try {
-      const got = await api.canvasGet(local.id);
-      const result = await pushCanvasDocumentResult(normalizeDocument(got.document as CanvasDocument));
-      if (result.accepted) {
+    pushCandidates.push(local);
+  }
+
+  const PUSH_SYNC_CONCURRENCY = 4;
+  for (let i = 0; i < pushCandidates.length; i += PUSH_SYNC_CONCURRENCY) {
+    const settled = await Promise.allSettled(
+      pushCandidates.slice(i, i + PUSH_SYNC_CONCURRENCY).map(async (local) => {
+        const got = await api.canvasGet(local.id);
+        const result = await pushCanvasDocumentResult(normalizeDocument(got.document as CanvasDocument));
+        if (result.accepted) await publishAcceptedPush(result);
+        return result;
+      }),
+    );
+    for (const s of settled) {
+      if (s.status === 'rejected') {
+        pushErrors += 1;
+        lastError = errorMessage(s.reason, String(s.reason));
+      } else if (s.value.accepted) {
         pushed += 1;
-        await publishAcceptedPush(result);
       } else {
         pushErrors += 1;
         lastError = 'El servidor conservó una versión más reciente del documento';
       }
-    } catch (err) {
-      pushErrors += 1;
-      lastError = errorMessage(err, String(err));
     }
   }
 

@@ -2,14 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, beforeAll } from 'vitest';
 import DataPreviewModal from './DataPreviewModal';
 
-class ResizeObserverMock {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
-  (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver || ResizeObserverMock;
-
 describe('DataPreviewModal', () => {
   beforeAll(() => {
     if (!window.requestAnimationFrame) {

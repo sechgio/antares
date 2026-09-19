@@ -2,6 +2,7 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { ChevronRight, FolderKanban, Loader2, Plus, RefreshCw, SearchX } from 'lucide-react';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
+import { isEditableKeyboardTarget } from '../../utils/dom';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import { useToastAction } from '../../hooks/useToastAction';
@@ -507,14 +508,7 @@ export default function EspaciosApp() {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
-      if (!target) return;
-      const tag = target.tagName;
-      const typing =
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        tag === 'SELECT' ||
-        target.isContentEditable;
-      if (typing) return;
+      if (!target || isEditableKeyboardTarget(target)) return;
       if (taskFormOpen || createModal) return;
       if (!sync.activeProyecto) return;
 
@@ -780,7 +774,7 @@ export default function EspaciosApp() {
             aria-valuemax={ESPACIOS_SIDEBAR_MAX_WIDTH}
             aria-label="Cambiar tamaño del panel lateral"
             className={`h-full w-full cursor-col-resize touch-none select-none ${
-              isResizingSidebar ? 'bg-[var(--accent-primary)]/25' : 'bg-transparent hover:bg-[var(--accent-primary)]/15'
+              isResizingSidebar ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_25%,transparent)]' : 'bg-transparent hover:bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)]'
             }`}
             onPointerDown={handleSidebarPointerDown}
             onPointerMove={handleSidebarPointerMove}

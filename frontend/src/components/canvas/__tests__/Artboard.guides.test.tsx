@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Artboard from '../editor/Artboard';
 import { MM_TO_PX } from '../ops/drawHelpers';
 import { createGuide } from '../ops/guides';
-import { createEmptyDocument } from '../types';
+import { createEmptyDocument, DEFAULT_PAGE_MARGIN_MM, type CanvasDocument } from '../types';
 import { createLayer } from '../constants';
 
 describe('Artboard guide dragging', () => {
@@ -331,6 +331,47 @@ describe('Artboard guide dragging', () => {
     );
     expect(screen.getByTestId('canvas-ruler-top')).toBeInTheDocument();
     expect(screen.getByTestId('canvas-ruler-left')).toBeInTheDocument();
+  });
+});
+
+describe('Artboard page margin overlay', () => {
+  const renderWithSettings = (settings?: CanvasDocument['settings']) => {
+    const document = createEmptyDocument('Margen de página');
+    if (settings) document.settings = settings;
+    render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+  };
+
+  it('insets the margin guide by the configured millimetres', () => {
+    renderWithSettings({ pageMarginMm: 15 });
+    const overlay = screen.getByTestId('canvas-page-margin') as HTMLElement;
+    expect(overlay.style.left).toBe('15mm');
+    expect(overlay.style.top).toBe('15mm');
+    expect(overlay.style.right).toBe('15mm');
+    expect(overlay.style.bottom).toBe('15mm');
+  });
+
+  it('falls back to the default margin when the document has none', () => {
+    renderWithSettings();
+    expect((screen.getByTestId('canvas-page-margin') as HTMLElement).style.left).toBe(
+      `${DEFAULT_PAGE_MARGIN_MM}mm`,
+    );
+  });
+
+  it('stays hidden when margins are off', () => {
+    renderWithSettings({ pageMarginMm: 0 });
+    expect(screen.queryByTestId('canvas-page-margin')).toBeNull();
   });
 });
 

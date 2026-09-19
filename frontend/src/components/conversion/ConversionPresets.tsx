@@ -215,7 +215,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
           </div>
 
           {saveMode && (
-            <div className="p-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 space-y-2">
+            <div className="p-3 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_50%,transparent)] space-y-2">
               <input
                 type="text"
                 value={saveName}
@@ -278,7 +278,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
                       <Button variant="none" size="none"
                         onClick={(e) => handleDelete(preset.id, e)}
                         aria-label="Eliminar"
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] transition-all"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>

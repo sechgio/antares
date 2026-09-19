@@ -789,7 +789,7 @@ export default function SelladorView() {
                       <div className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-[11px]">
                         <span>Página {page.pageNum}</span>
                         {page.stampCount > 0 ? (
-                          <span className="rounded-full bg-[var(--accent-primary)]/10 px-2 py-0.5 text-[var(--accent-primary)]">
+                          <span className="rounded-full bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] px-2 py-0.5 text-[var(--accent-primary)]">
                             {page.stampCount} sello
                             {page.stampCount > 1 ? "s" : ""}
                           </span>

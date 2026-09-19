@@ -56,7 +56,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         <div className="flex h-full w-full min-h-[300px] flex-col items-center justify-center bg-[var(--bg-base)] p-6 text-[var(--text-primary)]">
           <div className="w-full max-w-lg rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-6 text-left shadow-lg">
             <div className="flex items-start gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--accent-red)_12%,transparent)] text-[var(--accent-red)] border border-[var(--accent-red)]/30">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--accent-red)_12%,transparent)] text-[var(--accent-red)] border border-[color:color-mix(in_srgb,var(--accent-red)_30%,transparent)]">
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">

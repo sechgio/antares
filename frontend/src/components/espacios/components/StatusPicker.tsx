@@ -77,7 +77,7 @@ export default function StatusPicker({
         onClick={() => !disabled && toggle()}
         className={`group inline-flex items-center gap-1.5 rounded-full border font-medium outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
           isSm ? 'px-2.5 py-1 text-[11px]' : 'px-3 py-1.5 text-sm'
-        } focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]/35`}
+        } focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--accent-primary)_35%,transparent)]`}
         style={{
           color,
           background: soft,
@@ -124,7 +124,7 @@ export default function StatusPicker({
                   className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] transition-colors duration-100 ${
                     selected
                       ? 'bg-[var(--bg-base)] text-[var(--text-primary)]'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-base)]/70 hover:text-[var(--text-primary)]'
+                      : 'text-[var(--text-secondary)] hover:bg-[color:color-mix(in_srgb,var(--bg-base)_70%,transparent)] hover:text-[var(--text-primary)]'
                   }`}
                 >
                   <span

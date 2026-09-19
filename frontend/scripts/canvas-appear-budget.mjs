@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { shellChunkNames, staticClosure, importChain } from './lib/chunk-graph.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.resolve(__dirname, '../dist');
@@ -44,40 +45,33 @@ if (!canvasChunk) {
 }
 
 const canvasPath = path.join(jsDir, canvasChunk);
-const canvasText = fs.readFileSync(canvasPath, 'utf8');
 const canvasKb = kb(fs.statSync(canvasPath).size);
 
-const staticFrom = [...canvasText.matchAll(/from\s*["']\.\/([^"']+)["']/g)].map((m) => m[1]);
-const uniqueStatic = [...new Set(staticFrom)];
+const shellChunks = fs.existsSync(indexHtmlPath)
+  ? staticClosure({ jsDir, seeds: shellChunkNames(fs.readFileSync(indexHtmlPath, 'utf8')) })
+  : new Map();
 
-const alreadyLoaded = new Set();
-if (fs.existsSync(indexHtmlPath)) {
-  const html = fs.readFileSync(indexHtmlPath, 'utf8');
-  for (const m of html.matchAll(/assets\/js\/([^"']+\.js)/g)) {
-    alreadyLoaded.add(m[1]);
-  }
-}
+const closure = staticClosure({ jsDir, seeds: [canvasChunk] });
+const pulled = [...closure.keys()].filter((rel) => rel !== canvasChunk);
 
 console.log(`canvas chunk: ${canvasChunk} (${canvasKb} KB)`);
-console.log(`shell already loaded: ${[...alreadyLoaded].sort().join(', ') || '(none)'}`);
+console.log(
+  `shell already loaded: ${[...shellChunks.keys()].sort().join(', ') || '(none)'}`,
+);
 console.log('static imports:');
 
 let criticalKb = 0;
 let incrementalKb = 0;
-for (const rel of uniqueStatic) {
+for (const rel of pulled) {
   const p = path.join(jsDir, rel);
-  const sizeKb = fs.existsSync(p) ? kb(fs.statSync(p).size) : null;
-  const preloaded = alreadyLoaded.has(rel);
-  console.log(
-    `  - ${rel}${sizeKb != null ? ` (${sizeKb} KB)` : ' (missing)'}${preloaded ? ' [shell]' : ''}`,
-  );
-  if (sizeKb != null) {
-    criticalKb += sizeKb;
-    if (!preloaded) incrementalKb += sizeKb;
-  }
+  const sizeKb = kb(fs.statSync(p).size);
+  const preloaded = shellChunks.has(rel);
+  console.log(`  - ${rel} (${sizeKb} KB)${preloaded ? ' [shell]' : ''}`);
+  criticalKb += sizeKb;
+  if (!preloaded) incrementalKb += sizeKb;
 }
 
-if (!alreadyLoaded.has(canvasChunk)) {
+if (!shellChunks.has(canvasChunk)) {
   incrementalKb += canvasKb;
 }
 criticalKb += canvasKb;
@@ -87,12 +81,13 @@ console.log(
   `incremental (beyond shell): ${Math.round(incrementalKb * 10) / 10} KB (budget ${INCREMENTAL_BUDGET_KB} KB)`,
 );
 
-const forbiddenHit = uniqueStatic.find((rel) =>
+const forbiddenHit = pulled.find((rel) =>
   FORBIDDEN_STATIC.some((needle) => rel.includes(needle)),
 );
 if (forbiddenHit) {
+  const chain = importChain(closure, forbiddenHit).join(' → ');
   fail(
-    `Canvas chunk statically imports "${forbiddenHit}" — packaged open pays for that vendor before the editor can mount`,
+    `Canvas chunk statically imports "${forbiddenHit}" through ${chain} — packaged open pays for that vendor before the editor can mount`,
   );
 }
 

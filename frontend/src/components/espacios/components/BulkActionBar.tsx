@@ -50,7 +50,7 @@ export default function BulkActionBar({
 
       <Button variant="none" size="none"
         onClick={onBulkDelete}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--accent-red)]/30 bg-[var(--accent-red)]/8 px-3 text-xs font-medium text-[var(--accent-red)] transition-colors hover:bg-[var(--accent-red)]/15"
+        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-red)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_8%,transparent)] px-3 text-xs font-medium text-[var(--accent-red)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--accent-red)_15%,transparent)]"
       >
         <Trash2 className="h-3.5 w-3.5" />
         Eliminar

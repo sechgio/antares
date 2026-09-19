@@ -39,7 +39,7 @@ function LogoSlot({
         className={`group cursor-pointer rounded-md border flex flex-col items-center justify-center transition-all overflow-hidden relative ${
           logo
             ? 'border-[var(--border-subtle)] bg-[var(--bg-surface)]'
-            : 'border-transparent bg-[var(--bg-surface)] hover:bg-[var(--border-subtle)]/30'
+            : 'border-transparent bg-[var(--bg-surface)] hover:bg-[color:color-mix(in_srgb,var(--border-subtle)_30%,transparent)]'
         }`}
         style={{ aspectRatio: '2/1' }}
       >
@@ -49,7 +49,7 @@ function LogoSlot({
             <div className="absolute inset-0 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}>
                <Button variant="none" size="none"
                   onClick={(e) => { e.stopPropagation(); onRemove(); }}
-                  className="p-1.5 rounded-full bg-[var(--text-primary)]/10 text-[var(--text-primary)] hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)] transition-colors"
+                  className="p-1.5 rounded-full bg-[color:color-mix(in_srgb,var(--text-primary)_10%,transparent)] text-[var(--text-primary)] hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)] transition-colors"
                   aria-label={`Quitar ${label}`}
                >
                  <X size={14} />
@@ -111,7 +111,7 @@ export default function DualLogoPicker({ logoLeft, logoRight, onLogoChange, erro
         onChange={(e) => handleFile('right', e.target.files?.[0] ?? null)}
       />
       {errorMessage && (
-        <div className="px-2 py-1.5 rounded-md bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/20">
+        <div className="px-2 py-1.5 rounded-md bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] border border-[color:color-mix(in_srgb,var(--accent-red)_20%,transparent)]">
            <p role="alert" className="text-[10px] text-[var(--accent-red)] font-medium">{errorMessage}</p>
         </div>
       )}

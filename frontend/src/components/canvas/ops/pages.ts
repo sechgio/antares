@@ -1,12 +1,8 @@
 import type { CanvasDocument, CanvasLayer } from '../types';
-import { DOCUMENT_VERSION, mm, newId } from '../types';
+import { DOCUMENT_VERSION, mm, newId, pageCountFromDoc } from '../types';
 import { expandWithDescendants } from './layerTree';
 
-export function getPageCount(doc: CanvasDocument): number {
-  if (doc.pages?.length) return doc.pages.length;
-  const indices = doc.layers.map((l) => l.pageIndex ?? 0);
-  return indices.length ? Math.max(...indices) + 1 : 1;
-}
+export const getPageCount = pageCountFromDoc;
 
 export function getActivePageLayers(doc: CanvasDocument, pageIndex: number): CanvasLayer[] {
   return doc.layers.filter((l) => (l.pageIndex ?? 0) === pageIndex);

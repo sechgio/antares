@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useToast } from "../../hooks/useToast";
-import { downloadBase64Pdf, fileToDataUrl } from "../../utils/pdfAssets";
-import { saveFeatureHistory } from "../../utils/history";
+import { changeLogoFile } from "../../utils/logoFile";
+import { renderPdfDownload } from "../../utils/renderPdfDownload";
 import { errorMessage } from "@/utils/errors";
 import { technicalReportsApi } from "./api";
 import type { TechnicalReport, TechnicalReportListItem } from "./types";
@@ -24,21 +24,18 @@ export function useTechnicalReportsActions(workspace: WorkspaceSlice) {
 
   const changeLogo = useCallback(
     async (side: "left" | "right", file: File | null) => {
-      if (!file) {
-        if (side === "left") setLogoLeft(null);
-        else setLogoRight(null);
-        return;
-      }
-      try {
-        const url = await fileToDataUrl(file);
-        if (side === "left") setLogoLeft(url);
-        else setLogoRight(url);
-      } catch (error) {
-        addToast({
-          message: errorMessage(error, "No se pudo cargar el logo"),
-          type: "error",
-        });
-      }
+      await changeLogoFile(
+        file,
+        (url) => {
+          if (side === "left") setLogoLeft(url);
+          else setLogoRight(url);
+        },
+        (error) =>
+          addToast({
+            message: errorMessage(error, "No se pudo cargar el logo"),
+            type: "error",
+          }),
+      );
     },
     [addToast],
   );
@@ -49,23 +46,20 @@ export function useTechnicalReportsActions(workspace: WorkspaceSlice) {
       await runOperation(async () => {
         const reportForRender = hasChanges ? await saveCurrent() : formData;
         if (!reportForRender) return;
-        const rendered = await technicalReportsApi.renderHtml({
-          id: reportForRender.id,
-          report: reportForRender,
-          logo_left: logoLeft,
-          logo_right: logoRight,
-        });
-        const pdf = await technicalReportsApi.htmlToPdf({
-          html: rendered.html,
-          filename: rendered.filename,
-          return_base64: true,
-        });
-        if (!pdf.pdf_base64)
-          throw new Error("No se recibio el contenido del PDF generado.");
-        downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-        await saveFeatureHistory("informe_tecnico", pdf.filename, {
-          type: "individual",
-          reportId: reportForRender.id,
+        await renderPdfDownload({
+          render: () =>
+            technicalReportsApi.renderHtml({
+              id: reportForRender.id,
+              report: reportForRender,
+              logo_left: logoLeft,
+              logo_right: logoRight,
+            }),
+          htmlToPdf: technicalReportsApi.htmlToPdf,
+          runType: "informe_tecnico",
+          history: () => ({
+            details: { type: "individual", reportId: reportForRender.id },
+          }),
+          missingPdfError: "No se recibio el contenido del PDF generado.",
         });
         addToast({
           message: hasChanges
@@ -94,24 +88,20 @@ export function useTechnicalReportsActions(workspace: WorkspaceSlice) {
     if (reports.length === 0) return;
     try {
       await runOperation(async () => {
-        const rendered = await technicalReportsApi.renderConsolidatedHtml({
-          logo_left: logoLeft,
-          logo_right: logoRight,
+        const rendered = await renderPdfDownload({
+          render: () =>
+            technicalReportsApi.renderConsolidatedHtml({
+              logo_left: logoLeft,
+              logo_right: logoRight,
+            }),
+          htmlToPdf: technicalReportsApi.htmlToPdf,
+          runType: "informe_tecnico",
+          history: (r) => ({
+            details: { type: "consolidado", count: r.count },
+            count: r.count,
+          }),
+          missingPdfError: "No se recibio el contenido del PDF generado.",
         });
-        const pdf = await technicalReportsApi.htmlToPdf({
-          html: rendered.html,
-          filename: rendered.filename,
-          return_base64: true,
-        });
-        if (!pdf.pdf_base64)
-          throw new Error("No se recibio el contenido del PDF generado.");
-        downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-        await saveFeatureHistory(
-          "informe_tecnico",
-          pdf.filename,
-          { type: "consolidado", count: rendered.count },
-          rendered.count,
-        );
         addToast({
           message: `PDF consolidado generado (${rendered.count})`,
           type: "success",

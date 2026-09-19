@@ -67,7 +67,7 @@ export default function MappingColorField({ mapping, originalMapping, showReset,
                 aria-label={preset.label}
                 onClick={() => onChange(hexToMappingColor(preset.hex))}
                 className={`h-6 w-6 rounded-full border transition-transform hover:scale-110 ${
-                  active ? 'border-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]/50' : 'border-[var(--border-subtle)]'
+                  active ? 'border-[var(--accent-primary)] ring-1 ring-[color:color-mix(in_srgb,var(--accent-primary)_50%,transparent)]' : 'border-[var(--border-subtle)]'
                 }`}
                 style={{ backgroundColor: preset.hex }}
               />
@@ -83,7 +83,7 @@ export default function MappingColorField({ mapping, originalMapping, showReset,
       {showReset && !isOriginal && (
         <Button variant="none" size="none"
           onClick={() => onChange({ ...originalMapping })}
-          className="mt-2 flex w-full items-center justify-center gap-1.5 text-[9px] text-[var(--accent-primary)]/70 hover:text-[var(--accent-primary)] tracking-wider transition-colors"
+          className="mt-2 flex w-full items-center justify-center gap-1.5 text-[9px] text-[color:color-mix(in_srgb,var(--accent-primary)_70%,transparent)] hover:text-[var(--accent-primary)] tracking-wider transition-colors"
           style={{ fontFamily: "'Roboto Mono', monospace" }}
         >
           <RotateCcw size={10} />

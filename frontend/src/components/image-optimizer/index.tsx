@@ -723,7 +723,7 @@ export default function ImageOptimizer() {
                 <div
                   ref={downloadMenuAnchorRef}
                   className={`relative flex h-7 items-stretch overflow-hidden rounded-full border ${downloadableItems.length > 0 && !isProcessing
-                    ? 'border-[var(--accent-green)]/40 bg-[var(--accent-green)]/12'
+                    ? 'border-[color:color-mix(in_srgb,var(--accent-green)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-green)_12%,transparent)]'
                     : 'border-[var(--border-medium)] bg-[var(--bg-input)]'
                     }`}
                 >
@@ -742,7 +742,7 @@ export default function ImageOptimizer() {
                       aria-expanded={downloadMenuOpen}
                       aria-haspopup="menu"
                       aria-label={t('optimizer.actions.downloadOptions')}
-                      className="inline-flex h-full items-center border-l border-[var(--accent-green)]/30 px-1.5 text-[var(--accent-green)] transition-transform duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40"
+                      className="inline-flex h-full items-center border-l border-[color:color-mix(in_srgb,var(--accent-green)_30%,transparent)] px-1.5 text-[var(--accent-green)] transition-transform duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <ChevronDown size={11} className={`transition-transform duration-100 ${downloadMenuOpen ? 'rotate-180' : ''}`} />
                     </Button>
@@ -781,7 +781,7 @@ export default function ImageOptimizer() {
                 <Button variant="none" size="none"
                   onClick={handleClearAll}
                   disabled={isProcessing || items.length === 0}
-                  className={`${toolbarBtn} border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:border-[var(--accent-red)]/40 hover:text-[var(--accent-red)] disabled:opacity-30`}
+                  className={`${toolbarBtn} border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:border-[color:color-mix(in_srgb,var(--accent-red)_40%,transparent)] hover:text-[var(--accent-red)] disabled:opacity-30`}
                 >
                   <Trash2 size={12} />
                   {t('optimizer.actions.clear')}

@@ -40,8 +40,6 @@ import { applyWheelToViewport, clampZoom, fitZoomForViewport, MAX_ZOOM, MIN_ZOOM
 import { filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { applyAnchoredResize, parseResizeAnchor, resizeLayerAnchored, RESIZE_ANCHORS } from '../ops/resizeConstraints';
 import { clipPathForLayerType, isShapeTool, isSquareConstrainTool } from '../ops/shapePaths';
-import { buildRowData } from '../runtime/excel';
-import { matchesRecordId } from '../../../utils/recordMatching';
 import { mergeCanvasHtmlDocuments, renderCanvasHtml, type FillContext } from '../runtime/renderHtml';
 import { buildLayerPaintStyle } from '../ops/layerPaint';
 import { ensureLinePath } from '../ops/pathGeometry';
@@ -539,22 +537,6 @@ describe('logoSide', () => {
     const fixed = assignUniqueLogoSides(layers, newIds);
     expect(logoSideOf(fixed.find((l) => l.id === newIds[0])!)).toBe('right');
     expect(logoSideHasConflict(fixed, newIds[0])).toBe(false);
-  });
-});
-
-describe('canvas excel helpers', () => {
-  it('matches record id filenames', () => {
-    expect(matchesRecordId('ABC-1.jpg', 'ABC')).toBe(true);
-    expect(matchesRecordId('ABC_2.png', 'ABC')).toBe(true);
-    expect(matchesRecordId('XYZ-1.jpg', 'ABC')).toBe(false);
-    expect(matchesRecordId('ABC', 'ABC')).toBe(true);
-    expect(matchesRecordId('ABC-1', 'ABC')).toBe(true);
-    expect(matchesRecordId('ABC.pdf', 'ABC')).toBe(true);
-  });
-
-  it('builds row data from mappings', () => {
-    const data = buildRowData({ ColNIS: '99', Other: 'x' }, { NIS: 'ColNIS' });
-    expect(data.NIS).toBe('99');
   });
 });
 

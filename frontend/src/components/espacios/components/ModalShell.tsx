@@ -120,7 +120,7 @@ export default function ModalShell({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
 
         {footer && (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]/60 px-5 py-3.5">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-surface)_60%,transparent)] px-5 py-3.5">
             {footer}
           </div>
         )}

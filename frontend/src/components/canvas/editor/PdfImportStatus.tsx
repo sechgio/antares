@@ -18,7 +18,7 @@ export default function PdfImportStatus({
 }: PdfImportStatusProps) {
   if (!importing && !report && !error) return null;
   return (
-    <aside className="absolute bottom-3 left-1/2 z-30 w-[min(28rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-md border border-[var(--cv-border)] bg-[var(--cv-bg)]/95 p-3 text-xs shadow-lg" role="status">
+    <aside className="absolute bottom-3 left-1/2 z-30 w-[min(28rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-md border border-[var(--cv-border)] bg-[color:color-mix(in_srgb,var(--cv-bg)_95%,transparent)] p-3 text-xs shadow-lg" role="status">
       {progress ? (
         <div className="flex items-center justify-between gap-3">
           <span>

@@ -68,7 +68,7 @@ export default function ArrastreViewer({ entries: externalEntries, onRefresh }: 
       <div className="flex-1 overflow-auto">
         {entries.length > 0 ? (
           <table className="w-full min-w-[640px] text-left text-xs">
-            <thead className="sticky top-0 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/95 backdrop-blur-sm">
+            <thead className="sticky top-0 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-base)_95%,transparent)] backdrop-blur-sm">
               <tr>
                 {['NIS', 'SGIO', 'Motivo', 'Fecha', 'Observación'].map((col) => (
                   <th
@@ -84,7 +84,7 @@ export default function ArrastreViewer({ entries: externalEntries, onRefresh }: 
               {entries.map((entry) => (
                 <tr
                   key={`${entry.nis}-${entry.fecha}`}
-                  className="border-b border-[var(--border-subtle)]/50 transition-colors hover:bg-[var(--bg-elevated)]/40"
+                  className="border-b border-[color:color-mix(in_srgb,var(--border-subtle)_50%,transparent)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_40%,transparent)]"
                 >
                   <td className="px-4 py-2.5 font-mono text-[12px] text-[var(--text-primary)]">
                     {entry.nis}

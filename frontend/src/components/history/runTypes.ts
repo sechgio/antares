@@ -73,7 +73,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.conversionDesc',
     colorClass: 'text-[var(--accent-green)]',
     badgeClass:
-      'text-[var(--accent-green)] border-[color:var(--accent-green)]/20 bg-[color:var(--accent-green)]/10',
+      'text-[var(--accent-green)] border-[color:color-mix(in_srgb,var(--accent-green)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-green)_10%,transparent)]',
     showPatron: true,
     showOptions: false,
     filterGroup: 'default' as const,
@@ -104,7 +104,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.formatoDesc',
     colorClass: 'text-[var(--accent-primary)]',
     badgeClass:
-      'text-[var(--accent-primary)] border-[color:var(--accent-primary)]/20 bg-[color:var(--accent-primary)]/10',
+      'text-[var(--accent-primary)] border-[color:color-mix(in_srgb,var(--accent-primary)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -131,7 +131,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.selladorDesc',
     colorClass: 'text-[var(--accent-orange)]',
     badgeClass:
-      'text-[var(--accent-orange)] border-[color:var(--accent-orange)]/20 bg-[color:var(--accent-orange)]/10',
+      'text-[var(--accent-orange)] border-[color:color-mix(in_srgb,var(--accent-orange)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-orange)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -158,7 +158,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.padronDesc',
     colorClass: 'text-[var(--accent-yellow)]',
     badgeClass:
-      'text-[var(--accent-yellow)] border-[color:var(--accent-yellow)]/20 bg-[color:var(--accent-yellow)]/10',
+      'text-[var(--accent-yellow)] border-[color:color-mix(in_srgb,var(--accent-yellow)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -185,7 +185,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.volanteDesc',
     colorClass: 'text-[var(--accent-secondary)]',
     badgeClass:
-      'text-[var(--accent-secondary)] border-[color:var(--accent-secondary)]/20 bg-[color:var(--accent-secondary)]/10',
+      'text-[var(--accent-secondary)] border-[color:color-mix(in_srgb,var(--accent-secondary)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-secondary)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -212,7 +212,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.imageOptimizerDesc',
     colorClass: 'text-[var(--accent-primary)]',
     badgeClass:
-      'text-[var(--accent-primary)] border-[color:var(--accent-primary)]/20 bg-[color:var(--accent-primary)]/10',
+      'text-[var(--accent-primary)] border-[color:color-mix(in_srgb,var(--accent-primary)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -239,7 +239,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.reporteCampoDesc',
     colorClass: 'text-[var(--accent-orange)]',
     badgeClass:
-      'text-[var(--accent-orange)] border-[color:var(--accent-orange)]/20 bg-[color:var(--accent-orange)]/10',
+      'text-[var(--accent-orange)] border-[color:color-mix(in_srgb,var(--accent-orange)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-orange)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -262,7 +262,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.panelAvisoCorteDesc',
     colorClass: 'text-[var(--accent-red)]',
     badgeClass:
-      'text-[var(--accent-red)] border-[color:var(--accent-red)]/20 bg-[color:var(--accent-red)]/10',
+      'text-[var(--accent-red)] border-[color:color-mix(in_srgb,var(--accent-red)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -289,7 +289,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.evidenciaVolanteoDesc',
     colorClass: 'text-[var(--accent-secondary)]',
     badgeClass:
-      'text-[var(--accent-secondary)] border-[color:var(--accent-secondary)]/20 bg-[color:var(--accent-secondary)]/10',
+      'text-[var(--accent-secondary)] border-[color:color-mix(in_srgb,var(--accent-secondary)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-secondary)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -307,7 +307,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.informeTecnicoDesc',
     colorClass: 'text-[var(--accent-blue)]',
     badgeClass:
-      'text-[var(--accent-blue)] border-[color:var(--accent-blue)]/20 bg-[color:var(--accent-blue)]/10',
+      'text-[var(--accent-blue)] border-[color:color-mix(in_srgb,var(--accent-blue)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-blue)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -330,7 +330,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.informeV2Desc',
     colorClass: 'text-[var(--accent-blue)]',
     badgeClass:
-      'text-[var(--accent-blue)] border-[color:var(--accent-blue)]/20 bg-[color:var(--accent-blue)]/10',
+      'text-[var(--accent-blue)] border-[color:color-mix(in_srgb,var(--accent-blue)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-blue)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -347,7 +347,7 @@ const RUN_TYPES = {
     descriptionKey: 'history.runTypes.fichaTecnicaDesc',
     colorClass: 'text-[var(--accent-secondary)]',
     badgeClass:
-      'text-[var(--accent-secondary)] border-[color:var(--accent-secondary)]/20 bg-[color:var(--accent-secondary)]/10',
+      'text-[var(--accent-secondary)] border-[color:color-mix(in_srgb,var(--accent-secondary)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-secondary)_10%,transparent)]',
     showPatron: false,
     showOptions: true,
     filterGroup: 'default' as const,
@@ -370,7 +370,7 @@ export const UNKNOWN_RUN_TYPE: RunTypeMeta = {
   descriptionKey: 'history.runTypes._unknown',
   colorClass: 'text-[var(--text-muted)]',
   badgeClass:
-    'text-[var(--text-muted)] border-[color:var(--text-muted)]/20 bg-[color:var(--text-muted)]/10',
+    'text-[var(--text-muted)] border-[color:color-mix(in_srgb,var(--text-muted)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--text-muted)_10%,transparent)]',
   stats: [
     stat('formato', 'history.stats.format', (run) => run.formato || '—'),
     stat('ok', 'history.stats.ok', (run) => run.ok_count, 'text-[var(--accent-green)]'),

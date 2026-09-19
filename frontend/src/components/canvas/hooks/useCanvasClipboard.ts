@@ -13,7 +13,8 @@ import {
   type ClipboardCopyCoordinator,
 } from '../ops/clipboardLayers';
 import { assignUniqueLogoSides } from '../ops/logoSide';
-import { duplicateLayers } from '../ops/layerOps';
+import { deleteLayers, duplicateLayers } from '../ops/layerOps';
+import { expandWithDescendants } from '../ops/layerTree';
 import type { CanvasLayer } from '../types';
 
 interface CanvasClipboardParams {
@@ -142,6 +143,22 @@ export function useCanvasClipboard({
     });
   }, []);
 
+  const cutLayersToClipboard = useCallback(
+    (rootIds: string[]) => {
+      const editable = rootIds.filter((id) => {
+        const layer = documentLayers.find((l) => l.id === id);
+        return layer && !layer.locked && layer.type !== 'frame';
+      });
+      if (!editable.length) return [];
+      const deepIds = new Set(expandWithDescendants(documentLayers, editable));
+      copyLayersToClipboard(documentLayers.filter((l) => deepIds.has(l.id)));
+      sealPanelAndAbortGesture();
+      setAllLayers(deleteLayers(documentLayers, editable));
+      return editable;
+    },
+    [copyLayersToClipboard, documentLayers, sealPanelAndAbortGesture, setAllLayers],
+  );
+
   return {
     clipboard,
     setClipboard,
@@ -150,5 +167,6 @@ export function useCanvasClipboard({
     pasteClipboard,
     pasteReplaceClipboard,
     copyLayersToClipboard,
+    cutLayersToClipboard,
   };
 }

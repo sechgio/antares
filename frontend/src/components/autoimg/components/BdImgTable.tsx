@@ -39,7 +39,7 @@ const BdImgRow = React.memo(function BdImgRow({ index, style, filtered }: RowCom
   return (
     <div
       style={style}
-      className={`${ROW_GRID} border-b border-[var(--border-subtle)]/50 px-4 transition-colors hover:bg-[var(--bg-elevated)]/50`}
+      className={`${ROW_GRID} border-b border-[color:color-mix(in_srgb,var(--border-subtle)_50%,transparent)] px-4 transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_50%,transparent)]`}
     >
       <span className="truncate font-mono text-[12px] text-[var(--text-primary)]">{row[0]}</span>
       <span className="truncate text-[var(--text-muted)]">{row[1] || '—'}</span>
@@ -139,7 +139,7 @@ export default function BdImgTable({ rows, showTitle = true }: BdImgTableProps) 
               className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
                 active
                   ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-[inset_0_0_0_1px_var(--border-medium)]'
-                  : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]/50 hover:text-[var(--text-secondary)]'
+                  : 'text-[var(--text-muted)] hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_50%,transparent)] hover:text-[var(--text-secondary)]'
               }`}
             >
               {f.accent && (
@@ -166,7 +166,7 @@ export default function BdImgTable({ rows, showTitle = true }: BdImgTableProps) 
       {filtered.length > 0 ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div
-            className={`${ROW_GRID} shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/80 px-4 py-2.5`}
+            className={`${ROW_GRID} shrink-0 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-base)_80%,transparent)] px-4 py-2.5`}
           >
             {COLUMNS.map((col) => (
               <span

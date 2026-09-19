@@ -128,9 +128,9 @@ export default function Thumbnail({ path, fileToken, file, size = 48, variant = 
         </div>
       ) : null}
 
-      <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[var(--bg-base)]/70 to-transparent opacity-80" />
+      <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[color:color-mix(in_srgb,var(--bg-base)_70%,transparent)] to-transparent opacity-80" />
       <span
-        className={`absolute text-[var(--text-primary)] font-bold shadow-sm border border-[var(--text-primary)]/10 backdrop-blur-sm ${
+        className={`absolute text-[var(--text-primary)] font-bold shadow-sm border border-[color:color-mix(in_srgb,var(--text-primary)_10%,transparent)] backdrop-blur-sm ${
           isCard
             ? 'bottom-2 right-2 rounded-[6px] px-2 py-1 text-[10px]'
             : '-bottom-0.5 -right-0.5 rounded-pill px-1.5 py-0.5 text-[8px]'

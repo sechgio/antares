@@ -82,7 +82,7 @@ export default function SidebarNavItem({
         className={`group/item relative flex w-full items-center gap-1 rounded-lg border px-1.5 py-1 transition-colors duration-150 ${
           isActive
             ? 'border-[var(--border-medium)] bg-[var(--bg-base)]'
-            : 'border-[var(--border-subtle)] bg-transparent hover:border-[var(--border-medium)] hover:bg-[var(--bg-base)]/40'
+            : 'border-[var(--border-subtle)] bg-transparent hover:border-[var(--border-medium)] hover:bg-[color:color-mix(in_srgb,var(--bg-base)_40%,transparent)]'
         }`}
         style={isActive ? { backgroundColor: `${accentColor}14` } : undefined}
       >
@@ -116,7 +116,7 @@ export default function SidebarNavItem({
                 }
               }}
               aria-label={renameLabel}
-              className="w-full rounded-md border border-[var(--border-medium)] bg-[var(--bg-input)] px-1.5 py-0.5 text-[10px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+              className="w-full rounded-md border border-[var(--border-medium)] bg-[var(--bg-input)] px-1.5 py-0.5 text-[10px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[color:color-mix(in_srgb,var(--accent-primary)_30%,transparent)]"
             />
           </form>
         ) : (
@@ -157,7 +157,7 @@ export default function SidebarNavItem({
             <WithHoverTooltip label={deleteLabel} placement="right">
               <Button variant="none" size="none"
                 onClick={onDelete}
-                className="rounded-md p-1 text-[var(--text-muted)] hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)] focus:opacity-100"
+                className="rounded-md p-1 text-[var(--text-muted)] hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] hover:text-[var(--accent-red)] focus:opacity-100"
                 aria-label={deleteLabel}
               >
                 <Trash2 className="h-3.5 w-3.5" />

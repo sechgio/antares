@@ -100,4 +100,18 @@ describe('selectGenerateRowIndices', () => {
       }),
     ).toEqual([]);
   });
+
+  it("filtra por la fila de rowIndex, no por la primera, en scope 'single'", () => {
+    const rows = [{ ID: 'A-1' }, { ID: 'B-2' }, { ID: 'C-3' }];
+    expect(
+      selectGenerateRowIndices({
+        rows,
+        rowIndex: 1,
+        exportScope: 'single',
+        idColumn: 'ID',
+        requiresImages: true,
+        images: [new File(['x'], 'A-1.jpg', { type: 'image/jpeg' })],
+      }),
+    ).toEqual([]);
+  });
 });

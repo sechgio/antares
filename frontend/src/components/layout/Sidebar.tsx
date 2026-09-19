@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ComponentType } from 'react';
+import { useCallback, useState, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Camera,
@@ -29,6 +29,7 @@ import { TAB_DEFINITIONS, type TabId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../hooks/useToast';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
+import { useLocalStorageState } from '../../hooks/useLocalStorageState';
 import Button from '@/components/ui/Button';
 
 const SIDEBAR_STORAGE_KEY = 'antares_sidebar_expanded';
@@ -91,28 +92,16 @@ const TAB_BY_ID = Object.fromEntries(TAB_DEFINITIONS.map((tab) => [tab.id, tab])
   (typeof TAB_DEFINITIONS)[number]
 >;
 
-function readStoredExpanded(): boolean {
-  try {
-    const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY);
-    return stored === null ? true : stored === 'true';
-  } catch {
-    return true;
-  }
-}
-
 export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: SidebarProps) {
   const { t } = useTranslation();
   const { user, signOut } = useAuth();
   const { addToast } = useToast();
-  const [expanded, setExpanded] = useState(readStoredExpanded);
+  const [expanded, setExpanded] = useLocalStorageState<boolean>(SIDEBAR_STORAGE_KEY, {
+    parse: (raw) => raw === 'true',
+    fallback: true,
+    serialize: (value) => String(value),
+  });
   const [signingOut, setSigningOut] = useState(false);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(SIDEBAR_STORAGE_KEY, String(expanded));
-    } catch {
-    }
-  }, [expanded]);
 
   const toggleExpanded = useCallback(() => setExpanded((value) => !value), []);
 
@@ -193,7 +182,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
                       expanded ? 'h-8 w-full gap-2 px-2 py-1.5' : 'size-8 shrink-0 justify-start gap-0 p-0 pl-2',
                       isActive
                         ? 'bg-[var(--sidebar-accent)] font-medium text-[var(--sidebar-accent-foreground)]'
-                        : 'text-[var(--text-muted)] hover:bg-[var(--sidebar-accent)]/60 hover:text-[var(--text-secondary)]',
+                        : 'text-[var(--text-muted)] hover:bg-[color:color-mix(in_srgb,var(--sidebar-accent)_60%,transparent)] hover:text-[var(--text-secondary)]',
                     )}
                   >
                     <span className="flex size-4 shrink-0 items-center justify-center">
@@ -235,7 +224,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
               disabled={signingOut}
               onClick={handleSignOut}
               className={cn(
-                'flex items-center rounded-md text-left text-[var(--text-muted)] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] hover:bg-[var(--sidebar-accent)]/60 hover:text-[var(--text-secondary)] active:scale-[0.97] disabled:opacity-50 motion-reduce:active:scale-100',
+                'flex items-center rounded-md text-left text-[var(--text-muted)] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] hover:bg-[color:color-mix(in_srgb,var(--sidebar-accent)_60%,transparent)] hover:text-[var(--text-secondary)] active:scale-[0.97] disabled:opacity-50 motion-reduce:active:scale-100',
                 expanded ? 'h-8 w-full gap-2 px-2 py-1.5' : 'size-8 shrink-0 justify-start gap-0 p-0 pl-2',
               )}
             >

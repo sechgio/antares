@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import { createEmptyDocument } from '../types';
-import { selectGenerateRowIndices } from '../ops/generateExport';
 import GeneratePanel from '../editor/GeneratePanel';
 
 const canvasGet = vi.fn();
@@ -48,54 +47,6 @@ function docWithLayers(name: string, id?: string) {
   doc.layers.push(field);
   return doc;
 }
-
-describe('selectGenerateRowIndices', () => {
-  const rows = [
-    { ID: 'A-1', NIS: '1' },
-    { ID: 'B-2', NIS: '2' },
-    { ID: 'C-3', NIS: '3' },
-  ];
-
-  it('exports all rows when images are not required', () => {
-    expect(
-      selectGenerateRowIndices({
-        rows,
-        rowIndex: 0,
-        exportScope: 'all',
-        idColumn: 'ID',
-        requiresImages: false,
-        images: [],
-      }),
-    ).toEqual([0, 1, 2]);
-  });
-
-  it('skips rows without matching images when required', () => {
-    const images = [new File(['x'], 'A-1_1.jpg', { type: 'image/jpeg' })];
-    expect(
-      selectGenerateRowIndices({
-        rows,
-        rowIndex: 0,
-        exportScope: 'all',
-        idColumn: 'ID',
-        requiresImages: true,
-        images,
-      }),
-    ).toEqual([0]);
-  });
-
-  it('returns empty for single row without matching images when required', () => {
-    expect(
-      selectGenerateRowIndices({
-        rows,
-        rowIndex: 1,
-        exportScope: 'single',
-        idColumn: 'ID',
-        requiresImages: true,
-        images: [new File(['x'], 'A-1.jpg', { type: 'image/jpeg' })],
-      }),
-    ).toEqual([]);
-  });
-});
 
 describe('GeneratePanel wizard', () => {
   beforeEach(() => {

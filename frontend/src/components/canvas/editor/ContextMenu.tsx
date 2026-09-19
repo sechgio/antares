@@ -16,6 +16,7 @@ import {
   MousePointer2,
   Pipette,
   Pencil,
+  Scissors,
   SquareStack,
   Trash2,
   Ungroup,
@@ -28,6 +29,7 @@ import Button from '@/components/ui/Button';
 export type CanvasContextAction =
   | 'edit'
   | 'copy'
+  | 'cut'
   | 'paste'
   | 'pasteInPlace'
   | 'copyProps'
@@ -128,6 +130,13 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       icon: Copy,
       disabled: !hasLayer,
       sepBefore: Boolean(menu.editKind || menu.hasParent || menu.underCursor?.length),
+    },
+    {
+      id: 'cut',
+      label: 'Cortar',
+      tip: 'Ctrl+X',
+      icon: Scissors,
+      disabled: !hasLayer || menu.locked,
     },
     { id: 'paste', label: 'Pegar', tip: 'Ctrl+V', icon: ClipboardPaste, disabled: !menu.canPaste },
     {

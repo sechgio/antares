@@ -13,7 +13,7 @@ export default function EmptyState({ icon: Icon, title, description, actionLabel
   return (
     <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-5 px-6 py-12 text-center">
       <div className="relative">
-        <div className="absolute inset-0 scale-150 rounded-full bg-[var(--accent-primary)]/6 blur-xl" />
+        <div className="absolute inset-0 scale-150 rounded-full bg-[color:color-mix(in_srgb,var(--accent-primary)_6%,transparent)] blur-xl" />
         <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] shadow-[0_8px_24px_color-mix(in_srgb,var(--bg-base)_50%,transparent)]">
           <Icon className="h-8 w-8 text-[var(--accent-primary-hover)]" strokeWidth={1.5} />
         </div>

@@ -97,7 +97,7 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-base)]/90 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[color:color-mix(in_srgb,var(--bg-base)_90%,transparent)] backdrop-blur-sm p-4"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
@@ -150,10 +150,10 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
                 </div>
               </div>
               <div className="absolute inset-0 pointer-events-none">
-                <div className="absolute left-1/3 top-0 bottom-0 w-px bg-[var(--text-primary)]/25" />
-                <div className="absolute left-2/3 top-0 bottom-0 w-px bg-[var(--text-primary)]/25" />
-                <div className="absolute top-1/3 left-0 right-0 h-px bg-[var(--text-primary)]/25" />
-                <div className="absolute top-2/3 left-0 right-0 h-px bg-[var(--text-primary)]/25" />
+                <div className="absolute left-1/3 top-0 bottom-0 w-px bg-[color:color-mix(in_srgb,var(--text-primary)_25%,transparent)]" />
+                <div className="absolute left-2/3 top-0 bottom-0 w-px bg-[color:color-mix(in_srgb,var(--text-primary)_25%,transparent)]" />
+                <div className="absolute top-1/3 left-0 right-0 h-px bg-[color:color-mix(in_srgb,var(--text-primary)_25%,transparent)]" />
+                <div className="absolute top-2/3 left-0 right-0 h-px bg-[color:color-mix(in_srgb,var(--text-primary)_25%,transparent)]" />
               </div>
             </div>
           </div>
@@ -162,7 +162,7 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
         <div className="mt-4 flex flex-col gap-5 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-base)] p-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap gap-5 text-[10px] uppercase font-mono tracking-widest text-[var(--text-muted)]">
             <span className="flex items-center gap-2">Original <span className="text-[var(--text-primary)] border border-[var(--border-medium)] bg-[var(--bg-surface)] px-1.5 py-0.5 rounded">{image.sourceWidth}x{image.sourceHeight}</span></span>
-            <span className="flex items-center gap-2">Resultado <span className="text-[var(--accent-primary)] border border-[var(--accent-primary)]/10 bg-[var(--accent-primary)]/5 px-1.5 py-0.5 rounded">{currentCrop?.width}x{currentCrop?.height}</span></span>
+            <span className="flex items-center gap-2">Resultado <span className="text-[var(--accent-primary)] border border-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_5%,transparent)] px-1.5 py-0.5 rounded">{currentCrop?.width}x{currentCrop?.height}</span></span>
             <span className="flex items-center gap-2">Offset <span className="text-amber-400 border border-amber-500/10 bg-amber-500/5 px-1.5 py-0.5 rounded">{cropInfo.cropType === 'vertical' ? `X ${Math.round(offset.x * 100)}%` : `Y ${Math.round(offset.y * 100)}%`}</span></span>
           </div>
           <div className="flex items-center gap-2">

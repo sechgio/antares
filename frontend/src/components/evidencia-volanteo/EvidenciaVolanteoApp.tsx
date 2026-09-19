@@ -20,7 +20,7 @@ import { errorMessage } from '@/utils/errors';
 const SIDEBAR_CLASS =
   'ev-sidebar flex flex-col border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-y-auto shrink-0';
 const SIDEBAR_HEADER_CLASS = 
-  'sticky top-0 z-10 flex h-[45px] items-center border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/95 backdrop-blur-sm px-4 shadow-sm shrink-0';
+  'sticky top-0 z-10 flex h-[45px] items-center border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-base)_95%,transparent)] backdrop-blur-sm px-4 shadow-sm shrink-0';
 
 export default function EvidenciaVolanteoApp() {
   const session = useEvidenciaSession();
@@ -98,7 +98,7 @@ export default function EvidenciaVolanteoApp() {
             onLogoChange={handleLogoChange}
             errorMessage={logoError}
           />
-          <hr className="border-[var(--border-subtle)]/50" />
+          <hr className="border-[color:color-mix(in_srgb,var(--border-subtle)_50%,transparent)]" />
           <ImageUploader
             images={session.images}
             onAdd={session.addImages}
@@ -109,7 +109,7 @@ export default function EvidenciaVolanteoApp() {
 
         <div className="mt-auto sticky bottom-0 z-10 shrink-0 pointer-events-none">
           <div 
-            className="absolute inset-0 bg-[var(--bg-base)]/60 backdrop-blur-md pointer-events-none"
+            className="absolute inset-0 bg-[color:color-mix(in_srgb,var(--bg-base)_60%,transparent)] backdrop-blur-md pointer-events-none"
             style={{ 
               WebkitMaskImage: 'linear-gradient(to top, black 70%, transparent 100%)',
               maskImage: 'linear-gradient(to top, black 70%, transparent 100%)'
@@ -152,7 +152,7 @@ export default function EvidenciaVolanteoApp() {
         
         <div className="flex flex-col gap-6 p-4">
           <TitleForm title={session.title} onTitleChange={session.setTitle} />
-          <hr className="border-[var(--border-subtle)]/50" />
+          <hr className="border-[color:color-mix(in_srgb,var(--border-subtle)_50%,transparent)]" />
           <CuadranteRangesEditor
             ranges={session.cuadranteRanges}
             totalPages={session.totalPages}
@@ -167,7 +167,7 @@ export default function EvidenciaVolanteoApp() {
 
         <div className="mt-auto sticky bottom-0 z-10 shrink-0 pointer-events-none">
           <div 
-            className="absolute inset-0 bg-[var(--bg-base)]/60 backdrop-blur-md pointer-events-none"
+            className="absolute inset-0 bg-[color:color-mix(in_srgb,var(--bg-base)_60%,transparent)] backdrop-blur-md pointer-events-none"
             style={{ 
               WebkitMaskImage: 'linear-gradient(to top, black 70%, transparent 100%)',
               maskImage: 'linear-gradient(to top, black 70%, transparent 100%)'

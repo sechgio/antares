@@ -1,18 +1,17 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { CanvasDocument } from '../types';
 import {
-  isNewer,
   MAX_CLOUD_CANVAS_DOCUMENT_BYTES,
   markRemoteCanvasDeleted,
   pullCanvasDocument,
   pushCanvasDocument,
   queueCanvasCloudDelete,
   queueCanvasCloudPush,
-  shouldPushCanvasRow,
   syncCanvasDocuments,
-  withTimeout,
   _resetCanvasPushQueueForTests,
 } from './canvasCloudSync';
+import { isNewer, shouldPushCanvasRow } from './syncCompare';
+import { withTimeout } from '../../../utils/async';
 
 const supabaseMock = vi.hoisted(() => {
   const responses: Array<

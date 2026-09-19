@@ -198,7 +198,7 @@ export default function QueuePanel({
             isActive
               ? 'bg-[var(--bg-input)]'
               : 'hover:bg-[var(--bg-input)]'
-          } ${dropTargetId === item.id ? 'bg-[var(--accent-primary)]/10' : ''} ${draggedItemId === item.id ? 'opacity-55' : item.excluded ? 'opacity-45' : ''}`}
+          } ${dropTargetId === item.id ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)]' : ''} ${draggedItemId === item.id ? 'opacity-55' : item.excluded ? 'opacity-45' : ''}`}
           onClick={() => onSetActiveItem(item.id)}
         >
           <GripVertical size={12} className="shrink-0 text-[var(--text-secondary)] opacity-35 transition-opacity group-hover:opacity-70" />
@@ -220,7 +220,7 @@ export default function QueuePanel({
               </div>
             )}
             {item.status === 'processing' && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-base)]/55">
+              <div className="absolute inset-0 flex items-center justify-center bg-[color:color-mix(in_srgb,var(--bg-base)_55%,transparent)]">
                 <Loader2 size={10} className="animate-spin text-[var(--text-primary)]" />
               </div>
             )}
@@ -263,7 +263,7 @@ export default function QueuePanel({
               <Button variant="none" size="none"
                 aria-label={t('optimizer.queue.remove')}
                 onClick={(e) => { e.stopPropagation(); onRemoveItem(item.id); }}
-                className={`${iconBtn} hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)]`}
+                className={`${iconBtn} hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] hover:text-[var(--accent-red)]`}
               >
                 <Trash2 size={12} />
               </Button>
@@ -310,7 +310,7 @@ export default function QueuePanel({
             <Button variant="none" size="none" onClick={onToggleExcludeSelected} className={chipBtn}>{t('optimizer.queue.exclude')}</Button>
             <Button variant="none" size="none"
               onClick={onRemoveSelected}
-              className="h-6 rounded-md border border-[var(--accent-red)]/25 px-2 text-[10px] font-medium text-[var(--accent-red)] transition-[background-color,transform] duration-100 hover:bg-[var(--accent-red)]/10 active:scale-[0.96]"
+              className="h-6 rounded-md border border-[color:color-mix(in_srgb,var(--accent-red)_25%,transparent)] px-2 text-[10px] font-medium text-[var(--accent-red)] transition-[background-color,transform] duration-100 hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] active:scale-[0.96]"
             >
               {t('optimizer.queue.remove')}
             </Button>

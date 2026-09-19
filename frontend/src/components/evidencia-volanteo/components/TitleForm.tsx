@@ -17,7 +17,7 @@ export default function TitleForm({ title, onTitleChange }: Props) {
         rows={4}
         value={title}
         onChange={(e) => onTitleChange(e.target.value)}
-        className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5 text-xs text-[var(--text-primary)] resize-none focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)] focus:border-[var(--accent-primary)] transition-all shadow-sm placeholder:text-[var(--text-muted)]/50"
+        className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5 text-xs text-[var(--text-primary)] resize-none focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)] focus:border-[var(--accent-primary)] transition-all shadow-sm placeholder:text-[color:color-mix(in_srgb,var(--text-muted)_50%,transparent)]"
         placeholder={'EVIDENCIAS FOTOGRÁFICAS DEL VOLANTEO\nCORTE DE SERVICIO DIA 26.05.2026'}
       />
     </div>

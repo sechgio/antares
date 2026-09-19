@@ -27,3 +27,10 @@ export function sameLayerIds(
     .filter((l) => selectSameApplicable(l, criterion) && l.cssVars[key] === value)
     .map((l) => l.id);
 }
+
+export function invertSelectableIds(layers: CanvasLayer[], selectedIds: string[]): string[] {
+  const selected = new Set(selectedIds);
+  return layers
+    .filter((l) => l.type !== 'frame' && !l.locked && !selected.has(l.id))
+    .map((l) => l.id);
+}

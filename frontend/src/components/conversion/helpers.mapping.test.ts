@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeMappingStats, findMappingCollisions, isMappingSchemaMismatch } from './helpers';
+import { computeMappingStats, findMappingCollisions, isMappingSchemaMismatch, pickSyncedKeyColumn } from './helpers';
 
 describe('mapping helpers', () => {
   it('computes matched, unmatched and orphan stats locally', () => {
@@ -56,5 +56,19 @@ describe('mapping helpers', () => {
     expect(isMappingSchemaMismatch(new Error('No se detectó una columna de nuevo nombre'))).toBe(true);
     expect(isMappingSchemaMismatch(new Error("ID duplicado 'A.jpg' en la fila 3"))).toBe(false);
     expect(isMappingSchemaMismatch(new Error('Nuevo nombre vacío en la fila 4'))).toBe(false);
+  });
+});
+
+describe('conversion helpers', () => {
+  it('keeps the selected key column when it exists in the imported columns', () => {
+    expect(pickSyncedKeyColumn('archivo', ['codigo', 'archivo'])).toBe('archivo');
+  });
+
+  it('falls back to the first imported column when the previous key is stale', () => {
+    expect(pickSyncedKeyColumn('codigo', ['archivo', 'cliente'])).toBe('archivo');
+  });
+
+  it('clears the key column when no columns are available', () => {
+    expect(pickSyncedKeyColumn('codigo', [])).toBe('');
   });
 });

@@ -20,6 +20,7 @@ import {
 } from '../history/historyEvents';
 import type { HistoryRun } from '../history/RunList';
 import { getElectronFilePath } from '../../utils/pdfAssets';
+import { isEditableKeyboardTarget } from '../../utils/dom';
 import { useConversionFileRefs } from './useConversionFileRefs';
 import { errorMessage } from '@/utils/errors';
 
@@ -658,14 +659,7 @@ export default function ConversionView() {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (selectedFilesRef.current.size === 0) return;
       const t = e.target as HTMLElement | null;
-      if (
-        t instanceof HTMLInputElement ||
-        t instanceof HTMLTextAreaElement ||
-        t instanceof HTMLSelectElement ||
-        t?.isContentEditable
-      ) {
-        return;
-      }
+      if (isEditableKeyboardTarget(t)) return;
       e.preventDefault();
       removeSelectedFiles();
     };
@@ -772,7 +766,7 @@ export default function ConversionView() {
                       {files.length}
                     </span>
                     {videoCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)] text-[10px] font-semibold border border-[var(--accent-yellow)]/20 flex items-center gap-1">
+                      <span className="px-2 py-0.5 rounded-full bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] text-[var(--accent-yellow)] text-[10px] font-semibold border border-[color:color-mix(in_srgb,var(--accent-yellow)_20%,transparent)] flex items-center gap-1">
                         <Film className="h-2.5 w-2.5" />
                         {videoCount}
                       </span>
@@ -783,7 +777,7 @@ export default function ConversionView() {
                   {selectedFiles.size > 0 && (
                     <Button variant="none" size="none"
                       onClick={removeSelectedFiles}
-                      className="text-[11px] font-medium text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 px-2.5 py-1 rounded-lg transition-colors"
+                      className="text-[11px] font-medium text-[var(--accent-red)] hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] px-2.5 py-1 rounded-lg transition-colors"
                     >
                       Eliminar {selectedFiles.size}
                     </Button>
@@ -811,7 +805,7 @@ export default function ConversionView() {
                 />
               </div>
 
-              <div className="shrink-0 flex items-center justify-between border-t border-[var(--border-subtle)] px-5 py-2 bg-[var(--bg-elevated)]/30">
+              <div className="shrink-0 flex items-center justify-between border-t border-[var(--border-subtle)] px-5 py-2 bg-[color:color-mix(in_srgb,var(--bg-elevated)_30%,transparent)]">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
                     <Image className="h-3 w-3" />
@@ -842,7 +836,7 @@ export default function ConversionView() {
             <div className="flex items-center gap-2">
               <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
                 optionsReady
-                  ? 'bg-[var(--accent-green)]/5 border-[var(--accent-green)]/20 text-[var(--accent-green)]'
+                  ? 'bg-[color:color-mix(in_srgb,var(--accent-green)_5%,transparent)] border-[color:color-mix(in_srgb,var(--accent-green)_20%,transparent)] text-[var(--accent-green)]'
                   : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)]'
               }`}>
                 {optionsReady ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
@@ -851,7 +845,7 @@ export default function ConversionView() {
               </div>
               <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
                 renameReady
-                  ? 'bg-[var(--accent-green)]/5 border-[var(--accent-green)]/20 text-[var(--accent-green)]'
+                  ? 'bg-[color:color-mix(in_srgb,var(--accent-green)_5%,transparent)] border-[color:color-mix(in_srgb,var(--accent-green)_20%,transparent)] text-[var(--accent-green)]'
                   : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)]'
               }`}>
                 {renameReady ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
@@ -860,7 +854,7 @@ export default function ConversionView() {
               </div>
               <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
                 outputReady
-                  ? 'bg-[var(--accent-green)]/5 border-[var(--accent-green)]/20 text-[var(--accent-green)]'
+                  ? 'bg-[color:color-mix(in_srgb,var(--accent-green)_5%,transparent)] border-[color:color-mix(in_srgb,var(--accent-green)_20%,transparent)] text-[var(--accent-green)]'
                   : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)]'
               }`}>
                 {outputReady ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}

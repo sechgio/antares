@@ -86,7 +86,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
                               [f.key]: { ...s.texts[f.key], bold: !s.texts[f.key].bold }
                             }
                           }))}
-                          className={`w-5 h-5 rounded text-[9px] font-bold transition-all ${style.bold ? 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
+                          className={`w-5 h-5 rounded text-[9px] font-bold transition-all ${style.bold ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)] text-[var(--accent-primary)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
                         >B</Button>
                         <Button variant="none" size="none"
                           onClick={() => onUpdateStyle(s => ({
@@ -96,7 +96,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
                               [f.key]: { ...s.texts[f.key], visible: !s.texts[f.key].visible }
                             }
                           }))}
-                          className={`w-5 h-5 rounded flex items-center justify-center transition-all ${style.visible ? 'bg-[var(--accent-green)]/15 text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
+                          className={`w-5 h-5 rounded flex items-center justify-center transition-all ${style.visible ? 'bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
                         ><Eye size={9} /></Button>
                       </div>
                     </div>
@@ -183,7 +183,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
                 <span className="text-[10px] font-medium text-[var(--text-primary)]">Visibilidad</span>
                 <Button variant="none" size="none"
                   onClick={() => onUpdateStyle(s => ({ ...s, pin: { ...s.pin, visible: !s.pin.visible } }))}
-                  className={`w-5 h-5 rounded flex items-center justify-center transition-all ${customStyles.pin.visible !== false ? 'bg-[var(--accent-green)]/15 text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
+                  className={`w-5 h-5 rounded flex items-center justify-center transition-all ${customStyles.pin.visible !== false ? 'bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
                 >
                   <Eye size={9} />
                 </Button>

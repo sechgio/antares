@@ -137,13 +137,47 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
   const { busy, runOperation } = useOperationCoordinator();
   formDataRef.current = formData;
 
+  const pendingDraftRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!options.draftKey) return;
+    const draftKey = options.draftKey;
+    if (!draftKey) return;
     try {
-      localStorage.setItem(options.draftKey, JSON.stringify({ selectedId, formData }));
+      pendingDraftRef.current = JSON.stringify({ selectedId, formData });
     } catch {
+      pendingDraftRef.current = null;
+      return;
     }
+    const timer = setTimeout(() => {
+      const payload = pendingDraftRef.current;
+      pendingDraftRef.current = null;
+      if (payload !== null) {
+        try {
+          localStorage.setItem(draftKey, payload);
+        } catch {
+        }
+      }
+    }, 400);
+    return () => clearTimeout(timer);
   }, [options.draftKey, selectedId, formData]);
+
+  useEffect(() => {
+    const draftKey = options.draftKey;
+    if (!draftKey) return;
+    const flush = () => {
+      const payload = pendingDraftRef.current;
+      if (payload === null) return;
+      try {
+        localStorage.setItem(draftKey, payload);
+      } catch {
+      }
+    };
+    window.addEventListener('beforeunload', flush);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      flush();
+    };
+  }, [options.draftKey]);
 
   const hasChanges = dirtyCount > 0;
 

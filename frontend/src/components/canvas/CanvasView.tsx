@@ -123,6 +123,7 @@ import {
   A4_WIDTH_PX,
   createEmptyDocument,
   normalizeDocument,
+  resolvePageMarginMm,
   type CanvasDocument,
   type CanvasDocumentSummary,
   type CanvasLayer,
@@ -338,7 +339,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const renameBaselineRef = useRef<typeof history.document | null>(null);
 
   // Fuente única de "doc abierto dirty": deriva de hasUnsavedEdits + baselines
-  // en cada lectura (sin espejo manual que resincronizar).
+  // en cada lectura (sin espejo manual que resincronizar). La edición inline
+  // cuenta aunque aún no hayamos comiteado: su contenido viaja por
+  // updateSilent, que no toca hasUnsavedEdits, y si no apareciera aquí el pull
+  // remoto lo sobrescribiría en vez de ofrecer conflicto.
   const isOpenDirty = useCallback(
     () =>
       isOpenDocumentDirty(
@@ -346,8 +350,9 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         panelBaselineRef.current != null,
         gestureBaselineRef.current != null,
         renameBaselineRef.current != null,
+        editingLayerId != null,
       ),
-    [history.hasUnsavedEditsRef, panelBaselineRef, gestureBaselineRef],
+    [history.hasUnsavedEditsRef, panelBaselineRef, gestureBaselineRef, editingLayerId],
   );
 
   const onConflictResolve = useCallback(
@@ -513,7 +518,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     if (!active) return;
     if (!history.hasUnsavedEditsRef.current) return;
     if (autosavePendingRef.current) return;
-    const delay = autosaveDelayForDoc(history.document);
+    const delay = autosaveDelayForDoc(history.documentRef.current);
     const timer = window.setTimeout(() => flushAutosaveRef.current(), delay);
     return () => {
       window.clearTimeout(timer);
@@ -525,7 +530,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         autosaveRetryTimerRef.current = null;
       }
     };
-  }, [active, history.document, history.hasUnsavedEdits, history.hasUnsavedEditsRef]);
+  }, [active, history.past, history.future, history.documentRef, history.hasUnsavedEdits, history.hasUnsavedEditsRef]);
 
   useEffect(() => {
     if (active) return;
@@ -544,7 +549,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     };
   }, []);
   useEffect(() => {
-    const live = collectImageRefsFromLayers(history.document.layers);
+    const live = collectImageRefsFromLayers(history.documentRef.current.layers);
     for (const ref of collectImageRefsFromHistory(history.past)) live.add(ref);
     for (const ref of collectImageRefsFromHistory(history.future)) live.add(ref);
     for (const layer of clipboard) {
@@ -558,7 +563,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       }
     }
     sweepOrphanBlobs(live);
-  }, [history.document, history.past, history.future, clipboard]);
+  }, [history.documentRef, history.past, history.future, clipboard]);
 
   const onBeforeUnload = useCallback(() => {
     if (!history.hasUnsavedEditsRef.current) return;
@@ -742,6 +747,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     pasteClipboard,
     pasteReplaceClipboard,
     copyLayersToClipboard,
+    cutLayersToClipboard,
   } = useCanvasClipboard({
     documentLayers: history.document.layers,
     pageIndex,
@@ -1044,6 +1050,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     pasteClipboard,
     pasteReplaceClipboard,
     copyLayersToClipboard,
+    cutLayersToClipboard,
     sealPanelAndAbortGesture,
     startContainerOrInlineEdit,
     setSelectedIds,
@@ -1154,6 +1161,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     runUndo,
     runRedo,
     copyLayersToClipboard,
+    cutLayersToClipboard,
     pasteClipboard,
     pasteReplaceClipboard,
     sealPanelAndAbortGesture,
@@ -1327,6 +1335,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     setDocument: history.setDocument,
     selectedIds,
     pageIndex,
+    setPageIndex,
     pageLayers,
     uiLocked,
     runUndo,
@@ -1334,6 +1343,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     pasteClipboard,
     pasteReplaceClipboard,
     copyLayersToClipboard,
+    cutLayersToClipboard,
     setAllLayers,
     sealPanelAndAbortGesture,
     onAddPage,
@@ -1482,6 +1492,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             onChangeLayers={setPageLayers}
             onPreviewLayers={setPageLayersLive}
             onCommitGesture={commitPageLayersGesture}
+            onCancelGesture={cancelPageLayersGesture}
             onDrawLayer={onStageDrawLayer}
             onStartEdit={startContainerOrInlineEdit}
             onStartPathEdit={onStageStartPathEdit}
@@ -1498,6 +1509,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             showRulers={history.document.settings?.showRulers !== false}
             onToggleRulers={onToggleRulers}
             snapToGrid={Boolean(history.document.settings?.snapToGrid)}
+            gridSizeMm={history.document.settings?.gridSizeMm}
             onToggleSnapToGrid={onToggleSnapToGrid}
             zoomPortalTarget={zoomPortalTarget}
             zoomFallbackSlotRef={setStageZoomSlot}
@@ -1646,6 +1658,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
               );
               setSelectedIds([instance.id]);
             }}
+            pageMarginMm={resolvePageMarginMm(history.document.settings)}
+            onPageMarginChange={(mm) =>
+              history.setDocument({
+                ...history.document,
+                settings: { ...history.document.settings, pageMarginMm: mm },
+              })
+            }
             documentStyles={history.document.styles ?? []}
             onCreateStyle={(kind: CanvasStyleKind) => {
               if (selectedIds.length !== 1) return;

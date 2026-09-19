@@ -81,7 +81,7 @@ export default function CuadranteRangesEditor({
         {ranges.map((range, index) => (
           <div
             key={range.id}
-            className="group rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col gap-3 transition-colors hover:border-[var(--text-muted)]/30"
+            className="group rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col gap-3 transition-colors hover:border-[color:color-mix(in_srgb,var(--text-muted)_30%,transparent)]"
           >
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
@@ -140,7 +140,7 @@ export default function CuadranteRangesEditor({
                 rows={2}
                 value={range.cuadrante}
                 onChange={(e) => onChange(updateRange(ranges, range.id, { cuadrante: e.target.value }))}
-                className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)] focus:border-[var(--accent-primary)] transition-shadow placeholder:text-[var(--text-muted)]/50"
+                className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)] focus:border-[var(--accent-primary)] transition-shadow placeholder:text-[color:color-mix(in_srgb,var(--text-muted)_50%,transparent)]"
                 placeholder="AV EL SOL-AV.GUARDIA CIVIL, DISTRITO CHORRILLOS"
               />
             </label>

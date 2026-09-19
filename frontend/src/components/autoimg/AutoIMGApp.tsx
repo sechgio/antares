@@ -179,7 +179,7 @@ export default function AutoIMGApp() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--bg-base)]" data-surface="autoimg">
-      <div className="flex h-12 shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/80">
+      <div className="flex h-12 shrink-0 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-surface)_80%,transparent)]">
         <div className="flex w-[280px] min-w-[240px] shrink-0 items-center border-r border-[var(--border-subtle)] px-4">
           <AutoImgSidebarHeader
             connected={!!status?.connected || googleConnected}
@@ -201,7 +201,7 @@ export default function AutoIMGApp() {
                     className={`relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
                       isActive
                         ? 'bg-[var(--bg-elevated)] font-medium text-[var(--text-primary)] shadow-[inset_0_0_0_1px_var(--border-medium)]'
-                        : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]/50 hover:text-[var(--text-secondary)]'
+                        : 'text-[var(--text-muted)] hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_50%,transparent)] hover:text-[var(--text-secondary)]'
                     }`}
                   >
                     <Icon

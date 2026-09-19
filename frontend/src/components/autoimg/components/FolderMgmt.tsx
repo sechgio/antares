@@ -335,7 +335,7 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/90 p-5 shadow-[0_1px_0_rgba(255,255,255,0.5)_inset] backdrop-blur-sm">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-surface)_90%,transparent)] p-5 shadow-[0_1px_0_rgba(255,255,255,0.5)_inset] backdrop-blur-sm">
             <p className="mb-4 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">
               Nueva carpeta
             </p>
@@ -352,7 +352,7 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto">
-      <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/90 backdrop-blur-sm">
+      <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-surface)_90%,transparent)] backdrop-blur-sm">
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3">
           <div>
             <p className="text-[12px] font-medium tracking-tight text-[var(--text-primary)]">
@@ -413,7 +413,7 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
         </div>
       </div>
 
-      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/90 p-4 backdrop-blur-sm">
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-surface)_90%,transparent)] p-4 backdrop-blur-sm">
         <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">
           Agregar carpeta
         </p>

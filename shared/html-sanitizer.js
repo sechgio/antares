@@ -121,7 +121,15 @@ function stripOrKeepLink(fullTag) {
   return isAllowedGoogleFontUrl(href) ? fullTag : '';
 }
 
-function sanitizeHtmlForPdf(html) {
+function injectContentSecurityPolicy(stripped, cspMeta) {
+  if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
+    return stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${cspMeta}`);
+  }
+  return `${cspMeta}${stripped}`;
+}
+
+// Pipeline compartida por las políticas PDF y Canvas-preview: solo difieren en la CSP inyectada y en si url() admite blob:.
+function sanitizeGoogleFontHtml(html, cspMeta, allowBlobUrl) {
   const stripped = String(html)
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '')
@@ -148,14 +156,16 @@ function sanitizeHtmlForPdf(html) {
     .replace(/url\(\s*(['"]?)\s*(?:javascript|vbscript):[^'")\s]*\1\s*\)/gi, "url('')")
     .replace(/url\(\s*(['"]?)([^'")]+?)\1\s*\)/gi, (match, _quote, urlValue) => {
       const decoded = _decodeUrlEntities(urlValue);
+      if (allowBlobUrl && decoded.trim().toLowerCase().startsWith('blob:')) return match;
       if (isSafeDataUrl(decoded)) return match;
       if (isAllowedGoogleFontUrl(decoded)) return match;
       return "url('')";
     });
-  if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
-    return stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${CSP_META}`);
-  }
-  return `${CSP_META}${stripped}`;
+  return injectContentSecurityPolicy(stripped, cspMeta);
+}
+
+function sanitizeHtmlForPdf(html) {
+  return sanitizeGoogleFontHtml(html, CSP_META, false);
 }
 
 function sanitizeHtmlForPreview(html) {
@@ -223,50 +233,11 @@ function sanitizeHtmlForPreview(html) {
     return `<style>${inner}</style>`;
   });
 
-  if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
-    return stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${PREVIEW_CSP_META}`);
-  }
-  return `${PREVIEW_CSP_META}${stripped}`;
+  return injectContentSecurityPolicy(stripped, PREVIEW_CSP_META);
 }
 
 function sanitizeHtmlForCanvasPreview(html) {
-  const stripped = String(html)
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '')
-    .replace(/<meta[^>]*http-equiv[^>]*>/gi, '')
-    .replace(/<base[^>]*>/gi, '')
-    .replace(/<\/base>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '')
-    .replace(/<object[^>]*>[\s\S]*?<\/object>/gi, '')
-    .replace(/<embed[^>]*>/gi, '')
-    .replace(/<link[^>]*>/gi, (tag) => stripOrKeepLink(tag))
-    .replace(/<script[^>]*>/gi, '')
-    .replace(/<\/script>/gi, '')
-    .replace(/<iframe[^>]*>/gi, '')
-    .replace(/<\/iframe>/gi, '')
-    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
-    .replace(/\son[a-z]+\s*=\s*`[^`]*`/gi, '')
-    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
-    .replace(/\son[a-z]+\b(?=\s|>|\/)/gi, '')
-    .replace(URL_ATTR_RE, dispatchUrlAttr)
-    .replace(/@import\s+(['"])([^'"]*)\1\s*;?/gi, neutralizeImportStatement)
-    .replace(/expression\s*\(/gi, '')
-    .replace(/url\(\s*(['"]?)\s*(?:javascript|vbscript):[^'")\s]*\1\s*\)/gi, "url('')")
-    .replace(/url\(\s*(['"]?)([^'")]+?)\1\s*\)/gi, (match, _quote, urlValue) => {
-      const decoded = _decodeUrlEntities(urlValue);
-      const lowered = decoded.trim().toLowerCase();
-      if (lowered.startsWith('blob:')) return match;
-      if (isSafeDataUrl(decoded)) return match;
-      if (isAllowedGoogleFontUrl(decoded)) return match;
-      return "url('')";
-    });
-
-  if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
-    return stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${CANVAS_PREVIEW_CSP_META}`);
-  }
-  return `${CANVAS_PREVIEW_CSP_META}${stripped}`;
+  return sanitizeGoogleFontHtml(html, CANVAS_PREVIEW_CSP_META, true);
 }
 
 module.exports = { sanitizeHtmlForPdf, sanitizeHtmlForPreview, sanitizeHtmlForCanvasPreview, CSP_META, PREVIEW_CSP_META, CANVAS_PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };

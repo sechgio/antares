@@ -56,7 +56,7 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
           )}
           <Button variant="none" size="none"
             onClick={onDelete}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--accent-red)]/30 bg-transparent px-3 py-1.5 text-[11px] font-medium text-[var(--accent-red)] transition-all hover:bg-[color:var(--accent-red)]/10 active:scale-[0.98]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-red)_30%,transparent)] bg-transparent px-3 py-1.5 text-[11px] font-medium text-[var(--accent-red)] transition-all hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] active:scale-[0.98]"
           >
             <Trash2 size={12} strokeWidth={2} />
             {t('history.delete')}

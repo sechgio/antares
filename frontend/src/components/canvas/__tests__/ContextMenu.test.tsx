@@ -45,6 +45,18 @@ describe('ContextMenu', () => {
     expect(screen.getByRole('menuitem', { name: /Eliminar/i })).toBeInTheDocument();
   });
 
+  it('shows Cortar and emits the cut action', () => {
+    const onAction = vi.fn();
+    render(<ContextMenu menu={baseMenu()} onAction={onAction} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('menuitem', { name: /Cortar/ }));
+    expect(onAction).toHaveBeenCalledWith('cut');
+  });
+
+  it('disables Cortar when the layer is locked', () => {
+    render(<ContextMenu menu={baseMenu({ locked: true })} onAction={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole('menuitem', { name: /Cortar/ })).toBeDisabled();
+  });
+
   it('shows Seleccionar contenedor when the layer has a parent', () => {
     const onAction = vi.fn();
     render(

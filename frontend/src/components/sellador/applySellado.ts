@@ -5,6 +5,7 @@ import {
 } from "../../utils/stageFile";
 import { fileToBase64 } from "../../utils/pdfAssets";
 import { saveFeatureHistory } from "../../utils/history";
+import { askPdfSavePath } from "../../utils/deliverRenderedDocument";
 import { errorMessage } from "@/utils/errors";
 import {
   stripPdfExtension,
@@ -50,15 +51,7 @@ export async function applySellado(params: ApplySelladoParams): Promise<void> {
   let stampHandle: StagedFileHandle | null = null;
   try {
     const defaultName = `${stripPdfExtension(pdfFile.name)}_sellado.pdf`;
-    const saveTarget = await api.dialogSave({
-      title: "Guardar PDF sellado",
-      defaultPath: defaultName,
-      filters: [
-        { name: "PDF", extensions: ["pdf"] },
-        { name: "Todos los archivos", extensions: ["*"] },
-      ],
-    });
-    const outputPath = saveTarget.paths[0];
+    const outputPath = await askPdfSavePath(defaultName, "Guardar PDF sellado");
     if (!outputPath) return;
 
     let pdfSource: { pdf_path: string } | { pdf_b64: string };

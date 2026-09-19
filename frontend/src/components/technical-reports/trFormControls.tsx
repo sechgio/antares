@@ -72,13 +72,16 @@ export function Field({
   );
 }
 
-export function Section({ title, children, defaultOpen = false }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
+export function Section({ title, meta, children, defaultOpen = false }: { title: string; meta?: ReactNode; children: ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className={`tr-section tr-collapsible${open ? ' tr-collapsible--open' : ''}`}>
       <Button variant="none" size="none" className="tr-section-toggle" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
         <h3>{title}</h3>
-        <ChevronDown size={13} strokeWidth={2.25} className="tr-section-chevron" />
+        <span className="tr-section-side">
+          {meta ? <span className="tr-section-meta">{meta}</span> : null}
+          <ChevronDown size={13} strokeWidth={2.25} className="tr-section-chevron" />
+        </span>
       </Button>
       <div className="tr-section-body" aria-hidden={!open}>
         <div className="tr-section-inner">{children}</div>
