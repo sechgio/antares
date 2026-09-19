@@ -105,6 +105,29 @@ def test_build_panels_include_empty_crea_panel_sin_imagenes() -> None:
     assert result.summary.unmatched_images == 1
 
 
+def test_build_panels_include_empty_intercala_vacios_en_su_fila() -> None:
+    src = _source(
+        ["Clave", "Cuadrante Afectado"],
+        [
+            {"Clave": "A", "Cuadrante Afectado": "C-A"},
+            {"Clave": "B", "Cuadrante Afectado": "C-B"},
+            {"Clave": "C", "Cuadrante Afectado": "C-C"},
+        ],
+    )
+    result = build_panels(
+        src,
+        _rule(strategy="prefix"),
+        ["A1.jpg", "A2.jpg", "A3.jpg", "A4.jpg", "C1.jpg"],
+        None,
+        "include_empty",
+    )
+    # El agrupamiento de 4 comparte hoja entre A y C, pero la hoja vacía de B
+    # conserva su lugar entre ambas en el PDF y en el preview.
+    assert [p.source_row_index for p in result.panels] == [0, 1, 2]
+    assert [len(p.imagenes) for p in result.panels] == [4, 0, 1]
+    assert [p.cuadrante for p in result.panels] == ["C-A", "C-B", "C-C"]
+
+
 def test_build_panels_address_column_fallback_cuando_no_existe() -> None:
     src = _source(["Clave"], [{"Clave": "A1"}])
     result = build_panels(src, _rule(strategy="prefix"), ["A1_foto.jpg"], "direccion faltante", "include_empty")
