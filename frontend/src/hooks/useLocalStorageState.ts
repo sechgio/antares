@@ -26,11 +26,14 @@ export function useLocalStorageState<T>(
   serializeRef.current = serialize;
 
   useEffect(() => {
-    const serialized = serializeRef.current(value);
-    if (serialized === null) {
-      localStorage.removeItem(key);
-    } else {
-      localStorage.setItem(key, serialized);
+    try {
+      const serialized = serializeRef.current(value);
+      if (serialized === null) {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, serialized);
+      }
+    } catch {
     }
   }, [key, value]);
 

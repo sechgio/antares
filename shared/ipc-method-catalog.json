@@ -84,7 +84,6 @@
     "file_staged_create": { "handler": "native:dialog" },
     "file_token_cleanup": { "handler": "native:dialog" },
     "file_token_read_json": { "handler": "native:dialog" },
-    "file_token_resolve": { "handler": "native:dialog" },
     "formatos_delete": { "handler": "backend:formatos" },
     "formatos_generate": { "handler": "backend:formatos", "lane": "heavy", "timeout": "long" },
     "formatos_get_template": { "handler": "backend:formatos" },

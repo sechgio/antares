@@ -196,24 +196,20 @@ def _run_conversion_job(job: Job) -> None:
                 now = time.time()
                 notif_data: dict[str, Any] | None = None
                 is_last = False
+                item_log: tuple[str, str] | None = None
                 with state._lock:
                     if state.cancel_requested:
                         return
                     completed += 1
                     if success:
                         state.ok_count += 1
-                        log_message(
+                        item_log = (
                             f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}",
                             "ok",
-                            state=state,
                         )
                     else:
                         state.err_count += 1
-                        log_message(
-                            t("error.process_failed", file=name, error=error),
-                            "error",
-                            state=state,
-                        )
+                        item_log = (t("error.process_failed", file=name, error=error), "error")
                     state.progress = int((completed / total) * 100)
                     state.current_file = name
                     is_last = completed == total
@@ -232,12 +228,18 @@ def _run_conversion_job(job: Job) -> None:
                             "job_id": job_id,
                         }
 
+                # log_message escribe en stderr: dentro del lock serializaría los
+                # cierres de todos los workers detrás del pipe de logs.
+                if item_log is not None:
+                    log_message(item_log[0], item_log[1], state=state)
+
                 if notif_data is not None:
                     _emit_progress_notifications(job_id, notif_data, is_default)
 
                 with state._lock:
-                    if state.cancel_requested:
-                        log_message(t("info.process_cancelled"), "warn", state=state)
+                    cancel_requested = state.cancel_requested
+                if cancel_requested:
+                    log_message(t("info.process_cancelled"), "warn", state=state)
 
             cancelled = _drive_chunk_loop(
                 job,
@@ -398,9 +400,11 @@ def _drive_chunk_loop(
                     break
 
             with state._lock:
-                if state.cancel_requested and not cancelled:
+                cancel_just_seen = state.cancel_requested and not cancelled
+                if cancel_just_seen:
                     cancelled = True
-                    log_message(t("info.process_cancelled"), "warn", state=state)
+            if cancel_just_seen:
+                log_message(t("info.process_cancelled"), "warn", state=state)
             if cancelled:
                 for future in list(in_flight):
                     future.cancel()
@@ -440,15 +444,10 @@ def _drive_chunk_loop(
                     if state.cancel_requested:
                         cancelled = True
 
-                if cancelled:
-                    for pending in list(in_flight):
-                        pending.cancel()
-                    task_queue.clear()
-                    break
-
-                while len(in_flight) < max_in_flight and task_queue and not cancelled:
-                    if not _submit_one():
-                        break
+                if not cancelled:
+                    while len(in_flight) < max_in_flight and task_queue:
+                        if not _submit_one():
+                            break
 
                 if cancelled:
                     for pending in list(in_flight):

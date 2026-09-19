@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
+const { createAsyncLogWriter } = require('../electron/async-log-writer');
 
 process.env.LOCALAPPDATA = path.join(os.tmpdir(), 'alog-fix-test');
 fs.rmSync(process.env.LOCALAPPDATA, { recursive: true, force: true });
@@ -96,6 +97,59 @@ l.appendLogLine('INFO', 'linea posterior al fallo');
 await l.flushLogQueue();
 assert(fs.readFileSync(logFile, 'utf8').includes('linea posterior al fallo'), 'la cola sigue viva tras un writeBatch fallido');
 console.log('cadena de drain inmune a rechazos: OK');
+
+// flush debe seguir el encadenado si llega otro lote mientras el anterior escribe.
+const raceDir = path.join(process.env.LOCALAPPDATA, 'flush-race');
+const raceFile = path.join(raceDir, 'antares-2026-09-18.log');
+const realAppendFile = fs.promises.appendFile.bind(fs.promises);
+let startFirst;
+let startSecond;
+let releaseFirst;
+let releaseSecond;
+const firstStarted = new Promise((resolve) => { startFirst = resolve; });
+const secondStarted = new Promise((resolve) => { startSecond = resolve; });
+const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+const secondGate = new Promise((resolve) => { releaseSecond = resolve; });
+fs.promises.appendFile = async (target, text, encoding) => {
+  if (text.includes('primer lote')) {
+    startFirst();
+    await firstGate;
+  }
+  if (text.includes('segundo lote')) {
+    startSecond();
+    await secondGate;
+  }
+  return realAppendFile(target, text, encoding);
+};
+try {
+  const writer = createAsyncLogWriter({
+    getLogsDir: () => raceDir,
+    getMaxFileBytes: () => 1024 * 1024,
+    managedLogPattern: /^antares-.*\.log$/,
+    maxDirectoryBytes: 1024 * 1024,
+    onDrop: () => {},
+  });
+  writer.append(raceFile, 'primer lote\n');
+  const flushing = writer.flush();
+  let flushResolved = false;
+  void flushing.then(() => { flushResolved = true; });
+  await firstStarted;
+  writer.append(raceFile, 'segundo lote\n');
+  await Promise.resolve();
+  releaseFirst();
+  await secondStarted;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(flushResolved, false, 'flush no debe resolver con un lote encadenado en vuelo');
+  releaseSecond();
+  await flushing;
+  await writer.flush();
+  assert(fs.readFileSync(raceFile, 'utf8').includes('segundo lote'), 'flush espera el lote encadenado');
+} finally {
+  releaseFirst?.();
+  releaseSecond?.();
+  fs.promises.appendFile = realAppendFile;
+}
+console.log('flush espera lotes encadenados: OK');
 
 for (const name of ['antares-staged-99999999', `antares-staged-${process.pid}`, 'antares-staged-88888888', 'antares-pdf-x1y2z3', 'antares-backend-command-abc']) {
   fs.rmSync(path.join(tmp, name), { recursive: true, force: true });

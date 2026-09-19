@@ -44,10 +44,11 @@ class MappingIndex:
             if stem not in self._exact:
                 self._exact[stem] = value
 
+        stem_conflicts_lower = {c.lower() for c in self.stem_conflicts}
         for stem_l, values in stem_lower_to_values.items():
             if len(values) != 1:
                 self._conflicted_stems_lower.add(stem_l)
-                if stem_l not in {c.lower() for c in self.stem_conflicts}:
+                if stem_l not in stem_conflicts_lower:
                     self.stem_conflicts.append(stem_l)
                 continue
             value = next(iter(values))
@@ -104,6 +105,7 @@ class MappingIndex:
         for name in file_names:
             if self.lookup(name) is not None:
                 matched_names.append(name)
+        matched_names_set = set(matched_names)
 
         names = set(file_names)
         names_lower = {n.lower() for n in file_names}
@@ -125,7 +127,7 @@ class MappingIndex:
         return {
             "totalEntries": len(self.raw),
             "matchedFiles": len(matched_names),
-            "unmatchedFiles": [name for name in file_names if name not in matched_names],
+            "unmatchedFiles": [name for name in file_names if name not in matched_names_set],
             "orphanEntries": orphan_entries,
             "collisions": collisions,
         }

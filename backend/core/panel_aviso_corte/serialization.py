@@ -26,12 +26,9 @@ def _serialize_image_ref(ref: PanelImageRef) -> dict[str, Any]:
 
 def serialize_panel(panel: Panel) -> dict[str, Any]:
     if not isinstance(panel, Panel):
-        msg = (
+        raise TypeError(
             "serialize_panel: se esperaba Panel, se recibió "
             f"{type(panel).__name__}"
-        )
-        raise TypeError(
-            msg,
         )
     return {
         "cuadrante": panel.cuadrante,
@@ -44,27 +41,18 @@ def serialize_panel(panel: Panel) -> dict[str, Any]:
 
 def _deserialize_image_ref(raw: Any, index: int) -> PanelImageRef:
     if not isinstance(raw, dict):
-        msg = (
+        raise InvalidPanelError(
             f"imagenes[{index}]: debe ser dict, se recibió "
             f"{type(raw).__name__}"
         )
-        raise InvalidPanelError(
-            msg,
-        )
     for key in _REQUIRED_IMAGE_KEYS:
         if key not in raw:
-            msg = f"imagenes[{index}].{key}: campo obligatorio ausente"
-            raise InvalidPanelError(
-                msg,
-            )
+            raise InvalidPanelError(f"imagenes[{index}].{key}: campo obligatorio ausente")
     position = raw["position"]
     if not isinstance(position, int) or isinstance(position, bool):
-        msg = (
+        raise InvalidPanelError(
             f"imagenes[{index}].position: debe ser int, se recibió "
             f"{type(position).__name__}"
-        )
-        raise InvalidPanelError(
-            msg,
         )
     return PanelImageRef(
         filename=raw["filename"],
@@ -75,29 +63,22 @@ def _deserialize_image_ref(raw: Any, index: int) -> PanelImageRef:
 
 def deserialize_panel(data: Any) -> Panel:
     if not isinstance(data, dict):
-        msg = (
+        raise InvalidPanelError(
             "deserialize_panel: se esperaba dict, se recibió "
             f"{type(data).__name__}"
-        )
-        raise InvalidPanelError(
-            msg,
         )
 
     for key in _REQUIRED_PANEL_KEYS:
         if key not in data:
-            msg = f"{key}: campo obligatorio ausente en la carga serializada"
             raise InvalidPanelError(
-                msg,
+                f"{key}: campo obligatorio ausente en la carga serializada"
             )
 
     imagenes_raw = data["imagenes"]
     if not isinstance(imagenes_raw, (list, tuple)):
-        msg = (
+        raise InvalidPanelError(
             "imagenes: debe ser list o tuple, se recibió "
             f"{type(imagenes_raw).__name__}"
-        )
-        raise InvalidPanelError(
-            msg,
         )
 
     image_refs: tuple[PanelImageRef, ...] = tuple(

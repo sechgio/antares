@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasDocument, CanvasLayer, CanvasSharedStyle, CanvasStyleKind } from '../types';
+import { DEFAULT_PAGE_MARGIN_MM } from '../types';
 import InlineNumField from './InlineNumField';
 import { EyeSlash, VisibilityIcon } from './VisibilityIcon';
 import {
@@ -38,6 +39,8 @@ import CanvasSelect from './CanvasSelect';
 import CanvasVersionsPanel from './CanvasVersionsPanel';
 import Button from '@/components/ui/Button';
 
+const PAGE_MARGIN_PRESETS_MM = [0, 5, 10, 15, 20];
+
 interface RightPanelProps {
   documentId?: string;
   onVersionRestored?: (doc: CanvasDocument) => void;
@@ -63,6 +66,8 @@ interface RightPanelProps {
   onSendBack: () => void;
   onSendBackward: () => void;
   documentStyles?: CanvasSharedStyle[];
+  pageMarginMm?: number;
+  onPageMarginChange?: (mm: number) => void;
   onCreateStyle?: (kind: CanvasStyleKind) => void;
   onApplyStyle?: (styleId: string) => void;
   onDetachStyle?: (kind: CanvasStyleKind) => void;
@@ -144,6 +149,8 @@ export default memo(function RightPanel({
   onSendBack,
   onSendBackward,
   documentStyles = [],
+  pageMarginMm = DEFAULT_PAGE_MARGIN_MM,
+  onPageMarginChange,
   onCreateStyle,
   onApplyStyle,
   onDetachStyle,
@@ -423,22 +430,47 @@ export default memo(function RightPanel({
       ) : (
         <>
           {selectedCount === 0 &&
-            onCreateStyle &&
-            onApplyStyle &&
-            onDetachStyle &&
-            onRemoveStyle &&
-            onRenameStyle && (
+            (onPageMarginChange ||
+              (onCreateStyle &&
+                onApplyStyle &&
+                onDetachStyle &&
+                onRemoveStyle &&
+                onRenameStyle)) && (
               <div className="min-h-0 flex-1 overflow-y-auto">
-                <StylesSection
-                  styles={documentStyles}
-                  layer={null}
-                  canLink={false}
-                  onCreate={onCreateStyle}
-                  onApply={onApplyStyle}
-                  onDetach={onDetachStyle}
-                  onRemove={onRemoveStyle}
-                  onRename={onRenameStyle}
-                />
+                {onPageMarginChange && (
+                  <div className="canvas-section" data-testid="canvas-inspector-page">
+                    <SectionHeader title="Página" />
+                    <div className="canvas-inspector-stack">
+                      <CanvasSelect
+                        aria-label="Márgenes de página"
+                        value={String(pageMarginMm)}
+                        onChange={(val) => onPageMarginChange(Number(val))}
+                        options={Array.from(new Set([...PAGE_MARGIN_PRESETS_MM, pageMarginMm]))
+                          .sort((a, b) => a - b)
+                          .map((mm) => ({
+                            value: String(mm),
+                            label: mm === 0 ? 'Sin márgenes' : `${mm} mm`,
+                          }))}
+                      />
+                    </div>
+                  </div>
+                )}
+                {onCreateStyle &&
+                  onApplyStyle &&
+                  onDetachStyle &&
+                  onRemoveStyle &&
+                  onRenameStyle && (
+                    <StylesSection
+                      styles={documentStyles}
+                      layer={null}
+                      canLink={false}
+                      onCreate={onCreateStyle}
+                      onApply={onApplyStyle}
+                      onDetach={onDetachStyle}
+                      onRemove={onRemoveStyle}
+                      onRename={onRenameStyle}
+                    />
+                  )}
               </div>
             )}
 

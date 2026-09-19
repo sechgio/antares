@@ -51,7 +51,7 @@ export default function SpaceSidebar({
           aria-current={myTasksActive ? 'page' : undefined}
           className={
             myTasksActive
-              ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
+              ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]'
               : 'text-[var(--text-secondary)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]'
           }
         >
@@ -77,10 +77,10 @@ export default function SpaceSidebar({
             />
           ))}
           {espacios.length === 0 && (
-            <li className="rounded-xl border border-dashed border-[var(--accent-primary)]/25 bg-[var(--accent-primary)]/5 px-3 py-5 text-center">
+            <li className="rounded-xl border border-dashed border-[color:color-mix(in_srgb,var(--accent-primary)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_5%,transparent)] px-3 py-5 text-center">
               <div className="relative mx-auto mb-3 flex h-10 w-10 items-center justify-center">
-                <div className="absolute inset-0 rounded-xl bg-[var(--accent-primary)]/15 blur-md" />
-                <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--accent-primary)]/20 bg-[var(--bg-elevated)]">
+                <div className="absolute inset-0 rounded-xl bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)] blur-md" />
+                <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[color:color-mix(in_srgb,var(--accent-primary)_20%,transparent)] bg-[var(--bg-elevated)]">
                   <FolderKanban className="h-4 w-4 text-[var(--accent-primary-hover)]" />
                 </div>
               </div>

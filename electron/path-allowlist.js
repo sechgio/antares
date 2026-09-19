@@ -24,6 +24,19 @@ function assertPathNotSymlink(resolved) {
   return stat;
 }
 
+async function assertPathNotSymlinkAsync(resolved) {
+  let stat;
+  try {
+    stat = await fs.promises.lstat(resolved);
+  } catch {
+    throw new Error('not a file');
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error('symbolic links not allowed');
+  }
+  return stat;
+}
+
 function hasSymlinkAncestor(resolved) {
   let current = path.resolve(resolved);
   while (true) {
@@ -98,6 +111,7 @@ module.exports = {
   registerAllowedReadPaths,
   assertAllowedReadPath,
   assertPathNotSymlink,
+  assertPathNotSymlinkAsync,
   hasSymlinkAncestor,
   isAllowedReadPath,
   clearAllowedReadPaths,

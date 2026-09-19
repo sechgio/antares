@@ -367,9 +367,9 @@ export default function DataPreviewModal({
         }`}
         tabIndex={-1}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/80 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-surface)_80%,transparent)] px-5 py-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] border border-[var(--accent-primary)]/30 shadow-sm">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)] text-[var(--accent-primary)] border border-[color:color-mix(in_srgb,var(--accent-primary)_30%,transparent)] shadow-sm">
               <Table2 size={18} />
             </div>
             <div>
@@ -433,7 +433,7 @@ export default function DataPreviewModal({
                   onClick={() => setShowColumnDropdown((v) => !v)}
                   className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
                     showColumnDropdown || hiddenColumns.size > 0
-                      ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]"
+                      ? "border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]"
                       : "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]"
                   }`}
                   aria-label="Gestionar columnas"
@@ -607,7 +607,7 @@ export default function DataPreviewModal({
                 onClick={() => setShowDetailPane((v) => !v)}
                 className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
                   showDetailPane
-                    ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]"
+                    ? "border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]"
                     : "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]"
                 }`}
                 aria-label="Alternar panel de detalle"
@@ -673,7 +673,7 @@ export default function DataPreviewModal({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/40 px-5 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-surface)_40%,transparent)] px-5 py-2">
           <div
             className="flex items-center gap-0.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5"
             role="group"
@@ -718,7 +718,7 @@ export default function DataPreviewModal({
                 <span
                   className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
                     photoFilter === opt.f
-                      ? "bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]"
+                      ? "bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)] text-[var(--accent-primary)]"
                       : "bg-[var(--bg-input)] text-[var(--text-muted)]"
                   }`}
                 >
@@ -809,9 +809,9 @@ export default function DataPreviewModal({
             ) : (
               <table className="w-full min-w-full border-collapse text-left">
                 <thead>
-                  <tr className="sticky top-0 z-20 border-b border-[var(--border-medium)] bg-[var(--bg-elevated)]/95 backdrop-blur-md shadow-sm">
+                  <tr className="sticky top-0 z-20 border-b border-[var(--border-medium)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_95%,transparent)] backdrop-blur-md shadow-sm">
                     <th
-                      className="sticky left-0 z-30 w-12 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-r border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
+                      className="sticky left-0 z-30 w-12 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_95%,transparent)] border-r border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
                       onClick={() => handleHeaderClick("#")}
                       title="Ordenar por número de fila"
                     >
@@ -874,7 +874,7 @@ export default function DataPreviewModal({
 
                     <th
                       onClick={() => handleHeaderClick("__fotos__")}
-                      className="sticky right-0 z-20 w-28 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-l border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
+                      className="sticky right-0 z-20 w-28 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_95%,transparent)] border-l border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
                       title="Ordenar por cantidad de fotos vinculadas"
                     >
                       <div className="flex items-center justify-center gap-1.5">
@@ -926,10 +926,10 @@ export default function DataPreviewModal({
                             onDoubleClick={() => handleRowClick(originalIndex)}
                             className={`group cursor-pointer transition-colors ${
                               isSelected
-                                ? "bg-[var(--accent-primary)]/15 font-medium"
+                                ? "bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)] font-medium"
                                 : isFocused
-                                  ? "bg-[var(--bg-elevated)]/75"
-                                  : "hover:bg-[var(--accent-primary)]/8"
+                                  ? "bg-[color:color-mix(in_srgb,var(--bg-elevated)_75%,transparent)]"
+                                  : "hover:bg-[color:color-mix(in_srgb,var(--accent-primary)_8%,transparent)]"
                             }`}
                           >
                             <td
@@ -1015,7 +1015,7 @@ export default function DataPreviewModal({
                               }`}
                             >
                               {photoInfo.count > 0 ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap">
                                   <ImageIcon size={11} />
                                   {photoInfo.count}
                                 </span>
@@ -1036,7 +1036,7 @@ export default function DataPreviewModal({
           </div>
 
           {showDetailPane && focusedRowData && (
-            <aside className="w-80 sm:w-96 border-l border-[var(--border-subtle)] bg-[var(--bg-surface)]/60 flex flex-col overflow-hidden animate-fade-in">
+            <aside className="w-80 sm:w-96 border-l border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-surface)_60%,transparent)] flex flex-col overflow-hidden animate-fade-in">
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
                 <div className="flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--accent-primary)] font-mono text-xs font-bold text-[var(--text-on-accent)]">
@@ -1086,7 +1086,7 @@ export default function DataPreviewModal({
                     <span
                       className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                         focusedRowPhotoInfo.count > 0
-                          ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]"
+                          ? "bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] text-[var(--accent-green)]"
                           : "bg-[var(--bg-elevated)] text-[var(--text-muted)]"
                       }`}
                     >
@@ -1100,7 +1100,7 @@ export default function DataPreviewModal({
                       {focusedRowPhotoInfo.files.map((file, i) => (
                         <div
                           key={i}
-                          className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] bg-[var(--bg-elevated)]/60 px-2 py-1 rounded"
+                          className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_60%,transparent)] px-2 py-1 rounded"
                         >
                           <span className="truncate font-mono">
                             {file.name}
@@ -1189,7 +1189,7 @@ export default function DataPreviewModal({
             </span>
 
             {selectedRecordId && (
-              <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-indigo-500/30 bg-[var(--accent-primary)]/10 px-2 py-0.5 font-medium text-[var(--accent-primary)]">
+              <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-indigo-500/30 bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] px-2 py-0.5 font-medium text-[var(--accent-primary)]">
                 <Check size={11} />
                 Seleccionado: #{currentSelectedOriginalIdx + 1} (
                 {selectedRecordId})

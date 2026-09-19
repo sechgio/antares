@@ -12,6 +12,8 @@ export const CANVAS_SHORTCUTS: Array<{ keys: string; action: string }> = [
   { keys: 'Ctrl+Z · Ctrl+Shift+Z · Ctrl+Y', action: 'Deshacer / rehacer' },
   { keys: 'Ctrl+D', action: 'Duplicar' },
   { keys: 'Ctrl+C · Ctrl+V', action: 'Copiar / pegar (con hijos)' },
+  { keys: 'Ctrl+X', action: 'Cortar selección' },
+  { keys: 'Ctrl+Shift+I', action: 'Invertir selección' },
   { keys: 'Ctrl+Shift+V', action: 'Pegar en el sitio' },
   { keys: 'Ctrl+Alt+C · Ctrl+Alt+V', action: 'Copiar / pegar propiedades' },
   { keys: 'Ctrl+Shift+R', action: 'Pegar para reemplazar' },

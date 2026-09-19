@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useKeyboardShortcut } from "../../../hooks/useKeyboardShortcut";
 import { useToast } from "../../../hooks/useToast";
 import { saveFeatureHistory } from "../../../utils/history";
 import { errorMessage } from "@/utils/errors";
@@ -125,18 +126,15 @@ export function useCampoExport(params: CampoExportParams) {
     }
   }, [addToast, config, exportablePanelCount, panels, logoLeft, logoRight]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        if (photos.length > 0 && !isExporting) {
-          void handleExportCurrent();
-        }
+  useKeyboardShortcut(
+    "enter",
+    () => {
+      if (photos.length > 0 && !isExporting) {
+        void handleExportCurrent();
       }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [handleExportCurrent, photos.length, isExporting]);
+    },
+    { ctrl: true, allowInInput: true },
+  );
 
   return { isExporting, handleExportCurrent, handleExportConsolidated };
 }

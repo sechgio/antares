@@ -117,7 +117,6 @@ if (typeof window !== 'undefined') {
     minimizeWindow: async () => ({}),
     maximizeWindow: async () => ({}),
     closeWindow: async () => ({}),
-    showAppMenu: async () => ({}),
   },
   writable: true,
 });

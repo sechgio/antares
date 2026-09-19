@@ -497,7 +497,7 @@ export default function HistoryView() {
 
                 onClick={() => void delMany()}
 
-                className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--accent-red)]/30 bg-[color:var(--accent-red)]/10 px-3 py-1.5 text-[11px] font-medium text-[var(--accent-red)] transition-colors hover:bg-[color:var(--accent-red)]/20"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-red)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-red)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--accent-red)_20%,transparent)]"
 
               >
 

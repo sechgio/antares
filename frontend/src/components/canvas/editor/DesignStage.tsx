@@ -43,6 +43,7 @@ interface DesignStageProps {
   onChangeLayers: (layers: CanvasLayer[]) => void;
   onPreviewLayers: (layers: CanvasLayer[]) => void;
   onCommitGesture: () => void;
+  onCancelGesture?: () => void;
   onDrawLayer: (tool: CanvasTool, rect: DrawRect) => void;
   onStartEdit: (id: string, opts?: InlineEditStartOpts) => void;
   onStartPathEdit?: (id: string) => void;
@@ -65,6 +66,7 @@ interface DesignStageProps {
   showRulers?: boolean;
   onToggleRulers?: () => void;
   snapToGrid?: boolean;
+  gridSizeMm?: number;
   onToggleSnapToGrid?: () => void;
   zoomPortalTarget?: HTMLElement | null;
   zoomFallbackSlotRef?: (el: HTMLDivElement | null) => void;
@@ -98,6 +100,7 @@ export default function DesignStage({
   onChangeLayers,
   onPreviewLayers,
   onCommitGesture,
+  onCancelGesture,
   onDrawLayer,
   onStartEdit,
   onStartPathEdit,
@@ -115,6 +118,7 @@ export default function DesignStage({
   showRulers = false,
   onToggleRulers,
   snapToGrid = false,
+  gridSizeMm,
   onToggleSnapToGrid,
   zoomPortalTarget = null,
   zoomFallbackSlotRef,
@@ -219,6 +223,7 @@ export default function DesignStage({
         onChangeLayers={onChangeLayers}
         onPreviewLayers={onPreviewLayers}
         onCommitGesture={onCommitGesture}
+        onCancelGesture={onCancelGesture}
         onZoom={setZoom}
         onDrawLayer={onDrawLayer}
         onStartEdit={onStartEdit}
@@ -236,6 +241,7 @@ export default function DesignStage({
         onCancelGuideCreate={onCancelGuideCreate}
         showRulers={showRulers}
         snapToGrid={snapToGrid}
+        gridSizeMm={gridSizeMm}
         onStartInertia={startInertia}
         onCancelInertia={cancelInertia}
         gestureAbortToken={gestureAbortToken}

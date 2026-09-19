@@ -341,8 +341,8 @@ export default function PetdexView() {
           <div
             className={`ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] ${
               catalogStatus.tone === 'ok'
-                ? 'text-[var(--accent-green)] bg-[var(--accent-green)]/10'
-                : 'text-[var(--accent-yellow)] bg-[var(--accent-yellow)]/10'
+                ? 'text-[var(--accent-green)] bg-[color:color-mix(in_srgb,var(--accent-green)_10%,transparent)]'
+                : 'text-[var(--accent-yellow)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)]'
             }`}
           >
             {catalogStatus.tone === 'ok' ? <Check size={11} /> : <AlertCircle size={11} />}
@@ -432,7 +432,7 @@ export default function PetdexView() {
                   title={`${pet.displayName} · ${pet.kind}`}
                   className={`group relative flex flex-col items-center rounded-md border p-2 transition-all ${
                     isSelected
-                      ? 'border-[var(--accent-primary)] bg-[var(--accent-primary-glow)] ring-1 ring-[var(--accent-primary)]/40'
+                      ? 'border-[var(--accent-primary)] bg-[var(--accent-primary-glow)] ring-1 ring-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)]'
                       : 'border-transparent bg-[var(--bg-base)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'
                   }`}
                 >

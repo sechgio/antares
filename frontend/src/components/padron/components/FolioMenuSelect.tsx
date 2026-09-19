@@ -1,11 +1,7 @@
-import {
-  useEffect,
-  useId,
-  type CSSProperties,
-  type KeyboardEvent,
-} from 'react';
+import { useId, type CSSProperties } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import { useRovingListbox } from '@/hooks/useRovingListbox';
 import Button from '@/components/ui/Button';
 
 export interface FolioMenuOption {
@@ -41,43 +37,12 @@ export default function FolioMenuSelect({
 
   const selected = options.find((o) => o.value === value) ?? options[0];
 
-  useEffect(() => {
-    if (!open) return;
-    const selectedBtn = listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
-    selectedBtn?.focus();
-  }, [open]);
-
   const pick = (next: string) => {
     onChange(next);
     close();
   };
 
-  const onListKeyDown = (event: KeyboardEvent) => {
-    const items = Array.from(
-      listRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [],
-    );
-    if (items.length === 0) return;
-    const idx = items.findIndex((el) => el === document.activeElement);
-
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      items[(idx + 1 + items.length) % items.length]?.focus();
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      items[(idx - 1 + items.length) % items.length]?.focus();
-    } else if (event.key === 'Home') {
-      event.preventDefault();
-      items[0]?.focus();
-    } else if (event.key === 'End') {
-      event.preventDefault();
-      items[items.length - 1]?.focus();
-    } else if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      const active = document.activeElement as HTMLButtonElement | null;
-      const val = active?.dataset.value;
-      if (val != null) pick(val);
-    }
-  };
+  const onListKeyDown = useRovingListbox(listRef, open, pick);
 
   return (
     <div

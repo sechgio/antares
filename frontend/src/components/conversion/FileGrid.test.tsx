@@ -42,15 +42,6 @@ vi.mock('./FileGrid', async () => {
 
 import ConversionView from './ConversionView';
 
-if (typeof globalThis.ResizeObserver !== 'function') {
-  class ResizeObserverStub {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  }
-  (globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
-}
-
 const renderView = () =>
   render(
     <DialogProvider>

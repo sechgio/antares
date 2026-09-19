@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import io
-import logging
-from typing import Any
+from typing import Any, cast
 
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import DictionaryObject, IndirectObject, NameObject, create_string_object
+from pypdf.generic import (
+    ArrayObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    IndirectObject,
+    NameObject,
+    NumberObject,
+)
 
-from backend.core.format_strategies.shared import _escape_pdf_text
-
-logger = logging.getLogger(__name__)
+from backend.core.format_strategies.shared import _clone_page_shallow, _escape_pdf_text
 
 _NUMBER_XOBJECT_DRAW_COUNT = 7
 _NUMBER_XOBJECT_MARKERS = (
@@ -19,15 +23,14 @@ _NUMBER_XOBJECT_MARKERS = (
 )
 _NUMBER_FONT_NAME = "/FZD"
 _NUMBER_FONT_SIZE = 10.6599998
-_TEMPLATE_NUMBER_TEXT = "0000001"
 
 
-def _find_number_xobject(page) -> Any:
+def _find_number_xobject(page) -> tuple[str, Any]:
     xobjects = page["/Resources"].get("/XObject")
     if xobjects is None:
         msg = "Template sin XObjects"
         raise ValueError(msg)
-    for ref in xobjects.get_object().values():
+    for name, ref in xobjects.get_object().items():
         xobject = ref.get_object()
         if xobject.get("/Subtype") != "/Form":
             continue
@@ -35,7 +38,7 @@ def _find_number_xobject(page) -> Any:
         if data.count(b"Tj") != _NUMBER_XOBJECT_DRAW_COUNT:
             continue
         if all(marker in data for marker in _NUMBER_XOBJECT_MARKERS):
-            return xobject
+            return name, xobject
     msg = "No se encontro el XObject del correlativo en el template"
     raise ValueError(msg)
 
@@ -54,15 +57,9 @@ def _ensure_number_font(xobject) -> None:
     })
 
 
-def _update_number_xobject(page, padded_number: str) -> None:
-    from pypdf.generic import ArrayObject, NumberObject
-    xobject = _find_number_xobject(page)
-    _ensure_number_font(xobject)
-    xobject[NameObject("/BBox")] = ArrayObject([
-        NumberObject(0), NumberObject(0), NumberObject(200), NumberObject(42),
-    ])
+def _number_xobject_data(padded_number: str) -> bytes:
     escaped = _escape_pdf_text(padded_number)
-    xobject.set_data((
+    return (
         "q\n"
         "3.7440772 0 0 3.7440772 .135864258 -3.3921204 cm\n"
         "1 0 0 RG\n"
@@ -79,33 +76,47 @@ def _update_number_xobject(page, padded_number: str) -> None:
         "Q\n"
         "EMC\n"
         "EMC\n"
-    ).encode("latin-1"))
+    ).encode("latin-1")
 
 
-def _update_accessible_number(reader: PdfReader, padded_number: str) -> None:
-    for object_number in sorted(reader.xref.get(0, {}).keys()):
-        obj = reader.get_object(IndirectObject(object_number, 0, reader))
-        if not hasattr(obj, "get"):
-            continue
-        if not isinstance(obj, dict):
-            continue
-        if obj.get("/T") == _TEMPLATE_NUMBER_TEXT or obj.get("/E") == _TEMPLATE_NUMBER_TEXT:
-            obj[NameObject("/T")] = create_string_object(padded_number)
-            obj[NameObject("/E")] = create_string_object(padded_number)
-            return
-    logger.warning("No se encontro metadata accesible para el correlativo")
+def _build_number_xobject(writer: PdfWriter, template_xobject, padded_number: str) -> IndirectObject:
+    stream = DecodedStreamObject()
+    stream.set_data(_number_xobject_data(padded_number))
+    stream[NameObject("/Type")] = NameObject("/XObject")
+    stream[NameObject("/Subtype")] = NameObject("/Form")
+    stream[NameObject("/BBox")] = ArrayObject([
+        NumberObject(0), NumberObject(0), NumberObject(200), NumberObject(42),
+    ])
+    if "/Matrix" in template_xobject:
+        stream[NameObject("/Matrix")] = template_xobject["/Matrix"]
+    stream[NameObject("/Resources")] = template_xobject["/Resources"]
+    return writer._add_object(stream)
 
 
 class LegacyXObjectStrategy:
     def generate(self, template_bytes: bytes, desde: int, hasta: int, mapping: dict[str, Any] | None = None) -> bytes:
         writer = PdfWriter()
+        reader = PdfReader(io.BytesIO(template_bytes))
+        base_page = writer.add_page(reader.pages[0])
+        _, template_xobject = _find_number_xobject(base_page)
+        _ensure_number_font(template_xobject)
+        shared_resources = cast(DictionaryObject, base_page["/Resources"])
+        shared_xobjects = cast(DictionaryObject, shared_resources["/XObject"].get_object())
+        number_names = [
+            name for name, ref in shared_xobjects.items() if ref.get_object() is template_xobject
+        ]
         for number in range(desde, hasta + 1):
-            reader = PdfReader(io.BytesIO(template_bytes))
-            page = reader.pages[0]
             padded = str(number).zfill(7)
-            _update_number_xobject(page, padded)
-            _update_accessible_number(reader, padded)
-            writer.add_page(page)
+            page = base_page if number == desde else _clone_page_shallow(writer, base_page)
+            resources = cast(DictionaryObject, page["/Resources"])
+            if resources is shared_resources:
+                resources = DictionaryObject(shared_resources)
+                page[NameObject("/Resources")] = resources
+            xobjects = DictionaryObject(shared_xobjects)
+            number_xobject = _build_number_xobject(writer, template_xobject, padded)
+            for name in number_names:
+                xobjects[NameObject(name)] = number_xobject
+            resources[NameObject("/XObject")] = xobjects
         buffer = io.BytesIO()
         writer.write(buffer)
         return buffer.getvalue()

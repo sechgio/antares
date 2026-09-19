@@ -62,6 +62,23 @@ onActiveUserChange(() => {
   clearSessionCaches();
 });
 
+function statusPayload(connected, fields, sheetConfig) {
+  return {
+    connected,
+    sheetName: fields.sheetName || sheetConfig.name || undefined,
+    sheetId: fields.sheetId || sheetConfig.sheet_id || undefined,
+    sheetLinked: fields.sheetLinked ?? sheetConfig.linked,
+    lastSync: fields.lastSync,
+    autoSync: autoSync.isEnabled(),
+    totalNis: fields.totalNis,
+    completos: fields.completos,
+    faltantes: fields.faltantes,
+    sobrantes: fields.sobrantes,
+    sinSgio: fields.sinSgio,
+    carpetasActivas: fields.carpetasActivas,
+  };
+}
+
 async function getStatus() {
   const auth = await sheets.getAuthStatus();
   const sheetConfig = sheets.getStoredSheetConfig();
@@ -82,18 +99,7 @@ async function getStatus() {
   }
 
   return {
-    connected: auth.authenticated,
-    sheetName: fields.sheetName || sheetConfig.name || undefined,
-    sheetId: fields.sheetId || sheetConfig.sheet_id || undefined,
-    sheetLinked: fields.sheetLinked ?? sheetConfig.linked,
-    lastSync: fields.lastSync,
-    autoSync: autoSync.isEnabled(),
-    totalNis: fields.totalNis,
-    completos: fields.completos,
-    faltantes: fields.faltantes,
-    sobrantes: fields.sobrantes,
-    sinSgio: fields.sinSgio,
-    carpetasActivas: fields.carpetasActivas,
+    ...statusPayload(auth.authenticated, fields, sheetConfig),
     ...(refreshError ? { stale: true, error: refreshError, error_code: 'STATUS_REFRESH_FAILED' } : {}),
   };
 }
@@ -151,18 +157,7 @@ async function bootstrap({ refresh = true } = {}) {
     const fields = statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
     autoSync.restoreFromConfig(batch['CONFIG!A:B'] || []);
     return {
-      connected: true,
-      sheetName: fields.sheetName || sheetConfig.name || undefined,
-      sheetId: fields.sheetId || sheetConfig.sheet_id || undefined,
-      sheetLinked: fields.sheetLinked ?? sheetConfig.linked,
-      lastSync: fields.lastSync,
-      autoSync: autoSync.isEnabled(),
-      totalNis: fields.totalNis,
-      completos: fields.completos,
-      faltantes: fields.faltantes,
-      sobrantes: fields.sobrantes,
-      sinSgio: fields.sinSgio,
-      carpetasActivas: fields.carpetasActivas,
+      ...statusPayload(true, fields, sheetConfig),
       folders: applied.folders,
       bdRows: applied.bdImg,
       logRows: applied.logs,

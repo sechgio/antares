@@ -19,7 +19,6 @@ export default function PositionSection({
   onReplaceLayers,
   onCommitLive,
   onAlign,
-  alignmentLabel = 'Alinear capa',
   showRadius,
   emitLive,
   multiSelection = false,
@@ -43,7 +42,7 @@ export default function PositionSection({
 
   return (
     <>
-      <div className="canvas-alignment-tools" role="group" aria-label={alignmentLabel}>
+      <div className="canvas-alignment-tools" role="group" aria-label="Alinear capa">
         {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
           <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
             <Button variant="none" size="none"

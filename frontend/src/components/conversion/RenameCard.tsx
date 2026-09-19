@@ -227,7 +227,7 @@ export default function RenameCard(props: RenameCardProps) {
     <Card className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent-secondary)]/10 text-[var(--accent-secondary)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color:color-mix(in_srgb,var(--accent-secondary)_10%,transparent)] text-[var(--accent-secondary)]">
             <Tags className="h-5 w-5" />
           </div>
           <div className="min-w-0">
@@ -247,7 +247,7 @@ export default function RenameCard(props: RenameCardProps) {
       {usarRename && (
         <div className="space-y-6">
           {previewTruncated && (
-            <div className="flex items-center gap-2 rounded-lg border border-[var(--accent-yellow)]/30 bg-[var(--accent-yellow)]/10 px-3 py-2 text-[11px] text-[var(--accent-yellow)]">
+            <div className="flex items-center gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-yellow)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-3 py-2 text-[11px] text-[var(--accent-yellow)]">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               <span>
                 Vista previa limitada a {renamePreview.length || 200} archivo
@@ -264,7 +264,7 @@ export default function RenameCard(props: RenameCardProps) {
             </div>
           ) : mappingMode ? (
             <div className="space-y-4">
-              <div className="rounded-xl border border-[var(--accent-primary)]/25 bg-[var(--accent-primary)]/5 p-4 space-y-3">
+              <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--accent-primary)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_5%,transparent)] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <ArrowRight className="h-4 w-4 text-[var(--accent-primary)]" />
@@ -320,13 +320,13 @@ export default function RenameCard(props: RenameCardProps) {
                   </div>
                 )}
                 {(unmatchedCount > 0 || orphanCount > 0) && (
-                  <div className="flex items-center gap-2 rounded-lg border border-[var(--accent-yellow)]/30 bg-[var(--accent-yellow)]/10 px-3 py-2 text-[11px] text-[var(--accent-yellow)]">
+                  <div className="flex items-center gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-yellow)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-3 py-2 text-[11px] text-[var(--accent-yellow)]">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                     <span>Revisa los archivos sin mapeo o las filas del Excel sin archivo correspondiente.</span>
                   </div>
                 )}
                 {collisionCount > 0 && (
-                  <div className="rounded-lg border border-[var(--accent-red)]/30 bg-[var(--accent-red)]/10 px-3 py-2 text-[11px] text-[var(--accent-red)] space-y-1">
+                  <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--accent-red)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] px-3 py-2 text-[11px] text-[var(--accent-red)] space-y-1">
                     <div className="flex items-center gap-2 font-medium">
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                       <span>Varios archivos quedarían con el mismo nombre de salida.</span>
@@ -424,7 +424,7 @@ export default function RenameCard(props: RenameCardProps) {
                     <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[10px] font-bold">3</div>
                     <label className="text-xs font-bold text-[var(--text-primary)]">Secuencia</label>
                   </div>
-                  <div className="space-y-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/40 p-3">
+                  <div className="space-y-2.5 rounded-xl border border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_40%,transparent)] p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] text-[var(--text-secondary)]">Incluir número</span>
                       <Toggle checked={usesSeq} onChange={toggleSeq} aria-label="Incluir número en el nombre" />
@@ -480,7 +480,7 @@ export default function RenameCard(props: RenameCardProps) {
                       onClick={() => changeSeparator(sep.id)}
                       className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${
                         wordSeparator === sep.id
-                          ? 'bg-[var(--accent-secondary)]/20 text-[var(--accent-secondary)] border-[var(--accent-secondary)]/40'
+                          ? 'bg-[color:color-mix(in_srgb,var(--accent-secondary)_20%,transparent)] text-[var(--accent-secondary)] border-[color:color-mix(in_srgb,var(--accent-secondary)_40%,transparent)]'
                           : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
                       }`}
                     >
@@ -503,7 +503,7 @@ export default function RenameCard(props: RenameCardProps) {
           </div>
 
           {showAdvanced && (
-            <div className="space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/30 p-4 animate-fade-in">
+            <div className="space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_30%,transparent)] p-4 animate-fade-in">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Patrón personalizado</label>
                 <Input
@@ -542,7 +542,7 @@ export default function RenameCard(props: RenameCardProps) {
                     onClick={() => changeSeparator(sep.id)}
                     className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${
                       wordSeparator === sep.id
-                        ? 'bg-[var(--accent-secondary)]/20 text-[var(--accent-secondary)] border-[var(--accent-secondary)]/40'
+                        ? 'bg-[color:color-mix(in_srgb,var(--accent-secondary)_20%,transparent)] text-[var(--accent-secondary)] border-[color:color-mix(in_srgb,var(--accent-secondary)_40%,transparent)]'
                         : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
                     }`}
                   >
@@ -556,7 +556,7 @@ export default function RenameCard(props: RenameCardProps) {
       )}
 
       {hasVideos && (
-        <div className="rounded-lg border border-[var(--accent-blue)]/25 bg-[var(--accent-blue)]/10 px-3 py-2">
+        <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--accent-blue)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-blue)_10%,transparent)] px-3 py-2">
           <p className="text-[11px] font-medium text-[var(--accent-blue)] text-center">💡 Los videos conservan su extensión original</p>
         </div>
       )}

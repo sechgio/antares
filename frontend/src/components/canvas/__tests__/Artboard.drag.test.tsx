@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
-import Artboard, { createFrameRectCache } from '../editor/Artboard';
+import Artboard from '../editor/Artboard';
+import { createFrameRectCache } from '../editor/frameRectCache';
 import { createEmptyDocument, type CanvasLayer } from '../types';
 
 describe('createFrameRectCache', () => {
@@ -145,6 +146,48 @@ describe('Artboard drag gestures', () => {
     const moved = committed.find((l) => l.id === layer.id)!;
     expect(moved.cssVars['--translate-x']).toBe('60mm');
     expect(moved.cssVars['--translate-y']).toBe('100mm');
+  });
+
+  it('suelta el baseline del gesto y revierte el preview cuando se cancela el drag', () => {
+    const layer = createLayer('rect');
+    const document = createEmptyDocument('Test');
+    document.layers.push(layer);
+    const onPreviewLayers = vi.fn();
+    const onCommitGesture = vi.fn();
+    const onCancelGesture = vi.fn();
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[layer.id]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+        onPreviewLayers={onPreviewLayers}
+        onCommitGesture={onCommitGesture}
+        onCancelGesture={onCancelGesture}
+      />,
+    );
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const origin = node.style.transform;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 20 * mm, clientY: 100 });
+    act(() => tick());
+    expect(onPreviewLayers).toHaveBeenCalled();
+    expect(node.style.transform).not.toBe(origin);
+
+    act(() => {
+      window.dispatchEvent(new PointerEvent('pointercancel'));
+    });
+
+    expect(onCancelGesture).toHaveBeenCalledTimes(1);
+    expect(onCommitGesture).not.toHaveBeenCalled();
+    expect(node.style.transform).toBe(origin);
   });
 
   it('moves every selected layer together in one commit', () => {

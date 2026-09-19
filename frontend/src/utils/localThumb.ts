@@ -1,5 +1,6 @@
 
 import { api } from '../api';
+import { createConcurrencyLimiter } from './concurrency';
 
 const MAX_CACHE = 200;
 const MAX_CACHE_PAYLOAD_CHARS = 32 * 1024 * 1024;
@@ -7,14 +8,12 @@ const MIN_CONCURRENCY = 4;
 const MAX_CONCURRENCY = 8;
 const DEFAULT_MAX_EDGE = 256;
 const FULL_IMAGE_CACHE_PREFIX = 'full\0';
+const READ_TOKEN_PREFIX = 'antares-read_';
 
 const cache = new Map<string, string>();
 let cachePayloadChars = 0;
 
 const inFlight = new Map<string, Promise<string | null>>();
-
-let active = 0;
-const waitQueue: Array<() => void> = [];
 
 function resolveConcurrency(): number {
   try {
@@ -28,7 +27,7 @@ function resolveConcurrency(): number {
   }
 }
 
-const CONCURRENCY = resolveConcurrency();
+const runLimited = createConcurrencyLimiter(resolveConcurrency());
 
 function cacheKey(filePath: string, maxEdge: number): string {
   return `${filePath}\0${maxEdge}`;
@@ -62,33 +61,44 @@ function cacheSet(key: string, dataUrl: string): void {
 }
 
 function localImageRequest(fileRef: string, maxEdge?: number): { path?: string; file_token?: string; maxEdge?: number } {
-  return fileRef.startsWith('antares-read_')
+  return fileRef.startsWith(READ_TOKEN_PREFIX)
     ? { file_token: fileRef, maxEdge }
     : { path: fileRef, maxEdge };
 }
 
 function localImageDataRequest(fileRef: string): { path?: string; file_token?: string } {
-  return fileRef.startsWith('antares-read_')
+  return fileRef.startsWith(READ_TOKEN_PREFIX)
     ? { file_token: fileRef }
     : { path: fileRef };
 }
 
-function runLimited<T>(fn: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const start = () => {
-      active += 1;
-      Promise.resolve()
-        .then(fn)
-        .then(resolve, reject)
-        .finally(() => {
-          active -= 1;
-          const next = waitQueue.shift();
-          if (next) next();
-        });
-    };
-    if (active < CONCURRENCY) start();
-    else waitQueue.push(start);
-  });
+async function loadCachedDataUrl(
+  key: string,
+  request: () => Promise<{ dataUrl: string } | null>,
+): Promise<string | null> {
+  const hit = cacheGet(key);
+  if (hit) return hit;
+
+  const existing = inFlight.get(key);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<string | null> => {
+    try {
+      const result = await runLimited(request);
+      if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
+        cacheSet(key, result.dataUrl);
+        return result.dataUrl;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      inFlight.delete(key);
+    }
+  })();
+
+  inFlight.set(key, promise);
+  return promise;
 }
 
 export async function getLocalThumbnail(
@@ -98,65 +108,22 @@ export async function getLocalThumbnail(
   if (typeof filePath !== 'string' || !filePath.trim()) return null;
 
   const edge = Number.isFinite(maxEdge) && maxEdge > 0 ? Math.floor(maxEdge) : DEFAULT_MAX_EDGE;
-  const key = cacheKey(filePath, edge);
-  const hit = cacheGet(key);
-  if (hit) return hit;
-
-  const existing = inFlight.get(key);
-  if (existing) return existing;
-
-  const promise = (async (): Promise<string | null> => {
-    try {
-      const result = await runLimited(() => api.localThumbnail(localImageRequest(filePath, edge)));
-      if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
-        cacheSet(key, result.dataUrl);
-        return result.dataUrl;
-      }
-      return null;
-    } catch {
-      return null;
-    } finally {
-      inFlight.delete(key);
-    }
-  })();
-
-  inFlight.set(key, promise);
-  return promise;
+  return loadCachedDataUrl(cacheKey(filePath, edge), () =>
+    api.localThumbnail(localImageRequest(filePath, edge)),
+  );
 }
 
 export async function getLocalImageDataUrl(filePath: string): Promise<string | null> {
   if (typeof filePath !== 'string' || !filePath.trim()) return null;
 
-  const key = `${FULL_IMAGE_CACHE_PREFIX}${filePath}`;
-  const hit = cacheGet(key);
-  if (hit) return hit;
-
-  const existing = inFlight.get(key);
-  if (existing) return existing;
-
-  const promise = (async (): Promise<string | null> => {
-    try {
-      const result = await runLimited(() => api.localImageDataUrl(localImageDataRequest(filePath)));
-      if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
-        cacheSet(key, result.dataUrl);
-        return result.dataUrl;
-      }
-      return null;
-    } catch {
-      return null;
-    } finally {
-      inFlight.delete(key);
-    }
-  })();
-
-  inFlight.set(key, promise);
-  return promise;
+  return loadCachedDataUrl(`${FULL_IMAGE_CACHE_PREFIX}${filePath}`, () =>
+    api.localImageDataUrl(localImageDataRequest(filePath)),
+  );
 }
 
 export function _resetLocalThumbForTests(): void {
   cache.clear();
   cachePayloadChars = 0;
   inFlight.clear();
-  waitQueue.length = 0;
-  active = 0;
+  runLimited.reset();
 }

@@ -11,10 +11,33 @@ from unittest.mock import MagicMock
 from backend import main as backend_main
 
 
+class _ImmediateThread:
+    def __init__(self, *args, target=None, **kwargs):
+        self._target = target
+
+    def start(self) -> None:
+        if self._target:
+            self._target()
+
+    def is_alive(self) -> bool:
+        return False
+
+    def join(self, timeout: float | None = None) -> None:
+        return None
+
+
+class _ShutdownRecorderScheduler:
+    def __init__(self, events: list[str]) -> None:
+        self._events = events
+
+    def shutdown(self, *, wait: bool) -> None:
+        assert wait is True
+        self._events.append("scheduler_shutdown")
+
+
 def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
     counts = {
         "warm_core": 0,
-        "warm_pandas_sync": 0,
         "warm_deferred": 0,
         "warm_post_ready": 0,
         "ready": 0,
@@ -30,9 +53,6 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
     class FakeHandlers:
         def warm_core(self) -> None:
             counts["warm_core"] += 1
-
-        def warm_pandas_sync(self) -> None:
-            counts["warm_pandas_sync"] += 1
 
         def warm_deferred(self) -> None:
             counts["warm_deferred"] += 1
@@ -51,21 +71,7 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
 
     monkeypatch.setattr(backend_main, "HANDLERS", FakeHandlers())
 
-    class ImmediateThread:
-        def __init__(self, *args, target=None, **kwargs):
-            self._target = target
-
-        def start(self) -> None:
-            if self._target:
-                self._target()
-
-        def is_alive(self) -> bool:
-            return False
-
-        def join(self, timeout: float | None = None) -> None:
-            return None
-
-    monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(backend_main.threading, "Thread", _ImmediateThread)
 
     def fake_notify(method: str, params: dict) -> None:
         if method == "ready":
@@ -86,7 +92,6 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
 def test_main_skips_warm_deferred_by_default(monkeypatch) -> None:
     counts = _run_main_until_eof(monkeypatch, warm_env=None)
     assert counts["warm_core"] == 1
-    assert counts["warm_pandas_sync"] == 1
     assert counts["ready"] == 1
     assert counts["warm_deferred"] == 0
     assert counts["warm_post_ready"] == 1
@@ -95,7 +100,6 @@ def test_main_skips_warm_deferred_by_default(monkeypatch) -> None:
 def test_main_warms_deferred_when_env_enabled(monkeypatch) -> None:
     counts = _run_main_until_eof(monkeypatch, warm_env="1")
     assert counts["warm_core"] == 1
-    assert counts["warm_pandas_sync"] == 1
     assert counts["ready"] == 1
     assert counts["warm_deferred"] == 1
     assert counts["warm_post_ready"] == 1
@@ -241,38 +245,6 @@ def test_dispatch_uses_heavy_scheduler_for_heavy_methods(monkeypatch) -> None:
     ]
 
 
-def test_heavy_methods_include_fichas_and_evidencia() -> None:
-    assert "db_fields_update" in backend_main.HEAVY_METHODS
-    assert "db_fields_reset" in backend_main.HEAVY_METHODS
-    assert "db_parse_mapping" in backend_main.HEAVY_METHODS
-    assert "fichas_tecnicas_import_file" in backend_main.HEAVY_METHODS
-    assert "fichas_tecnicas_render_html" in backend_main.HEAVY_METHODS
-    assert "fichas_tecnicas_render_consolidated_html" in backend_main.HEAVY_METHODS
-    assert "informes_v2_import_file" in backend_main.HEAVY_METHODS
-    assert "informes_v2_download_template" in backend_main.HEAVY_METHODS
-    assert "informes_v2_render_html" in backend_main.HEAVY_METHODS
-    assert "informes_v2_render_consolidated_html" in backend_main.HEAVY_METHODS
-    assert "evidencia_volanteo_render" in backend_main.HEAVY_METHODS
-    assert "canvas_export_cmyk_pdf" in backend_main.HEAVY_METHODS
-    assert "canvas_get" not in backend_main.HEAVY_METHODS
-    assert "canvas_save" not in backend_main.HEAVY_METHODS
-    assert "canvas_save_history" not in backend_main.HEAVY_METHODS
-
-
-def test_classify_init_db_failure_is_fatal_message() -> None:
-    assert "init_db failed" in "init_db failed during startup: disk full"
-
-
-def test_sync_methods_are_liveness_safe() -> None:
-    assert "version" in backend_main.SYNC_METHODS
-    assert "process_status" in backend_main.SYNC_METHODS
-    assert backend_main.SYNC_METHODS.isdisjoint(backend_main.HEAVY_METHODS)
-
-
-def test_process_start_is_not_heavy() -> None:
-    assert "process_start" not in backend_main.HEAVY_METHODS
-
-
 def test_maybe_log_ipc_timing_logs_slow_handlers(monkeypatch) -> None:
     logged: list[tuple] = []
     monkeypatch.delenv("ANTARES_IPC_TELEMETRY", raising=False)
@@ -308,37 +280,17 @@ def test_maybe_log_ipc_timing_verbose_logs_fast_handlers(monkeypatch) -> None:
 def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
     events: list[str] = []
 
-    class FakeScheduler:
-        def shutdown(self, *, wait: bool) -> None:
-            assert wait is True
-            events.append("scheduler_shutdown")
-
-    class ImmediateThread:
-        def __init__(self, *args, target=None, **kwargs):
-            self._target = target
-
-        def start(self) -> None:
-            if self._target:
-                self._target()
-
-        def is_alive(self) -> bool:
-            return False
-
-        def join(self, timeout: float | None = None) -> None:
-            return None
-
     monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: events.append("warm_core"))
-    monkeypatch.setattr(backend_main.HANDLERS, "warm_pandas_sync", lambda: events.append("warm_pandas_sync"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: events.append("warm_deferred"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", lambda: events.append("warm_post_ready"))
-    monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(backend_main.threading, "Thread", _ImmediateThread)
     monkeypatch.setattr(
         backend_main,
         "get_scheduler",
-        lambda: events.append("get_scheduler") or FakeScheduler(),
+        lambda: events.append("get_scheduler") or _ShutdownRecorderScheduler(events),
     )
     monkeypatch.setattr(
         backend_main,
@@ -364,7 +316,6 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
         "get_scheduler",
         "ready",
         "warm_post_ready",
-        "warm_pandas_sync",
         "read_message",
         "scheduler_shutdown",
         "close_connection",
@@ -375,37 +326,17 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
 def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
     events: list[str] = []
 
-    class FakeScheduler:
-        def shutdown(self, *, wait: bool) -> None:
-            assert wait is True
-            events.append("scheduler_shutdown")
-
-    class ImmediateThread:
-        def __init__(self, *args, target=None, **kwargs):
-            self._target = target
-
-        def start(self) -> None:
-            if self._target:
-                self._target()
-
-        def is_alive(self) -> bool:
-            return False
-
-        def join(self, timeout: float | None = None) -> None:
-            return None
-
     monkeypatch.setenv("ANTARES_WARM_DEFERRED", "1")
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: events.append("warm_core"))
-    monkeypatch.setattr(backend_main.HANDLERS, "warm_pandas_sync", lambda: events.append("warm_pandas_sync"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: events.append("warm_deferred"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", lambda: events.append("warm_post_ready"))
-    monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(backend_main.threading, "Thread", _ImmediateThread)
     monkeypatch.setattr(
         backend_main,
         "get_scheduler",
-        lambda: events.append("get_scheduler") or FakeScheduler(),
+        lambda: events.append("get_scheduler") or _ShutdownRecorderScheduler(events),
     )
     monkeypatch.setattr(
         backend_main,
@@ -432,7 +363,6 @@ def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
         "get_scheduler",
         "ready",
         "warm_post_ready",
-        "warm_pandas_sync",
         "read_message",
         "scheduler_shutdown",
         "close_connection",
@@ -459,7 +389,6 @@ def test_main_does_not_emit_ready_if_shutdown_arrives_during_startup(monkeypatch
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
     monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: None)
-    monkeypatch.setattr(backend_main.HANDLERS, "warm_pandas_sync", lambda: None)
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: None)
     monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", fail_if_post_ready)
     monkeypatch.setattr(backend_main, "get_scheduler", FakeScheduler)
@@ -549,9 +478,6 @@ def test_main_resolves_deferred_method_in_worker_not_reader(monkeypatch) -> None
         def warm_core(self) -> None:
             pass
 
-        def warm_pandas_sync(self) -> None:
-            pass
-
         def warm_deferred(self) -> None:
             pass
 
@@ -603,9 +529,6 @@ def test_main_unknown_method_rejected_without_import(monkeypatch) -> None:
 
     class StrictHandlers:
         def warm_core(self) -> None:
-            pass
-
-        def warm_pandas_sync(self) -> None:
             pass
 
         def warm_deferred(self) -> None:

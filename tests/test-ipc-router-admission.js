@@ -43,7 +43,6 @@ function loadRouter({ currentProc, incrementPendingRequests, decrementPendingReq
 
   stubModule('electron/window-manager', {
     getMainWindow: () => mainWindow,
-    buildAppMenu: () => ({ popup: () => {} }),
     getIsDev: () => isDev,
   });
 

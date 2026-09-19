@@ -19,6 +19,7 @@ import {
 } from '../ops/layerOps';
 import { assignUniqueLogoSides } from '../ops/logoSide';
 import { applyAppearanceVars, extractAppearanceVars } from '../ops/clipboardLayers';
+import { invertSelectableIds } from '../ops/selectSame';
 import { nextZoomPreset } from '../ops/viewportNav';
 import { matchHistoryShortcut } from '../ops/historyShortcuts';
 import { abortActivePointerGestureSession } from '../ops/pointerGestureSession';
@@ -76,6 +77,7 @@ export interface CanvasKeyboardInput {
   runUndo: () => void;
   runRedo: () => void;
   copyLayersToClipboard: (layers: CanvasLayer[]) => unknown;
+  cutLayersToClipboard: (rootIds: string[]) => string[];
   pasteClipboard: (offsetMm?: number) => unknown;
   pasteReplaceClipboard: () => unknown;
   sealPanelAndAbortGesture: () => void;
@@ -130,6 +132,7 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
     runUndo,
     runRedo,
     copyLayersToClipboard,
+    cutLayersToClipboard,
     pasteClipboard,
     pasteReplaceClipboard,
     sealPanelAndAbortGesture,
@@ -509,6 +512,10 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
         const copies = historyDoc.layers.filter((l) => deepIdSet.has(l.id));
         copyLayersToClipboard(copies);
       }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'x') {
+        e.preventDefault();
+        if (cutLayersToClipboard(editableIds).length) setSelectedIds([]);
+      }
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'v') {
         e.preventDefault();
         void pasteClipboard(e.shiftKey ? 0 : undefined);
@@ -556,6 +563,10 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
         setSelectedIds(
           pageLayers.filter((l) => l.type !== 'frame' && !l.locked).map((l) => l.id),
         );
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        setSelectedIds(invertSelectableIds(pageLayers, selectedIds));
       }
       if (e.key === '?' || (e.shiftKey && e.key === '/')) {
         e.preventDefault();
@@ -608,5 +619,57 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
         }
       }
     };
-  });
+  }, [
+    onKeyDownRef,
+    mode,
+    isTemplatePickerOpen,
+    paletteOpen,
+    pathEditingLayerId,
+    editingLayerId,
+    eyedropperActive,
+    previewOpen,
+    enteredGroupId,
+    tool,
+    pageIndex,
+    selectedIds,
+    pageLayers,
+    historyDoc,
+    setHistoryDoc,
+    setAllLayers,
+    nudgeLayersLive,
+    setSelectedIds,
+    setTool,
+    setRenameRequest,
+    setPaletteOpen,
+    setShowShortcuts,
+    setEyedropperActive,
+    setContextMenu,
+    setPathEditingLayerId,
+    setPreviewOpen,
+    setEnteredGroupId,
+    setGestureAbortToken,
+    commitInlineEdit,
+    startInlineEdit,
+    onInlineEditValue,
+    onInlineEditStyle,
+    startContainerOrInlineEdit,
+    runUndo,
+    runRedo,
+    copyLayersToClipboard,
+    cutLayersToClipboard,
+    pasteClipboard,
+    pasteReplaceClipboard,
+    sealPanelAndAbortGesture,
+    cancelPageLayersGesture,
+    onPanelCommitLive,
+    toggleBothPanels,
+    zoomToFit,
+    zoomToSelection,
+    onSave,
+    propsClipboardRef,
+    toolBeforeSpaceRef,
+    viewportNavRef,
+    gestureBaselineRef,
+    panelBaselineRef,
+  ]);
 }

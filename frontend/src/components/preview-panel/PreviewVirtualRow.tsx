@@ -112,7 +112,7 @@ const PreviewVirtualRow = React.memo(function PreviewVirtualRowInner({
         }`}
       >
         {photoInfo.count > 0 ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap">
+          <span className="inline-flex items-center gap-1 rounded-full bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap">
             <ImageIcon size={11} />
             {photoInfo.count}
           </span>

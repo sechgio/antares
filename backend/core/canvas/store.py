@@ -34,6 +34,10 @@ _HISTORY_SPILL_SUFFIX = "_history.json"
 DOCUMENT_SPILL_PREFIX = "document__"
 HISTORY_SPILL_PREFIX = "history__"
 
+_SPILL_RECOVER = "recover"
+_SPILL_DISCARD = "discard"
+_SPILL_UNKNOWN = "unknown"
+
 _INVALID_STEM_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
@@ -47,8 +51,13 @@ def encode_canvas_json(payload: object) -> bytes:
     Serializing a multi-megabyte document costs tens of milliseconds, so every
     caller that needs the size, the digest and the bytes must reuse a single
     result instead of encoding the payload again per concern.
+
+    ``allow_nan=False`` is deliberate: the default encoder writes ``NaN`` and
+    ``Infinity`` literals that are not JSON, which would store a document no
+    strict parser (Electron, Postgres) can read back. It raises ``ValueError``,
+    which every caller here already maps to a "datos no serializables" error.
     """
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
 def canvas_json_size_bytes(payload: object) -> int:
@@ -228,18 +237,32 @@ class CanvasStore:
         return self.history_dir / f"{self._safe_stem(doc_id)}_history.json"
 
     @staticmethod
-    def _spill_is_newer(spill_path: Path, target: Path) -> bool:
+    def _spill_comparison(spill_path: Path, target: Path) -> str:
+        """Decide what to do with a spill against its live document.
+
+        Returns ``_SPILL_RECOVER``, ``_SPILL_DISCARD`` or ``_SPILL_UNKNOWN``.
+        A spill is written when a save is refused under memory pressure, so it
+        can hold the only copy of an unsaved edit: an unreadable mtime must not
+        be reported as "stale", or the caller would delete that copy.
+        """
         try:
-            return not target.exists() or spill_path.stat().st_mtime_ns > target.stat().st_mtime_ns
+            if not target.exists():
+                return _SPILL_RECOVER
+            if spill_path.stat().st_mtime_ns > target.stat().st_mtime_ns:
+                return _SPILL_RECOVER
+            return _SPILL_DISCARD
         except OSError as exc:
             logger.warning("Could not compare canvas spill %s with %s: %s", spill_path, target, exc)
-            return False
+            return _SPILL_UNKNOWN
 
     def _recover_document_spill(self, spill_path: Path) -> None:
         doc_id = spill_path.stem.removeprefix(DOCUMENT_SPILL_PREFIX)
         try:
             target = self._path_for(doc_id)
-            if not self._spill_is_newer(spill_path, target):
+            outcome = self._spill_comparison(spill_path, target)
+            if outcome == _SPILL_UNKNOWN:
+                return
+            if outcome == _SPILL_DISCARD:
                 spill_path.unlink(missing_ok=True)
                 return
             raw = json.loads(spill_path.read_text(encoding="utf-8"))
@@ -259,7 +282,10 @@ class CanvasStore:
             doc_id = spill_path.name.removesuffix(_HISTORY_SPILL_SUFFIX)
         try:
             target = self._history_path_for(doc_id)
-            if not self._spill_is_newer(spill_path, target):
+            outcome = self._spill_comparison(spill_path, target)
+            if outcome == _SPILL_UNKNOWN:
+                return
+            if outcome == _SPILL_DISCARD:
                 spill_path.unlink(missing_ok=True)
                 return
             raw = json.loads(spill_path.read_text(encoding="utf-8"))
@@ -335,7 +361,13 @@ class CanvasStore:
             if not isinstance(raw, dict):
                 logger.warning("Canvas document %s is not a JSON object; treating as unreadable", path)
                 return None
-            doc = normalize_document(raw)
+            # Normalizing inside the guard too: a value the normalizer cannot
+            # absorb must surface as an unreadable document, not as a handler crash.
+            try:
+                doc = normalize_document(raw)
+            except (TypeError, ValueError) as exc:
+                logger.warning("Could not normalize canvas document %s: %s", path, exc)
+                return None
             if doc["id"] != path.stem:
                 doc["id"] = path.stem
             return doc

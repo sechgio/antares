@@ -14,9 +14,6 @@ const LONG_RUNNING_METHODS = new Set(
 const HEAVY_TIMEOUT_METHODS = new Set(
   Object.keys(METHODS).filter((m) => METHODS[m].timeout === 'heavy'),
 );
-const HEAVY_LANE_METHODS = new Set(
-  Object.keys(METHODS).filter((m) => METHODS[m].lane === 'heavy'),
-);
 const SYNC_METHODS = new Set(
   Object.keys(METHODS).filter((m) => METHODS[m].lane === 'sync'),
 );
@@ -50,19 +47,6 @@ function nativeDispatchFor(method) {
     : null;
 }
 
-function backendModuleFor(method) {
-  const handler = METHODS[method] && METHODS[method].handler;
-  return typeof handler === 'string' && handler.startsWith('backend:')
-    ? `backend.handlers.${handler.slice('backend:'.length)}`
-    : null;
-}
-
-function laneFor(method) {
-  const entry = METHODS[method];
-  if (!entry || !entry.handler.startsWith('backend:')) return null;
-  return entry.lane || 'light';
-}
-
 function timeoutMsFor(method) {
   const entry = METHODS[method];
   const tier = (entry && entry.timeout) || 'normal';
@@ -84,7 +68,6 @@ module.exports = {
   NATIVE_METHODS,
   LONG_RUNNING_METHODS,
   HEAVY_TIMEOUT_METHODS,
-  HEAVY_LANE_METHODS,
   SYNC_METHODS,
   IDEMPOTENT_METHODS,
   RAW_OUTPUT_PATH_METHODS,
@@ -92,8 +75,6 @@ module.exports = {
   METHOD_OUTPUT_PATH_KEYS,
   nativeMethods,
   nativeDispatchFor,
-  backendModuleFor,
-  laneFor,
   timeoutMsFor,
   isIdempotent,
 };

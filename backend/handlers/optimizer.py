@@ -15,19 +15,13 @@ from backend.handlers.common import with_locale
 MAX_DEDUP_ATTEMPTS = 1000
 
 
-def _safe_name(value: str, fallback: str, *, strict: bool = False) -> str:
-    safe = value.strip().replace("\\", "/").split("/")[-1].strip()
-    invalid = ':*?"<>|\\/' if strict else ':*?"<>|'
-    safe = "".join(
-        "-" if char in invalid or (strict and ord(char) < 32) else char for char in safe
-    )
-    if strict:
-        safe = safe.rstrip(" .")
-    return safe or fallback
-
-
 def _safe_filename(value: str, fallback: str) -> str:
-    return _safe_name(value, fallback, strict=True)
+    safe = value.strip().replace("\\", "/").split("/")[-1].strip()
+    safe = "".join(
+        "-" if char in ':*?"<>|\\/' or ord(char) < 32 else char for char in safe
+    )
+    safe = safe.rstrip(" .")
+    return safe or fallback
 
 
 def _dedupe_archive_name(filename: str, seen: dict[str, int]) -> str:

@@ -188,18 +188,6 @@ def test_preview_column_rename_record_mode_usa_fila_correcta_por_indice(monkeypa
     assert [item["en_bd"] for item in result["preview"]] == [True, True, True]
 
 
-def test_broken_lookup_codigos_duplicados_nunca_devuelve_none() -> None:
-    db_rows = [
-        {"nis": "ROW0", "sgio": "SGIO_A"},
-        {"nis": "ROW1", "sgio": "SGIO_B"},
-    ]
-    lookup = _broken_lookup(["4210502", "4210502"], db_rows)
-
-    assert lookup("4210502") == db_rows[0]
-    assert lookup("4210502") == db_rows[0]
-    assert lookup("4210502") is not None
-
-
 def test_broken_preview_tres_archivos_mismo_codigo_usa_siempre_fila_cero(tmp_path) -> None:
     names = ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"]
     files = [str(tmp_path / name) for name in names]
@@ -234,12 +222,6 @@ def test_broken_preview_mas_archivos_que_filas_tercero_tambien_usa_fila_cero(tmp
         ("SGIO_A_003.jpg", True),
     ]
     assert all(en_bd for _nuevo, en_bd in preview)
-
-
-def test_broken_lookup_codigo_fuera_de_lista_devuelve_none() -> None:
-    lookup = _broken_lookup(["IMG", "IMG"], [{"sgio": "A"}])
-
-    assert lookup("IMG_1") is None
 
 
 def test_broken_preview_fallback_stem_distinto_al_grupo_da_datos_none_en_record(tmp_path) -> None:

@@ -48,7 +48,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
   return (
     <div className="flex flex-col gap-2">
       {source ? (
-        <div className="flex items-center gap-2 rounded-lg border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/5 px-2.5 py-2">
+        <div className="flex items-center gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-green)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-green)_5%,transparent)] px-2.5 py-2">
           <CheckCircle2 size={15} className="text-[var(--accent-green)] shrink-0" />
           <div className="flex flex-col flex-1 min-w-0">
             <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">{source.filename}</span>
@@ -62,7 +62,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
         <Button variant="none" size="none"
           onClick={() => inputRef.current?.click()}
           disabled={loading}
-          className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2.5 py-2 hover:border-[var(--accent-primary)]/50 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2.5 py-2 hover:border-[color:color-mix(in_srgb,var(--accent-primary)_50%,transparent)] transition-colors disabled:opacity-50"
         >
           {loading ? (
             <Loader2 size={15} className="text-[var(--accent-primary)] animate-spin" />
@@ -101,7 +101,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
               setError(errorMessage(err, 'Error al descargar la plantilla'));
             }
           }}
-          className="flex items-center justify-center gap-2 rounded-lg border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/5 px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-green)] hover:bg-[var(--accent-green)]/10 transition-colors"
+          className="flex items-center justify-center gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-green)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-green)_5%,transparent)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-green)] hover:bg-[color:color-mix(in_srgb,var(--accent-green)_10%,transparent)] transition-colors"
         >
           <Download size={14} className="shrink-0" />
           <span>Descargar plantilla de ejemplo</span>

@@ -38,9 +38,6 @@ def test_sync_method_lazy_loaded_when_not_preloaded(monkeypatch) -> None:
         def warm_core(self) -> None:
             pass
 
-        def warm_pandas_sync(self) -> None:
-            pass
-
         def warm_deferred(self) -> None:
             pass
 
@@ -102,9 +99,6 @@ def test_sync_method_not_found_if_get_returns_none(monkeypatch) -> None:
         def warm_core(self) -> None:
             pass
 
-        def warm_pandas_sync(self) -> None:
-            pass
-
         def warm_deferred(self) -> None:
             pass
 
@@ -147,8 +141,7 @@ def test_sync_method_not_found_if_get_returns_none(monkeypatch) -> None:
     assert "Método desconocido: process_status" in str(error)
 
 
-def test_process_status_is_sync_and_resolvable_in_real_registry() -> None:
-    assert "process_status" in backend_main.SYNC_METHODS
+def test_process_status_resolvable_in_real_registry() -> None:
     assert HANDLERS.is_known("process_status")
     handler = HANDLERS.get("process_status")
     assert handler is not None

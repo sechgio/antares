@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, assertActionsPinned, finish } = require('./helpers/harness');
 
 const ROOT = path.join(__dirname, '..');
 const CI_PATH = path.join(ROOT, '.github', 'workflows', 'ci.yml');
@@ -13,15 +13,6 @@ const UV_LOCK_PATH = path.join(ROOT, 'uv.lock');
 const NODE_VERSION_PATH = path.join(ROOT, '.node-version');
 const VITE_CONFIG_PATH = path.join(ROOT, 'frontend', 'vite.config.ts');
 const STATIC_VITEST_CONFIG_PATH = path.join(ROOT, 'frontend', 'vitest.static.config.ts');
-
-function assertActionsPinned(source, label) {
-  const actionRefs = [...source.matchAll(/uses:\s+actions\/[^@\s]+@([^\s#]+)/g)].map((match) => match[1]);
-  assert(actionRefs.length > 0, `${label} uses GitHub-maintained actions`);
-  assert(
-    actionRefs.every((ref) => /^[0-9a-f]{40}$/.test(ref)),
-    `${label} pins every GitHub action to a full commit SHA`,
-  );
-}
 
 function assertSingleWorker(config, label) {
   assert(

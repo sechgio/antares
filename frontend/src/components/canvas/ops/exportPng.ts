@@ -1,5 +1,8 @@
 
 const SELECTION_RING = '0 0 0 1px var(--cv-accent)';
+const ACCENT_RING_TOKEN = 'var(--cv-accent)';
+
+export const PAGE_PNG_SCALE = 2;
 
 export function needsImageCacheBust(root: HTMLElement): boolean {
   const imgs = root.querySelectorAll('img');
@@ -135,6 +138,74 @@ export async function exportSelectionPng(
     await downloadDataUrl(dataUrl, name || 'seleccion');
   } catch (err) {
     console.error('Error exporting selection PNG:', err);
+  } finally {
+    wrap.remove();
+  }
+}
+
+function withoutAccentRing(boxShadow: string): string {
+  if (!boxShadow.includes(ACCENT_RING_TOKEN)) return boxShadow;
+  const segments: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const char of boxShadow) {
+    if (char === '(') depth += 1;
+    else if (char === ')') depth -= 1;
+    if (char === ',' && depth === 0) {
+      segments.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  segments.push(current);
+  const kept = segments.filter((s) => s.trim() && !s.includes(ACCENT_RING_TOKEN));
+  return kept.join(',').trim() || 'none';
+}
+
+export function cloneArtboardForExport(artboard: HTMLElement): HTMLElement {
+  const clone = artboard.cloneNode(false) as HTMLElement;
+  clone.removeAttribute('data-testid');
+  clone.style.transform = 'none';
+  clone.style.boxShadow = 'none';
+  clone.style.setProperty('--cv-camera-zoom', '1');
+  for (const child of Array.from(artboard.children)) {
+    if (!child.hasAttribute('data-layer-id')) continue;
+    const layerEl = child.cloneNode(true) as HTMLElement;
+    if (layerEl.style.outline.includes(ACCENT_RING_TOKEN)) layerEl.style.outline = 'none';
+    layerEl.style.boxShadow = withoutAccentRing(layerEl.style.boxShadow);
+    clone.appendChild(layerEl);
+  }
+  return clone;
+}
+
+export async function exportPagePng(name: string, scale: number): Promise<void> {
+  const artboard = document.querySelector('[data-testid="canvas-artboard"]') as HTMLElement | null;
+  if (!artboard) return;
+
+  const width = Math.max(1, artboard.offsetWidth);
+  const height = Math.max(1, artboard.offsetHeight);
+
+  const wrap = document.createElement('div');
+  wrap.setAttribute('data-testid', 'canvas-export-wrap');
+  wrap.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;overflow:hidden;background:transparent;pointer-events:none;`;
+
+  const page = cloneArtboardForExport(artboard);
+  page.style.position = 'relative';
+  page.style.left = '0';
+  page.style.top = '0';
+  wrap.appendChild(page);
+  document.body.appendChild(wrap);
+
+  try {
+    const { toPng } = await import('html-to-image');
+    const dataUrl = await toPng(wrap, {
+      pixelRatio: scale,
+      cacheBust: needsImageCacheBust(wrap),
+    });
+    await downloadDataUrl(dataUrl, name || 'pagina');
+  } catch (err) {
+    console.error('Error exporting page PNG:', err);
   } finally {
     wrap.remove();
   }

@@ -7,7 +7,6 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   FileSpreadsheet,
   Image as ImageIcon,
   FileCode,
@@ -22,6 +21,7 @@ import { api } from "../../api";
 import { useToast } from "../../hooks/useToast";
 import { useBackendStatus } from "../../hooks/useBackendStatus";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useLocalStorageState } from "../../hooks/useLocalStorageState";
 import { mapWithConcurrencyLimit } from "../../utils/mapWithConcurrencyLimit";
 import PreviewPanel, { renderPreviewHtml } from "./PreviewPanel";
 import TemplatePicker from "./TemplatePicker";
@@ -35,12 +35,6 @@ import {
   validateNewCustomColumn,
 } from "./utils/sheetLogic";
 import {
-  clearPersistedLogo,
-  compressLogoForStorage,
-  loadPersistedLogo,
-  savePersistedLogo,
-} from "./utils/persistedLogo";
-import {
   buildPdfFilename,
   imageToPdfSource,
   mergeHtmlDocuments,
@@ -49,6 +43,9 @@ import {
   type PdfQuality,
 } from "./pdfExport";
 import DataPreviewModal from "./DataPreviewModal";
+import Step from "./Step";
+import { usePersistedLogos } from "./usePersistedLogos";
+import { useSpillToken } from "./useSpillToken";
 import "./template-picker.css";
 import Button from "@/components/ui/Button";
 import { errorMessage } from "@/utils/errors";
@@ -65,76 +62,7 @@ interface CustomColumn {
   mappedTo: string;
 }
 
-interface StepProps {
-  number: string;
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-  disabled?: boolean;
-  badge?: React.ReactNode;
-  defaultOpen?: boolean;
-  status?: "pending" | "done";
-}
-
-const LOGO_LEFT_KEY = "antares_preview_logo_left";
-const LOGO_RIGHT_KEY = "antares_preview_logo_right";
 const CUSTOM_COLS_KEY = "antares_preview_custom_columns";
-
-function Step({
-  number,
-  title,
-  icon,
-  children,
-  disabled,
-  badge,
-  defaultOpen = true,
-  status = "pending",
-}: StepProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const done = status === "done";
-
-  return (
-    <div
-      className={`rounded-lg border transition-colors ${isOpen ? "border-[var(--border-medium)] bg-[var(--bg-elevated)]" : "border-[var(--border-subtle)] bg-transparent hover:border-[var(--border-medium)]"} ${disabled ? "opacity-40 pointer-events-none" : ""}`}
-    >
-      <Button
-        variant="none"
-        size="none"
-        onClick={() => setIsOpen((v) => !v)}
-        aria-expanded={isOpen}
-        className="flex w-full items-center gap-2 px-2 py-2 group cursor-pointer select-none rounded-lg"
-      >
-        <span
-          className={`inline-flex h-[20px] w-[20px] items-center justify-center rounded-full text-[10px] font-bold shrink-0 transition-colors ${done ? "bg-[var(--accent-green)] text-[var(--text-on-accent)]" : isOpen ? "bg-[var(--accent-primary)] text-[var(--text-on-accent)]" : "bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] ring-1 ring-inset ring-[var(--accent-primary)]/30"}`}
-        >
-          {done ? <CheckCircle size={12} /> : number}
-        </span>
-        <span className="text-[11px] font-semibold text-[var(--text-primary)] truncate">
-          {title}
-        </span>
-        <span className="text-[var(--text-muted)] shrink-0">{icon}</span>
-        {badge && <span className="ml-auto mr-1">{badge}</span>}
-        <ChevronDown
-          size={12}
-          className={`ml-auto text-[var(--text-muted)] transition-transform duration-200 shrink-0 ${isOpen ? "rotate-0" : "-rotate-90"}`}
-        />
-      </Button>
-      <div
-        ref={contentRef}
-        className="overflow-hidden transition-all duration-200 ease-in-out"
-        style={{
-          maxHeight: isOpen
-            ? `${contentRef.current?.scrollHeight ?? 800}px`
-            : "0px",
-          opacity: isOpen ? 1 : 0,
-        }}
-      >
-        <div className="px-2 pb-2 pt-0.5">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 export default function PreviewPanelView() {
   const { addToast } = useToast();
@@ -148,29 +76,10 @@ export default function PreviewPanelView() {
     Array<{ name: string; rows: unknown[][]; rowCount?: number }>
   >([]);
   const [selectedSheetName, setSelectedSheetName] = useState("");
-  const [spillToken, setSpillToken] = useState<string | null>(null);
-  const spillTokenRef = useRef<string | null>(null);
+  const { spillToken, setSpillToken, spillTokenRef, releaseSpillToken } =
+    useSpillToken();
   const sheetLoadGenRef = useRef(0);
   const parseGenRef = useRef(0);
-  const releasedSpillTokensRef = useRef<Set<string>>(new Set());
-
-  const releaseSpillToken = useCallback(async (token: string | null) => {
-    if (!token) return;
-    if (releasedSpillTokensRef.current.has(token)) return;
-    if (releasedSpillTokensRef.current.size >= 64) {
-      const oldest = releasedSpillTokensRef.current.values().next().value;
-      if (oldest) releasedSpillTokensRef.current.delete(oldest);
-    }
-    releasedSpillTokensRef.current.add(token);
-    try {
-      await api.fileTokenCleanup(token);
-    } catch (err) {
-      console.warn(
-        "[preview] spill cleanup failed:",
-        errorMessage(err, String(err)),
-      );
-    }
-  }, []);
 
   useEffect(
     () => () => {
@@ -186,8 +95,8 @@ export default function PreviewPanelView() {
   const [selectedIndex, setSelectedIndex] = useState("");
   const [searchOrder, setSearchOrder] = useState("");
 
-  const [logoLeft, setLogoLeft] = useState<string | null>(null);
-  const [logoRight, setLogoRight] = useState<string | null>(null);
+  const { logoLeft, logoRight, handleLogoUpload } =
+    usePersistedLogos((message) => addToast({ message, type: "error" }));
 
   const [customTemplate, setCustomTemplate] = useState<{
     name: string;
@@ -201,14 +110,13 @@ export default function PreviewPanelView() {
     [],
   );
 
-  const [customColumns, setCustomColumns] = useState<CustomColumn[]>(() => {
-    try {
-      const s = localStorage.getItem(CUSTOM_COLS_KEY);
-      return s ? JSON.parse(s) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [customColumns, setCustomColumns] = useLocalStorageState<CustomColumn[]>(
+    CUSTOM_COLS_KEY,
+    {
+      parse: (raw) => JSON.parse(raw) as CustomColumn[],
+      fallback: [],
+    },
+  );
   const [showColumnModal, setShowColumnModal] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
   const [newColumnMapping, setNewColumnMapping] = useState("");
@@ -231,26 +139,6 @@ export default function PreviewPanelView() {
 
   const [dragStep2, setDragStep2] = useState(false);
   const [dragStep4, setDragStep4] = useState(false);
-
-  useEffect(() => {
-    const l = loadPersistedLogo(LOGO_LEFT_KEY);
-    if (l) setLogoLeft(l.dataUrl);
-    const r = loadPersistedLogo(LOGO_RIGHT_KEY);
-    if (r) setLogoRight(r.dataUrl);
-  }, []);
-
-  useEffect(() => {
-    if (logoLeft) savePersistedLogo(LOGO_LEFT_KEY, logoLeft, "logo-left");
-    else clearPersistedLogo(LOGO_LEFT_KEY);
-    if (logoRight) savePersistedLogo(LOGO_RIGHT_KEY, logoRight, "logo-right");
-    else clearPersistedLogo(LOGO_RIGHT_KEY);
-  }, [logoLeft, logoRight]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(CUSTOM_COLS_KEY, JSON.stringify(customColumns));
-    } catch {}
-  }, [customColumns]);
 
   const loadTemplates = useCallback(async () => {
     try {
@@ -282,24 +170,6 @@ export default function PreviewPanelView() {
       cancelled = true;
     };
   }, [backendState, loadTemplates]);
-
-  const handleLogoUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-    side: "left" | "right",
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const result = await compressLogoForStorage(file);
-      if (side === "left") setLogoLeft(result);
-      else setLogoRight(result);
-    } catch {
-      addToast({
-        message: "No se pudo cargar el logo seleccionado",
-        type: "error",
-      });
-    }
-  };
 
   const handleTemplateUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -893,7 +763,7 @@ export default function PreviewPanelView() {
             <div className="space-y-1.5">
               <label className="block w-full cursor-pointer">
                 <div
-                  className={`border border-dashed rounded-md py-1.5 px-2 text-center transition-colors text-[10px] ${templateStatus === "valid" ? "border-[var(--accent-green)]/50 bg-[var(--accent-green)]/5 text-[var(--accent-green)]" : templateStatus === "invalid" ? "border-[var(--accent-red)]/50 bg-[var(--accent-red)]/5 text-[var(--accent-red)]" : "border-[var(--border-medium)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)]"}`}
+                  className={`border border-dashed rounded-md py-1.5 px-2 text-center transition-colors text-[10px] ${templateStatus === "valid" ? "border-[color:color-mix(in_srgb,var(--accent-green)_50%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-green)_5%,transparent)] text-[var(--accent-green)]" : templateStatus === "invalid" ? "border-[color:color-mix(in_srgb,var(--accent-red)_50%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_5%,transparent)] text-[var(--accent-red)]" : "border-[var(--border-medium)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)]"}`}
                 >
                   {customTemplate
                     ? customTemplate.name
@@ -937,7 +807,7 @@ export default function PreviewPanelView() {
 
               <div className="flex items-center justify-between gap-2">
                 <div
-                  className={`flex-1 flex items-center justify-between px-2 py-1 rounded-md text-[9px] border ${customTemplate ? "bg-[var(--accent-green)]/5 border-[var(--accent-green)]/20" : "bg-[var(--bg-elevated)] border-[var(--border-medium)]"}`}
+                  className={`flex-1 flex items-center justify-between px-2 py-1 rounded-md text-[9px] border ${customTemplate ? "bg-[color:color-mix(in_srgb,var(--accent-green)_5%,transparent)] border-[color:color-mix(in_srgb,var(--accent-green)_20%,transparent)]" : "bg-[var(--bg-elevated)] border-[var(--border-medium)]"}`}
                 >
                   <span className="text-[var(--text-muted)]">Activa:</span>
                   <span
@@ -1180,7 +1050,7 @@ export default function PreviewPanelView() {
                           size="none"
                           aria-label="Eliminar"
                           onClick={() => removeCustomColumn(col.id)}
-                          className="text-[var(--accent-red)] hover:opacity-80 text-[9px] px-0.5 hover:bg-[var(--accent-red)]/20 rounded transition-colors"
+                          className="text-[var(--accent-red)] hover:opacity-80 text-[9px] px-0.5 hover:bg-[color:color-mix(in_srgb,var(--accent-red)_20%,transparent)] rounded transition-colors"
                         >
                           ✕
                         </Button>
@@ -1453,7 +1323,7 @@ export default function PreviewPanelView() {
                 <span>+</span> Agregar Columna Personalizada
               </h3>
               {columnError && (
-                <div className="bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/30 text-[var(--accent-red)] text-[11px] rounded-lg p-2 mb-3 flex items-center gap-2">
+                <div className="bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] border border-[color:color-mix(in_srgb,var(--accent-red)_30%,transparent)] text-[var(--accent-red)] text-[11px] rounded-lg p-2 mb-3 flex items-center gap-2">
                   <AlertCircle size={14} /> {columnError}
                 </div>
               )}

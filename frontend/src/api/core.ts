@@ -12,7 +12,6 @@ declare global {
       minimizeWindow: () => Promise<unknown>;
       maximizeWindow: () => Promise<unknown>;
       closeWindow: () => Promise<unknown>;
-      showAppMenu: (menuIndex: number, position: { x: number; y: number }) => Promise<unknown>;
       autoUpdateCheck: () => Promise<{ success: boolean; reason?: string }>;
       autoUpdateInstall: () => Promise<{ success: boolean; reason?: string }>;
       onAutoUpdateStatus: (callback: (data: { status: string; version: string | null; progress: number; message?: string }) => void) => () => void;
@@ -22,7 +21,6 @@ declare global {
       fileStagedAppend?: (token: string, chunk: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
       fileStagedComplete?: (token: string) => Promise<{ file_token: string }>;
       fileStagedAbort?: (token: string) => Promise<unknown>;
-      resolveFileToken?: (token: string) => Promise<{ path: string; name?: string; size?: number }>;
       cleanupFileToken?: (token: string) => Promise<{ cleaned: boolean }>;
       canvasAssetPut?: (chunk: ArrayBuffer | Uint8Array) => Promise<{ asset_id: string; ref: string; bytes: number }>;
       canvasAssetGet?: (ref: string) => Promise<{ ref: string; chunk: ArrayBuffer; bytes: number }>;

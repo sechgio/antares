@@ -12,82 +12,49 @@ import {
 import { createPortal } from 'react-dom';
 import { useLiveRef } from '../../../hooks/useLiveRef';
 import type { CanvasDocument, CanvasGuide, CanvasLayer, CanvasTool } from '../types';
-import { A4_HEIGHT_PX, A4_WIDTH_PX, parseMm, resolvePageMarginMm } from '../types';
+import { A4_HEIGHT_PX, A4_WIDTH_PX, resolvePageMarginMm } from '../types';
 import {
   clientToMm,
-  isClickPlace,
   isPlaceTool,
   mmToScreenPx,
-  MM_TO_PX,
-  normalizeDrawRect,
   type DrawRect,
 } from '../ops/drawHelpers';
-import { clipPathForLayerType, isSquareConstrainTool } from '../ops/shapePaths';
-import { isTextualLayerType } from '../layerKinds';
+import { clipPathForLayerType } from '../ops/shapePaths';
 import {
-  angleFromCenter,
-  computeResizeBox,
-  isPointerClick,
-  layersInMarquee,
-  moveSelection,
-  resizeSelection,
-  rotateSelection,
   selectionBounds,
   prepareSnapRails,
   smartGuidesEqual,
-  snapUnalignedAxesToGrid,
-  snapMoveWithGuides,
-  snapResizeBox,
-  snapThresholdMm,
-  constrainMoveToAxis,
-  type HandlePos,
   type RectMm,
   type SmartGuide,
   DEFAULT_GRID_MM,
 } from '../ops/selectionTransform';
 import { buildSpatialIndex } from '../ops/spatialIndex';
 import { layerBounds } from '../ops/layerBounds';
-import { replaceLayerById } from '../ops/patchLayers';
 import {
-  collectReferenceGaps,
   formatGapMm,
   guidesForPage,
   measureHoverGap,
-  measureSelectionGaps,
-  snapEqualGaps,
   type DistanceLabel,
 } from '../ops/guides';
-import { duplicateLayers } from '../ops/layerOps';
 import { expandWithDescendants } from '../ops/layerTree';
 import { applyWheelBurst } from '../ops/viewportNav';
 import { CULLING_MARGIN_MM, filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { compositionHiddenLayerIds } from '../ops/booleanOps';
-import { createGestureRaf, createWheelGestureRaf } from '../ops/gestureRaf';
+import { createWheelGestureRaf } from '../ops/gestureRaf';
 import {
   createPointerGestureOwner,
   type PointerGestureOwner,
-  type PointerGestureSession,
 } from '../ops/pointerGestureSession';
 import {
   applyLayerDomGeometry,
-  applyLayerDomTransforms,
   clearLayerDomGestureStyles,
   setCanvasGestureActive,
 } from '../ops/imperativeLayerDom';
 import {
-  computeRadiusFromDrag,
   layerSupportsCornerRadius,
-  layersWithCornerRadius,
-  maxCornerRadiusPxForLayer,
 } from '../ops/cornerRadiusGesture';
 import { usePinchZoom } from '../hooks/usePinchZoom';
-import {
-  bendLineAt,
-  cutLineAt,
-  dragLineAnchor,
-  dragLineHandle,
-} from '../ops/pathEditGestures';
-import { ensureLinePath, lineIntersectsPolygon, rectIntersectsPolygon } from '../ops/pathGeometry';
+import { ensureLinePath } from '../ops/pathGeometry';
 import { cornerRadiusPx, type CornerId } from '../ops/layerStyle';
 import type {
   InlineEditStartOpts,
@@ -96,23 +63,26 @@ import type {
 } from '../ops/inlineEdit';
 import CanvasRulers, { GuidePositionChip, MeasurementBadge } from './CanvasRulers';
 import GuideContextMenu from './GuideContextMenu';
-import { createFrameRectCache } from './frameRectCache';
+import { createArtboardToolGestures } from './artboardToolGestures';
+import { createArtboardViewportGestures } from './artboardViewportGestures';
+import {
+  createArtboardTransformGestures,
+  createArtboardPathGapGestures,
+} from './artboardTransformGestures';
+import {
+  createArtboardSelectionHandlers,
+  createSelectionMoveStarter,
+} from './artboardSelectionGestures';
 import { useArtboardGuideInteraction } from './useArtboardGuideInteraction';
 import LayerNode from './LayerNode';
 import PathHandlesOverlay from './PathHandlesOverlay';
 import { SelectionChromeOverlay } from './SelectionChromeOverlay';
 import { SmartSelectionOverlay } from './SmartSelectionOverlay';
 import { screenChromePx } from '../ops/textTypography';
-import {
-  detectSmartSequence,
-  resizeSmartGap,
-  tidySmartSequence,
-  type SmartSequence,
-} from '../ops/smartSelection';
+import { detectSmartSequence } from '../ops/smartSelection';
 
 const GUIDE_HIT_PX = 10;
 const GUIDE_LINE_PX = 2;
-const PAN_INERTIA_FRESH_MS = 80;
 
 interface ArtboardProps {
   document: CanvasDocument;
@@ -129,6 +99,7 @@ interface ArtboardProps {
   onChangeLayers: (layers: CanvasLayer[]) => void;
   onPreviewLayers?: (layers: CanvasLayer[]) => void;
   onCommitGesture?: () => void;
+  onCancelGesture?: () => void;
   onZoom?: (zoom: number) => void;
   onDrawLayer?: (tool: CanvasTool, rect: DrawRect) => void;
   onContextMenu?: (
@@ -167,38 +138,6 @@ interface ArtboardProps {
     getPan: () => { x: number; y: number };
   };
 }
-
-function sampleLayerColor(layer: CanvasLayer | undefined | null): string | null {
-  if (!layer) return null;
-  const v = layer.cssVars;
-  if (isTextualLayerType(layer.type)) {
-    if (v['--color']) return v['--color'];
-  }
-  if (v['--fill-visible'] !== '0' && v['--background-color']) return v['--background-color'];
-  if (v['--stroke-visible'] !== '0' && v['--border-color']) return v['--border-color'];
-  if (v['--color']) return v['--color'];
-  return null;
-}
-
-function escapeToAbort(getSession: () => { abort: () => void }): (ev: KeyboardEvent) => void {
-  return (ev) => {
-    if (ev.key !== 'Escape') return;
-    getSession().abort();
-  };
-}
-
-function cloneLayers(layers: CanvasLayer[], deepIds?: ReadonlySet<string>): CanvasLayer[] {
-  if (!deepIds || deepIds.size === 0) {
-    return layers.map((l) => ({ ...l, cssVars: { ...l.cssVars }, meta: l.meta ? { ...l.meta } : undefined }));
-  }
-  return layers.map((l) =>
-    deepIds.has(l.id)
-      ? { ...l, cssVars: { ...l.cssVars }, meta: l.meta ? { ...l.meta } : undefined }
-      : l,
-  );
-}
-
-export { createFrameRectCache };
 
 const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
   guides,
@@ -266,6 +205,7 @@ function Artboard({
   onChangeLayers,
   onPreviewLayers,
   onCommitGesture,
+  onCancelGesture,
   onZoom,
   onDrawLayer,
   onContextMenu,
@@ -382,6 +322,8 @@ function Artboard({
   onPreviewLayersRef.current = onPreviewLayers;
   const onCommitGestureRef = useRef(onCommitGesture);
   onCommitGestureRef.current = onCommitGesture;
+  const onCancelGestureRef = useRef(onCancelGesture);
+  onCancelGestureRef.current = onCancelGesture;
   const onChangeLayersRef = useRef(onChangeLayers);
   onChangeLayersRef.current = onChangeLayers;
   const onSelectRef = useRef(onSelect);
@@ -515,6 +457,10 @@ function Artboard({
       setCanvasGestureActive(false);
       setGuidesIfChanged([]);
       setDistanceLabelsIfChanged([]);
+      // El preview vivo ya llegó al documento vía onPreviewLayers/updateSilent; sin
+      // avisar al dueño del baseline quedaba el gesto abortado sin entrada en el
+      // historial y el baseline apuntando a un preview muerto.
+      onCancelGestureRef.current?.();
     },
     [setGuidesIfChanged, setDistanceLabelsIfChanged],
   );
@@ -864,281 +810,42 @@ function Artboard({
     };
   }, []);
 
-  const startPanDrag = (e: ReactPointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onCancelInertia?.();
-    setPanning(true);
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const origin = { ...navRef.current.pan };
-    let lastX = e.clientX;
-    let lastY = e.clientY;
-    let lastT = performance.now();
-    let vx = 0;
-    let vy = 0;
-    const pointerId = e.pointerId;
-    const captureTarget = e.currentTarget as HTMLElement;
-    let captured = false;
-    if (typeof captureTarget.setPointerCapture === 'function') {
-      try {
-        captureTarget.setPointerCapture(pointerId);
-        captured = true;
-      } catch {
-        captured = false;
-      }
-    }
-    const releaseCapture = () => {
-      if (!captured || typeof captureTarget.releasePointerCapture !== 'function') return;
-      captured = false;
-      try {
-        captureTarget.releasePointerCapture(pointerId);
-      } catch {
-        // The browser may release capture before pointercancel/blur reaches React.
-      }
-    };
-
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      navRef.current.onPan({
-        x: origin.x + (ev.clientX - startX),
-        y: origin.y + (ev.clientY - startY),
-      });
-    });
-    pointerGestures.start({
-      pointerId,
-      onMove: (ev) => {
-        if (pinchGestureRef.current) return;
-        const now = performance.now();
-        const dt = Math.max(1, now - lastT);
-        const instantVx = (ev.clientX - lastX) / dt * 16;
-        const instantVy = (ev.clientY - lastY) / dt * 16;
-        vx = vx * 0.6 + instantVx * 0.4;
-        vy = vy * 0.6 + instantVy * 0.4;
-        lastX = ev.clientX;
-        lastY = ev.clientY;
-        lastT = now;
-        raf.schedule(ev);
-      },
-      onEnd: () => {
-        releaseCapture();
-        raf.flush();
-        setPanning(false);
-        const velocityIsFresh = performance.now() - lastT <= PAN_INERTIA_FRESH_MS;
-        if (
-          !pinchGestureRef.current
-          && velocityIsFresh
-          && onStartInertia
-          && (Math.abs(vx) > 1 || Math.abs(vy) > 1)
-        ) {
-          onStartInertia({ vx, vy });
-        }
-      },
-      onAbort: () => {
-        releaseCapture();
-        raf.cancel();
-        setPanning(false);
-      },
-    });
-  };
-
-  const beginSelectionMove = useCallback(
-    (
-      ids: string[],
-      startClientX: number,
-      startClientY: number,
-      options?: {
-        onClickWithoutDrag?: () => void;
-        duplicate?: boolean;
-        originSelectedIds?: string[];
-      },
-    ) => {
-      const originLayers = layersRef.current;
-      const originSelectedIds = options?.originSelectedIds ?? [...selectedIdsRef.current];
-      let snapshot = cloneLayers(
-        originLayers,
-        new Set(expandWithDescendants(originLayers, ids)),
-      );
-      let moveIds = ids;
-      let didDuplicate = false;
-      let useReactPreview = false;
-      gestureDirtyRef.current = false;
-      let dragging = false;
-      const marginMm = pageMarginRef.current;
-
-      const ensureDuplicate = () => {
-        if (!options?.duplicate || didDuplicate) return;
-        didDuplicate = true;
-        const { layers, newIds } = duplicateLayers(snapshot, ids, { offsetMm: 0 });
-        if (!newIds.length) return;
-        snapshot = layers;
-        moveIds = newIds;
-        onSelectIdsRef.current(newIds);
-        useReactPreview = true;
-        applyGestureLayers(snapshot);
-      };
-
-      const applyMovePreview = (moved: CanvasLayer[], nextMoveIds: string[]) => {
-        if (pinchGestureRef.current) return;
-        if (!gestureDirtyRef.current) {
-          onPreviewLayersRef.current?.(layersRef.current);
-          gestureDirtyRef.current = true;
-          setGestureActive(true);
-          setCanvasGestureActive(true);
-        }
-        gestureLayersRef.current = moved;
-        layersRef.current = moved;
-        imperativeMoveIdsRef.current = nextMoveIds;
-        const frame = frameRef.current;
-        if (frame) applyLayerDomTransforms(frame, moved, nextMoveIds);
-      };
-
-      const buildOthers = (snap: CanvasLayer[], moving: string[]) => {
-        const exclude = new Set(expandWithDescendants(snap, moving));
-        return snap
-          .filter((l) => !exclude.has(l.id) && l.type !== 'frame' && l.visible !== false && !l.locked)
-          .map((l) => {
-            const b = layerBounds(l);
-            return { x: b.x, y: b.y, w: b.w, h: b.h };
-          });
-      };
-
-      let originBounds = selectionBounds(snapshot, moveIds);
-      let rails = prepareSnapRails(
-        snapshot,
-        moveIds,
-        pageSizeRef.current,
-        manualGuidesRef.current,
-        marginMm,
-      );
-      let othersRects = buildOthers(snapshot, moveIds);
-      let refGaps = collectReferenceGaps(othersRects, pageSizeRef.current);
-
-      const raf = createGestureRaf((ev: PointerEvent) => {
-        if (pinchGestureRef.current) return;
-        const dxPx = ev.clientX - startClientX;
-        const dyPx = ev.clientY - startClientY;
-        if (!dragging) {
-          if (isPointerClick(dxPx, dyPx)) return;
-          dragging = true;
-          ensureDuplicate();
-          originBounds = selectionBounds(snapshot, moveIds);
-          rails = prepareSnapRails(
-            snapshot,
-            moveIds,
-            pageSizeRef.current,
-            manualGuidesRef.current,
-            marginMm,
-          );
-          othersRects = buildOthers(snapshot, moveIds);
-          refGaps = collectReferenceGaps(othersRects, pageSizeRef.current);
-        }
-        const z = zoomRef.current;
-        let rawDx = dxPx / (z * MM_TO_PX);
-        let rawDy = dyPx / (z * MM_TO_PX);
-        const axisLock = ev.shiftKey;
-        ({ dx: rawDx, dy: rawDy } = constrainMoveToAxis(rawDx, rawDy, axisLock));
-        const lockHorizontal = axisLock && rawDy === 0;
-        const lockVertical = axisLock && rawDx === 0;
-        const disableSnap = ev.ctrlKey || ev.metaKey;
-        const threshold = snapThresholdMm(z);
-        let dx = rawDx;
-        let dy = rawDy;
-        let nextGuides: SmartGuide[] = [];
-        let equalGapLabels: DistanceLabel[] = [];
-        if (!disableSnap) {
-          const snapped = snapMoveWithGuides(
-            snapshot,
-            moveIds,
-            rawDx,
-            rawDy,
-            pageSizeRef.current,
-            threshold,
-            manualGuidesRef.current,
-            rails,
-            marginMm,
-          );
-          dx = snapped.dx;
-          dy = snapped.dy;
-          nextGuides = snapped.guides;
-          if (originBounds) {
-            const equal = snapEqualGaps(
-              originBounds,
-              dx,
-              dy,
-              othersRects,
-              pageSizeRef.current,
-              threshold,
-              refGaps,
-            );
-            dx = equal.dx;
-            dy = equal.dy;
-            equalGapLabels = equal.labels;
-            const equalAxes = new Set(equal.labels.map((label) => label.axis));
-            if (equalAxes.size) {
-              nextGuides = nextGuides.filter((guide) => !equalAxes.has(guide.axis));
-            }
-          }
-          if (snapToGridRef.current && originBounds) {
-            const gridBox = snapUnalignedAxesToGrid(
-              { x: originBounds.x + dx, y: originBounds.y + dy, w: originBounds.w, h: originBounds.h },
-              gridSizeMmRef.current,
-              'position',
-              [...nextGuides, ...equalGapLabels],
-            );
-            dx = gridBox.x - originBounds.x;
-            dy = gridBox.y - originBounds.y;
-          }
-        }
-        if (lockHorizontal) {
-          dy = 0;
-          nextGuides = nextGuides.filter((g) => g.axis === 'x');
-          equalGapLabels = equalGapLabels.filter((g) => g.axis === 'x');
-        } else if (lockVertical) {
-          dx = 0;
-          nextGuides = nextGuides.filter((g) => g.axis === 'y');
-          equalGapLabels = equalGapLabels.filter((g) => g.axis === 'y');
-        }
-        setGuidesIfChanged(nextGuides);
-        const moved = moveSelection(snapshot, moveIds, dx, dy);
-        if (useReactPreview) applyGestureLayers(moved);
-        else applyMovePreview(moved, moveIds);
-        const bounds = selectionBounds(moved, moveIds);
-        if (bounds) {
-          setGestureBbox(bounds);
-          const measured = measureSelectionGaps(bounds, othersRects, pageSizeRef.current);
-          setDistanceLabelsIfChanged(equalGapLabels.length ? equalGapLabels : measured);
-        } else {
-          setGestureBbox(null);
-          setDistanceLabelsIfChanged([]);
-        }
-      });
-      let session: PointerGestureSession;
-      session = pointerGestures.start({
-        onMove: (ev) => raf.schedule(ev),
-        onEnd: () => {
-          raf.flush();
-          setGuidesIfChanged([]);
-          setDistanceLabelsIfChanged([]);
-          endGesture();
-          if (!dragging) options?.onClickWithoutDrag?.();
-        },
-        onKeyDown: escapeToAbort(() => session),
-        onAbort: () => {
-          raf.cancel();
-          abortGesturePreview({ layers: originLayers, ids });
-          if (options?.duplicate && didDuplicate) {
-            onSelectIdsRef.current(originSelectedIds);
-          }
-        },
-      });
-    },
+  const beginSelectionMove = useMemo(
+    () =>
+      createSelectionMoveStarter({
+        frameRef,
+        zoomRef,
+        layersRef,
+        pinchGestureRef,
+        gestureDirtyRef,
+        gestureLayersRef,
+        imperativeMoveIdsRef,
+        pageSizeRef,
+        manualGuidesRef,
+        pageMarginRef,
+        snapToGridRef,
+        gridSizeMmRef,
+        selectedIdsRef,
+        onSelectIdsRef,
+        onPreviewLayersRef,
+        pointerGestures,
+        applyGestureLayers,
+        endGesture,
+        abortGesturePreview,
+        setGuidesIfChanged,
+        setDistanceLabelsIfChanged,
+        setGestureActive,
+        setGestureBbox,
+      }),
     [
       abortGesturePreview,
       applyGestureLayers,
-      applyImperativePreview,
       endGesture,
-      setGuidesIfChanged,
+      pointerGestures,
       setDistanceLabelsIfChanged,
+      setGestureBbox,
+      setGestureActive,
+      setGuidesIfChanged,
     ],
   );
 
@@ -1169,567 +876,102 @@ function Artboard({
     [clientPointMm],
   );
 
-  const handleLayerPointerDown = useCallback(
-    (id: string, e: ReactPointerEvent<HTMLDivElement>) => {
-      if (e.button === 1) return;
-      if (e.button !== 0) return;
-      onCancelInertia?.();
-      if (eyedropperActiveRef.current) {
-        const hitId = pickHit(e.clientX, e.clientY);
-        const color =
-          sampleLayerColor(layersRef.current.find((l) => l.id === hitId)) ?? '#FFFFFF';
-        onEyedropperPickRef.current?.(color);
-        return;
-      }
-      let targetId = id;
-      const groupMembers = enteredDescendants();
-      if (groupMembers) {
-        const hit = pickHit(e.clientX, e.clientY, { within: groupMembers });
-        if (!hit) {
-          onExitGroupEditRef.current?.();
-          onSelectIdsRef.current?.([]);
-          return;
-        }
-        targetId = hit;
-      } else if (e.ctrlKey || e.metaKey) {
-        targetId = pickHit(e.clientX, e.clientY, { skipSelected: true }) ?? id;
-      }
-      const additive = e.shiftKey;
-      if (editingLayerIdRef.current) {
-        if (targetId === editingLayerIdRef.current) return;
-        onCommitEditRef.current?.();
-      }
-      const current = selectedIdsRef.current;
-      const wasSelected = current.includes(targetId);
-      let ids: string[];
-      let onClickWithoutDrag: (() => void) | undefined;
+  const { handleLayerPointerDown } = createArtboardSelectionHandlers({
+    layersRef,
+    selectedIdsRef,
+    editingLayerIdRef,
+    eyedropperActiveRef,
+    onEyedropperPickRef,
+    onExitGroupEditRef,
+    onSelectIdsRef,
+    onSelectRef,
+    onCommitEditRef,
+    onCancelInertia,
+    enteredDescendants,
+    pickHit,
+    beginSelectionMove,
+  });
 
-      if (additive) {
-        if (wasSelected) {
-          ids = current;
-          onClickWithoutDrag = () => {
-            onSelectIdsRef.current(current.filter((x) => x !== targetId));
-          };
-        } else {
-          ids = [...current, targetId];
-          onSelectIdsRef.current(ids);
-        }
-      } else if (wasSelected && current.length > 1) {
-        ids = current;
-      } else {
-        ids = [targetId];
-        onSelectRef.current(targetId, false);
-      }
+  const { startResize, startRotate, startRadiusResize } = createArtboardTransformGestures({
+    frameRef,
+    zoomRef,
+    layersRef,
+    pinchGestureRef,
+    gestureDirtyRef,
+    pageSizeRef,
+    manualGuidesRef,
+    pageMarginRef,
+    snapToGridRef,
+    gridSizeMmRef,
+    pointerGestures,
+    editableSelected,
+    bbox,
+    onCancelInertia,
+    applyImperativePreview,
+    applyGestureLayers,
+    endGesture,
+    abortGesturePreview,
+    setGuidesIfChanged,
+    setGestureBbox,
+    setRadiusDrag,
+  });
 
-      const layer = layersRef.current.find((l) => l.id === targetId);
-      if (!layer || layer.locked) return;
-      const moveIds = ids.filter((sid) => {
-        const l = layersRef.current.find((x) => x.id === sid);
-        return l && !l.locked && l.type !== 'frame';
-      });
-      if (!moveIds.length) return;
-      e.preventDefault();
-      beginSelectionMove(moveIds, e.clientX, e.clientY, {
-        onClickWithoutDrag,
-        duplicate: e.altKey,
-        originSelectedIds: ids,
-      });
-    },
-    [beginSelectionMove, onCancelInertia, enteredDescendants, pickHit],
-  );
+  const { startPanDrag, beginMarquee } = createArtboardViewportGestures({
+    frameRef,
+    zoomRef,
+    layersRef,
+    navRef,
+    pinchGestureRef,
+    selectedIdsRef,
+    onExitGroupEditRef,
+    pointerGestures,
+    editingLayerId,
+    onCommitEdit,
+    onCancelInertia,
+    onStartInertia,
+    onSelect,
+    onSelectIds,
+    enteredDescendants,
+    setPanning,
+    setMarquee,
+  });
 
-  const startResize = (e: ReactPointerEvent<HTMLDivElement>, corner: HandlePos) => {
-    e.stopPropagation();
-    e.preventDefault();
-    onCancelInertia?.();
-    if (!editableSelected.length) return;
-    const originLayers = layersRef.current;
-    const snapshot = cloneLayers(
-      originLayers,
-      new Set(expandWithDescendants(originLayers, editableSelected)),
-    );
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const ids = [...editableSelected];
-    const origin = selectionBounds(snapshot, ids);
-    if (!origin) return;
-    gestureDirtyRef.current = false;
-    const rails = prepareSnapRails(
-      snapshot,
-      ids,
-      pageSizeRef.current,
-      manualGuidesRef.current,
-      pageMarginRef.current,
-    );
+  const { beginGapDrag, tidySmartSelection, beginPathPointDrag } = createArtboardPathGapGestures({
+    frameRef,
+    zoomRef,
+    layersRef,
+    gestureDirtyRef,
+    pointerGestures,
+    pathEditLayer,
+    onCancelInertia,
+    applyGestureLayers,
+    endGesture,
+    abortGesturePreview,
+  });
 
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      const z = zoomRef.current;
-      if (pinchGestureRef.current) return;
-      const dx = (ev.clientX - startX) / (z * MM_TO_PX);
-      const dy = (ev.clientY - startY) / (z * MM_TO_PX);
-      let nextBox = computeResizeBox(origin, corner, dx, dy, {
-        aspectLock: ev.shiftKey,
-        fromCenter: ev.altKey,
-      });
-      if (!ev.ctrlKey && !ev.metaKey) {
-        const snapped = snapResizeBox(
-          snapshot,
-          ids,
-          nextBox,
-          pageSizeRef.current,
-          snapThresholdMm(z),
-          manualGuidesRef.current,
-          rails,
-        );
-        nextBox = snapped.box;
-        setGuidesIfChanged(snapped.guides);
-        if (snapToGridRef.current) {
-          nextBox = snapUnalignedAxesToGrid(nextBox, gridSizeMmRef.current, 'bounds', snapped.guides);
-        }
-      } else {
-        setGuidesIfChanged([]);
-      }
-      const resized = resizeSelection(snapshot, ids, corner, 0, 0, { targetBox: nextBox });
-      applyImperativePreview(resized, ids);
-      setGestureBbox(selectionBounds(resized, ids));
-    });
-    let session: PointerGestureSession;
-    session = pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: () => {
-        raf.flush();
-        setGuidesIfChanged([]);
-        endGesture();
-      },
-      onKeyDown: escapeToAbort(() => session),
-      onAbort: () => {
-        raf.cancel();
-        abortGesturePreview({ layers: originLayers, ids });
-      },
-    });
-  };
-
-  const startRotate = (e: ReactPointerEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (!bbox || !editableSelected.length || !frameRef.current) return;
-    const originLayers = layersRef.current;
-    const snapshot = cloneLayers(
-      originLayers,
-      new Set(expandWithDescendants(originLayers, editableSelected)),
-    );
-    const ids = [...editableSelected];
-    const cx = bbox.x + bbox.w / 2;
-    const cy = bbox.y + bbox.h / 2;
-    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
-    const startAngle = angleFromCenter(cx, cy, start.xMm, start.yMm);
-    gestureDirtyRef.current = false;
-
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      const angle = angleFromCenter(cx, cy, cur.xMm, cur.yMm);
-      const delta = angle - startAngle;
-      const rotated = rotateSelection(snapshot, ids, delta, { snap15: ev.shiftKey });
-      applyImperativePreview(rotated, ids);
-      setGestureBbox(selectionBounds(rotated, ids));
-    });
-    let session: PointerGestureSession;
-    session = pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: () => {
-        raf.flush();
-        endGesture();
-      },
-      onKeyDown: escapeToAbort(() => session),
-      onAbort: () => {
-        raf.cancel();
-        abortGesturePreview({ layers: originLayers, ids });
-      },
-    });
-  };
-
-  const startRadiusResize = (e: ReactPointerEvent<HTMLDivElement>, corner: CornerId) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (editableSelected.length !== 1) return;
-    const id = editableSelected[0]!;
-    const originLayers = layersRef.current;
-    const snapshot = cloneLayers(originLayers, new Set([id]));
-    const layer = snapshot.find((l) => l.id === id);
-    if (!layer || !layerSupportsCornerRadius(layer)) return;
-    const startRadius = cornerRadiusPx(layer.cssVars, corner);
-    const startX = e.clientX;
-    const startY = e.clientY;
-    gestureDirtyRef.current = false;
-    setRadiusDrag({ label: `Radius ${Math.round(startRadius)}`, corner });
-
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      const z = zoomRef.current;
-      if (pinchGestureRef.current) return;
-      const dxPx = (ev.clientX - startX) / z;
-      const dyPx = (ev.clientY - startY) / z;
-      const base = snapshot.find((l) => l.id === id)!;
-      const nextR = computeRadiusFromDrag(
-        startRadius,
-        corner,
-        dxPx,
-        dyPx,
-        maxCornerRadiusPxForLayer(base),
-      );
-      applyGestureLayers(
-        layersWithCornerRadius(snapshot, id, corner, nextR, { independent: ev.altKey }),
-      );
-      setRadiusDrag({ label: `Radius ${Math.round(nextR)}`, corner });
-    });
-    let session: PointerGestureSession;
-    session = pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: () => {
-        raf.flush();
-        setRadiusDrag(null);
-        endGesture();
-      },
-      onKeyDown: escapeToAbort(() => session),
-      onAbort: () => {
-        raf.cancel();
-        setRadiusDrag(null);
-        abortGesturePreview({ layers: originLayers, ids: [id] });
-      },
-    });
-  };
-
-  const beginMarquee = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!frameRef.current) return;
-    if (editingLayerId) {
-      onCommitEdit?.();
-    }
-    e.stopPropagation();
-    e.preventDefault();
-    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
-    const origin = { xMm, yMm };
-    setMarquee({ x: xMm, y: yMm, w: 0, h: 0 });
-    if (!e.shiftKey) onSelectIds([]);
-
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      if (pinchGestureRef.current) return;
-      const x = Math.min(origin.xMm, cur.xMm);
-      const y = Math.min(origin.yMm, cur.yMm);
-      setMarquee({
-        x,
-        y,
-        w: Math.abs(cur.xMm - origin.xMm),
-        h: Math.abs(cur.yMm - origin.yMm),
-      });
-    });
-    let session: PointerGestureSession;
-    session = pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: (ev) => {
-        raf.cancel();
-        if (!ev) {
-          setMarquee(null);
-          return;
-        }
-        const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-        if (pinchGestureRef.current) {
-          setMarquee(null);
-          return;
-        }
-        const box: RectMm = {
-          x: Math.min(origin.xMm, cur.xMm),
-          y: Math.min(origin.yMm, cur.yMm),
-          w: Math.abs(cur.xMm - origin.xMm),
-          h: Math.abs(cur.yMm - origin.yMm),
-        };
-        setMarquee(null);
-        const currentLayers = layersRef.current;
-        const groupMembers = enteredDescendants();
-        if (box.w < 1 && box.h < 1) {
-          const hits = buildSpatialIndex(currentLayers).hitTest(cur.xMm, cur.yMm);
-          const filtered = groupMembers ? hits.filter((h) => groupMembers.has(h)) : hits;
-          const top = filtered[0];
-          if (top) {
-            if (ev.shiftKey) {
-              const merged = Array.from(new Set([...selectedIdsRef.current, top]));
-              onSelectIds(merged);
-            } else {
-              onSelect(top);
-            }
-          } else if (groupMembers) {
-            onExitGroupEditRef.current?.();
-            onSelect(null);
-          } else if (!ev.shiftKey) {
-            onSelect(null);
-          }
-          return;
-        }
-        let hit =
-          currentLayers.length > 30
-            ? buildSpatialIndex(currentLayers).query(box)
-            : layersInMarquee(currentLayers, box);
-        if (groupMembers) hit = hit.filter((id) => groupMembers.has(id));
-        if (ev.shiftKey) {
-          const merged = Array.from(new Set([...selectedIdsRef.current, ...hit]));
-          onSelectIds(merged);
-        } else {
-          onSelectIds(hit);
-        }
-      },
-      onKeyDown: escapeToAbort(() => session),
-      onAbort: () => {
-        raf.cancel();
-        setMarquee(null);
-      },
-    });
-  };
-
-  const beginGapDrag = (
-    seq: SmartSequence,
-    index: number,
-    e: ReactPointerEvent<HTMLDivElement>,
-  ) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    e.preventDefault();
-    onCancelInertia?.();
-    if (!frameRef.current) return;
-    const snapshot = cloneLayers(
-      layersRef.current,
-      new Set(expandWithDescendants(layersRef.current, seq.ids)),
-    );
-    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const originGap = seq.gaps[index] ?? 0;
-    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
-    gestureDirtyRef.current = false;
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      const delta = seq.axis === 'x' ? cur.xMm - start.xMm : cur.yMm - start.yMm;
-      applyGestureLayers(resizeSmartGap(snapshot, seq, index, originGap + delta));
-    });
-    let session: PointerGestureSession;
-    session = pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: (ev) => {
-        if (!ev) {
-          raf.cancel();
-          abortGesturePreview();
-          return;
-        }
-        raf.flush();
-        endGesture();
-      },
-      onKeyDown: escapeToAbort(() => session),
-      onAbort: () => {
-        raf.cancel();
-        abortGesturePreview();
-      },
-    });
-  };
-
-  const tidySmartSelection = (
-    seq: SmartSequence,
-    e: ReactPointerEvent<HTMLDivElement>,
-  ) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    e.preventDefault();
-    onCancelInertia?.();
-    applyGestureLayers(tidySmartSequence(layersRef.current, seq));
-    endGesture();
-  };
-
-  const beginPathPointDrag = (
-    pointIndex: number,
-    kind: 'anchor' | 'hin' | 'hout',
-    e: ReactPointerEvent<SVGCircleElement>,
-  ) => {
-    if (!pathEditLayer || !frameRef.current) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const layerId = pathEditLayer.id;
-    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      const current = layersRef.current.find((l) => l.id === layerId);
-      if (!current) return;
-      const next =
-        kind === 'anchor'
-          ? dragLineAnchor(current, pointIndex, cur.xMm, cur.yMm)
-          : dragLineHandle(current, pointIndex, kind, cur.xMm, cur.yMm, !ev.altKey);
-      applyGestureLayers(replaceLayerById(layersRef.current, next));
-    });
-    pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: () => {
-        raf.flush();
-        endGesture();
-      },
-      onAbort: () => raf.cancel(),
-    });
-  };
-
-  const beginBend = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!frameRef.current) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const targetId =
-      pathEditingLayerId ||
-      selectedIds.find((id) => displayLayers.find((l) => l.id === id)?.type === 'line');
-    if (!targetId) return;
-    if (pathEditingLayerId !== targetId) onStartPathEdit?.(targetId);
-    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
-    const applyAt = (xMm: number, yMm: number) => {
-      const current = layersRef.current.find((l) => l.id === targetId);
-      if (!current || current.type !== 'line') return;
-      const next = bendLineAt(current, xMm, yMm);
-      applyGestureLayers(replaceLayerById(layersRef.current, next));
-    };
-    applyAt(start.xMm, start.yMm);
-
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      applyAt(cur.xMm, cur.yMm);
-    });
-    pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: () => {
-        raf.flush();
-        endGesture();
-      },
-      onAbort: () => raf.cancel(),
-    });
-  };
-
-  const beginCut = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!frameRef.current) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const targetId =
-      pathEditingLayerId ||
-      selectedIds.find((id) => displayLayers.find((l) => l.id === id)?.type === 'line');
-    if (!targetId) return;
-    if (pathEditingLayerId !== targetId) onStartPathEdit?.(targetId);
-    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const cur = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
-    const current = layersRef.current.find((l) => l.id === targetId);
-    if (!current || current.type !== 'line') return;
-    const split = cutLineAt(current, cur.xMm, cur.yMm);
-    if (!split) return;
-    const [left, right] = split;
-    const next = layersRef.current.flatMap((l) => (l.id === targetId ? [left, right] : [l]));
-    onChangeLayers(next);
-    onSelectIds([left.id, right.id]);
-  };
-
-  const beginLasso = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!frameRef.current) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
-    const pts: Array<{ x: number; y: number }> = [{ x: start.xMm, y: start.yMm }];
-    setLassoPts(pts);
-
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      if (pinchGestureRef.current) return;
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      pts.push({ x: cur.xMm, y: cur.yMm });
-      setLassoPts([...pts]);
-    });
-    pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: () => {
-        raf.flush();
-        setLassoPts(null);
-        if (pinchGestureRef.current || pts.length < 3) return;
-        const hit = layersRef.current
-          .filter((l) => l.type !== 'frame' && l.visible !== false && !l.locked)
-          .filter((l) => {
-            if (l.type === 'line') return lineIntersectsPolygon(l, pts);
-            const x = parseMm(l.cssVars['--translate-x']);
-            const y = parseMm(l.cssVars['--translate-y']);
-            const w = parseMm(l.cssVars['--width'], 10);
-            const h = parseMm(l.cssVars['--height'], 10);
-            return rectIntersectsPolygon({ x, y, w, h }, pts);
-          })
-          .map((l) => l.id);
-        if (e.shiftKey) {
-          onSelectIds(Array.from(new Set([...selectedIdsRef.current, ...hit])));
-        } else {
-          onSelectIds(hit);
-        }
-      },
-      onAbort: () => {
-        raf.cancel();
-        setLassoPts(null);
-      },
-    });
-  };
-
-  const beginDraw = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!placing || !onDrawLayer || !frameRef.current) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
-    drawStart.current = { xMm, yMm };
-    setDraft({ x: xMm, y: yMm, w: 0, h: 0 });
-
-    const raf = createGestureRaf((ev: PointerEvent) => {
-      if (!drawStart.current) return;
-      if (pinchGestureRef.current) return;
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      const constrainSquare =
-        ev.shiftKey && isSquareConstrainTool(tool);
-      const next = normalizeDrawRect(drawStart.current.xMm, drawStart.current.yMm, cur.xMm, cur.yMm, {
-        constrainSquare,
-      });
-      if (tool === 'line') {
-        next.x0 = drawStart.current.xMm;
-        next.y0 = drawStart.current.yMm;
-        next.x1 = cur.xMm;
-        next.y1 = cur.yMm;
-      }
-      setDraft(next);
-    });
-    pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
-      onEnd: (ev) => {
-        raf.cancel();
-        if (!drawStart.current || !ev) {
-          setDraft(null);
-          return;
-        }
-        const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-        let result = normalizeDrawRect(drawStart.current.xMm, drawStart.current.yMm, cur.xMm, cur.yMm, {
-          constrainSquare:
-            ev.shiftKey && isSquareConstrainTool(tool),
-        });
-        if (tool === 'line') {
-          result.x0 = drawStart.current.xMm;
-          result.y0 = drawStart.current.yMm;
-          result.x1 = cur.xMm;
-          result.y1 = cur.yMm;
-        }
-        if (isClickPlace(result)) {
-          result = { x: drawStart.current.xMm, y: drawStart.current.yMm, w: 0, h: 0 };
-        }
-        drawStart.current = null;
-        setDraft(null);
-        if (!pinchGestureRef.current) onDrawLayer(tool, result);
-      },
-      onAbort: () => {
-        raf.cancel();
-        drawStart.current = null;
-        setDraft(null);
-      },
-    });
-  };
+  const { beginBend, beginCut, beginLasso, beginDraw } = createArtboardToolGestures({
+    frameRef,
+    zoomRef,
+    layersRef,
+    pinchGestureRef,
+    drawStart,
+    selectedIdsRef,
+    pointerGestures,
+    selectedIds,
+    displayLayers,
+    pathEditingLayerId,
+    placing,
+    tool,
+    onDrawLayer,
+    onStartPathEdit,
+    onChangeLayers,
+    onSelectIds,
+    applyGestureLayers,
+    endGesture,
+    abortGesturePreview,
+    setDraft,
+    setLassoPts,
+  });
 
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button === 1) {

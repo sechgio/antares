@@ -3,7 +3,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 const path = require('path');
-const { assertAllowedReadPath, assertPathNotSymlink } = require('./path-allowlist');
+const { assertAllowedReadPath, assertPathNotSymlink, assertPathNotSymlinkAsync } = require('./path-allowlist');
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;
 const MAX_CHUNK_BYTES = 8 * 1024 * 1024;
@@ -30,14 +30,15 @@ const SUSPICIOUS_PATH_KEYS = new Set([
   'result_file_token',
   'cache_token',
 ]);
-const WRITE_PATH_KEYS = new Set([
+const GENERIC_OUTPUT_PATH_KEYS = [
   'output_path',
-  'outputpath',
+  'outputPath',
   'output_dir',
-  'outputdir',
+  'outputDir',
   'output_folder',
-  'outputfolder',
-]);
+  'outputFolder',
+];
+const WRITE_PATH_KEYS = new Set(GENERIC_OUTPUT_PATH_KEYS.map((k) => k.toLowerCase()));
 const EMPTY_PATH_KEY_SET = new Set();
 
 const _capabilities = new Map();
@@ -84,6 +85,29 @@ function createFileCapability({ filePath, mode, webContentsId, name, size }) {
     mode,
     path: resolved,
     realPath: fs.realpathSync(resolved),
+    name: name || path.basename(resolved),
+    size: typeof size === 'number' ? size : stat.size,
+    webContentsId: webContentsId ?? null,
+    createdAt: _now(),
+    expiresAt: _now() + TOKEN_TTL_MS,
+  };
+  _capabilities.set(token, entry);
+  _ensureSweep();
+  return entry;
+}
+
+async function createFileCapabilityAsync({ filePath, mode, webContentsId, name, size }) {
+  if (!filePath || typeof filePath !== 'string') throw new Error('filePath required');
+  const resolved = path.resolve(filePath);
+  const stat = await assertPathNotSymlinkAsync(resolved);
+  if (mode === 'read' && !stat.isFile()) throw new Error('not a file');
+  if (mode === 'write' && stat.isSymbolicLink()) throw new Error('symbolic links not allowed');
+  const token = _newToken(mode === 'read' ? 'antares-read' : 'antares-write');
+  const entry = {
+    token,
+    mode,
+    path: resolved,
+    realPath: await fsp.realpath(resolved),
     name: name || path.basename(resolved),
     size: typeof size === 'number' ? size : stat.size,
     webContentsId: webContentsId ?? null,
@@ -337,6 +361,7 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
 
 module.exports = {
   createFileCapability,
+  createFileCapabilityAsync,
   resolveCapability,
   revokeCapability,
   createStagedSession,
@@ -346,4 +371,5 @@ module.exports = {
   cleanupStagedCapability,
   cleanupAllStaged,
   _assertNoRawAbsolutePaths,
+  GENERIC_OUTPUT_PATH_KEYS,
 };

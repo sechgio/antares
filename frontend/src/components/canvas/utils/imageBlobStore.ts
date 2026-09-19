@@ -15,9 +15,29 @@ export interface RegisteredBlob {
   dataUrl?: string;
 }
 
+const CANVAS_ASSET_REF_PREFIX = 'canvas-asset:';
+const NO_ELECTRON_ASSETS_MSG = 'No se pueden resolver canvas-asset: sin Electron (canvasAssetGet)';
+
+const isImageOrLogoLayer = (layer: CanvasLayer) =>
+  layer.type === 'image' || layer.type === 'logo';
+
+const isCanvasAssetRef = (value: string | undefined) =>
+  Boolean(value?.startsWith(CANVAS_ASSET_REF_PREFIX));
+
+const layerAssetRef = (layer: CanvasLayer): string | undefined =>
+  isImageOrLogoLayer(layer) && isCanvasAssetRef(layer.value) ? layer.value : undefined;
+
 const blobMap = new Map<string, RegisteredBlob>();
 const urlToBlobIdMap = new Map<string, string>();
 let imageProcessorModulePromise: Promise<typeof import('../workers/imageProcessorClient')> | null = null;
+
+function lookupRegisteredBlob(value: string): RegisteredBlob | undefined {
+  const reg = blobMap.get(value);
+  if (reg) return reg;
+  if (!value.startsWith('blob:')) return undefined;
+  const blobId = urlToBlobIdMap.get(value);
+  return blobId ? blobMap.get(blobId) : undefined;
+}
 
 function loadImageProcessor() {
   if (!imageProcessorModulePromise) {
@@ -54,7 +74,7 @@ export function trackImageRef(live: Set<string>, value: string | undefined): voi
 export function collectImageRefsFromLayers(layers: Iterable<CanvasLayer>): Set<string> {
   const live = new Set<string>();
   for (const layer of layers) {
-    if (layer.type === 'image' || layer.type === 'logo') {
+    if (isImageOrLogoLayer(layer)) {
       trackImageRef(live, layer.value);
     }
   }
@@ -64,7 +84,7 @@ export function collectImageRefsFromLayers(layers: Iterable<CanvasLayer>): Set<s
 function collectImageRefsFromDiff(diff: CanvasDiff, live: Set<string>): void {
   if (diff.addedLayers) {
     for (const layer of diff.addedLayers) {
-      if (layer.type === 'image' || layer.type === 'logo') {
+      if (isImageOrLogoLayer(layer)) {
         trackImageRef(live, layer.value);
       }
     }
@@ -86,7 +106,7 @@ export function collectImageRefsFromHistory(steps: Iterable<HistoryStep>): Set<s
       collectImageRefsFromDiff(step.redoDiff, live);
     } else {
       for (const layer of step.layers) {
-        if (layer.type === 'image' || layer.type === 'logo') {
+        if (isImageOrLogoLayer(layer)) {
           trackImageRef(live, layer.value);
         }
       }
@@ -240,21 +260,17 @@ export async function serializeDocumentImages(
   const updatedLayers: CanvasLayer[] = [];
 
   for (const layer of doc.layers) {
-    if (layer.type !== 'image' && layer.type !== 'logo') {
+    if (!isImageOrLogoLayer(layer)) {
       updatedLayers.push(layer);
       continue;
     }
     const val = layer.value;
-    if (!val || val.startsWith('canvas-asset:')) {
+    if (!val || isCanvasAssetRef(val)) {
       updatedLayers.push(layer);
       continue;
     }
 
-    let reg = blobMap.get(val);
-    if (!reg && val.startsWith('blob:')) {
-      const blobId = urlToBlobIdMap.get(val);
-      if (blobId) reg = blobMap.get(blobId);
-    }
+    const reg = lookupRegisteredBlob(val);
     if (!reg) {
       updatedLayers.push(layer);
       continue;
@@ -280,7 +296,7 @@ export function applySavedDocumentKeepingImages(
   const editorById = new Map(editorDoc.layers.map((l) => [l.id, l]));
   let changed = false;
   const layers = savedDoc.layers.map((layer) => {
-    if (layer.type !== 'image' && layer.type !== 'logo') return layer;
+    if (!isImageOrLogoLayer(layer)) return layer;
     const prev = editorById.get(layer.id);
     if (!prev?.value || prev.value === layer.value) return layer;
     const keepLive =
@@ -302,7 +318,7 @@ export async function embedCanvasAssetsAsDataUrls(
   const getAsset = window.electronAPI?.canvasAssetGet;
   if (!getAsset) {
     if (strict && countCanvasAssetRefs(doc) > 0) {
-      throw new Error('No se pueden resolver canvas-asset: sin Electron (canvasAssetGet)');
+      throw new Error(NO_ELECTRON_ASSETS_MSG);
     }
     return doc;
   }
@@ -321,20 +337,21 @@ export async function embedCanvasAssetsAsDataUrls(
 
   const layers: CanvasLayer[] = [];
   for (const layer of doc.layers) {
-    if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value?.startsWith('canvas-asset:')) {
+    const ref = layerAssetRef(layer);
+    if (!ref) {
       layers.push(layer);
       continue;
     }
-    const dataUrl = dataUrlByRef.get(layer.value);
+    const dataUrl = dataUrlByRef.get(ref);
     if (dataUrl !== undefined) {
       changed = true;
       layers.push({ ...layer, value: dataUrl });
       continue;
     }
     if (strict) {
-      const err = readErrorsByRef.get(layer.value);
+      const err = readErrorsByRef.get(ref);
       const msg = errorMessage(err, String(err ?? 'asset vacío'));
-      throw new Error(`No se pudo resolver ${layer.value}: ${msg}`);
+      throw new Error(`No se pudo resolver ${ref}: ${msg}`);
     }
     layers.push(layer);
   }
@@ -360,9 +377,7 @@ export async function assertCanvasAssetExpansionWithinBytes(
   for (const ref of refs) occurrences.set(ref, (occurrences.get(ref) ?? 0) + 1);
 
   const compactLayers = doc.layers.map((layer) => (
-    (layer.type === 'image' || layer.type === 'logo') && layer.value?.startsWith('canvas-asset:')
-      ? { ...layer, value: '' }
-      : layer
+    layerAssetRef(layer) ? { ...layer, value: '' } : layer
   ));
   const baseBytes = new TextEncoder().encode(JSON.stringify({ ...doc, layers: compactLayers })).byteLength;
   let estimatedBytes = baseBytes;
@@ -383,31 +398,26 @@ export async function assertCanvasAssetExpansionWithinBytes(
 }
 
 function canvasAssetRefs(doc: CanvasDocument): string[] {
-  return doc.layers.flatMap((layer) => (
-    (layer.type === 'image' || layer.type === 'logo') && layer.value?.startsWith('canvas-asset:')
-      ? [layer.value]
-      : []
-  ));
+  return doc.layers.flatMap((layer) => {
+    const ref = layerAssetRef(layer);
+    return ref ? [ref] : [];
+  });
 }
 
 export async function embedManagedBlobsAsDataUrls(doc: CanvasDocument): Promise<CanvasDocument> {
   let changed = false;
   const layers: CanvasLayer[] = [];
   for (const layer of doc.layers) {
-    if (layer.type !== 'image' && layer.type !== 'logo') {
+    if (!isImageOrLogoLayer(layer)) {
       layers.push(layer);
       continue;
     }
     const val = layer.value;
-    if (!val || val.startsWith('data:') || val.startsWith('canvas-asset:') || val.startsWith('http') || val.startsWith('file:')) {
+    if (!val || val.startsWith('data:') || isCanvasAssetRef(val) || val.startsWith('http') || val.startsWith('file:')) {
       layers.push(layer);
       continue;
     }
-    let reg = blobMap.get(val);
-    if (!reg && val.startsWith('blob:')) {
-      const blobId = urlToBlobIdMap.get(val);
-      if (blobId) reg = blobMap.get(blobId);
-    }
+    const reg = lookupRegisteredBlob(val);
     if (!reg) {
       layers.push(layer);
       continue;
@@ -434,7 +444,7 @@ async function prepareDocumentImagesForCmykExport(doc: CanvasDocument): Promise<
   let next = await serializeDocumentImages(doc, { preferAssetRefs: true });
   next = await persistDataUrlsAsCanvasAssets(next);
   for (const layer of next.layers) {
-    if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value) continue;
+    if (!isImageOrLogoLayer(layer) || !layer.value) continue;
     if (layer.value.startsWith('blob:') || blobMap.has(layer.value)) {
       throw new Error(`CMYK export: imagen sin persistir (${layer.id})`);
     }
@@ -464,6 +474,22 @@ function readCanvasAssetShared(getAsset: CanvasAssetGetter, ref: string): Promis
   return promise;
 }
 
+async function readDocAssetChunks(
+  getAsset: CanvasAssetGetter,
+  refs: string[],
+): Promise<{ chunks: Map<string, ArrayBuffer>; errors: Map<string, unknown> }> {
+  const chunks = new Map<string, ArrayBuffer>();
+  const errors = new Map<string, unknown>();
+  await Promise.all([...new Set(refs)].map(async (ref) => {
+    try {
+      chunks.set(ref, await readCanvasAssetShared(getAsset, ref));
+    } catch (err) {
+      errors.set(ref, err);
+    }
+  }));
+  return { chunks, errors };
+}
+
 async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promise<CanvasDocument> {
   const putAsset = window.electronAPI?.canvasAssetPut as CanvasAssetPutter | undefined;
   if (!putAsset) return doc;
@@ -471,7 +497,7 @@ async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promise<Canva
   let changed = false;
   const layers: CanvasLayer[] = [];
   for (const layer of doc.layers) {
-    if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value?.startsWith('data:')) {
+    if (!isImageOrLogoLayer(layer) || !layer.value?.startsWith('data:')) {
       layers.push(layer);
       continue;
     }
@@ -500,34 +526,30 @@ export async function hydrateDocumentImages(
   const getAsset = window.electronAPI?.canvasAssetGet;
   if (!getAsset) {
     if (strict && countCanvasAssetRefs(doc) > 0) {
-      throw new Error('No se pueden resolver canvas-asset: sin Electron (canvasAssetGet)');
+      throw new Error(NO_ELECTRON_ASSETS_MSG);
     }
     return doc;
   }
 
   let changed = false;
-  const assetChunkByRef = new Map<string, ArrayBuffer>();
-  const readErrorsByRef = new Map<string, unknown>();
-  await Promise.all([...new Set(canvasAssetRefs(doc))].map(async (ref) => {
-    try {
-      assetChunkByRef.set(ref, await readCanvasAssetShared(getAsset, ref));
-    } catch (err) {
-      readErrorsByRef.set(ref, err);
-    }
-  }));
+  const { chunks: assetChunkByRef, errors: readErrorsByRef } = await readDocAssetChunks(
+    getAsset,
+    canvasAssetRefs(doc),
+  );
 
   const layers: CanvasLayer[] = [];
   for (const layer of doc.layers) {
-    if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value?.startsWith('canvas-asset:')) {
+    const ref = layerAssetRef(layer);
+    if (!ref) {
       layers.push(layer);
       continue;
     }
-    const chunk = assetChunkByRef.get(layer.value);
+    const chunk = assetChunkByRef.get(ref);
     if (!chunk) {
-      const err = readErrorsByRef.get(layer.value);
+      const err = readErrorsByRef.get(ref);
       if (strict) {
         const msg = errorMessage(err, String(err ?? 'asset vacío'));
-        throw new Error(`No se pudo resolver ${layer.value}: ${msg}`);
+        throw new Error(`No se pudo resolver ${ref}: ${msg}`);
       }
       layers.push(layer);
       continue;
@@ -549,17 +571,10 @@ export async function assertDocumentImagesResolvable(doc: CanvasDocument): Promi
 
   const getAsset = window.electronAPI?.canvasAssetGet;
   if (!getAsset) {
-    throw new Error('No se pueden resolver canvas-asset: sin Electron (canvasAssetGet)');
+    throw new Error(NO_ELECTRON_ASSETS_MSG);
   }
 
-  const failures = new Map<string, unknown>();
-  await Promise.all([...new Set(refs)].map(async (ref) => {
-    try {
-      await readCanvasAssetShared(getAsset, ref);
-    } catch (err) {
-      failures.set(ref, err);
-    }
-  }));
+  const { errors: failures } = await readDocAssetChunks(getAsset, refs);
   for (const ref of new Set(refs)) {
     const err = failures.get(ref);
     if (err !== undefined) {
@@ -571,7 +586,7 @@ export async function assertDocumentImagesResolvable(doc: CanvasDocument): Promi
 
 async function persistLayerImageValue(val: string): Promise<string> {
   if (
-    val.startsWith('canvas-asset:')
+    isCanvasAssetRef(val)
     || val.startsWith('data:')
     || val.startsWith('http://')
     || val.startsWith('https://')
@@ -579,11 +594,7 @@ async function persistLayerImageValue(val: string): Promise<string> {
   ) {
     return val;
   }
-  let reg = blobMap.get(val);
-  if (!reg && val.startsWith('blob:')) {
-    const blobId = urlToBlobIdMap.get(val);
-    if (blobId) reg = blobMap.get(blobId);
-  }
+  const reg = lookupRegisteredBlob(val);
   if (!reg) return val;
 
   const putAsset = window.electronAPI?.canvasAssetPut as CanvasAssetPutter | undefined;
@@ -593,7 +604,7 @@ async function persistLayerImageValue(val: string): Promise<string> {
 }
 
 async function hydrateLayerImageValue(val: string): Promise<string> {
-  if (!val.startsWith('canvas-asset:')) return val;
+  if (!isCanvasAssetRef(val)) return val;
   const getAsset = window.electronAPI?.canvasAssetGet;
   if (!getAsset) return val;
   try {
@@ -615,7 +626,7 @@ async function mapDiffImageValues(
   if (addedLayers?.length) {
     const mappedLayers = [];
     for (const layer of addedLayers) {
-      if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value) {
+      if (!isImageOrLogoLayer(layer) || !layer.value) {
         mappedLayers.push(layer);
         continue;
       }

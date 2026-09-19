@@ -41,6 +41,12 @@ function requireData<T>(data: T | null, action: string): T {
   return data;
 }
 
+async function deleteById(table: string, id: string): Promise<void> {
+  const client = requireClient();
+  const { error } = await client.from(table).delete().eq('id', id);
+  throwOnError(error);
+}
+
 export async function fetchEspacios(): Promise<Espacio[]> {
   const client = requireClient();
   const { data, error } = await client.from('espacios').select('*').order('name');
@@ -49,9 +55,7 @@ export async function fetchEspacios(): Promise<Espacio[]> {
 }
 
 export async function deleteEspacio(id: string): Promise<void> {
-  const client = requireClient();
-  const { error } = await client.from('espacios').delete().eq('id', id);
-  throwOnError(error);
+  return deleteById('espacios', id);
 }
 
 export async function createEspacio(name: string, userId: string, color?: string): Promise<Espacio> {
@@ -98,9 +102,7 @@ export async function createProyecto(espacioId: string, name: string, color?: st
 }
 
 export async function deleteProyecto(id: string): Promise<void> {
-  const client = requireClient();
-  const { error } = await client.from('proyectos').delete().eq('id', id);
-  throwOnError(error);
+  return deleteById('proyectos', id);
 }
 
 export async function updateProyecto(
@@ -243,9 +245,7 @@ export async function updateTarea(id: string, patch: Partial<TareaInput & Pick<T
 }
 
 export async function deleteTarea(id: string): Promise<void> {
-  const client = requireClient();
-  const { error } = await client.from('tareas').delete().eq('id', id);
-  throwOnError(error);
+  return deleteById('tareas', id);
 }
 
 export async function fetchTaskComments(tareaId: string): Promise<TaskComment[]> {
@@ -291,9 +291,7 @@ export async function updateTaskComment(id: string, body: string): Promise<TaskC
 }
 
 export async function deleteTaskComment(id: string): Promise<void> {
-  const client = requireClient();
-  const { error } = await client.from('tarea_comments').delete().eq('id', id);
-  throwOnError(error);
+  return deleteById('tarea_comments', id);
 }
 
 export async function fetchTaskActivity(tareaId: string): Promise<TaskActivity[]> {
@@ -433,7 +431,5 @@ export async function updateBoardColumn(
 }
 
 export async function deleteBoardColumn(id: string): Promise<void> {
-  const client = requireClient();
-  const { error } = await client.from('board_columns').delete().eq('id', id);
-  throwOnError(error);
+  return deleteById('board_columns', id);
 }

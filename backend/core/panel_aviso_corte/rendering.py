@@ -9,8 +9,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-
 from backend.core.docx_helpers import (
     cm_to_twips,
     format_run,
@@ -21,6 +19,7 @@ from backend.core.docx_helpers import (
     set_row_height,
     set_vertical_align,
 )
+from backend.core.jinja_environment import make_cached_jinja_environment
 from backend.utils.image_data import (
     build_image_uris,
     contain_fit_cm,
@@ -80,9 +79,8 @@ def _template_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "templates"
 
 
-_jinja_env = Environment(
-    loader=FileSystemLoader(str(_template_dir())),
-    autoescape=select_autoescape(["html", "xml"]),
+_environment = make_cached_jinja_environment(
+    _template_dir, PANEL_TEMPLATE_FILES[DEFAULT_PANEL_TEMPLATE_ID]
 )
 
 
@@ -125,7 +123,7 @@ def render_pdf(
 
     template_file = resolve_panel_template_file(template_id)
     try:
-        template = _jinja_env.get_template(template_file)
+        template = _environment().get_template(template_file)
     except Exception as exc:
         logger.exception("No se pudo cargar la plantilla %s", template_file)
         msg = f"Error al cargar plantilla: {exc}"

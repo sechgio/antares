@@ -1,5 +1,5 @@
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { Check, Flag, Pencil, Trash2 } from 'lucide-react';
+import { Check, Flag } from 'lucide-react';
 import StatusPicker from '../StatusPicker';
 import type { BoardColumn, Tarea, TareaStatus, TeamMember } from '../../types';
 import { formatRelativeDate } from '../../utils/dates';
@@ -7,6 +7,7 @@ import { isOverdue } from '../../utils/filters';
 import { memberName } from '../../utils/members';
 import { columnIsDone } from '../../utils/statusConfig';
 import { priorityMeta } from './taskPriority';
+import { TaskRowActions, TaskSelectCheckbox } from './TaskRowPrimitives';
 import Button from '@/components/ui/Button';
 
 function AssigneeCell({ members, id }: { members: TeamMember[]; id: string | null }) {
@@ -124,42 +125,13 @@ export default function TableTaskRowContent({
     <span className="text-[var(--text-muted)]">—</span>
   );
 
-  const actions = (
-    <>
-      {onEdit && (
-        <WithHoverTooltip label="Editar" placement="bottom">
-          <Button variant="none" size="none"
-            onClick={() => onEdit(tarea)}
-            className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-            aria-label={`Editar ${tarea.title}`}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        </WithHoverTooltip>
-      )}
-      <WithHoverTooltip label="Eliminar" placement="bottom">
-        <Button variant="none" size="none"
-          onClick={() => onDelete(tarea.id)}
-          className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
-          aria-label={`Eliminar ${tarea.title}`}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      </WithHoverTooltip>
-    </>
-  );
+  const actions = <TaskRowActions tarea={tarea} onEdit={onEdit} onDelete={onDelete} small />;
 
   return (
     <>
       {selectable ? (
         <Cell className={isTable ? 'px-2 py-2.5 text-center' : 'flex justify-center'}>
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={() => onToggleSelect?.(tarea.id)}
-            aria-label={`Seleccionar ${tarea.title}`}
-            className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
-          />
+          <TaskSelectCheckbox tarea={tarea} selected={selected} onToggle={onToggleSelect} />
         </Cell>
       ) : (
         !isTable && <span />

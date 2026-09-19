@@ -1,8 +1,19 @@
+import { Suspense, lazy } from 'react';
 import { Minus, Square, X, Settings } from 'lucide-react';
-import TaskNotificationsBell from './TaskNotificationsBell';
 import UpdateButton from './UpdateButton';
 import { HoverTooltip } from '@/components/ui/HoverTooltip';
 import Button from '@/components/ui/Button';
+
+// La campana arrastra useDueNotifications → la API de espacios → @supabase/supabase-js.
+// Importarla en directo metería ese vendor en el grafo estático del shell (lo mide
+// frontend/scripts/shell-preload-budget.mjs) y el arranque en frío lo pagaría.
+const TaskNotificationsBell = lazy(() => import('./TaskNotificationsBell'));
+
+const bellPlaceholder = (
+  <div className="relative flex h-full" aria-hidden>
+    <div className="h-full w-10" />
+  </div>
+);
 
 function handleWindowAction(action: 'minimizeWindow' | 'maximizeWindow' | 'closeWindow') {
   window.electronAPI?.[action]?.();
@@ -21,7 +32,9 @@ export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEsp
       className="app-titlebar flex h-9 shrink-0 items-center justify-end overflow-visible border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] select-none"
     >
       <div className="app-titlebar-controls flex h-full items-stretch overflow-visible">
-        <TaskNotificationsBell onOpenEspacios={onOpenEspacios} />
+        <Suspense fallback={bellPlaceholder}>
+          <TaskNotificationsBell onOpenEspacios={onOpenEspacios} />
+        </Suspense>
         <UpdateButton />
         {onOpenSettings && (
           <div className="group relative flex h-full">

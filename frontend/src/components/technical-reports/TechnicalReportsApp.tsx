@@ -1,13 +1,15 @@
 import "./technical-reports.css";
 import { WithHoverTooltip } from "@/components/ui/HoverTooltip";
 import {
+  ChevronDown,
   Download,
   FilePlus2,
-  Files,
   RefreshCw,
   Trash2,
   Upload,
 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useAnchoredPopover } from "../../hooks/useAnchoredPopover";
 import { useReportWorkspace } from "../../hooks/useReportWorkspace";
 import ReportWorkspaceShell from "../report-workspace/ReportWorkspaceShell";
 import Button from "../ui/Button";
@@ -46,6 +48,20 @@ export default function TechnicalReportsApp() {
       runOperation,
       saveCurrent,
     });
+  const {
+    isOpen: exportMenuOpen,
+    position: exportMenuPosition,
+    triggerRef: exportMenuTriggerRef,
+    popupRef: exportMenuRef,
+    close: closeExportMenu,
+    toggle: toggleExportMenu,
+  } = useAnchoredPopover<HTMLDivElement>({
+    estimatedHeight: 44,
+    align: "end",
+    direction: "down",
+    gap: 4,
+    matchTriggerWidth: true,
+  });
 
   return (
     <ReportWorkspaceShell
@@ -59,38 +75,41 @@ export default function TechnicalReportsApp() {
       tabsAriaLabel="Vista de informes técnicos"
       actions={
         <>
-          <Button
-            variant="none"
-            size="none"
-            className="tr-secondary"
-            disabled={busy}
-            onClick={() => importInputRef.current?.click()}
-          >
-            <Upload size={16} />
-            Importar
-          </Button>
-          <WithHoverTooltip label="Recargar" placement="bottom">
-            <Button
-              variant="none"
-              size="none"
-              className="tr-secondary tr-icon-button"
-              disabled={busy}
-              onClick={() => void loadReports()}
-            >
-              <RefreshCw size={16} />
-            </Button>
-          </WithHoverTooltip>
-          <WithHoverTooltip label="Eliminar todos" placement="bottom">
-            <Button
-              variant="none"
-              size="none"
-              className="tr-danger tr-icon-button"
-              disabled={busy || reports.length === 0}
-              onClick={() => void clearReports()}
-            >
-              <Trash2 size={16} />
-            </Button>
-          </WithHoverTooltip>
+          <div className="tr-action-group">
+            <WithHoverTooltip label="Importar" placement="bottom">
+              <Button
+                variant="none"
+                size="none"
+                className="tr-secondary tr-icon-button"
+                disabled={busy}
+                onClick={() => importInputRef.current?.click()}
+              >
+                <Upload size={16} />
+              </Button>
+            </WithHoverTooltip>
+            <WithHoverTooltip label="Recargar" placement="bottom">
+              <Button
+                variant="none"
+                size="none"
+                className="tr-secondary tr-icon-button"
+                disabled={busy}
+                onClick={() => void loadReports()}
+              >
+                <RefreshCw size={16} />
+              </Button>
+            </WithHoverTooltip>
+            <WithHoverTooltip label="Eliminar todos" placement="bottom">
+              <Button
+                variant="none"
+                size="none"
+                className="tr-danger tr-icon-button"
+                disabled={busy || reports.length === 0}
+                onClick={() => void clearReports()}
+              >
+                <Trash2 size={16} />
+              </Button>
+            </WithHoverTooltip>
+          </div>
           <Button
             variant="none"
             size="none"
@@ -101,26 +120,64 @@ export default function TechnicalReportsApp() {
             <FilePlus2 size={16} />
             Nuevo
           </Button>
-          <Button
-            variant="none"
-            size="none"
-            className="tr-primary"
-            onClick={exportCurrent}
-            disabled={!formData || busy}
-          >
-            <Download size={16} />
-            PDF
-          </Button>
-          <Button
-            variant="none"
-            size="none"
-            className="tr-secondary"
-            onClick={exportConsolidated}
-            disabled={reports.length === 0 || busy}
-          >
-            <Files size={16} />
-            Consolidado
-          </Button>
+          <div ref={exportMenuTriggerRef} className="tr-split">
+            <Button
+              variant="none"
+              size="none"
+              className="tr-primary"
+              onClick={() => {
+                closeExportMenu();
+                void exportCurrent();
+              }}
+              disabled={!formData || busy}
+            >
+              <Download size={16} />
+              PDF
+            </Button>
+            {reports.length > 0 && (
+              <Button
+                variant="none"
+                size="none"
+                className="tr-split-toggle"
+                onClick={toggleExportMenu}
+                disabled={busy}
+                aria-expanded={exportMenuOpen}
+                aria-haspopup="menu"
+                aria-label="Opciones de exportación"
+              >
+                <ChevronDown size={14} />
+              </Button>
+            )}
+          </div>
+          {exportMenuOpen &&
+            exportMenuPosition &&
+            createPortal(
+              <div
+                ref={exportMenuRef}
+                role="menu"
+                style={{
+                  top: exportMenuPosition.top,
+                  left: exportMenuPosition.left,
+                  width: exportMenuPosition.width,
+                }}
+                className="tr-menu"
+              >
+                <Button
+                  variant="none"
+                  size="none"
+                  role="menuitem"
+                  className="tr-menu-item"
+                  disabled={busy}
+                  onClick={() => {
+                    closeExportMenu();
+                    void exportConsolidated();
+                  }}
+                >
+                  Consolidado
+                </Button>
+              </div>,
+              document.body,
+            )}
         </>
       }
     >

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, assertActionsPinned, finish } = require('./helpers/harness');
 
 const ROOT = path.join(__dirname, '..');
 const scriptPath = path.join(ROOT, 'scripts', 'pr-fix-loop.js');
@@ -42,10 +42,7 @@ function run() {
   assert(!wf.includes('npm install'), 'workflow does not execute dependency lifecycle scripts');
   assert(!wf.includes('--ship'), 'workflow never enables fixer side effects');
   assert(!wf.includes('--merge'), 'workflow never auto-merges');
-  assert(
-    [...wf.matchAll(/uses:\s+actions\/[^@\s]+@([^\s#]+)/g)].every((match) => /^[0-9a-f]{40}$/.test(match[1])),
-    'workflow pins GitHub actions to full commit SHAs'
-  );
+  assertActionsPinned(wf, 'pr-fix-loop workflow');
 
   try {
     execSync('node --check scripts/pr-fix-loop.js', { cwd: ROOT, stdio: 'pipe' });

@@ -44,7 +44,6 @@ function loadRouterWithHandler({ documentsDir, downloadsDir, userDataDir, fakePr
 
   stubModule('electron/window-manager', {
     getMainWindow: () => fakeWin,
-    buildAppMenu: () => ({ popup: () => {} }),
     getIsDev: () => true,
   });
 

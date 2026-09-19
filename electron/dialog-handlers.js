@@ -58,16 +58,11 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   if (!NATIVE_METHODS.has(method)) {
     return { handled: false };
   }
-
-  if (method === 'file_token_resolve') {
-    const token = params && params.token;
-    const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
-    return { handled: true, result: { path: filePath } };
-  }
+  const webContentsId = _webContentsIdFromWindow(window);
 
   if (method === 'file_token_read_json') {
     const token = params && params.token;
-    const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
+    const filePath = _resolveTokenPath(token, webContentsId);
     const MAX_JSON_READ = 64 * 1024 * 1024;
     let parsed;
     try {
@@ -95,29 +90,29 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     }
     let filePath;
     try {
-      filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
+      filePath = _resolveTokenPath(token, webContentsId);
     } catch {
       return { handled: true, result: { cleaned: false } };
     }
     await cleanupSpreadsheetSpillFile(filePath);
-    await cleanupStagedCapability(token, _webContentsIdFromWindow(window));
+    await cleanupStagedCapability(token, webContentsId);
     revokeCapability(token);
     return { handled: true, result: { cleaned: true } };
   }
 
   if (method === 'file_staged_create') {
-    const session = createStagedSession({ name: params.name, size: params.size, webContentsId: _webContentsIdFromWindow(window) });
+    const session = createStagedSession({ name: params.name, size: params.size, webContentsId: webContentsId });
     return { handled: true, result: { token: session.token } };
   }
 
   if (method === 'file_staged_append') {
     const chunk = params.chunk !== undefined ? params.chunk : params.chunk_b64;
-    const res = await appendStagedChunk(params.token, chunk, _webContentsIdFromWindow(window));
+    const res = await appendStagedChunk(params.token, chunk, webContentsId);
     return { handled: true, result: res };
   }
 
   if (method === 'file_staged_complete') {
-    const cap = await completeStagedSession(params.token, _webContentsIdFromWindow(window));
+    const cap = await completeStagedSession(params.token, webContentsId);
     return { handled: true, result: { file_token: cap.token, name: cap.name, size: cap.size } };
   }
 
@@ -170,11 +165,11 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     const { nativeImage } = electronModules;
     let resolvedPath = params && params.path;
     if (typeof resolvedPath === 'string' && resolvedPath.startsWith('antares-read_')) {
-      resolvedPath = _resolveTokenPath(resolvedPath, _webContentsIdFromWindow(window));
+      resolvedPath = _resolveTokenPath(resolvedPath, webContentsId);
       registerAllowedReadPath(resolvedPath);
     }
     if (params && params.file_token) {
-      resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
+      resolvedPath = _resolveTokenPath(params.file_token, webContentsId);
       registerAllowedReadPath(resolvedPath);
     }
     const result = await createLocalThumbnail(
@@ -188,11 +183,11 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   if (method === 'local_image_data_url') {
     let resolvedPath = params && params.path;
     if (typeof resolvedPath === 'string' && resolvedPath.startsWith('antares-read_')) {
-      resolvedPath = _resolveTokenPath(resolvedPath, _webContentsIdFromWindow(window));
+      resolvedPath = _resolveTokenPath(resolvedPath, webContentsId);
       registerAllowedReadPath(resolvedPath);
     }
     if (params && params.file_token) {
-      resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
+      resolvedPath = _resolveTokenPath(params.file_token, webContentsId);
       registerAllowedReadPath(resolvedPath);
     }
     const result = await createLocalImageDataUrl(resolvedPath);
@@ -202,7 +197,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   if (method === 'html_to_pdf') {
     return {
       handled: true,
-      result: await renderHtmlToPdf(params, electronModules, _webContentsIdFromWindow(window)),
+      result: await renderHtmlToPdf(params, electronModules, webContentsId),
     };
   }
 
@@ -247,7 +242,7 @@ writeRoots._loadPersistedWriteRoots();
 module.exports = {
   handleDialogCall,
   NATIVE_METHODS,
-  isUnderAllowedWriteRoot: writeRoots._isUnderAllowedPdfWriteDir,
+  isUnderAllowedWriteRoot: writeRoots._isUnderRegisteredWriteRoot,
   _clearAllowedWriteRoots: writeRoots._clearAllowedWriteRoots,
   _resetPdfRenderPool,
   registerFileInputPath,

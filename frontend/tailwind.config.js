@@ -1,3 +1,20 @@
+// Un color declarado como `var(--x)` en texto plano no admite el modificador de
+// alfa de Tailwind: `bg-mc-ink/50` no genera ninguna regla y la utilidad queda
+// muerta en silencio. Devolver una función con `color-mix` es el camino que
+// soporta `withAlphaValue` y además respeta el valor del token en el tema claro
+// y en el oscuro.
+//
+// Sin modificador, Tailwind pasa `var(--tw-*-opacity, 1)` como `opacityValue`:
+// no es un número, así que se devuelve el token intacto para no cambiar el
+// comportamiento de las ~2800 clases de color que ya funcionan.
+const alpha =
+  (cssVar) =>
+  ({ opacityValue }) => {
+    const amount = Number(opacityValue);
+    if (!Number.isFinite(amount)) return `var(${cssVar})`;
+    return `color-mix(in srgb, var(${cssVar}) ${Number((amount * 100).toFixed(2))}%, transparent)`;
+  };
+
 export default {
   content: [
     "./index.html",
@@ -7,49 +24,49 @@ export default {
     extend: {
       colors: {
         mc: {
-          canvas: 'var(--mc-canvas)',
-          lifted: 'var(--mc-lifted)',
-          white: 'var(--mc-white)',
-          bone: 'var(--mc-bone)',
-          ink: 'var(--mc-ink)',
-          charcoal: 'var(--mc-charcoal)',
-          slate: 'var(--mc-slate)',
-          granite: 'var(--mc-granite)',
-          graphite: 'var(--mc-graphite)',
-          dust: 'var(--mc-dust)',
-          signal: 'var(--mc-signal)',
-          signalLight: 'var(--mc-signalLight)',
-          clay: 'var(--mc-clay)',
-          linkBlue: 'var(--mc-linkBlue)',
-          red: 'var(--mc-red)',
-          yellow: 'var(--mc-yellow)',
-          ghost: 'var(--mc-ghost)',
+          canvas: alpha('--mc-canvas'),
+          lifted: alpha('--mc-lifted'),
+          white: alpha('--mc-white'),
+          bone: alpha('--mc-bone'),
+          ink: alpha('--mc-ink'),
+          charcoal: alpha('--mc-charcoal'),
+          slate: alpha('--mc-slate'),
+          granite: alpha('--mc-granite'),
+          graphite: alpha('--mc-graphite'),
+          dust: alpha('--mc-dust'),
+          signal: alpha('--mc-signal'),
+          signalLight: alpha('--mc-signalLight'),
+          clay: alpha('--mc-clay'),
+          linkBlue: alpha('--mc-linkBlue'),
+          red: alpha('--mc-red'),
+          yellow: alpha('--mc-yellow'),
+          ghost: alpha('--mc-ghost'),
         },
         dark: {
-          base: 'var(--bg-base)',
-          surface: 'var(--bg-surface)',
-          elevated: 'var(--bg-elevated)',
-          input: 'var(--bg-input)',
+          base: alpha('--bg-base'),
+          surface: alpha('--bg-surface'),
+          elevated: alpha('--bg-elevated'),
+          input: alpha('--bg-input'),
         },
         txt: {
-          primary: 'var(--text-primary)',
-          secondary: 'var(--text-secondary)',
-          muted: 'var(--text-muted)',
+          primary: alpha('--text-primary'),
+          secondary: alpha('--text-secondary'),
+          muted: alpha('--text-muted'),
         },
         accent: {
-          orange: 'var(--accent-orange)',
-          'orange-hover': 'var(--accent-orange-hover)',
-          'orange-glow': 'var(--accent-orange-glow)',
-          teal: 'var(--accent-secondary)',
-          blue: 'var(--accent-blue)',
-          green: 'var(--accent-green)',
-          red: 'var(--accent-red)',
-          yellow: 'var(--accent-yellow)',
+          orange: alpha('--accent-orange'),
+          'orange-hover': alpha('--accent-orange-hover'),
+          'orange-glow': alpha('--accent-orange-glow'),
+          teal: alpha('--accent-secondary'),
+          blue: alpha('--accent-blue'),
+          green: alpha('--accent-green'),
+          red: alpha('--accent-red'),
+          yellow: alpha('--accent-yellow'),
         },
         bdr: {
-          subtle: 'var(--border-subtle)',
-          medium: 'var(--border-medium)',
-          active: 'var(--border-active)',
+          subtle: alpha('--border-subtle'),
+          medium: alpha('--border-medium'),
+          active: alpha('--border-active'),
         },
       },
       fontFamily: {

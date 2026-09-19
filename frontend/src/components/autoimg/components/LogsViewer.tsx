@@ -66,7 +66,7 @@ export default function LogsViewer({ rows: externalRows, onRefresh }: LogsViewer
         {data.length > 0 ? (
           <div className="divide-y divide-[var(--border-subtle)]">
             {data.map((row, i) => (
-              <div key={i} className="px-4 py-3 transition-colors hover:bg-[var(--bg-elevated)]/30">
+              <div key={i} className="px-4 py-3 transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_30%,transparent)]">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-[12px] font-medium text-[var(--text-primary)]">
                     {row[1]}

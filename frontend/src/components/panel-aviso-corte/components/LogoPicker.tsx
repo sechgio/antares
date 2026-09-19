@@ -65,8 +65,8 @@ export default function LogoPicker({ right, onRight }: Props) {
         onDragLeave={() => setDragging(false)}
         className={`relative cursor-pointer rounded-lg border border-dashed overflow-hidden transition-all duration-200 ${
           dragging
-            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/8 shadow-[0_0_0_2px_var(--accent-primary)/15]'
-            : 'border-[var(--border-subtle)] hover:border-[var(--accent-primary)]/50 hover:bg-[var(--bg-surface)]'
+            ? 'border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_8%,transparent)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary)_15%,transparent)]'
+            : 'border-[var(--border-subtle)] hover:border-[color:color-mix(in_srgb,var(--accent-primary)_50%,transparent)] hover:bg-[var(--bg-surface)]'
         }`}
       >
         {right ? (
@@ -84,7 +84,7 @@ export default function LogoPicker({ right, onRight }: Props) {
             </div>
             <Button variant="none" size="none"
               onClick={handleRemove}
-              className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 transition-colors shrink-0"
+              className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] transition-colors shrink-0"
               aria-label="Quitar logo"
             >
               <X size={13} />
@@ -93,7 +93,7 @@ export default function LogoPicker({ right, onRight }: Props) {
         ) : (
           <div className="flex items-center gap-2.5 p-2">
             <div className={`w-10 h-10 rounded-md flex items-center justify-center shrink-0 transition-colors ${
-              dragging ? 'bg-[var(--accent-primary)]/10' : 'bg-[var(--bg-surface)]'
+              dragging ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)]' : 'bg-[var(--bg-surface)]'
             }`}>
               {dragging ? (
                 <Upload size={16} className="text-[var(--accent-primary)]" />

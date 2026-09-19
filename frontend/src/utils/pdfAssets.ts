@@ -1,5 +1,6 @@
 import { arrayBufferToBase64, base64ToBytes } from './bytesToBase64';
 import { stageFileForIpc } from './stageFile';
+import { createConcurrencyLimiter } from './concurrency';
 
 export type PdfQuality = 'max' | 'high' | 'low';
 
@@ -18,26 +19,11 @@ const STAGEABLE_IMAGE_EXTENSIONS = new Set([
 const STAGE_CONCURRENCY = 4;
 export const MAX_PDF_STAGE_QUEUE = 32;
 const PDF_STAGE_CAPACITY_ERROR = 'PDF image staging queue capacity exhausted';
-let stageInFlight = 0;
-const stageWaiters: Array<() => void> = [];
 
-function runStagedLimited<T>(fn: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const start = () => {
-      stageInFlight += 1;
-      fn()
-        .then(resolve, reject)
-        .finally(() => {
-          stageInFlight -= 1;
-          const next = stageWaiters.shift();
-          if (next) next();
-        });
-    };
-    if (stageInFlight < STAGE_CONCURRENCY) start();
-    else if (stageWaiters.length < MAX_PDF_STAGE_QUEUE) stageWaiters.push(start);
-    else reject(new Error(PDF_STAGE_CAPACITY_ERROR));
-  });
-}
+const runStagedLimited = createConcurrencyLimiter(STAGE_CONCURRENCY, {
+  maxQueue: MAX_PDF_STAGE_QUEUE,
+  capacityError: () => new Error(PDF_STAGE_CAPACITY_ERROR),
+});
 
 function stageFileForPdf(file: File): Promise<string | null> {
   const dot = file.name.lastIndexOf('.');

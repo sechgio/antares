@@ -48,7 +48,7 @@ export default function ColorSwatchPicker({ color, label, onChange }: ColorSwatc
             e.stopPropagation();
             toggle();
           }}
-          className="flex h-6 w-6 items-center justify-center rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]/40"
+          className="flex h-6 w-6 items-center justify-center rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)]"
         >
           <span
             className="h-3.5 w-3.5 rounded-full border border-black/15 shadow-sm"

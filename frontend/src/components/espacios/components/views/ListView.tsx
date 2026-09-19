@@ -62,7 +62,7 @@ const ListVirtualRow = React.memo(function ListVirtualRow({
   return (
     <div
       style={style}
-      className={`${ROW_GRID} border-b border-[var(--border-subtle)] px-3 transition-colors hover:bg-[var(--bg-elevated)]/50 ${
+      className={`${ROW_GRID} border-b border-[var(--border-subtle)] px-3 transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_50%,transparent)] ${
         overdue ? 'bg-[var(--accent-red)]/[0.03]' : ''
       } ${selected ? 'bg-[var(--accent-primary)]/[0.06]' : ''}`}
       data-virtual-row
@@ -143,7 +143,7 @@ function ListRowTable({
             return (
               <tr
                 key={tarea.id}
-                className={`border-b border-[var(--border-subtle)] transition-colors hover:bg-[var(--bg-elevated)]/50 ${
+                className={`border-b border-[var(--border-subtle)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_50%,transparent)] ${
                   overdue ? 'bg-[var(--accent-red)]/[0.03]' : ''
                 } ${selected ? 'bg-[var(--accent-primary)]/[0.06]' : ''}`}
               >

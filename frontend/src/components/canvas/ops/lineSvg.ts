@@ -3,14 +3,7 @@ import type { CanvasLayer } from '../types';
 import { parseMm } from '../types';
 import { ensureLinePath, parseStrokeCap, pathToSvgD } from './pathGeometry';
 import { lineStrokeWidthPx, pxToMm, resolveLineFillColor, parseStrokeDash, strokeDasharrayMm } from './layerStyle';
-
-function escapeAttr(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
+import { escapeAttr } from '../../../utils/html';
 
 function strokeLinecap(cap: ReturnType<typeof parseStrokeCap>): 'butt' | 'round' | 'square' {
   if (cap === 'round') return 'round';

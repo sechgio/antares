@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import SyncConflictBar from '../editor/SyncConflictBar';
-import type { SyncConflict } from '../sync/canvasCloudSync';
+import type { SyncConflict } from '../sync/syncCompare';
 import { createEmptyDocument } from '../types';
 
 function makeConflict(name = 'PANEL 2'): SyncConflict {

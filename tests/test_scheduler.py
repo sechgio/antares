@@ -302,3 +302,51 @@ def test_submit_light_does_not_inflate_submitted_when_executor_submit_raises() -
     assert metrics["light_outstanding"] == 0
     assert metrics["light_submitted"] == 0
     assert scheduler._light_slots.acquire(blocking=False), "semaphore permit was leaked"
+
+
+def test_metrics_probes_ram_without_holding_the_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`metrics()` no puede retener `_lock` mientras consulta la RAM.
+
+    Ese lock es el mismo que `_heavy_cond` suelta mientras los workers del lane
+    heavy esperan un slot: un `import psutil` o un syscall lento dentro del lock
+    congela el scheduler entero.
+    """
+    import psutil
+
+    from backend.core.scheduler import WorkScheduler
+
+    class _Vm:
+        total = 8 * 1024**3
+        available = 6 * 1024**3
+        percent = 25
+
+    observed: dict[str, bool] = {}
+
+    def fake_virtual_memory() -> _Vm:
+        # Otro hilo: un RLock se reentría en el mismo hilo y aprobaría el test
+        # aunque metrics() siguiera reteniendo el lock.
+        seen: dict[str, bool] = {}
+
+        def probe() -> None:
+            acquired = scheduler._lock.acquire(blocking=False)
+            if acquired:
+                scheduler._lock.release()
+            seen["free"] = acquired
+
+        worker = threading.Thread(target=probe)
+        worker.start()
+        worker.join(timeout=5)
+        observed["lock_free"] = seen.get("free", False)
+        return _Vm()
+
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=0)
+    monkeypatch.setattr(psutil, "virtual_memory", fake_virtual_memory)
+
+    try:
+        metrics = scheduler.metrics()
+    finally:
+        scheduler.shutdown(wait=True)
+
+    assert observed["lock_free"] is True, "metrics() sondió la RAM con el lock tomado"
+    assert metrics["system_ram_available_mb"] == 6 * 1024
+    assert metrics["memory_pressure"] is False

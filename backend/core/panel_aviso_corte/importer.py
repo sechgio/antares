@@ -67,8 +67,11 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
         raise InvalidExcelError(_ERR_INVALID_EXTENSION)
 
     try:
-        import openpyxl
-        from openpyxl.utils.exceptions import InvalidFileException
+        from backend.core.import_guard import serialized_import
+
+        with serialized_import():
+            import openpyxl
+            from openpyxl.utils.exceptions import InvalidFileException
     except ImportError as err:  # pragma: no cover - openpyxl es dependencia declarada
         logger.exception("parse_excel_bytes: openpyxl no disponible: %s", err)
         msg = f"{_ERR_READ_PREFIX}: {err}"

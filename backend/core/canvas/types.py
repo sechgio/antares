@@ -183,7 +183,3 @@ class CanvasDocument(TypedDict, total=False):
     settings: CanvasSettings
     guides: list[CanvasGuide]
     styles: list[CanvasSharedStyle]
-
-
-JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
-JsonObject = dict[str, JsonValue]

@@ -147,6 +147,44 @@ function testReport() {
   assert(empty.includes('quality-ratchet.js --update'), 'sin baseline explica cómo crearlo');
 }
 
+function testBaselineSource() {
+  console.log('\nOrigen del techo:');
+  const committed = { metrics: { typeIgnore: { value: 27, direction: 'max' } } };
+  const raised = { metrics: { typeIgnore: { value: 40, direction: 'max' } } };
+  const lowered = { metrics: { typeIgnore: { value: 20, direction: 'max' } } };
+
+  const chosen = ratchet.chooseBaseline({ committed, local: raised });
+  eq(chosen.source, 'HEAD', 'el techo commiteado manda sobre el del árbol de trabajo');
+  eq(chosen.baseline, committed, 'se juzga contra el baseline de HEAD, no contra el local');
+  eq(ratchet.chooseBaseline({ committed: null, local: raised }).source, 'worktree', 'sin baseline en HEAD sí vale el local');
+  eq(ratchet.chooseBaseline({ committed: null, local: null }).baseline, null, 'sin ninguno no se juzga nada');
+
+  const drift = ratchet.loosenedCeilings(committed, raised);
+  eq(drift.length, 1, 'avisa cuando el árbol de trabajo sube un techo');
+  eq(drift[0].head, 27, 'el aviso muestra el techo de HEAD');
+  eq(drift[0].local, 40, 'el aviso muestra el techo local propuesto');
+  eq(ratchet.loosenedCeilings(committed, lowered).length, 0, 'bajarlo localmente no es deriva');
+  eq(ratchet.loosenedCeilings(committed, committed).length, 0, 'árbol idéntico a HEAD no es deriva');
+  eq(ratchet.loosenedCeilings(null, raised).length, 0, 'sin baseline commiteado no hay deriva que señalar');
+  eq(
+    ratchet.loosenedCeilings({ metrics: { typeIgnore: { value: null } } }, raised).length,
+    0,
+    'un techo nulo en HEAD no se compara',
+  );
+
+  const fromGit = ratchet.readCommittedBaseline();
+  assert(
+    fromGit && Number.isFinite(fromGit.metrics.typeIgnore.value),
+    'readCommittedBaseline() lee .quality-baseline.json desde HEAD',
+  );
+
+  const report = ratchet.renderReport(
+    ratchet.evaluate({ typeIgnore: 27 }, committed),
+    { baselineSource: 'HEAD' },
+  );
+  assert(report.includes('Techo leído de `HEAD`'), 'el informe declara de dónde salió el techo');
+}
+
 function run() {
   console.log('Quality ratchet\n');
 
@@ -155,6 +193,7 @@ function run() {
     testCounters();
     testCompare();
     testNextBaseline();
+    testBaselineSource();
     testReport();
   } finally {
     cleanup();

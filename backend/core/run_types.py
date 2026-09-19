@@ -166,40 +166,44 @@ class RunTypeMeta:
     filter_group: str = "default"
 
 
+# StatField es frozen: una instancia por columna semántica puede compartirse entre registros.
+_STAT_FORMATO = StatField(
+    key="formato",
+    label_key="history.stats.format",
+    resolve=lambda r: r.get("formato") or "—",
+)
+
+_STAT_OK = StatField(
+    key="ok",
+    label_key="history.stats.ok",
+    resolve=lambda r: r.get("ok_count") or 0,
+    color_token="var(--accent-green)",
+)
+
+_STAT_ERR = StatField(
+    key="err",
+    label_key="history.stats.err",
+    resolve=lambda r: r.get("err_count") or 0,
+    color_token="var(--accent-red)",
+)
+
+
 def _conversion_stats() -> tuple[StatField, ...]:
     return (
-        StatField(
-            key="formato",
-            label_key="history.stats.format",
-            resolve=lambda r: r.get("formato") or "—",
-        ),
+        _STAT_FORMATO,
         StatField(
             key="calidad",
             label_key="history.stats.quality",
             resolve=lambda r: f"{int(r.get('calidad') or 0)}%",
         ),
-        StatField(
-            key="ok",
-            label_key="history.stats.ok",
-            resolve=lambda r: r.get("ok_count") or 0,
-            color_token="var(--accent-green)",
-        ),
-        StatField(
-            key="err",
-            label_key="history.stats.err",
-            resolve=lambda r: r.get("err_count") or 0,
-            color_token="var(--accent-red)",
-        ),
+        _STAT_OK,
+        _STAT_ERR,
     )
 
 
 def _formato_stats() -> tuple[StatField, ...]:
     return (
-        StatField(
-            key="formato",
-            label_key="history.stats.format",
-            resolve=lambda r: r.get("formato") or "—",
-        ),
+        _STAT_FORMATO,
         StatField(
             key="desde",
             label_key="history.stats.from",
@@ -221,57 +225,29 @@ def _formato_stats() -> tuple[StatField, ...]:
 
 def _padron_stats() -> tuple[StatField, ...]:
     return (
-        StatField(
-            key="formato",
-            label_key="history.stats.format",
-            resolve=lambda r: r.get("formato") or "—",
-        ),
+        _STAT_FORMATO,
         StatField(
             key="items",
             label_key="history.stats.items",
             resolve=lambda r: len(_files(r)),
             color_token="var(--accent-yellow)",
         ),
-        StatField(
-            key="ok",
-            label_key="history.stats.ok",
-            resolve=lambda r: r.get("ok_count") or 0,
-            color_token="var(--accent-green)",
-        ),
-        StatField(
-            key="err",
-            label_key="history.stats.err",
-            resolve=lambda r: r.get("err_count") or 0,
-            color_token="var(--accent-red)",
-        ),
+        _STAT_OK,
+        _STAT_ERR,
     )
 
 
 def _volante_stats() -> tuple[StatField, ...]:
     return (
-        StatField(
-            key="formato",
-            label_key="history.stats.format",
-            resolve=lambda r: r.get("formato") or "—",
-        ),
+        _STAT_FORMATO,
         StatField(
             key="records",
             label_key="history.stats.records",
             resolve=lambda r: len(_files(r)),
             color_token="var(--accent-secondary)",
         ),
-        StatField(
-            key="ok",
-            label_key="history.stats.ok",
-            resolve=lambda r: r.get("ok_count") or 0,
-            color_token="var(--accent-green)",
-        ),
-        StatField(
-            key="err",
-            label_key="history.stats.err",
-            resolve=lambda r: r.get("err_count") or 0,
-            color_token="var(--accent-red)",
-        ),
+        _STAT_OK,
+        _STAT_ERR,
     )
 
 
@@ -294,12 +270,7 @@ def _image_optimizer_stats() -> tuple[StatField, ...]:
             resolve=lambda r: r.get("ok_count") or 0,
             color_token="var(--accent-green)",
         ),
-        StatField(
-            key="err",
-            label_key="history.stats.err",
-            resolve=lambda r: r.get("err_count") or 0,
-            color_token="var(--accent-red)",
-        ),
+        _STAT_ERR,
     )
 
 
@@ -341,18 +312,8 @@ def _reporte_campo_stats() -> tuple[StatField, ...]:
             label_key="history.stats.contractor",
             resolve=lambda r: _opt(r, "contratista") or "—",
         ),
-        StatField(
-            key="ok",
-            label_key="history.stats.ok",
-            resolve=lambda r: r.get("ok_count") or 0,
-            color_token="var(--accent-green)",
-        ),
-        StatField(
-            key="err",
-            label_key="history.stats.err",
-            resolve=lambda r: r.get("err_count") or 0,
-            color_token="var(--accent-red)",
-        ),
+        _STAT_OK,
+        _STAT_ERR,
     )
 
 
@@ -374,12 +335,7 @@ def _panel_aviso_corte_stats() -> tuple[StatField, ...]:
             resolve=lambda r: r.get("ok_count") or 0,
             color_token="var(--accent-rose, #fb7185)",
         ),
-        StatField(
-            key="err",
-            label_key="history.stats.err",
-            resolve=lambda r: r.get("err_count") or 0,
-            color_token="var(--accent-red)",
-        ),
+        _STAT_ERR,
     )
 
 

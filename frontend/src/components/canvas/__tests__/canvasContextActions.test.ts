@@ -36,6 +36,7 @@ function makeInput(doc: CanvasDocument, overrides: Partial<CanvasContextActionsI
     pasteClipboard: vi.fn(),
     pasteReplaceClipboard: vi.fn(),
     copyLayersToClipboard: vi.fn(),
+    cutLayersToClipboard: vi.fn(() => [] as string[]),
     sealPanelAndAbortGesture: vi.fn(),
     startContainerOrInlineEdit: vi.fn(),
     setSelectedIds: vi.fn(),
@@ -237,6 +238,34 @@ describe('createCanvasContextActionHandler', () => {
     expect(layers.find((l) => l.id === b.id)).toBeDefined();
     const filterFn = vi.mocked(input.setSelectedIds).mock.calls[0][0] as (ids: string[]) => string[];
     expect(filterFn([b.id])).toEqual([b.id]);
+  });
+
+  it('cut delega en cutLayersToClipboard y deselecciona solo lo eliminado', () => {
+    const a = createLayer('rect');
+    const b = createLayer('ellipse');
+    const doc = makeDoc([a, b]);
+    const cutLayersToClipboard = vi.fn(() => [a.id]);
+    const input = makeInput(doc, {
+      contextMenu: menu(a.id),
+      selectedIds: [a.id, b.id],
+      cutLayersToClipboard,
+    });
+    createCanvasContextActionHandler(input)('cut');
+    expect(cutLayersToClipboard).toHaveBeenCalledWith([a.id, b.id]);
+    const filterFn = vi.mocked(input.setSelectedIds).mock.calls[0][0] as (ids: string[]) => string[];
+    expect(filterFn([a.id, b.id])).toEqual([b.id]);
+  });
+
+  it('cut sin capas eliminadas no toca la selección', () => {
+    const a = createLayer('rect');
+    const doc = makeDoc([a]);
+    const input = makeInput(doc, {
+      contextMenu: menu(a.id),
+      selectedIds: [a.id],
+      cutLayersToClipboard: vi.fn(() => [] as string[]),
+    });
+    createCanvasContextActionHandler(input)('cut');
+    expect(input.setSelectedIds).not.toHaveBeenCalled();
   });
 
   it('pasteToReplace pasa el id cuando no está seleccionado', () => {

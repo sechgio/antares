@@ -49,7 +49,6 @@ function loadIpcRouter({
 
   stubModule('electron/window-manager', {
     getMainWindow: () => null,
-    buildAppMenu: () => ({ popup: () => {} }),
     getIsDev: () => true,
   });
 

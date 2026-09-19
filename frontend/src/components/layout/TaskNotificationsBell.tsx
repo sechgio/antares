@@ -145,7 +145,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
                 <Button variant="none" size="none"
                   key={item.id}
                   onClick={() => handleSelect(item)}
-                  className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-base)]/70"
+                  className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-base)_70%,transparent)]"
                 >
                   <span
                     className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
@@ -186,7 +186,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
                     close();
                     onOpenEspacios();
                   }}
-                  className="w-full rounded-lg px-2.5 py-2 text-center text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-base)]/70 hover:text-[var(--text-primary)]"
+                  className="w-full rounded-lg px-2.5 py-2 text-center text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-base)_70%,transparent)] hover:text-[var(--text-primary)]"
                 >
                   Ir a Espacios
                 </Button>

@@ -60,7 +60,7 @@ export default function OptionsCard({
     <Card className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]">
             <SlidersHorizontal className="h-4 w-4" />
           </div>
           <div>
@@ -72,7 +72,7 @@ export default function OptionsCard({
         </div>
         <div className="flex items-center gap-3">
           {hasVideos && conversionEnabled && (
-            <div className="rounded-lg border border-[var(--accent-yellow)]/25 bg-[var(--accent-yellow)]/10 px-2.5 py-1">
+            <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--accent-yellow)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-2.5 py-1">
               <p className="text-[11px] font-medium text-[var(--accent-yellow)]">Videos: copia directa</p>
             </div>
           )}
@@ -86,7 +86,7 @@ export default function OptionsCard({
       </div>
 
       {!conversionEnabled && (
-        <div className="rounded-xl border border-[var(--accent-secondary)]/25 bg-[var(--accent-secondary)]/10 px-3 py-2.5">
+        <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--accent-secondary)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-secondary)_10%,transparent)] px-3 py-2.5">
           <p className="text-xs font-medium text-[var(--accent-secondary)]">
             La conversión está desactivada. Los archivos se copiarán al destino con el nuevo nombre y conservarán su formato original.
           </p>
@@ -119,7 +119,7 @@ export default function OptionsCard({
                   aria-label={info?.desc || f}
                   className={`relative flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl border text-center transition-all duration-200 ${
                     active
-                      ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/40 text-[var(--accent-primary)]'
+                      ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] border-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)] text-[var(--accent-primary)]'
                       : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
                   }`}
                 >
@@ -137,14 +137,14 @@ export default function OptionsCard({
           })}
         </div>
         {showFormatInfo && (
-          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 px-3 py-2.5 space-y-1 animate-fade-in">
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_50%,transparent)] px-3 py-2.5 space-y-1 animate-fade-in">
             <p className="text-[11px] text-[var(--text-secondary)]">{formatInfo.desc}</p>
             <div className="flex flex-wrap gap-2">
               {formatInfo.lossless && (
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--accent-green)]/10 text-[var(--accent-green)] border border-[var(--accent-green)]/20">Sin pérdida</span>
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[color:color-mix(in_srgb,var(--accent-green)_10%,transparent)] text-[var(--accent-green)] border border-[color:color-mix(in_srgb,var(--accent-green)_20%,transparent)]">Sin pérdida</span>
               )}
               {formatInfo.supportsAlpha && (
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--accent-blue)]/10 text-[var(--accent-blue)] border border-[var(--accent-blue)]/20">Transparencia</span>
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[color:color-mix(in_srgb,var(--accent-blue)_10%,transparent)] text-[var(--accent-blue)] border border-[color:color-mix(in_srgb,var(--accent-blue)_20%,transparent)]">Transparencia</span>
               )}
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--bg-input)] text-[var(--text-muted)] border border-[var(--border-subtle)]">{formatInfo.bestFor}</span>
             </div>
@@ -168,7 +168,7 @@ export default function OptionsCard({
                 onClick={() => onCalidadChange(preset.value)}
                 className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl border text-center transition-all duration-200 ${
                   active
-                    ? 'border-[var(--accent-primary)]/40 bg-[var(--accent-primary)]/10'
+                    ? 'border-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)]'
                     : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] hover:border-[var(--border-medium)]'
                 }`}
               >

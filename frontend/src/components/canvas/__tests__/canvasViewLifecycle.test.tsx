@@ -91,6 +91,10 @@ vi.mock('../presets/loadPresets', () => ({
 
 let latestStageDocument: CanvasDocument | null = null;
 let latestStageTool: CanvasTool | null = null;
+let latestRightPanelProps: {
+  pageMarginMm?: number;
+  onPageMarginChange?: (mm: number) => void;
+} | null = null;
 
 vi.mock('../editor/DesignStage', () => ({
   default: ({
@@ -109,7 +113,10 @@ vi.mock('../editor/DesignStage', () => ({
 }));
 
 vi.mock('../editor/RightPanel', () => ({
-  default: () => null,
+  default: (props: { pageMarginMm?: number; onPageMarginChange?: (mm: number) => void }) => {
+    latestRightPanelProps = props;
+    return null;
+  },
 }));
 
 vi.mock('../editor/BottomToolbar', () => ({
@@ -219,6 +226,18 @@ describe('CanvasView lifecycle', () => {
 
     act(() => window.dispatchEvent(new Event('blur')));
     expect(latestStageTool).toBe('select');
+  });
+
+  it('el inspector recibe el margen de página y lo escribe en los ajustes', async () => {
+    await renderReady();
+    expect(latestRightPanelProps?.pageMarginMm).toBe(10);
+
+    act(() => latestRightPanelProps?.onPageMarginChange?.(5));
+
+    await waitFor(() => {
+      expect(currentStageDocument().settings?.pageMarginMm).toBe(5);
+    });
+    expect(latestRightPanelProps?.pageMarginMm).toBe(5);
   });
 
   it('aborts an active pointer gesture before Space activates the hand tool', async () => {

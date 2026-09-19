@@ -1,11 +1,8 @@
 import { Check, ChevronDown } from 'lucide-react';
-import {
-  useEffect,
-  useId,
-  type KeyboardEvent,
-} from 'react';
+import { useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import { useRovingListbox } from '@/hooks/useRovingListbox';
 import Button from '@/components/ui/Button';
 
 interface TemplatePickerOption {
@@ -67,43 +64,12 @@ export default function TemplatePicker({
     if (open) updatePosition();
   }, [open, options.length, maxMenuHeight, updatePosition]);
 
-  useEffect(() => {
-    if (!open) return;
-    const selectedBtn = listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
-    (selectedBtn ?? listRef.current?.querySelector<HTMLElement>('[role="option"]'))?.focus();
-  }, [open]);
-
   const pick = (next: string) => {
     onChange(next);
     close();
   };
 
-  const onListKeyDown = (event: KeyboardEvent) => {
-    const items = Array.from(
-      listRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [],
-    );
-    if (items.length === 0) return;
-    const idx = items.findIndex((el) => el === document.activeElement);
-
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      items[(idx + 1 + items.length) % items.length]?.focus();
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      items[(idx - 1 + items.length) % items.length]?.focus();
-    } else if (event.key === 'Home') {
-      event.preventDefault();
-      items[0]?.focus();
-    } else if (event.key === 'End') {
-      event.preventDefault();
-      items[items.length - 1]?.focus();
-    } else if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      const active = document.activeElement as HTMLButtonElement | null;
-      const val = active?.dataset.value;
-      if (val != null) pick(val);
-    }
-  };
+  const onListKeyDown = useRovingListbox(listRef, open, pick, { focusFallback: true });
 
   return (
     <div className={`pp-template-picker relative w-full${open ? ' is-open' : ''}`}>

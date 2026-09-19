@@ -2,22 +2,22 @@ const fs = require('fs');
 const path = require('path');
 
 const { registerAllowedReadPaths } = require('./path-allowlist');
-const { createFileCapability } = require('./file-capabilities');
+const { createFileCapabilityAsync } = require('./file-capabilities');
 const { _registerWriteRootFromPath } = require('./write-roots');
 
 function _webContentsIdFromWindow(win) {
   try { return win && win.webContents ? win.webContents.id : null; } catch { return null; }
 }
 
-function _createReadFileTokens(paths, window) {
+async function _createReadFileTokens(paths, window) {
   if (!Array.isArray(paths) || paths.length === 0) return [];
   const webContentsId = _webContentsIdFromWindow(window);
-  return paths.map((filePath) => createFileCapability({
+  return Promise.all(paths.map(async (filePath) => (await createFileCapabilityAsync({
     filePath,
     mode: 'read',
     webContentsId,
     name: path.basename(filePath),
-  }).token);
+  })).token));
 }
 
 function resultFromOpenDialog(response) {
@@ -112,7 +112,7 @@ async function runFolderDialog(params = {}, dialog, window) {
   registerAllowedReadPaths(files);
   return {
     paths: files,
-    file_tokens: _createReadFileTokens(files, window),
+    file_tokens: await _createReadFileTokens(files, window),
   };
 }
 
@@ -137,7 +137,7 @@ async function runOpenDialog(method, params = {}, dialog, window) {
   registerAllowedReadPaths(result.paths);
   return {
     ...result,
-    file_tokens: method === 'dialog_dest' ? [] : _createReadFileTokens(result.paths, window),
+    file_tokens: method === 'dialog_dest' ? [] : await _createReadFileTokens(result.paths, window),
   };
 }
 

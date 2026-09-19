@@ -29,11 +29,11 @@ function cloneLayer(l: CanvasLayer): CanvasLayer {
   };
 }
 
-export function cloneDocument(doc: CanvasDocument): CanvasDocument {
+function cloneDocumentWith(doc: CanvasDocument, mapLayer: (layer: CanvasLayer) => CanvasLayer) {
   return {
     ...doc,
     page: { ...doc.page },
-    layers: doc.layers.map(cloneLayer),
+    layers: doc.layers.map(mapLayer),
     fields: doc.fields.map((f) => ({ ...f })),
     pages: doc.pages?.map((p) => ({ ...p })),
     settings: doc.settings
@@ -44,17 +44,10 @@ export function cloneDocument(doc: CanvasDocument): CanvasDocument {
   };
 }
 
+export function cloneDocument(doc: CanvasDocument): CanvasDocument {
+  return cloneDocumentWith(doc, cloneLayer);
+}
+
 export function cloneDocumentBaseline(doc: CanvasDocument, pageIndex: number): CanvasDocument {
-  return {
-    ...doc,
-    page: { ...doc.page },
-    layers: doc.layers.map((l) => ((l.pageIndex ?? 0) === pageIndex ? cloneLayer(l) : l)),
-    fields: doc.fields.map((f) => ({ ...f })),
-    pages: doc.pages?.map((p) => ({ ...p })),
-    settings: doc.settings
-      ? { ...doc.settings, gridRules: doc.settings.gridRules?.map((r) => ({ ...r })) }
-      : undefined,
-    styles: doc.styles?.map((s) => ({ ...s, cssVars: { ...s.cssVars } })),
-    guides: doc.guides?.map((g) => ({ ...g })),
-  };
+  return cloneDocumentWith(doc, (l) => ((l.pageIndex ?? 0) === pageIndex ? cloneLayer(l) : l));
 }

@@ -19,7 +19,7 @@ async function exportDiagnostics(params = {}, dialog, window) {
     return { canceled: true, exported: false };
   }
   const outPath = response.filePath;
-  const { getAppContext, getLogsDir, getDroppedEventCount, redactText } = require('./app-log');
+  const { getAppContext, getLogsDir, getDroppedEventCount, managedLogPattern, redactText } = require('./app-log');
   const { raceTimeout } = require('./async-utils');
   let backendInfo = {};
   try {
@@ -56,7 +56,7 @@ async function exportDiagnostics(params = {}, dialog, window) {
   try {
     if (fs.existsSync(logsDir)) {
       const files = fs.readdirSync(logsDir)
-        .filter((f) => /^antares-\d{4}-\d{2}-\d{2}(?:\.\d+)?\.(?:log|jsonl)$/.test(f))
+        .filter((f) => managedLogPattern.test(f))
         .map((f) => {
           const p = path.join(logsDir, f);
           return { name: f, path: p, mtimeMs: fs.statSync(p).mtimeMs };

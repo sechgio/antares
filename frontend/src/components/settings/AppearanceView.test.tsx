@@ -42,6 +42,17 @@ const lightTheme = {
   accent_hover: '#1D4ED8',
 };
 
+function stubAppearanceBridge(
+  invoke: (method: string, params?: Record<string, unknown>) => unknown,
+) {
+  window.electronAPI = {
+    invoke: async (method, params) => (await invoke(method, params)) ?? {},
+    onNotify: () => () => {},
+    onUpdateAvailable: () => () => {},
+    onUpdateDownloaded: () => () => {},
+  };
+}
+
 function renderAppearance() {
   return render(
     <ToastProvider>
@@ -61,17 +72,11 @@ describe('AppearanceView', () => {
   });
 
   it('shows a minimal Codex-like appearance panel and applies a selected style', async () => {
-    window.electronAPI = {
-      invoke: async (method: string, params?: Record<string, unknown>) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear', 'Professional Light'] };
-        if (method === 'theme_preset' && params?.name === 'Professional Light') return lightTheme;
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method, params) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear', 'Professional Light'] };
+      if (method === 'theme_preset' && params?.name === 'Professional Light') return lightTheme;
+    });
 
     renderAppearance();
 
@@ -111,16 +116,10 @@ describe('AppearanceView', () => {
     document.documentElement.style.setProperty('--bg-base', activeTheme.bg);
     document.documentElement.style.setProperty('--accent-primary', activeTheme.accent);
 
-    window.electronAPI = {
-      invoke: async (method: string) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+    });
 
     renderAppearance();
 
@@ -131,16 +130,10 @@ describe('AppearanceView', () => {
   });
 
   it('centers the settings workspace without constraining appearance to a narrow column', async () => {
-    window.electronAPI = {
-      invoke: async (method: string) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear', 'Professional Light'] };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear', 'Professional Light'] };
+    });
 
     renderAppearance();
 
@@ -156,16 +149,10 @@ describe('AppearanceView', () => {
   });
 
   it('imports a theme JSON and applies it to the live interface', async () => {
-    window.electronAPI = {
-      invoke: async (method: string) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+    });
 
     renderAppearance();
 
@@ -205,16 +192,10 @@ describe('AppearanceView', () => {
   });
 
   it('applies the selected interface density to shared theme variables', async () => {
-    window.electronAPI = {
-      invoke: async (method: string) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+    });
 
     renderAppearance();
 
@@ -249,17 +230,11 @@ describe('AppearanceView', () => {
       orange: '#A855F7',
     };
 
-    window.electronAPI = {
-      invoke: async (method: string, params?: Record<string, unknown>) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear', 'Neon Grid'] };
-        if (method === 'theme_preset' && params?.name === 'Neon Grid') return neonTheme;
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method, params) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear', 'Neon Grid'] };
+      if (method === 'theme_preset' && params?.name === 'Neon Grid') return neonTheme;
+    });
 
     renderAppearance();
 
@@ -284,16 +259,10 @@ describe('AppearanceView', () => {
   });
 
   it('advanced color edits update the live theme before saving', async () => {
-    window.electronAPI = {
-      invoke: async (method: string) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+    });
 
     renderAppearance();
 
@@ -312,16 +281,10 @@ describe('AppearanceView', () => {
       fg_muted: '#F7F7F7',
     };
 
-    window.electronAPI = {
-      invoke: async (method: string) => {
-        if (method === 'theme_get') return unreadableTheme;
-        if (method === 'theme_presets') return { presets: ['Unreadable Custom'] };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method) => {
+      if (method === 'theme_get') return unreadableTheme;
+      if (method === 'theme_presets') return { presets: ['Unreadable Custom'] };
+    });
 
     renderAppearance();
 
@@ -332,16 +295,10 @@ describe('AppearanceView', () => {
   });
 
   it('uses dark text on light accent colors', async () => {
-    window.electronAPI = {
-      invoke: async (method: string) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+    });
 
     renderAppearance();
 
@@ -372,17 +329,11 @@ describe('AppearanceView', () => {
       orange: '#A855F7',
     };
 
-    window.electronAPI = {
-      invoke: async (method: string, params?: Record<string, unknown>) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear', 'Neon Grid'] };
-        if (method === 'theme_preset' && params?.name === 'Neon Grid') return neonTheme;
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method, params) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear', 'Neon Grid'] };
+      if (method === 'theme_preset' && params?.name === 'Neon Grid') return neonTheme;
+    });
 
     renderAppearance();
 
@@ -397,17 +348,11 @@ describe('AppearanceView', () => {
   });
 
   it('shows a translated saved alert instead of the i18n key', async () => {
-    window.electronAPI = {
-      invoke: async (method: string, params?: Record<string, unknown>) => {
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
-        if (method === 'theme_save') return { ...baseTheme, ...params };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method, params) => {
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+      if (method === 'theme_save') return { ...baseTheme, ...params };
+    });
 
     renderAppearance();
 
@@ -418,16 +363,10 @@ describe('AppearanceView', () => {
   });
 
   it('falls back to DEFAULT_THEME when IPC fetch fails and there is no cache', async () => {
-    window.electronAPI = {
-      invoke: async (method: string) => {
-        if (method === 'theme_get') throw new Error('IPC disconnected');
-        if (method === 'theme_presets') return { presets: [] };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method) => {
+      if (method === 'theme_get') throw new Error('IPC disconnected');
+      if (method === 'theme_presets') return { presets: [] };
+    });
 
     renderAppearance();
 
@@ -440,19 +379,13 @@ describe('AppearanceView', () => {
 
   it('triggers logs open folder and diagnostics export from Soporte y Diagnóstico section', async () => {
     const invokedMethods: string[] = [];
-    window.electronAPI = {
-      invoke: async (method: string) => {
-        invokedMethods.push(method);
-        if (method === 'theme_get') return baseTheme;
-        if (method === 'theme_presets') return { presets: [] };
-        if (method === 'logs_open_folder') return { opened: true, path: 'C:/logs' };
-        if (method === 'diagnostics_export') return { exported: true, path: 'C:/diag.json' };
-        return {};
-      },
-      onNotify: () => () => {},
-      onUpdateAvailable: () => () => {},
-      onUpdateDownloaded: () => () => {},
-    };
+    stubAppearanceBridge(async (method) => {
+      invokedMethods.push(method);
+      if (method === 'theme_get') return baseTheme;
+      if (method === 'theme_presets') return { presets: [] };
+      if (method === 'logs_open_folder') return { opened: true, path: 'C:/logs' };
+      if (method === 'diagnostics_export') return { exported: true, path: 'C:/diag.json' };
+    });
 
     renderAppearance();
 

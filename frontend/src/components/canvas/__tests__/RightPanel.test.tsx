@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import { buildLayerPaintStyle } from '../ops/layerPaint';
@@ -678,5 +678,48 @@ describe('RightPanel creative freedom controls', () => {
 
     fireEvent.click(vertBtn);
     expect(onDistribute).toHaveBeenCalledWith('vertical');
+  });
+});
+
+describe('inspector: sección Página', () => {
+  it('no aparece sin onPageMarginChange', () => {
+    render(<RightPanel {...panelProps} layer={null} selectedCount={0} onChange={vi.fn()} />);
+    expect(screen.queryByTestId('canvas-inspector-page')).toBeNull();
+  });
+
+  it('muestra el margen actual y comunica el cambio elegido', () => {
+    const onPageMarginChange = vi.fn();
+    render(
+      <RightPanel
+        {...panelProps}
+        layer={null}
+        selectedCount={0}
+        onChange={vi.fn()}
+        pageMarginMm={15}
+        onPageMarginChange={onPageMarginChange}
+      />,
+    );
+    const section = screen.getByTestId('canvas-inspector-page');
+    expect(within(section).getByText('Página')).toBeInTheDocument();
+    fireEvent.click(within(section).getByRole('button', { name: /15 mm/i }));
+    fireEvent.click(
+      within(screen.getByRole('listbox')).getByRole('option', { name: 'Sin márgenes' }),
+    );
+    expect(onPageMarginChange).toHaveBeenCalledWith(0);
+  });
+
+  it('ofrece el margen heredado aunque no sea un valor predefinido', () => {
+    render(
+      <RightPanel
+        {...panelProps}
+        layer={null}
+        selectedCount={0}
+        onChange={vi.fn()}
+        pageMarginMm={7}
+        onPageMarginChange={vi.fn()}
+      />,
+    );
+    const section = screen.getByTestId('canvas-inspector-page');
+    expect(within(section).getByRole('button', { name: /7 mm/i })).toBeInTheDocument();
   });
 });

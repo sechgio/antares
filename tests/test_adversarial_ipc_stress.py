@@ -71,7 +71,6 @@ def test_adversarial_live_backend_burst_and_queue_saturation():
     env.update({
         "PYTHONUNBUFFERED": "1",
         "PYTHONUTF8": "1",
-        "ANTARES_ENABLE_PLUGINS": "0",
         "ANTARES_MAP_PROVIDER": "google",
     })
 

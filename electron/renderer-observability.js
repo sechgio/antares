@@ -121,46 +121,35 @@ function recordRendererEvent(payload) {
   return safe;
 }
 
+// Añadir un canal del renderer es una fila aquí, no una copia del gate de confianza.
+const RENDERER_IPC_CHANNELS = [
+  { channel: 'renderer-error', record: recordRendererError },
+  { channel: 'renderer-event', record: recordRendererEvent },
+];
+
 function registerRendererObservability(ipcMain) {
   if (!ipcMain || typeof ipcMain.on !== 'function') return;
-  ipcMain.on('renderer-error', (event, payload) => {
-    try {
-      const { app } = require('electron');
-      const { getMainWindow } = require('./window-manager');
-      const { isTrustedRendererFrame } = require('./renderer-trust');
-      const isDev = !app.isPackaged;
-      if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) {
-        appendLogEvent('WARN', 'security.rejected', {
-          component: 'electron',
-          outcome: 'rejected',
-          reason: 'untrusted_sender',
-          method: 'renderer-error',
-        });
-        return;
+  for (const { channel, record } of RENDERER_IPC_CHANNELS) {
+    ipcMain.on(channel, (event, payload) => {
+      try {
+        const { app } = require('electron');
+        const { getMainWindow } = require('./window-manager');
+        const { isTrustedRendererFrame } = require('./renderer-trust');
+        const isDev = !app.isPackaged;
+        if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) {
+          appendLogEvent('WARN', 'security.rejected', {
+            component: 'electron',
+            outcome: 'rejected',
+            reason: 'untrusted_sender',
+            method: channel,
+          });
+          return;
+        }
+        record(payload);
+      } catch {
       }
-      recordRendererError(payload);
-    } catch {
-    }
-  });
-  ipcMain.on('renderer-event', (event, payload) => {
-    try {
-      const { app } = require('electron');
-      const { getMainWindow } = require('./window-manager');
-      const { isTrustedRendererFrame } = require('./renderer-trust');
-      const isDev = !app.isPackaged;
-      if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) {
-        appendLogEvent('WARN', 'security.rejected', {
-          component: 'electron',
-          outcome: 'rejected',
-          reason: 'untrusted_sender',
-          method: 'renderer-event',
-        });
-        return;
-      }
-      recordRendererEvent(payload);
-    } catch {
-    }
-  });
+    });
+  }
 }
 
 module.exports = {

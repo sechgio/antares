@@ -328,10 +328,6 @@ def main() -> None:
                 HANDLERS.warm_post_ready()
             except Exception:
                 logger.exception("warm_post_ready failed")
-            try:
-                HANDLERS.warm_pandas_sync()
-            except Exception:
-                logger.exception("warm_pandas_sync post-ready failed")
         warm_thread = threading.Thread(target=_post_ready_warm, name="post-ready-warm", daemon=True)
         warm_thread.start()
 

@@ -396,7 +396,7 @@ export const UbicacionesView: React.FC = () => {
 
               {inputMode === 'excel' ? (
                 excelFile ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-[var(--accent-green)]/25 bg-[var(--accent-green)]/[0.06] px-3 py-2 transition-all mt-1">
+                  <div className="flex items-center gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-green)_25%,transparent)] bg-[var(--accent-green)]/[0.06] px-3 py-2 transition-all mt-1">
                     <CheckCircle2 size={14} className="text-[var(--accent-green)] shrink-0" />
                     <span className="text-[11px] font-medium text-[var(--text-primary)] truncate flex-1">
                       {excelFile.name}
@@ -420,7 +420,7 @@ export const UbicacionesView: React.FC = () => {
                     className={`group flex items-center gap-2.5 py-2 px-3 rounded-lg border-2 border-dashed transition-all duration-200 cursor-pointer mt-1 ${
                       isDragging
                         ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/[0.06] scale-[1.01]'
-                        : 'border-[var(--border-medium)] hover:border-[var(--accent-primary)]/50 hover:bg-[var(--bg-elevated)]'
+                        : 'border-[var(--border-medium)] hover:border-[color:color-mix(in_srgb,var(--accent-primary)_50%,transparent)] hover:bg-[var(--bg-elevated)]'
                     }`}
                   >
                     <FileSpreadsheet
@@ -428,7 +428,7 @@ export const UbicacionesView: React.FC = () => {
                       className={`shrink-0 transition-colors ${
                         isDragging
                           ? 'text-[var(--accent-primary)]'
-                          : 'text-[var(--text-muted)] group-hover:text-[var(--accent-primary)]/80'
+                          : 'text-[var(--text-muted)] group-hover:text-[color:color-mix(in_srgb,var(--accent-primary)_80%,transparent)]'
                       }`}
                     />
                     <div className="min-w-0">
@@ -457,7 +457,7 @@ export const UbicacionesView: React.FC = () => {
                 onClick={handleSelectOutputDir}
                 className={`flex items-center gap-2 w-full rounded-lg border px-3 py-2 text-left transition-all duration-200 ${
                   outputDir
-                    ? 'border-[var(--accent-green)]/25 bg-[var(--accent-green)]/[0.06]'
+                    ? 'border-[color:color-mix(in_srgb,var(--accent-green)_25%,transparent)] bg-[var(--accent-green)]/[0.06]'
                     : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'
                 }`}
               >

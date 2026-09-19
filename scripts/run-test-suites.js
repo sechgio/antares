@@ -15,6 +15,8 @@ const CONTRACT_TESTS = [
   'test-pr-fix-loop.js',
   'test-release-loop.js',
   'test-branch-protection.js',
+  'test-chunk-graph.js',
+  'test-tailwind-alpha-utilities.js',
   'test-quality-ratchet.js',
   'test-review-policy.js',
   'test-admin-create-user-contract.js',

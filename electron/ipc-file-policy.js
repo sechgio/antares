@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { GENERIC_OUTPUT_PATH_KEYS } = require('./file-capabilities');
 const ipcCatalog = require('../shared/ipc-method-catalog');
 
 const RAW_OUTPUT_PATH_METHODS = ipcCatalog.RAW_OUTPUT_PATH_METHODS;
@@ -99,6 +100,10 @@ function resolveReadPathValue(
   throw new Error(`raw read path not allowed for ${label}; use file token`);
 }
 
+function resolveReadToken(token, webContentsId) {
+  return require('./file-capabilities').resolveCapability(token, 'read', webContentsId);
+}
+
 function maybeResolveFileTokens(params, win, method) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
   const { _assertNoRawAbsolutePaths } = require('./file-capabilities');
@@ -148,7 +153,7 @@ function maybeResolveFileTokens(params, win, method) {
   for (const key of ['file_token', 'result_file_token', 'cache_token']) {
     const value = params[key];
     if (!READ_TOKEN_RE.test(String(value || ''))) continue;
-    const cap = require('./file-capabilities').resolveCapability(value, 'read', webContentsId);
+    const cap = resolveReadToken(value, webContentsId);
     if (next === params) next = { ...params };
     next._resolved_file_token_path = cap.path;
     if (cap.name) next._resolved_file_token_name = cap.name;
@@ -161,7 +166,7 @@ function maybeResolveFileTokens(params, win, method) {
     for (const [key, value] of Object.entries(rawLocal)) {
       if (typeof value !== 'string' || !READ_TOKEN_RE.test(value)) continue;
       try {
-        resolvedLocal[key] = require('./file-capabilities').resolveCapability(value, 'read', webContentsId).path;
+        resolvedLocal[key] = resolveReadToken(value, webContentsId).path;
         localMutated = true;
       } catch (err) {
         throw new Error(`invalid file token for localImagePaths.${key}: ${err.message}`);
@@ -178,7 +183,7 @@ function maybeResolveFileTokens(params, win, method) {
     const value = next && typeof next === 'object' ? next[key] : undefined;
     if (typeof value !== 'string' || !READ_TOKEN_RE.test(value)) continue;
     try {
-      const cap = require('./file-capabilities').resolveCapability(value, 'read', webContentsId);
+      const cap = resolveReadToken(value, webContentsId);
       if (!legacyMutated) { next = { ...next }; legacyMutated = true; }
       next[key] = cap.path;
     } catch (err) {
@@ -191,7 +196,7 @@ function maybeResolveFileTokens(params, win, method) {
     for (const token of next.file_tokens) {
       if (typeof token === 'string' && READ_TOKEN_RE.test(token)) {
         try {
-          resolvedTokens.push(require('./file-capabilities').resolveCapability(token, 'read', webContentsId).path);
+          resolvedTokens.push(resolveReadToken(token, webContentsId).path);
           tokensMutated = true;
         } catch (err) {
           throw new Error(`invalid file token in file_tokens: ${err.message}`);
@@ -241,14 +246,25 @@ async function cleanupStagedTokens(tokens, webContentsId = null) {
   await Promise.all(tokens.map((token) => cleanupStagedCapability(token, webContentsId)));
 }
 
-const GENERIC_OUTPUT_KEYS = [
-  'output_path',
-  'outputPath',
-  'output_dir',
-  'outputDir',
-  'output_folder',
-  'outputFolder',
-];
+// Extensions that Windows would load or that hijack a shell handler. Writing
+// one of these into Documentos/Descargas turns a renderer compromise into code
+// execution, so the fallback branch rejects them even though it accepts the
+// document formats Antares actually produces.
+const FORBIDDEN_FALLBACK_EXTENSIONS = new Set([
+  '.bat', '.cmd', '.com', '.cpl', '.dll', '.exe', '.hta', '.jar', '.js', '.jse',
+  '.lnk', '.msc', '.msi', '.msp', '.ocx', '.ps1', '.psm1', '.reg', '.scr',
+  '.sys', '.url', '.vbe', '.vbs', '.wsf', '.wsh',
+]);
+
+function _outputExtension(resolvedPath) {
+  // Windows drops trailing dots/spaces and truncates at the first ':' (alternate
+  // data stream), so "informe.exe." and "informe.exe:data" still load as an
+  // executable and must be caught here.
+  const base = path.basename(resolvedPath).replace(/[ .]+$/, '');
+  const colon = base.indexOf(':');
+  const name = colon === -1 ? base : base.slice(0, colon);
+  return path.extname(name).toLowerCase();
+}
 
 function _assertAllowedRawOutputPath(outRaw) {
   const { isAllowedReadPath } = require('./path-allowlist');
@@ -261,15 +277,25 @@ function _assertAllowedRawOutputPath(outRaw) {
       ? (fs.lstatSync(resolved).isDirectory() ? resolved : path.dirname(resolved))
       : path.dirname(resolved);
     const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
+    // El predicado se lee de write-roots, su dueño, y no del facade de dialogs:
+    // las pruebas del router stubean dialog-handlers y ese stub no lo expone.
+    const { _isUnderStandardUserDir } = require('./write-roots');
     if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
-      throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
+      if (!_isUnderStandardUserDir(dir)) {
+        throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
+      }
+      if (FORBIDDEN_FALLBACK_EXTENSIONS.has(_outputExtension(resolved))) {
+        throw new Error('tipo de archivo no permitido en la ruta de salida');
+      }
     }
     const { hasSymlinkAncestor } = require('./path-allowlist');
     if (hasSymlinkAncestor(resolved)) {
       throw new Error('symlink no permitido en ruta de salida');
     }
   } catch (e) {
-    if (e.message.includes('no está permitida') || e.message.includes('symlink')) throw e;
+    if (e.message.includes('no está permitida') || e.message.includes('no permitido') || e.message.includes('symlink')) {
+      throw e;
+    }
     throw new Error(`ruta de salida no permitida: ${e.message}`);
   }
 }
@@ -290,7 +316,7 @@ function validateAndResolveWriteParams(params, win, method) {
   };
   const methodOutputKeys = ipcCatalog.METHOD_OUTPUT_PATH_KEYS.get(method);
   if (methodOutputKeys) for (const key of methodOutputKeys) pushIfPresent(key);
-  for (const key of GENERIC_OUTPUT_KEYS) pushIfPresent(key);
+  for (const key of GENERIC_OUTPUT_PATH_KEYS) pushIfPresent(key);
   if (RAW_OUTPUT_PATH_METHODS.has(method)) pushIfPresent('path');
   if (outputKeys.length === 0) return params;
 

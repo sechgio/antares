@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from backend.core.informes_v2.models import InformeV2, create_empty_report, next_informe_v2_number
-from backend.core.report_store import ReportStore, resolve_report_store_paths
+from backend.core.informes_v2.models import InformeV2, create_empty_report
+from backend.core.report_store import ReportStore, next_report_number, resolve_report_store_paths
 from backend.utils.lazy import LazySingleton
 from backend.utils.paths import resource_path, user_data_path
 
@@ -25,7 +25,7 @@ class InformesV2DB(ReportStore):
             path,
             InformeV2.normalize,
             create_empty_report,
-            next_informe_v2_number,
+            next_report_number,
             legacy_path=legacy_path,
         )
 

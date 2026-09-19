@@ -100,7 +100,13 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
     throw new Error('HTML excede el tamaño máximo permitido (150 MB)');
   }
   const sanitizedHtml = sanitizeHtmlForPdf(html);
-  const htmlWithLocalImages = localImages.reduce((current, entry) => current.split(entry.token).join(entry.fileUrl), sanitizedHtml);
+  const fileUrlByToken = new Map(localImages.map(entry => [entry.token, entry.fileUrl]));
+  const htmlWithLocalImages = localImages.length === 0
+    ? sanitizedHtml
+    : sanitizedHtml.replace(
+        new RegExp(localImages.map(entry => entry.token).join('|'), 'g'),
+        match => fileUrlByToken.get(match),
+      );
 
   const { BrowserWindow, session } = electronModules;
   if (!BrowserWindow) {

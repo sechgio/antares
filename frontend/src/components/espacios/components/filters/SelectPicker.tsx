@@ -71,7 +71,7 @@ export default function SelectPicker({
           open
             ? 'border-[var(--accent-primary)] text-[var(--text-primary)] shadow-[0_0_0_3px_var(--accent-primary-glow)]'
             : isFiltered
-              ? 'border-[var(--border-medium)] text-[var(--text-primary)] hover:border-[var(--accent-primary)]/50'
+              ? 'border-[var(--border-medium)] text-[var(--text-primary)] hover:border-[color:color-mix(in_srgb,var(--accent-primary)_50%,transparent)]'
               : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
         } focus-visible:border-[var(--accent-primary)] focus-visible:shadow-[0_0_0_3px_var(--accent-primary-glow)]`}
       >
@@ -117,7 +117,7 @@ export default function SelectPicker({
                   className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] transition-colors duration-100 ${
                     isSelected
                       ? 'bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)] text-[var(--text-primary)]'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-base)]/70 hover:text-[var(--text-primary)]'
+                      : 'text-[var(--text-secondary)] hover:bg-[color:color-mix(in_srgb,var(--bg-base)_70%,transparent)] hover:text-[var(--text-primary)]'
                   }`}
                 >
                   {opt.color ? (

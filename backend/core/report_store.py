@@ -30,6 +30,16 @@ def resolve_report_store_paths(
     return path, legacy
 
 
+def next_report_number(reports: list[ReportDocument]) -> int:
+    current = 0
+    for report in reports:
+        try:
+            current = max(current, int(report.get("metadata", {}).get("informe_id", 0)))
+        except (TypeError, ValueError):
+            continue
+    return current + 1
+
+
 class ReportStore(JsonDocumentStore):
     def __init__(
         self,

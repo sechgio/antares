@@ -471,7 +471,7 @@ export default function GanttView({
                   zoom === id && colWManual == null
                     ? 'bg-[var(--text-primary)] text-[var(--bg-elevated)]'
                     : zoom === id
-                      ? 'bg-[var(--text-primary)]/85 text-[var(--bg-elevated)]'
+                      ? 'bg-[color:color-mix(in_srgb,var(--text-primary)_85%,transparent)] text-[var(--bg-elevated)]'
                       : 'bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-base)] hover:text-[var(--text-secondary)]'
                 }`}
               >
@@ -549,7 +549,7 @@ export default function GanttView({
                     style={{ left: i * colW, width: colW }}
                   >
                     <Button variant="none" size="none"
-                      className="flex h-full w-full flex-col items-center justify-center gap-0.5 border-r border-[var(--border-subtle)]/70 transition-colors hover:bg-[var(--bg-base)]"
+                      className="flex h-full w-full flex-col items-center justify-center gap-0.5 border-r border-[color:color-mix(in_srgb,var(--border-subtle)_70%,transparent)] transition-colors hover:bg-[var(--bg-base)]"
                       style={{
                         background: day.isToday
                           ? 'color-mix(in srgb, var(--accent-red) 6%, transparent)'
@@ -617,7 +617,7 @@ export default function GanttView({
               return (
                 <div
                   key={day.date}
-                  className="absolute top-0 box-border h-full border-r border-[var(--border-subtle)]/50"
+                  className="absolute top-0 box-border h-full border-r border-[color:color-mix(in_srgb,var(--border-subtle)_50%,transparent)]"
                   style={{
                     left: i * colW,
                     width: colW,
@@ -630,7 +630,7 @@ export default function GanttView({
             {Array.from({ length: visualLanes }, (_, lane) => (
               <div
                 key={`lane-${lane}`}
-                className="pointer-events-none absolute left-0 border-b border-[var(--border-subtle)]/40"
+                className="pointer-events-none absolute left-0 border-b border-[color:color-mix(in_srgb,var(--border-subtle)_40%,transparent)]"
                 style={{ top: (lane + 1) * LANE_HEIGHT + 4, width: gridWidth }}
                 aria-hidden
               />
@@ -641,7 +641,7 @@ export default function GanttView({
               if (idx < 0) return null;
               return (
                 <div
-                  className="pointer-events-none absolute top-0 z-10 w-px bg-[var(--accent-red)]/80"
+                  className="pointer-events-none absolute top-0 z-10 w-px bg-[color:color-mix(in_srgb,var(--accent-red)_80%,transparent)]"
                   style={{ left: idx * colW + colW / 2, height: '100%' }}
                   aria-hidden
                 >
@@ -789,7 +789,7 @@ export default function GanttView({
                   width: colW,
                 }}
               >
-                <span className="rounded bg-[var(--bg-elevated)]/90 px-1 py-0.5 opacity-70">+</span>
+                <span className="rounded bg-[color:color-mix(in_srgb,var(--bg-elevated)_90%,transparent)] px-1 py-0.5 opacity-70">+</span>
               </div>
             )}
           </div>

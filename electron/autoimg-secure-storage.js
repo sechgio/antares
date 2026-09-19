@@ -103,14 +103,7 @@ function readSecureJson(filename, namespace) {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     if (raw?.data && typeof raw.data === 'string') {
       const version = Number(raw.v) === 2 ? 2 : 1;
-      const payload = decryptPayload(namespace, raw.data, version);
-      if (version === 1 && _safeStorageAvailable()) {
-        try {
-          writeSecureJson(filename, namespace, payload);
-        } catch {
-        }
-      }
-      return payload;
+      return decryptPayload(namespace, raw.data, version);
     }
     return null;
   } catch {

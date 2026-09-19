@@ -32,7 +32,7 @@ const SKINS = {
   dashed: {
     wrapper: 'flex flex-col gap-2',
     zoneBase: 'cursor-pointer rounded-lg border-2 border-dashed px-3 py-3 flex items-center gap-2.5 transition-colors',
-    zoneIdle: 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--accent-primary)]/50',
+    zoneIdle: 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[color:color-mix(in_srgb,var(--accent-primary)_50%,transparent)]',
     iconBox: () => 'w-8 h-8 rounded-md bg-[var(--bg-elevated)] flex items-center justify-center shrink-0',
     iconSize: 14,
     iconClassName: 'text-[var(--text-muted)]',
@@ -55,13 +55,13 @@ const SKINS = {
   flat: {
     wrapper: 'flex flex-col gap-3',
     zoneBase: 'group cursor-pointer rounded-md border px-4 py-4 flex items-center gap-3 transition-all',
-    zoneIdle: 'border-transparent bg-[var(--bg-surface)] hover:bg-[var(--border-subtle)]/30',
+    zoneIdle: 'border-transparent bg-[var(--bg-surface)] hover:bg-[color:color-mix(in_srgb,var(--border-subtle)_30%,transparent)]',
     iconBox: (isDragging: boolean) =>
-      `w-9 h-9 rounded-md flex items-center justify-center shrink-0 transition-colors ${isDragging ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'bg-[var(--bg-base)] text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'}`,
+      `w-9 h-9 rounded-md flex items-center justify-center shrink-0 transition-colors ${isDragging ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]' : 'bg-[var(--bg-base)] text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'}`,
     iconSize: 16,
     iconClassName: undefined as string | undefined,
-    badge: 'px-2 py-0.5 rounded-full bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] text-[10px] font-bold tracking-wide',
-    errorsBox: 'flex flex-col gap-1.5 px-2 py-1.5 rounded-md bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/20',
+    badge: 'px-2 py-0.5 rounded-full bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)] text-[10px] font-bold tracking-wide',
+    errorsBox: 'flex flex-col gap-1.5 px-2 py-1.5 rounded-md bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] border border-[color:color-mix(in_srgb,var(--accent-red)_20%,transparent)]',
     errorText: 'text-[10px] font-medium text-[var(--accent-red)]',
     dismissClass: 'text-[10px] font-medium text-[var(--accent-red)] self-start hover:underline',
     galleryWrap: 'flex flex-col gap-3 mt-1',
@@ -78,7 +78,7 @@ const SKINS = {
   },
 } satisfies Record<ImageUploaderVariant, Record<string, unknown>>;
 
-const ZONE_DRAGGING = 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5';
+const ZONE_DRAGGING = 'border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_5%,transparent)]';
 
 export default function ImageUploader({
   images,

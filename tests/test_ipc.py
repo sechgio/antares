@@ -1,68 +1,12 @@
 
 import json
 import os
-import subprocess
-import sys
-import threading
 import time
-from pathlib import Path
 
 import pytest
 
 from backend.version import __version__
-
-BACKEND_SCRIPT = Path(__file__).parent.parent / "backend" / "main.py"
-
-
-def _drain_stderr(proc: subprocess.Popen, sink: list[str]) -> None:
-    if proc.stderr is None:
-        return
-    for line in iter(proc.stderr.readline, ""):
-        sink.append(line)
-
-
-@pytest.fixture
-def backend_process():
-    project_root = BACKEND_SCRIPT.parent.parent
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "backend.main"],
-        cwd=str(project_root),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-    )
-    stderr_lines: list[str] = []
-    threading.Thread(target=_drain_stderr, args=(proc, stderr_lines), daemon=True).start()
-    proc.stderr_lines = stderr_lines
-
-    buffer = ""
-    start = time.time()
-    while time.time() - start < 10:
-        line = proc.stdout.readline()
-        if not line:
-            continue
-        buffer += line
-        try:
-            msg = json.loads(line)
-            if msg.get("method") == "ready":
-                break
-        except json.JSONDecodeError:
-            continue
-    else:
-        proc.kill()
-        pytest.fail(
-            f"Backend did not send ready message within 10 seconds.\n"
-            f"stdout buffer: {buffer!r}\n"
-            f"stderr: {''.join(stderr_lines)!r}",
-        )
-
-    yield proc
-
-    proc.stdin.close()
-    proc.kill()
-    proc.wait()
+from tests.conftest import await_ready, spawn_backend, stop_backend
 
 
 def _rpc_call(proc, method: str, params: dict, timeout: float = 5.0):
@@ -91,30 +35,12 @@ def _rpc_call(proc, method: str, params: dict, timeout: float = 5.0):
 
 
 def test_oversized_request_does_not_desynchronize_real_backend() -> None:
-    project_root = BACKEND_SCRIPT.parent.parent
     env = os.environ.copy()
     env["ANTARES_IPC_MAX_PAYLOAD_SIZE"] = "1024"
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "backend.main"],
-        cwd=str(project_root),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        env=env,
-    )
-    stderr_lines: list[str] = []
-    threading.Thread(target=_drain_stderr, args=(proc, stderr_lines), daemon=True).start()
+    proc, stderr_lines = spawn_backend(env)
 
     try:
-        start = time.time()
-        while time.time() - start < 10:
-            line = proc.stdout.readline()
-            if line and json.loads(line).get("method") == "ready":
-                break
-        else:
-            pytest.fail(f"Backend did not become ready: {''.join(stderr_lines)}")
+        await_ready(proc, stderr_lines)
 
         oversized = {
             "jsonrpc": "2.0",
@@ -145,9 +71,7 @@ def test_oversized_request_does_not_desynchronize_real_backend() -> None:
         assert responses["after-large-real"]["result"]["version"] == __version__
         assert proc.poll() is None
     finally:
-        proc.stdin.close()
-        proc.kill()
-        proc.wait()
+        stop_backend(proc)
 
 
 class TestIPC:

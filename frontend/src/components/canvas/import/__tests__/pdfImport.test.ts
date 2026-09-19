@@ -1,6 +1,62 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyDocument } from '../../types';
+import { pdfBoxToCanvasBox, pdfPointsToMm } from '../pdfGeometry';
+import {
+  DEFAULT_PDF_IMPORT_LIMITS,
+  assertPdfFileSize,
+  normalizePdfPageRange,
+  resolvePdfImportLimits,
+} from '../pdfImportLimits';
 import { appendPdfFragment, mapPdfPagesToCanvas } from '../pdfToCanvas';
+
+describe('PDF geometry', () => {
+  it('converts points to millimeters', () => {
+    expect(pdfPointsToMm(72)).toBeCloseTo(25.4, 6);
+  });
+
+  it('flips the PDF Y axis into Canvas top-left coordinates', () => {
+    const box = pdfBoxToCanvasBox(
+      { x: 72, y: 72, width: 144, height: 72 },
+      { widthPt: 612, heightPt: 792 },
+    );
+    expect(box.xMm).toBeCloseTo(25.4, 6);
+    expect(box.yMm).toBeCloseTo(pdfPointsToMm(648), 6);
+    expect(box.widthMm).toBeCloseTo(50.8, 6);
+    expect(box.heightMm).toBeCloseTo(25.4, 6);
+  });
+});
+
+describe('PDF import limits', () => {
+  it('rejects a file above the configured byte budget', () => {
+    expect(() =>
+      assertPdfFileSize(DEFAULT_PDF_IMPORT_LIMITS.maxFileBytes + 1, DEFAULT_PDF_IMPORT_LIMITS),
+    ).toThrow('100 MiB');
+  });
+
+  it('merges only positive finite integer overrides', () => {
+    const limits = resolvePdfImportLimits({
+      maxPages: 12,
+      maxLayersPerPage: 80,
+      maxOperatorsPerPage: 0,
+      maxImageBytesTotal: Number.NaN,
+    });
+
+    expect(limits.maxPages).toBe(12);
+    expect(limits.maxLayersPerPage).toBe(80);
+    expect(limits.maxOperatorsPerPage).toBe(
+      DEFAULT_PDF_IMPORT_LIMITS.maxOperatorsPerPage,
+    );
+    expect(limits.maxImageBytesTotal).toBe(
+      DEFAULT_PDF_IMPORT_LIMITS.maxImageBytesTotal,
+    );
+  });
+
+  it('normalizes and validates requested page ranges', () => {
+    expect(normalizePdfPageRange(5, 2, 99)).toEqual({ first: 2, last: 5 });
+    expect(() => normalizePdfPageRange(5, 6, 6)).toThrow('Rango de páginas inválido');
+    expect(() => normalizePdfPageRange(5, 3, 2)).toThrow('Rango de páginas inválido');
+  });
+});
 
 describe('PDF to Canvas mapping', () => {
   it('maps only supported primitives and reports skipped content', () => {

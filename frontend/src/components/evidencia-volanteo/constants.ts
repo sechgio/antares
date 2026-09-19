@@ -19,10 +19,4 @@ export const DEFAULT_CUADRANTE_LABEL = 'CUADRANTE AFECTADO:';
 export const MSG_NO_IMAGES = 'No hay imágenes para exportar';
 export const MSG_TITLE_REQUIRED = 'El título es obligatorio';
 
-export function chunkArray<T>(arr: T[], size: number): T[][] {
-  const result: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    result.push(arr.slice(i, i + size));
-  }
-  return result;
-}
+export { chunkArray } from '@/utils/chunk';

@@ -78,40 +78,6 @@ def _make_job(tmp_path, files, **extra):
     return Job(id="audit", job_type="conversion", params=params), src, dst, real_files
 
 
-def test_rename_fails_when_keycolumn_doesnt_contain_file_codes(monkeypatch, tmp_path):
-    _setup_fields(monkeypatch, tmp_path, [
-        {"name": "nis", "type": "TEXT", "required": False, "unique": False},
-        {"name": "sgio", "type": "TEXT", "required": False, "unique": False},
-    ])
-
-    scheduler = _RecordingScheduler()
-    copied: list[tuple[str, str]] = []
-
-    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
-    monkeypatch.setattr(conversion_job, "es_video", lambda _p: False)
-    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda s, d, **_kwargs: copied.append((str(s), str(d))))
-    monkeypatch.setattr(conversion_job, "_notify_complete", lambda *a, **k: None)
-    monkeypatch.setattr("backend.core.history.save_run", lambda **k: None)
-
-    _patch_catalog_lookup(
-        monkeypatch,
-        lambda codes, col: {} if col == "nis" else {"69841274": {"nis": "ABC", "sgio": "454654001"}},
-    )
-
-    job, _src, _dst, _real_files = _make_job(
-        tmp_path, ["69841274_001.jpg"],
-        key_column="nis",
-    )
-    conversion._run_conversion_job(job)
-
-    assert len(scheduler.submitted) == 1
-    _src, out_path, _is_video = scheduler.submitted[0]
-    assert out_path.name == "454654001_001.jpg", (
-        f"Auto-detection should find sgio and rename, got: {out_path.name}"
-    )
-
-
 def test_rename_works_when_keycolumn_matches_file_codes(monkeypatch, tmp_path):
     _setup_fields(monkeypatch, tmp_path, [
         {"name": "nis", "type": "TEXT", "required": False, "unique": False},
@@ -146,33 +112,6 @@ def test_rename_works_when_keycolumn_matches_file_codes(monkeypatch, tmp_path):
     )
 
 
-def test_preview_also_fails_with_wrong_keycolumn(monkeypatch, tmp_path):
-    _setup_fields(monkeypatch, tmp_path, [
-        {"name": "nis", "type": "TEXT", "required": False, "unique": False},
-        {"name": "sgio", "type": "TEXT", "required": False, "unique": False},
-    ])
-
-    f = tmp_path / "69841274_001.jpg"
-    f.write_text("x")
-
-    _patch_catalog_lookup(
-        monkeypatch,
-        lambda codes, col: {} if col == "nis" else {"69841274": {"nis": "ABC", "sgio": "454654001"}},
-    )
-
-    result = conversion.preview({
-        "files": [str(f)],
-        "patron": "{sgio}{sep}{seq}{ext}",
-        "word_separator": "_",
-        "key_column": "nis",
-        "use_filename_seq": True,
-        "secuencia": 1,
-    })
-
-    assert result["preview"][0]["en_bd"] is True
-    assert result["preview"][0]["nuevo"] == "454654001_001.jpg"
-
-
 def test_preview_works_with_correct_keycolumn(monkeypatch, tmp_path):
     _setup_fields(monkeypatch, tmp_path, [
         {"name": "nis", "type": "TEXT", "required": False, "unique": False},
@@ -198,42 +137,6 @@ def test_preview_works_with_correct_keycolumn(monkeypatch, tmp_path):
 
     assert result["preview"][0]["en_bd"] is True
     assert result["preview"][0]["nuevo"] == "454654001_001.jpg"
-
-
-def test_auto_detect_keycolumn_finds_best_match(monkeypatch, tmp_path):
-    _setup_fields(monkeypatch, tmp_path, [
-        {"name": "nis", "type": "TEXT", "required": False, "unique": False},
-        {"name": "sgio", "type": "TEXT", "required": False, "unique": False},
-    ])
-
-    db_records = [
-        {"nis": "ABC", "sgio": "69841274"},
-        {"nis": "DEF", "sgio": "69841275"},
-    ]
-
-    def mock_buscar(codes, col):
-        result = {}
-        for rec in db_records:
-            val = str(rec.get(col, "") or "").strip()
-            if val and val in codes:
-                result[val] = rec
-        return result
-
-    _patch_catalog_lookup(monkeypatch, mock_buscar)
-
-    file_codes = ["69841274", "69841275"]
-
-    columns = ["nis", "sgio"]
-    best_col = None
-    best_matches = 0
-    for col in columns:
-        matches = mock_buscar(file_codes, col)
-        if len(matches) > best_matches:
-            best_matches = len(matches)
-            best_col = col
-
-    assert best_col == "sgio"
-    assert best_matches == 2
 
 
 def test_fix_preview_auto_detects_correct_keycolumn(monkeypatch, tmp_path):

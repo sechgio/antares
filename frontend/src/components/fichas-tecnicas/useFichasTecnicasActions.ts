@@ -7,9 +7,10 @@ import {
 } from "react";
 import { useToast } from "../../hooks/useToast";
 import { useDialog } from "../../hooks/useDialog";
+import { useKeyboardShortcut } from "../../hooks/useKeyboardShortcut";
 import type { ReportWorkspaceMobileTab } from "../../hooks/useReportWorkspace";
-import { downloadBase64Pdf, fileToDataUrl } from "../../utils/pdfAssets";
-import { saveFeatureHistory } from "../../utils/history";
+import { changeLogoFile } from "../../utils/logoFile";
+import { renderPdfDownload } from "../../utils/renderPdfDownload";
 import { fichasTecnicasApi } from "./api";
 import { formatIpcError } from "./formatIpcError";
 import type { FichaTecnica, FichaTecnicaListItem } from "./types";
@@ -38,16 +39,11 @@ export function useFichasTecnicasActions(workspace: WorkspaceSlice) {
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.key === ".") {
-        event.preventDefault();
-        setFocusMode((value) => !value);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  useKeyboardShortcut(
+    ".",
+    () => setFocusMode((value) => !value),
+    { ctrl: true, allowInInput: true },
+  );
 
   useEffect(() => {
     if (focusMode) setMobileTab("preview");
@@ -55,18 +51,15 @@ export function useFichasTecnicasActions(workspace: WorkspaceSlice) {
 
   const changeLogo = useCallback(
     async (file: File | null) => {
-      if (!file) {
-        setLogoLeft(null);
-        return;
-      }
-      try {
-        setLogoLeft(await fileToDataUrl(file));
-      } catch (error) {
-        addToast({
-          message: formatIpcError(error, "No se pudo cargar el logo"),
-          type: "error",
-        });
-      }
+      await changeLogoFile(
+        file,
+        setLogoLeft,
+        (error) =>
+          addToast({
+            message: formatIpcError(error, "No se pudo cargar el logo"),
+            type: "error",
+          }),
+      );
     },
     [addToast],
   );
@@ -75,20 +68,12 @@ export function useFichasTecnicasActions(workspace: WorkspaceSlice) {
     try {
       await runOperation(async () => {
         if (!formData) {
-          const rendered = await fichasTecnicasApi.renderHtml({
-            template: true,
-            logo_left: logoLeft,
-          });
-          const pdf = await fichasTecnicasApi.htmlToPdf({
-            html: rendered.html,
-            filename: rendered.filename,
-            return_base64: true,
-          });
-          if (!pdf.pdf_base64)
-            throw new Error("No se recibió el contenido del PDF generado.");
-          downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-          await saveFeatureHistory("ficha_tecnica", pdf.filename, {
-            type: "plantilla",
+          await renderPdfDownload({
+            render: () =>
+              fichasTecnicasApi.renderHtml({ template: true, logo_left: logoLeft }),
+            htmlToPdf: fichasTecnicasApi.htmlToPdf,
+            runType: "ficha_tecnica",
+            history: () => ({ details: { type: "plantilla" } }),
           });
           addToast({ message: "Plantilla PDF generada", type: "success" });
           return;
@@ -96,22 +81,18 @@ export function useFichasTecnicasActions(workspace: WorkspaceSlice) {
 
         const fichaForRender = hasChanges ? await saveCurrent() : formData;
         if (!fichaForRender) return;
-        const rendered = await fichasTecnicasApi.renderHtml({
-          id: fichaForRender.id,
-          ficha: fichaForRender,
-          logo_left: logoLeft,
-        });
-        const pdf = await fichasTecnicasApi.htmlToPdf({
-          html: rendered.html,
-          filename: rendered.filename,
-          return_base64: true,
-        });
-        if (!pdf.pdf_base64)
-          throw new Error("No se recibió el contenido del PDF generado.");
-        downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-        await saveFeatureHistory("ficha_tecnica", pdf.filename, {
-          type: "individual",
-          fichaId: fichaForRender.id,
+        await renderPdfDownload({
+          render: () =>
+            fichasTecnicasApi.renderHtml({
+              id: fichaForRender.id,
+              ficha: fichaForRender,
+              logo_left: logoLeft,
+            }),
+          htmlToPdf: fichasTecnicasApi.htmlToPdf,
+          runType: "ficha_tecnica",
+          history: () => ({
+            details: { type: "individual", fichaId: fichaForRender.id },
+          }),
         });
         addToast({
           message: hasChanges
@@ -139,23 +120,16 @@ export function useFichasTecnicasActions(workspace: WorkspaceSlice) {
     if (!confirmed) return;
     try {
       await runOperation(async () => {
-        const rendered = await fichasTecnicasApi.renderConsolidatedHtml({
-          logo_left: logoLeft,
+        const rendered = await renderPdfDownload({
+          render: () =>
+            fichasTecnicasApi.renderConsolidatedHtml({ logo_left: logoLeft }),
+          htmlToPdf: fichasTecnicasApi.htmlToPdf,
+          runType: "ficha_tecnica",
+          history: (r) => ({
+            details: { type: "consolidado", count: r.count },
+            count: r.count,
+          }),
         });
-        const pdf = await fichasTecnicasApi.htmlToPdf({
-          html: rendered.html,
-          filename: rendered.filename,
-          return_base64: true,
-        });
-        if (!pdf.pdf_base64)
-          throw new Error("No se recibió el contenido del PDF generado.");
-        downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-        await saveFeatureHistory(
-          "ficha_tecnica",
-          pdf.filename,
-          { type: "consolidado", count: rendered.count },
-          rendered.count,
-        );
         addToast({
           message: `PDF consolidado generado (${rendered.count})`,
           type: "success",

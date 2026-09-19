@@ -118,7 +118,6 @@ class IPCProcess:
                 "LOCALAPPDATA": str(self.profile_dir),
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONUTF8": "1",
-                "ANTARES_ENABLE_PLUGINS": "0",
                 "ANTARES_MAP_PROVIDER": "google",
             }
         )
@@ -238,7 +237,7 @@ def make_fixtures(base: Path) -> dict[str, Any]:
     base.mkdir(parents=True, exist_ok=True)
     from io import BytesIO
 
-    import fitz
+    import pymupdf
     from openpyxl import Workbook
     from PIL import Image
 
@@ -257,7 +256,7 @@ def make_fixtures(base: Path) -> dict[str, Any]:
     png_b64 = base64.b64encode(png_bytes).decode("ascii")
 
     pdf_path = base / "sample.pdf"
-    document = fitz.open()
+    document = pymupdf.open()
     page = document.new_page(width=300, height=300)
     page.insert_text((40, 60), "Antares IPC benchmark")
     document.save(pdf_path)
@@ -435,7 +434,10 @@ def setup_process(ipc: IPCProcess, fixtures: dict[str, Any]) -> dict[str, Any]:
     setup: dict[str, Any] = {}
 
     def result(method: str, params: dict[str, Any]) -> Any:
-        _, response = ipc.rpc(method, params)
+        try:
+            _, response = ipc.rpc(method, params)
+        except TimeoutError:
+            return {}
         return response.get("result") or {}
 
     setup["theme"] = result("theme_get", {})

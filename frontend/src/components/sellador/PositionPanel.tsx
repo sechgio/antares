@@ -54,7 +54,7 @@ export default function PositionPanel({
             onClick={() => onSelectPosition(index)}
             className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-mono transition-colors ${
               index === activeIndex
-                ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]'
+                ? 'border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)] text-[var(--accent-primary)]'
                 : 'border-[var(--border-medium)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
             }`}
           >
@@ -74,7 +74,7 @@ export default function PositionPanel({
                     onRemovePosition(index);
                   }
                 }}
-                className="rounded-full p-0.5 hover:bg-[var(--accent-red)]/20 hover:text-[var(--accent-red)]"
+                className="rounded-full p-0.5 hover:bg-[color:color-mix(in_srgb,var(--accent-red)_20%,transparent)] hover:text-[var(--accent-red)]"
                 aria-label={`Eliminar ${pos.name}`}
               >
                 <Trash2 size={10} />

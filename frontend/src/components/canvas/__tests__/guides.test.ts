@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampGuidePos,
+  clearGuides,
   collectReferenceGaps,
   createGuide,
   formatGapMm,
@@ -52,6 +53,16 @@ describe('guides', () => {
     expect(doc.guides![0].posMm).toBe(40);
     doc = removeGuide(doc, g.id);
     expect(doc.guides).toHaveLength(0);
+  });
+
+  it('clearGuides vacía todas las páginas y es idempotente', () => {
+    let doc = createEmptyDocument();
+    expect(clearGuides(doc)).toBe(doc);
+    doc = upsertGuide(doc, createGuide('x', 10, 0));
+    doc = upsertGuide(doc, createGuide('y', 20, 1));
+    const cleared = clearGuides(doc);
+    expect(cleared.guides).toEqual([]);
+    expect(clearGuides(cleared)).toBe(cleared);
   });
 
   it('measureSelectionGaps reports page and object gaps', () => {

@@ -1,4 +1,3 @@
-import { api } from '../../api';
 import {
   fileToPdfImageSource,
   imageToPdfDataUrl,
@@ -61,16 +60,4 @@ export async function preparePhotosForExport(
     path: await photoToPdfPath(photo, `${keyPrefix}-${index}`, localImagePaths, quality),
     name: photo.name,
   }));
-}
-
-export async function askPdfSavePath(defaultFilename: string, title: string): Promise<string | null> {
-  const saveTarget = await api.dialogSave({
-    title,
-    defaultPath: defaultFilename,
-    filters: [
-      { name: 'PDF', extensions: ['pdf'] },
-      { name: 'Todos los archivos', extensions: ['*'] },
-    ],
-  });
-  return saveTarget.paths[0] || null;
 }

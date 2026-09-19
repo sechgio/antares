@@ -10,14 +10,9 @@ describe('Figma-like zoom camera (layout invariant)', () => {
     expect(design.border || design.outline || '').toMatch(/2px/);
   });
 
-  it('camera zoom only changes the frame display size, not design px', () => {
-    const cameraZoom = 0.85;
+  it('A4 design canvas is 210x297 mm at 96 dpi', () => {
     expect(A4_WIDTH_PX).toBe(Math.round((210 * 96) / 25.4));
     expect(A4_HEIGHT_PX).toBe(Math.round((297 * 96) / 25.4));
-    const visualW = A4_WIDTH_PX * cameraZoom;
-    const visualH = A4_HEIGHT_PX * cameraZoom;
-    expect(visualW / A4_WIDTH_PX).toBeCloseTo(cameraZoom, 6);
-    expect(visualH / A4_HEIGHT_PX).toBeCloseTo(cameraZoom, 6);
   });
 
   it('re-layout zoom would change rounded font/box ratios (why we use camera zoom)', () => {

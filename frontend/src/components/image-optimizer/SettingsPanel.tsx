@@ -75,7 +75,7 @@ export default function SettingsPanel({
         <Button variant="none" size="none"
           onClick={onOpenCropEditor}
           disabled={!activeItem || !settings.operations.cropEnabled || settings.crop.aspectRatio === 'original'}
-          className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2 text-[11px] font-medium text-[var(--text-primary)] transition-[background-color,transform] duration-100 hover:border-[var(--accent-primary)]/40 active:scale-[0.96] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-40"
+          className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2 text-[11px] font-medium text-[var(--text-primary)] transition-[background-color,transform] duration-100 hover:border-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)] active:scale-[0.96] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-40"
         >
           <Crop size={12} />
           {t('optimizer.fields.adjustCrop')}
@@ -112,7 +112,7 @@ export default function SettingsPanel({
             />
           </label>
         </div>
-        <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 py-1.5 transition-colors hover:border-[var(--accent-primary)]/35">
+        <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 py-1.5 transition-colors hover:border-[color:color-mix(in_srgb,var(--accent-primary)_35%,transparent)]">
           <span className="text-[11px] font-medium text-[var(--text-primary)]">{t('optimizer.fields.noUpscale')}</span>
           <input
             type="checkbox"

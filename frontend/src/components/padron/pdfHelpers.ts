@@ -1,4 +1,5 @@
 import { base64ToBytes } from '../../utils/bytesToBase64';
+import { chunkArray as chunkToPages } from '../../utils/chunk';
 import type { Orientation, PadronItem } from './data';
 
 const _imageBase64Cache = new Map<string, Promise<string>>();
@@ -50,10 +51,7 @@ export function clamp(value: number, min: number, max: number): number {
 }
 
 export function chunkArray<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
+  const chunks = chunkToPages(arr, size);
   return chunks.length ? chunks : [[]];
 }
 

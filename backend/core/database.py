@@ -6,6 +6,7 @@ import logging
 import re
 import sqlite3
 import unicodedata
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
 
@@ -456,6 +457,25 @@ def _record_code_match(
     result[val] = row_dict
 
 
+def _collect_code_matches(
+    rows: Iterable[Any],
+    field_names: Iterable[str],
+    query_by_fold: dict[str, str],
+    result: dict[str, dict[str, Any]],
+    code_rowids: dict[str, int],
+) -> None:
+    """Recorre filas `SELECT rowid AS __antares_rowid__, ...` y registra cada
+    valor de `field_names` que case contra `query_by_fold`."""
+    for row in rows:
+        row_dict = dict(row)
+        row_id = row_dict.pop("__antares_rowid__")
+        for fn in field_names:
+            val = str(row_dict.get(fn, "") or "").strip()
+            query_key = query_by_fold.get(val.casefold()) if val else None
+            if query_key:
+                _record_code_match(result, code_rowids, query_key, row_id, row_dict)
+
+
 def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
     if not codigos:
         return {}
@@ -466,11 +486,7 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
         if not field_names:
             return {}
 
-        query_by_fold: dict[str, str] = {}
-        for raw in codigos:
-            text = str(raw).strip()
-            if text:
-                query_by_fold.setdefault(text.casefold(), text)
+        query_by_fold = _folded_query_keys(codigos)
         if not query_by_fold:
             return {}
         folded_codes = list(query_by_fold.keys())
@@ -480,9 +496,6 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
         cols = ", ".join(_qi(fn) for fn in field_names)
 
         preferred = "codigo" if "codigo" in field_names else field_names[0]
-
-        def _query_key_for(val: str) -> str | None:
-            return query_by_fold.get(val.casefold())
 
         def _scan_column(codes: list[str], column: str) -> None:
             CHUNK = 900
@@ -494,14 +507,9 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                     f"WHERE lower({_qi(column)}) IN ({placeholders})",
                     chunk,
                 )
-                for row in cursor.fetchall():
-                    row_dict = dict(row)
-                    row_id = row_dict.pop("__antares_rowid__")
-                    for fn in field_names:
-                        val = str(row_dict.get(fn, "") or "").strip()
-                        query_key = _query_key_for(val) if val else None
-                        if query_key:
-                            _record_code_match(result, code_rowids, query_key, row_id, row_dict)
+                _collect_code_matches(
+                    cursor.fetchall(), field_names, query_by_fold, result, code_rowids,
+                )
 
         _scan_column(folded_codes, preferred)
 
@@ -520,14 +528,9 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                     f"SELECT rowid AS __antares_rowid__, {cols} FROM imagenes WHERE {conditions}",
                     params,
                 )
-                for row in cursor.fetchall():
-                    row_dict = dict(row)
-                    row_id = row_dict.pop("__antares_rowid__")
-                    for fn in field_names:
-                        val = str(row_dict.get(fn, "") or "").strip()
-                        query_key = _query_key_for(val) if val else None
-                        if query_key:
-                            _record_code_match(result, code_rowids, query_key, row_id, row_dict)
+                _collect_code_matches(
+                    cursor.fetchall(), field_names, query_by_fold, result, code_rowids,
+                )
         return result
 
 
@@ -599,13 +602,9 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
                 f"WHERE lower({_qi(safe_column)}) IN ({placeholders})",
                 chunk,
             )
-            for row in cursor.fetchall():
-                row_dict = dict(row)
-                row_id = row_dict.pop("__antares_rowid__")
-                val = str(row_dict.get(safe_column, "") or "").strip()
-                query_key = query_by_fold.get(val.casefold()) if val else None
-                if query_key:
-                    _record_code_match(result, code_rowids, query_key, row_id, row_dict)
+            _collect_code_matches(
+                cursor.fetchall(), [safe_column], query_by_fold, result, code_rowids,
+            )
         return result
 
 

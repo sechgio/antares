@@ -43,7 +43,7 @@ export function HighlightMatch({ text, query }: { text: string; query: string })
           part.toLowerCase() === cleanQuery.toLowerCase() ? (
             <mark
               key={i}
-              className="rounded-[2px] bg-[var(--accent-primary)]/30 text-[var(--text-primary)] px-0.5 font-semibold"
+              className="rounded-[2px] bg-[color:color-mix(in_srgb,var(--accent-primary)_30%,transparent)] text-[var(--text-primary)] px-0.5 font-semibold"
             >
               {part}
             </mark>
@@ -62,7 +62,7 @@ export function renderStatusBadge(value: string, query = '') {
   const normalized = value.trim().toUpperCase();
   if (['ATENDIDO', 'COMPLETO', 'COMPLETADO', 'EJECUTADO', 'FINALIZADO', 'OK', 'APROBADO', 'ACTIVO'].includes(normalized)) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-green)]/15 text-[var(--accent-green)] whitespace-nowrap">
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] text-[var(--accent-green)] whitespace-nowrap">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
         <HighlightMatch text={value} query={query} />
       </span>
@@ -70,7 +70,7 @@ export function renderStatusBadge(value: string, query = '') {
   }
   if (['PENDIENTE', 'EN PROCESO', 'EN CURSO', 'INICIADO', 'ASIGNADO', 'REVISION', 'EN ESPERA'].includes(normalized)) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-yellow)]/15 text-[var(--accent-yellow)] whitespace-nowrap">
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[color:color-mix(in_srgb,var(--accent-yellow)_15%,transparent)] text-[var(--accent-yellow)] whitespace-nowrap">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-yellow)]" />
         <HighlightMatch text={value} query={query} />
       </span>
@@ -78,7 +78,7 @@ export function renderStatusBadge(value: string, query = '') {
   }
   if (['CANCELADO', 'ANULADO', 'RECHAZADO', 'NO ATENDIDO', 'URGENTE', 'ERROR', 'BAJA'].includes(normalized)) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-red)]/15 text-[var(--accent-red)] whitespace-nowrap">
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[color:color-mix(in_srgb,var(--accent-red)_15%,transparent)] text-[var(--accent-red)] whitespace-nowrap">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-red)]" />
         <HighlightMatch text={value} query={query} />
       </span>

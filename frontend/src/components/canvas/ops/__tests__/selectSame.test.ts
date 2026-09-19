@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../../constants';
-import { sameLayerIds, selectSameApplicable } from '../selectSame';
+import type { CanvasLayer } from '../../types';
+import { invertSelectableIds, sameLayerIds, selectSameApplicable } from '../selectSame';
 
 describe('selectSame', () => {
   it('fill matches layers with the same background color', () => {
@@ -44,5 +45,17 @@ describe('selectSame', () => {
   it('selectSameApplicable excludes frames', () => {
     const frame = createLayer('frame', { id: 'fr' });
     expect(selectSameApplicable(frame, 'fill')).toBe(false);
+  });
+
+  it('invertSelectableIds devuelve las seleccionables no seleccionadas', () => {
+    const a = createLayer('rect', { id: 'a' });
+    const b = createLayer('ellipse', { id: 'b' });
+    const locked = createLayer('text', { id: 'l', locked: true });
+    const frame: CanvasLayer = { ...createLayer('rect', { id: 'fr' }), type: 'frame' };
+    const layers = [a, b, locked, frame];
+
+    expect(invertSelectableIds(layers, [])).toEqual(['a', 'b']);
+    expect(invertSelectableIds(layers, ['a'])).toEqual(['b']);
+    expect(invertSelectableIds(layers, ['a', 'b'])).toEqual([]);
   });
 });

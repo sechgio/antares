@@ -79,11 +79,20 @@ function _registerWriteRootFromPath(rawPath) {
   if (_addWriteRoot(root)) _persistWriteRoots();
 }
 
-function _isUnderAllowedPdfWriteDir(dir) {
+function _isUnderRegisteredWriteRoot(dir) {
   const resolvedDir = path.resolve(dir);
   for (const root of _allowedWriteRoots) {
     if (isPathInside(root, resolvedDir)) return true;
   }
+  return false;
+}
+
+// Documentos/Descargas no es una raiz elegida por el usuario: es un fallback
+// para que una carpeta recordada siga funcionando aunque la lista persistida
+// de raices se haya rotado. Se expone aparte para que quien escriba por esa
+// via asuma las restricciones del caso.
+function _isUnderStandardUserDir(dir) {
+  const resolvedDir = path.resolve(dir);
   try {
     const { app } = require('electron');
     if (app && typeof app.getPath === 'function') {
@@ -95,6 +104,10 @@ function _isUnderAllowedPdfWriteDir(dir) {
   } catch {
   }
   return false;
+}
+
+function _isUnderAllowedPdfWriteDir(dir) {
+  return _isUnderRegisteredWriteRoot(dir) || _isUnderStandardUserDir(dir);
 }
 
 function _sanitizeFilename(name) {
@@ -148,6 +161,8 @@ module.exports = {
   _allowedWriteRoots,
   _loadPersistedWriteRoots,
   _registerWriteRootFromPath,
+  _isUnderRegisteredWriteRoot,
+  _isUnderStandardUserDir,
   _isUnderAllowedPdfWriteDir,
   _sanitizeFilename,
   _sanitizePdfOutputPath,
