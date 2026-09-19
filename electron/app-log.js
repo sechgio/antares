@@ -69,7 +69,6 @@ const _originalConsole = {
 };
 
 let _logsDir = null;
-let _logsDirReady = false;
 let _consoleTeeInstalled = false;
 let _sessionId = null;
 let _appVersion = null;
@@ -224,7 +223,6 @@ function _maxLogFileBytes() {
 }
 
 function _markDroppedEvent() {
-  _logsDirReady = false;
   _droppedEventCount += 1;
 }
 
@@ -300,7 +298,6 @@ function getDroppedEventCount() {
 function initAppLogs() {
   const dir = getLogsDir();
   fs.mkdirSync(dir, { recursive: true });
-  _logsDirReady = true;
   try {
     const cutoff = Date.now() - LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
     for (const name of fs.readdirSync(dir)) {

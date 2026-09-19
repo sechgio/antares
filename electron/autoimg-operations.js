@@ -90,7 +90,6 @@ function getOperationStatus() {
 }
 
 module.exports = {
-  CANCELLABLE_OPERATIONS,
   operationState,
   throwIfCancelled,
   runLocked,

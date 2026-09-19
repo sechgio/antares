@@ -1,6 +1,4 @@
 
-const assert = require('assert');
-
 let passed = 0;
 let failed = 0;
 

@@ -1,6 +1,5 @@
 
 const path = require('path');
-const Module = require('module');
 
 const { assertOrExit:assert, evictModule } = require('./helpers/harness');
 
