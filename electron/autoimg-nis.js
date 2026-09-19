@@ -1,6 +1,4 @@
 
-const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|tiff?|heic|heif)$/i;
-
 const NIS_FILE_RE = /^(\d{7})(?:[_-][A-Za-z0-9]+)*$/;
 
 const NIS_SLOT_RE = /^(\d{7})[_-]([1-9]\d*)([A-Za-z])?$/i;

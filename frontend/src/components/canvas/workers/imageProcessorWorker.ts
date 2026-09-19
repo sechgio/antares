@@ -13,7 +13,6 @@ export interface ImageProcessingResult {
   name: string;
   type: string;
   blob: Blob;
-  dataUrl?: string;
   width?: number;
   height?: number;
   error?: string;

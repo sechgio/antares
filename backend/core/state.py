@@ -43,7 +43,6 @@ _LOGGER = logging.getLogger("backend.handlers.conversion")
 _TAG_LEVEL_MAP: dict[str, int] = {
     "error": logging.ERROR,
     "warn": logging.WARNING,
-    "warning": logging.WARNING,
     "ok": logging.INFO,
     "info": logging.INFO,
 }

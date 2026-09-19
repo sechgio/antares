@@ -90,7 +90,6 @@ export default function HeaderForm({
             <div className={`rcampo-field ${hasValue ? 'has-value' : ''}`} key={field.key}>
                 <label className="rcampo-field-label">
                     {field.label}
-                    {field.required && <span className="required">*</span>}
                 </label>
                 {field.multiline && field.rows ? (
                     <textarea

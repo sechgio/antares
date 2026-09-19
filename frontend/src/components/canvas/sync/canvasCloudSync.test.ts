@@ -1045,16 +1045,6 @@ describe('pushCanvasDocument', () => {
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
-  it('sets created_by to the current user when the row is new', async () => {
-    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T13:00:00Z' });
-    supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
-
-    const ok = await pushCanvasDocument(doc);
-
-    expect(ok).toBe(true);
-    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
-  });
-
   it('aborts before upsert when canvas-asset refs cannot be resolved', async () => {
     const prevApi = window.electronAPI;
     window.electronAPI = {

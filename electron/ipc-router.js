@@ -535,13 +535,6 @@ function _sendRequest(method, params) {
     entry.timeout = setTimeout(() => {
       _pendingRequests.delete(id);
       entry.releasePending();
-      const win = getMainWindow();
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('ipc-notify', 'ipc.error', {
-          method,
-          message: `IPC timeout: el backend no respondió a "${method}" en ${timeoutMs / 1000}s`,
-        });
-      }
       entry.reject(new Error(`IPC timeout: ${method}`));
     }, timeoutMs);
 

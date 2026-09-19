@@ -17,7 +17,6 @@ export interface HeaderField {
   label: string;
   shortLabel?: string;
   required: boolean;
-  wide?: boolean;
   stacked?: boolean;
 }
 
@@ -73,15 +72,15 @@ export interface ParseResult {
 }
 
 export const OUTPUT_FORMAT_OPTIONS = [
-  { value: 'service-interruption' as OutputFormat, label: 'Plantilla actual', rowsPerPage: 18 },
-  { value: 'volante-lurigancho' as OutputFormat, label: 'volante lurigancho', rowsPerPage: 18 },
-  { value: 'volanteo-lurigancho-v2' as OutputFormat, label: 'volanteo lurigancho v2', rowsPerPage: 18 },
-  { value: 'water-cut-notice' as OutputFormat, label: 'Aviso corte de agua', rowsPerPage: 36 },
+  { value: 'service-interruption' as OutputFormat, label: 'Plantilla actual' },
+  { value: 'volante-lurigancho' as OutputFormat, label: 'volante lurigancho' },
+  { value: 'volanteo-lurigancho-v2' as OutputFormat, label: 'volanteo lurigancho v2' },
+  { value: 'water-cut-notice' as OutputFormat, label: 'Aviso corte de agua' },
 ];
 
 export const ORIENTATION_OPTIONS = [
-  { value: 'landscape' as Orientation, label: 'Horizontal', rowsPerPage: 18 },
-  { value: 'portrait' as Orientation, label: 'Vertical', rowsPerPage: 37 },
+  { value: 'landscape' as Orientation, label: 'Horizontal' },
+  { value: 'portrait' as Orientation, label: 'Vertical' },
 ];
 
 export const HEADER_FIELD_GROUPS: FieldGroup[] = [
@@ -130,19 +129,17 @@ export const HEADER_FIELD_GROUPS: FieldGroup[] = [
     title: 'Comunicación',
     fields: [
       { key: 'fechaTrabajo', label: 'Fecha de trabajo', required: true },
-      { key: 'fechaComunicacion', label: 'Fecha de comunicación', required: true, wide: true },
+      { key: 'fechaComunicacion', label: 'Fecha de comunicación', required: true },
       {
         key: 'localidades',
         label: 'Localidades afectadas',
         required: false,
-        wide: true,
         stacked: true,
       },
       {
         key: 'areaAfectada',
         label: 'Área afectada',
         required: false,
-        wide: true,
         stacked: true,
       },
     ],
@@ -150,12 +147,11 @@ export const HEADER_FIELD_GROUPS: FieldGroup[] = [
   {
     title: 'Servicio',
     fields: [
-      { key: 'codigoServicio', label: 'C.P.S.', required: false, wide: true },
+      { key: 'codigoServicio', label: 'C.P.S.', required: false },
       {
         key: 'descripcionServicio',
         label: 'Descripción del servicio',
         required: false,
-        wide: true,
       },
     ],
   },
@@ -176,10 +172,9 @@ export const WATER_CUT_FIELD_GROUPS: FieldGroup[] = [
         key: 'horarioCorte',
         label: 'Horario de corte de servicio',
         required: true,
-        wide: true,
         stacked: true,
       },
-      { key: 'motivo', label: 'Motivo', required: true, wide: true, stacked: true },
+      { key: 'motivo', label: 'Motivo', required: true, stacked: true },
     ],
   },
 ];
