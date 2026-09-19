@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import codecs
 import contextlib
 import csv
 import io
@@ -30,6 +31,7 @@ INLINE_RESULT_MAX_BYTES = 512 * 1024
 DEFAULT_GET_ROWS_LIMIT = 500
 MAX_GET_ROWS_LIMIT = 5_000
 _SUPPORTED_FORMATS = frozenset({"xlsx", "xls", "csv"})
+_CSV_SNIFF_BYTES = 64 * 1024
 
 _SPILL_CACHE_MAX_ENTRIES = 2
 _SPILL_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024
@@ -323,13 +325,39 @@ def _parse_xls(path: Path, result: SpreadsheetResultBuilder) -> list[str]:
     return warnings
 
 
+def _head_decodes(chunk: bytes, encoding: str) -> bool:
+    try:
+        codecs.getincrementaldecoder(encoding)().decode(chunk, final=False)
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def _sniff_csv(path: Path) -> tuple[str, str]:
+    """Excel en español exporta con ';' y en ANSI de Windows, y el encabezado
+    suele ser ASCII aunque el cuerpo traiga tildes: la codificación se decide
+    sobre un muestreo, no sobre la primera línea, y sin leer el archivo entero
+    para conservar el streaming. La coma mantiene la precedencia para no cambiar
+    los CSV que ya se leían bien."""
+    with path.open("rb") as fh:
+        head = fh.read(_CSV_SNIFF_BYTES)
+    encoding = next(
+        (candidate for candidate in ("utf-8-sig", "utf-8", "cp1252") if _head_decodes(head, candidate)),
+        "latin-1",
+    )
+    first_line = head.partition(b"\n")[0]
+    delimiter = next((d for d in (",", ";", "\t") if d.encode() in first_line), ",")
+    return encoding, delimiter
+
+
 def _parse_csv(path: Path, result: SpreadsheetResultBuilder) -> list[str]:
     warnings: list[str] = []
     sheet_index = result.start_sheet(path.stem)
+    encoding, delimiter = _sniff_csv(path)
     row_count = 0
     total_cells = 0
-    with path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.reader(f)
+    with path.open("r", encoding=encoding, newline="") as f:
+        reader = csv.reader(f, delimiter=delimiter)
         for row in reader:
             vals = _trim_row([v if v != "" else None for v in row])
             if vals is None:
