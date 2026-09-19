@@ -1,11 +1,14 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import VolantesView from "./VolantesView";
+import { createPdfDocument } from "./utils/pdf";
+
+const draftState = vi.hoisted(() => ({ records: [] as unknown[] }));
 
 vi.mock("./hooks/useVolantesDraft", () => ({
   useVolantesDraft: () => ({
-    records: [],
+    records: draftState.records,
     setRecords: vi.fn(),
     brand: { logoIzquierdo: null, logoDerecho: null },
     setBrand: vi.fn(),
@@ -85,5 +88,21 @@ describe("VolantesView actions", () => {
     expect(within(header).getByRole("button", { name: "Plantilla" })).toBeInTheDocument();
     expect(within(header).getByText("Importar")).toBeInTheDocument();
     expect(screen.getByText(/No hay un registro seleccionado/)).toBeInTheDocument();
+  });
+
+  it("no lanza una segunda exportación mientras la primera está en curso", () => {
+    draftState.records = [{ id: "r1", reservorio: "R104" }];
+    const pending = new Promise<never>(() => {});
+    vi.mocked(createPdfDocument).mockReturnValue(pending);
+
+    render(<VolantesView />);
+    const exportButton = within(screen.getByRole("banner")).getByRole("button", {
+      name: "Exportar todo",
+    });
+
+    fireEvent.click(exportButton);
+    fireEvent.click(exportButton);
+
+    expect(vi.mocked(createPdfDocument)).toHaveBeenCalledTimes(1);
   });
 });
