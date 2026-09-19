@@ -117,7 +117,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   }
 
   if (method === 'file_staged_abort') {
-    await abortStagedSession(params.token);
+    await abortStagedSession(params.token, webContentsId);
     return { handled: true, result: { aborted: true } };
   }
 
