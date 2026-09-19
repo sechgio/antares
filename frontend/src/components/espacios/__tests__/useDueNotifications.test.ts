@@ -114,6 +114,47 @@ describe('useDueNotifications', () => {
     expect(fetchDueSoonTareas.mock.calls.length).toBe(callsAfterMount + 1);
   });
 
+  it('descarta el fetch en vuelo y limpia cuando se deshabilita', async () => {
+    let resolveRows: ((rows: unknown[]) => void) | null = null;
+    fetchDueSoonTareas.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRows = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useDueNotifications(enabled),
+      { initialProps: { enabled: true } },
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    rerender({ enabled: false });
+
+    await act(async () => {
+      resolveRows?.([
+        {
+          id: 't1',
+          title: 'De la cuenta anterior',
+          due_date: '2026-07-09',
+          status: 'todo',
+          proyecto_id: 'p1',
+          proyecto_name: 'Obra',
+          espacio_id: 'e1',
+          espacio_name: 'Espacio',
+        },
+      ]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.items).toEqual([]);
+    expect(result.current.loading).toBe(false);
+  });
+
   it('unsubscribes on unmount', async () => {
     const channel = { id: 'ch-due' };
     subscribeDueNotifications.mockReturnValue(channel);
