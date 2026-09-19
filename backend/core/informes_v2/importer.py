@@ -79,7 +79,6 @@ LINEA_ALIASES = {
         "rebombeo",
         "lineaimpulsion",
         "linimpulsion",
-        "impulsion",
     ),
     "rebose": ("rebose", "linearebose"),
     "purga": ("lineapurga", "purgalinea"),

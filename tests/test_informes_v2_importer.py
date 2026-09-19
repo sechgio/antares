@@ -148,3 +148,19 @@ def test_template_xlsx_roundtrip_maps_all_sections() -> None:
     assert report["medidas"]["altura_total"] == "4.0"
     assert report["medidas"]["tirante_limpieza"] == "0.3"
     assert report["medidas"]["observacion"] == "Sin hallazgos"
+
+
+def test_alias_impulsion_pelado_corresponde_a_la_valvula() -> None:
+    content = (
+        b"ID;Impulsion 8;Impulsion Oper;Impulsion No Op;Obs Impulsion;Lin Impulsion 8;Lin Impulsion Obs\n"
+        b"R-1;5;1;0;valv ok;9;lin ok\n"
+    )
+
+    report = import_reports_from_bytes("datos.csv", content)[0]
+
+    assert report["valvulas"]["impulsion"]["diametros"]["8"] == 5
+    assert report["valvulas"]["impulsion"]["oper"] == 1
+    assert report["valvulas"]["impulsion"]["no_op"] == 0
+    assert report["valvulas"]["impulsion"]["observaciones"] == "valv ok"
+    assert report["linea"]["impulsion_rebombeo"]["diametros"]["8"] == 9
+    assert report["linea"]["impulsion_rebombeo"]["observaciones"] == "lin ok"
