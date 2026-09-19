@@ -122,7 +122,11 @@ export function useProcessRunner(): ProcessRunnerHookResult {
   }, [pollStatus]);
 
   const cancelProcess = useCallback(async () => {
-    await api.cancelProcess();
+    try {
+      await api.cancelProcess();
+    } catch {
+      // Si el cancel no llegó, el estado real lo descubre el pollStatus siguiente.
+    }
     pollStatus();
   }, [pollStatus]);
 
