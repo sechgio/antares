@@ -384,3 +384,41 @@ def test_save_run_receives_duration_ms(monkeypatch, tmp_path) -> None:
     assert job.result["err_count"] == 2
     assert job.result["cancelled"] is False
     assert "RuntimeError" in str(job.result.get("error", ""))
+
+
+def test_conversion_crash_reporta_los_archivos_ya_procesados(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: _RecordingScheduler())
+    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion_job, "convertir_imagen", lambda *_a, **_k: None)
+    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 2)
+    monkeypatch.setattr(conversion_job, "send_notification", lambda *_a, **_k: None)
+    monkeypatch.setattr("backend.core.database.buscar_lote_por_codigos", lambda _codes: {})
+
+    real_prepare = conversion_job._prepare_chunk_tasks
+    attempts: list[int] = []
+
+    def flaky_prepare(*args, **kwargs):  # type: ignore[no-untyped-def]
+        attempts.append(1)
+        if len(attempts) > 1:
+            raise RuntimeError("fallo de lectura")
+        return real_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(conversion_job, "_prepare_chunk_tasks", flaky_prepare)
+
+    dest = tmp_path / "out"
+    dest.mkdir()
+    job = Job(
+        id="crash-mid",
+        job_type="conversion",
+        params={
+            "files": [str(tmp_path / f"{idx}.jpg") for idx in range(5)],
+            "destino": str(dest),
+            "formato": "JPEG",
+            "usar_rename": False,
+        },
+    )
+    conversion._run_conversion_job(job)
+
+    assert job.result is not None
+    assert job.result["ok_count"] == 2
+    assert job.result["err_count"] == 3

@@ -303,18 +303,19 @@ def _run_conversion_job(job: Job) -> None:
     except Exception as exc:
         if not notified:
             files = params.get("files", []) or []
-            err_count = len(files) if files else 1
             error_msg = f"{type(exc).__name__}: {exc}"
             logger.exception("Conversion job %s failed: %s", job_id, error_msg)
             log_message(error_msg, "error", state=state)
             with state._lock:
+                ok_count = state.ok_count
+                err_count = max(len(files) - ok_count, 1) if files else 1
                 job.result = {
-                    "ok_count": 0,
+                    "ok_count": ok_count,
                     "err_count": err_count,
                     "cancelled": False,
                     "error": error_msg,
                 }
-            _notify_complete(job, 0, err_count, cancelled=False, progress=0)
+            _notify_complete(job, ok_count, err_count, cancelled=False, progress=0)
             notified = True
     finally:
         with state._lock:
