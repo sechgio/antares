@@ -36,3 +36,29 @@ def test_user_error_message_hides_unexpected_internals():
     assert isinstance(exc, AntaresBaseException)
     assert str(exc) == "Error interno del servidor"
     assert exc.category == "INTERNAL_ERROR"
+
+
+def test_user_error_message_keeps_tool_domain_errors():
+    """Evidencia Volanteo y Aviso de Corte escriben sus mensajes en español en
+    errores de dominio; aplanarlos a "Error interno del servidor" deja al
+    usuario sin la causa (documento vacío, Excel inválido, regla inválida)."""
+    from backend.core.evidencia_volanteo.errors import EvidenciaVolanteoError, RenderingError
+    from backend.core.panel_aviso_corte.errors import (
+        InvalidExcelError,
+        InvalidMatchRuleError,
+        InvalidPanelError,
+        PanelAvisoCorteError,
+    )
+
+    cases = [
+        (RenderingError("No hay páginas para exportar"), "No hay páginas para exportar"),
+        (EvidenciaVolanteoError("Evidencia inválida"), "Evidencia inválida"),
+        (InvalidExcelError("El Excel no tiene filas"), "El Excel no tiene filas"),
+        (InvalidMatchRuleError("Regla de emparejamiento inválida"), "Regla de emparejamiento inválida"),
+        (InvalidPanelError("Panel no soportado"), "Panel no soportado"),
+        (PanelAvisoCorteError("Error del aviso de corte"), "Error del aviso de corte"),
+    ]
+    for exc, message in cases:
+        mapped = _user_error_message(exc)
+        assert str(mapped) == message
+        assert mapped.category == "VALIDATION_ERROR", type(exc).__name__

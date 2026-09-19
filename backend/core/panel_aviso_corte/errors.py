@@ -4,7 +4,7 @@ from __future__ import annotations
 from backend.core.exceptions import AntaresError
 
 
-class PanelAvisoCorteError(AntaresError):
+class PanelAvisoCorteError(AntaresError, ValueError):
 
     ERROR_CODE: str = "PANEL_AVISO_CORTE_ERROR"
 
