@@ -127,6 +127,70 @@ describe('useCampoPanels persistence', () => {
         expect(stored.header[TITULO_COLOR_KEY]).toBe('#0066CC');
     });
 
+    it('descarta el guardado de un panel que la carga reemplazó antes de escribirse', async () => {
+        const { result, rerender } = renderHook(
+            ({ cfg }) => useCampoPanels(cfg),
+            { initialProps: { cfg: config } },
+        );
+
+        await act(async () => {
+            await vi.runAllTimersAsync();
+        });
+
+        let resolveLoad: (panels: StoredPanel[]) => void = () => {};
+        loadPanelsByType.mockImplementation(
+            () => new Promise<StoredPanel[]>((resolve) => { resolveLoad = resolve; }),
+        );
+        rerender({ cfg: getReportConfig('desinfeccion-reservorios') });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        let createdId = '';
+        act(() => {
+            createdId = result.current.createPanel().id;
+        });
+
+        await act(async () => {
+            resolveLoad([]);
+            await Promise.resolve();
+        });
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(500);
+        });
+
+        const savedIds = savePanel.mock.calls.map((c) => (c[0] as StoredPanel).id);
+        expect(savedIds).not.toContain(createdId);
+        expect(result.current.panels.some((p) => p.id === createdId)).toBe(false);
+    });
+
+    it('reintenta al cerrar un panel cuyo guardado falló', async () => {
+        savePanel.mockRejectedValueOnce(new Error('quota exceeded'));
+        const { result, unmount } = renderHook(() => useCampoPanels(config));
+
+        await act(async () => {
+            await vi.runAllTimersAsync();
+        });
+
+        act(() => {
+            result.current.updateHeader('CENTRO', 'CS Norte');
+        });
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(500);
+        });
+
+        expect(savePanel).toHaveBeenCalledTimes(1);
+
+        savePanel.mockResolvedValue(undefined);
+        unmount();
+
+        const stored = savePanel.mock.calls.at(-1)![0] as StoredPanel;
+        expect(savePanel).toHaveBeenCalledTimes(2);
+        expect(stored.header.CENTRO).toBe('CS Norte');
+    });
+
     it('flushes previous template type when switching plantilla', async () => {
         const { result, rerender } = renderHook(
             ({ cfg }) => useCampoPanels(cfg),

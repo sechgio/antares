@@ -119,8 +119,11 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
     }, []);
 
     const persistPanelNow = useCallback((panel: CampoPanel, type: ReportTypeConfig['id']) => {
-        dirtyIdsRef.current.delete(panel.id);
-        void savePanel(panelToStored(panel, type));
+        // Se desmarca solo cuando el write resolvió: si IndexedDB falla el panel
+        // queda sucio y el próximo flush (cambio de plantilla o cierre) lo reintenta.
+        void savePanel(panelToStored(panel, type)).then(() => {
+            dirtyIdsRef.current.delete(panel.id);
+        }, () => {});
     }, []);
 
     const flushPendingSaves = useCallback((type: ReportTypeConfig['id'] = reportTypeRef.current) => {
@@ -143,7 +146,13 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
         cancelPendingSave(panel.id);
         const timer = setTimeout(() => {
             saveTimersRef.current.delete(panel.id);
-            const latest = panelsRef.current.find((p) => p.id === panel.id) ?? panel;
+            // La carga de otra plantilla pudo reemplazar este panel mientras estaba
+            // en espera: escribirlo igualmente lo dejaría fantasma en la nueva lista.
+            const latest = panelsRef.current.find((p) => p.id === panel.id);
+            if (!latest) {
+                dirtyIdsRef.current.delete(panel.id);
+                return;
+            }
             persistPanelNow(latest, reportTypeRef.current);
         }, debounceMs);
         saveTimersRef.current.set(panel.id, timer);
