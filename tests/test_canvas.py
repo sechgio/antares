@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from backend.core.canvas.models import (
     next_copy_name,
     normalize_document,
 )
-from backend.core.canvas.store import CanvasStore, migrate_legacy_canvas_documents
+from backend.core.canvas.store import CanvasStore, encode_canvas_json, migrate_legacy_canvas_documents
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.handlers import canvas as canvas_handlers
 
@@ -443,6 +444,169 @@ def test_normalize_clamps_guide_page_index() -> None:
         {"id": "g-p1", "axis": "x", "posMm": 20.0, "pageIndex": 0},
         {"id": "g-bad", "axis": "y", "posMm": 5.0, "pageIndex": 0},
     ]
+
+
+def _strict_json_loads(text: str) -> Any:
+    """json.loads que rechaza los literales NaN/Infinity que JSON no define."""
+
+    def _reject(literal: str) -> None:
+        raise AssertionError(f"literal no-JSON en disco: {literal}")
+
+    return json.loads(text, parse_constant=_reject)
+
+
+def test_normalize_rejects_non_finite_values_across_the_document() -> None:
+    """Un float no finito debe caerse al fallback del propio campo.
+
+    JSON no tiene literal para Infinity/NaN: si atraviesan la normalización
+    quedan serializados en disco y el documento deja de poder leerse.
+    """
+    raw = create_empty_document()
+    raw["page"] = {"widthMm": float("inf"), "heightMm": float("nan")}
+    raw["settings"] = {
+        "imagesPerPage": float("inf"),
+        "gridSizeMm": float("inf"),
+        "pageMarginMm": float("nan"),
+        "gridRules": [{"whenImages": float("inf"), "cols": 1, "rows": 1}],
+    }
+    raw["guides"] = [{"id": "g1", "axis": "x", "posMm": float("inf"), "pageIndex": float("nan")}]
+    raw["layers"].append(
+        {
+            "id": "slot",
+            "type": "imageSlot",
+            "name": "Slot",
+            "value": "",
+            "pageIndex": float("inf"),
+            "meta": {
+                "gapMm": float("inf"),
+                "index": float("nan"),
+                "rules": [{"whenImages": float("inf"), "cols": 1, "rows": 1}],
+                "colTracks": [10.0, float("inf")],
+            },
+        }
+    )
+    raw["layers"].append(
+        {
+            "id": "shape",
+            "type": "polygon",
+            "name": "Shape",
+            "value": "",
+            "meta": {
+                "path": {
+                    "points": [
+                        {"x": float("inf"), "y": 1.0},
+                        {"x": 2.0, "y": 3.0},
+                        {"x": 3.0, "y": 4.0},
+                    ],
+                    "closed": True,
+                },
+            },
+        }
+    )
+
+    doc = normalize_document(raw)
+
+    assert doc["page"] == {"widthMm": 210, "heightMm": 297}
+    assert doc["settings"] == {}
+    assert doc["guides"] == []
+
+    slot = next(layer for layer in doc["layers"] if layer["id"] == "slot")
+    assert slot["pageIndex"] == 0
+    assert slot["meta"]["gapMm"] == 2.0
+    assert slot["meta"]["index"] == 0
+    assert "rules" not in slot["meta"]
+    assert "colTracks" not in slot["meta"]
+
+    shape = next(layer for layer in doc["layers"] if layer["id"] == "shape")
+    assert [point["x"] for point in shape["meta"]["path"]["points"]] == [2.0, 3.0]
+
+    encode_canvas_json(doc)
+
+
+def test_encode_canvas_json_refuses_non_finite_payload() -> None:
+    with pytest.raises(ValueError):
+        encode_canvas_json({"layers": [{"meta": {"gapMm": float("inf")}}]})
+
+
+def test_store_roundtrip_of_non_finite_document_stays_strict_json(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    document = create_empty_document(name="Con Infinity")
+    document["layers"][0]["meta"] = {"gapMm": float("inf")}
+
+    saved = store.save(document)
+    on_disk = (tmp_path / f"{saved['id']}.json").read_text(encoding="utf-8")
+
+    assert _strict_json_loads(on_disk)
+    recovered = store.get(saved["id"])
+    assert recovered is not None
+    assert recovered["layers"][0]["meta"]["gapMm"] == 2.0
+
+
+def test_store_get_treats_unnormalizable_document_as_unreadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = CanvasStore(tmp_path)
+    saved = store.save(create_empty_document(name="Roto"))
+
+    def _boom(_raw: Any) -> dict[str, Any]:
+        raise ValueError("normalizador no soporta este valor")
+
+    monkeypatch.setattr(canvas_store_mod, "normalize_document", _boom)
+
+    assert store.get(saved["id"]) is None
+
+
+def test_spill_comparison_reports_unknown_when_mtime_is_unreadable(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    target = tmp_path / "doc-1.json"
+    target.write_text("{}", encoding="utf-8")
+    unreadable = tmp_path / "spill" / "document__doc-1.json"
+
+    assert store._spill_comparison(unreadable, target) == canvas_store_mod._SPILL_UNKNOWN
+
+
+def test_document_spill_survives_an_unreadable_comparison(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un stat transitoriamente fallido no puede borrar la unica copia nueva.
+
+    El spill se escribe cuando un guardado se rechaza por presion de memoria,
+    asi que su contenido es la edicion que aun no esta en el documento.
+    """
+    store = CanvasStore(tmp_path / "documents")
+    spill_dir = tmp_path / "spill"
+    spill_dir.mkdir(parents=True, exist_ok=True)
+    spill = spill_dir / "document__doc-1.json"
+    spill.write_text(json.dumps(create_empty_document(name="Edicion sin guardar")), encoding="utf-8")
+    target = store.docs_dir / "doc-1.json"
+    target.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        CanvasStore,
+        "_spill_comparison",
+        staticmethod(lambda *_args: canvas_store_mod._SPILL_UNKNOWN),
+    )
+    store._recover_document_spill(spill)
+
+    assert spill.exists()
+    assert target.read_text(encoding="utf-8") == "{}"
+
+
+def test_stale_document_spill_is_still_discarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = CanvasStore(tmp_path / "documents")
+    spill_dir = tmp_path / "spill"
+    spill_dir.mkdir(parents=True, exist_ok=True)
+    spill = spill_dir / "document__doc-1.json"
+    spill.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        CanvasStore,
+        "_spill_comparison",
+        staticmethod(lambda *_args: canvas_store_mod._SPILL_DISCARD),
+    )
+    store._recover_document_spill(spill)
+
+    assert not spill.exists()
 
 
 def test_default_docs_dir_uses_user_data(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

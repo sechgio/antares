@@ -18,6 +18,15 @@ function assert(condition, message) {
   }
 }
 
+function assertActionsPinned(source, label) {
+  const actionRefs = [...source.matchAll(/uses:\s+actions\/[^@\s]+@([^\s#]+)/g)].map((match) => match[1]);
+  assert(actionRefs.length > 0, `${label} uses GitHub-maintained actions`);
+  assert(
+    actionRefs.every((ref) => /^[0-9a-f]{40}$/.test(ref)),
+    `${label} pins every GitHub action to a full commit SHA`,
+  );
+}
+
 function assertOrExit(condition, message) {
   if (!condition) {
     console.error(`[FAIL] ${message}`);
@@ -163,6 +172,7 @@ function installInertTimers({
 
 module.exports = {
   assert,
+  assertActionsPinned,
   assertOrExit,
   counters,
   finish,

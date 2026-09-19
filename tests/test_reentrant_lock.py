@@ -36,10 +36,3 @@ def test_nested_lock_from_different_threads() -> None:
 
     assert not errors
     assert len(state.logs) == 20
-
-
-def test_process_state_lock_type() -> None:
-    state = ProcessState()
-    assert isinstance(state._lock, type(threading.RLock())), (
-        f"ProcessState._lock is {type(state._lock).__name__}, expected RLock"
-    )

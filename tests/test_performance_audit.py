@@ -308,9 +308,10 @@ def test_get_all_does_not_renormalize_stored_items(tmp_path) -> None:
     assert calls == 0
 
 
-def test_warm_prewarms_history_schema_and_pandas_sync() -> None:
+def test_warm_prewarms_history_schema_without_pandas_sync() -> None:
     import inspect
 
+    import backend.main as backend_main
     from backend.handlers import HandlerRegistry
 
     post_ready = inspect.getsource(HandlerRegistry.warm_post_ready)
@@ -320,9 +321,16 @@ def test_warm_prewarms_history_schema_and_pandas_sync() -> None:
     ]
     assert not any("pandas" in ln or "openpyxl" in ln for ln in post_ready_imports)
 
-    pandas_sync = inspect.getsource(HandlerRegistry.warm_pandas_sync)
-    assert "import pandas" in pandas_sync
-    assert "import openpyxl" in pandas_sync
+    # Regresión: el warm post-ready de pandas/openpyxl retenía serialized_import
+    # durante ~45-120 s y bloqueaba la carga lazy de handlers (C1 del audit).
+    assert not hasattr(HandlerRegistry, "warm_pandas_sync")
+    assert "warm_pandas" not in inspect.getsource(backend_main)
+
+    # Regresión: el warm post-ready de weasyprint retenía serialized_import
+    # durante el import frío (>90 s medidos en máquina degradada) y bloqueaba
+    # _load_module con el mismo mecanismo que C1.
+    assert "write_pdf_sanitized" not in post_ready
+    assert "pdf_html" not in post_ready
 
 
 def test_cold_imports_are_serialized_against_cextension_deadlock() -> None:
@@ -344,6 +352,11 @@ def test_cold_imports_are_serialized_against_cextension_deadlock() -> None:
     pdf_source = inspect.getsource(pdf_html.write_pdf_sanitized)
     assert "serialized_import" in pdf_source
     assert "from weasyprint import HTML" in pdf_source
+
+    from backend.core.panel_aviso_corte.importer import parse_excel_bytes
+    importer_source = inspect.getsource(parse_excel_bytes)
+    assert "serialized_import" in importer_source
+    assert "import openpyxl" in importer_source
 
     handler_source = inspect.getsource(history_handlers)
     assert "def _core_history" in handler_source

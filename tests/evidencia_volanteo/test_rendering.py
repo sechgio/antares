@@ -26,7 +26,7 @@ from backend.core.evidencia_volanteo.layout import (
     PHOTO_TABLE_ROWS,
 )
 from backend.core.evidencia_volanteo.rendering import (
-    _jinja_env,
+    _environment,
     _prepare_logos,
     _serialize_pages,
     layout_context,
@@ -231,7 +231,7 @@ def test_pdf_html_cuadrante_matches_preview() -> None:
         cuadrante="",
         pages=(EvidenciaPage(images=(), cuadrante="zona norte"),),
     )
-    template = _jinja_env.get_template("evidencia-volanteo.html")
+    template = _environment().get_template("evidencia-volanteo.html")
     pages_data = _serialize_pages(doc, _build_image_uris({}, None))
     html = template.render({
         "title": doc.title,
@@ -251,7 +251,7 @@ def test_empty_cuadrante_shows_placeholder_in_pdf_html() -> None:
         cuadrante="",
         pages=(EvidenciaPage(images=(), cuadrante=""),),
     )
-    template = _jinja_env.get_template("evidencia-volanteo.html")
+    template = _environment().get_template("evidencia-volanteo.html")
     pages_data = _serialize_pages(doc, _build_image_uris({}, None))
     html = template.render({
         "title": doc.title,
@@ -272,7 +272,7 @@ def test_pdf_html_custom_and_hidden_cuadrante_label() -> None:
         cuadrante_label="AREA AFECTADA:",
         show_cuadrante_label=True,
     )
-    template = _jinja_env.get_template("evidencia-volanteo.html")
+    template = _environment().get_template("evidencia-volanteo.html")
     pages_data = _serialize_pages(doc, _build_image_uris({}, None))
     html = template.render({
         "title": doc.title,
@@ -409,7 +409,7 @@ def test_render_pdf_html_six_images_one_a4_page() -> None:
 
 def test_pdf_html_uses_contain_for_photos() -> None:
     doc = _make_document()
-    template = _jinja_env.get_template("evidencia-volanteo.html")
+    template = _environment().get_template("evidencia-volanteo.html")
     pages_data = _serialize_pages(doc, _build_image_uris({"img1.jpg": _tiny_png()}, None))
     html = template.render({
         "title": doc.title,
@@ -425,7 +425,7 @@ def test_pdf_html_uses_contain_for_photos() -> None:
 
 def test_pdf_html_has_horizontal_photo_gaps() -> None:
     doc = _make_document()
-    template = _jinja_env.get_template("evidencia-volanteo.html")
+    template = _environment().get_template("evidencia-volanteo.html")
     pages_data = _serialize_pages(doc, _build_image_uris({}, None))
     html = template.render({
         "title": doc.title,

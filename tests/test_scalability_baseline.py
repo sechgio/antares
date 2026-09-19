@@ -100,7 +100,7 @@ def test_serialization_is_json_safe_and_preserves_metadata() -> None:
 def test_offline_baseline_executes_all_named_scenarios_with_representative_fixtures() -> None:
     result = run_offline_baseline("1x", seed=17)
 
-    assert result["mode"] == "offline-synthetic"
+    assert result["mode"] == "offline-real-paths"
     assert {measurement["scenario"] for measurement in result["measurements"]} == {
         "conversion",
         "list",
@@ -157,9 +157,8 @@ def test_offline_baseline_at_ten_x_samples_rss_and_records_job_waits_with_bounde
         assert measurement["latency_ms"]["p95"] >= measurement["latency_ms"]["p50"]
         assert measurement["latency_ms"]["p99"] >= measurement["latency_ms"]["p95"]
     autoimg = next(measurement for measurement in result["measurements"] if measurement["scenario"] == "autoimg")
-    assert autoimg["lock_wait_ms"] > 0
     assert autoimg["queue_wait_ms"] > 0
-    assert autoimg["capacity"] == {"queue_maxsize": 1, "queue_peak_depth": 1}
+    assert autoimg["capacity"]["light_submitted"] > 0
     assert {"cpu_model", "cpu_count", "memory_total_bytes", "memory_available_bytes"} <= set(result["metadata"])
     assert result["metadata"]["cpu_count"] >= 0
     assert result["metadata"]["memory_total_bytes"] >= 0

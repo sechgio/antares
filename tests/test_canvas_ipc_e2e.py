@@ -5,14 +5,12 @@ import json
 import os
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
 import pytest
 
-BACKEND_SCRIPT = Path(__file__).parent.parent / "backend" / "main.py"
-PROJECT_ROOT = BACKEND_SCRIPT.parent.parent
+from tests.conftest import await_ready, spawn_backend, stop_backend
 
 
 def _user_data_env(tmp_path: Path) -> dict[str, str]:
@@ -26,68 +24,12 @@ def _user_data_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-def _drain_stderr(proc: subprocess.Popen, sink: list[str]) -> None:
-    if proc.stderr is None:
-        return
-    for line in iter(proc.stderr.readline, ""):
-        sink.append(line)
-
-
 @pytest.fixture
 def backend(tmp_path: Path):
-    env = _user_data_env(tmp_path)
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "backend.main"],
-        cwd=str(PROJECT_ROOT),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        env=env,
-    )
-
-    stderr_lines: list[str] = []
-    drain = threading.Thread(target=_drain_stderr, args=(proc, stderr_lines), daemon=True)
-    drain.start()
-
-    buffer = ""
-    start = time.time()
-    ready = False
-    while time.time() - start < 10:
-        line = proc.stdout.readline()
-        if not line:
-            break
-        buffer += line
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if msg.get("method") == "db_init_failed":
-            proc.kill()
-            proc.wait()
-            pytest.fail(
-                f"Backend db_init_failed during startup: {msg.get('params')}\n"
-                f"stderr: {''.join(stderr_lines)}"
-            )
-        if msg.get("method") == "ready":
-            ready = True
-            break
-
-    if not ready:
-        proc.kill()
-        proc.wait()
-        pytest.fail(
-            f"Backend did not send ready within 10s.\n"
-            f"stdout buffer: {buffer!r}\n"
-            f"stderr: {''.join(stderr_lines)}"
-        )
-
+    proc, stderr_lines = spawn_backend(_user_data_env(tmp_path))
+    await_ready(proc, stderr_lines)
     yield proc, stderr_lines
-
-    proc.stdin.close()
-    proc.kill()
-    proc.wait()
+    stop_backend(proc)
 
 
 def _rpc_call(proc: subprocess.Popen, method: str, params: dict, timeout: float = 5.0) -> dict:

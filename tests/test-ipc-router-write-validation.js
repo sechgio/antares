@@ -74,6 +74,32 @@ async function run() {
     const p2 = router._validateAndResolveWriteParams({ outputDir: path.join(dlDir, 'x') }, null);
     assert(p2.outputDir === path.join(dlDir, 'x'), 'outputDir bajo Descargas se acepta');
 
+    let docFormatError = null;
+    try {
+      router._validateAndResolveWriteParams({ outputPath: path.join(docsDir, 'volantes.xlsx') }, null);
+    } catch (e) {
+      docFormatError = e.message;
+    }
+    assert(docFormatError === null, 'Documentos sigue aceptando los formatos que produce Antares');
+
+    for (const [name, leaf] of [
+      ['ejecutable', 'setup.exe'],
+      ['lote', 'inicio.bat'],
+      ['extension de windows', 'atajo.lnk'],
+      ['punto final que windows ignora', 'setup.bat.'],
+      ['espacios finales', 'setup.exe  '],
+      ['alternate data stream', 'setup.exe:sdatos'],
+      ['mayusculas', 'SETUP.EXE'],
+    ]) {
+      let message = null;
+      try {
+        router._validateAndResolveWriteParams({ outputPath: path.join(dlDir, leaf) }, null);
+      } catch (e) {
+        message = e.message;
+      }
+      assert(message !== null && /no permitido/.test(message), `Documentos/Descargas rechaza ${name}`);
+    }
+
     let threw = false;
     try {
       router._validateAndResolveWriteParams({ outputDir: path.join(arbitraryDir, 'salidas') }, null);

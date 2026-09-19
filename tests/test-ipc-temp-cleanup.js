@@ -8,10 +8,17 @@ const {
   cleanupSpreadsheetSpillFile,
   sweepIpcTempDirs,
   ipcTempDirs,
+  resetIpcTempSweepThrottle,
 } = require('../electron/ipc-temp-cleanup.js');
 
 async function main() {
   console.log('Testing IPC temp cleanup...\n');
+
+  // Cada sweep encadena el GC de assets de Canvas, que borra archivos: aíslenlo
+  // en un HOME temporal para no tocar los datos reales del usuario.
+  const fakeHome = await fsp.mkdtemp(path.join(os.tmpdir(), 'antares-ipc-temp-cleanup-'));
+  process.env.LOCALAPPDATA = fakeHome;
+  process.env.XDG_DATA_HOME = fakeHome;
 
   const spillDir = path.join(os.tmpdir(), 'antares-spreadsheet-results');
   const pdfDir = path.join(os.tmpdir(), 'antares-pdf-out');
@@ -45,6 +52,23 @@ async function main() {
   assert.ok(ipcTempDirs().length >= 2);
   console.log('  ✓ spill cleanup + age sweep');
 
+  const throttledPdf = path.join(pdfDir, `throttled-${process.pid}.pdf`);
+  await fsp.writeFile(throttledPdf, '%PDF', 'utf8');
+  fs.utimesSync(throttledPdf, new Date(staleTime / 1000), new Date(staleTime / 1000));
+  assert.strictEqual(
+    await sweepIpcTempDirs(Date.now()),
+    0,
+    'a sweep asked for inside the interval is a no-op',
+  );
+  assert.ok(fs.existsSync(throttledPdf), 'the throttled sweep does not scan the temp dirs');
+
+  resetIpcTempSweepThrottle();
+  const concurrent = await Promise.all([sweepIpcTempDirs(Date.now()), sweepIpcTempDirs(Date.now())]);
+  assert.ok(concurrent[0] >= 1, 'the un-throttled sweep removes the stale PDF');
+  assert.strictEqual(concurrent[1], concurrent[0], 'overlapping sweeps share a single pass');
+  assert.strictEqual(fs.existsSync(throttledPdf), false, 'stale PDF removed once the throttle resets');
+  console.log('  ✓ sweep self-limits per interval and dedupes overlaps');
+
   const { handleDialogCall } = require('../electron/dialog-handlers.js');
   const { createFileCapability, resolveCapability } = require('../electron/file-capabilities.js');
   const cleanupSpill = path.join(spillDir, `cleanup-token-${process.pid}.json`);
@@ -62,6 +86,8 @@ async function main() {
   }
   assert.ok(revoked, 'file_token_cleanup revokes capability');
   console.log('  ✓ file_token_cleanup deletes spill and revokes token');
+
+  await fsp.rm(fakeHome, { recursive: true, force: true });
 
   console.log('\nAll ipc-temp-cleanup tests passed.');
 }

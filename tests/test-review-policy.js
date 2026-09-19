@@ -5,6 +5,7 @@ const { assert, finish } = require('./helpers/harness');
 
 const ROOT = path.join(__dirname, '..');
 const policy = require(path.join(ROOT, 'scripts', 'review-policy-check.js'));
+const audit = require(path.join(ROOT, 'scripts', 'lib', 'pr-audit.js'));
 const metrics = require(path.join(ROOT, 'scripts', 'review-metrics.js'));
 
 function eq(actual, expected, message) {
@@ -37,9 +38,18 @@ function testArtifacts() {
   assert(/issues:\s+write/.test(wf), 'el workflow puede publicar y editar comentarios del PR');
   assert(wf.includes('edited'), 'el workflow reacciona a ediciones de la descripción');
   assert(wf.includes('labeled'), 'el workflow reacciona a cambios de etiquetas');
+  assert(wf.includes('--fail-on blocking'), 'el workflow fija el umbral de bloqueo');
   assert(wf.includes('^[1-9][0-9]*$'), 'el workflow valida pr_number en dispatch');
   assert(wf.includes('timeout-minutes:'), 'el workflow acota su tiempo de ejecución');
   assert(wf.includes('persist-credentials: false'), 'el checkout no persiste credenciales');
+
+  const auditModule = path.join(ROOT, 'scripts', 'lib', 'pr-audit.js');
+  assert(fs.existsSync(auditModule), 'la capa de datos del PR vive en su propio módulo');
+  const script = fs.readFileSync(path.join(ROOT, 'scripts', 'review-policy-check.js'), 'utf8');
+  assert(
+    script.includes("require('./lib/pr-audit')"),
+    'la política delega la lectura del PR y se queda con la evaluación',
+  );
 }
 
 function testClassifySize() {
@@ -47,8 +57,8 @@ function testClassifySize() {
   eq(policy.classifySize(0), 'ok', '0 líneas es ok');
   eq(policy.classifySize(policy.SIZE_WARN), 'ok', 'exactamente 400 es ok');
   eq(policy.classifySize(policy.SIZE_WARN + 1), 'warn', '401 es warn');
-  eq(policy.classifySize(policy.SIZE_BLOCK - 1), 'warn', '999 es warn');
-  eq(policy.classifySize(policy.SIZE_BLOCK), 'block', '1000 bloquea');
+  eq(policy.classifySize(policy.SIZE_LARGE - 1), 'warn', '1999 es warn');
+  eq(policy.classifySize(policy.SIZE_LARGE), 'block', '2000 es demasiado grande');
 }
 
 function testIsTestPath() {
@@ -232,7 +242,7 @@ function testDraftDowngrade() {
 function testSelectPolicyComment() {
   console.log('\nUpsert del comentario de política:');
 
-  const sel = policy.selectPolicyComment([
+  const sel = audit.selectPolicyComment([
     { id: 5, body: 'informe viejo <!-- antares-review-policy:pr=1 -->' },
     { id: 7, body: 'comentario humano' },
     { id: 9, body: '<!-- antares-review-policy:pr=1 --> informe nuevo' },
@@ -241,9 +251,49 @@ function testSelectPolicyComment() {
   eq(sel.remove.length, 1, 'marca los duplicados para borrado');
   eq(sel.remove[0].id, 5, 'el duplicado viejo se borra');
 
-  const none = policy.selectPolicyComment([{ id: 1, body: 'hola' }]);
+  const none = audit.selectPolicyComment([{ id: 1, body: 'hola' }]);
   eq(none.update, null, 'sin marca previa se crea un comentario nuevo');
   eq(none.remove.length, 0, 'sin duplicados no se borra nada');
+}
+
+async function testPrAuditNormalizers() {
+  console.log('\nCapa de datos del PR:');
+
+  const file = audit.normalizeFile({ filename: 'backend/main.py', additions: '4', deletions: '2', status: 'Modified' });
+  eq(file.path, 'backend/main.py', 'traduce filename a path');
+  eq(file.additions, 4, 'convierte additions a número');
+  eq(file.status, 'modified', 'normaliza el estado a minúsculas');
+
+  const comment = audit.normalizeComment({
+    id: 3,
+    user: { login: 'revisora' },
+    body: 'nit: detalle',
+    created_at: '2026-08-01T10:00:00Z',
+  });
+  eq(comment.author.login, 'revisora', 'expone user como author');
+  eq(comment.createdAt, '2026-08-01T10:00:00Z', 'expone created_at como createdAt');
+
+  eq((await audit.settle(Promise.resolve(7))).value, 7, 'settle envuelve el valor');
+  eq((await audit.settle(Promise.reject(new Error('x')))).error.message, 'x', 'settle envuelve el error');
+
+  const order = await audit.mapLimit([1, 2, 3, 4], 2, async (n) => n * 10);
+  eq(order.join(','), '10,20,30,40', 'mapLimit preserva el orden con concurrencia');
+
+  let attempts = 0;
+  const recovered = await audit.withRetry(
+    async () => {
+      attempts += 1;
+      if (attempts < 2) throw new Error('499');
+      return 'ok';
+    },
+    3,
+    1,
+  );
+  eq(recovered, 'ok', 'withRetry absorbe un fallo transitorio');
+  eq(attempts, 2, 'reintenta hasta agotar los intentos');
+
+  assert(audit.isMissingGh('spawnSync gh ENOENT'), 'reconoce que falta gh');
+  assert(!audit.isMissingGh('HTTP 422 demasiado grande'), 'un 422 no es gh ausente');
 }
 
 function testEvaluatePolicy() {
@@ -281,35 +331,40 @@ function testEvaluatePolicy() {
   const huge = policy.evaluatePolicy({
     number: 2,
     body: goodPrBody(),
-    additions: 1400,
+    additions: 2400,
     deletions: 20,
-    files: [{ path: 'backend/handlers/nuevo.py', additions: 1400, deletions: 0 }],
+    files: [{ path: 'backend/handlers/nuevo.py', additions: 2400, deletions: 0, status: 'added' }],
     reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
     comments: [],
     author: { login: 'sechgio' },
   });
-  eq(huge.verdict, 'blocked', 'un PR de 1420 líneas se bloquea');
+  eq(huge.verdict, 'blocked', 'un PR de 2420 líneas sin declarar se bloquea');
   assert(
-    huge.checks.some((c) => c.id === 'tamano' && c.status === 'fail'),
+    huge.checks.some((c) => c.id === 'tamano' && c.status === 'fail' && c.severity === policy.BLOCKING),
     'bloquea por tamaño',
   );
   assert(
-    huge.checks.some((c) => c.id === 'archivos' && c.status === 'fail'),
-    'bloquea por archivo nuevo > 500 líneas',
+    huge.checks.some((c) => c.id === 'archivos' && c.status === 'warn' && c.severity === policy.ADVISORY),
+    'el archivo nuevo grande avisa pero no bloquea',
+  );
+  assert(
+    !huge.checks.some((c) => c.severity === policy.ADVISORY && c.status === 'fail'),
+    'ningún check no bloqueante queda en fail',
   );
 
   const exempt = policy.evaluatePolicy({
     number: 3,
     body: goodPrBody(),
-    additions: 1400,
+    additions: 2400,
     deletions: 20,
-    files: [{ path: 'backend/handlers/nuevo.py', additions: 1400, deletions: 0 }],
+    files: [{ path: 'backend/handlers/nuevo.py', additions: 2400, deletions: 0, status: 'added' }],
     reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
     comments: [],
     labels: [{ name: 'size/exempt' }],
     author: { login: 'sechgio' },
   });
   eq(exempt.verdict, 'warning', 'la etiqueta size/exempt degrada el bloqueo a aviso');
+  assert(exempt.stats.sizeExempt, 'la exención queda registrada en las estadísticas');
 
   const draft = policy.evaluatePolicy({
     number: 4,
@@ -476,7 +531,70 @@ function testMetrics() {
   assert(md.includes('|'), 'el markdown es una tabla');
 }
 
-function run() {
+function testAdvisoryChecks() {
+  console.log('\nChecks no bloqueantes y datos incompletos:');
+
+  const renamed = policy.evaluatePolicy({
+    number: 20,
+    body: goodPrBody(),
+    additions: 900,
+    deletions: 0,
+    files: [{ path: 'electron/main.js', additions: 900, deletions: 0, status: 'renamed' }],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  assert(
+    renamed.checks.some((c) => c.id === 'archivos' && c.status === 'pass'),
+    'un renombrado no cuenta como archivo nuevo',
+  );
+  assert(!policy.isNewFile({ status: 'modified', deletions: 0 }), 'modified no es nuevo');
+  assert(policy.isNewFile({ status: 'added', deletions: 12 }), 'added es nuevo aunque traiga borrados');
+
+  const polluted = policy.taxonomyCompliance([
+    { author: { login: 'sechgio' }, body: 'sin prefijo' },
+    { author: { login: 'github-actions', type: 'Bot' }, body: 'informe automático' },
+    { author: { login: 'revisora' }, body: `nit: detalle <!-- ${audit.COMMENT_MARKER}pr=20 -->` },
+  ]);
+  eq(polluted.total, 1, 'excluye bots y el informe de la propia política');
+  eq(polluted.prefixed, 0, 'el comentario humano sin prefijo sí cuenta');
+
+  const partial = policy.evaluatePolicy(
+    {
+      number: 21,
+      body: goodPrBody(),
+      additions: 4000,
+      deletions: 100,
+      changedFiles: 900,
+      files: [{ path: 'backend/core/x.py', additions: 10, deletions: 0, status: 'modified' }],
+      reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+      comments: [],
+      author: { login: 'sechgio' },
+    },
+    { partial: true },
+  );
+  assert(
+    partial.checks.some((c) => c.id === 'tamano' && c.status === 'skip'),
+    'con el listado de archivos incompleto no se bloquea por tamaño',
+  );
+  eq(partial.verdict, 'warning', 'un dato incompleto no convierte el aviso en bloqueo');
+
+  const withVerdict = (verdict) => ({ verdict, checks: [], stats: {} });
+  assert(!policy.shouldFail(withVerdict('blocked'), 'never'), 'never nunca falla');
+  assert(policy.shouldFail(withVerdict('blocked'), policy.BLOCKING), 'blocking falla ante bloqueos');
+  assert(!policy.shouldFail(withVerdict('warning'), policy.BLOCKING), 'blocking ignora los avisos');
+  assert(policy.shouldFail(withVerdict('warning'), 'advisory'), 'advisory sí exige limpiar avisos');
+  assert(!policy.shouldFail(withVerdict('ok'), 'advisory'), 'sin avisos nada falla');
+
+  assert(policy.isBot({ login: 'github-actions', type: 'Bot' }), 'REST identifica bots por user.type');
+  assert(!policy.isBot({ login: 'sechgio', type: 'User' }), 'un humano no es bot');
+
+  const report = policy.renderReport({ number: 22, author: { login: 'sechgio' } }, partial, { headSha: 'abc1234567890' });
+  assert(report.includes('### Avisos para el revisor'), 'el informe agrupa los avisos');
+  assert(report.includes('Commit auditado: `abc1234`'), 'el informe identifica el commit auditado');
+}
+
+async function run() {
   console.log('Testing review policy and metrics...');
   testArtifacts();
   testClassifySize();
@@ -487,7 +605,9 @@ function run() {
   testGeneratedPaths();
   testDraftDowngrade();
   testSelectPolicyComment();
+  await testPrAuditNormalizers();
   testEvaluatePolicy();
+  testAdvisoryChecks();
   testMetrics();
 
   finish();

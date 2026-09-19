@@ -385,22 +385,9 @@ def test_send_response_encodes_once_and_writes_bytes(monkeypatch) -> None:
     line = stdout.buffer.getvalue()
     assert line.endswith(b"\n")
     payload = json.loads(line.decode("utf-8"))
+    assert payload["jsonrpc"] == "2.0"
     assert payload["id"] == "r1"
     assert payload["result"]["label"] == "café"
-
-
-def test_send_response_writes_utf8_json_line_via_binary_buffer(monkeypatch) -> None:
-    stdout = _BinaryStdout()
-    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
-
-    ipc_protocol.send_response({"ok": True, "label": "café"}, "r1")
-
-    raw = stdout.buffer.getvalue()
-    assert raw.endswith(b"\n")
-    msg = json.loads(raw.decode("utf-8"))
-    assert msg["jsonrpc"] == "2.0"
-    assert msg["id"] == "r1"
-    assert msg["result"]["label"] == "café"
 
 
 def test_send_response_rejects_oversized_payload_with_utf8_byte_size(monkeypatch) -> None:
