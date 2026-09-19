@@ -178,13 +178,3 @@ class InformeV2:
         report["status"] = source.get("status") if source.get("status") in REPORT_STATUS_VALUES else "draft"
         report["last_modified"] = _safe_str(source.get("last_modified"), datetime.now().isoformat())
         return report
-
-
-def next_informe_v2_number(reports: list[dict[str, Any]]) -> int:
-    current = 0
-    for report in reports:
-        try:
-            current = max(current, int(report.get("metadata", {}).get("informe_id", 0)))
-        except (TypeError, ValueError):
-            continue
-    return current + 1

@@ -52,6 +52,32 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
+def _finite_float(raw: Any) -> float:
+    """``float()`` que rechaza valores no finitos.
+
+    JSON no tiene literal para ``Infinity``/``NaN``: un flotante no finito
+    serializado deja en disco un token que ningún parser estricto (Electron,
+    Postgres) puede leer, es decir, el documento queda ilegible para siempre.
+    Lanza ``ValueError`` para que lo absorba la rama de fallback de cada sitio.
+    """
+    value = float(raw)
+    if not math.isfinite(value):
+        raise ValueError(f"valor no finito: {value!r}")
+    return value
+
+
+def _finite_int(raw: Any) -> int:
+    """``int()`` que convierte ``OverflowError`` en ``ValueError``.
+
+    ``int(float("inf"))`` lanza ``OverflowError``, que los ``except
+    (TypeError, ValueError)`` de los sitios de coerción no captura.
+    """
+    try:
+        return int(raw)
+    except OverflowError as exc:
+        raise ValueError(f"valor no finito: {raw!r}") from exc
+
+
 def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:  # allowlist: dict[str, Any]
     doc_id = _new_id()
     page_id = _new_id()
@@ -121,12 +147,12 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
     for int_key in ("index", "cols", "rows", "pageIndex", "imagesPerPage"):
         if int_key in raw:
             try:
-                cleaned[int_key] = int(raw[int_key])
+                cleaned[int_key] = _finite_int(raw[int_key])
             except (TypeError, ValueError):
                 cleaned[int_key] = 0
     if "gapMm" in raw:
         try:
-            cleaned["gapMm"] = float(raw["gapMm"])
+            cleaned["gapMm"] = _finite_float(raw["gapMm"])
         except (TypeError, ValueError):
             cleaned["gapMm"] = 2.0
     for bool_key in ("showDate", "showCoords", "showFilename", "checked"):
@@ -146,9 +172,9 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
             try:
                 rules.append(
                     {
-                        "whenImages": int(item.get("whenImages", 0)),
-                        "cols": int(item.get("cols", 1)),
-                        "rows": int(item.get("rows", 1)),
+                        "whenImages": _finite_int(item.get("whenImages", 0)),
+                        "cols": _finite_int(item.get("cols", 1)),
+                        "rows": _finite_int(item.get("rows", 1)),
                     }
                 )
             except (TypeError, ValueError):
@@ -164,21 +190,21 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
                     continue
                 try:
                     pt_dict: dict[str, Any] = {  # allowlist: dict[str, Any]
-                        "x": float(pt.get("x", 0)),
-                        "y": float(pt.get("y", 0)),
+                        "x": _finite_float(pt.get("x", 0)),
+                        "y": _finite_float(pt.get("y", 0)),
                     }
                     if isinstance(pt.get("hin"), dict):
                         pt_dict["hin"] = {
-                            "x": float(pt["hin"].get("x", 0)),
-                            "y": float(pt["hin"].get("y", 0)),
+                            "x": _finite_float(pt["hin"].get("x", 0)),
+                            "y": _finite_float(pt["hin"].get("y", 0)),
                         }
                     elif pt.get("hin") is None and "hin" in pt:
                         pt_dict["hin"] = None
 
                     if isinstance(pt.get("hout"), dict):
                         pt_dict["hout"] = {
-                            "x": float(pt["hout"].get("x", 0)),
-                            "y": float(pt["hout"].get("y", 0)),
+                            "x": _finite_float(pt["hout"].get("x", 0)),
+                            "y": _finite_float(pt["hout"].get("y", 0)),
                         }
                     elif pt.get("hout") is None and "hout" in pt:
                         pt_dict["hout"] = None
@@ -330,11 +356,11 @@ def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # allowlist: dic
     if align_main not in _AUTO_LAYOUT_ALIGNS or align_cross not in _AUTO_LAYOUT_ALIGNS:
         return None
     try:
-        gap_mm = float(raw["gapMm"])
-        pad_mm = float(raw["padMm"])
+        gap_mm = _finite_float(raw["gapMm"])
+        pad_mm = _finite_float(raw["padMm"])
     except (KeyError, TypeError, ValueError):
         return None
-    if gap_mm < 0 or pad_mm < 0 or not math.isfinite(gap_mm) or not math.isfinite(pad_mm):
+    if gap_mm < 0 or pad_mm < 0:
         return None
     res: dict[str, Any] = {  # allowlist: dict[str, Any]
         "direction": direction,
@@ -347,8 +373,8 @@ def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # allowlist: dic
     for pad_key in ("padTopMm", "padRightMm", "padBottomMm", "padLeftMm"):
         if pad_key in raw and raw[pad_key] is not None:
             try:
-                v = float(raw[pad_key])
-                if v >= 0 and math.isfinite(v):
+                v = _finite_float(raw[pad_key])
+                if v >= 0:
                     res[pad_key] = v
             except (TypeError, ValueError):
                 pass
@@ -356,8 +382,8 @@ def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # allowlist: dic
         res["wrap"] = raw["wrap"]
     if "crossGapMm" in raw and raw["crossGapMm"] is not None:
         try:
-            v = float(raw["crossGapMm"])
-            if v >= 0 and math.isfinite(v):
+            v = _finite_float(raw["crossGapMm"])
+            if v >= 0:
                 res["crossGapMm"] = v
         except (TypeError, ValueError):
             pass
@@ -376,10 +402,10 @@ def _normalize_track_list(raw: Any) -> list[float] | None:
     tracks: list[float] = []
     for item in raw:
         try:
-            value = float(item)
+            value = _finite_float(item)
         except (TypeError, ValueError):
             return None
-        if value <= 0 or value != value:
+        if value <= 0:
             return None
         tracks.append(value)
     return tracks
@@ -404,7 +430,7 @@ def _normalize_layer(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str,
     if "visible" in raw:
         layer["visible"] = bool(raw["visible"])
     try:
-        layer["pageIndex"] = int(raw.get("pageIndex", 0))
+        layer["pageIndex"] = _finite_int(raw.get("pageIndex", 0))
     except (TypeError, ValueError):
         layer["pageIndex"] = 0
     meta = _normalize_meta(raw.get("meta"))
@@ -459,21 +485,21 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any
     out: dict[str, Any] = {}  # allowlist: dict[str, Any]
     if "imagesPerPage" in raw:
         with contextlib.suppress(TypeError, ValueError):
-            out["imagesPerPage"] = max(1, int(raw["imagesPerPage"]))
+            out["imagesPerPage"] = max(1, _finite_int(raw["imagesPerPage"]))
     if "showRulers" in raw:
         out["showRulers"] = bool(raw["showRulers"])
     if "snapToGrid" in raw:
         out["snapToGrid"] = bool(raw["snapToGrid"])
     if "gridSizeMm" in raw:
         try:
-            size = float(raw["gridSizeMm"])
+            size = _finite_float(raw["gridSizeMm"])
             if size > 0:
                 out["gridSizeMm"] = size
         except (TypeError, ValueError):
             pass
     if "pageMarginMm" in raw:
         try:
-            margin = float(raw["pageMarginMm"])
+            margin = _finite_float(raw["pageMarginMm"])
             if margin >= 0:
                 out["pageMarginMm"] = margin
         except (TypeError, ValueError):
@@ -486,9 +512,9 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any
             try:
                 rules.append(
                     {
-                        "whenImages": int(item.get("whenImages", 0)),
-                        "cols": int(item.get("cols", 1)),
-                        "rows": int(item.get("rows", 1)),
+                        "whenImages": _finite_int(item.get("whenImages", 0)),
+                        "cols": _finite_int(item.get("cols", 1)),
+                        "rows": _finite_int(item.get("rows", 1)),
                     }
                 )
             except (TypeError, ValueError):
@@ -532,10 +558,8 @@ def _normalize_guides(raw: Any, last_page: int) -> list[dict[str, Any]]:  # allo
         if isinstance(pos_raw, bool) or not isinstance(pos_raw, (int, float, str)):
             continue
         try:
-            pos_mm = float(pos_raw)
+            pos_mm = _finite_float(pos_raw)
         except (TypeError, ValueError):
-            continue
-        if not math.isfinite(pos_mm):
             continue
         guide_id = str(item.get("id") or "").strip() or _new_id()
         page_raw = item.get("pageIndex", 0)
@@ -543,7 +567,7 @@ def _normalize_guides(raw: Any, last_page: int) -> list[dict[str, Any]]:  # allo
             page_index = 0
         else:
             try:
-                page_index = int(page_raw)
+                page_index = _finite_int(page_raw)
             except (TypeError, ValueError):
                 page_index = 0
         page_index = max(0, min(page_index, max(0, last_page)))
@@ -559,11 +583,11 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
     if not isinstance(page_raw, dict):
         page_raw = {}
     try:
-        width_mm = int(page_raw.get("widthMm", A4_WIDTH_MM))
+        width_mm = _finite_int(page_raw.get("widthMm", A4_WIDTH_MM))
     except (TypeError, ValueError):
         width_mm = A4_WIDTH_MM
     try:
-        height_mm = int(page_raw.get("heightMm", A4_HEIGHT_MM))
+        height_mm = _finite_int(page_raw.get("heightMm", A4_HEIGHT_MM))
     except (TypeError, ValueError):
         height_mm = A4_HEIGHT_MM
 

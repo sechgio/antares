@@ -399,6 +399,7 @@ module.exports = {
   initAppLogs,
   installConsoleLogTee,
   logInfo,
+  managedLogPattern: MANAGED_LOG_RE,
   redactText: _redactText,
   setAppContext,
 };

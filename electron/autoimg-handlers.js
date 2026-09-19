@@ -6,11 +6,7 @@ const drive = require('./google-drive-service');
 const engine = require('./autoimg-sync-engine');
 const { sanitizeError, sanitizeErrorMessage, assertNoSecretInObject } = require('./autoimg-security');
 const { assertAllowedSheetRange } = require('./autoimg-sheet-ranges');
-
-function _emitNotify(method, params) {
-  const win = getMainWindow();
-  if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', method, params);
-}
+const { emit } = require('./autoimg-notify');
 
 async function handleAutoimgCall(method, params = {}) {
   if (!AUTOIMG_METHODS.has(method)) return { handled: false };
@@ -47,8 +43,8 @@ async function handleAutoimgCall(method, params = {}) {
       case 'autoimg_sheets_auth_url': {
         const { shell } = require('electron');
         const result = await sheets.beginBrowserOAuthFlow(
-          (status) => _emitNotify('autoimg.auth.complete', status),
-          (err) => _emitNotify('autoimg.auth.error', {
+          (status) => emit('autoimg.auth.complete', status),
+          (err) => emit('autoimg.auth.error', {
             message: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
           }),
         );

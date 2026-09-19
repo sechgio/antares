@@ -454,20 +454,24 @@ class WorkScheduler:
                 "heavy_run_last_ms": self._heavy_run_last,
                 "heavy_run_max_ms": self._heavy_run_max,
             }
-            try:
-                import psutil
-                vm = psutil.virtual_memory()
-                m["system_ram_total_mb"] = int(vm.total / (1024 * 1024))
-                m["system_ram_available_mb"] = int(vm.available / (1024 * 1024))
-                m["system_ram_percent"] = int(vm.percent)
-            except ImportError:
-                pass
-            avail_mb = m.get("system_ram_available_mb")
-            m["memory_pressure"] = bool(avail_mb is not None and avail_mb < MEMORY_PRESSURE_THRESHOLD_MB)
-            m["memory_alert"] = (
-                f"low_ram:{avail_mb}MB<{MEMORY_PRESSURE_THRESHOLD_MB}MB" if m["memory_pressure"] else None
-            )
-            return m
+        # Importar psutil y consultar la RAM son I/O bloqueante: se hacen fuera del
+        # lock, que es el mismo que _heavy_cond libera mientras los workers esperan
+        # un slot del lane heavy.
+        try:
+            import psutil
+
+            vm = psutil.virtual_memory()
+            m["system_ram_total_mb"] = int(vm.total / (1024 * 1024))
+            m["system_ram_available_mb"] = int(vm.available / (1024 * 1024))
+            m["system_ram_percent"] = int(vm.percent)
+        except ImportError:
+            pass
+        avail_mb = m.get("system_ram_available_mb")
+        m["memory_pressure"] = bool(avail_mb is not None and avail_mb < MEMORY_PRESSURE_THRESHOLD_MB)
+        m["memory_alert"] = (
+            f"low_ram:{avail_mb}MB<{MEMORY_PRESSURE_THRESHOLD_MB}MB" if m["memory_pressure"] else None
+        )
+        return m
 
     def shutdown(self, *, wait: bool = True) -> None:
         self._light_executor.shutdown(wait=wait, cancel_futures=True)

@@ -47,6 +47,7 @@ PIL_FORMAT_MAP: dict[str, str] = {
 
 _EXIF_ORIENTATION = 0x0112
 _TRANSPOSE_ORIENTATIONS = frozenset({2, 3, 4, 5, 6, 7, 8})
+_SWAP_DIMS_ORIENTATIONS = frozenset({5, 6, 7, 8})
 
 
 def _bake_orientation(source_img: Image.Image) -> Image.Image:
@@ -207,6 +208,17 @@ def convertir_imagen(
 
         if _can_fast_copy(source_img, formato, calidad, resize, keep_exif, optimize):
             return copiar_archivo(ruta_origen, ruta_destino, ensure_dir=ensure_dir)
+
+        if resize and isinstance(resize, (tuple, list)) and len(resize) == 2:
+            drw, drh = int(resize[0]), int(resize[1])
+            if drw > 0 and drh > 0:
+                try:
+                    orientation = source_img.getexif().get(_EXIF_ORIENTATION, 1)
+                except Exception:
+                    orientation = 1
+                if orientation in _SWAP_DIMS_ORIENTATIONS:
+                    drw, drh = drh, drw
+                source_img.draft(source_img.mode, (drw, drh))
 
         working: Image.Image = _bake_orientation(source_img)
 

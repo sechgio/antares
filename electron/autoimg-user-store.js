@@ -1,6 +1,6 @@
 const { readSecureJson, writeSecureJson, clearSecureJson, migratePlaintextJson } = require('./autoimg-secure-storage');
 const { validateClientId } = require('./autoimg-security');
-const { scopedFilename, scopedNamespace, getActiveUserKey } = require('./autoimg-user-scope');
+const { scopedFilename, scopedNamespace, getActiveUserKey, onActiveUserChange } = require('./autoimg-user-scope');
 
 const OAUTH_CONFIG_FILE = 'autoimg-oauth-config.json';
 const OAUTH_CONFIG_NS = 'oauth';
@@ -54,40 +54,65 @@ function _safeTokens(tokens) {
   };
 }
 
+// Caché en memoria del payload descifrado por (file,ns): evita releer y
+// desencriptar tokens.json en cada petición. Se invalida en cualquier escritura
+// o borrado que pase por este módulo, y al cambiar el usuario activo (la
+// migración de user-scope escribe por debajo de esta capa).
+const _tokenCache = new Map();
+const _tokenCacheKey = (paths) => `${paths.file}${paths.ns}`;
+
+onActiveUserChange(() => _tokenCache.clear());
+
+function _loadTokensScoped(paths) {
+  const key = _tokenCacheKey(paths);
+  if (!_tokenCache.has(key)) {
+    _tokenCache.set(key, readSecureJson(paths.file, paths.ns));
+  }
+  const cached = _tokenCache.get(key);
+  return cached ? { ...cached } : cached;
+}
+
+function _storeTokensScoped(paths, safe) {
+  writeSecureJson(paths.file, paths.ns, safe);
+  _tokenCache.set(_tokenCacheKey(paths), { ...safe });
+}
+
+function _clearTokensScoped(paths) {
+  clearSecureJson(paths.file);
+  _tokenCache.set(_tokenCacheKey(paths), null);
+}
+
 function loadTokens() {
-  const { file, ns } = _tokenPaths();
-  return readSecureJson(file, ns);
+  return _loadTokensScoped(_tokenPaths());
 }
 
 function saveTokens(tokens) {
-  const safe = _safeTokens(tokens);
-  const { file, ns } = _tokenPaths();
-  writeSecureJson(file, ns, safe);
+  _storeTokensScoped(_tokenPaths(), _safeTokens(tokens));
 }
 
 function clearTokens() {
-  const { file } = _tokenPaths();
-  clearSecureJson(file);
+  _clearTokensScoped(_tokenPaths());
 }
 
 function loadTokensForUserKey(userKey) {
   const paths = _tokenPathsForUserKey(userKey);
-  return paths ? readSecureJson(paths.file, paths.ns) : null;
+  return paths ? _loadTokensScoped(paths) : null;
 }
 
 function saveTokensForUserKey(userKey, tokens) {
   const paths = _tokenPathsForUserKey(userKey);
-  if (paths) writeSecureJson(paths.file, paths.ns, _safeTokens(tokens));
+  if (paths) _storeTokensScoped(paths, _safeTokens(tokens));
 }
 
 function clearTokensForUserKey(userKey) {
   const paths = _tokenPathsForUserKey(userKey);
-  if (paths) clearSecureJson(paths.file);
+  if (paths) _clearTokensScoped(paths);
 }
 
 function clearTokensLegacyPaths() {
   clearSecureJson('autoimg/anonymous/tokens.json');
   clearSecureJson('autoimg-tokens.json');
+  _tokenCache.clear();
 }
 
 function _sheetPaths() {

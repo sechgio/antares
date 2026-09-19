@@ -88,16 +88,6 @@ class HandlerRegistry:
     def warm_core(self) -> list[str]:
         return self.warm(_CORE_HANDLER_MODULES)
 
-    def warm_pandas_sync(self) -> None:
-        try:
-            with serialized_import():
-                import openpyxl  # noqa: F401
-                import pandas  # noqa: F401
-
-            log_event(logger, logging.INFO, "handlers.warm_pandas", outcome="success", message="pandas/openpyxl pre-ready warm complete")
-        except Exception:
-            log_event(logger, logging.ERROR, "handlers.warm_pandas", outcome="failed", message="pandas/openpyxl pre-ready warm failed", exc_info=True)
-
     def warm_post_ready(self) -> None:
         # No envolver warm() en serialized_import: _load_module adquiere
         # module_lock y luego serialized_import, así que retener el lock global
@@ -113,12 +103,6 @@ class HandlerRegistry:
             log_event(logger, logging.INFO, "handlers.warm_canvas_store", outcome="success", message="canvas store post-ready warm complete")
         except Exception:
             log_event(logger, logging.ERROR, "handlers.warm_canvas_store", outcome="failed", message="canvas store post-ready warm failed", exc_info=True)
-        write_pdf_sanitized: Callable[[str], bytes] | None = None
-        try:
-            with serialized_import():
-                from backend.utils.pdf_html import write_pdf_sanitized
-        except Exception:
-            log_event(logger, logging.ERROR, "handlers.warm_weasyprint", outcome="failed", message="WeasyPrint import warm failed", exc_info=True)
         WARM_CRITICAL_DONE.set()
         self._warm_formatos_core()
         try:
@@ -137,12 +121,6 @@ class HandlerRegistry:
             executor.shutdown(wait=False)
         except Exception:
             logger.exception("history schema background warm submission failed")
-        if write_pdf_sanitized is not None:
-            try:
-                write_pdf_sanitized("<!DOCTYPE html><html><body>warm</body></html>")
-                log_event(logger, logging.INFO, "handlers.warm_weasyprint", outcome="success", message="WeasyPrint post-ready warm complete")
-            except Exception:
-                log_event(logger, logging.ERROR, "handlers.warm_weasyprint", outcome="failed", message="WeasyPrint post-ready warm failed", exc_info=True)
 
     def warm_deferred(self) -> None:
         self.warm(_DEFERRED_HANDLER_MODULES)

@@ -290,9 +290,9 @@ class _LayerPaint:
 class _LayerRenderCall:
     page: fitz.Page
     shape: fitz.Shape
-    layer: dict[str, Any]
-    ctx: dict[str, Any]
-    css_vars: dict[str, Any]
+    layer: dict[str, Any]  # allowlist: dict[str, Any]
+    ctx: dict[str, Any]  # allowlist: dict[str, Any]
+    css_vars: dict[str, Any]  # allowlist: dict[str, Any]
     paint: _LayerPaint
     local_image_paths: dict[str, str]
 

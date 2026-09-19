@@ -154,6 +154,9 @@ function _recordHealthProbe({ outcome, durationMs, reason, errorCode = undefined
     error_code: errorCode,
   });
 }
+function _intOrUndef(value) {
+  return Number.isInteger(value) ? value : undefined;
+}
 async function waitForReady(timeoutMs = 60_000) {
   if (_state === STATE.READY && pythonProcess && !pythonProcess.killed) return true;
   if (_state === STATE.FATAL) return false;
@@ -225,8 +228,8 @@ function _persistStderrLine(line, sourcePid) {
       : structured?.pid;
   appendLogEvent(level, structured?.event || 'backend.stderr', {
     component: 'backend',
-    pid: Number.isInteger(backendPid) ? backendPid : undefined,
-    backend_pid: Number.isInteger(backendPid) ? backendPid : undefined,
+    pid: _intOrUndef(backendPid),
+    backend_pid: _intOrUndef(backendPid),
     stream: 'stderr',
     message: safeLine,
     request_id: structured?.request_id,
@@ -297,7 +300,7 @@ function _emitFatalEvent(message, reason, attempts) {
     component: 'backend',
     outcome: 'failed',
     reason,
-    attempt: Number.isInteger(attempts) ? attempts : undefined,
+    attempt: _intOrUndef(attempts),
     message,
   });
 }
@@ -612,8 +615,8 @@ async function _autoRestart(reason = 'unexpected_exit', previousPid = null, { re
     if (isReady() && pythonProcess) {
       appendLogEvent('INFO', 'backend.restarted', {
         component: 'backend',
-        pid: Number.isInteger(pythonProcess.pid) ? pythonProcess.pid : undefined,
-        backend_pid: Number.isInteger(pythonProcess.pid) ? pythonProcess.pid : undefined,
+        pid: _intOrUndef(pythonProcess.pid),
+        backend_pid: _intOrUndef(pythonProcess.pid),
         outcome: 'success',
         attempt: _restartCount,
         duration_ms: Date.now() - restartStartedAt,
@@ -700,7 +703,7 @@ function _spawn(isDev) {
   const spawnedPid = spawnedProcess.pid;
   appendLogEvent('INFO', 'backend.starting', {
     component: 'backend',
-    pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
+    pid: _intOrUndef(spawnedPid),
   });
   spawnedProcess.stderr.on('data', (chunk) => _recordStderr(chunk, spawnedPid));
   spawnedProcess.stdin.on('error', (err) => {
@@ -714,7 +717,7 @@ function _spawn(isDev) {
     const isCleanShutdown = !!_isShuttingDown;
     appendLogEvent(isCleanShutdown ? 'INFO' : wasReady ? 'WARN' : 'INFO', 'backend.exited', {
       component: 'backend',
-      pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
+      pid: _intOrUndef(spawnedPid),
       outcome: isCleanShutdown ? 'cancelled' : wasReady ? 'failed' : 'cancelled',
       reason: isCleanShutdown ? 'shutdown' : signal ? 'signal' : 'exit',
     });
@@ -765,7 +768,7 @@ function _spawn(isDev) {
             }
             appendLogEvent(degraded ? 'WARN' : 'INFO', 'backend.ready', {
               component: 'backend',
-              pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
+              pid: _intOrUndef(spawnedPid),
               outcome: degraded ? 'degraded' : 'success',
               reason: degraded ? 'failed_handler_modules' : undefined,
               message: degraded ? JSON.stringify(msg.params?.failed_handler_modules ?? []) : undefined,
@@ -875,8 +878,8 @@ async function manualRestart(isDev, { force = false, reason = null } = {}) {
     if (isReady() && pythonProcess) {
       appendLogEvent('INFO', 'backend.restarted', {
         component: 'backend',
-        pid: Number.isInteger(pythonProcess.pid) ? pythonProcess.pid : undefined,
-        backend_pid: Number.isInteger(pythonProcess.pid) ? pythonProcess.pid : undefined,
+        pid: _intOrUndef(pythonProcess.pid),
+        backend_pid: _intOrUndef(pythonProcess.pid),
         outcome: 'success',
         attempt: 1,
         duration_ms: Date.now() - restartStartedAt,

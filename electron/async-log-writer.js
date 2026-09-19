@@ -195,8 +195,9 @@ function createAsyncLogWriter({
   async function flush(maxRounds = 100) {
     for (let round = 0; round < maxRounds; round += 1) {
       await Promise.resolve();
-      await drainPromise;
-      if (!flushScheduled && pendingEntries.length === 0) return;
+      const observedDrain = drainPromise;
+      await observedDrain;
+      if (drainPromise === observedDrain && !flushScheduled && pendingEntries.length === 0) return;
     }
   }
 

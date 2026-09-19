@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const SWEEP_MIN_INTERVAL_MS = 5 * 60 * 1000;
 const TEMP_DIR_NAMES = ['antares-pdf-out', 'antares-spreadsheet-results'];
 
 function ipcTempDirs() {
@@ -23,7 +24,7 @@ async function cleanupSpreadsheetSpillFile(filePath) {
   await fsp.rm(filePath, { force: true }).catch(() => {});
 }
 
-async function sweepIpcTempDirs(nowMs = Date.now()) {
+async function _sweepIpcTempDirsOnce(nowMs) {
   let removed = 0;
   for (const dir of ipcTempDirs()) {
     let entries;
@@ -53,9 +54,33 @@ async function sweepIpcTempDirs(nowMs = Date.now()) {
   return removed;
 }
 
+// `sweepIpcTempDirs` also runs the canvas asset GC, which reads and scans every
+// canvas document/history/spill JSON. It is called from per-request IPC paths, so
+// it self-limits to one full pass per interval instead of one per call.
+let _sweepInFlight = null;
+let _lastSweepStartedAt = 0;
+
+async function sweepIpcTempDirs(nowMs = Date.now()) {
+  if (_sweepInFlight) return _sweepInFlight;
+  const startedAt = Date.now();
+  if (startedAt - _lastSweepStartedAt < SWEEP_MIN_INTERVAL_MS) return 0;
+  _lastSweepStartedAt = startedAt;
+  const sweep = _sweepIpcTempDirsOnce(nowMs).finally(() => {
+    if (_sweepInFlight === sweep) _sweepInFlight = null;
+  });
+  _sweepInFlight = sweep;
+  return sweep;
+}
+
+function resetIpcTempSweepThrottle() {
+  _sweepInFlight = null;
+  _lastSweepStartedAt = 0;
+}
+
 module.exports = {
   MAX_AGE_MS,
   ipcTempDirs,
   cleanupSpreadsheetSpillFile,
   sweepIpcTempDirs,
+  resetIpcTempSweepThrottle,
 };

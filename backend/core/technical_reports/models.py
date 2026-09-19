@@ -266,13 +266,3 @@ def _normalize_canastillas(source: Any) -> dict[str, Any]:
         data[f"observaciones_{key}"] = _safe_str(source.get(f"observaciones_{key}"), "")
         data[f"sugerencias_{key}"] = _safe_str(source.get(f"sugerencias_{key}"), "")
     return data
-
-
-def next_technical_report_number(reports: list[dict[str, Any]]) -> int:
-    current = 0
-    for report in reports:
-        try:
-            current = max(current, int(report.get("metadata", {}).get("informe_id", 0)))
-        except (TypeError, ValueError):
-            continue
-    return current + 1

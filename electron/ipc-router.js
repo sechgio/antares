@@ -106,18 +106,18 @@ function _isIdempotentMethod(method) {
 
 let _lastBackendRestartAt = 0;
 
-function _isAllowedIpcSender(event) {
-  let isDev;
+function _resolveIsDev() {
   try {
-    isDev = require('./window-manager').getIsDev();
-  } catch {
-    try {
-      isDev = !require('electron').app.isPackaged;
-    } catch {
-      isDev = false;
-    }
-  }
-  return isTrustedRendererFrame(event, getMainWindow(), isDev);
+    return require('./window-manager').getIsDev();
+  } catch {}
+  try {
+    return !require('electron').app.isPackaged;
+  } catch {}
+  return false;
+}
+
+function _isAllowedIpcSender(event) {
+  return isTrustedRendererFrame(event, getMainWindow(), _resolveIsDev());
 }
 
 function _logSecurityRejection(reason, method, message) {
@@ -673,14 +673,26 @@ function _isPackaged() {
   }
 }
 
+function _requireTrustedSender(event, method) {
+  if (!_isAllowedIpcSender(event)) {
+    _logSecurityRejection('untrusted_sender', method);
+    throw new Error('IPC call rejected: untrusted sender frame');
+  }
+}
+
+function _tagValidationError(err, method) {
+  if (err && typeof err === 'object' && err.category === undefined) {
+    err.code = -32602;
+    err.category = 'VALIDATION_ERROR';
+  }
+  _logSecurityRejection('file_policy', method, err && err.message ? err.message : undefined);
+}
+
 function registerIpcHandlers() {
   if (!_isPackaged()) reloadIpcMethods();
 
   ipcMain.handle('ipc-call', async (event, method, params) => {
-    if (!_isAllowedIpcSender(event)) {
-      _logSecurityRejection('untrusted_sender', typeof method === 'string' ? method : undefined);
-      throw new Error('IPC call rejected: untrusted sender frame');
-    }
+    _requireTrustedSender(event, typeof method === 'string' ? method : undefined);
     if (typeof method !== 'string' || !_getAllowedMethods().has(method)) {
       _logSecurityRejection('method_not_allowed', typeof method === 'string' ? method : undefined);
       const hint = ' Reinicia Antares por completo (cierra todas las ventanas) para recargar la allowlist IPC.';
@@ -707,11 +719,7 @@ function registerIpcHandlers() {
           });
           nativeParams = _validateAndResolveWriteParams(nativeParams, win, method);
         } catch (err) {
-          if (err && typeof err === 'object' && err.category === undefined) {
-            err.code = -32602;
-            err.category = 'VALIDATION_ERROR';
-          }
-          _logSecurityRejection('file_policy', method, err && err.message ? err.message : undefined);
+          _tagValidationError(err, method);
           _logIpcTelemetry({
             method,
             elapsedMs: Date.now() - startedAt,
@@ -754,11 +762,7 @@ function registerIpcHandlers() {
       backendParams = _maybeResolveFileTokens(params, win, method);
       backendParams = _validateAndResolveWriteParams(backendParams, win, method);
     } catch (err) {
-      if (err && typeof err === 'object' && err.category === undefined) {
-        err.code = -32602;
-        err.category = 'VALIDATION_ERROR';
-      }
-      _logSecurityRejection('file_policy', method, err && err.message ? err.message : undefined);
+      _tagValidationError(err, method);
       _logIpcTelemetry({ method, elapsedMs: 0, requestBytes: _estimateJsonBytes(params), outcome: 'rejected' });
       throw _toRendererIpcError(err);
     }
@@ -778,10 +782,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('backend-status', async (event) => {
-    if (!_isAllowedIpcSender(event)) {
-      _logSecurityRejection('untrusted_sender', 'backend-status');
-      throw new Error('IPC call rejected: untrusted sender frame');
-    }
+    _requireTrustedSender(event, 'backend-status');
     const isPackaged = _isPackaged();
     return {
       state: getState(),
@@ -793,10 +794,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('backend-restart', async (event) => {
-    if (!_isAllowedIpcSender(event)) {
-      _logSecurityRejection('untrusted_sender', 'backend-restart');
-      throw new Error('IPC call rejected: untrusted sender frame');
-    }
+    _requireTrustedSender(event, 'backend-restart');
     const now = Date.now();
     if (now - _lastBackendRestartAt < BACKEND_RESTART_MIN_INTERVAL_MS) {
       return { success: false, state: getState(), error: 'rate_limited' };
@@ -817,22 +815,12 @@ function registerIpcHandlers() {
     }
 
     _lastBackendRestartAt = now;
-    const { getIsDev } = require('./window-manager');
-    let isDev;
-    try {
-      isDev = getIsDev();
-    } catch {
-      isDev = !require('electron').app.isPackaged;
-    }
-    const ok = await manualRestart(isDev);
+    const ok = await manualRestart(_resolveIsDev());
     return { success: ok, state: getState() };
   });
 
   ipcMain.handle('window-control', async (event, action) => {
-    if (!_isAllowedIpcSender(event)) {
-      _logSecurityRejection('untrusted_sender', 'window-control');
-      throw new Error('IPC call rejected: untrusted sender frame');
-    }
+    _requireTrustedSender(event, 'window-control');
     const win = getMainWindow();
     if (!win || win.isDestroyed()) return { handled: false };
     if (action === 'minimize') { win.minimize(); return { handled: true }; }
