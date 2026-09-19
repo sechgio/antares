@@ -17,6 +17,17 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **AutoIMG**: al quitar una carpeta quedaba la última fila repetida en la hoja FOLDERS y reaparecía en la lectura siguiente.
 - **Panel Aviso de Corte**: con «Incluir vacíos» las filas sin imágenes quedaban todas al principio del documento en lugar de seguir el orden de la planilla.
 - **Volantes**: un segundo clic en «Exportar todo» lanzaba una exportación simultánea, con PDF, descarga y entrada de historial duplicados.
+- **Conversión**: si el trabajo moría a mitad se descartaban los archivos ya convertidos y el resultado reportaba cero correctos; ahora se informan los realmente procesados.
+- **Informes v2**: una columna «Impulsion» escrita a mano alimentaba la sección de línea de rebombeo y vaciaba la de válvulas; el alias sin prefijo se retira porque las cabeceras reales ya lo llevan.
+- **Números de planilla**: `1.250` se truncaba a 1 y `12,5` se leía como 0; el punto de miles y la coma decimal de la notación en español se normalizan antes de convertir.
+- **Importación CSV**: una raya o una comilla tipográfica en cp1252 quedaba guardada como carácter de control, porque latin-1 decodifica cualquier byte; cp1252 se intenta primero en fichas técnicas e informes.
+- **Formatos / mapping**: un `page` negativo o un `padding` desmesurado reventaban el render o generaban nombres de archivo de un millón de caracteres; el mapping se valida al guardar y un PDF de cero páginas se rechaza antes de generar.
+- **Espacios / notificaciones**: la campana de tareas vencidas se rellenaba con datos de la sesión cerrada; el hook se desactiva junto a la sesión y descarta la respuesta que estuviera en vuelo.
+- **Conversión / cancelar**: un fallo del IPC de cancelación cortaba el flujo y dejaba la UI con un estado obsoleto; ahora se consulta el estado real al `pollStatus` siguiente.
+- **Espacios / deshacer**: recuperar una tarea borrada la pintaba en el proyecto visible en lugar del proyecto de origen, y llegaba a recargar la lista del proyecto equivocado.
+- **Reportes de campo**: un panel en espera de guardado se escribía en la plantilla nueva aunque la carga lo hubiera reemplazado, y un guardado fallido dejaba el panel marcado como limpio sin reintento.
+- **Preview de reportes**: un `{%` literal dentro del texto borraba todo el contenido hasta la etiqueta siguiente.
+- **Staging de archivos**: `file_staged_abort` cancelaba la sesión de otra ventana; el token queda ligado a la ventana que lo creó.
 
 ## [0.11.12] — 2026-09-16
 
