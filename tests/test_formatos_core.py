@@ -146,6 +146,18 @@ def test_load_catalog_downgrades_visual_overlay_without_mapping(catalog_env, tmp
     assert formatos._formats["up2"]["strategy"] == formatos.SIMPLE_OVERLAY
 
 
+def test_load_catalog_keeps_deleted_builtin_disabled(catalog_env, tmp_path) -> None:
+    builtin_id = formatos._BUILTIN_FORMATS[0]["id"]
+    formatos._load_catalog()
+    assert formatos.delete_format(builtin_id) is True
+    assert formatos._formats[builtin_id]["enabled"] is False
+
+    formatos._load_catalog()
+
+    assert formatos._formats[builtin_id]["enabled"] is False
+    assert builtin_id not in {f["id"] for f in formatos.list_formats()}
+
+
 def test_add_uploaded_format_validates_name_size_and_pdf(catalog_env, monkeypatch) -> None:
     monkeypatch.setattr(formatos, "MAX_UPLOAD_PDF_BYTES", 10)
     with pytest.raises(ValueError, match=r"50 MB|tamaño máximo"):
