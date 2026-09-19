@@ -108,7 +108,6 @@ def start(
     *,
     method: str = "",
     lane: str = "",
-    mark_line_ready: bool = True,
 ) -> None:
     if not enabled():
         return
@@ -123,7 +122,7 @@ def start(
                 trace.method = method
             if lane:
                 trace.lane = lane
-            if mark_line_ready and "line_ready" not in trace.marks:
+            if "line_ready" not in trace.marks:
                 trace.mark("line_ready")
     except Exception:
         logger.debug("ipc_phase start failed", exc_info=True)
