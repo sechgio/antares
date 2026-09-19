@@ -1,5 +1,6 @@
 import { createClient } from "jsr:@supabase/supabase-js@2.112.4";
 import { corsHeaders } from "../_shared/cors.ts";
+import { jsonError, requireAdmin } from "../_shared/admin-auth.ts";
 
 interface CreateUserBody {
   email?: string;
@@ -16,10 +17,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...cors, "Content-Type": "application/json" },
-    });
+    return jsonError("Method not allowed", 405, cors);
   }
 
   try {
@@ -28,56 +26,19 @@ Deno.serve(async (req: Request) => {
     const password = body.password;
 
     if (!email || !password) {
-      return new Response(
-        JSON.stringify({ error: "Email y password son obligatorios" }),
-        { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
-      );
+      return jsonError("Email y password son obligatorios", 400, cors);
     }
 
     if (password.length < 8) {
-      return new Response(
-        JSON.stringify({ error: "La contraseña debe tener al menos 8 caracteres" }),
-        { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
-      );
+      return jsonError("La contraseña debe tener al menos 8 caracteres", 400, cors);
     }
+
+    const auth = await requireAdmin(req, cors, "Solo los administradores pueden crear usuarios");
+    if (!auth.ok) return auth.response;
+    const { userClient } = auth;
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "This endpoint requires a valid Bearer token" }),
-        { status: 401, headers: { ...cors, "Content-Type": "application/json" } },
-      );
-    }
-
-    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    const { data: { user: callerUser } } = await userClient.auth.getUser();
-    if (!callerUser) {
-      return new Response(
-        JSON.stringify({ error: "This endpoint requires a valid Bearer token" }),
-        { status: 401, headers: { ...cors, "Content-Type": "application/json" } },
-      );
-    }
-
-    const { data: profile } = await userClient
-      .from("user_profiles")
-      .select("is_admin, is_disabled")
-      .eq("user_id", callerUser.id)
-      .single();
-
-    if (!profile?.is_admin || profile.is_disabled) {
-      return new Response(
-        JSON.stringify({ error: "Solo los administradores pueden crear usuarios" }),
-        { status: 403, headers: { ...cors, "Content-Type": "application/json" } },
-      );
-    }
-
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    const adminClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
@@ -88,10 +49,7 @@ Deno.serve(async (req: Request) => {
     });
 
     if (createError) {
-      return new Response(
-        JSON.stringify({ error: createError.message }),
-        { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
-      );
+      return jsonError(createError.message, 400, cors);
     }
 
     if (body.role === "admin" && userData.user?.id) {
