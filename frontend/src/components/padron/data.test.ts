@@ -30,7 +30,6 @@ describe('padron output format data', () => {
     expect(OUTPUT_FORMAT_OPTIONS).toContainEqual({
       value: 'volante-lurigancho',
       label: 'volante lurigancho',
-      rowsPerPage: 18,
     });
   });
 
@@ -38,7 +37,6 @@ describe('padron output format data', () => {
     expect(OUTPUT_FORMAT_OPTIONS).toContainEqual({
       value: 'water-cut-notice',
       label: 'Aviso corte de agua',
-      rowsPerPage: 36,
     });
     expect(createDefaultWaterCutData()).toEqual({
       cuadranteAfectado: '',

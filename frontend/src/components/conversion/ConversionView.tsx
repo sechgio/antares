@@ -893,7 +893,6 @@ export default function ConversionView() {
               previewTruncated={previewTruncated}
               previewTotalFiles={previewTotalFiles}
               onClearMapping={clearMapping}
-              namingMode={namingMode}
               onNamingModeChange={(mode) => {
                 const preset = namingPresets.find((p) => p.id === mode);
                 if (preset) chooseNamingPreset(preset);
@@ -905,7 +904,6 @@ export default function ConversionView() {
               onSecuenciaChange={setSecuencia}
               useFilenameSeq={useFilenameSeq}
               onToggleFilenameSeq={(checked) => setSequenceMode(checked ? 'record' : 'global')}
-              namingPresets={namingPresets}
               fields={fields}
               dbColumns={dbColumns}
               dbRecords={dbRecords}

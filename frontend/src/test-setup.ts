@@ -112,8 +112,6 @@ if (typeof window !== 'undefined') {
       throw new Error(`IPC method not allowed: ${method} (test stub — añade el método al stub si el test lo necesita)`);
     },
     onNotify: () => () => {},
-    onUpdateAvailable: () => () => {},
-    onUpdateDownloaded: () => () => {},
     minimizeWindow: async () => ({}),
     maximizeWindow: async () => ({}),
     closeWindow: async () => ({}),

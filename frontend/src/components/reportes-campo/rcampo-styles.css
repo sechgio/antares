@@ -578,11 +578,6 @@
     color: var(--rcampo-primary);
 }
 
-.rcampo-field-label .required {
-    color: var(--rcampo-danger);
-    font-size: 0.6rem;
-}
-
 .rcampo-input,
 .rcampo-textarea {
     width: 100%;
