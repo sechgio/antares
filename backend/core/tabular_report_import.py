@@ -86,7 +86,9 @@ def parse_csv_rows(
     normalize_key: NormalizeValue,
 ) -> list[ReportRow]:
     text: str | None = None
-    for encoding in ("utf-8-sig", "utf-8", "latin-1", "cp1252", "iso-8859-1"):
+    # cp1252 va antes que latin-1: latin-1 decodifica cualquier byte y se quedaría
+    # con los caracteres de control en lugar de la raya y las comillas tipográficas.
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1", "iso-8859-1"):
         try:
             text = content.decode(encoding)
             break

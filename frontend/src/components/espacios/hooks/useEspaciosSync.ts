@@ -408,20 +408,23 @@ export function useEspaciosSync(userId: string | undefined) {
   }, [activeEspacioId, proyectos.length, loadProyectos]);
 
   const addTarea = useCallback(
-    async (input: TareaInput) => {
-      if (!activeProyectoId) {
+    async (input: TareaInput, targetProyectoId?: string) => {
+      const proyectoId = targetProyectoId ?? activeProyectoId;
+      if (!proyectoId) {
         throw new Error('Selecciona un proyecto antes de crear una tarea');
       }
       if (!userId) {
         throw new Error('Debes iniciar sesión para crear tareas');
       }
-      const proyectoId = activeProyectoId;
       const tarea = await createTarea(proyectoId, input, userId);
       if (!tarea?.id) {
         throw new Error('No se pudo crear la tarea (respuesta vacía de Supabase)');
       }
-      setTareas((prev) => (prev.some((t) => t.id === tarea.id) ? prev : [...prev, tarea]));
       emitDueNotificationsInvalidate();
+      // El undo puede devolver la tarea a un proyecto que ya no está visible:
+      // pintarla o recargarla aquí sustituiría la lista del proyecto activo.
+      if (proyectoId !== activeProyectoId) return;
+      setTareas((prev) => (prev.some((t) => t.id === tarea.id) ? prev : [...prev, tarea]));
       void loadTareas(proyectoId).catch((err) => {
         reportEspaciosSyncError('reconcileTareas', err, 'Error al cargar tareas');
       });

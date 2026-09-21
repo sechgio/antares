@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import logging
+import math
 import os
 import shutil
 import sys
@@ -242,12 +243,76 @@ def delete_format(fmt_id: str) -> bool:
     return True
 
 
+_MAPPING_POINT_MAX = 20000.0
+_MAPPING_PADDING_MAX = 12
+_MAPPING_MCID_MAX = 64
+
+# clave: (mínimo, máximo, defecto, es_entero)
+_MAPPING_NUMERIC_FIELDS: dict[str, tuple[float, float, float, bool]] = {
+    "page": (0, MAX_UPLOAD_PDF_PAGES - 1, 0, True),
+    "x": (0, _MAPPING_POINT_MAX, 0, False),
+    "y": (0, _MAPPING_POINT_MAX, 0, False),
+    "width": (1, _MAPPING_POINT_MAX, 140, False),
+    "height": (1, _MAPPING_POINT_MAX, 20, False),
+    "font_size": (1, 200, 12, False),
+    "color_r": (0, 1, 0, False),
+    "color_g": (0, 1, 0, False),
+    "color_b": (0, 1, 0, False),
+    "padding": (0, _MAPPING_PADDING_MAX, 7, True),
+    "blank_x": (0, _MAPPING_POINT_MAX, 0, False),
+    "blank_y": (0, _MAPPING_POINT_MAX, 0, False),
+    "blank_width": (0, _MAPPING_POINT_MAX, 0, False),
+    "blank_height": (0, _MAPPING_POINT_MAX, 0, False),
+}
+
+
+def _coerce_mapping_number(value: object, lo: float, hi: float, default: float, as_int: bool) -> float | int:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        number = default
+    else:
+        try:
+            number = float(value)
+        except ValueError:
+            number = default
+        if not math.isfinite(number):
+            number = default
+    clamped = min(max(number, lo), hi)
+    return round(clamped) if as_int else clamped
+
+
+def _sanitize_mapping(mapping: object) -> dict[str, object]:
+    """Ajusta el mapping que llega del renderer al rango que sus consumidores pueden
+    escribir: indexa las páginas del PDF, alimenta el `zfill` del nombre de archivo y
+    se interpola en el stream del overlay."""
+    if not isinstance(mapping, dict):
+        msg = "El mapping debe ser un objeto"
+        raise ValueError(msg)
+    clean: dict[str, object] = {}
+    for key, (lo, hi, default, as_int) in _MAPPING_NUMERIC_FIELDS.items():
+        value = mapping.get(key)
+        if value is None and key.startswith("blank_"):
+            clean[key] = None
+        else:
+            clean[key] = _coerce_mapping_number(value, lo, hi, default, as_int)
+    raw_name = "".join(c for c in str(mapping.get("font_name") or "Helvetica") if c.isalnum() or c in "-+")
+    clean["font_name"] = raw_name[:40] or "Helvetica"
+    clean["redraw_top_border"] = bool(mapping.get("redraw_top_border"))
+    clean["redraw_ot_badge"] = bool(mapping.get("redraw_ot_badge"))
+    mcids = mapping.get("blank_mcids")
+    clean["blank_mcids"] = (
+        [_coerce_mapping_number(m, 0, 1000000, 0, True) for m in list(mcids)[:_MAPPING_MCID_MAX]]
+        if isinstance(mcids, (list, tuple))
+        else None
+    )
+    return clean
+
+
 def update_mapping(fmt_id: str, mapping: dict[str, Any]) -> dict[str, Any] | None:
     with _formats_lock:
         entry = _formats.get(fmt_id)
         if entry is None:
             return None
-        entry["mapping"] = mapping
+        entry["mapping"] = _sanitize_mapping(mapping)
         if entry["strategy"] == SIMPLE_OVERLAY:
             entry["strategy"] = VISUAL_OVERLAY
         _save_catalog()
@@ -291,6 +356,9 @@ def add_uploaded_format(
 
     try:
         page_count = len(reader.pages)
+        if page_count < 1:
+            msg = "El PDF no tiene páginas"
+            raise ValueError(msg)
         if page_count > MAX_UPLOAD_PDF_PAGES:
             msg = f"PDF excede el máximo de {MAX_UPLOAD_PDF_PAGES} páginas"
             raise ValueError(msg)

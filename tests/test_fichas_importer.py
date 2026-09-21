@@ -49,6 +49,15 @@ def test_parse_csv_bytes_arbitrarios_decodifican_via_latin1() -> None:
     assert len(rows) == 1
 
 
+def test_parse_csv_lee_cp1252_antes_que_latin1() -> None:
+    # En cp1252 0x97 y 0x92 son raya y comilla tipográfica; latin-1 las lee como control.
+    content = "Cliente;Observacion\nZona 2 \u2014 alta\u2019 ok;listo\n".encode("cp1252")
+
+    rows = parse_csv_bytes(content)
+
+    assert rows[0]["cliente"] == "Zona 2 \u2014 alta\u2019 ok"
+
+
 def test_parse_xlsx_normaliza_y_omite_vacias() -> None:
     content = _xlsx_bytes(
         [

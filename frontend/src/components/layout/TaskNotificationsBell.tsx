@@ -1,6 +1,7 @@
 import { Bell } from 'lucide-react';
 import { useId, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useAuth } from '../../auth/AuthContext';
 import { useDueNotifications } from '../espacios/hooks/useDueNotifications';
 import { formatRelativeDate } from '../espacios/utils/dates';
 import type { DueNotification, DueUrgency } from '../espacios/utils/dueNotifications';
@@ -26,7 +27,8 @@ const URGENCY_LABEL: Record<DueUrgency, string> = {
 };
 
 export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificationsBellProps) {
-  const { items, count, loading, error, refresh } = useDueNotifications(true);
+  const { user } = useAuth();
+  const { items, count, loading, error, refresh } = useDueNotifications(!!user);
   const {
     isOpen: open,
     position,

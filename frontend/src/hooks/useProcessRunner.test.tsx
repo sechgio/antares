@@ -141,6 +141,26 @@ describe('useProcessRunner', () => {
     expect(result.current.running).toBe(false);
   });
 
+  it('no propaga el fallo de cancelación y resincroniza con pollStatus', async () => {
+    mockApi.cancelProcess.mockRejectedValue(new Error('IPC timeout'));
+
+    const { result } = renderHook(() => useProcessRunner());
+    await act(async () => Promise.resolve());
+
+    let rejected = false;
+    await act(async () => {
+      try {
+        await result.current.cancelProcess();
+      } catch {
+        rejected = true;
+      }
+    });
+
+    expect(rejected).toBe(false);
+    expect(mockApi.getStatus).toHaveBeenCalled();
+    expect(result.current.pollError).toBeNull();
+  });
+
   it('resets running on backend.restarting / backend.fatal / backend.error', async () => {
     const { result } = renderHook(() => useProcessRunner());
     await act(async () => Promise.resolve());

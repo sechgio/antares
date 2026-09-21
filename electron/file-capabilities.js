@@ -253,9 +253,10 @@ async function completeStagedSession(token, webContentsId) {
   return cap;
 }
 
-async function abortStagedSession(token) {
+async function abortStagedSession(token, webContentsId = null) {
   const session = _stagedSessions.get(token);
   if (!session) return;
+  if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
   _stagedSessions.delete(token);
   if (session.readToken) _capabilities.delete(session.readToken);
   if (session.tmpPath) await fsp.rm(session.tmpPath, { force: true }).catch(() => {});

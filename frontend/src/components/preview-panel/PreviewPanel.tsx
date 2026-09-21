@@ -424,7 +424,9 @@ function processJinja2Template(
     return remaining > 0 ? content.repeat(remaining) : '';
   });
 
-  html = html.replace(/\{%\s*[\s\S]*?\s*%\}/g, '');
+  // El cuerpo no puede cruzar otro '{%': sin ese filtro, un '{%' suelto en el
+  // texto se traga todo el contenido hasta la etiqueta siguiente.
+  html = html.replace(/\{%\s*(?:(?!\{%)[\s\S])*?\s*%\}/g, '');
   html = html.replace(/\{#.*?#\}/g, '');
 
   if (images.length > 0) {
