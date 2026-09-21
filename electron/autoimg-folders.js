@@ -2,7 +2,7 @@ const sheets = require('./google-sheets-service');
 const drive = require('./google-drive-service');
 const { saveLocalFolders, loadLocalFolders } = require('./autoimg-user-store');
 const { sanitizeErrorMessage } = require('./autoimg-security');
-const { parseFoldersFromValues } = require('./autoimg-sheet-rows');
+const { parseFoldersFromValues, AUTOIMG_SHEET_TABS } = require('./autoimg-sheet-rows');
 const { ensureSheetId } = require('./autoimg-sheet-config');
 const {
   sheetCache,
@@ -136,6 +136,18 @@ async function removeFolder({ folder_id }) {
     if (values[i][1] !== folder_id) filtered.push(values[i]);
   }
   await sheets.writeRange('FOLDERS!A:E', filtered);
+  // values.update solo reemplaza las filas enviadas: sin limpiar el remanente,
+  // la última carpeta queda duplicada en la hoja y reaparece al volver a leer.
+  if (values.length > filtered.length) {
+    const emptyTail = Array.from(
+      { length: values.length - filtered.length },
+      () => new Array(AUTOIMG_SHEET_TABS.FOLDERS.length).fill(''),
+    );
+    await sheets.writeRange(
+      `FOLDERS!A${filtered.length + 1}:E${values.length}`,
+      emptyTail,
+    );
+  }
   const folders = parseFoldersFromValues(filtered);
   persistFoldersLocal(folders);
   tryCommitSheetCache({ folders });

@@ -7,6 +7,17 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Mensajes de error de herramientas**: `EvidenciaVolanteoError` y `PanelAvisoCorteError` derivan ahora de `ValueError`, así que la UI vuelve a mostrar el texto propio de la herramienta en lugar de "Error interno del servidor".
+- **Canvas / pegar**: pegar una capa que todavía estaba en el documento duplicaba el id y terminaba borrando la capa original; el portapapeles se re-keyea antes de clonar.
+- **Canvas / export CMYK**: con páginas pareadas el tope de 200 páginas multiplicaba contextos × páginas y rechazaba exportaciones que el renderer resuelve en una página por contexto.
+- **Canvas / atajos**: `Ctrl+Shift+D` duplicaba capas además de abrir Ajustes, porque el atajo de duplicación comparaba `e.code` en lugar de `e.key`.
+- **Formatos**: desactivar un formato builtin se perdía al reiniciar y el formato volvía a estar disponible.
+- **Hojas de cálculo**: los CSV que Excel en español exporta con `;` se leían como una sola columna y los guardados en ANSI de Windows fallaban; el delimitador y la codificación se detectan ahora sobre un muestreo del archivo.
+- **AutoIMG**: al quitar una carpeta quedaba la última fila repetida en la hoja FOLDERS y reaparecía en la lectura siguiente.
+- **Panel Aviso de Corte**: con «Incluir vacíos» las filas sin imágenes quedaban todas al principio del documento en lugar de seguir el orden de la planilla.
+- **Volantes**: un segundo clic en «Exportar todo» lanzaba una exportación simultánea, con PDF, descarga y entrada de historial duplicados.
+
 ## [0.11.12] — 2026-09-16
 
 ### Added

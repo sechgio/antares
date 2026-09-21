@@ -1,6 +1,6 @@
 
 
-class EvidenciaVolanteoError(Exception):
+class EvidenciaVolanteoError(ValueError):
     pass
 
 

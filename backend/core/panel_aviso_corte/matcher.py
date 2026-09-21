@@ -142,7 +142,6 @@ def build_panels(
 
     compiled = compile_match_rule(rule) if rule.strategy == "regex" else None
 
-    panels: list[Panel] = []
     warnings: list[str] = []
     assigned_images: set[str] = set()
     rows_without_images_keys: list[str] = []
@@ -183,6 +182,7 @@ def build_panels(
         return cuadrante, fecha_corte, motivo
 
     all_entries: list[tuple[str, str, int]] = []
+    panels_by_row: list[tuple[int, Panel]] = []
 
     for row_idx, row in enumerate(source.rows):
         cell_value = row.get(key_col_original, "")
@@ -204,7 +204,7 @@ def build_panels(
                     imagenes=(),
                     source_row_index=row_idx,
                 )
-                panels.append(panel)
+                panels_by_row.append((row_idx, panel))
             rows_without_images_keys.append(cell_value)
             continue
 
@@ -249,7 +249,12 @@ def build_panels(
             imagenes=tuple(image_refs),
             source_row_index=batch[0][2],
         )
-        panels.append(panel)
+        panels_by_row.append((first_row_idx, panel))
+
+    # Los paneles con imágenes se construyen en un segundo pase porque el
+    # agrupamiento cruza filas: sin este reordenamiento las filas vacías
+    # quedarían todas al principio del PDF en vez de su lugar en la planilla.
+    panels = [panel for _, panel in sorted(panels_by_row, key=lambda item: item[0])]
 
     unmatched = [img for img in image_names if img not in assigned_images]
     summary = MatchSummary(

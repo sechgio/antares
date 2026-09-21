@@ -215,6 +215,7 @@ export default function VolantesView() {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
 
   const exportSingleRef = useRef<HTMLDivElement | null>(null);
+  const exportAllInFlightRef = useRef(false);
 
   const selectedRecord =
     records.find((record) => record.id === selectedRecordId) ??
@@ -400,6 +401,11 @@ export default function VolantesView() {
       addToast({ message: "No hay contenido para exportar.", type: "error" });
       return;
     }
+    // El rasterizado por lotes tarda segundos y el botón no se deshabilita: sin
+    // este candado un segundo clic exporta dos PDFs a la vez, con historial y
+    // descarga duplicados.
+    if (exportAllInFlightRef.current) return;
+    exportAllInFlightRef.current = true;
 
     const recordsToExport = records;
     const exportLayout = layoutMode;
@@ -455,6 +461,7 @@ export default function VolantesView() {
       const message = errorMessage(error, "No se pudo generar el PDF.");
       addToast({ message, type: "error" });
     } finally {
+      exportAllInFlightRef.current = false;
       root?.unmount();
       wrapper?.remove();
     }

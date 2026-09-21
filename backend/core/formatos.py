@@ -140,6 +140,7 @@ def _load_catalog() -> None:
                     raw["has_mapping"] = raw.get("mapping") is not None
 
                 if fid in new_formats and new_formats[fid]["origen"] == "builtin":
+                    new_formats[fid]["enabled"] = raw.get("enabled", True)
                     if raw.get("mapping") is not None:
                         new_formats[fid]["mapping"] = raw["mapping"]
                         new_formats[fid]["has_mapping"] = True

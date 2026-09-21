@@ -135,6 +135,19 @@ describe('useCanvasKeyboard', () => {
     expect(newIds[0]).not.toBe(text.id);
   });
 
+  it('Ctrl+Shift+D no duplica: el shell lo reserva para abrir Ajustes', () => {
+    const text = createLayer('text');
+    const doc = makeDoc([text]);
+    const input = makeInput(doc, { selectedIds: [text.id] });
+    renderHook(() => useCanvasKeyboard(input));
+    // Con Shift el navegador entrega key 'D' pero code sigue siendo 'KeyD', y el
+    // chord pertenece al atajo global del shell.
+    const e = press(input, { key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true });
+    expect(e.defaultPrevented).toBe(false);
+    expect(input.setAllLayers).not.toHaveBeenCalled();
+    expect(input.setSelectedIds).not.toHaveBeenCalled();
+  });
+
   it('Ctrl+D no hace nada cuando la selección solo tiene capas no editables', () => {
     const locked = createLayer('rect', { locked: true });
     const doc = makeDoc([locked]);

@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { useCanvasClipboard } from '../hooks/useCanvasClipboard';
 import { createLayer } from '../constants';
@@ -19,7 +19,7 @@ function setup(layers: CanvasLayer[], overrides: Partial<Params> = {}) {
     ...overrides,
   };
   const { result } = renderHook(() => useCanvasClipboard(input));
-  return { input, cut: result.current.cutLayersToClipboard };
+  return { input, cut: result.current.cutLayersToClipboard, paste: result.current.pasteClipboard };
 }
 
 describe('useCanvasClipboard cutLayersToClipboard', () => {
@@ -48,5 +48,45 @@ describe('useCanvasClipboard cutLayersToClipboard', () => {
     expect(input.setClipboard).not.toHaveBeenCalled();
     expect(input.sealPanelAndAbortGesture).not.toHaveBeenCalled();
     expect(input.setAllLayers).not.toHaveBeenCalled();
+  });
+});
+
+describe('useCanvasClipboard pasteClipboard', () => {
+  it('copiar y pegar en el propio documento conserva la capa copiada con una sola copia', async () => {
+    const original = createLayer('rect');
+    const other = createLayer('ellipse');
+    const { input, paste } = setup([original, other], {
+      selectedIds: [original.id],
+      clipboard: [original],
+    });
+
+    await act(async () => {
+      await paste();
+    });
+
+    const layers = vi.mocked(input.setAllLayers).mock.calls[0][0] as CanvasLayer[];
+    const selectedIds = vi.mocked(input.setSelectedIds).mock.calls[0][0] as string[];
+
+    expect(layers.filter((l) => l.id === original.id)).toHaveLength(1);
+    expect(layers).toHaveLength(3);
+    expect(new Set(layers.map((l) => l.id)).size).toBe(layers.length);
+    expect(selectedIds).toHaveLength(1);
+    expect(selectedIds[0]).not.toBe(original.id);
+  });
+
+  it('cortar y pegar sigue dando una única copia de la capa cortada', async () => {
+    const source = createLayer('rect');
+    const other = createLayer('ellipse');
+    const { input, paste } = setup([other], { clipboard: [source] });
+
+    await act(async () => {
+      await paste();
+    });
+
+    const layers = vi.mocked(input.setAllLayers).mock.calls[0][0] as CanvasLayer[];
+
+    expect(layers.some((l) => l.id === source.id)).toBe(false);
+    expect(layers).toHaveLength(2);
+    expect(new Set(layers.map((l) => l.id)).size).toBe(layers.length);
   });
 });

@@ -203,6 +203,32 @@ def test_canvas_export_cmyk_pdf_large_persists_to_disk(monkeypatch):
     assert out_file.read_bytes().startswith(b"%PDF")
 
 
+def test_canvas_export_cmyk_pdf_paired_pages_count_once(tmp_path):
+    """El frontend aplana el documento antes de exportar, así que contexts y pages
+    ya son 1:1 con las páginas de salida. Contarlos como producto rechazaba desde
+    15 páginas un CMYK que el RGB sí imprimía."""
+    doc = create_empty_document(name="Paired 15")
+    doc["pages"] = [{"id": f"page-{i}", "name": f"Página {i + 1}"} for i in range(15)]
+    output_path = tmp_path / "paired15.pdf"
+
+    res = canvas_export_cmyk_pdf(
+        {
+            "document": doc,
+            "contexts": [{} for _ in range(15)],
+            "pair_context_pages": True,
+            "outputPath": str(output_path),
+            "filename": "paired15.pdf",
+        }
+    )
+
+    assert res["saved_path"] == str(output_path)
+    pdf_doc = fitz.open(stream=output_path.read_bytes(), filetype="pdf")
+    try:
+        assert len(pdf_doc) == 15
+    finally:
+        pdf_doc.close()
+
+
 def _page0_contents(pdf_bytes: bytes) -> bytes:
     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:

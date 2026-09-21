@@ -155,7 +155,9 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
       if (isTemplatePickerOpen) return;
       if (paletteOpen) return;
 
-      const isDuplicateShortcut = (e.ctrlKey || e.metaKey) && e.code === 'KeyD';
+      // 'code' no cambia con Shift: sin este filtro el chord global del shell
+      // (Ctrl+Shift+D abre Ajustes) también duplicaba capas.
+      const isDuplicateShortcut = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === 'KeyD';
       const isGroupShortcut = (e.ctrlKey || e.metaKey) && e.code === 'KeyG';
       const getEditableIds = () =>
         selectedIds.filter((id) => {
