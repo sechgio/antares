@@ -55,13 +55,19 @@ async function _cleanupStagedImageCapabilities(rawPaths, webContentsId = null) {
 }
 
 const PDF_RENDER_SLOTS = 2;
+const MAX_QUEUED_PDF_RENDERS = 2;
+const MAX_QUEUED_PDF_HTML_BYTES = 64 * 1024 * 1024;
 const pdfRenderSlots = Array.from({ length: PDF_RENDER_SLOTS }, (_, i) => ({
   queue: Promise.resolve(),
+  busy: false,
+  queued: 0,
   window: null,
   session: null,
   partition: `pdf-render-${i}`,
 }));
 let pdfSlotCursor = 0;
+let queuedPdfRenderCount = 0;
+let queuedPdfHtmlBytes = 0;
 
 function _nextPdfSlot() {
   const slot = pdfRenderSlots[pdfSlotCursor % PDF_RENDER_SLOTS];
@@ -69,9 +75,54 @@ function _nextPdfSlot() {
   return slot;
 }
 
+function _reserveQueuedPdfRender(htmlBytes) {
+  if (
+    queuedPdfRenderCount >= MAX_QUEUED_PDF_RENDERS
+    || queuedPdfHtmlBytes + htmlBytes > MAX_QUEUED_PDF_HTML_BYTES
+  ) {
+    return null;
+  }
+
+  queuedPdfRenderCount += 1;
+  queuedPdfHtmlBytes += htmlBytes;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    queuedPdfRenderCount -= 1;
+    queuedPdfHtmlBytes -= htmlBytes;
+  };
+}
+
 function renderHtmlToPdf(params = {}, electronModules = {}, webContentsId = null) {
   const slot = _nextPdfSlot();
-  const render = () => _renderHtmlToPdf(params, electronModules, slot, webContentsId);
+  const isQueued = slot.busy;
+  let releaseQueue = null;
+  if (isQueued) {
+    const htmlBytes = typeof params.html === 'string' ? Buffer.byteLength(params.html, 'utf8') : 0;
+    releaseQueue = _reserveQueuedPdfRender(htmlBytes);
+    if (!releaseQueue) {
+      return _cleanupStagedImageCapabilities(params.localImagePaths, webContentsId).then(() => {
+        throw new Error('Cola de render PDF ocupada; vuelve a intentarlo.');
+      });
+    }
+    slot.queued += 1;
+  } else {
+    slot.busy = true;
+  }
+
+  const render = async () => {
+    if (releaseQueue) {
+      slot.queued -= 1;
+      releaseQueue();
+      releaseQueue = null;
+    }
+    try {
+      return await _renderHtmlToPdf(params, electronModules, slot, webContentsId);
+    } finally {
+      if (slot.queued === 0) slot.busy = false;
+    }
+  };
   const result = slot.queue.then(render, render);
   slot.queue = result.then(() => undefined, () => undefined);
   return result;
@@ -80,10 +131,14 @@ function renderHtmlToPdf(params = {}, electronModules = {}, webContentsId = null
 function _resetPdfRenderPool() {
   for (const slot of pdfRenderSlots) {
     slot.queue = Promise.resolve();
+    slot.busy = false;
+    slot.queued = 0;
     slot.window = null;
     slot.session = null;
   }
   pdfSlotCursor = 0;
+  queuedPdfRenderCount = 0;
+  queuedPdfHtmlBytes = 0;
 }
 
 async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webContentsId = null) {
@@ -186,10 +241,16 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
     await fs.promises.writeFile(htmlPath, htmlWithLocalImages, 'utf8');
 
     const didFinishLoad = new Promise((resolve, reject) => {
-      pdfWindow.webContents.once('did-finish-load', resolve);
-      pdfWindow.webContents.once('did-fail-load', (_event, _code, description) => {
+      const onDidFailLoad = (_event, _code, description) => {
+        pdfWindow.webContents.removeListener('did-finish-load', onDidFinishLoad);
         reject(new Error(description || 'No se pudo cargar el HTML para PDF'));
-      });
+      };
+      const onDidFinishLoad = () => {
+        pdfWindow.webContents.removeListener('did-fail-load', onDidFailLoad);
+        resolve();
+      };
+      pdfWindow.webContents.once('did-finish-load', onDidFinishLoad);
+      pdfWindow.webContents.once('did-fail-load', onDidFailLoad);
     });
 
     await pdfWindow.loadFile(htmlPath);
@@ -259,7 +320,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
 
     const wantBase64 = params.return_base64 === true;
     if (wantBase64) {
-      result.pdf_base64 = Buffer.from(pdfBuffer).toString('base64');
+      result.pdf_base64 = pdfBuffer.toString('base64');
     }
 
     return result;

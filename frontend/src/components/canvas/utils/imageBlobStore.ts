@@ -474,23 +474,7 @@ function readCanvasAssetShared(getAsset: CanvasAssetGetter, ref: string): Promis
   return promise;
 }
 
-async function readDocAssetChunks(
-  getAsset: CanvasAssetGetter,
-  refs: string[],
-): Promise<{ chunks: Map<string, ArrayBuffer>; errors: Map<string, unknown> }> {
-  const chunks = new Map<string, ArrayBuffer>();
-  const errors = new Map<string, unknown>();
-  await Promise.all([...new Set(refs)].map(async (ref) => {
-    try {
-      chunks.set(ref, await readCanvasAssetShared(getAsset, ref));
-    } catch (err) {
-      errors.set(ref, err);
-    }
-  }));
-  return { chunks, errors };
-}
-
-async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promise<CanvasDocument> {
+export async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promise<CanvasDocument> {
   const putAsset = window.electronAPI?.canvasAssetPut as CanvasAssetPutter | undefined;
   if (!putAsset) return doc;
 
@@ -532,32 +516,39 @@ export async function hydrateDocumentImages(
   }
 
   let changed = false;
-  const { chunks: assetChunkByRef, errors: readErrorsByRef } = await readDocAssetChunks(
-    getAsset,
-    canvasAssetRefs(doc),
-  );
-
-  const layers: CanvasLayer[] = [];
-  for (const layer of doc.layers) {
+  const layers = [...doc.layers];
+  const layerIndexesByRef = new Map<string, number[]>();
+  doc.layers.forEach((layer, index) => {
     const ref = layerAssetRef(layer);
-    if (!ref) {
-      layers.push(layer);
+    if (!ref) return;
+    const indexes = layerIndexesByRef.get(ref);
+    if (indexes) indexes.push(index);
+    else layerIndexesByRef.set(ref, [index]);
+  });
+  const readErrorsByRef = new Map<string, unknown>();
+  for (const [ref, indexes] of layerIndexesByRef) {
+    let chunk: ArrayBuffer;
+    try {
+      chunk = await readCanvasAssetShared(getAsset, ref);
+    } catch (err) {
+      readErrorsByRef.set(ref, err);
       continue;
     }
-    const chunk = assetChunkByRef.get(ref);
-    if (!chunk) {
-      const err = readErrorsByRef.get(ref);
-      if (strict) {
-        const msg = errorMessage(err, String(err ?? 'asset vacío'));
-        throw new Error(`No se pudo resolver ${ref}: ${msg}`);
-      }
-      layers.push(layer);
-      continue;
+    const blob = new Blob([chunk]);
+    for (const index of indexes) {
+      const registered = await registerImageBlob(blob);
+      layers[index] = { ...layers[index], value: registered.url };
+      changed = true;
     }
-    const reg = await registerImageBlob(new Blob([chunk]));
-    changed = true;
-    layers.push({ ...layer, value: reg.url });
   }
+
+  if (strict) {
+    for (const [ref, err] of readErrorsByRef) {
+      const msg = errorMessage(err, String(err ?? 'asset vacío'));
+      throw new Error(`No se pudo resolver ${ref}: ${msg}`);
+    }
+  }
+
   const next = changed ? { ...doc, layers } : doc;
   if (strict && countCanvasAssetRefs(next) > 0) {
     throw new Error('Quedan referencias canvas-asset: sin resolver');
@@ -574,10 +565,10 @@ export async function assertDocumentImagesResolvable(doc: CanvasDocument): Promi
     throw new Error(NO_ELECTRON_ASSETS_MSG);
   }
 
-  const { errors: failures } = await readDocAssetChunks(getAsset, refs);
   for (const ref of new Set(refs)) {
-    const err = failures.get(ref);
-    if (err !== undefined) {
+    try {
+      await readCanvasAssetShared(getAsset, ref);
+    } catch (err) {
       const msg = errorMessage(err, String(err));
       throw new Error(`No se pudo resolver ${ref}: ${msg}`);
     }

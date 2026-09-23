@@ -189,6 +189,65 @@ describe('UbicacionesView config sync', () => {
     expect(payload.customStyles).toBeTruthy();
   });
 
+  it('shows manual coordinates as optional when address geocoding is enabled', async () => {
+    renderView();
+    fireEvent.click(screen.getByRole('button', { name: /Manual/i }));
+
+    expect(screen.getByText('Latitud*')).toBeInTheDocument();
+    expect(screen.getByText('Longitud*')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Geocodificar/i }));
+    fireEvent.change(screen.getByPlaceholderText('Ej. Av. Principal 123'), {
+      target: { value: 'Av. Nueva 123' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Latitud')).toBeInTheDocument();
+      expect(screen.getByText('Longitud')).toBeInTheDocument();
+    });
+  });
+
+  it('previews an address-only manual entry after switching from Excel', async () => {
+    localStorage.setItem('antares:ubicaciones:geocode', 'true');
+    localStorage.setItem(
+      'antares:ubicaciones:manualData',
+      JSON.stringify({ direccion: 'Av. Nueva 123', localidad: '', distrito: '', lat: '', lon: '', cod_componente: '' }),
+    );
+
+    renderView();
+    fireEvent.click(screen.getByRole('button', { name: /Manual/i }));
+
+    await waitFor(() => expect(mockPreview).toHaveBeenCalled());
+    expect(previewPayloads.at(-1)?.geocode).toBe(true);
+    expect(previewPayloads.at(-1)?.manualData).toEqual(
+      expect.objectContaining({ direccion: 'Av. Nueva 123', lat: '', lon: '' }),
+    );
+  });
+
+  it('sends geocode config to preview and generate when enabled', async () => {
+    renderView();
+    await uploadExcel();
+    await selectOutputFolder();
+
+    mockPreview.mockClear();
+    previewPayloads.length = 0;
+    fireEvent.click(screen.getByRole('checkbox', { name: /Geocodificar/i }));
+
+    expect(screen.getByRole('textbox', { name: 'País (ISO)' })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(previewPayloads.at(-1)?.geocode).toBe(true);
+      expect(previewPayloads.at(-1)?.geocodeCountry).toBe('pe');
+    });
+
+    mockGenerate.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /Generar PDF/i }));
+
+    await waitFor(() => expect(mockGenerate).toHaveBeenCalled());
+    expect(generatePayloads.at(-1)!.geocode).toBe(true);
+    expect(generatePayloads.at(-1)!.geocodeCountry).toBe('pe');
+  });
+
   it('re-fetches excel preview when switching back from manual mode', async () => {
     renderView();
     await uploadExcel();

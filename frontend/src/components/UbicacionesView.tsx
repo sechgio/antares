@@ -22,11 +22,13 @@ import { DesignPanel } from './ubicaciones/DesignPanel';
 import { ManualEntryForm } from './ubicaciones/ManualEntryForm';
 import { EmptyPreviewPanel, RealPreviewPanel, ResultPanel } from './ubicaciones/PreviewPanels';
 import { useUbicacionesApiKeys } from './ubicaciones/useUbicacionesApiKeys';
-import { useUbicacionesPreview } from './ubicaciones/useUbicacionesPreview';
+import { hasManualAddress, useUbicacionesPreview } from './ubicaciones/useUbicacionesPreview';
 import {
   DEFAULT_MANUAL_DATA,
   DEFAULT_STYLES,
   LS_FORMATO,
+  LS_GEOCODE,
+  LS_GEOCODE_COUNTRY,
   LS_INPUT_MODE,
   LS_MANUAL_DATA,
   LS_OUTPUT_DIR,
@@ -90,6 +92,18 @@ export const UbicacionesView: React.FC = () => {
     serialize: (v) => v,
   });
 
+  const [geocode, setGeocode] = useLocalStorageState<boolean>(LS_GEOCODE, {
+    parse: (s) => s === 'true',
+    fallback: false,
+    serialize: (v) => (v ? 'true' : 'false'),
+  });
+
+  const [geocodeCountry, setGeocodeCountry] = useLocalStorageState<string>(LS_GEOCODE_COUNTRY, {
+    parse: (s) => s || 'pe',
+    fallback: 'pe',
+    serialize: (v) => v || 'pe',
+  });
+
   const { apiKeys, setApiKeys, keysConfigured } = useUbicacionesApiKeys();
 
   const [customStyles, setCustomStyles] = useLocalStorageState<CustomStyles>(STORAGE_KEY, {
@@ -126,6 +140,8 @@ export const UbicacionesView: React.FC = () => {
     provider,
     zoom,
     apiKeys,
+    geocode,
+    geocodeCountry,
   });
 
   const lonInputRef = React.useRef<HTMLInputElement>(null);
@@ -164,6 +180,24 @@ export const UbicacionesView: React.FC = () => {
     });
     scheduleMapRefetch(300);
   }, [setApiKeys, syncParams, scheduleMapRefetch]);
+
+  const updateGeocode = useCallback((enabled: boolean) => {
+    setGeocode(enabled);
+    syncParams({ geocode: enabled });
+    if (!enabled && inputMode === 'manual' && (!isValidCoord(manualData.lat) || !isValidCoord(manualData.lon))) {
+      clearPreview();
+    } else if (excelPath || inputMode === 'manual') {
+      scheduleMapRefetch(50);
+    }
+  }, [setGeocode, syncParams, excelPath, inputMode, manualData, clearPreview, scheduleMapRefetch]);
+
+  const updateGeocodeCountry = useCallback((value: string) => {
+    setGeocodeCountry(value);
+    syncParams({ geocodeCountry: value });
+    if (geocode && (excelPath || inputMode === 'manual')) {
+      scheduleMapRefetch(300);
+    }
+  }, [setGeocodeCountry, syncParams, geocode, excelPath, inputMode, scheduleMapRefetch]);
 
   const resetStyles = useCallback(() => {
     setCustomStyles(DEFAULT_STYLES);
@@ -241,7 +275,7 @@ export const UbicacionesView: React.FC = () => {
 
   const handleGenerate = async () => {
     if (inputMode === 'excel' && !excelFile) return;
-    if (inputMode === 'manual' && (!manualData.lat || !manualData.lon)) {
+    if (inputMode === 'manual' && (!manualData.lat || !manualData.lon) && !(geocode && hasManualAddress(manualData))) {
       setResult({ success: false, error: 'Ingresa latitud y longitud válidas' });
       return;
     }
@@ -275,6 +309,8 @@ export const UbicacionesView: React.FC = () => {
         provider: genProvider,
         zoom: genZoom,
         apiKeys: genApiKeys,
+        geocode: genGeocode,
+        geocodeCountry: genGeocodeCountry,
       } = lastParamsRef.current;
 
       const response = await api.generarUbicaciones({
@@ -287,6 +323,8 @@ export const UbicacionesView: React.FC = () => {
         zoom: genZoom,
         api_key: genApiKeys[genProvider] || '',
         manualData: genInputMode === 'manual' ? genManualData : undefined,
+        geocode: genGeocode,
+        geocodeCountry: genGeocodeCountry,
       });
       setResult({ success: true, data: response });
     } catch (err: unknown) {
@@ -326,6 +364,8 @@ export const UbicacionesView: React.FC = () => {
       const nextLon = field === 'lon' ? value : manualData.lon;
       if (isValidCoord(nextLat) && isValidCoord(nextLon)) {
         scheduleMapPreview(false);
+      } else if (geocode && hasManualAddress(manualData)) {
+        scheduleMapPreview(false);
       } else {
         clearPreview();
       }
@@ -351,7 +391,8 @@ export const UbicacionesView: React.FC = () => {
   };
 
   const hasValidManualCoords = isValidCoord(manualData.lat) && isValidCoord(manualData.lon);
-  const canGenerate = (inputMode === 'excel' ? !!excelFile : hasValidManualCoords) && !!outputDir && !isProcessing;
+  const manualCanGeocode = geocode && hasManualAddress(manualData);
+  const canGenerate = (inputMode === 'excel' ? !!excelFile : hasValidManualCoords || manualCanGeocode) && !!outputDir && !isProcessing;
   const folderName = outputDir ? outputDir.split('\\').pop() || outputDir.split('/').pop() : '';
 
   const hasData = inputMode === 'excel' ? !!excelFile : true;
@@ -381,7 +422,7 @@ export const UbicacionesView: React.FC = () => {
                   if (nextMode === 'excel' && excelPath) {
                     schedulePreview(previewRowIndex);
                   } else if (nextMode === 'manual') {
-                    if (isValidCoord(manualData.lat) && isValidCoord(manualData.lon)) {
+                    if ((isValidCoord(manualData.lat) && isValidCoord(manualData.lon)) || manualCanGeocode) {
                       schedulePreview(0);
                     } else {
                       clearPreview();
@@ -445,8 +486,42 @@ export const UbicacionesView: React.FC = () => {
                   manualData={manualData}
                   onChange={handleManualChange}
                   lonInputRef={lonInputRef}
+                  geocodeEnabled={geocode && hasManualAddress(manualData)}
                 />
               )}
+
+              <div className="flex flex-col gap-1.5 mt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={geocode}
+                    onChange={(e) => updateGeocode(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-[var(--border-medium)] accent-[var(--accent-primary)]"
+                  />
+                  <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+                    Geocodificar direcciones sin coordenadas
+                  </span>
+                </label>
+                {geocode && (
+                  <div className="flex items-center gap-2 pl-5">
+                    <label htmlFor="ubicaciones-geocode-country" className="text-[9px] font-semibold text-[var(--text-muted)] uppercase shrink-0">
+                      País (ISO)
+                    </label>
+                    <input
+                      id="ubicaciones-geocode-country"
+                      type="text"
+                      value={geocodeCountry}
+                      onChange={(e) => updateGeocodeCountry(e.target.value)}
+                      className="bg-[var(--bg-input)] border border-[var(--border-medium)] rounded text-[11px] px-2 py-1 text-[var(--text-primary)] w-16 outline-none focus:border-[var(--accent-primary)] transition-colors"
+                      placeholder="pe"
+                      maxLength={30}
+                    />
+                    <span className="text-[9px] text-[var(--text-muted)] leading-tight">
+                      Envía la dirección a Nominatim y conserva la consulta en caché local. Úsalo solo en lotes ocasionales; evita datos personales o confidenciales. © OpenStreetMap contributors.
+                    </span>
+                  </div>
+                )}
+              </div>
             </section>
 
             <section className="flex flex-col gap-1.5">

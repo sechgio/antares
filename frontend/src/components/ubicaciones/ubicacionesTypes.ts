@@ -98,6 +98,8 @@ export const LS_API_KEYS = 'antares:ubicaciones:apiKeys';
 export const LS_GOOGLE_MAPS_KEY = 'antares:ubicaciones:googleMapsKey';
 export const LS_ZOOM = 'antares:ubicaciones:zoom';
 export const LS_PROVIDER = 'antares:ubicaciones:provider';
+export const LS_GEOCODE = 'antares:ubicaciones:geocode';
+export const LS_GEOCODE_COUNTRY = 'antares:ubicaciones:geocodeCountry';
 
 export function clearPlaintextApiKeys(): void {
   localStorage.removeItem(LS_API_KEYS);

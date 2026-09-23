@@ -31,6 +31,7 @@ const supabaseMock = vi.hoisted(() => {
 vi.mock('../utils/imageBlobStore', () => ({
   serializeDocumentImages: (...args: unknown[]) =>
     serializeDocumentImages(...(args as [CanvasDocument])),
+  persistDataUrlsAsCanvasAssets: vi.fn(async (doc: CanvasDocument) => doc),
   hydrateDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
   embedCanvasAssetsAsDataUrls: vi.fn(async (doc: CanvasDocument) => doc),
   assertCanvasAssetExpansionWithinBytes: vi.fn(async () => undefined),

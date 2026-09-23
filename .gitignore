@@ -145,6 +145,7 @@ data/formatos/uploads/
 
 # Agent scratch output (local only)
 agent-tools/
+outputs/
 
 # Advisor plans (local only)
 plans/

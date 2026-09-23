@@ -224,6 +224,8 @@ class JobManager:
                             method=j.job_type,
                             outcome=outcome,
                             duration_ms=j.duration_ms,
+                            ok_count=ok_count,
+                            err_count=err_count,
                         )
                         self.release_out_paths(j.id)
                         self._slim_completed_job(j)

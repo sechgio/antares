@@ -149,6 +149,36 @@ def test_new_store_recovers_pending_history_spill(tmp_path: Path, monkeypatch: p
     assert not spill_path.exists()
 
 
+@pytest.mark.parametrize("spill_kind", ["document", "history"])
+def test_new_store_recovers_complete_spill_temp_before_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    spill_kind: str,
+) -> None:
+    store = CanvasStore(tmp_path)
+    _install_store(monkeypatch, store)
+    if spill_kind == "document":
+        document = create_empty_document(name="Recover interrupted spill")
+        document_id = str(document["id"])
+        spill_path = Path(canvas_handlers._spill_payload(document_id, document) or "")
+    else:
+        document = store.create(name="Recover interrupted history spill")
+        document_id = str(document["id"])
+        payload = {"past": [create_empty_document(name="Past")], "future": []}
+        spill_path = Path(canvas_handlers._spill_payload(document_id, payload, "_history.json") or "")
+    assert spill_path.is_file()
+
+    tmp_spill = spill_path.with_name(f"{spill_path.name}.0123456789abcdef0123456789abcdef.tmp")
+    spill_path.replace(tmp_spill)
+    recovered = CanvasStore(tmp_path, migrate_legacy=False)
+
+    if spill_kind == "document":
+        assert recovered.get(document_id) == document
+    else:
+        assert recovered.get_history(document_id)["past"][0]["name"] == "Past"
+    assert not tmp_spill.exists()
+
+
 def test_document_and_history_spills_do_not_collide_for_suffix_ids(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

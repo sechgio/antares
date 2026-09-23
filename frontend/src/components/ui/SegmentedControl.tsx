@@ -9,6 +9,7 @@ export interface SegmentedControlProps<T extends string = string> {
   options: SegmentedControlOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  disabled?: boolean;
   className?: string;
   'aria-label'?: string;
 }
@@ -17,6 +18,7 @@ export function SegmentedControl<T extends string = string>({
   options,
   value,
   onChange,
+  disabled = false,
   className = 'flex gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5',
   'aria-label': ariaLabel,
 }: SegmentedControlProps<T>) {
@@ -29,6 +31,7 @@ export function SegmentedControl<T extends string = string>({
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
+            disabled={disabled}
             aria-pressed={active}
             className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[10px] font-medium transition-all duration-150 ${
               active

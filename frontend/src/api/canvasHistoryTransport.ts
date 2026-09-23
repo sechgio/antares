@@ -10,6 +10,11 @@ type HistoryTransportState = {
 
 const transportState = new Map<string, HistoryTransportState>();
 const saveQueues = new Map<string, Promise<HistoryResponse>>();
+const MAX_CACHED_DOCUMENTS = 2;
+
+export function forgetCanvasHistoryTransport(id: string): void {
+  transportState.delete(id);
+}
 
 export function resetCanvasHistoryTransportForTests(): void {
   transportState.clear();
@@ -31,6 +36,10 @@ export function saveCanvasHistoryIncrementally(
 ): Promise<HistoryResponse> {
   const execute = async (): Promise<HistoryResponse> => {
     const previous = transportState.get(id);
+    if (previous) {
+      transportState.delete(id);
+      transportState.set(id, previous);
+    }
     const fullPayload = { id, past, future, include_digest: true };
     let response: HistoryResponse;
     if (!previous?.digest) {
@@ -53,11 +62,15 @@ export function saveCanvasHistoryIncrementally(
       }
     }
     if (response.digest) {
+      transportState.delete(id);
       transportState.set(id, {
         past: past.slice(),
         future: future.slice(),
         digest: response.digest,
       });
+      if (transportState.size > MAX_CACHED_DOCUMENTS) {
+        transportState.delete(transportState.keys().next().value!);
+      }
     } else {
       transportState.delete(id);
     }

@@ -1,6 +1,6 @@
 import type { CanvasDocument } from '../components/canvas/types';
 import type { HistoryStep as CanvasHistoryStep } from '../components/canvas/utils/canvasDiff';
-import { saveCanvasHistoryIncrementally } from './canvasHistoryTransport';
+import { forgetCanvasHistoryTransport, saveCanvasHistoryIncrementally } from './canvasHistoryTransport';
 import { _invoke } from './core';
 import type { HtmlToPdfResponse } from './toolsApi';
 
@@ -46,7 +46,11 @@ export const canvasApi = {
     }),
   canvasCreate: (name?: string) =>
     _invoke<{ document: CanvasDocument }>('canvas_create', name ? { name } : {}),
-  canvasDelete: (id: string) => _invoke<{ success: boolean; deleted_id: string }>('canvas_delete', { id }),
+  canvasDelete: async (id: string) => {
+    const response = await _invoke<{ success: boolean; deleted_id: string }>('canvas_delete', { id });
+    if (response.success) forgetCanvasHistoryTransport(id);
+    return response;
+  },
   canvasDuplicate: (id: string, name?: string) =>
     _invoke<{ document: CanvasDocument }>('canvas_duplicate', name ? { id, name } : { id }),
   canvasExportCmykPdf: (body: CanvasExportCmykPdfBody) =>

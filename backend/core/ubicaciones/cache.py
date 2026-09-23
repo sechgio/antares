@@ -16,6 +16,7 @@ from typing import Any, cast
 
 from PIL import Image, ImageFont
 
+from backend.core.observability import bind_context
 from backend.core.ubicaciones.client import (
     _MAP_ZOOM,
     _coord_key,
@@ -535,7 +536,7 @@ def _spawn_prefetch(*args: Any, **kwargs: Any) -> None:
             _prefetch_slots.release()
 
     threading.Thread(
-        target=_run,
+        target=bind_context(_run),
         daemon=True,
         name="ubic-prefetch",
     ).start()

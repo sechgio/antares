@@ -39,6 +39,8 @@ _SPILL_DISCARD = "discard"
 _SPILL_UNKNOWN = "unknown"
 
 _INVALID_STEM_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_SPILL_TMP_RE = re.compile(r"^(?P<spill>(?:document__|history__).+\.json)\.[0-9a-f]{32}\.tmp$")
+_FileSignature = tuple[int, int, int, int]
 
 
 class CanvasDocumentTooLargeError(ValueError):
@@ -80,6 +82,14 @@ def _write_atomic(path: Path, encoded: bytes) -> None:
         with contextlib.suppress(OSError):
             tmp.unlink(missing_ok=True)
         raise
+
+
+def _file_signature(path: Path) -> _FileSignature | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino)
 
 _store_singleton = LazySingleton(lambda docs_dir=None: CanvasStore(docs_dir))
 
@@ -189,10 +199,13 @@ class CanvasStore:
         if should_migrate:
             migrate_legacy_canvas_documents(source=_legacy_docs_dir(), dest=self.docs_dir)
         self._index_stems: set[str] | None = None
+        self._index_signatures: dict[str, _FileSignature] | None = None
         self._inner_id_index: dict[str, Path] = {}
         self._listing_cache: list[dict[str, str]] = []
         self._history_digests: dict[str, str] = {}
+        self._history_signatures: dict[str, _FileSignature] = {}
         self._recover_pending_spills()
+        self._cleanup_orphan_tmp_files()
 
     def _safe_stem(self, doc_id: str) -> str:
         safe = Path(doc_id).name
@@ -309,6 +322,37 @@ class CanvasStore:
         spill_dir = self.docs_dir.parent / "spill"
         if not spill_dir.is_dir():
             return
+        for tmp_path in sorted(
+            spill_dir.glob("*.json.*.tmp"),
+            key=lambda path: (_file_signature(path) or (0, 0, 0, 0))[0],
+        ):
+            match = _SPILL_TMP_RE.fullmatch(tmp_path.name)
+            if match is None:
+                continue
+            try:
+                raw = json.loads(tmp_path.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict):
+                    raise ValueError("canvas spill must be an object")
+                if match.group("spill").startswith(DOCUMENT_SPILL_PREFIX):
+                    normalize_document(raw)
+            except OSError as exc:
+                logger.warning("Could not read interrupted canvas spill %s: %s", tmp_path, exc)
+                continue
+            except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as exc:
+                logger.warning("Could not recover interrupted canvas spill %s: %s", tmp_path, exc)
+                with contextlib.suppress(OSError):
+                    tmp_path.unlink(missing_ok=True)
+                continue
+
+            final_path = spill_dir / match.group("spill")
+            try:
+                if final_path.exists() and final_path.stat().st_mtime_ns > tmp_path.stat().st_mtime_ns:
+                    tmp_path.unlink(missing_ok=True)
+                else:
+                    tmp_path.replace(final_path)
+            except OSError as exc:
+                logger.warning("Could not promote interrupted canvas spill %s: %s", tmp_path, exc)
+
         for spill_path in sorted(spill_dir.glob("*.json")):
             if spill_path.name.startswith(HISTORY_SPILL_PREFIX) or (
                 not spill_path.name.startswith(DOCUMENT_SPILL_PREFIX)
@@ -318,14 +362,40 @@ class CanvasStore:
             else:
                 self._recover_document_spill(spill_path)
 
+    def _cleanup_orphan_tmp_files(self) -> None:
+        """Borra restos temporales de documentos e historiales.
+
+        Los spills recuperables se promueven antes de esta limpieza; los que
+        todavía no se pudieron leer se conservan para el próximo arranque.
+        """
+        spill_dir = self.docs_dir.parent / "spill"
+        directories = (self.docs_dir, self.history_dir, spill_dir)
+        for directory in directories:
+            for tmp_path in directory.glob("*.tmp"):
+                if directory == spill_dir and _SPILL_TMP_RE.fullmatch(tmp_path.name):
+                    continue
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.warning("Could not remove stale canvas tmp %s: %s", tmp_path, exc)
+
     def _rebuild_index_if_stale(self) -> None:
-        current_stems = {p.stem for p in self.docs_dir.glob("*.json")}
-        if self._index_stems == current_stems:
+        paths = sorted(self.docs_dir.glob("*.json"))
+        current_signatures: dict[str, _FileSignature] = {}
+        for path in paths:
+            signature = _file_signature(path)
+            if signature is None:
+                continue
+            current_signatures[path.stem] = signature
+        if self._index_signatures == current_signatures:
             return
-        self._index_stems = current_stems
+        self._index_stems = set(current_signatures)
+        self._index_signatures = current_signatures
         self._inner_id_index = {}
         self._listing_cache = []
-        for path in sorted(self.docs_dir.glob("*.json")):
+        for path in paths:
+            if path.stem not in current_signatures:
+                continue
             meta = _extract_doc_meta(path)
             if meta is None:
                 continue
@@ -443,24 +513,35 @@ class CanvasStore:
                     f"El historial Canvas excede el límite agregado de almacenamiento ({MAX_CANVAS_HISTORY_BYTES} bytes)",
                 )
             digest = hashlib.sha256(encoded).hexdigest()
-            if self._history_digests.get(str(doc_id)) == digest:
+            if self.get_history_digest(str(doc_id)) == digest:
                 return True
             _write_atomic(path, encoded)
             self._history_digests[str(doc_id)] = digest
+            signature = _file_signature(path)
+            if signature is None:
+                self._history_signatures.pop(str(doc_id), None)
+            else:
+                self._history_signatures[str(doc_id)] = signature
             return True
 
     def get_history_digest(self, doc_id: str) -> str | None:
         with self._doc_lock(str(doc_id)):
-            cached = self._history_digests.get(str(doc_id))
-            if cached is not None:
-                return cached
             path = self._history_path_for(str(doc_id))
             try:
+                signature = _file_signature(path)
+                if signature is None:
+                    raise FileNotFoundError(path)
+                cached = self._history_digests.get(str(doc_id))
+                if cached is not None and self._history_signatures.get(str(doc_id)) == signature:
+                    return cached
                 encoded = path.read_bytes()
             except OSError:
+                self._history_digests.pop(str(doc_id), None)
+                self._history_signatures.pop(str(doc_id), None)
                 return None
             digest = hashlib.sha256(encoded).hexdigest()
             self._history_digests[str(doc_id)] = digest
+            self._history_signatures[str(doc_id)] = signature
             return digest
 
     def save_history_delta(
@@ -506,11 +587,13 @@ class CanvasStore:
                 )
             orphan = self._find_path_by_inner_id(doc["id"])
             if orphan is not None and orphan != path:
-                with contextlib.suppress(OSError):
-                    orphan.unlink()
-                self._drop_index_entry(orphan.stem)
-            _write_atomic(path, encoded)
-            self._refresh_index_entry(doc, path)
+                with self._index_lock:
+                    with contextlib.suppress(OSError):
+                        orphan.unlink()
+                    self._drop_index_entry(orphan.stem)
+            with self._index_lock:
+                _write_atomic(path, encoded)
+                self._refresh_index_entry(doc, path)
             return doc
 
     def create(self, *, name: str = "Sin título") -> dict[str, Any]:  # allowlist: dict[str, Any]
@@ -535,10 +618,12 @@ class CanvasStore:
                 with contextlib.suppress(OSError):
                     spill_path.unlink()
             self._history_digests.pop(str(doc_id), None)
-            if not path.exists():
-                return False
-            path.unlink()
-            self._drop_index_entry(path.stem)
+            self._history_signatures.pop(str(doc_id), None)
+            with self._index_lock:
+                if not path.exists():
+                    return False
+                path.unlink()
+                self._drop_index_entry(path.stem)
             return True
 
     def _refresh_index_entry(self, doc: dict[str, Any], path: Path) -> None:  # allowlist: dict[str, Any]
@@ -549,6 +634,12 @@ class CanvasStore:
             inner_id = str(doc.get("id") or "")
             self._inner_id_index = {k: v for k, v in self._inner_id_index.items() if v != path}
             self._index_stems.add(stem)
+            if self._index_signatures is not None:
+                signature = _file_signature(path)
+                if signature is None:
+                    self._index_signatures.pop(stem, None)
+                else:
+                    self._index_signatures[stem] = signature
             if inner_id:
                 self._inner_id_index[inner_id] = path
             entry = {"id": stem, "name": str(doc.get("name") or "Sin título"), "updatedAt": str(doc.get("updatedAt") or "")}
@@ -560,6 +651,8 @@ class CanvasStore:
             if self._index_stems is None:
                 return
             self._index_stems.discard(stem)
+            if self._index_signatures is not None:
+                self._index_signatures.pop(stem, None)
             self._inner_id_index = {k: v for k, v in self._inner_id_index.items() if v.stem != stem}
             self._listing_cache = [item for item in self._listing_cache if item["id"] != stem]
 

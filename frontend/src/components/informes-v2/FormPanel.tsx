@@ -17,6 +17,7 @@ import {
   type InformeV2,
   type ReservoirType,
 } from './types';
+import Reservorios2Form from './Reservorios2Form';
 
 interface Props {
   report: InformeV2 | null;
@@ -52,6 +53,7 @@ export default function FormPanel({
   }
 
   const patch = (next: Partial<InformeV2>) => onChange({ ...report, ...next });
+  const isR2 = report.plantilla === 'reservorios2';
   const patchHeader = (key: keyof InformeV2['header'], value: string | number) => {
     patch({ header: { ...report.header, [key]: value } });
   };
@@ -124,50 +126,63 @@ export default function FormPanel({
             </label>
             <Field label="Volumen (m³)" type="number" value={report.header.volumen} onChange={(value) => patchHeader('volumen', Number(value) || 0)} />
           </div>
-          <Field label="Ubicación" value={report.header.ubicacion} onChange={(value) => patchHeader('ubicacion', value)} />
+          {!isR2 && <Field label="Ubicación" value={report.header.ubicacion} onChange={(value) => patchHeader('ubicacion', value)} />}
           <div className="tr-grid-2">
             <Field label="Distrito" value={report.header.distrito} onChange={(value) => patchHeader('distrito', value)} />
             <Field label="Fecha ejecución" value={report.header.fecha_ejecucion} onChange={(value) => patchHeader('fecha_ejecucion', value)} />
           </div>
-          <div className="tr-grid-2">
+          {isR2 ? (
             <Field label="Suministro" value={report.header.suministro} onChange={(value) => patchHeader('suministro', value)} />
-            <Field label="SGIO" value={report.header.sgio} onChange={(value) => patchHeader('sgio', value)} />
-          </div>
+          ) : (
+            <div className="tr-grid-2">
+              <Field label="Suministro" value={report.header.suministro} onChange={(value) => patchHeader('suministro', value)} />
+              <Field label="SGIO" value={report.header.sgio} onChange={(value) => patchHeader('sgio', value)} />
+            </div>
+          )}
         </Section>
 
-        <Section title="Válvulas">
-          {VALVULA_ROWS.map((key) => (
-            <DiameterRowEditor
-              key={key}
-              title={VALVULA_LABELS[key]}
-              row={report.valvulas[key] || emptyDiameterRow()}
-              onChange={(next) => patchTableRow('valvulas', key, next)}
-            />
-          ))}
-        </Section>
+        {isR2 ? (
+          <Reservorios2Form
+            data={report.reservorios2}
+            onChange={(reservorios2) => patch({ reservorios2 })}
+          />
+        ) : (
+          <>
+            <Section title="Válvulas">
+              {VALVULA_ROWS.map((key) => (
+                <DiameterRowEditor
+                  key={key}
+                  title={VALVULA_LABELS[key]}
+                  row={report.valvulas[key] || emptyDiameterRow()}
+                  onChange={(next) => patchTableRow('valvulas', key, next)}
+                />
+              ))}
+            </Section>
 
-        <Section title="Línea">
-          {LINEA_ROWS.map((key) => (
-            <DiameterRowEditor
-              key={key}
-              title={LINEA_LABELS[key]}
-              row={report.linea[key] || emptyDiameterRow()}
-              onChange={(next) => patchTableRow('linea', key, next)}
-            />
-          ))}
-        </Section>
+            <Section title="Línea">
+              {LINEA_ROWS.map((key) => (
+                <DiameterRowEditor
+                  key={key}
+                  title={LINEA_LABELS[key]}
+                  row={report.linea[key] || emptyDiameterRow()}
+                  onChange={(next) => patchTableRow('linea', key, next)}
+                />
+              ))}
+            </Section>
 
-        <Section title="Medidas" defaultOpen>
-          <div className="tr-grid-2">
-            <Field label="Largo (M)" value={report.medidas.largo} onChange={(value) => patchMedida('largo', value)} />
-            <Field label="Altura rebose (M)" value={report.medidas.altura_rebose} onChange={(value) => patchMedida('altura_rebose', value)} />
-            <Field label="Ancho (M)" value={report.medidas.ancho} onChange={(value) => patchMedida('ancho', value)} />
-            <Field label="Altura total (M)" value={report.medidas.altura_total} onChange={(value) => patchMedida('altura_total', value)} />
-            <Field label="Diámetro (M)" value={report.medidas.diametro} onChange={(value) => patchMedida('diametro', value)} />
-            <Field label="Tirante limpieza (M)" value={report.medidas.tirante_limpieza} onChange={(value) => patchMedida('tirante_limpieza', value)} />
-          </div>
-          <Field label="Observación" value={report.medidas.observacion} onChange={(value) => patchMedida('observacion', value)} />
-        </Section>
+            <Section title="Medidas" defaultOpen>
+              <div className="tr-grid-2">
+                <Field label="Largo (M)" value={report.medidas.largo} onChange={(value) => patchMedida('largo', value)} />
+                <Field label="Altura rebose (M)" value={report.medidas.altura_rebose} onChange={(value) => patchMedida('altura_rebose', value)} />
+                <Field label="Ancho (M)" value={report.medidas.ancho} onChange={(value) => patchMedida('ancho', value)} />
+                <Field label="Altura total (M)" value={report.medidas.altura_total} onChange={(value) => patchMedida('altura_total', value)} />
+                <Field label="Diámetro (M)" value={report.medidas.diametro} onChange={(value) => patchMedida('diametro', value)} />
+                <Field label="Tirante limpieza (M)" value={report.medidas.tirante_limpieza} onChange={(value) => patchMedida('tirante_limpieza', value)} />
+              </div>
+              <Field label="Observación" value={report.medidas.observacion} onChange={(value) => patchMedida('observacion', value)} />
+            </Section>
+          </>
+        )}
       </div>
     </aside>
   );

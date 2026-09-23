@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, Check, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, PawPrint } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import Toggle from '../ui/Toggle';
@@ -47,7 +47,7 @@ function parseManifestPets(data: unknown): Pet[] {
     }));
 }
 
-function readManifestCache(): Pet[] | null {
+function readManifestCache(): ManifestCache | null {
   try {
     const raw = localStorage.getItem(PETDEX_MANIFEST_CACHE_KEY);
     if (!raw) return null;
@@ -57,15 +57,26 @@ function readManifestCache(): Pet[] | null {
       localStorage.removeItem(PETDEX_MANIFEST_CACHE_KEY);
       return null;
     }
-    return parsed.pets;
+    return parsed;
   } catch {
     return null;
   }
 }
 
+function formatCacheAge(cachedAt: number): string {
+  const mins = Math.floor((Date.now() - cachedAt) / 60000);
+  if (mins < 1) return 'hace menos de 1 min';
+  if (mins < 60) return `hace ${mins} min`;
+  return `hace ${Math.floor(mins / 60)} h`;
+}
+
 function writeManifestCache(pets: Pet[]) {
-  const payload: ManifestCache = { cachedAt: Date.now(), pets };
-  localStorage.setItem(PETDEX_MANIFEST_CACHE_KEY, JSON.stringify(payload));
+  try {
+    const payload: ManifestCache = { cachedAt: Date.now(), pets };
+    localStorage.setItem(PETDEX_MANIFEST_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // El manifiesto en memoria sigue siendo válido aunque el almacenamiento esté lleno o bloqueado.
+  }
 }
 
 const PRESET_PETS: Pet[] = [
@@ -119,9 +130,11 @@ export default function PetdexView() {
   const [movement, setMovement] = useState<'static' | 'walk'>(() => (localStorage.getItem('petdex_movement') as 'static' | 'walk') || 'walk');
 
   const initialCache = readManifestCache();
-  const [pets, setPets] = useState<Pet[]>(() => initialCache ?? []);
+  const [pets, setPets] = useState<Pet[]>(() => initialCache?.pets ?? []);
   const [loading, setLoading] = useState(() => initialCache === null);
   const [catalogSource, setCatalogSource] = useState<CatalogSource>(() => (initialCache ? 'cache' : 'presets'));
+  const [cachedAt, setCachedAt] = useState<number | null>(() => initialCache?.cachedAt ?? null);
+  const manifestRequestRef = useRef(0);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKind, setSelectedKind] = useState('all');
@@ -195,18 +208,22 @@ export default function PetdexView() {
     setCatalogSource(source);
   };
 
-  const fetchManifest = async () => {
-    setLoading(true);
+  const fetchManifest = async (background = false) => {
+    const requestId = ++manifestRequestRef.current;
+    if (!background) setLoading(true);
     try {
       const res = await fetch(PETDEX_MANIFEST_URL);
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = await res.json();
       const apiPets = parseManifestPets(data);
       if (apiPets.length === 0) throw new Error('Manifest returned no pets');
+      if (requestId !== manifestRequestRef.current) return;
 
       writeManifestCache(apiPets);
+      setCachedAt(Date.now());
       applyCatalog(apiPets, 'live');
     } catch (err) {
+      if (requestId !== manifestRequestRef.current) return;
       console.warn('Petdex manifest fetch failed', err);
       reportFrontendError({
         kind: 'app_error',
@@ -216,18 +233,18 @@ export default function PetdexView() {
       });
       const cached = readManifestCache();
       if (cached) {
-        applyCatalog(cached, 'cache');
+        setCachedAt(cached.cachedAt);
+        applyCatalog(cached.pets, 'cache');
       } else {
         applyCatalog(PRESET_PETS, 'presets');
       }
     } finally {
-      setLoading(false);
+      if (!background && requestId === manifestRequestRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (readManifestCache()) return;
-    fetchManifest();
+    fetchManifest(readManifestCache() !== null);
   }, []);
 
   useEffect(() => {
@@ -276,7 +293,7 @@ export default function PetdexView() {
   const catalogStatus = catalogSource === 'live'
     ? { tone: 'ok' as const, title: 'Sincronizado con Petdex', detail: `${pets.length.toLocaleString()} mascotas disponibles en el catálogo.` }
     : catalogSource === 'cache'
-    ? { tone: 'warn' as const, title: 'Catálogo en caché', detail: `Sin conexión a Petdex. Mostrando ${pets.length.toLocaleString()} mascotas guardadas localmente.` }
+    ? { tone: 'warn' as const, title: 'Catálogo en caché', detail: `Mostrando ${pets.length.toLocaleString()} mascotas guardadas localmente${cachedAt ? ` · actualizado ${formatCacheAge(cachedAt)}` : ''}.` }
     : { tone: 'warn' as const, title: 'Modo Offline', detail: 'No se pudo conectar a Petdex. Mostrando mascotas locales por defecto.' };
 
   return (
@@ -393,7 +410,7 @@ export default function PetdexView() {
 
         <WithHoverTooltip label="Recargar catálogo" placement="bottom">
           <Button variant="none" size="none"
-            onClick={fetchManifest}
+            onClick={() => fetchManifest()}
             aria-label="Recargar catálogo"
             disabled={loading}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-40"

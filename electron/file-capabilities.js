@@ -46,6 +46,19 @@ const _stagedSessions = new Map();
 let _stagedRoot = null;
 let _sweepTimer = null;
 
+// Solo los fallos con señal de abuso (binding/symlink) se reportan: expiración y
+// token desconocido son rutina (TTL de 30 min) y serían ruido en el jsonl.
+function _logCapabilityDenial(reason) {
+  try {
+    require('./app-log').appendLogEvent('WARN', 'security.rejected', {
+      component: 'electron',
+      outcome: 'rejected',
+      reason,
+    });
+  } catch {
+  }
+}
+
 function _now() { return Date.now(); }
 
 function _getStagedRoot() {
@@ -124,8 +137,12 @@ function resolveCapability(token, expectedMode, webContentsId) {
   const entry = _capabilities.get(token);
   if (!entry) throw new Error('capability not found or expired');
   if (_isExpired(entry)) { _capabilities.delete(token); throw new Error('capability expired'); }
-  if (expectedMode && entry.mode !== expectedMode) throw new Error('capability mode mismatch');
+  if (expectedMode && entry.mode !== expectedMode) {
+    _logCapabilityDenial('capability_mode_mismatch');
+    throw new Error('capability mode mismatch');
+  }
   if (entry.webContentsId !== null && webContentsId !== null && entry.webContentsId !== webContentsId) {
+    _logCapabilityDenial('capability_window_mismatch');
     throw new Error('capability not bound to this window');
   }
   const real = fs.realpathSync(entry.path);
@@ -134,7 +151,10 @@ function resolveCapability(token, expectedMode, webContentsId) {
     : process.platform === 'win32'
       ? real.toLowerCase() === entry.path.toLowerCase()
       : real === entry.path;
-  if (!matches) throw new Error('path symlink escape detected');
+  if (!matches) {
+    _logCapabilityDenial('capability_symlink_escape');
+    throw new Error('path symlink escape detected');
+  }
   return entry;
 }
 
@@ -264,7 +284,7 @@ async function abortStagedSession(token, webContentsId = null) {
 
 async function cleanupAllStaged() {
   _cleanupSweep();
-  for (const [k, v] of _stagedSessions) {
+  for (const v of _stagedSessions.values()) {
     if (v.tmpPath) await fsp.rm(v.tmpPath, { force: true }).catch(() => {});
     if (v.readToken) _capabilities.delete(v.readToken);
   }

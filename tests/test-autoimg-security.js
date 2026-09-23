@@ -90,7 +90,6 @@ function main() {
     'tests/test-autoimg-google-token.js',
     'tests/test-autoimg-google-fetch.js',
     '.githooks/pre-commit',
-    'scripts/supabase-db-push.ps1',
     '.cursor/rules/supabase-project.mdc',
     'electron/google-sheets-service.js',
     'electron/autoimg-handlers.js',

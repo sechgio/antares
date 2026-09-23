@@ -71,11 +71,23 @@ def test_import_file_and_download_template(monkeypatch, tmp_path) -> None:
     assert result["imported_count"] == 1
     assert HANDLERS["informes_v2_list"]({"summary": True})["items"][0]["header"]["photo_id"] == "R-1"
 
+    # Con plantilla seleccionada, las hojas importadas nacen con esa plantilla.
+    result = HANDLERS["informes_v2_import_file"](
+        {"filename": "datos.csv", "content_b64": content, "plantilla": "reservorios2"}
+    )
+    assert result["imported_count"] == 1
+    imported = HANDLERS["informes_v2_list"]({})["items"][0]
+    assert imported["plantilla"] == "reservorios2"
+
     template = HANDLERS["informes_v2_download_template"]({})
     assert template["filename"] == "informes_v2_plantilla.xlsx"
     assert template["content_b64"]
     raw = base64.b64decode(template["content_b64"])
     assert raw[:2] == b"PK"
+
+    new_template = HANDLERS["informes_v2_download_template"]({"plantilla": "reservorios2"})
+    assert new_template["filename"] == "informes_v2_plantilla_nueva.xlsx"
+    assert base64.b64decode(new_template["content_b64"])[:2] == b"PK"
 
 
 def test_render_html_includes_photo_grid(monkeypatch, tmp_path) -> None:
@@ -92,6 +104,29 @@ def test_render_html_includes_photo_grid(monkeypatch, tmp_path) -> None:
     assert "Demo" in result["html"]
     assert "data:image/png;base64,aaa" in result["html"]
     assert result["filename"].startswith("informe_v2_")
+
+
+def test_render_reservorios2_html_and_persistence(monkeypatch, tmp_path) -> None:
+    _reset_db(monkeypatch, tmp_path)
+    report = HANDLERS["informes_v2_create"]({})["item"]
+    assert report["plantilla"] == "clasica"
+
+    report["plantilla"] = "reservorios2"
+    report["header"]["cod_infraestructura"] = "CI-9"
+    report["reservorios2"]["inspeccion"]["descarga"]["critico"] = True
+    report["reservorios2"]["valvulas"]["desague"]["diametros"]["3"] = 4
+    saved = HANDLERS["informes_v2_update"]({"id": report["id"], "report": report})["item"]
+    assert saved["plantilla"] == "reservorios2"
+    assert saved["reservorios2"]["valvulas"]["desague"]["diametros"]["3"] == 4
+
+    got = HANDLERS["informes_v2_get"]({"id": report["id"]})["item"]
+    assert got["header"]["cod_infraestructura"] == "CI-9"
+    assert got["reservorios2"]["inspeccion"]["descarga"]["critico"] is True
+
+    result = HANDLERS["informes_v2_render_html"]({"report": got})
+    assert "DIÁMETRO DE VÁLVULAS" in result["html"]
+    assert "CI-9" not in result["html"]
+    assert "DIAMETRO DE TUBERIA" not in result["html"]
 
 
 def test_summary_list_does_not_copy_full_reports(monkeypatch, tmp_path) -> None:

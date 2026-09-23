@@ -1,6 +1,6 @@
 export const CANVAS_SHORTCUTS: Array<{ keys: string; action: string }> = [
   { keys: 'V', action: 'Seleccionar' },
-  { keys: 'H / Espacio', action: 'Mano (pan)' },
+  { keys: 'H / Espacio / Botón central', action: 'Mano (pan)' },
   { keys: 'R / O / L', action: 'Rectángulo / Elipse / Línea' },
   { keys: 'Shift+L / P / S / D / H / N', action: 'Flecha / Polígono / Estrella / Rombo / Hexágono / Pentágono' },
   { keys: 'P / C (línea) · U', action: 'Curvar / cortar línea · lazo' },

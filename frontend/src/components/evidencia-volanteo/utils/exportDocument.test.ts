@@ -67,10 +67,20 @@ describe('buildImagePayload', () => {
     const images = [makeImage('a.jpg'), makeImage('b.jpg')];
     const payload = await buildImagePayload(images, { needDataUris: true });
     expect(payload.imagePaths['0::a.jpg']).toBeUndefined();
-    expect(payload.imagesBase64['0::a.jpg']).toBeTruthy();
-    expect(payload.imagesBase64['1::b.jpg']).toBeTruthy();
+    expect(Object.keys(payload.imagesBase64)).toHaveLength(0);
     expect(payload.imageDataUris['0::a.jpg']).toMatch(/^data:image\/jpeg;base64,/);
     expect(payload.imageDataUris['1::b.jpg']).toMatch(/^data:image\/jpeg;base64,/);
+  });
+
+  it('rechaza el total de fotos antes de codificarlas para PDF', async () => {
+    const images = Array.from({ length: 5 }, (_, index) => makeImage(`large-${index}.jpg`));
+    for (const image of images) {
+      Object.defineProperty(image.file, 'size', { value: 14 * 1024 * 1024 });
+    }
+
+    await expect(buildImagePayload(images, { needDataUris: true })).rejects.toThrow(
+      'El peso total de las imágenes no puede superar 64 MB',
+    );
   });
 });
 

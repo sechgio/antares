@@ -9,6 +9,7 @@ import { useToast } from '../../hooks/useToast';
 import { saveFeatureHistory } from '../../utils/history';
 import ReportWorkspaceShell from '../report-workspace/ReportWorkspaceShell';
 import Button from '../ui/Button';
+import { SegmentedControl } from '../ui/SegmentedControl';
 import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
@@ -16,14 +17,20 @@ import { downloadBase64Blob, downloadBase64Pdf, fileToDataUrl } from '../../util
 import { changeLogoFile } from '../../utils/logoFile';
 import { askPdfSavePath } from '../../utils/deliverRenderedDocument';
 import { informesV2Api } from './api';
+import { createEmptyInforme, normalizeInforme } from './types';
 import {
   logoToPdfPath,
   preparePhotosForExport,
   type LogoAsset,
 } from './exportPdf';
 import { matchPhotosForId } from './photoMatch';
-import type { PhotoAsset } from './types';
+import type { PhotoAsset, PlantillaId } from './types';
 import { errorMessage } from '@/utils/errors';
+
+const PLANTILLA_OPTIONS: Array<{ value: PlantillaId; label: string }> = [
+  { value: 'clasica', label: 'Clásica' },
+  { value: 'reservorios2', label: 'Nueva' },
+];
 
 export default function InformesV2App() {
   const { addToast } = useToast();
@@ -47,7 +54,7 @@ export default function InformesV2App() {
     deleteReport,
     clearReports,
     importFile,
-  } = useReportWorkspace(informesV2Api);
+  } = useReportWorkspace(informesV2Api, { normalizeItem: normalizeInforme });
   const [logoLeft, setLogoLeft] = useState<LogoAsset | null>(null);
   const [logoRight, setLogoRight] = useState<LogoAsset | null>(null);
   const [photos, setPhotos] = useState<PhotoAsset[]>([]);
@@ -60,17 +67,36 @@ export default function InformesV2App() {
     return matchPhotosForId(photos, formData.header.photo_id);
   }, [formData, photos]);
 
+  // El switcher actúa como vista: sin informe abierto fija la plantilla por defecto;
+  // con informe abierto cambia la plantilla de ese informe.
+  const [plantillaDefault, setPlantillaDefault] = useState<PlantillaId>('clasica');
+  const plantillaSeleccionada = formData?.plantilla ?? plantillaDefault;
+  const previewVacio = useMemo(
+    () =>
+      plantillaSeleccionada === 'reservorios2'
+        ? { ...createEmptyInforme(), plantilla: 'reservorios2' as PlantillaId }
+        : null,
+    [plantillaSeleccionada],
+  );
+
+  // «Nuevo» crea la hoja con la plantilla seleccionada; con la clásica no hay que sembrar nada.
+  const crearNuevo = useCallback(() => {
+    void createReport(
+      plantillaSeleccionada !== 'clasica' ? { plantilla: plantillaSeleccionada } : undefined,
+    );
+  }, [createReport, plantillaSeleccionada]);
+
   const downloadTemplate = useCallback(async () => {
     try {
       await runOperation(async () => {
-        const result = await informesV2Api.downloadTemplate();
+        const result = await informesV2Api.downloadTemplate(plantillaSeleccionada);
         downloadBase64Blob(result.content_b64, result.filename, result.mime);
         addToast({ message: 'Plantilla Excel descargada', type: 'success' });
       });
     } catch (error) {
       addToast({ message: errorMessage(error, 'No se pudo descargar la plantilla'), type: 'error' });
     }
-  }, [addToast, runOperation]);
+  }, [addToast, plantillaSeleccionada, runOperation]);
 
   const changeLogo = useCallback(async (side: 'left' | 'right', file: File | null) => {
     await changeLogoFile(
@@ -238,35 +264,51 @@ export default function InformesV2App() {
       title="INFORMES V2"
       appClassName="iv2-app"
       importInputRef={importInputRef}
-      onImportFile={importFile}
+      onImportFile={(file) => void importFile(file, { plantilla: plantillaSeleccionada })}
       mobileTab={mobileTab}
       onMobileTabChange={setMobileTab}
       dbTabLabel="Informes"
       tabsAriaLabel="Vista de informes v2"
+      headerCenter={
+        <SegmentedControl
+          aria-label="Plantilla"
+          className="iv2-header-switch"
+          options={PLANTILLA_OPTIONS}
+          value={plantillaSeleccionada}
+          disabled={busy}
+          onChange={(plantilla) => {
+            setPlantillaDefault(plantilla);
+            if (formData) patchForm({ ...formData, plantilla });
+          }}
+        />
+      }
       actions={
         <>
-          <Button variant="none" size="none" className="tr-secondary" disabled={busy} onClick={() => importInputRef.current?.click()}>
-            <Upload size={16} />
-            Importar
-          </Button>
-          <Button variant="none" size="none" className="tr-secondary" disabled={busy} onClick={() => void downloadTemplate()}>
-            <FileDown size={16} />
-            Plantilla
-          </Button>
+          <WithHoverTooltip label="Importar" placement="bottom">
+            <Button variant="none" size="none" className="tr-secondary tr-icon-button" aria-label="Importar" disabled={busy} onClick={() => importInputRef.current?.click()}>
+              <Upload size={16} />
+            </Button>
+          </WithHoverTooltip>
+          <WithHoverTooltip label="Descargar plantilla" placement="bottom">
+            <Button variant="none" size="none" className="tr-secondary tr-icon-button" aria-label="Descargar plantilla" disabled={busy} onClick={() => void downloadTemplate()}>
+              <FileDown size={16} />
+            </Button>
+          </WithHoverTooltip>
           <WithHoverTooltip label="Recargar" placement="bottom">
-            <Button variant="none" size="none" className="tr-secondary tr-icon-button" disabled={busy} onClick={() => void loadReports()}>
+            <Button variant="none" size="none" className="tr-secondary tr-icon-button" aria-label="Recargar" disabled={busy} onClick={() => void loadReports()}>
               <RefreshCw size={16} />
             </Button>
           </WithHoverTooltip>
           <WithHoverTooltip label="Eliminar todos" placement="bottom">
-            <Button variant="none" size="none" className="tr-danger tr-icon-button" disabled={busy || reports.length === 0} onClick={() => void clearReports()}>
+            <Button variant="none" size="none" className="tr-danger tr-icon-button" aria-label="Eliminar todos" disabled={busy || reports.length === 0} onClick={() => void clearReports()}>
               <Trash2 size={16} />
             </Button>
           </WithHoverTooltip>
-          <Button variant="none" size="none" className="tr-secondary" onClick={() => void createReport()} disabled={busy}>
-            <FilePlus2 size={16} />
-            Nuevo
-          </Button>
+          <WithHoverTooltip label="Nuevo" placement="bottom">
+            <Button variant="none" size="none" className="tr-secondary tr-icon-button" aria-label="Nuevo" onClick={crearNuevo} disabled={busy}>
+              <FilePlus2 size={16} />
+            </Button>
+          </WithHoverTooltip>
           <Button variant="none" size="none" className="tr-primary" onClick={() => void exportCurrent()} disabled={!formData || busy}>
             <Download size={16} />
             PDF
@@ -279,7 +321,7 @@ export default function InformesV2App() {
       }
     >
       <DatabasePanel reports={reports} selectedId={selectedId} onSelect={(id) => void selectReport(id)} />
-      <PreviewPanel report={formData} logoLeft={logoLeftSrc} logoRight={logoRightSrc} photos={matchedPhotos} />
+      <PreviewPanel report={formData ?? previewVacio} logoLeft={logoLeftSrc} logoRight={logoRightSrc} photos={matchedPhotos} />
       <FormPanel
         report={formData}
         hasChanges={hasChanges}

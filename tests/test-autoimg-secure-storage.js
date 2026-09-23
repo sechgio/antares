@@ -1,6 +1,7 @@
 const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');
+const Module = require('module');
 const os = require('os');
 const path = require('path');
 
@@ -24,6 +25,63 @@ function cleanup() {
 }
 
 cleanup();
+
+function testUpgradeFailureIsTelemetered({ name, namespace, payload }) {
+  // readSecureJson reescribe a v2 cuando encuentra un sobre v1 con safeStorage
+  // disponible; en pruebas headless ese electrón no existe, así que se inyecta.
+  secure.writeSecureJson(name, namespace, payload);
+
+  const appLog = require('../electron/app-log');
+  const events = [];
+  const originalAppend = appLog.appendLogEvent;
+  const originalWriteFileSync = fs.writeFileSync;
+  const originalLoad = Module._load;
+  const modulePath = require.resolve('../electron/autoimg-secure-storage');
+
+  appLog.appendLogEvent = (level, event, fields) => { events.push({ level, event, fields }); };
+  fs.writeFileSync = (written, ...args) => {
+    if (String(written).endsWith('.tmp')) throw new Error('simulated disk failure');
+    return originalWriteFileSync(written, ...args);
+  };
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: { getName: () => 'antares', getPath: () => path.join(os.tmpdir(), 'antares-autoimg') },
+        safeStorage: {
+          isEncryptionAvailable: () => true,
+          encryptString: (text) => Buffer.from(text, 'utf8'),
+          decryptString: (buf) => buf.toString('utf8'),
+        },
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    delete require.cache[modulePath];
+    const withSafeStorage = require('../electron/autoimg-secure-storage');
+    assert.deepStrictEqual(
+      withSafeStorage.readSecureJson(name, namespace),
+      payload,
+      'a failed v1 to v2 upgrade still returns the payload',
+    );
+    const failures = events.filter((entry) => entry.event === 'autoimg.storage_upgrade_failed');
+    assert.strictEqual(failures.length, 1, 'the failed upgrade is telemetered once');
+    assert.strictEqual(failures[0].level, 'WARN');
+    assert.strictEqual(failures[0].fields.outcome, 'failed');
+    assert.match(failures[0].fields.message, /simulated disk failure/);
+    assert.strictEqual(
+      secure.readSecureJson(name, namespace).access_token,
+      payload.access_token,
+      'the v1 envelope survives the failed rewrite',
+    );
+  } finally {
+    delete require.cache[modulePath];
+    Module._load = originalLoad;
+    fs.writeFileSync = originalWriteFileSync;
+    appLog.appendLogEvent = originalAppend;
+  }
+}
 
 try {
   const first = { access_token: 'access', refresh_token: 'refresh', expiry_date: 123 };
@@ -56,6 +114,12 @@ try {
 
   fs.writeFileSync(filePath, '{not-json');
   assert.strictEqual(secure.readSecureJson(filename, namespace), null, 'corrupt envelopes recover as empty state');
+
+  testUpgradeFailureIsTelemetered({
+    name: filename,
+    namespace,
+    payload: { access_token: 'upgrade-probe', refresh_token: 'refresh', expiry_date: 456 },
+  });
 
   console.log('[PASS] AutoIMG secure storage is atomic and recovers from corruption.');
 } finally {

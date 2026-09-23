@@ -174,6 +174,27 @@ describe('useReportWorkspace', () => {
     expect(mocks.addToast).toHaveBeenCalledWith({ message: 'Informe creado', type: 'success' });
   });
 
+  it('applies a seed to the created report and keeps it pending until saved', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useReportWorkspace(api));
+    await act(async () => Promise.resolve());
+
+    await act(async () => {
+      await result.current.createReport({ title: 'sembrado' });
+    });
+
+    expect(result.current.formData).toEqual({ id: 'TR-0002', title: 'sembrado' });
+    expect(result.current.hasChanges).toBe(true);
+    expect(api.update).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.saveReport();
+    });
+
+    expect(api.update).toHaveBeenCalledWith('TR-0002', { id: 'TR-0002', title: 'sembrado' });
+    expect(result.current.hasChanges).toBe(false);
+  });
+
   it('saves the current form and clears dirty state', async () => {
     const api = makeApi();
     const { result } = renderHook(() => useReportWorkspace(api));

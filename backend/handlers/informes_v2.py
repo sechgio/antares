@@ -95,16 +95,23 @@ def informes_v2_clear(params: dict[str, Any]) -> dict[str, Any]:
 def informes_v2_import_file(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.informes_v2.importer import import_reports_from_bytes
 
-    return import_into_store(_db(), params, import_reports_from_bytes, "informes importados")
+    plantilla = str(params.get("plantilla") or "").strip()
+
+    def importer(filename: str, content: bytes) -> list[dict[str, Any]]:
+        return import_reports_from_bytes(filename, content, plantilla)
+
+    return import_into_store(_db(), params, importer, "informes importados")
 
 
 @with_locale
 def informes_v2_download_template(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.informes_v2.template_xlsx import build_template_xlsx_bytes
 
-    content = build_template_xlsx_bytes()
+    plantilla = str(params.get("plantilla") or "clasica").strip()
+    is_reservorios2 = plantilla == "reservorios2"
+    content = build_template_xlsx_bytes(plantilla)
     return {
-        "filename": "informes_v2_plantilla.xlsx",
+        "filename": "informes_v2_plantilla_nueva.xlsx" if is_reservorios2 else "informes_v2_plantilla.xlsx",
         "content_b64": base64.b64encode(content).decode("ascii"),
         "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }

@@ -103,7 +103,6 @@ class LayerMeta(TypedDict, total=False):
     checked: bool
     rowsData: str
     imagesPerPage: int
-    pageIndex: int
     path: LayerPath
     autoLayout: LayerAutoLayout
     layoutSizingMain: ChildLayoutSizing

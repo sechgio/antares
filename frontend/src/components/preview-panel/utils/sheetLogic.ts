@@ -76,12 +76,6 @@ export function pickSheetToLoad(sheets: SheetRows[]): SheetRows | undefined {
   return withData[0] ?? fallback[0];
 }
 
-export interface CustomColumn {
-  id: string;
-  name: string;
-  mappedTo: string;
-}
-
 /** Validación de alta de columna personalizada; null = ok. */
 export function validateNewCustomColumn(
   name: string,

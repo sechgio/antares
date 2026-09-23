@@ -9,13 +9,14 @@ interface ManualEntryFormProps {
   manualData: ManualData;
   onChange: (field: keyof ManualData, value: string) => void;
   lonInputRef: React.RefObject<HTMLInputElement | null>;
+  geocodeEnabled: boolean;
 }
 
-export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({ manualData, onChange, lonInputRef }) => (
+export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({ manualData, onChange, lonInputRef, geocodeEnabled }) => (
   <div className="flex flex-col gap-2 mt-1 p-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
     <div className="grid grid-cols-2 gap-2">
       <div className="flex flex-col gap-1">
-        <label className={labelClass}>Latitud*</label>
+        <label className={labelClass}>{geocodeEnabled ? 'Latitud' : 'Latitud*'}</label>
         <input
           type="text"
           value={manualData.lat}
@@ -25,7 +26,9 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({ manualData, on
         />
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-[9px] text-[var(--text-muted)] uppercase">Longitud*</label>
+        <label className="text-[9px] text-[var(--text-muted)] uppercase">
+          {geocodeEnabled ? 'Longitud' : 'Longitud*'}
+        </label>
         <input
           ref={lonInputRef}
           type="text"

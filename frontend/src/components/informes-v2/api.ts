@@ -1,6 +1,6 @@
 import { api } from '../../api';
 import { createReportApi } from '../../api/reportApi';
-import type { InformeV2, InformeV2ListItem } from './types';
+import type { InformeV2, InformeV2ListItem, PlantillaId } from './types';
 
 export const informesV2Api = {
   ...createReportApi<InformeV2, InformeV2ListItem>(
@@ -14,7 +14,7 @@ export const informesV2Api = {
       importFile: api.informesV2ImportFile,
     },
   ),
-  downloadTemplate: () => api.informesV2DownloadTemplate(),
+  downloadTemplate: (plantilla: PlantillaId) => api.informesV2DownloadTemplate(plantilla),
   renderHtml: (body: {
     id?: string;
     report?: InformeV2;

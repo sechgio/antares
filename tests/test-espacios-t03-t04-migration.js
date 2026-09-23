@@ -15,7 +15,7 @@ const priority = readMigration('_espacios_tarea_priority.sql');
 const feature = readMigration('_espacios_task_activity_and_my_tasks.sql');
 
 const checks = [
-  [priority, /alter table public\.tareas add column priority text/i, 'registra la columna priority pendiente de T01'],
+  [priority, /alter table public\.tareas add column (if not exists )?priority text/i, 'registra la columna priority pendiente de T01'],
   [feature, /create table public\.tarea_comments/i, 'crea tarea_comments'],
   [feature, /create table public\.tarea_activity/i, 'crea tarea_activity'],
   [feature, /check \(length\(btrim\(body\)\) > 0\)/i, 'rechaza comentarios vacíos'],

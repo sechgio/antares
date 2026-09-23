@@ -31,6 +31,8 @@
     "stream",
     "bytes",
     "count",
+    "ok_count",
+    "err_count",
     "dropped_events",
     "rum_name",
     "rum_value",

@@ -1,6 +1,6 @@
 const { app, ipcMain } = require('electron');
 const { getMainWindow } = require('./window-manager');
-const { logInfo } = require('./app-log');
+const { appendLogEvent, logInfo } = require('./app-log');
 
 let _autoUpdater = null;
 let _updateInProgress = false;
@@ -67,6 +67,12 @@ function setupAutoUpdater(isDev) {
     ipcMain.handle('auto-update-check', async (event) => {
       const { _isAllowedIpcSender } = require('./ipc-router');
       if (!_isAllowedIpcSender(event)) {
+        appendLogEvent('WARN', 'security.rejected', {
+          component: 'electron',
+          outcome: 'rejected',
+          reason: 'untrusted_sender',
+          method: 'auto-update-check',
+        });
         return { success: false, reason: 'untrusted sender' };
       }
       logInfo('[auto-updater] (dev) Manual check requested. Mocking up-to-date.');
@@ -83,6 +89,12 @@ function setupAutoUpdater(isDev) {
     ipcMain.handle('auto-update-install', async (event) => {
       const { _isAllowedIpcSender } = require('./ipc-router');
       if (!_isAllowedIpcSender(event)) {
+        appendLogEvent('WARN', 'security.rejected', {
+          component: 'electron',
+          outcome: 'rejected',
+          reason: 'untrusted_sender',
+          method: 'auto-update-install',
+        });
         return { success: false, reason: 'untrusted sender' };
       }
       return { success: false, reason: 'No disponible en modo desarrollo' };
@@ -96,6 +108,9 @@ function setupAutoUpdater(isDev) {
 
   updater.on('checking-for-update', () => {
     logInfo('[auto-updater] buscando actualizaciones...');
+    appendLogEvent('INFO', 'updater.check_start', {
+      reason: _manualCheckRequested ? 'manual' : 'periodic',
+    });
   });
 
   updater.on('update-available', (info) => {
@@ -104,6 +119,7 @@ function setupAutoUpdater(isDev) {
     _lastLoggedPercent = -1;
     _availableVersion = info?.version || 'unknown';
     logInfo('[auto-updater] versión disponible:', info?.version);
+    appendLogEvent('INFO', 'updater.available', { message: `version=${_availableVersion}` });
     _broadcastToRenderer('auto-update-status', {
       status: 'available',
       version: _availableVersion,
@@ -113,6 +129,7 @@ function setupAutoUpdater(isDev) {
 
   updater.on('update-not-available', () => {
     logInfo('[auto-updater] no hay actualizaciones.');
+    appendLogEvent('INFO', 'updater.check', { outcome: 'success', reason: 'up_to_date' });
     if (_manualCheckRequested) {
       _manualCheckRequested = false;
       _broadcastToRenderer('auto-update-status', {
@@ -143,6 +160,10 @@ function setupAutoUpdater(isDev) {
     _updateDownloaded = true;
     _availableVersion = info?.version || _availableVersion;
     logInfo('[auto-updater] descarga lista.');
+    appendLogEvent('INFO', 'updater.downloaded', {
+      outcome: 'success',
+      message: `version=${_availableVersion}`,
+    });
     _broadcastToRenderer('auto-update-status', {
       status: 'ready',
       version: _availableVersion,
@@ -153,6 +174,11 @@ function setupAutoUpdater(isDev) {
   updater.on('error', (err) => {
     _clearUpdateInProgress();
     console.warn('[auto-updater] error:', err && err.message ? err.message : err);
+    appendLogEvent('ERROR', 'updater.error', {
+      outcome: 'failed',
+      error_code: err && err.name ? err.name : 'updater_error',
+      message: err && err.message ? err.message : String(err),
+    });
     _broadcastToRenderer('auto-update-status', {
       status: 'error',
       version: null,
@@ -164,6 +190,11 @@ function setupAutoUpdater(isDev) {
   setTimeout(() => {
     updater.checkForUpdates().catch((err) => {
       console.warn('[auto-updater] checkForUpdates falló:', err.message);
+      appendLogEvent('WARN', 'updater.error', {
+        outcome: 'failed',
+        reason: 'check_failed',
+        message: err && err.message ? err.message : String(err),
+      });
     });
   }, 8_000);
 
@@ -171,12 +202,23 @@ function setupAutoUpdater(isDev) {
     if (_updateInProgress) return;
     updater.checkForUpdates().catch((err) => {
       console.warn('[auto-updater] periodic checkForUpdates falló:', err && err.message ? err.message : err);
+      appendLogEvent('WARN', 'updater.error', {
+        outcome: 'failed',
+        reason: 'check_failed',
+        message: err && err.message ? err.message : String(err),
+      });
     });
   }, 6 * 60 * 60 * 1000);
 
   ipcMain.handle('auto-update-check', async (event) => {
     const { _isAllowedIpcSender } = require('./ipc-router');
     if (!_isAllowedIpcSender(event)) {
+      appendLogEvent('WARN', 'security.rejected', {
+        component: 'electron',
+        outcome: 'rejected',
+        reason: 'untrusted_sender',
+        method: 'auto-update-check',
+      });
       return { success: false, reason: 'untrusted sender' };
     }
     logInfo('[auto-updater] Manual check requested. In progress:', _updateInProgress);
@@ -200,11 +242,19 @@ function setupAutoUpdater(isDev) {
   ipcMain.handle('auto-update-install', async (event) => {
     const { _isAllowedIpcSender } = require('./ipc-router');
     if (!_isAllowedIpcSender(event)) {
+      appendLogEvent('WARN', 'security.rejected', {
+        component: 'electron',
+        outcome: 'rejected',
+        reason: 'untrusted_sender',
+        method: 'auto-update-install',
+      });
       return { success: false, reason: 'untrusted sender' };
     }
     if (!_updateDownloaded || !_autoUpdater) {
+      appendLogEvent('WARN', 'updater.install', { outcome: 'rejected', reason: 'update_not_ready' });
       return { success: false, reason: 'update not ready' };
     }
+    appendLogEvent('INFO', 'updater.install', { outcome: 'success' });
     _autoUpdater.quitAndInstall(false, true);
     return { success: true };
   });

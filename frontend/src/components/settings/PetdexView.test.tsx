@@ -184,7 +184,26 @@ describe('PetdexView', () => {
     expect(screen.queryByText('Custom Test Pet')).not.toBeInTheDocument();
   });
 
-  it('skips network fetch when manifest cache is still fresh', async () => {
+  it('uses a live manifest when persisting its cache fails', async () => {
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function setItem(key, value) {
+      if (key === 'petdex_manifest_cache') throw new DOMException('Quota exceeded', 'QuotaExceededError');
+      return originalSetItem.call(this, key, value);
+    });
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockPetsManifest),
+    } as Response);
+
+    render(<PetdexView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Custom Test Pet')).toBeInTheDocument();
+      expect(screen.getByText('Sincronizado con Petdex')).toBeInTheDocument();
+    });
+  });
+
+  it('serves fresh cache immediately and revalidates in background', async () => {
     localStorage.setItem(
       'petdex_manifest_cache',
       JSON.stringify({
@@ -193,13 +212,57 @@ describe('PetdexView', () => {
       }),
     );
 
-    const fetchSpy = vi.spyOn(global, 'fetch');
+    const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(mockPetsManifest),
+      } as Response),
+    );
 
     render(<PetdexView />);
 
     expect(screen.getByText('Custom Test Pet')).toBeInTheDocument();
     expect(screen.getByText('Catálogo en caché')).toBeInTheDocument();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledWith(PETDEX_MANIFEST_URL);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sincronizado con Petdex')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps the explicit refresh result when the background request finishes later', async () => {
+    localStorage.setItem(
+      'petdex_manifest_cache',
+      JSON.stringify({ cachedAt: Date.now(), pets: mockPetsManifest.pets }),
+    );
+
+    let resolveBackground!: (response: Response) => void;
+    let resolveRefresh!: (response: Response) => void;
+    const backgroundRequest = new Promise<Response>((resolve) => { resolveBackground = resolve; });
+    const refreshRequest = new Promise<Response>((resolve) => { resolveRefresh = resolve; });
+    const fetchSpy = vi.spyOn(global, 'fetch')
+      .mockImplementationOnce(() => backgroundRequest)
+      .mockImplementationOnce(() => refreshRequest);
+
+    render(<PetdexView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Recargar catálogo' }));
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    const newerManifest = {
+      pets: [{ ...mockPetsManifest.pets[0], slug: 'newer-pet', displayName: 'Newer Pet' }],
+    };
+    const response = (manifest: unknown) => ({
+      ok: true,
+      json: () => Promise.resolve(manifest),
+    } as Response);
+
+    await act(async () => { resolveRefresh(response(newerManifest)); });
+    expect(await screen.findByText('Newer Pet')).toBeInTheDocument();
+
+    await act(async () => { resolveBackground(response(mockPetsManifest)); });
+
+    expect(screen.getByText('Newer Pet')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('petdex_manifest_cache')!).pets[0].displayName).toBe('Newer Pet');
   });
 
   it('ignores expired manifest cache and fetches again', async () => {
@@ -258,6 +321,7 @@ describe('PetdexView', () => {
         'petdex_manifest_cache',
         JSON.stringify({ cachedAt: Date.now(), pets: mockPetsManifest.pets }),
       );
+      vi.spyOn(global, 'fetch').mockImplementation(() => new Promise<Response>(() => {}));
     }
 
     function installRafStub() {

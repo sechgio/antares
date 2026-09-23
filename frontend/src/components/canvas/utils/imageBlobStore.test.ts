@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applySavedDocumentKeepingImages,
   assertCanvasAssetExpansionWithinBytes,
+  assertDocumentImagesResolvable,
   clearBlobStore,
   collectImageRefsFromHistory,
   collectImageRefsFromLayers,
@@ -186,6 +187,49 @@ describe("canvas-asset refs", () => {
       doc([layer("a", "image", "canvas-asset:r1")]),
     );
     expect(out.layers[0].value).toMatch(/^blob:/);
+  });
+
+  it("hydrate lee y registra los assets de forma secuencial", async () => {
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const getAsset = vi.fn(async () => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      await Promise.resolve();
+      activeReads -= 1;
+      return { chunk: new Uint8Array([1, 2, 3]).buffer };
+    });
+    (window as { electronAPI?: unknown }).electronAPI = { canvasAssetGet: getAsset };
+
+    const out = await hydrateDocumentImages(doc([
+      layer("a", "image", "canvas-asset:r1"),
+      layer("b", "image", "canvas-asset:r2"),
+      layer("c", "image", "canvas-asset:r3"),
+    ]));
+
+    expect(maxActiveReads).toBe(1);
+    expect(out.layers.every((item) => item.value.startsWith("blob:"))).toBe(true);
+  });
+
+  it("assertDocumentImagesResolvable lee refs uno por uno", async () => {
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const getAsset = vi.fn(async () => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      await Promise.resolve();
+      activeReads -= 1;
+      return { chunk: new Uint8Array([1, 2, 3]).buffer };
+    });
+    (window as { electronAPI?: unknown }).electronAPI = { canvasAssetGet: getAsset };
+
+    await assertDocumentImagesResolvable(doc([
+      layer("a", "image", "canvas-asset:r1"),
+      layer("b", "image", "canvas-asset:r2"),
+      layer("c", "image", "canvas-asset:r3"),
+    ]));
+
+    expect(maxActiveReads).toBe(1);
   });
 
   it("hydrate strict lanza con detalle cuando el asset falla", async () => {

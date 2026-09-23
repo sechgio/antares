@@ -11,6 +11,8 @@ export {
 export const IMAGES_PER_PAGE = 6;
 export const GRID_COLUMNS = 3;
 export const GRID_ROWS = 2;
+export const MAX_TOTAL_IMAGE_BYTES = 64 * 1024 * 1024;
+export const MSG_IMAGE_TOTAL_TOO_LARGE = 'El peso total de las imágenes no puede superar 64 MB';
 
 export const DEFAULT_TITLE =
   'EVIDENCIAS FOTOGRÁFICAS DEL VOLANTEO\nCORTE DE SERVICIO';

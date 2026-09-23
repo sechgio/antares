@@ -12,9 +12,13 @@ let inflight: Promise<ReadonlyArray<CanvasPreset>> | null = null;
 export async function loadCanvasPresets(): Promise<ReadonlyArray<CanvasPreset>> {
   if (cache) return cache;
   if (!inflight) {
-    inflight = import('../presets').then((m) => {
+    const pending = import('../presets').then((m) => {
       cache = m.CANVAS_PRESETS;
       return cache;
+    });
+    inflight = pending;
+    void pending.catch(() => {
+      if (inflight === pending) inflight = null;
     });
   }
   return inflight;

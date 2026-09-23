@@ -138,6 +138,25 @@ def test_destination_scan_cache_is_lru_bounded(tmp_path, monkeypatch) -> None:
     assert str(second.resolve()) in out_path_dedupe._dest_scan_cache
 
 
+def test_destination_scan_cache_respects_byte_budget(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(out_path_dedupe, "_dest_scan_cache", out_path_dedupe.OrderedDict())
+    first = tmp_path / "first"
+    second = tmp_path / "other"
+    for dest in (first, second):
+        dest.mkdir()
+        (dest / "a.jpg").write_bytes(b"x")
+
+    assert out_path_dedupe._scan_dest_out_keys(first) == {out_path_dedupe._out_path_key(first / "a.jpg")}
+    first_bytes = next(iter(out_path_dedupe._dest_scan_cache.values()))[2]
+    monkeypatch.setattr(out_path_dedupe, "_MAX_DEST_SCAN_CACHE_BYTES", first_bytes)
+    assert out_path_dedupe._scan_dest_out_keys(second) == {out_path_dedupe._out_path_key(second / "a.jpg")}
+    assert list(out_path_dedupe._dest_scan_cache) == [str(second.resolve())]
+
+    monkeypatch.setattr(out_path_dedupe, "_MAX_DEST_SCAN_CACHE_BYTES", 1)
+    assert out_path_dedupe._scan_dest_out_keys(first) == {out_path_dedupe._out_path_key(first / "a.jpg")}
+    assert str(first.resolve()) not in out_path_dedupe._dest_scan_cache
+
+
 def test_dedupe_spans_chunks_via_shared_reserved_set() -> None:
     reserved: set[str] = set()
     chunk1 = _dedupe_chunk_out_paths(

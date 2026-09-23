@@ -31,6 +31,8 @@ _DATA_URL_RE = re.compile(r"^data:([^;,]+)?(;base64)?,(.*)$", re.DOTALL)
 _CANVAS_MANIFEST_FILENAME = "antares-canvas-manifest.json"
 _MAX_CANVAS_MANIFEST_BYTES = 2 * 1024 * 1024
 _MAX_CANVAS_MANIFEST_B64_CHARS = ((_MAX_CANVAS_MANIFEST_BYTES + 2) // 3) * 4
+_MAX_PREPARED_IMAGE_PIXELS = 40_000_000
+_IMAGE_CACHE_MAX_BYTES = 64 * 1024 * 1024
 
 _FONT_MAP: dict[str, str] = {
     "sans-serif": "helv",
@@ -310,6 +312,8 @@ class CanvasCmykRenderer:
         w_pt, h_pt = rect.width, rect.height
         w_px = max(1, int(w_pt * self.dpi / 72))
         h_px = max(1, int(h_pt * self.dpi / 72))
+        if w_px * h_px > _MAX_PREPARED_IMAGE_PIXELS:
+            raise ValueError("La imagen CMYK excede el límite de píxeles de preparación")
         src_key = _resolve_image_path(src, local_image_paths) or src
         key = (src_key, fit, w_px, h_px, self.dpi)
 
@@ -319,10 +323,17 @@ class CanvasCmykRenderer:
                 if pil_img is None:
                     return None
                 cached = _prepare_image_bytes(pil_img, fit, w_px, h_px, self.dpi)
-            self._image_cache[key] = cached
-            self._image_cache.move_to_end(key)
-            while len(self._image_cache) > self._image_cache_max:
-                self._image_cache.popitem(last=False)
+            entry_bytes = len(cached[0])
+            if entry_bytes <= self._image_cache_max_bytes:
+                self._image_cache[key] = cached
+                self._image_cache_bytes += entry_bytes
+                self._image_cache.move_to_end(key)
+                while (
+                    len(self._image_cache) > self._image_cache_max
+                    or self._image_cache_bytes > self._image_cache_max_bytes
+                ):
+                    _, evicted = self._image_cache.popitem(last=False)
+                    self._image_cache_bytes -= len(evicted[0])
 
         cmyk_bytes, cw, ch = cached
         if fit == "contain":
@@ -356,6 +367,8 @@ class CanvasCmykRenderer:
         self.pair_context_pages = pair_context_pages
         self._image_cache: OrderedDict[tuple[Any, ...], tuple[bytes, int, int]] = OrderedDict()
         self._image_cache_max = 128
+        self._image_cache_max_bytes = _IMAGE_CACHE_MAX_BYTES
+        self._image_cache_bytes = 0
         self._layer_renderers: dict[str, Callable[[_LayerRenderCall], None]] = {
             "rect": self._render_rect_frame,
             "frame": self._render_rect_frame,

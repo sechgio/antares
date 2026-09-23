@@ -246,12 +246,14 @@ def test_dispatch_uses_heavy_scheduler_for_heavy_methods(monkeypatch) -> None:
 
 
 def test_maybe_log_ipc_timing_logs_slow_handlers(monkeypatch) -> None:
+    import logging as _logging
+
     logged: list[tuple] = []
     monkeypatch.delenv("ANTARES_IPC_TELEMETRY", raising=False)
     monkeypatch.setattr(
-        backend_main.logger,
-        "log",
-        lambda level, msg, *args: logged.append((level, msg % args if args else msg)),
+        backend_main,
+        "log_event",
+        lambda _logger, level, event, **fields: logged.append((level, event, fields)),
     )
 
     backend_main._maybe_log_ipc_timing("canvas_save", 100.0, ok=True)
@@ -259,22 +261,78 @@ def test_maybe_log_ipc_timing_logs_slow_handlers(monkeypatch) -> None:
 
     backend_main._maybe_log_ipc_timing("canvas_save", 6_000.0, ok=True)
     assert len(logged) == 1
-    assert "canvas_save" in logged[0][1]
-    assert "elapsed_ms" in logged[0][1]
+    level, event, fields = logged[0]
+    assert level == _logging.WARNING
+    assert event == "backend.ipc.timing"
+    assert fields["method"] == "canvas_save"
+    assert fields["duration_ms"] == 6000
+    assert fields["outcome"] == "success"
+    assert fields["reason"] == "slow"
+    assert "elapsed_ms" in fields["message"]
 
 
 def test_maybe_log_ipc_timing_verbose_logs_fast_handlers(monkeypatch) -> None:
     logged: list[tuple] = []
     monkeypatch.setenv("ANTARES_IPC_TELEMETRY", "1")
     monkeypatch.setattr(
-        backend_main.logger,
-        "log",
-        lambda level, msg, *args: logged.append((level, msg % args if args else msg)),
+        backend_main,
+        "log_event",
+        lambda _logger, level, event, **fields: logged.append((level, event, fields)),
     )
 
     backend_main._maybe_log_ipc_timing("version", 2.0, ok=True)
     assert len(logged) == 1
-    assert "version" in logged[0][1]
+    _level, event, fields = logged[0]
+    assert event == "backend.ipc.timing"
+    assert fields["method"] == "version"
+    assert fields["outcome"] == "success"
+    assert "reason" not in fields
+
+
+def test_heartbeat_loop_emits_backend_heartbeat(monkeypatch) -> None:
+    logged: list[tuple] = []
+    monkeypatch.setattr(
+        backend_main,
+        "log_event",
+        lambda _logger, level, event, **fields: logged.append((level, event, fields)),
+    )
+    monkeypatch.setattr(backend_main, "_heartbeat_interval_s", lambda: 0.01)
+    monkeypatch.setattr(backend_main, "_heartbeat_process_snapshot", lambda: (12345, 7))
+
+    class FakeScheduler:
+        def metrics(self) -> dict:
+            return {
+                "light_active": 1,
+                "light_queued": 0,
+                "heavy_active": 0,
+                "heavy_queued": 2,
+                "light_rejected": 0,
+                "heavy_rejected": 1,
+                "memory_pressure": True,
+                "system_ram_available_mb": 512,
+            }
+
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=backend_main._heartbeat_loop, args=(stop, FakeScheduler()), daemon=True
+    )
+    thread.start()
+    time.sleep(0.05)
+    stop.set()
+    thread.join(timeout=2)
+
+    assert logged, "heartbeat debe emitir backend.heartbeat"
+    import logging as _logging
+
+    level, event, fields = logged[0]
+    assert event == "backend.heartbeat"
+    assert level == _logging.WARNING
+    assert fields["bytes"] == 12345
+    assert fields["count"] == 7
+    assert fields["reason"] == "memory_pressure"
+    compact = json.loads(fields["message"])
+    assert compact["memory_pressure"] is True
+    assert compact["heavy_queued"] == 2
 
 
 def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:

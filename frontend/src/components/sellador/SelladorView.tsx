@@ -29,7 +29,7 @@ import {
 import PositionPanel from "./PositionPanel";
 import StampPlacementEditor from "./StampPlacementEditor";
 import PdfPagePreview from "./PdfPagePreview";
-import { getPdfPageSize, loadPdfDocument } from "./pdfjs";
+import { loadPdfDocument } from "./pdfjs";
 import { renderOtherPagesPreview } from "./previewRender";
 import {
   buildResolvedPlacements,
@@ -89,6 +89,7 @@ export default function SelladorView() {
   const [pagePreviews, setPagePreviews] = useState<
     Array<{ pageNum: number; url: string; stampCount: number }>
   >([]);
+  const [visibleOtherPages, setVisibleOtherPages] = useState<number[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(900);
@@ -148,6 +149,7 @@ export default function SelladorView() {
   );
 
   const primaryRect = positions[0]?.rect ?? null;
+  const pagePreviewByNumber = new Map(pagePreviews.map((page) => [page.pageNum, page]));
   const canApply =
     hasPdfSource &&
     hasStampSource &&
@@ -309,8 +311,16 @@ export default function SelladorView() {
 
           const b64 = await fileToBase64(file);
           const pdf = await loadPdfDocument(b64);
-          const size = await getPdfPageSize(b64);
-          await applyPdfMetadata(file, pdf.numPages, size, null, b64);
+          let pageCount: number;
+          let size: { width: number; height: number };
+          try {
+            pageCount = pdf.numPages;
+            const viewport = (await pdf.getPage(1)).getViewport({ scale: 1 });
+            size = { width: viewport.width, height: viewport.height };
+          } finally {
+            await pdf.destroy();
+          }
+          await applyPdfMetadata(file, pageCount, size, null, b64);
         } finally {
           inspectHandle?.release();
         }
@@ -384,15 +394,59 @@ export default function SelladorView() {
     [stampPreviewUrl],
   );
 
+  const canRenderOtherPages = hasPdfSource && !!primaryRect && pageCount > 1 && !!pageSize;
+
   useEffect(() => {
-    if (!hasPdfSource || !primaryRect || pageCount <= 0 || !pageSize) {
+    if (!canRenderOtherPages) {
+      setVisibleOtherPages([]);
+      return;
+    }
+
+    const root = previewRef.current;
+    if (!root) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setVisibleOtherPages(Array.from({ length: pageCount - 1 }, (_, index) => index + 2));
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      setVisibleOtherPages((current) => {
+        const next = new Set(current);
+        for (const entry of entries) {
+          const pageNum = Number((entry.target as HTMLElement).dataset.otherPagePreview);
+          if (!Number.isFinite(pageNum)) continue;
+          if (entry.isIntersecting) next.add(pageNum);
+          else next.delete(pageNum);
+        }
+        const sorted = [...next].sort((a, b) => a - b);
+        return sorted.length === current.length && sorted.every((page, index) => page === current[index])
+          ? current
+          : sorted;
+      });
+    }, { root, rootMargin: "500px 0px" });
+
+    root.querySelectorAll<HTMLElement>("[data-other-page-preview]").forEach((page) => {
+      observer.observe(page);
+    });
+    return () => observer.disconnect();
+  }, [canRenderOtherPages, pageCount]);
+
+  useEffect(() => {
+    if (!canRenderOtherPages) {
       setPagePreviews([]);
+      setPreviewLoading(false);
+      return;
+    }
+
+    const pageNumbers = visibleOtherPages.filter((pageNum) => pageNum >= 2 && pageNum <= pageCount);
+    setPagePreviews((current) => current.filter((page) => pageNumbers.includes(page.pageNum)));
+    if (pageNumbers.length === 0) {
+      setPreviewLoading(false);
       return;
     }
 
     let cancelled = false;
-    const isInitialOtherPages = pagePreviews.length === 0;
-    if (isInitialOtherPages) setPreviewLoading(true);
+    setPreviewLoading(true);
 
     renderOtherPagesPreview({
       pdfPath,
@@ -400,6 +454,7 @@ export default function SelladorView() {
       pdfFile,
       sourceRevision: pdfSourceRevision,
       pageCount,
+      pageNumbers,
       containerW: debouncedPreviewWidth,
       stampUrl: stampPreviewUrl,
       placementsByPage,
@@ -429,7 +484,7 @@ export default function SelladorView() {
   }, [
     addToast,
     assignmentCounts,
-    hasPdfSource,
+    canRenderOtherPages,
     pageCount,
     pageSize,
     pdfBase64,
@@ -439,7 +494,7 @@ export default function SelladorView() {
     debouncedPreviewWidth,
     stampPreviewUrl,
     placementsByPage,
-    primaryRect,
+    visibleOtherPages,
   ]);
 
   const updatePositionRect = useCallback((index: number, rect: StampRect) => {
@@ -781,39 +836,45 @@ export default function SelladorView() {
                       <RefreshCw size={12} className="animate-spin" />
                     ) : null}
                   </div>
-                  {pagePreviews.map((page) => (
-                    <div
-                      key={page.pageNum}
-                      className="overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-white"
-                    >
-                      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-[11px]">
-                        <span>Página {page.pageNum}</span>
-                        {page.stampCount > 0 ? (
-                          <span className="rounded-full bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] px-2 py-0.5 text-[var(--accent-primary)]">
-                            {page.stampCount} sello
-                            {page.stampCount > 1 ? "s" : ""}
-                          </span>
-                        ) : (
-                          <span className="text-[var(--text-muted)]">
-                            Sin sello
-                          </span>
-                        )}
-                      </div>
-                      {page.url ? (
-                        <img
-                          src={page.url}
-                          alt={`Página ${page.pageNum}`}
-                          loading="lazy"
-                          decoding="async"
-                          className="block w-full"
-                        />
-                      ) : previewLoading ? (
-                        <div className="flex items-center justify-center py-16 text-[var(--text-muted)]">
-                          <Loader2 size={16} className="animate-spin" />
+                  {Array.from({ length: pageCount - 1 }, (_, index) => index + 2).map((pageNum) => {
+                    const page = pagePreviewByNumber.get(pageNum);
+                    const pageStampCount = assignmentCounts.get(pageNum) ?? 0;
+                    const isVisible = visibleOtherPages.includes(pageNum);
+                    return (
+                      <div
+                        key={pageNum}
+                        data-other-page-preview={pageNum}
+                        className="overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-white"
+                      >
+                        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-[11px]">
+                          <span>Página {pageNum}</span>
+                          {pageStampCount > 0 ? (
+                            <span className="rounded-full bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] px-2 py-0.5 text-[var(--accent-primary)]">
+                              {pageStampCount} sello
+                              {pageStampCount > 1 ? "s" : ""}
+                            </span>
+                          ) : (
+                            <span className="text-[var(--text-muted)]">
+                              Sin sello
+                            </span>
+                          )}
                         </div>
-                      ) : null}
-                    </div>
-                  ))}
+                        {page?.url ? (
+                          <img
+                            src={page.url}
+                            alt={`Página ${pageNum}`}
+                            loading="lazy"
+                            decoding="async"
+                            className="block w-full"
+                          />
+                        ) : isVisible && previewLoading ? (
+                          <div className="flex items-center justify-center py-16 text-[var(--text-muted)]">
+                            <Loader2 size={16} className="animate-spin" />
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>

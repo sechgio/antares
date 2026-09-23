@@ -124,4 +124,21 @@ describe('frontend observability', () => {
       reason: 'lww_rpc_v2_missing',
     }, 'WARN');
   });
+
+  it('forwards requestId as request_id on renderer events', () => {
+    const reportRendererEvent = vi.fn();
+    window.electronAPI = { ...window.electronAPI!, reportRendererEvent };
+
+    reportFrontendEvent({
+      event: 'canvas.cloud_sync',
+      outcome: 'success',
+      requestId: 'req-sync-42',
+    });
+
+    expect(reportRendererEvent).toHaveBeenCalledWith('canvas.cloud_sync', {
+      view: 'canvas',
+      outcome: 'success',
+      request_id: 'req-sync-42',
+    }, 'INFO');
+  });
 });

@@ -120,6 +120,29 @@ try {
   assert.strictEqual(structuredEvent.outcome, 'degraded', 'evento conserva outcome');
   assert.strictEqual(structuredEvent.duration_ms, 321, 'evento conserva duración');
 
+  backendSpawner._recordStderr(
+    Buffer.from(`${JSON.stringify({
+      event: 'job.finished',
+      level: 'INFO',
+      job_id: 'job-9',
+      method: 'process_start',
+      outcome: 'partial',
+      duration_ms: 1200,
+      ok_count: 7,
+      err_count: 2,
+      bytes: 987654,
+      count: 12,
+    })}\n`),
+    5679,
+  );
+  await appLog.flushLogQueue();
+  const jobEvent = readEvents().find((event) => event.event === 'job.finished');
+  assert(jobEvent, 'job.finished del backend llega al sink durable');
+  assert.strictEqual(jobEvent.ok_count, 7, 'el spawner conserva ok_count entero');
+  assert.strictEqual(jobEvent.err_count, 2, 'el spawner conserva err_count entero');
+  assert.strictEqual(jobEvent.bytes, 987654, 'el spawner conserva bytes (heartbeat RSS)');
+  assert.strictEqual(jobEvent.count, 12, 'el spawner conserva count (heartbeat threads)');
+
   const humanLog = fs.readdirSync(appLog.getLogsDir())
     .find((name) => /\.log$/.test(name));
   assert(humanLog, 'se conserva el log humano existente');

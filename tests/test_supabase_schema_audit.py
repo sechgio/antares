@@ -509,3 +509,26 @@ def test_config_toml_exposes_only_public_schema() -> None:
     assert m, "config.toml debe fijar [api].schemas"
     exposed = {s.strip().strip('"').strip("'") for s in m.group(1).split(",") if s.strip()}
     assert exposed == {"public"}, f"schemas expuestos por PostgREST: {sorted(exposed)}"
+
+
+def test_active_user_requires_an_existing_enabled_profile() -> None:
+    definition = STATE.functions[("private", "is_active_user", ())].lower()
+    pattern = (
+        r"select\s+exists\s*\(\s*select\s+1\s+from\s+public\.user_profiles\s+"
+        r"where\s+user_id\s*=\s*auth\.uid\(\)\s+and\s+is_disabled\s*=\s*false"
+    )
+    assert re.search(
+        pattern,
+        definition,
+    ), "private.is_active_user debe denegar JWT cuyo perfil fue eliminado o deshabilitado"
+
+
+def test_deleted_profile_realtime_event_can_be_filtered_by_user_id() -> None:
+    migrations = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(MIGRATIONS_DIR.glob("*.sql"))
+    )
+    assert re.search(
+        r"alter\s+table\s+public\.user_profiles\s+replica\s+identity\s+full\s*;",
+        migrations,
+        re.IGNORECASE,
+    ), "DELETE de user_profiles necesita REPLICA IDENTITY FULL para soportar el filtro realtime por usuario"

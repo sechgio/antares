@@ -180,7 +180,6 @@ export interface LayerMeta {
   checked?: boolean;
   rowsData?: string;
   imagesPerPage?: number;
-  pageIndex?: number;
   path?: LayerPath;
   autoLayout?: LayerAutoLayout;
   layoutSizingMain?: ChildLayoutSizing;
@@ -327,7 +326,25 @@ function normalizeGuides(raw: unknown, lastPage: number): CanvasGuide[] {
   return guides;
 }
 
+function findParentCycleBreaks(layers: CanvasLayer[]): Set<string> {
+  const parentOf = new Map(layers.map((l) => [l.id, l.parentId] as const));
+  const visited = new Set<string>(), cycleNodes = new Set<string>();
+  for (const layer of layers) {
+    if (visited.has(layer.id) || !layer.parentId) { visited.add(layer.id); continue; }
+    const path = new Set<string>();
+    let cursor: string | undefined = layer.id;
+    while (cursor && parentOf.has(cursor) && !visited.has(cursor)) {
+      if (path.has(cursor)) { cycleNodes.add(cursor); break; }
+      path.add(cursor);
+      cursor = parentOf.get(cursor);
+    }
+    for (const id of path) visited.add(id);
+  }
+  return cycleNodes;
+}
+
 export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
+  const parentCycleNodes = findParentCycleBreaks(doc.layers);
   const needsUpgrade = doc.version !== DOCUMENT_VERSION;
   const needsRepair =
     !doc.pages?.length ||
@@ -345,7 +362,17 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
     const treeNeedsRepair = doc.layers.some(
       (layer) => layer.parentId && (layer.parentId === layer.id || !layerIds.has(layer.parentId)),
     );
-    if (!clampNeeded && !treeNeedsRepair) {
+    const opsNeedRepair = doc.layers.some(
+      (layer) =>
+        layer.meta?.ops?.some(
+          (entry) =>
+            !entry ||
+            typeof entry !== 'object' ||
+            entry.layerId === layer.id ||
+            !layerIds.has(entry.layerId),
+        ),
+    );
+    if (!clampNeeded && !treeNeedsRepair && !opsNeedRepair && !parentCycleNodes.size) {
       return {
         ...doc,
         guides: normalizeGuides(doc.guides, lastPage),
@@ -389,6 +416,29 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
       return { ...layer, parentId: undefined };
     }
     return layer;
+  });
+
+  if (parentCycleNodes.size) {
+    layers = layers.map((layer) =>
+      parentCycleNodes.has(layer.id) ? { ...layer, parentId: undefined } : layer,
+    );
+  }
+
+  layers = layers.map((layer) => {
+    const ops = layer.meta?.ops;
+    if (!ops?.length) return layer;
+    const kept = ops.filter(
+      (entry) =>
+        !!entry &&
+        typeof entry === 'object' &&
+        entry.layerId !== layer.id &&
+        validIds.has(entry.layerId),
+    );
+    if (kept.length === ops.length) return layer;
+    const meta = { ...layer.meta };
+    if (kept.length) meta.ops = kept;
+    else delete meta.ops;
+    return { ...layer, meta };
   });
 
   return {
