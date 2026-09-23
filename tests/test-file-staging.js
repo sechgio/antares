@@ -69,6 +69,27 @@ async function main() {
   }
 
   {
+    const session5 = createStagedSession({ name: 'ajeno.xlsx', size: 4, webContentsId: 1 });
+    await appendStagedChunk(session5.token, Buffer.from('data'), 1);
+    const { handleDialogCall } = require('../electron/dialog-handlers.js');
+
+    await assert.rejects(
+      () => handleDialogCall(
+        'file_staged_abort',
+        { token: session5.token },
+        {},
+        { webContents: { id: 2 } },
+      ),
+      /staged session window mismatch/,
+      'otra ventana no puede abortar una sesión staged ajena',
+    );
+    assert.ok(fs.existsSync(session5.tmpPath), 'el archivo staged de la otra ventana sigue intacto');
+
+    await abortStagedSession(session5.token, 1);
+    assert.ok(!fs.existsSync(session5.tmpPath), 'la ventana dueña sí puede abortar su sesión');
+  }
+
+  {
     const { createFileCapability, resolveCapability, revokeCapability } = require('../electron/file-capabilities.js');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-b5-'));
     try {

@@ -5,6 +5,33 @@ import Artboard from '../editor/Artboard';
 import { createFrameRectCache } from '../editor/frameRectCache';
 import { createEmptyDocument, type CanvasLayer } from '../types';
 
+const { applyLayerDomGeometrySpy, collectReferenceGapsSpy } = vi.hoisted(() => ({
+  applyLayerDomGeometrySpy: vi.fn(),
+  collectReferenceGapsSpy: vi.fn(),
+}));
+
+vi.mock('../ops/guides', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../ops/guides')>();
+  return {
+    ...actual,
+    collectReferenceGaps: (...args: Parameters<typeof actual.collectReferenceGaps>) => {
+      collectReferenceGapsSpy(...args);
+      return actual.collectReferenceGaps(...args);
+    },
+  };
+});
+
+vi.mock('../ops/imperativeLayerDom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../ops/imperativeLayerDom')>();
+  return {
+    ...actual,
+    applyLayerDomGeometry: (...args: Parameters<typeof actual.applyLayerDomGeometry>) => {
+      applyLayerDomGeometrySpy(...args);
+      actual.applyLayerDomGeometry(...args);
+    },
+  };
+});
+
 describe('createFrameRectCache', () => {
   it('re-reads getBoundingClientRect when zoomRef changes mid-gesture', () => {
     const frame = document.createElement('div');
@@ -28,6 +55,8 @@ describe('Artboard drag gestures', () => {
   let nextId: number;
 
   beforeEach(() => {
+    applyLayerDomGeometrySpy.mockClear();
+    collectReferenceGapsSpy.mockClear();
     frames = new Map();
     nextId = 1;
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
@@ -146,6 +175,48 @@ describe('Artboard drag gestures', () => {
     const moved = committed.find((l) => l.id === layer.id)!;
     expect(moved.cssVars['--translate-x']).toBe('60mm');
     expect(moved.cssVars['--translate-y']).toBe('100mm');
+  });
+
+  it('prepares equal-gap references only after a drag starts and only once', () => {
+    const layer = createLayer('rect');
+    const { container } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    expect(collectReferenceGapsSpy).not.toHaveBeenCalled();
+
+    fireEvent.pointerMove(window, { clientX: 101, clientY: 100 });
+    act(() => tick());
+    expect(collectReferenceGapsSpy).not.toHaveBeenCalled();
+
+    fireEvent.pointerMove(window, { clientX: 100 + 10 * mm, clientY: 100 });
+    act(() => tick());
+    expect(collectReferenceGapsSpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerMove(window, { clientX: 100 + 12 * mm, clientY: 100 });
+    act(() => tick());
+    expect(collectReferenceGapsSpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerUp(window, { clientX: 100 + 12 * mm, clientY: 100 });
+  });
+
+  it('does not reapply layer geometry for overlay-only updates during a move', () => {
+    const layer = createLayer('rect');
+    const { container } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 10 * mm, clientY: 100 });
+    act(() => tick());
+    expect(applyLayerDomGeometrySpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerMove(window, { clientX: 100 + 20 * mm, clientY: 100 });
+    act(() => tick());
+    expect(applyLayerDomGeometrySpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerUp(window, { clientX: 100 + 20 * mm, clientY: 100 });
   });
 
   it('suelta el baseline del gesto y revierte el preview cuando se cancela el drag', () => {

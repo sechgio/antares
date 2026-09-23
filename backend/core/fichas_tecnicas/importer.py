@@ -30,7 +30,9 @@ def _normalize_header(value: Any) -> str:
 
 def parse_csv_bytes(content: bytes) -> list[dict[str, Any]]:
     decoded: str | None = None
-    for encoding in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
+    # cp1252 va antes que latin-1: latin-1 decodifica cualquier byte y se quedaría
+    # con los caracteres de control en lugar de la raya y las comillas tipográficas.
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
         try:
             decoded = content.decode(encoding)
             break

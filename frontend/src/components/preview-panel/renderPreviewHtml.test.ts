@@ -71,6 +71,20 @@ describe("renderPreviewHtml — template custom jinja", () => {
     expect(renderPreviewHtml({ customTemplate: tNoElse })).not.toContain("R{%");
   });
 
+  it("un '{%' literal en el texto no borra el contenido hasta la siguiente etiqueta", () => {
+    const t = tpl(
+      "<p>Descuento 20{% menor</p>{% if customColumns|length > 0 %}<span>IMPORTANTE</span>{% endif %}<p>FIN</p>",
+    );
+    const html = renderPreviewHtml({
+      customTemplate: t,
+      customColumns: [{ id: "c1", name: "Columna" }],
+    });
+    expect(html).toContain("20{% menor");
+    expect(html).toContain("IMPORTANTE");
+    expect(html).toContain("FIN");
+    expect(html).not.toContain("{% endif %}");
+  });
+
   it("if report.images|length == N / != / > / >= / < / elif", () => {
     const images = [img("a.png"), img("b.png")];
     const t = tpl(

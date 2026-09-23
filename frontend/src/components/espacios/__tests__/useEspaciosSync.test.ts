@@ -441,6 +441,27 @@ describe('useEspaciosSync', () => {
     expect(result.current.tareas).toEqual([tareaB]);
   });
 
+  it('addTarea con proyecto destino explícito crea allí y no toca la vista activa', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+
+    await act(async () => {
+      result.current.setActiveEspacioId('esp-b');
+    });
+    await waitFor(() => expect(result.current.activeProyectoId).toBe('proy-b'));
+
+    createTarea.mockResolvedValue({ ...tareaA, id: 'tarea-a2' });
+    fetchTareas.mockClear();
+
+    await act(async () => {
+      await result.current.addTarea({ title: 'Tarea A' }, 'proy-a');
+    });
+
+    expect(createTarea).toHaveBeenCalledWith('proy-a', { title: 'Tarea A' }, 'user-1');
+    expect(fetchTareas).not.toHaveBeenCalled();
+    expect(result.current.tareas).toEqual([tareaB]);
+  });
+
   it('applies realtime DELETE events using the primary key carried in `old`', async () => {
     const { result } = renderHook(() => useEspaciosSync('user-1'));
     await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));

@@ -13,8 +13,15 @@ vi.mock('../../espacios/utils/focusTarget', () => ({
   writeEspaciosFocusTarget: vi.fn(),
 }));
 
+let authUser: { id: string } | null = { id: 'u1' };
+
+vi.mock('../../../auth/AuthContext', () => ({
+  useAuth: () => ({ user: authUser }),
+}));
+
 describe('TaskNotificationsBell', () => {
   beforeEach(() => {
+    authUser = { id: 'u1' };
     refresh.mockReset();
     useDueNotifications.mockReturnValue({
       items: [
@@ -62,5 +69,14 @@ describe('TaskNotificationsBell', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Ir a Espacios/i }));
 
     expect(onOpenEspacios).toHaveBeenCalledTimes(1);
+  });
+
+  it('activa las notificaciones solo con sesión iniciada', () => {
+    render(<TaskNotificationsBell onOpenEspacios={vi.fn()} />);
+    expect(useDueNotifications).toHaveBeenLastCalledWith(true);
+
+    authUser = null;
+    render(<TaskNotificationsBell onOpenEspacios={vi.fn()} />);
+    expect(useDueNotifications).toHaveBeenLastCalledWith(false);
   });
 });

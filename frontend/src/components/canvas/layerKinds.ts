@@ -1,10 +1,10 @@
 import type { CanvasLayerType } from './types';
 
-export const TEXTUAL_LAYER_TYPES = ['text', 'field'] as const satisfies readonly CanvasLayerType[];
-export const AUTO_LAYOUT_CONTAINER_TYPES = ['frame', 'group', 'component'] as const satisfies readonly CanvasLayerType[];
-export const NESTING_LAYER_TYPES = ['group', 'grid', 'frame', 'component'] as const satisfies readonly CanvasLayerType[];
-export const IMAGE_LAYER_TYPES = ['image', 'logo', 'imageSlot'] as const satisfies readonly CanvasLayerType[];
-export const VECTOR_SHAPE_LAYER_TYPES = [
+const TEXTUAL_LAYER_TYPES = ['text', 'field'] as const satisfies readonly CanvasLayerType[];
+const AUTO_LAYOUT_CONTAINER_TYPES = ['frame', 'group', 'component'] as const satisfies readonly CanvasLayerType[];
+const NESTING_LAYER_TYPES = ['group', 'grid', 'frame', 'component'] as const satisfies readonly CanvasLayerType[];
+const IMAGE_LAYER_TYPES = ['image', 'logo', 'imageSlot'] as const satisfies readonly CanvasLayerType[];
+const VECTOR_SHAPE_LAYER_TYPES = [
   'rect',
   'ellipse',
   'arrow',

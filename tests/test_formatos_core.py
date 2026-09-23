@@ -183,6 +183,11 @@ def test_add_uploaded_format_rejects_too_many_pages(catalog_env, monkeypatch) ->
         formatos.add_uploaded_format("n", "a.pdf", _minimal_pdf(pages=2), persisted=False)
 
 
+def test_add_uploaded_format_rejects_pdf_sin_paginas(catalog_env) -> None:
+    with pytest.raises(ValueError, match="páginas"):
+        formatos.add_uploaded_format("n", "a.pdf", _minimal_pdf(pages=0), persisted=False)
+
+
 def test_generate_pdf_validation_chain(catalog_env) -> None:
     with pytest.raises(ValueError, match="no encontrado"):
         formatos.generate_pdf("nope", 1, 1)

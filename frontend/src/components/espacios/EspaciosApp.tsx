@@ -380,7 +380,7 @@ export default function EspaciosApp() {
                   start_date: tarea.start_date,
                   due_date: tarea.due_date,
                   sort_order: tarea.sort_order,
-                }).catch((err) => {
+                }, tarea.proyecto_id).catch((err) => {
                   addToastRef.current({
                     message: errorMessage(err, 'No se pudo restaurar la tarea'),
                     type: 'error',
