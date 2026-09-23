@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractPdfDocument } from '../pdfExtract';
+import { DEFAULT_PDF_IMPORT_LIMITS } from '../pdfImportLimits';
 
 const pdfjsMock = vi.hoisted(() => ({
   ensurePdfJs: vi.fn(),
@@ -111,6 +112,45 @@ describe('extractPdfDocument', () => {
         expect.objectContaining({ reason: 'limit-exceeded', count: 1 }),
       ]),
     );
+  });
+
+  it('sets a bounded document-wide operator budget', () => {
+    expect(DEFAULT_PDF_IMPORT_LIMITS.maxOperatorsTotal).toBe(500_000);
+  });
+
+  it('rejects a document that exceeds the aggregate operator budget and releases its pages', async () => {
+    const page1 = {
+      ...makePage(1),
+      getOperatorList: vi.fn(async () => ({ fnArray: [1, 2], argsArray: [[], []] })),
+    };
+    const page2 = {
+      ...makePage(2),
+      getOperatorList: vi.fn(async () => ({ fnArray: [1, 2], argsArray: [[], []] })),
+    };
+    const pages = [page1, page2];
+    const pdf = {
+      numPages: pages.length,
+      getPage: vi.fn(async (pageNumber: number) => pages[pageNumber - 1]),
+      getAttachments: vi.fn(async () => null),
+      cleanup: vi.fn(async () => undefined),
+      destroy: vi.fn(async () => undefined),
+    };
+    pdfjsMock.ensurePdfJs.mockResolvedValue({
+      OPS: { rectangle: 1, fill: 2 },
+      getDocument: vi.fn(() => ({ promise: Promise.resolve(pdf) })),
+    });
+
+    await expect(
+      extractPdfDocument(new Uint8Array([1]), {
+        limits: { maxOperatorsPerPage: 10, maxOperatorsTotal: 3 },
+      }),
+    ).rejects.toThrow('El PDF supera el límite total de 3 operadores');
+
+    expect(page2.getTextContent).not.toHaveBeenCalled();
+    expect(page1.cleanup).toHaveBeenCalledOnce();
+    expect(page2.cleanup).toHaveBeenCalledOnce();
+    expect(pdf.cleanup).toHaveBeenCalledOnce();
+    expect(pdf.destroy).toHaveBeenCalledOnce();
   });
 
   it('resolves PDF.js image objects with their owning object store', async () => {

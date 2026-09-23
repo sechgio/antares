@@ -15,6 +15,7 @@ function run() {
     XDG_DATA_HOME: process.env.XDG_DATA_HOME,
     HTTPS_PROXY: process.env.HTTPS_PROXY,
     SSL_CERT_FILE: process.env.SSL_CERT_FILE,
+    ANTARES_IPC_TELEMETRY: process.env.ANTARES_IPC_TELEMETRY,
   };
 
   process.env.ANTARES_MAP_PROVIDER = 'osm';
@@ -28,10 +29,11 @@ function run() {
   process.env.UNRELATED_SECRET_TOKEN = 'should-not-appear';
 
   try {
+    delete process.env.ANTARES_IPC_TELEMETRY;
     const packaged = _buildChildEnv(false);
     assert(packaged.PYTHONIOENCODING === 'utf-8', 'forces PYTHONIOENCODING=utf-8');
     assert(packaged.PYTHONUTF8 === '1', 'forces PYTHONUTF8=1');
-    assert(packaged.ANTARES_IPC_TELEMETRY === '1', 'forces ANTARES_IPC_TELEMETRY=1 (sampled telemetry)');
+    assert(packaged.ANTARES_IPC_TELEMETRY === undefined, 'does not force verbose IPC telemetry');
     assert(packaged.ANTARES_MAP_PROVIDER === 'osm', 'passes ANTARES_MAP_PROVIDER');
     assert(packaged.ANTARES_MAPS_API_KEY === 'test-key', 'passes ANTARES_MAPS_API_KEY');
     assert(packaged.COMSPEC === process.env.COMSPEC, 'passes COMSPEC');
@@ -45,10 +47,11 @@ function run() {
     assert(packaged.LOCALAPPDATA !== undefined || packaged.HOME !== undefined || packaged.USERPROFILE !== undefined,
       'passes at least one user-data root');
 
+    process.env.ANTARES_IPC_TELEMETRY = '1';
     const dev = _buildChildEnv(true);
     assert(dev.PYTHONPATH === 'C:\\should-not-reach-frozen', 'dev child passes PYTHONPATH');
     assert(dev.VIRTUAL_ENV === 'C:\\venv-dev-only', 'dev child passes VIRTUAL_ENV');
-    assert(dev.ANTARES_IPC_TELEMETRY === '1', 'dev child also forces ANTARES_IPC_TELEMETRY=1');
+    assert(dev.ANTARES_IPC_TELEMETRY === '1', 'dev child preserves an explicit verbose IPC telemetry opt-in');
   } finally {
     for (const [k, v] of Object.entries(prev)) {
       if (v === undefined) delete process.env[k];

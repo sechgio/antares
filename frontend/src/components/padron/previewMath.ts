@@ -1,4 +1,4 @@
-import { chunkArray, clamp } from "./pdfHelpers";
+import { clamp } from "./pdfHelpers";
 import type { Orientation, OutputFormat } from "./data";
 
 export const MAX_PREVIEW_PAGES = 5;
@@ -86,5 +86,3 @@ export function folioLabelTotal(
     ? Math.max(...physicalFolios)
     : activePagesCount;
 }
-
-export { chunkArray };

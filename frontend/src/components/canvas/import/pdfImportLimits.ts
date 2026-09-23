@@ -2,6 +2,7 @@ export interface PdfImportLimits {
   maxFileBytes: number;
   maxPages: number;
   maxOperatorsPerPage: number;
+  maxOperatorsTotal: number;
   maxTextItemsPerPage: number;
   maxImagesPerPage: number;
   maxLayersPerPage: number;
@@ -14,6 +15,7 @@ export const DEFAULT_PDF_IMPORT_LIMITS: Readonly<PdfImportLimits> = Object.freez
   maxFileBytes: 100 * 1024 * 1024,
   maxPages: 50,
   maxOperatorsPerPage: 200_000,
+  maxOperatorsTotal: 500_000,
   maxTextItemsPerPage: 2_000,
   maxImagesPerPage: 100,
   maxLayersPerPage: 400,
@@ -26,6 +28,7 @@ const INTEGER_KEYS: Array<keyof PdfImportLimits> = [
   'maxFileBytes',
   'maxPages',
   'maxOperatorsPerPage',
+  'maxOperatorsTotal',
   'maxTextItemsPerPage',
   'maxImagesPerPage',
   'maxLayersPerPage',

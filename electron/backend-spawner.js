@@ -682,7 +682,6 @@ function _buildChildEnv(isDev = false) {
   const appContext = getAppContext();
   env.ANTARES_SESSION_ID = appContext.session_id;
   if (appContext.app_version) env.ANTARES_APP_VERSION = appContext.app_version;
-  env.ANTARES_IPC_TELEMETRY = '1';
   return env;
 }
 function _spawn(isDev) {
