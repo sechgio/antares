@@ -486,7 +486,7 @@ function Artboard({
     const frame = frameRef.current;
     if (!frame) return;
     applyLayerDomGeometry(frame, gestureLayersRef.current, imperativeMoveIdsRef.current);
-  }, [gestureActive, guides, distanceLabels, gestureBbox]);
+  }, [gestureActive]);
 
   const navRef = useRef({ zoom, pan, onZoom, onPan });
   navRef.current = { zoom, pan, onZoom, onPan };

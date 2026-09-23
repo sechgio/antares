@@ -58,4 +58,4 @@ function raceTimeout(promise, ms, onTimeout) {
   });
 }
 
-module.exports = { abortError, throwIfAborted, sleep, sleepAbortable, raceTimeout };
+module.exports = { throwIfAborted, sleep, sleepAbortable, raceTimeout };

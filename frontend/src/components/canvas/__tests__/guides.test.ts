@@ -202,6 +202,21 @@ describe('guides', () => {
     expect(result.labels.some((l) => l.axis === 'x' && Math.abs(l.valueMm - 8) < 0.01)).toBe(true);
   });
 
+  it('preserves reference insertion order when two gap sizes are equally near', () => {
+    const result = snapEqualGaps(
+      { x: 50, y: 10, w: 10, h: 10 },
+      0,
+      0,
+      [{ x: 20, y: 10, w: 17.5, h: 10 }],
+      { widthMm: 500, heightMm: 500 },
+      2,
+      { x: [14, 11], y: [] },
+    );
+
+    expect(result.dx).toBe(1.5);
+    expect(result.labels[0]?.valueMm).toBe(14);
+  });
+
   it('measureHoverGap measures gap to a separated layer', () => {
     const sel = { x: 20, y: 20, w: 10, h: 10 };
     const target = { x: 60, y: 25, w: 10, h: 10 };

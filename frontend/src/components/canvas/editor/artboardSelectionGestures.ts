@@ -145,16 +145,10 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
         });
     };
 
-    let originBounds = selectionBounds(snapshot, moveIds);
-    let rails = prepareSnapRails(
-      snapshot,
-      moveIds,
-      pageSizeRef.current,
-      manualGuidesRef.current,
-      marginMm,
-    );
-    let othersRects = buildOthers(snapshot, moveIds);
-    let refGaps = collectReferenceGaps(othersRects, pageSizeRef.current);
+    let originBounds: RectMm | null = null;
+    let rails: ReturnType<typeof prepareSnapRails> | undefined;
+    let othersRects: RectMm[] = [];
+    let refGaps: ReturnType<typeof collectReferenceGaps> | undefined;
 
     const raf = createGestureRaf((ev: PointerEvent) => {
       if (pinchGestureRef.current) return;
@@ -248,8 +242,11 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
       const bounds = selectionBounds(moved, moveIds);
       if (bounds) {
         setGestureBbox(bounds);
-        const measured = measureSelectionGaps(bounds, othersRects, pageSizeRef.current);
-        setDistanceLabelsIfChanged(equalGapLabels.length ? equalGapLabels : measured);
+        setDistanceLabelsIfChanged(
+          equalGapLabels.length
+            ? equalGapLabels
+            : measureSelectionGaps(bounds, othersRects, pageSizeRef.current),
+        );
       } else {
         setGestureBbox(null);
         setDistanceLabelsIfChanged([]);
