@@ -32,6 +32,7 @@ import signal
 import threading
 import time
 import warnings
+import zlib
 from concurrent.futures import Future
 from typing import Any
 
@@ -195,9 +196,10 @@ def _ipc_telemetry_verbose() -> bool:
     return raw in {"1", "true", "yes"}
 
 
-def _maybe_log_ipc_timing(method_name: str, elapsed_ms: float, *, ok: bool) -> None:
+def _maybe_log_ipc_timing(method_name: str, elapsed_ms: float, *, ok: bool, request_id: str | int | None=None) -> None:
     slow = elapsed_ms >= 5_000.0
-    if not _ipc_telemetry_verbose() and not slow:
+    sampled = request_id is not None and zlib.crc32(str(request_id).encode("utf-8")) % 100 == 0
+    if not _ipc_telemetry_verbose() and not slow and ok and not sampled:
         return
     level = logging.WARNING if slow or not ok else logging.INFO
     fields: dict[str, Any] = {
@@ -226,13 +228,13 @@ def _dispatch_with_context(handler, params, msg_id, method_name) -> None:
     try:
         result = handler(params)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
-        _maybe_log_ipc_timing(method_name, elapsed_ms, ok=True)
+        _maybe_log_ipc_timing(method_name, elapsed_ms, ok=True, request_id=msg_id)
         ipc_phase_telemetry.mark(msg_id, "handler_end")
         ipc_phase_telemetry.set_fields(msg_id, handler_ok=True, handler_ms=elapsed_ms)
         send_response(result, msg_id)
     except Exception as exc:
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
-        _maybe_log_ipc_timing(method_name, elapsed_ms, ok=False)
+        _maybe_log_ipc_timing(method_name, elapsed_ms, ok=False, request_id=msg_id)
         user_msg = _user_error_message(exc)
         logger.exception("Error en %s: %s", method_name, user_msg)
         ipc_phase_telemetry.mark(msg_id, "handler_end")

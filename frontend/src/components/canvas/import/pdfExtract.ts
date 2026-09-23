@@ -530,6 +530,7 @@ async function extractPage(
   page: unknown,
   pdfjs: typeof import('pdfjs-dist'),
   limits: PdfImportLimits,
+  remainingOperators: number,
 ): Promise<PdfPageExtraction> {
   const pageRecord = asRecord(page);
   const viewport = typeof pageRecord.getViewport === 'function'
@@ -542,6 +543,9 @@ async function extractPage(
     ? await (getOperatorList as () => Promise<PdfOperatorList>).call(page)
     : { fnArray: [], argsArray: [] };
   const operatorCount = Array.isArray(operatorList.fnArray) ? operatorList.fnArray.length : 0;
+  if (operatorCount > remainingOperators) {
+    throw new Error(`El PDF supera el límite total de ${limits.maxOperatorsTotal} operadores`);
+  }
   if (operatorCount > limits.maxOperatorsPerPage) {
     return {
       pageNumber,
@@ -604,6 +608,7 @@ export async function extractPdfDocument(
   }
 
   const pages: PdfPageExtraction[] = [];
+  let totalOperators = 0;
   let manifestBytes: Uint8Array | undefined;
   try {
     const getAttachments = (pdf as unknown as PdfRecord).getAttachments;
@@ -618,7 +623,14 @@ export async function extractPdfDocument(
       throwIfAborted(options.signal);
       const page = await pdf.getPage(pageNumber);
       try {
-        const extracted = await extractPage(pageNumber, page, pdfjs, limits);
+        const extracted = await extractPage(
+          pageNumber,
+          page,
+          pdfjs,
+          limits,
+          limits.maxOperatorsTotal - totalOperators,
+        );
+        totalOperators += extracted.operators;
         pages.push(extracted);
         const skipped = extracted.issues?.reduce((sum, issue) => sum + issue.count, 0) || 0;
         options.onProgress?.({

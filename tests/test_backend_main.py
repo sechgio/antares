@@ -285,8 +285,36 @@ def test_maybe_log_ipc_timing_verbose_logs_fast_handlers(monkeypatch) -> None:
     _level, event, fields = logged[0]
     assert event == "backend.ipc.timing"
     assert fields["method"] == "version"
+    assert fields["duration_ms"] == 2
     assert fields["outcome"] == "success"
     assert "reason" not in fields
+
+
+def test_maybe_log_ipc_timing_samples_successes_and_keeps_fast_failures(monkeypatch) -> None:
+    import logging as _logging
+
+    logged: list[tuple] = []
+    monkeypatch.delenv("ANTARES_IPC_TELEMETRY", raising=False)
+    monkeypatch.setattr(
+        backend_main,
+        "log_event",
+        lambda _logger, level, event, **fields: logged.append((level, event, fields)),
+    )
+    monkeypatch.setattr(backend_main.zlib, "crc32", lambda _value: 0)
+
+    backend_main._maybe_log_ipc_timing("version", 2.0, ok=True, request_id="sampled-request")
+    assert len(logged) == 1
+    assert logged[0][1] == "backend.ipc.timing"
+
+    logged.clear()
+    monkeypatch.setattr(backend_main.zlib, "crc32", lambda _value: 1)
+    backend_main._maybe_log_ipc_timing("version", 2.0, ok=True, request_id="unsampled-request")
+    assert logged == []
+
+    backend_main._maybe_log_ipc_timing("version", 2.0, ok=False, request_id="failed-request")
+    assert len(logged) == 1
+    assert logged[0][0] == _logging.WARNING
+    assert logged[0][2]["outcome"] == "failed"
 
 
 def test_heartbeat_loop_emits_backend_heartbeat(monkeypatch) -> None:

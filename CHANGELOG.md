@@ -28,6 +28,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Reportes de campo**: un panel en espera de guardado se escribía en la plantilla nueva aunque la carga lo hubiera reemplazado, y un guardado fallido dejaba el panel marcado como limpio sin reintento.
 - **Preview de reportes**: un `{%` literal dentro del texto borraba todo el contenido hasta la etiqueta siguiente.
 - **Staging de archivos**: `file_staged_abort` cancelaba la sesión de otra ventana; el token queda ligado a la ventana que lo creó.
+- **Canvas / PDF**: la importación rechaza documentos con más de 500.000 operadores acumulados, aunque cada página permanezca bajo su límite individual.
 
 ## [0.11.12] — 2026-09-16
 
