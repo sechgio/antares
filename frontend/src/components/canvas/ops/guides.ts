@@ -43,6 +43,52 @@ export function clearGuides(doc: CanvasDocument): CanvasDocument {
 const GUIDE_REMOVE_SLACK_PX = 4;
 const GAP_MATCH_TOLERANCE_MM = 0.1;
 
+type ReferenceGaps = { x: number[]; y: number[] };
+type OrderedReferenceGaps = { x: Uint32Array; y: Uint32Array };
+
+const orderedReferenceGapsCache = new WeakMap<ReferenceGaps, OrderedReferenceGaps>();
+
+function getOrderedReferenceGaps(referenceGaps: ReferenceGaps): OrderedReferenceGaps {
+  const cached = orderedReferenceGapsCache.get(referenceGaps);
+  if (cached) return cached;
+
+  const order = (gaps: number[]) =>
+    Uint32Array.from({ length: gaps.length }, (_, index) => index).sort(
+      (left, right) => gaps[left]! - gaps[right]! || left - right,
+    );
+  const ordered = { x: order(referenceGaps.x), y: order(referenceGaps.y) };
+  orderedReferenceGapsCache.set(referenceGaps, ordered);
+  return ordered;
+}
+
+function lowerBoundGap(gaps: number[], ordered: Uint32Array, value: number): number {
+  let low = 0;
+  let high = ordered.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (gaps[ordered[middle]!]! < value) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function nearestReferenceGapIndex(gaps: number[], ordered: Uint32Array, value: number): number {
+  if (!ordered.length) return -1;
+  const insertion = lowerBoundGap(gaps, ordered, value);
+  let before = insertion > 0 ? ordered[insertion - 1]! : -1;
+  const after = insertion < ordered.length ? ordered[insertion]! : -1;
+  if (before < 0) return after;
+  if (after < 0) return ordered[lowerBoundGap(gaps, ordered, gaps[before]!)]!;
+
+  const beforeValue = gaps[before]!;
+  before = ordered[lowerBoundGap(gaps, ordered, beforeValue)]!;
+  const beforeDistance = Math.abs(value - beforeValue);
+  const afterDistance = Math.abs(value - gaps[after]!);
+  if (beforeDistance < afterDistance) return before;
+  if (afterDistance < beforeDistance) return after;
+  return Math.min(before, after);
+}
+
 export function clampGuidePos(posMm: number, maxMm: number): number {
   return Math.max(0, Math.min(maxMm, posMm));
 }
@@ -61,7 +107,7 @@ export function isGuideRemovalPoint(
 export function collectReferenceGaps(
   others: RectMm[],
   page: { widthMm: number; heightMm: number },
-): { x: number[]; y: number[] } {
+): ReferenceGaps {
   const xs = new Set<number>();
   const ys = new Set<number>();
 
@@ -100,9 +146,10 @@ export function snapEqualGaps(
   others: RectMm[],
   page: { widthMm: number; heightMm: number },
   thresholdMm: number,
-  referenceGaps?: { x: number[]; y: number[] },
+  referenceGaps?: ReferenceGaps,
 ): { dx: number; dy: number; labels: DistanceLabel[] } {
   const refs = referenceGaps ?? collectReferenceGaps(others, page);
+  const orderedRefs = getOrderedReferenceGaps(refs);
   const sel = { x: origin.x + dxMm, y: origin.y + dyMm, w: origin.w, h: origin.h };
 
   type Candidate = { dist: number; delta: number; label: DistanceLabel };
@@ -110,60 +157,60 @@ export function snapEqualGaps(
 
   const considerX = (currentGap: number, nextDx: number, label: DistanceLabel) => {
     if (currentGap <= MIN_GUIDE_GAP_MM) return;
-    for (const g of refs.x) {
-      const dist = Math.abs(currentGap - g);
-      if (dist <= thresholdMm && (!best.x || dist < best.x.dist)) {
-        const fromLeft = label.id.includes('left') || label.id.includes('page-left');
-        best.x = {
-          dist,
-          delta: nextDx + (g - currentGap),
-          label: fromLeft
-            ? {
-                ...label,
-                valueMm: g,
-                x: label.x1 + g / 2,
-                x2: label.x1 + g,
-              }
-            : {
-                ...label,
-                valueMm: g,
-                x: label.x2 - g / 2,
-                x1: label.x2 - g,
-              },
-        };
-      }
-    }
+    const referenceIndex = nearestReferenceGapIndex(refs.x, orderedRefs.x, currentGap);
+    if (referenceIndex < 0) return;
+    const g = refs.x[referenceIndex]!;
+    const dist = Math.abs(currentGap - g);
+    if (!(dist <= thresholdMm) || (best.x && dist >= best.x.dist)) return;
+    const fromLeft = label.id.includes('left') || label.id.includes('page-left');
+    best.x = {
+      dist,
+      delta: nextDx + (g - currentGap),
+      label: fromLeft
+        ? {
+            ...label,
+            valueMm: g,
+            x: label.x1 + g / 2,
+            x2: label.x1 + g,
+          }
+        : {
+            ...label,
+            valueMm: g,
+            x: label.x2 - g / 2,
+            x1: label.x2 - g,
+          },
+    };
   };
 
   const considerY = (currentGap: number, nextDy: number, label: DistanceLabel) => {
     if (currentGap <= MIN_GUIDE_GAP_MM) return;
-    for (const g of refs.y) {
-      const dist = Math.abs(currentGap - g);
-      if (dist <= thresholdMm && (!best.y || dist < best.y.dist)) {
-        if (label.id.includes('top') || label.id.includes('page-top')) {
-          best.y = {
-            dist,
-            delta: nextDy + (g - currentGap),
-            label: {
-              ...label,
-              valueMm: g,
-              y: label.y1 + g / 2,
-              y2: label.y1 + g,
-            },
-          };
-        } else {
-          best.y = {
-            dist,
-            delta: nextDy + (g - currentGap),
-            label: {
-              ...label,
-              valueMm: g,
-              y: label.y2 - g / 2,
-              y1: label.y2 - g,
-            },
-          };
-        }
-      }
+    const referenceIndex = nearestReferenceGapIndex(refs.y, orderedRefs.y, currentGap);
+    if (referenceIndex < 0) return;
+    const g = refs.y[referenceIndex]!;
+    const dist = Math.abs(currentGap - g);
+    if (!(dist <= thresholdMm) || (best.y && dist >= best.y.dist)) return;
+    if (label.id.includes('top') || label.id.includes('page-top')) {
+      best.y = {
+        dist,
+        delta: nextDy + (g - currentGap),
+        label: {
+          ...label,
+          valueMm: g,
+          y: label.y1 + g / 2,
+          y2: label.y1 + g,
+        },
+      };
+    } else {
+      best.y = {
+        dist,
+        delta: nextDy + (g - currentGap),
+        label: {
+          ...label,
+          valueMm: g,
+          y: label.y2 - g / 2,
+          y1: label.y2 - g,
+        },
+      };
     }
   };
 
