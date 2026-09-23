@@ -211,11 +211,11 @@ export function getProcessingPlan(item: ImageItem, settings: BatchSettings): Pro
   const resize = settings.operations.resizeEnabled
     ? computeResizeDimensions(sourceWidth, sourceHeight, settings.resize.maxWidth, settings.resize.maxHeight, settings.resize.noUpscale)
     : { width: sourceWidth, height: sourceHeight, scale: 1 };
-  const shouldResize = settings.operations.resizeEnabled
-    ? sourceWidth > 0 && sourceHeight > 0
-      ? resize.width !== sourceWidth || resize.height !== sourceHeight
-      : true
-    : false;
+  const shouldResize = settings.operations.resizeEnabled && (
+    !(sourceWidth > 0 && sourceHeight > 0)
+    || resize.width !== sourceWidth
+    || resize.height !== sourceHeight
+  );
   const shouldCrop = !!effectiveCrop;
   const shouldConvertFormat = settings.operations.formatEnabled && settings.format.outputFormat !== 'original';
   const shouldCompress = settings.operations.compressionEnabled && !item.overrides.skipCompression;

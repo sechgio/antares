@@ -221,6 +221,29 @@ export default function RenameCard(props: RenameCardProps) {
 
   const variableFields = hasCatalog ? dbColumns : fields;
 
+  const separatorButtons = (
+    <div className="flex gap-2">
+      {[
+        { id: '_', label: 'Guion bajo (_)' },
+        { id: '-', label: 'Guion medio (-)' },
+        { id: ' ', label: 'Espacio ( )' },
+        { id: '', label: 'Pegado' },
+      ].map((sep) => (
+        <Button variant="none" size="none"
+          key={sep.id || 'none'}
+          onClick={() => changeSeparator(sep.id)}
+          className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${
+            wordSeparator === sep.id
+              ? 'bg-[color:color-mix(in_srgb,var(--accent-secondary)_20%,transparent)] text-[var(--accent-secondary)] border-[color:color-mix(in_srgb,var(--accent-secondary)_40%,transparent)]'
+              : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
+          }`}
+        >
+          {sep.label}
+        </Button>
+      ))}
+    </div>
+  );
+
   return (
     <Card className="space-y-5">
       <div className="flex items-center justify-between gap-3">
@@ -466,26 +489,7 @@ export default function RenameCard(props: RenameCardProps) {
                   <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[10px] font-bold">4</div>
                   <label className="text-xs font-bold text-[var(--text-primary)]">Separador</label>
                 </div>
-                <div className="flex gap-2">
-                  {[
-                    { id: '_', label: 'Guion bajo (_)' },
-                    { id: '-', label: 'Guion medio (-)' },
-                    { id: ' ', label: 'Espacio ( )' },
-                    { id: '', label: 'Pegado' },
-                  ].map((sep) => (
-                    <Button variant="none" size="none"
-                      key={sep.id || 'none'}
-                      onClick={() => changeSeparator(sep.id)}
-                      className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${
-                        wordSeparator === sep.id
-                          ? 'bg-[color:color-mix(in_srgb,var(--accent-secondary)_20%,transparent)] text-[var(--accent-secondary)] border-[color:color-mix(in_srgb,var(--accent-secondary)_40%,transparent)]'
-                          : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
-                      }`}
-                    >
-                      {sep.label}
-                    </Button>
-                  ))}
-                </div>
+                {separatorButtons}
               </div>
             </>
           )}
@@ -528,26 +532,7 @@ export default function RenameCard(props: RenameCardProps) {
           {showSeparatorUi && !hasCatalog && (
             <div className="space-y-3">
               <label className="text-xs font-bold text-[var(--text-primary)]">Separador</label>
-              <div className="flex gap-2">
-                {[
-                  { id: '_', label: 'Guion bajo (_)' },
-                  { id: '-', label: 'Guion medio (-)' },
-                  { id: ' ', label: 'Espacio ( )' },
-                  { id: '', label: 'Pegado' },
-                ].map((sep) => (
-                  <Button variant="none" size="none"
-                    key={sep.id || 'none'}
-                    onClick={() => changeSeparator(sep.id)}
-                    className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${
-                      wordSeparator === sep.id
-                        ? 'bg-[color:color-mix(in_srgb,var(--accent-secondary)_20%,transparent)] text-[var(--accent-secondary)] border-[color:color-mix(in_srgb,var(--accent-secondary)_40%,transparent)]'
-                        : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
-                    }`}
-                  >
-                    {sep.label}
-                  </Button>
-                ))}
-              </div>
+              {separatorButtons}
             </div>
           )}
         </div>

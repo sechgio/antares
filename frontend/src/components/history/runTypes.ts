@@ -55,10 +55,6 @@ export function safeJsonParse<T>(json: string, fallback: T): T {
   }
 }
 
-function opt(options: Record<string, unknown>, key: string): unknown {
-  return options[key];
-}
-
 const stat = (
   key: string,
   labelKey: string,
@@ -112,8 +108,8 @@ const RUN_TYPES = {
     fileListKey: 'history.fileList.formato',
     stats: [
       stat('formato', 'history.stats.format', (run) => run.formato || '—'),
-      stat('desde', 'history.stats.from', (_run, _files, options) => String(opt(options, 'desde') ?? '?')),
-      stat('hasta', 'history.stats.to', (_run, _files, options) => String(opt(options, 'hasta') ?? '?')),
+      stat('desde', 'history.stats.from', (_run, _files, options) => String(options['desde'] ?? '?')),
+      stat('hasta', 'history.stats.to', (_run, _files, options) => String(options['hasta'] ?? '?')),
       stat(
         'files',
         'history.stats.pages',
@@ -142,14 +138,14 @@ const RUN_TYPES = {
       stat(
         'stamps',
         'history.stats.stamps',
-        (run, _files, options) => String(opt(options, 'stamp_count') ?? run.ok_count),
+        (run, _files, options) => String(options['stamp_count'] ?? run.ok_count),
         'text-[var(--accent-orange)]',
       ),
       stat('pages', 'history.stats.pagesStamped', (_run, _files, options) => {
-        const stamped = opt(options, 'stamped_pages');
+        const stamped = options['stamped_pages'];
         return Array.isArray(stamped) ? stamped.join(', ') : '—';
       }),
-      stat('seed', 'history.stats.seed', (_run, _files, options) => String(opt(options, 'seed') ?? '—')),
+      stat('seed', 'history.stats.seed', (_run, _files, options) => String(options['seed'] ?? '—')),
     ],
   },
   padron: {
@@ -222,10 +218,10 @@ const RUN_TYPES = {
       stat(
         'preset',
         'history.stats.preset',
-        (_run, _files, options) => String(opt(options, 'preset') ?? 'custom'),
+        (_run, _files, options) => String(options['preset'] ?? 'custom'),
         'text-[var(--accent-primary)]',
       ),
-      stat('scope', 'history.stats.scope', (_run, _files, options) => String(opt(options, 'scope') ?? 'all')),
+      stat('scope', 'history.stats.scope', (_run, _files, options) => String(options['scope'] ?? 'all')),
       stat('ok', 'history.stats.processed', (run) => run.ok_count, 'text-[var(--accent-green)]'),
       stat('err', 'history.stats.err', (run) => run.err_count, 'text-[var(--accent-red)]'),
     ],
@@ -246,11 +242,11 @@ const RUN_TYPES = {
     reexecute: false,
     fileListKey: 'history.fileList.default',
     stats: [
-      stat('cs', 'history.stats.cs', (_run, _files, options) => String(opt(options, 'cs') ?? '—')),
+      stat('cs', 'history.stats.cs', (_run, _files, options) => String(options['cs'] ?? '—')),
       stat(
         'contratista',
         'history.stats.contractor',
-        (_run, _files, options) => String(opt(options, 'contratista') ?? '—'),
+        (_run, _files, options) => String(options['contratista'] ?? '—'),
       ),
       stat('ok', 'history.stats.ok', (run) => run.ok_count, 'text-[var(--accent-green)]'),
       stat('err', 'history.stats.err', (run) => run.err_count, 'text-[var(--accent-red)]'),
@@ -272,12 +268,12 @@ const RUN_TYPES = {
       stat(
         'strategy',
         'history.stats.strategy',
-        (_run, _files, options) => String(opt(options, 'strategy') ?? '—'),
+        (_run, _files, options) => String(options['strategy'] ?? '—'),
       ),
       stat(
         'key',
         'history.stats.keyColumn',
-        (_run, _files, options) => String(opt(options, 'key_column') ?? '—'),
+        (_run, _files, options) => String(options['key_column'] ?? '—'),
       ),
       stat('ok', 'history.stats.panels', (run) => run.ok_count, 'text-[var(--accent-red)]'),
       stat('err', 'history.stats.err', (run) => run.err_count, 'text-[var(--accent-red)]'),
@@ -296,8 +292,8 @@ const RUN_TYPES = {
     reexecute: false,
     fileListKey: 'history.fileList.default',
     stats: [
-      stat('format', 'history.stats.format', (_run, _files, options) => String(opt(options, 'format') ?? '—')),
-      stat('pages', 'history.stats.pages', (_run, _files, options) => String(opt(options, 'pages') ?? '—')),
+      stat('format', 'history.stats.format', (_run, _files, options) => String(options['format'] ?? '—')),
+      stat('pages', 'history.stats.pages', (_run, _files, options) => String(options['pages'] ?? '—')),
       stat('ok', 'history.stats.images', (run) => run.ok_count, 'text-[var(--accent-secondary)]'),
     ],
   },
@@ -314,13 +310,13 @@ const RUN_TYPES = {
     reexecute: false,
     fileListKey: 'history.fileList.default',
     stats: [
-      stat('cs', 'history.stats.cs', (_run, _files, options) => String(opt(options, 'cs') ?? '—')),
+      stat('cs', 'history.stats.cs', (_run, _files, options) => String(options['cs'] ?? '—')),
       stat(
         'contratista',
         'history.stats.contractor',
-        (_run, _files, options) => String(opt(options, 'contratista') ?? '—'),
+        (_run, _files, options) => String(options['contratista'] ?? '—'),
       ),
-      stat('status', 'history.stats.status', (_run, _files, options) => String(opt(options, 'status') ?? '—')),
+      stat('status', 'history.stats.status', (_run, _files, options) => String(options['status'] ?? '—')),
       stat('ok', 'history.stats.ok', (run) => run.ok_count, 'text-[var(--accent-blue)]'),
     ],
   },
@@ -337,7 +333,7 @@ const RUN_TYPES = {
     reexecute: false,
     fileListKey: 'history.fileList.default',
     stats: [
-      stat('type', 'history.stats.status', (_run, _files, options) => String(opt(options, 'type') ?? '—')),
+      stat('type', 'history.stats.status', (_run, _files, options) => String(options['type'] ?? '—')),
       stat('ok', 'history.stats.ok', (run) => run.ok_count, 'text-[var(--accent-blue)]'),
     ],
   },
@@ -354,7 +350,7 @@ const RUN_TYPES = {
     reexecute: false,
     fileListKey: 'history.fileList.default',
     stats: [
-      stat('type', 'history.stats.status', (_run, _files, options) => String(opt(options, 'type') ?? '—')),
+      stat('type', 'history.stats.status', (_run, _files, options) => String(options['type'] ?? '—')),
       stat('ok', 'history.stats.ok', (run) => run.ok_count, 'text-[var(--accent-secondary)]'),
     ],
   },
