@@ -67,6 +67,35 @@ it('falls back to a full Canvas history save when the persisted base changed', a
   });
 });
 
+it('evicts old Canvas history snapshots and saves them in full when revisited', async () => {
+  const step = { type: 'diff' as const, undoDiff: {}, redoDiff: {} };
+  mockInvoke.mockResolvedValue({ success: true, digest: 'digest' });
+
+  await api.canvasSaveHistory('doc-a', [step], []);
+  await api.canvasSaveHistory('doc-b', [step], []);
+  await api.canvasSaveHistory('doc-c', [step], []);
+  await api.canvasSaveHistory('doc-a', [step], []);
+
+  expect(mockInvoke).toHaveBeenNthCalledWith(4, 'canvas_save_history', {
+    id: 'doc-a', past: [step], future: [], include_digest: true,
+  });
+});
+
+it('forgets a deleted Canvas document history after deletion succeeds', async () => {
+  const step = { type: 'diff' as const, undoDiff: {}, redoDiff: {} };
+  mockInvoke.mockImplementation(async (method: string) => method === 'canvas_delete'
+    ? { success: true, deleted_id: 'doc-a' }
+    : { success: true, digest: 'digest' });
+
+  await api.canvasSaveHistory('doc-a', [step], []);
+  await api.canvasDelete('doc-a');
+  await api.canvasSaveHistory('doc-a', [step], []);
+
+  expect(mockInvoke).toHaveBeenNthCalledWith(3, 'canvas_save_history', {
+    id: 'doc-a', past: [step], future: [], include_digest: true,
+  });
+});
+
 describe('API Client', () => {
   it('should call version endpoint', async () => {
     mockInvoke.mockResolvedValue({ version: '0.3.6' });

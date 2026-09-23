@@ -108,7 +108,7 @@ Canvas es un editor A4 Figma-style local-first: el JSON local es la fuente inmed
 - Las migraciones en `supabase/migrations/` son la fuente de verdad del esquema. Incluyen perfiles/roles, `espacios`, `proyectos`, `tareas`, `board_columns`, `canvas_documents` y versiones Canvas, junto con RLS, triggers LWW, Realtime privado e invocadores RPC restringidos.
 - Toda funcionalidad nueva debe conservar RLS, least privilege y la separación de funciones privadas. No soluciones un problema de permisos exponiendo tablas o funciones privilegiadas al cliente.
 - Las Edge Functions `supabase/functions/admin-create-user` y `admin-delete-user` son administrativas y requieren el modelo de credenciales existente; no las llames desde la UI con secretos.
-- Para aplicar migraciones remotas usa únicamente el flujo revisado de `scripts/supabase-db-push.ps1`, con `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` y el project ref autorizado por el script. No pongas credenciales en el repo ni ejecutes un push remoto como sustituto de pruebas locales.
+- Para aplicar migraciones remotas usa el complemento Supabase autenticado en Codex, verifica el project ref y compara el historial remoto antes de aplicar las migraciones locales pendientes. No pongas credenciales en el repo ni ejecutes un despliegue remoto como sustituto de pruebas locales.
 
 ## Instalación, desarrollo y comandos
 

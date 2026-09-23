@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { assert, finish, counters } = require('./helpers/harness');
+const { assert, counters } = require('./helpers/harness');
 
 function readProjectFile(...parts) {
   return fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
@@ -33,7 +33,7 @@ assert(spec.includes("backend/templates"), 'PyInstaller should bundle backend HT
 
 const builderConfig = readProjectFile('electron-builder.yml');
 assert(/electronLanguages:\s*\n\s*-\s*es\s*\n\s*-\s*en-US/m.test(builderConfig), 'electron-builder should keep only Spanish and English Electron locales');
-assert(builderConfig.includes('compression: normal'), 'electron-builder should use normal compression for installer artifacts (release speed)');
+assert(builderConfig.includes('compression: maximum'), 'electron-builder should use maximum compression for smaller installer artifacts');
 assert(builderConfig.includes('- "assets/icon.ico"'), 'electron-builder should keep only the runtime window icon from assets');
 assert(!builderConfig.includes('- "assets/**/*"'), 'electron-builder should not duplicate all assets inside app.asar');
 assert(!/extraResources:\s*\n\s*-\s*from:\s*assets/m.test(builderConfig), 'electron-builder should not duplicate assets as external resources');

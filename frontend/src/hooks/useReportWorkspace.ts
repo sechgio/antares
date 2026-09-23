@@ -12,7 +12,7 @@ export interface ReportWorkspaceApi<TReport, TListItem> {
   update: (id: string, report: TReport) => Promise<TReport>;
   delete: (id: string) => Promise<unknown>;
   clear: () => Promise<unknown>;
-  importFile: (filename: string, content_b64: string) => Promise<{ imported_count: number }>;
+  importFile: (filename: string, content_b64: string, extra?: Record<string, unknown>) => Promise<{ imported_count: number }>;
 }
 
 export type ReportWorkspaceMobileTab = 'db' | 'preview' | 'form';
@@ -265,18 +265,22 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
     });
   }, [addToast, dialog, formData, formatError, hasChanges, labels, markClean, normalizeItem, options.focusPreviewOnOpen, options.saveBeforeSelect, refreshReports, reportApi, runOperation]);
 
-  const createReport = useCallback(async () => {
+  const createReport = useCallback(async (seed?: Partial<TReport>) => {
     const gen = ++sessionGenRef.current;
     await runOperation(async () => {
       try {
-        const report = normalizeItem(await reportApi.create());
+        const created = normalizeItem(await reportApi.create());
         // Un fallo del refresh no debe reportar "No se pudo crear" cuando el
         // informe ya existe: la lista solo queda stale hasta el próximo refresh.
         await maybeRefreshReports();
         if (gen === sessionGenRef.current) {
+          const report = seed ? normalizeItem({ ...created, ...seed }) : created;
           setSelectedId(report.id);
           setFormData(report);
-          markClean();
+          // La semilla se aplica en memoria: el informe en disco sigue con sus valores
+          // por defecto hasta que se guarde, así que cuenta como cambio pendiente.
+          if (seed) setDirtyCount(1);
+          else markClean();
           if (options.focusPreviewOnOpen) setMobileTab('preview');
         }
         addToast({ message: labels.createdMessage, type: 'success' });
@@ -360,12 +364,14 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
     });
   }, [addToast, dialog, formatError, labels, markClean, options.draftKey, reportApi, runOperation]);
 
-  const importFile = useCallback(async (file: File) => {
+  const importFile = useCallback(async (file: File, extra?: Record<string, unknown>) => {
     const gen = ++sessionGenRef.current;
     await runOperation(async () => {
       try {
         const content = await fileToBase64(file);
-        const result = await reportApi.importFile(file.name, content);
+        const result = extra
+          ? await reportApi.importFile(file.name, content, extra)
+          : await reportApi.importFile(file.name, content);
         if (gen === sessionGenRef.current) {
           setSelectedId(null);
           setFormData(null);

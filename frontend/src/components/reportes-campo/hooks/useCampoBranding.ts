@@ -86,6 +86,8 @@ export function useCampoBranding(reportType: ReportType) {
     useEffect(() => {
         return () => {
             flushPendingSave();
+            revokeLogo(logoLeftRef.current);
+            revokeLogo(logoRightRef.current);
         };
     }, [flushPendingSave]);
 

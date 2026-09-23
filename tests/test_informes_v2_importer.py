@@ -3,6 +3,7 @@ from io import BytesIO
 from openpyxl import Workbook
 
 from backend.core.informes_v2.importer import (
+    R2_TEMPLATE_HEADERS,
     TEMPLATE_HEADERS,
     import_reports_from_bytes,
     normalize_header_value,
@@ -61,6 +62,26 @@ def test_template_xlsx_has_canonical_headers() -> None:
     assert "Tirante Limpieza" in headers
 
 
+def test_reservorios2_template_xlsx_has_only_its_fields() -> None:
+    from openpyxl import load_workbook
+
+    content = build_template_xlsx_bytes("reservorios2")
+    loaded = load_workbook(BytesIO(content))
+    headers = [cell.value for cell in next(loaded.active.iter_rows(min_row=1, max_row=1))]
+
+    assert headers == R2_TEMPLATE_HEADERS
+    assert "informe_id" in headers
+    assert "caja_registro" in headers
+    assert "obs_caja_registro" in headers
+    assert "valvulas_desague_3" in headers
+    assert "valvulas_desague_oper" in headers
+    assert "canastillas_succion_14" in headers
+    assert "medidas_altura_total" in headers
+    assert "medidas_etiqueta_altura_total" in headers
+    assert not {"cs", "contratista", "sgio"} & set(headers)
+    assert not {"ID", "Estacion", "Insp CAJA DE REGISTRO Normal", "R2 Valv Desague 3"} & set(headers)
+
+
 def test_all_template_headers_are_mapped() -> None:
     from backend.core.informes_v2.importer import COLUMN_MAPPING
 
@@ -70,6 +91,17 @@ def test_all_template_headers_are_mapped() -> None:
         if normalize_header_value(header) not in COLUMN_MAPPING
     ]
     assert unmapped == [], f"Headers de plantilla sin mapeo: {unmapped}"
+
+
+def test_all_reservorios2_template_headers_are_mapped() -> None:
+    from backend.core.informes_v2.importer import COLUMN_MAPPING
+
+    unmapped = [
+        header
+        for header in R2_TEMPLATE_HEADERS
+        if normalize_header_value(header) not in COLUMN_MAPPING
+    ]
+    assert unmapped == [], f"Headers de plantilla Nueva sin mapeo: {unmapped}"
 
 
 def test_template_xlsx_roundtrip_maps_all_sections() -> None:
@@ -164,3 +196,205 @@ def test_alias_impulsion_pelado_corresponde_a_la_valvula() -> None:
     assert report["valvulas"]["impulsion"]["observaciones"] == "valv ok"
     assert report["linea"]["impulsion_rebombeo"]["diametros"]["8"] == 9
     assert report["linea"]["impulsion_rebombeo"]["observaciones"] == "lin ok"
+
+
+def test_reservorios2_xlsx_roundtrip_maps_all_sections() -> None:
+    content = build_template_xlsx_bytes("reservorios2")
+    from openpyxl import load_workbook
+
+    wb = load_workbook(BytesIO(content))
+    ws = wb.active
+    by_header = {header: index + 1 for index, header in enumerate(R2_TEMPLATE_HEADERS)}
+    row_values = {
+        "informe_id": 9,
+        "photo_id": "R2-900",
+        "dia": 15,
+        "mes": "MARZO",
+        "anio": 2026,
+        "codigo_infraestructura": "R-900",
+        "ubicacion": "A.H. VILLA",
+        "suministro": "2748175",
+        "tipo": "ELEVADO",
+        "volumen": 900,
+        "caja_registro": "normal",
+        "obs_caja_registro": "sin fisuras",
+        "cerco_perimetrico": "critico",
+        "sug_cerco": "reparar",
+        "valvulas_desague_3": 2,
+        "valvulas_desague_oper": 1,
+        "obs_valvulas_desague": "operativa",
+        "sug_valvulas_desague": "mantener",
+        "canastillas_succion_14": 3,
+        "canastillas_succion_no_op": 1,
+        "obs_canastillas_succion": "oxidada",
+        "sug_canastillas_succion": "reemplazar",
+        "medidas_diametro": "4.5",
+        "medidas_diametro_interno": "4.2",
+        "medidas_altura_util": "2.1",
+        "medidas_altura_total": "2.5",
+        "medidas_etiqueta_diametro": "LARGO",
+        "medidas_etiqueta_diametro_interno": "ANCHO",
+        "medidas_etiqueta_altura_util": "PROFUNDIDAD UTIL",
+        "medidas_etiqueta_altura_total": "PROFUNDIDAD TOTAL",
+    }
+    for header, value in row_values.items():
+        ws.cell(row=2, column=by_header[header], value=value)
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    report = import_reports_from_bytes(
+        "plantilla_nueva.xlsx",
+        buffer.getvalue(),
+        "reservorios2",
+    )[0]
+
+    assert report["id"] == "IV2-0009"
+    assert report["plantilla"] == "reservorios2"
+    assert report["header"]["photo_id"] == "R2-900"
+    assert report["header"]["estacion"] == "R-900"
+    assert report["header"]["distrito"] == "A.H. VILLA"
+    assert report["header"]["fecha_ejecucion"] == "15/03/2026"
+    assert report["header"]["suministro"] == "2748175"
+    assert report["reservorios2"]["inspeccion"]["caja_registro"] == {
+        "normal": True,
+        "critico": False,
+        "observaciones": "sin fisuras",
+        "sugerencias": "",
+    }
+    assert report["reservorios2"]["inspeccion"]["cerco"]["critico"] is True
+    assert report["reservorios2"]["inspeccion"]["cerco"]["sugerencias"] == "reparar"
+    assert report["reservorios2"]["valvulas"]["desague"] == {
+        "diametros": {"2": 0, "3": 2, "4": 0, "6": 0, "8": 0, "10": 0, "12": 0},
+        "oper": 1,
+        "no_op": 0,
+        "observaciones": "operativa",
+        "sugerencias": "mantener",
+    }
+    assert report["reservorios2"]["canastilla"]["succion"]["diametros"]["14"] == 3
+    assert report["reservorios2"]["canastilla"]["succion"]["no_op"] == 1
+    assert report["reservorios2"]["canastilla"]["succion"]["sugerencias"] == "reemplazar"
+    assert report["reservorios2"]["medidas"] == {
+        "diametro": "4.5",
+        "diametro_interno": "4.2",
+        "altura_util": "2.1",
+        "altura_total": "2.5",
+        "etiqueta_diametro": "LARGO",
+        "etiqueta_diametro_interno": "ANCHO",
+        "etiqueta_altura_util": "PROFUNDIDAD UTIL",
+        "etiqueta_altura_total": "PROFUNDIDAD TOTAL",
+    }
+
+
+def test_import_detects_reservorios2_from_columns() -> None:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(BytesIO(build_template_xlsx_bytes("reservorios2")))
+    wb.active.cell(row=2, column=1, value="R2-1")
+    buf = BytesIO()
+    wb.save(buf)
+
+    # Las columnas R2 mandan aunque el switch de la UI diga "clasica".
+    report = import_reports_from_bytes("plantilla_nueva.xlsx", buf.getvalue(), "clasica")[0]
+    assert report["plantilla"] == "reservorios2"
+
+
+def test_import_detects_clasica_from_columns() -> None:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(BytesIO(build_template_xlsx_bytes("clasica")))
+    wb.active.cell(row=2, column=1, value="C-1")
+    buf = BytesIO()
+    wb.save(buf)
+
+    report = import_reports_from_bytes("plantilla.xlsx", buf.getvalue(), "reservorios2")[0]
+    assert report["plantilla"] == "clasica"
+
+
+def test_import_plantilla_column_and_param_fallback() -> None:
+    # La columna Plantilla explícita gana al parámetro.
+    content = b"ID;Estacion;Plantilla\nC-1;E 1;reservorios2\n"
+    report = import_reports_from_bytes("datos.csv", content, "clasica")[0]
+    assert report["plantilla"] == "reservorios2"
+
+    # Sin señal en el archivo, el parámetro de la UI decide.
+    content = b"ID;Estacion\nC-1;E 1\n"
+    report = import_reports_from_bytes("datos.csv", content, "reservorios2")[0]
+    assert report["plantilla"] == "reservorios2"
+
+
+def test_import_reservorios2_partial_csv_keeps_valves_and_measures() -> None:
+    content = (
+        b"informe_id;photo_id;valvulas_desague_3;medidas_altura_total\n"
+        b"9;R2-900;2;2.5\n"
+    )
+
+    report = import_reports_from_bytes("parcial.csv", content, "reservorios2")[0]
+
+    assert report["plantilla"] == "reservorios2"
+    assert report["reservorios2"]["valvulas"]["desague"]["diametros"]["3"] == 2
+    assert report["reservorios2"]["medidas"]["altura_total"] == "2.5"
+
+
+def test_import_reservorios2_aliases_keep_values_when_template_hint_is_present() -> None:
+    content = b"informe_id;r2valvdesague3;inspcajaregistronormal\n9;2;1\n"
+
+    report = import_reports_from_bytes("datos.csv", content, "reservorios2")[0]
+
+    assert report["reservorios2"]["valvulas"]["desague"]["diametros"]["3"] == 2
+    assert report["reservorios2"]["inspeccion"]["caja_registro"]["normal"] is True
+
+
+def test_import_reservorios2_accepts_technical_report_aliases() -> None:
+    content = (
+        "ID;Código;Empresa;Recomendaciones Cerco;Canast Aduccion 14;Photo ID\n"
+        "7;R-900;ACCIONA;reparar;3;F-900\n"
+    ).encode()
+
+    report = import_reports_from_bytes("tecnico.csv", content, "reservorios2")[0]
+
+    assert report["id"] == "IV2-0007"
+    assert report["header"]["photo_id"] == "F-900"
+    assert report["header"]["estacion"] == "R-900"
+    assert report["header"]["contratista"] == "ACCIONA"
+    assert report["reservorios2"]["inspeccion"]["cerco"]["sugerencias"] == "reparar"
+    assert report["reservorios2"]["canastilla"]["aduccion"]["diametros"]["14"] == 3
+
+
+def test_import_global_oper_totals_do_not_fabricate_row_values() -> None:
+    content = (
+        b"informe_id;valvulas_operativas;valvulas_no_operativas;"
+        b"canastillas_operativas;canastillas_no_operativas\n"
+        b"3;8;2;5;1\n"
+    )
+
+    report = import_reports_from_bytes("tecnico.csv", content, "reservorios2")[0]
+    r2 = report["reservorios2"]
+
+    assert r2["valvulas_totales"] == {"oper": 8, "no_op": 2}
+    assert r2["canastilla_totales"] == {"oper": 5, "no_op": 1}
+    assert all(row["oper"] == 0 and row["no_op"] == 0 for row in r2["valvulas"].values())
+    assert all(row["oper"] == 0 and row["no_op"] == 0 for row in r2["canastilla"].values())
+
+
+def test_import_reservorios2_releases_classic_rows_before_reparsing(monkeypatch) -> None:
+    from backend.core.informes_v2 import importer
+
+    calls = 0
+    classic_rows = []
+
+    def parse_csv(_content, _mapping):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            rows = [{"photo_id": "C-1"}]
+            classic_rows.append(rows)
+            return rows
+        assert len(classic_rows[0]) == 0
+        return [{"informe_id": "9", "r2_medidas_diametro": "2.5"}]
+
+    monkeypatch.setattr(importer, "parse_csv_file", parse_csv)
+
+    reports = import_reports_from_bytes("datos.csv", b"contenido", "reservorios2")
+
+    assert len(reports) == 1
+    assert calls == 2

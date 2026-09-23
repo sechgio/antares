@@ -268,6 +268,7 @@ def test_maybe_log_ipc_timing_logs_slow_handlers(monkeypatch) -> None:
     assert fields["duration_ms"] == 6000
     assert fields["outcome"] == "success"
     assert fields["reason"] == "slow"
+    assert "elapsed_ms" in fields["message"]
 
 
 def test_maybe_log_ipc_timing_verbose_logs_fast_handlers(monkeypatch) -> None:
@@ -286,7 +287,7 @@ def test_maybe_log_ipc_timing_verbose_logs_fast_handlers(monkeypatch) -> None:
     assert fields["method"] == "version"
     assert fields["duration_ms"] == 2
     assert fields["outcome"] == "success"
-    assert fields.get("reason") is None
+    assert "reason" not in fields
 
 
 def test_maybe_log_ipc_timing_samples_successes_and_keeps_fast_failures(monkeypatch) -> None:
@@ -314,6 +315,52 @@ def test_maybe_log_ipc_timing_samples_successes_and_keeps_fast_failures(monkeypa
     assert len(logged) == 1
     assert logged[0][0] == _logging.WARNING
     assert logged[0][2]["outcome"] == "failed"
+
+
+def test_heartbeat_loop_emits_backend_heartbeat(monkeypatch) -> None:
+    logged: list[tuple] = []
+    monkeypatch.setattr(
+        backend_main,
+        "log_event",
+        lambda _logger, level, event, **fields: logged.append((level, event, fields)),
+    )
+    monkeypatch.setattr(backend_main, "_heartbeat_interval_s", lambda: 0.01)
+    monkeypatch.setattr(backend_main, "_heartbeat_process_snapshot", lambda: (12345, 7))
+
+    class FakeScheduler:
+        def metrics(self) -> dict:
+            return {
+                "light_active": 1,
+                "light_queued": 0,
+                "heavy_active": 0,
+                "heavy_queued": 2,
+                "light_rejected": 0,
+                "heavy_rejected": 1,
+                "memory_pressure": True,
+                "system_ram_available_mb": 512,
+            }
+
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=backend_main._heartbeat_loop, args=(stop, FakeScheduler()), daemon=True
+    )
+    thread.start()
+    time.sleep(0.05)
+    stop.set()
+    thread.join(timeout=2)
+
+    assert logged, "heartbeat debe emitir backend.heartbeat"
+    import logging as _logging
+
+    level, event, fields = logged[0]
+    assert event == "backend.heartbeat"
+    assert level == _logging.WARNING
+    assert fields["bytes"] == 12345
+    assert fields["count"] == 7
+    assert fields["reason"] == "memory_pressure"
+    compact = json.loads(fields["message"])
+    assert compact["memory_pressure"] is True
+    assert compact["heavy_queued"] == 2
 
 
 def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:

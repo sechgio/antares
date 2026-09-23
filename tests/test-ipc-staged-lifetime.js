@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 
-const { assert, finish, counters, stubModule, evictModule } = require('./helpers/harness');
+const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
 
 function loadRouterWithHandler({ documentsDir, downloadsDir, userDataDir, fakeProc, fakeWin }) {
   const handlers = new Map();

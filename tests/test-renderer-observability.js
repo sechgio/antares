@@ -124,12 +124,22 @@ try {
     level: 'WARN',
     fields: { outcome: 'failed', reason: 'worker_timeout', view: 'image-optimizer' },
   });
+  recordRendererEvent({
+    event: 'canvas.cloud_sync',
+    level: 'INFO',
+    fields: { outcome: 'success', request_id: 'req-sync-42' },
+  });
   const rejectedUnknown = recordRendererEvent({
     event: 'not.in.allowlist',
     level: 'INFO',
     fields: { outcome: 'failed' },
   });
   assert.strictEqual(rejectedUnknown, null, 'eventos fuera de la allowlist se descartan');
+  const hostile = sanitizeRendererEvent({
+    event: 'canvas.push',
+    fields: { request_id: "a'b; DROP TABLE--\nsecond line" },
+  });
+  assert(hostile && /^[a-zA-Z0-9_.:-]+$/.test(hostile.fields.request_id), 'request_id hostil queda sanitizado a token seguro');
   await flushLogQueue();
 
   const updatedEvents = fs.readFileSync(path.join(getLogsDir(), jsonl), 'utf8')
@@ -152,6 +162,9 @@ try {
   const pushEvent = updatedEvents.find((entry) => entry.event === 'canvas.push');
   assert(pushEvent, 'canvas.push pasa la allowlist y se persiste');
   assert.strictEqual(pushEvent.outcome, 'degraded');
+  const syncEvent = updatedEvents.find((entry) => entry.event === 'canvas.cloud_sync');
+  assert(syncEvent, 'canvas.cloud_sync pasa la allowlist y se persiste');
+  assert.strictEqual(syncEvent.request_id, 'req-sync-42', 'renderer-event conserva request_id para correlación');
   const espaciosEvent = updatedEvents.find((entry) => entry.event === 'espacios.sync');
   assert(espaciosEvent, 'espacios.sync pasa la allowlist y se persiste');
   assert.strictEqual(espaciosEvent.view, 'espacios');

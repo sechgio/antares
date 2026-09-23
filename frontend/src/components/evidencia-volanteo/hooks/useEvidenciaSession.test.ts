@@ -86,6 +86,23 @@ describe("useEvidenciaSession", () => {
     expect(errors[1]).toContain("c.png");
   });
 
+  it("addImages no permite exceder el presupuesto agregado", async () => {
+    const { result } = renderHook(() => useEvidenciaSession());
+    await waitFor(() => expect(saveSession).toHaveBeenCalled());
+    const files = Array.from({ length: 5 }, (_, index) => img(`large-${index}.png`));
+    for (const file of files) {
+      Object.defineProperty(file, "size", { value: 14 * 1024 * 1024 });
+    }
+    let errors: string[] = [];
+
+    await act(async () => {
+      errors = await result.current.addImages(files);
+    });
+
+    expect(result.current.images).toHaveLength(4);
+    expect(errors).toEqual(["El peso total de las imágenes no puede superar 64 MB"]);
+  });
+
   it("pagina de a 6 y clampea el índice al borrar imágenes", async () => {
     const { result } = renderHook(() => useEvidenciaSession());
     await waitFor(() => expect(saveSession).toHaveBeenCalled());

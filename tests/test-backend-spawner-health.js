@@ -1,5 +1,5 @@
 const {
-  assert, finish, flushAsyncTurns, waitFor, stubBackendCommand, evictModule,
+  assert, finish, waitFor, stubBackendCommand, evictModule,
   makeFakeProc, patchSpawn, installInertTimers,
 } = require('./helpers/harness');
 

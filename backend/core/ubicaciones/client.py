@@ -14,7 +14,7 @@ from typing import Any, cast
 
 from PIL import Image
 
-from backend.core.observability import log_event
+from backend.core.observability import bind_context, log_event
 from backend.version import __version__ as _antares_version
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ def _redact_url_for_log(url: str) -> str:
             return url
         pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
         redacted: list[tuple[str, str]] = []
-        sensitive = {"key", "access_token", "api_key", "token", "apikey"}
+        sensitive = {"key", "access_token", "api_key", "token", "apikey", "q"}
         for name, value in pairs:
             if name.lower() in sensitive:
                 redacted.append((name, "***"))
@@ -225,7 +225,7 @@ def _fetch_xyz_tiles_map(
 
     max_workers = min(_MAX_RENDER_WORKERS, max(len(tile_jobs), 1))
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="map-tile") as ex:
-        for col, row, tile in ex.map(_download_tile, tile_jobs):
+        for col, row, tile in ex.map(bind_context(_download_tile), tile_jobs):
             if tile is not None:
                 canvas.paste(tile, (col * _OSM_TILE_SIZE, row * _OSM_TILE_SIZE))
 

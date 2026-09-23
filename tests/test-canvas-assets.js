@@ -8,7 +8,6 @@ const {
   getCanvasAsset,
   getCanvasAssetInfo,
   parseAssetRef,
-  toAssetRef,
   assetsDir,
 } = require('../electron/canvas-assets.js');
 

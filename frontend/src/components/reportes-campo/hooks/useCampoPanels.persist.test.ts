@@ -280,6 +280,7 @@ describe('useCampoPanels persistence', () => {
         expect(stored.photos).toHaveLength(1);
         expect(stored.photos[0].name).toBe('foto.jpg');
         expect(stored.photos[0].type).toBe('image/jpeg');
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock');
     });
 
     it('deletes stored panel and cancels pending flush for that id', async () => {

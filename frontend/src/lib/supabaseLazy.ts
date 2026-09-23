@@ -4,6 +4,12 @@ let cached: Promise<SupabaseClient | null> | null = null;
 
 // Mantiene @supabase/supabase-js fuera del grafo estático del chunk de canvas.
 export function getSupabaseClient(): Promise<SupabaseClient | null> {
-  cached ??= import('./supabase').then((m) => m.supabase);
+  if (!cached) {
+    const pending = import('./supabase').then((m) => m.supabase);
+    cached = pending;
+    void pending.catch(() => {
+      if (cached === pending) cached = null;
+    });
+  }
   return cached;
 }

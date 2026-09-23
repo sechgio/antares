@@ -66,11 +66,17 @@ async function run() {
   const win = makeWindow();
   const ipcMain = makeIpcMain();
   const app = { isPackaged: true, getVersion: () => '1.2.3' };
+  const logEvents = [];
 
   const stubs = [
     installStub('../electron/window-manager.js', { getMainWindow: () => win }),
     installStub('../electron/ipc-router.js', {
       _isAllowedIpcSender: (event) => event && event.trusted === true,
+    }),
+    installStub('../electron/app-log.js', {
+      appendLogEvent: (level, event, fields) => { logEvents.push({ level, event, fields }); },
+      appendLogLine: () => {},
+      logInfo: () => {},
     }),
   ];
 
@@ -171,6 +177,17 @@ async function run() {
     res = await ipcMain.handlers.get('auto-update-install')({ trusted: false });
     assert(res.success === false && res.reason === 'untrusted sender', 'prod install rejects untrusted sender');
 
+    logEvents.length = 0;
+    fakeUpdater.emit('checking-for-update');
+    const periodicStart = logEvents.find((entry) => entry.event === 'updater.check_start');
+    assert(periodicStart !== undefined, 'checking-for-update opens the check');
+    assert(periodicStart.fields.reason === 'periodic', 'a background check is labelled periodic');
+    assert(periodicStart.fields.outcome === undefined, 'an unfinished check has no outcome yet');
+    assert(
+      !logEvents.some((entry) => entry.event === 'updater.check'),
+      'checking-for-update does not emit the completion event',
+    );
+
     fakeUpdater.emit('update-not-available');
     assert(
       !win.sent.some((m) => m.data.status === 'up-to-date'),
@@ -180,6 +197,12 @@ async function run() {
     fakeUpdater.checkResult = Promise.resolve({ version: null });
     res = await ipcMain.handlers.get('auto-update-check')({ trusted: true });
     assert(res.success === true, 'manual check succeeds when idle');
+    logEvents.length = 0;
+    fakeUpdater.emit('checking-for-update');
+    assert(
+      logEvents.some((entry) => entry.event === 'updater.check_start' && entry.fields.reason === 'manual'),
+      'a user requested check is labelled manual',
+    );
     fakeUpdater.emit('update-not-available');
     assert(
       win.sent.some((m) => m.data.status === 'up-to-date' && m.data.version === '1.2.3'),

@@ -38,8 +38,9 @@ async function _fetchProfile(
       .from('user_profiles')
       .select('display_name, is_admin, is_disabled')
       .eq('user_id', userId)
-      .single();
-    if (error || !data) return null;
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
     return {
       displayName: data.display_name ?? null,
       isAdmin: !!data.is_admin,
@@ -50,7 +51,7 @@ async function _fetchProfile(
   try {
     return await p;
   } finally {
-    _profileInflight.delete(userId);
+    if (_profileInflight.get(userId) === p) _profileInflight.delete(userId);
   }
 }
 
@@ -84,15 +85,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const revokeDisabledSession = useCallback(async () => {
+  const revokeDisabledSession = useCallback((userId: string) => {
     const client = clientRef.current;
-    if (!client) return;
-    await client.auth.signOut();
+    // Invalidate profile checks already in flight so they cannot restore a
+    // session after the account has been revoked.
+    authGenRef.current += 1;
+    _profileInflight.delete(userId);
     if (mountedRef.current) {
       setUser(null);
       setError(DISABLED_ACCOUNT_MESSAGE);
       setLoading(false);
     }
+    if (!client) return;
+    void client.auth.signOut({ scope: 'local' }).catch((err) => {
+      console.warn('[auth] signOut after account revocation failed:', err);
+    });
   }, []);
 
   const applyAuthenticatedUser = useCallback(async (
@@ -101,8 +108,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   ): Promise<boolean> => {
     const profile = await _fetchProfile(clientRef.current, supabaseUser.id);
     if (gen !== authGenRef.current || !mountedRef.current) return false;
-    if (profile?.isDisabled) {
-      await revokeDisabledSession();
+    if (!profile || profile.isDisabled) {
+      revokeDisabledSession(supabaseUser.id);
       return false;
     }
     setUser(_mapUser(supabaseUser, profile));
@@ -242,8 +249,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         (payload) => {
           const next = payload.new as { is_disabled?: boolean } | null;
           if (next?.is_disabled) {
-            void revokeDisabledSession();
+            revokeDisabledSession(userId);
           }
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'user_profiles',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          revokeDisabledSession(userId);
         },
       )
       .subscribe();
@@ -263,10 +282,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const userId = data.user?.id;
     if (userId) {
-      const profile = await _fetchProfile(supabase, userId);
-      if (profile?.isDisabled) {
-        await revokeDisabledSession();
-        return { error: DISABLED_ACCOUNT_MESSAGE };
+      try {
+        const profile = await _fetchProfile(supabase, userId);
+        if (!profile || profile.isDisabled) {
+          revokeDisabledSession(userId);
+          return { error: DISABLED_ACCOUNT_MESSAGE };
+        }
+      } catch (err) {
+        const message = errorMessage(err, String(err));
+        setError(message);
+        return { error: message };
       }
     }
     setError(null);

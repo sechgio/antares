@@ -64,6 +64,8 @@ describe('useCampoBranding', () => {
         expect(stored.reportType).toBe('panel-fotografico');
         expect(stored.logoLeft?.name).toBe('left.png');
         expect(stored.logoRight?.name).toBe('right.png');
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:left.png');
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:right.png');
     });
 
     it('restores logos from storage on mount', async () => {

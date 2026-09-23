@@ -11,11 +11,12 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from backend.core.observability import log_event
+from backend.core.observability import bind_context, log_event
 from backend.core.ubicaciones import cache as _ubic_cache
 from backend.core.ubicaciones import client as _ubic_client
 from backend.core.ubicaciones import composer as _ubic_composer
 from backend.core.ubicaciones import consolidator as _ubic_consolidator
+from backend.core.ubicaciones import geocode as _ubic_geocode
 from backend.core.ubicaciones.cache import (
     _cache_lock,
     _compose_and_cache_preview,
@@ -90,6 +91,40 @@ def _manual_datos(manual_data: dict) -> dict[str, Any]:  # allowlist: dict[str, 
     }
 
 
+def _geocode_opts_from_payload(payload: dict) -> tuple[bool, str | None]:  # allowlist: dict[str, Any]
+    enabled = payload.get("geocode") is True
+    raw_country = payload.get("geocodeCountry")
+    country = _ubic_geocode.normalize_country(raw_country)
+    if enabled and raw_country and country is None:
+        raise ValueError("El país debe ser un código ISO de dos letras, por ejemplo 'pe'.")
+    return enabled, country
+
+
+def _has_address_columns(col_dir: Any, col_loc: Any, col_dist: Any) -> bool:
+    return bool(col_dir or col_loc or col_dist)
+
+
+def _try_geocode(datos: dict, *, enabled: bool, country: str | None) -> tuple[float, float] | None:  # allowlist: dict[str, Any]
+    if not enabled:
+        return None
+    query = _ubic_geocode.build_geocode_query(
+        datos.get("direccion"), datos.get("localidad"), datos.get("distrito")
+    )
+    if not query:
+        return None
+    return _ubic_geocode.geocode_address(query, country=country)
+
+
+def _geocode_failure(datos: dict) -> dict[str, str]:
+    query = _ubic_geocode.build_geocode_query(
+        datos.get("direccion"), datos.get("localidad"), datos.get("distrito")
+    )
+    return {
+        "cod_componente": str(datos.get("cod_componente", "")),
+        "motivo": "not_found" if query else "missing_address",
+    }
+
+
 @with_locale
 def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dict[str, Any]
     excel_path = payload.get("excelPath")
@@ -99,6 +134,7 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dic
     recompose_only = bool(payload.get("recomposeOnly", False))
     map_opts = _map_opts_from_payload(payload)
     custom_styles = payload.get("customStyles") or None
+    geocode_enabled, geocode_country = _geocode_opts_from_payload(payload)
 
     if not excel_path and not manual_data:
         raise ValueError("Falta la ruta del Excel o datos manuales.")
@@ -113,7 +149,9 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dic
         df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
         total_filas = len(df)
 
-        if col_lat is None:
+        if (col_lat is None or col_lon is None) and not (
+            geocode_enabled and _has_address_columns(col_dir, col_loc, col_dist)
+        ):
             raise ValueError("El Excel debe tener columnas 'latitud' y 'longitud'.")
 
         if row_index >= total_filas:
@@ -126,13 +164,24 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dic
     lat = _coerce_coord(datos["lat"])
     lon = _coerce_coord(datos["lon"])
     if lat is None or lon is None:
+        geocoded = _try_geocode(datos, enabled=geocode_enabled, country=geocode_country)
+        if geocoded is not None:
+            lat, lon = geocoded
+            datos["_geocoded_by"] = "nominatim"
+    if lat is None or lon is None:
+        if geocode_enabled:
+            if _geocode_failure(datos)["motivo"] == "missing_address":
+                raise ValueError("La fila no tiene coordenadas ni una dirección para geocodificar.")
+            raise ValueError("No se pudo geocodificar la dirección; revise la dirección o la conexión.")
         raise ValueError("La fila no tiene coordenadas validas.")
     datos["lat"] = lat
     datos["lon"] = lon
 
-    excel_ctx = _manual_preview_ctx(datos) if manual_data else excel_ctx
+    preview_ctx: tuple[Any, ...] = _manual_preview_ctx(datos) if manual_data else excel_ctx
+    if datos.get("_geocoded_by") == "nominatim":
+        preview_ctx = (*preview_ctx, "nominatim", geocode_country, lat, lon)
     styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
-    composed_key = _composed_preview_key(excel_ctx, row_index, formato, styles_hash, map_opts)
+    composed_key = _composed_preview_key(preview_ctx, row_index, formato, styles_hash, map_opts)
 
     cached_preview = _preview_composed_cache.get(composed_key)
     if cached_preview is not None:
@@ -147,7 +196,7 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dic
         cached_map = _map_screenshot_cache.get(map_key) or _map_screenshot_working_cache.get(map_key)
         if cached_map is not None:
             data = _compose_and_cache_preview(
-                excel_ctx,
+                preview_ctx,
                 row_index,
                 formato,
                 datos,
@@ -160,7 +209,7 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dic
 
     screenshot_bytes = _get_cached_map_screenshot(lat, lon, formato, preview=True, map_opts=map_opts)
     data = _compose_and_cache_preview(
-        excel_ctx,
+        preview_ctx,
         row_index,
         formato,
         datos,
@@ -171,7 +220,7 @@ def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:  # allowlist: dic
     )
 
     _spawn_prefetch(
-        excel_ctx,
+        preview_ctx,
         row_index,
         formato,
         datos,
@@ -193,6 +242,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
     consolidado = payload.get("consolidado", False)
     map_opts = _map_opts_from_payload(payload)
     custom_styles = payload.get("customStyles") or None
+    geocode_enabled, geocode_country = _geocode_opts_from_payload(payload)
 
     if not output_dir or (not excel_path and not manual_data):
         raise ValueError("Faltan rutas de entrada/salida o datos manuales.")
@@ -200,9 +250,19 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
     os.makedirs(output_dir, exist_ok=True)
 
     valid_rows: list[dict] = []
+    geocodificados = 0
+    geocode_failures: list[dict[str, str]] = []
 
     if manual_data:
         datos = _manual_datos(manual_data)
+        if _is_na(datos["lat"]) or _is_na(datos["lon"]):
+            geocoded = _try_geocode(datos, enabled=geocode_enabled, country=geocode_country)
+            if geocoded is not None:
+                datos["lat"], datos["lon"] = geocoded
+                datos["_geocoded_by"] = "nominatim"
+                geocodificados += 1
+            elif geocode_enabled:
+                geocode_failures.append(_geocode_failure(datos))
         if not _is_na(datos["lat"]) and not _is_na(datos["lon"]):
             valid_rows.append(datos)
     else:
@@ -210,7 +270,9 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
             raise ValueError("Faltan rutas de entrada/salida o datos manuales.")
         df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
 
-        if col_lat is None:
+        if (col_lat is None or col_lon is None) and not (
+            geocode_enabled and _has_address_columns(col_dir, col_loc, col_dist)
+        ):
             raise ValueError("El Excel debe tener columnas 'latitud' y 'longitud'.")
 
         for index, row in df.iterrows():
@@ -218,12 +280,30 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
             lat = _coerce_coord(datos["lat"])
             lon = _coerce_coord(datos["lon"])
             if lat is None or lon is None:
+                geocoded = _try_geocode(datos, enabled=geocode_enabled, country=geocode_country)
+                if geocoded is not None:
+                    lat, lon = geocoded
+                    datos["_geocoded_by"] = "nominatim"
+                    geocodificados += 1
+                elif geocode_enabled:
+                    geocode_failures.append(_geocode_failure(datos))
+            if lat is None or lon is None:
                 continue
             datos["lat"] = lat
             datos["lon"] = lon
             valid_rows.append(datos)
 
     if not valid_rows:
+        if geocode_enabled and geocode_failures:
+            return {
+                "generados": 0,
+                "fallidos": 0,
+                "outputDir": output_dir,
+                "consolidado": consolidado,
+                "consolidatedPath": None,
+                "geocodificados": 0,
+                "geocodeFailures": geocode_failures,
+            }
         raise ValueError("No hay filas con coordenadas validas para generar.")
 
     if not consolidado:
@@ -241,10 +321,12 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
     def _render_one(d: dict) -> tuple[bool, str | None]:
         log_event(logger, logging.INFO, "ubicaciones.item_start", message=f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}")
         t0 = time.perf_counter()
+        ok = False
         try:
             if not consolidado:
                 out_path = os.path.join(output_dir, d["_out_filename"])
                 generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts, custom_styles=custom_styles)
+                ok = True
                 return (True, None)
             if consolidated_temp_dir is None:
                 raise RuntimeError("No se pudo crear el directorio temporal del PDF consolidado.")
@@ -256,6 +338,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
             os.close(fd)
             try:
                 generar_imagen_ubicacion(d, tmp_name, formato, map_opts=map_opts, custom_styles=custom_styles)
+                ok = True
                 return (True, tmp_name)
             except Exception:
                 with contextlib.suppress(OSError):
@@ -275,11 +358,11 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
             elapsed_ms = round((time.perf_counter() - t0) * 1000)
             log_event(
                 logger,
-                logging.INFO,
+                logging.INFO if ok else logging.WARNING,
                 "ubicaciones.item_complete",
-                outcome="success",
+                outcome="success" if ok else "failed",
                 duration_ms=elapsed_ms,
-                message=f"Ubicacion {d['cod_componente']} renderizada",
+                message=f"Ubicacion {d['cod_componente']} {'renderizada' if ok else 'falló'}",
             )
 
     temp_ctx = (
@@ -291,7 +374,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
         consolidated_temp_dir = managed_temp_dir
         max_workers = max(1, min(_MAX_RENDER_WORKERS, len(valid_rows)))
         with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
-            for ok, page_path in ex.map(_render_one, valid_rows):
+            for ok, page_path in ex.map(bind_context(_render_one), valid_rows):
                 if not ok:
                     fallidos += 1
                     continue
@@ -332,13 +415,17 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
         finally:
             close_consolidated_writer(consolidated_writer)
 
-    return {
+    result = {
         "generados": generados,
         "fallidos": fallidos,
         "outputDir": output_dir,
         "consolidado": consolidado,
         "consolidatedPath": consolidated_path,
     }
+    if geocode_enabled:
+        result["geocodificados"] = geocodificados
+        result["geocodeFailures"] = geocode_failures
+    return result
 
 
 HANDLERS: dict[str, Any] = {  # allowlist: dict[str, Any]

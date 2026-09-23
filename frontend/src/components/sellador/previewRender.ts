@@ -156,6 +156,7 @@ export async function renderOtherPagesPreview(
     pdfFile: File | null;
     sourceRevision?: number;
     pageCount: number;
+    pageNumbers?: number[];
     containerW: number;
     stampUrl: string | null;
     placementsByPage: Map<number, StampRect[]>;
@@ -171,6 +172,7 @@ export async function renderOtherPagesPreview(
     pdfFile,
     sourceRevision = 0,
     pageCount,
+    pageNumbers,
     containerW,
     stampUrl,
     placementsByPage,
@@ -182,6 +184,11 @@ export async function renderOtherPagesPreview(
 
   const bucketedWidth = bucketContainerWidth(containerW);
   const previews: Array<{ pageNum: number; url: string; stampCount: number }> = [];
+  const pagesToRender = [...new Set(
+    pageNumbers ?? Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => index + 2),
+  )]
+    .filter((pageNum) => pageNum >= 2 && pageNum <= pageCount);
+  if (pagesToRender.length === 0) return;
   let lastReportedCount = 0;
   let pdf: PDFDocumentProxy | null = null;
   let pdfHandle: StagedFileHandle | null = null;
@@ -189,7 +196,7 @@ export async function renderOtherPagesPreview(
   const reportProgress = (force = false) => {
     if (isCancelled()) return;
     const shouldReport = force
-      || previews.length === pageCount - 1
+      || previews.length === pagesToRender.length
       || previews.length - lastReportedCount >= 2;
     if (!shouldReport) return;
     lastReportedCount = previews.length;
@@ -207,7 +214,7 @@ export async function renderOtherPagesPreview(
       pdf = await loadPdfDocument(pdfBase64);
     }
 
-    for (let pageNum = 2; pageNum <= pageCount; pageNum += 1) {
+    for (const pageNum of pagesToRender) {
       if (isCancelled()) break;
       const stampsOnPage = assignmentCounts.get(pageNum) ?? 0;
       const stampRects = placementsByPage.get(pageNum) ?? [];

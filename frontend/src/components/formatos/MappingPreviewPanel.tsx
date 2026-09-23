@@ -141,16 +141,24 @@ export default function MappingPreviewPanel({
 
     async function tryBlobRender(blob: Blob) {
       const pdf = await loadPdfFromBlob(blob);
-      if (generation !== loadGenerationRef.current) return false;
-      return renderFromPdf(pdf);
+      try {
+        if (generation !== loadGenerationRef.current) return false;
+        return await renderFromPdf(pdf);
+      } finally {
+        await pdf.destroy();
+      }
     }
 
     async function tryTemplateRender() {
       const res = await api.formatosGetTemplate(formatId);
       if (generation !== loadGenerationRef.current) return false;
       const pdf = await loadPdfFromBase64(res.pdf_base64);
-      if (generation !== loadGenerationRef.current) return false;
-      return renderFromPdf(pdf);
+      try {
+        if (generation !== loadGenerationRef.current) return false;
+        return await renderFromPdf(pdf);
+      } finally {
+        await pdf.destroy();
+      }
     }
 
     async function loadPreview() {
@@ -197,7 +205,7 @@ export default function MappingPreviewPanel({
       setError(formatMappingLoadError(err));
     });
 
-    return undefined;
+    return () => { loadGenerationRef.current += 1; };
   }, [containerWidth, formatId, pageNum, renderKey]);
 
   const handleMappingRectChange = (partial: Pick<VisualMapping, 'x' | 'y' | 'width' | 'height'>) => {

@@ -234,7 +234,8 @@ export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ r
     const isConsolidado = result.data?.consolidado;
     const generados = result.data?.generados ?? 0;
     const fallidos = result.data?.fallidos ?? 0;
-    const allFailed = generados === 0 && fallidos > 0;
+    const geocodeFailures = result.data?.geocodeFailures ?? [];
+    const allFailed = generados === 0 && (fallidos > 0 || geocodeFailures.length > 0);
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8">
         <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${allFailed ? 'bg-[color:color-mix(in_srgb,var(--accent-yellow)_15%,transparent)]' : 'bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)]'}`}>
@@ -264,6 +265,24 @@ export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ r
           <p className="text-sm text-amber-400 mb-5">
             {fallidos} fila{fallidos !== 1 ? 's' : ''} omitida{fallidos !== 1 ? 's' : ''} por error
           </p>
+        )}
+        {(result.data?.geocodificados ?? 0) > 0 && (
+          <p className="text-xs text-[var(--text-muted)] mb-5 -mt-3">
+            {result.data!.geocodificados} {result.data!.geocodificados !== 1 ? 'ubicaciones' : 'ubicación'} resuelta{result.data!.geocodificados !== 1 ? 's' : ''} desde dirección
+          </p>
+        )}
+        {geocodeFailures.length > 0 && (
+          <div className="max-w-md w-full rounded-lg border border-amber-400/20 bg-amber-400/[0.05] px-3 py-2 mb-5 -mt-3">
+            <p className="text-xs font-medium text-amber-400">
+              {geocodeFailures.length} {geocodeFailures.length !== 1 ? 'direcciones' : 'dirección'} sin resolver
+            </p>
+            <p className="text-[10px] text-[var(--text-muted)] mt-1 break-words">
+              {geocodeFailures.slice(0, 8).map((failure) =>
+                `${failure.cod_componente}: ${failure.motivo === 'missing_address' ? 'sin dirección' : 'sin resultado o servicio no disponible'}`,
+              ).join(' · ')}
+              {geocodeFailures.length > 8 ? ` · y ${geocodeFailures.length - 8} más` : ''}
+            </p>
+          </div>
         )}
         <div className="max-w-md w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
           <div className="flex items-center gap-2 mb-1.5">

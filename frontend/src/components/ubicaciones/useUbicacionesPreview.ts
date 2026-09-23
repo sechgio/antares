@@ -22,6 +22,12 @@ export interface UbicacionesPreviewDeps {
   provider: string;
   zoom: number;
   apiKeys: Record<string, string>;
+  geocode: boolean;
+  geocodeCountry: string;
+}
+
+export function hasManualAddress(data: ManualData): boolean {
+  return Boolean(data.direccion?.trim() || data.localidad?.trim() || data.distrito?.trim());
 }
 
 export type PreviewFetchOptions = {
@@ -44,6 +50,8 @@ export function useUbicacionesPreview(deps: UbicacionesPreviewDeps) {
     provider,
     zoom,
     apiKeys,
+    geocode,
+    geocodeCountry,
   } = deps;
 
   const [preview, setPreview] = useState<PreviewData>(null);
@@ -79,9 +87,11 @@ export function useUbicacionesPreview(deps: UbicacionesPreviewDeps) {
       provider,
       zoom,
       apiKeys,
+      geocode,
+      geocodeCountry,
       previewRowIndex,
     };
-  }, [excelPath, inputMode, manualData, formato, outputDir, outputMode, customStyles, provider, zoom, apiKeys, previewRowIndex]);
+  }, [excelPath, inputMode, manualData, formato, outputDir, outputMode, customStyles, provider, zoom, apiKeys, geocode, geocodeCountry, previewRowIndex]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -117,6 +127,8 @@ export function useUbicacionesPreview(deps: UbicacionesPreviewDeps) {
         provider: currentProvider,
         zoom: currentZoom,
         apiKeys: currentApiKeys,
+        geocode: currentGeocode,
+        geocodeCountry: currentGeocodeCountry,
       } = lastParamsRef.current;
 
       const path = options?.excelPathOverride ?? pathFromState;
@@ -124,6 +136,7 @@ export function useUbicacionesPreview(deps: UbicacionesPreviewDeps) {
       if (
         currentInputMode === 'manual'
         && (!isValidCoord(currentManualData.lat) || !isValidCoord(currentManualData.lon))
+        && !(currentGeocode && hasManualAddress(currentManualData))
       ) {
         return;
       }
@@ -153,6 +166,8 @@ export function useUbicacionesPreview(deps: UbicacionesPreviewDeps) {
           zoom: currentZoom,
           api_key: currentApiKeys[currentProvider] || '',
           manualData: currentInputMode === 'manual' ? currentManualData : undefined,
+          geocode: currentGeocode,
+          geocodeCountry: currentGeocodeCountry,
         });
         if (myId !== fetchIdRef.current) return;
         if (resp?.total_filas) {
@@ -287,8 +302,10 @@ export function useUbicacionesPreview(deps: UbicacionesPreviewDeps) {
   useEffect(() => {
     if (
       inputMode === 'manual'
-      && isValidCoord(manualData.lat)
-      && isValidCoord(manualData.lon)
+      && (
+        (isValidCoord(manualData.lat) && isValidCoord(manualData.lon))
+        || (geocode && hasManualAddress(manualData))
+      )
     ) {
       triggerPreviewFetch(0);
     }

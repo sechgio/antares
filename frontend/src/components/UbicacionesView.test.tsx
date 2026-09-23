@@ -37,6 +37,30 @@ describe('UbicacionesView ResultPanel', () => {
     expect(screen.getByText('4 páginas')).toBeInTheDocument();
   });
 
+  it('shows geocoding failures by row code and reason', () => {
+    render(
+      <ResultPanel
+        result={{
+          success: true,
+          data: {
+            generados: 0,
+            fallidos: 0,
+            consolidado: false,
+            geocodeFailures: [
+              { cod_componente: 'UBI-1', motivo: 'missing_address' },
+              { cod_componente: 'UBI-2', motivo: 'not_found' },
+            ],
+          },
+        }}
+        outputDir={outputDir}
+      />,
+    );
+
+    expect(screen.getByText('Proceso completado con errores')).toBeInTheDocument();
+    expect(screen.getByText('2 direcciones sin resolver')).toBeInTheDocument();
+    expect(screen.getByText(/UBI-1: sin dirección.*UBI-2: sin resultado o servicio no disponible/)).toBeInTheDocument();
+  });
+
   it('shows consolidatedPath filename when fallback name was used', () => {
     render(
       <ResultPanel

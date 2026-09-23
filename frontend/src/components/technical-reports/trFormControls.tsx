@@ -58,16 +58,18 @@ export function Field({
   value,
   onChange,
   type = 'text',
+  ariaLabel,
 }: {
   label: string;
   value: string | number;
   onChange: (value: string) => void;
   type?: string;
+  ariaLabel?: string;
 }) {
   return (
     <label className="tr-field">
       <span>{label}</span>
-      <input type={type} value={value ?? ''} onChange={(event) => onChange(event.target.value)} />
+      <input aria-label={ariaLabel} type={type} value={value ?? ''} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }

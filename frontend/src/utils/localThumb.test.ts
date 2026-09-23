@@ -21,13 +21,23 @@ describe('getLocalThumbnail', () => {
   it('returns data URL on success and caches it', async () => {
     localThumbnail.mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,abc' });
 
-    const first = await getLocalThumbnail('C:\\photos\\a.jpg', 256);
-    const second = await getLocalThumbnail('C:\\photos\\a.jpg', 256);
+    const first = await getLocalThumbnail('antares-read_a', 256);
+    const second = await getLocalThumbnail('antares-read_a', 256);
 
     expect(first).toBe('data:image/jpeg;base64,abc');
     expect(second).toBe('data:image/jpeg;base64,abc');
     expect(localThumbnail).toHaveBeenCalledTimes(1);
-    expect(localThumbnail).toHaveBeenCalledWith({ path: 'C:\\photos\\a.jpg', maxEdge: 256 });
+    expect(localThumbnail).toHaveBeenCalledWith({ file_token: 'antares-read_a', maxEdge: 256 });
+  });
+
+  it('revalidates path thumbnails through the native signature cache', async () => {
+    localThumbnail
+      .mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,first' })
+      .mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,second' });
+
+    expect(await getLocalThumbnail('C:\\photos\\replaceable.jpg', 256)).toContain('first');
+    expect(await getLocalThumbnail('C:\\photos\\replaceable.jpg', 256)).toContain('second');
+    expect(localThumbnail).toHaveBeenCalledTimes(2);
   });
 
   it('coalesces concurrent requests for the same path into one IPC call', async () => {
@@ -90,13 +100,23 @@ describe('getLocalThumbnail', () => {
   it('getLocalImageDataUrl returns full-fidelity data URL and caches it', async () => {
     localImageDataUrl.mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,full' });
 
-    const first = await getLocalImageDataUrl('C:\\cache\\preview.jpg');
-    const second = await getLocalImageDataUrl('C:\\cache\\preview.jpg');
+    const first = await getLocalImageDataUrl('antares-read_preview');
+    const second = await getLocalImageDataUrl('antares-read_preview');
 
     expect(first).toBe('data:image/jpeg;base64,full');
     expect(second).toBe('data:image/jpeg;base64,full');
     expect(localImageDataUrl).toHaveBeenCalledTimes(1);
-    expect(localImageDataUrl).toHaveBeenCalledWith({ path: 'C:\\cache\\preview.jpg' });
+    expect(localImageDataUrl).toHaveBeenCalledWith({ file_token: 'antares-read_preview' });
+  });
+
+  it('revalidates full images referenced by path', async () => {
+    localImageDataUrl
+      .mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,first' })
+      .mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,second' });
+
+    expect(await getLocalImageDataUrl('C:\\cache\\replaceable.jpg')).toContain('first');
+    expect(await getLocalImageDataUrl('C:\\cache\\replaceable.jpg')).toContain('second');
+    expect(localImageDataUrl).toHaveBeenCalledTimes(2);
   });
 
   it('evicts full images when their combined payload exceeds the cache budget', async () => {
@@ -106,9 +126,9 @@ describe('getLocalThumbnail', () => {
     }));
 
     for (let index = 0; index < 5; index += 1) {
-      await getLocalImageDataUrl(`C:\\cache\\large-${index}.jpg`);
+      await getLocalImageDataUrl(`antares-read_large-${index}`);
     }
-    await getLocalImageDataUrl('C:\\cache\\large-0.jpg');
+    await getLocalImageDataUrl('antares-read_large-0');
 
     expect(localImageDataUrl).toHaveBeenCalledTimes(6);
   });

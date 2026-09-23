@@ -38,7 +38,6 @@ const SCOPES = [
 let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
 let _pendingOAuthState = null;
-let _oauthFlowPromise = null;
 
 function _generateCodeVerifier() {
   return crypto.randomBytes(32).toString('base64url');
@@ -87,7 +86,6 @@ function cancelBrowserOAuthFlow() {
   _pendingRedirectUri = null;
   _pendingCodeVerifier = null;
   _pendingOAuthState = null;
-  _oauthFlowPromise = null;
 }
 
 async function beginBrowserOAuthFlow(onComplete, onError) {
@@ -103,7 +101,7 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
   _pendingOAuthState = oauthState;
   const url = _buildAuthUrl(redirectUri, codeChallenge, oauthState);
 
-  _oauthFlowPromise = startCallbackServer(port, {
+  startCallbackServer(port, {
     expectedState: oauthState,
     onCode: async (code) => {
       try {

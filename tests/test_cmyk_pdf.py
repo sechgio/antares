@@ -5,6 +5,7 @@ import base64
 from pathlib import Path
 
 import fitz
+import pytest
 
 from backend.core.canvas.models import create_empty_document
 from backend.core.cmyk_pdf.color import css_color_to_cmyk, hex_to_rgb, rgb_to_cmyk
@@ -700,6 +701,51 @@ def test_cmyk_renderer_image_cache_evicts_lru(monkeypatch):
         )
         assert prepared is not None
     assert len(renderer._image_cache) == renderer._image_cache_max
+
+
+def test_cmyk_renderer_image_cache_respects_byte_budget(monkeypatch):
+    from contextlib import contextmanager
+
+    from PIL import Image
+
+    import backend.core.cmyk_pdf.renderer as renderer_mod
+
+    renderer = CanvasCmykRenderer(document=create_empty_document(name="Byte budget"))
+    renderer._image_cache_max_bytes = 10
+
+    @contextmanager
+    def fake_open(_src, _local_image_paths):
+        yield Image.new("RGB", (1, 1), color=(10, 20, 30))
+
+    monkeypatch.setattr(renderer_mod, "_open_export_image", fake_open)
+    monkeypatch.setattr(renderer_mod, "_prepare_image_bytes", lambda *_args: (b"12345678", 1, 1))
+
+    rect = fitz.Rect(0, 0, 1, 1)
+    renderer._prepare_image_for_rect_cached("first", {}, rect, "fill")
+    renderer._prepare_image_for_rect_cached("second", {}, rect, "fill")
+
+    assert len(renderer._image_cache) == 1
+    assert renderer._image_cache_bytes == 8
+
+
+def test_cmyk_renderer_rejects_images_above_pixel_budget(monkeypatch):
+    from contextlib import contextmanager
+
+    from PIL import Image
+
+    import backend.core.cmyk_pdf.renderer as renderer_mod
+
+    renderer = CanvasCmykRenderer(document=create_empty_document(name="Pixel budget"))
+    monkeypatch.setattr(renderer_mod, "_MAX_PREPARED_IMAGE_PIXELS", 10, raising=False)
+
+    @contextmanager
+    def fake_open(_src, _local_image_paths):
+        yield Image.new("RGB", (1, 1), color=(10, 20, 30))
+
+    monkeypatch.setattr(renderer_mod, "_open_export_image", fake_open)
+
+    with pytest.raises(ValueError, match="píxeles"):
+        renderer._prepare_image_for_rect_cached("large", {}, fitz.Rect(0, 0, 30, 30), "fill")
 
 
 def test_cmyk_renderer_text_align_and_font():

@@ -15,9 +15,13 @@ export async function loadPdfDocument(pdfBase64: string) {
 
 export async function getPdfPageSize(pdfBase64: string, pageNum = 1): Promise<PdfPageSize> {
   const pdf = await loadPdfDocument(pdfBase64);
-  const page = await pdf.getPage(pageNum);
-  const viewport = page.getViewport({ scale: 1 });
-  return { width: viewport.width, height: viewport.height };
+  try {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1 });
+    return { width: viewport.width, height: viewport.height };
+  } finally {
+    await pdf.destroy();
+  }
 }
 
 export async function renderPdfPageToDataUrl(

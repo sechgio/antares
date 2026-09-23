@@ -144,7 +144,7 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
         cleaned["fallback"] = str(raw["fallback"])
     if raw.get("side") in ("left", "right"):
         cleaned["side"] = raw["side"]
-    for int_key in ("index", "cols", "rows", "pageIndex", "imagesPerPage"):
+    for int_key in ("index", "cols", "rows", "imagesPerPage"):
         if int_key in raw:
             try:
                 cleaned[int_key] = _finite_int(raw[int_key])
@@ -163,7 +163,17 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
             else:
                 cleaned[bool_key] = bool(value)
     if "rowsData" in raw and raw["rowsData"] is not None:
-        cleaned["rowsData"] = str(raw["rowsData"])
+        # La tabla guarda sus celdas como JSON dentro del string: solo se
+        # conserva si parsea a un objeto con "cells" lista (misma condición
+        # que parseTableData en el frontend; si no, la tabla muestra su
+        # grilla por defecto y el dato corrupto no se perpetúa en disco).
+        rows_text = str(raw["rowsData"])
+        try:
+            parsed_rows = json.loads(rows_text)
+        except (TypeError, ValueError):
+            parsed_rows = None
+        if isinstance(parsed_rows, dict) and isinstance(parsed_rows.get("cells"), list):
+            cleaned["rowsData"] = rows_text
     if isinstance(raw.get("rules"), list):
         rules = []
         for item in raw["rules"]:
@@ -626,6 +636,56 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
         parent = layer.get("parentId")
         if parent and (parent not in valid_ids or parent == layer["id"]):
             layer.pop("parentId", None)
+
+    # Rompe ciclos de parentId sin separar las capas que solo conducen hasta ellos.
+    parent_of = {layer["id"]: layer.get("parentId") for layer in layers}
+    visited: set[str] = set()
+    cycle_nodes: set[str] = set()
+    for layer in layers:
+        if layer["id"] in visited:
+            continue
+        if not layer.get("parentId"):
+            visited.add(layer["id"])
+            continue
+        path: list[str] = []
+        path_index: dict[str, int] = {}
+        cursor = layer["id"]
+        while cursor and cursor in parent_of and cursor not in visited:
+            repeated_at = path_index.get(cursor)
+            if repeated_at is not None:
+                cycle_node = path[repeated_at]
+                cycle_nodes.add(cycle_node)
+                parent_of[cycle_node] = None
+                break
+            path_index[cursor] = len(path)
+            path.append(cursor)
+            cursor = parent_of.get(cursor)
+        visited.update(path)
+    for layer in layers:
+        if layer["id"] in cycle_nodes:
+            layer.pop("parentId", None)
+
+    # Operandos booleanos que referencian capas inexistentes (o la propia
+    # capa): referencia colgada que LayerNode no puede resolver.
+    for layer in layers:
+        meta = layer.get("meta")
+        if not isinstance(meta, dict):
+            continue
+        ops = meta.get("ops")
+        if not isinstance(ops, list):
+            continue
+        kept = [
+            entry
+            for entry in ops
+            if isinstance(entry, dict)
+            and entry.get("layerId") != layer["id"]
+            and entry.get("layerId") in valid_ids
+        ]
+        if len(kept) != len(ops):
+            if kept:
+                meta["ops"] = kept
+            else:
+                meta.pop("ops", None)
 
     return {
         "version": DOCUMENT_VERSION,

@@ -49,6 +49,11 @@ describe('InformesV2App', () => {
     mocks.api.informesV2Delete.mockResolvedValue({ deleted_id: 'R-1' });
     mocks.api.informesV2Clear.mockResolvedValue({});
     mocks.api.informesV2ImportFile.mockResolvedValue({ imported_count: 2 });
+    mocks.api.informesV2DownloadTemplate.mockResolvedValue({
+      filename: 'informes_v2_plantilla_nueva.xlsx',
+      content_b64: '',
+      mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
     mocks.api.dialogSave.mockResolvedValue({ paths: ['C:\\salida.pdf'] });
     mocks.api.informesV2RenderConsolidatedHtml.mockResolvedValue({ html: '<html></html>', filename: 'salida.pdf', count: 1 });
     mocks.api.htmlToPdf.mockResolvedValue({ filename: 'salida.pdf', saved_path: 'C:\\salida.pdf' });
@@ -68,6 +73,100 @@ describe('InformesV2App', () => {
     expect(mocks.api.informesV2Get).toHaveBeenCalledWith('IV2-0001');
     expect(screen.getByText(/Informe #1/)).toBeInTheDocument();
     expect(screen.getByDisplayValue('ESTACION 1')).toBeInTheDocument();
+  });
+
+  it('abre un informe guardado antes de existir la plantilla Reservorios 2', async () => {
+    // JSON.stringify descarta las claves undefined: así llega un informe previo a la plantilla
+    const legacy = JSON.parse(
+      JSON.stringify({
+        ...report,
+        plantilla: undefined,
+        reservorios2: undefined,
+        header: { ...report.header, contratista: undefined, cod_infraestructura: undefined },
+      }),
+    ) as typeof report;
+    mocks.api.informesV2Get.mockResolvedValue({ item: legacy });
+    mocks.api.informesV2Update.mockResolvedValue({ success: true, item: legacy });
+
+    render(<InformesV2App />);
+    fireEvent.click(await screen.findByText('ESTACION 1'));
+    await act(async () => Promise.resolve());
+
+    expect(screen.getByRole('group', { name: 'Plantilla' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clásica' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva' }));
+    expect(screen.getByRole('button', { name: 'Clásica' })).toHaveAttribute('aria-pressed', 'false');
+    // el texto vive en dos sitios: la fila del formulario y la tabla del preview
+    expect((await screen.findAllByText('CAJA DE REGISTRO')).length).toBeGreaterThan(1);
+    expect(document.querySelector('.r2-info')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    });
+
+    expect(mocks.api.informesV2Update).toHaveBeenCalledWith(
+      'IV2-0001',
+      expect.objectContaining({
+        plantilla: 'reservorios2',
+        reservorios2: expect.objectContaining({ inspeccion: expect.any(Object) }),
+      }),
+    );
+  });
+
+  it('cambia de plantilla sin informe abierto y las hojas nuevas la usan', async () => {
+    mocks.api.informesV2Create.mockResolvedValue({ item: createEmptyInforme(2) });
+
+    render(<InformesV2App />);
+    await screen.findByText('ESTACION 1');
+
+    const nueva = screen.getByRole('button', { name: 'Nueva' });
+    expect(nueva).not.toBeDisabled();
+    fireEvent.click(nueva);
+
+    expect(nueva).toHaveAttribute('aria-pressed', 'true');
+    // la vista cambia a la plantilla Reservorios 2 aunque no haya informe abierto
+    expect(document.querySelector('.r2-info')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Nuevo' }));
+    });
+    expect(screen.getByRole('button', { name: 'Nueva' })).toHaveAttribute('aria-pressed', 'true');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    });
+    expect(mocks.api.informesV2Update).toHaveBeenCalledWith(
+      'IV2-0002',
+      expect.objectContaining({ plantilla: 'reservorios2' }),
+    );
+  });
+
+  it('«Nuevo» crea la hoja con la plantilla del informe abierto', async () => {
+    mocks.api.informesV2Create.mockResolvedValue({ item: createEmptyInforme(2) });
+
+    render(<InformesV2App />);
+    fireEvent.click(await screen.findByText('ESTACION 1'));
+    await act(async () => Promise.resolve());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Nuevo' }));
+    });
+
+    expect(mocks.api.informesV2Create).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Informe #2/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nueva' })).toHaveAttribute('aria-pressed', 'true');
+    expect(document.querySelector('.r2-info')).toBeInTheDocument();
+
+    // la plantilla sembrada aún no está en disco: hay que guardarla
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    });
+    expect(mocks.api.informesV2Update).toHaveBeenCalledWith(
+      'IV2-0002',
+      expect.objectContaining({ plantilla: 'reservorios2' }),
+    );
   });
 
   it('saves edits through informesV2Update', async () => {
@@ -103,9 +202,11 @@ describe('InformesV2App', () => {
     expect(mocks.addToast).toHaveBeenCalledWith({ message: 'Informe eliminado', type: 'success' });
   });
 
-  it('imports a file through the hidden input', async () => {
+  it('imports a file through the hidden input with the selected plantilla', async () => {
     const { container } = render(<InformesV2App />);
     await screen.findByText('ESTACION 1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva' }));
 
     const input = container.querySelector('input[type="file"][accept=".csv,.xlsx"]');
     expect(input).not.toBeNull();
@@ -115,9 +216,21 @@ describe('InformesV2App', () => {
     });
 
     await waitFor(() => expect(mocks.api.informesV2ImportFile).toHaveBeenCalledWith(
-      expect.objectContaining({ filename: 'informes.xlsx' }),
+      expect.objectContaining({ filename: 'informes.xlsx', plantilla: 'reservorios2' }),
     ));
     expect(mocks.addToast).toHaveBeenCalledWith({ message: '2 informes importados', type: 'success' });
+  });
+
+  it('downloads the column template for the selected plantilla', async () => {
+    render(<InformesV2App />);
+    await screen.findByText('ESTACION 1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Descargar plantilla' }));
+    });
+
+    expect(mocks.api.informesV2DownloadTemplate).toHaveBeenCalledWith('reservorios2');
   });
 
   it('surfaces a failed list load as an error toast', async () => {

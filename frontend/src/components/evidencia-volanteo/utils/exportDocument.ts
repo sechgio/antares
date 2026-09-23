@@ -2,7 +2,12 @@ import { api } from '../../../api';
 import { renderAndDeliverDocument } from '../../../utils/deliverRenderedDocument';
 import { buildTimestampedFilename, fileToBase64 } from '../../../utils/pdfAssets';
 import { stageFileForIpc } from '../../../utils/stageFile';
-import { DEFAULT_CUADRANTE_LABEL, IMAGES_PER_PAGE } from '../constants';
+import {
+  DEFAULT_CUADRANTE_LABEL,
+  IMAGES_PER_PAGE,
+  MAX_TOTAL_IMAGE_BYTES,
+  MSG_IMAGE_TOTAL_TOO_LARGE,
+} from '../constants';
 import type { CuadranteRange, LocalImage, LogoAsset } from '../types';
 import { buildExportHtml, imageExportKey } from './buildExportHtml';
 import { resolveCuadranteForPage } from './cuadranteRanges';
@@ -16,6 +21,10 @@ export async function buildImagePayload(
   imageDataUris: Record<string, string>;
 }> {
   const needDataUris = options.needDataUris ?? false;
+  if (images.reduce((total, image) => total + image.file.size, 0) > MAX_TOTAL_IMAGE_BYTES) {
+    throw new Error(MSG_IMAGE_TOTAL_TOO_LARGE);
+  }
+
   const imagePaths: Record<string, string> = {};
   const imagesBase64: Record<string, string> = {};
   const imageDataUris: Record<string, string> = {};
@@ -33,7 +42,7 @@ export async function buildImagePayload(
 
     if (needDataUris || !hasToken) {
       const base64 = await fileToBase64(image.file);
-      if (!hasToken) {
+      if (!needDataUris && !hasToken) {
         imagesBase64[exportKey] = base64;
       }
       if (needDataUris) {
@@ -74,9 +83,10 @@ export async function exportEvidenciaDocument(
     readLogoOnce(logoRight),
   ]);
 
-  const { imagePaths, imagesBase64, imageDataUris } = await buildImagePayload(images, {
+  const imagePayload = await buildImagePayload(images, {
     needDataUris: needHtml,
   });
+  const { imagePaths, imagesBase64, imageDataUris } = imagePayload;
 
   const pages = [];
   for (let i = 0; i < images.length; i += IMAGES_PER_PAGE) {
@@ -109,6 +119,10 @@ export async function exportEvidenciaDocument(
       showCuadranteLabel,
     )
     : undefined;
+
+  if (html) {
+    for (const key of Object.keys(imageDataUris)) delete imageDataUris[key];
+  }
 
   const logos: { left_b64?: string; right_b64?: string } = {};
   if (!html) {

@@ -19,7 +19,7 @@ async function exportDiagnostics(params = {}, dialog, window) {
     return { canceled: true, exported: false };
   }
   const outPath = response.filePath;
-  const { getAppContext, getLogsDir, getDroppedEventCount, managedLogPattern, redactText } = require('./app-log');
+  const { getAppContext, getLogsDir, getDroppedEventCount, managedLogPattern, redactText, flushLogQueue } = require('./app-log');
   const { raceTimeout } = require('./async-utils');
   let backendInfo = {};
   try {
@@ -52,6 +52,9 @@ async function exportDiagnostics(params = {}, dialog, window) {
   }
 
   const logsDir = getLogsDir();
+  try {
+    await raceTimeout(flushLogQueue(), 3_000, () => {});
+  } catch {}
   const recentLogs = [];
   try {
     if (fs.existsSync(logsDir)) {

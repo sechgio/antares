@@ -123,6 +123,7 @@ function PdfMultiViewer({
       return;
     }
     let cancelled = false;
+    let resolveFrame: (() => void) | null = null;
     setPageImgs([]);
     setRenderError(null);
 
@@ -132,26 +133,35 @@ function PdfMultiViewer({
       if (cancelled) return;
 
       const pdf = await pdfjs.getDocument({ data: new Uint8Array(ab) }).promise;
-      if (cancelled) return;
-      const numPages = pdf.numPages;
-      const rawContainerW = (containerRef.current?.clientWidth ?? 1100) - 32;
-      const containerW = Math.max(rawContainerW, 200);
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      try {
+        if (cancelled) return;
+        const numPages = pdf.numPages;
+        const rawContainerW = (containerRef.current?.clientWidth ?? 1100) - 32;
+        const containerW = Math.max(rawContainerW, 200);
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
-      for (let i = 1; i <= numPages; i++) {
-        if (cancelled) break;
-        setRenderingPage(i);
+        for (let i = 1; i <= numPages; i++) {
+          if (cancelled) break;
+          setRenderingPage(i);
 
-        await new Promise<void>((r) => {
-          rafId.current = requestAnimationFrame(() => r());
-        });
+          await new Promise<void>((resolve) => {
+            resolveFrame = resolve;
+            rafId.current = requestAnimationFrame(() => {
+              resolveFrame = null;
+              resolve();
+            });
+          });
 
-        const url = await renderPageToUrl(pdf, i, containerW, dpr);
-        if (cancelled) break;
-        setPageImgs((prev) => [...prev, { url, pageNum: i }]);
+          if (cancelled) break;
+          const url = await renderPageToUrl(pdf, i, containerW, dpr);
+          if (cancelled) break;
+          setPageImgs((prev) => [...prev, { url, pageNum: i }]);
+        }
+
+        if (!cancelled) setRenderingPage(0);
+      } finally {
+        await pdf.destroy();
       }
-
-      if (!cancelled) setRenderingPage(0);
     }
 
     renderAll().catch((e) => {
@@ -168,6 +178,7 @@ function PdfMultiViewer({
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafId.current);
+      resolveFrame?.();
       setPageImgs([]);
     };
   }, [blob, renderKey]);

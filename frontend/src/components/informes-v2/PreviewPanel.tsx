@@ -11,6 +11,7 @@ import {
   type InformeV2,
   type PhotoAsset,
 } from './types';
+import Reservorios2Preview from './Reservorios2Preview';
 
 const EMPTY_INFORME = createEmptyInforme();
 
@@ -52,6 +53,14 @@ export default function PreviewPanel({ report, logoLeft, logoRight, photos }: Pr
     while (s.length < 6) s.push(null);
     return s;
   }, [photos]);
+
+  if (data.plantilla === 'reservorios2') {
+    return (
+      <section className="tr-preview-wrap">
+        <Reservorios2Preview data={data} logoLeft={logoLeft} logoRight={logoRight} photos={photos} />
+      </section>
+    );
+  }
 
   return (
     <section className="tr-preview-wrap">

@@ -22,6 +22,9 @@ def test_simple_overlay_generate_page_count() -> None:
     assert pdf_bytes.startswith(b"%PDF")
     reader = PdfReader(io.BytesIO(pdf_bytes))
     assert len(reader.pages) == 2
+    for index, page in enumerate(reader.pages):
+        assert f"000000{index + 1}" in (page.extract_text() or "")
+    assert "0000002" not in (reader.pages[0].extract_text() or "")
 
 
 def test_legacy_xobject_rejects_blank_template() -> None:
@@ -82,8 +85,32 @@ def test_visual_overlay_generate_stamps_each_page() -> None:
     pdf_bytes = strategy.generate(_minimal_pdf_bytes(), 1, 3, mapping=_visual_mapping())
     reader = PdfReader(io.BytesIO(pdf_bytes))
     assert len(reader.pages) == 3
-    text = reader.pages[0].extract_text()
-    assert "0000001" in (text or "")
+    stamps = ["0000001", "0000002", "0000003"]
+    for index, page in enumerate(reader.pages):
+        text = page.extract_text() or ""
+        assert stamps[index] in text
+        assert [other for other in stamps if other != stamps[index] and other in text] == []
+
+
+def test_overlay_strategies_read_the_template_once(monkeypatch) -> None:
+    import backend.core.format_strategies.visual_overlay as overlay_module
+
+    template = _minimal_pdf_bytes()
+    original_reader = overlay_module.PdfReader
+    template_reads = 0
+
+    def counting_reader(stream, *args, **kwargs):
+        nonlocal template_reads
+        if stream.getvalue() == template:
+            template_reads += 1
+        return original_reader(stream, *args, **kwargs)
+
+    monkeypatch.setattr(overlay_module, "PdfReader", counting_reader)
+    for strategy_name, mapping in (("visual_overlay", _visual_mapping()), ("simple_overlay", None)):
+        template_reads = 0
+        pdf_bytes = get_strategy(strategy_name).generate(template, 1, 3, mapping=mapping)
+        assert len(PdfReader(io.BytesIO(pdf_bytes)).pages) == 3
+        assert template_reads == 1
 
 
 def test_visual_overlay_blank_rect_with_ot_badge() -> None:

@@ -23,13 +23,14 @@ sys.path = adjust_backend_import_path(
     frozen=bool(getattr(sys, "frozen", False)),
 )
 
+import importlib
+import json
 import locale
 import logging
 import os
 import signal
 import threading
 import time
-import traceback
 import warnings
 import zlib
 from concurrent.futures import Future
@@ -45,6 +46,7 @@ from backend.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from backend.core.import_guard import serialized_import
 from backend.core.ipc_catalog import HEAVY_METHODS, SYNC_METHODS, lane_for
 from backend.core.observability import (
     configure_logging,
@@ -89,6 +91,16 @@ logger = logging.getLogger(__name__)
 
 _WARM_WAIT_METHODS = frozenset(HEAVY_METHODS | {"preview"})
 _WARM_WAIT_TIMEOUT = 15.0
+_PANDAS_METHODS = frozenset({
+    "db_export",
+    "db_parse_mapping",
+    "db_template",
+    "generar_ubicaciones",
+    "panel_aviso_corte_template",
+    "preview_ubicacion",
+    "spreadsheet_export_volantes_template",
+})
+_PANDAS_MAPPING_METHODS = frozenset({"preview", "process_start"})
 
 
 def _utf8_locale_candidates() -> list[str]:
@@ -135,6 +147,50 @@ def _user_error_message(exc: Exception) -> AntaresBaseException:
     return AntaresBaseException("Error interno del servidor")
 
 
+_HEARTBEAT_INTERVAL_S = 600.0
+
+
+def _heartbeat_interval_s() -> float:
+    try:
+        raw = os.environ.get("ANTARES_HEARTBEAT_INTERVAL_S", "").strip()
+        return float(raw) if raw else _HEARTBEAT_INTERVAL_S
+    except ValueError:
+        return _HEARTBEAT_INTERVAL_S
+
+
+def _heartbeat_process_snapshot() -> tuple[int, int]:
+    try:
+        import psutil
+
+        proc = psutil.Process()
+        return int(proc.memory_info().rss), int(proc.num_threads())
+    except Exception:
+        return 0, 0
+
+
+def _heartbeat_loop(stop: threading.Event, scheduler: Any) -> None:
+    while not stop.wait(_heartbeat_interval_s()):
+        try:
+            rss_bytes, thread_count = _heartbeat_process_snapshot()
+            metrics = scheduler.metrics()
+            compact = {key: metrics.get(key) for key in (
+                "light_active", "light_queued", "heavy_active", "heavy_queued",
+                "light_rejected", "heavy_rejected", "memory_pressure", "system_ram_available_mb",
+            )}
+            fields: dict[str, Any] = {"bytes": rss_bytes, "count": thread_count}
+            fields["message"] = json.dumps(compact, separators=(",", ":"))
+            if metrics.get("memory_pressure"):
+                fields["reason"] = "memory_pressure"
+            log_event(
+                logger,
+                logging.WARNING if metrics.get("memory_pressure") else logging.INFO,
+                "backend.heartbeat",
+                **fields,
+            )
+        except Exception:
+            logger.debug("heartbeat emit failed", exc_info=True)
+
+
 def _ipc_telemetry_verbose() -> bool:
     raw = os.environ.get("ANTARES_IPC_TELEMETRY", "").strip().lower()
     return raw in {"1", "true", "yes"}
@@ -152,16 +208,15 @@ def _maybe_log_ipc_timing(
     if not _ipc_telemetry_verbose() and not slow and ok and not sampled:
         return
     level = logging.WARNING if slow or not ok else logging.INFO
-    log_event(
-        logger,
-        level,
-        "backend.ipc.timing",
-        message=f"ipc method={method_name} elapsed_ms={elapsed_ms:.1f} ok={ok}",
-        method=method_name,
-        duration_ms=round(elapsed_ms),
-        outcome="success" if ok else "failed",
-        reason="slow" if slow else None,
-    )
+    fields: dict[str, Any] = {
+        "method": method_name,
+        "duration_ms": round(elapsed_ms),
+        "outcome": "success" if ok else "failed",
+        "message": f"ipc method={method_name} elapsed_ms={elapsed_ms:.1f} ok={ok}",
+    }
+    if slow:
+        fields["reason"] = "slow"
+    log_event(logger, level, "backend.ipc.timing", **fields)
 
 
 def _dispatch(handler, params, msg_id, method_name) -> None:
@@ -187,7 +242,7 @@ def _dispatch_with_context(handler, params, msg_id, method_name) -> None:
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         _maybe_log_ipc_timing(method_name, elapsed_ms, ok=False, request_id=msg_id)
         user_msg = _user_error_message(exc)
-        logger.exception("Error en %s: %s\n%s", method_name, user_msg, traceback.format_exc())
+        logger.exception("Error en %s: %s", method_name, user_msg)
         ipc_phase_telemetry.mark(msg_id, "handler_end")
         ipc_phase_telemetry.set_fields(msg_id, handler_ok=False, handler_ms=elapsed_ms, ok=False)
         send_response(None, msg_id, error=user_msg)
@@ -198,6 +253,22 @@ def _log_future_exception(future: Future) -> None:
         future.result()
     except BaseException as handler_exc:
         logger.exception("Handler raised: %s", handler_exc)
+
+
+def _preload_pandas_for_worker(method_name: str, params: dict[str, Any]) -> None:
+    if sys.platform != "win32":
+        return
+    if method_name not in _PANDAS_METHODS and not (
+        method_name in _PANDAS_MAPPING_METHODS
+        and params.get("mapping_path")
+        and not params.get("mapping")
+    ):
+        return
+    try:
+        with serialized_import():
+            importlib.import_module("pandas")
+    except Exception:
+        logger.debug("pandas preload before handler dispatch failed", exc_info=True)
 
 
 def _reject_submit(
@@ -320,6 +391,17 @@ def main() -> None:
 
     scheduler = get_scheduler()
 
+    heartbeat_stop = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
+    if _heartbeat_interval_s() > 0 and not os.environ.get("PYTEST_CURRENT_TEST"):
+        heartbeat_thread = threading.Thread(
+            target=_heartbeat_loop,
+            args=(heartbeat_stop, scheduler),
+            name="telemetry-heartbeat",
+            daemon=True,
+        )
+        heartbeat_thread.start()
+
     _consecutive_errors = 0
     _MAX_CONSECUTIVE_ERRORS = 100
 
@@ -360,6 +442,7 @@ def main() -> None:
                     _consecutive_errors = max(0, _consecutive_errors - 1)
                     continue
 
+                _preload_pandas_for_worker(msg.method, msg.params)
                 handler = HANDLERS.get_loaded(msg.method)
                 if handler is None and HANDLERS.is_known(msg.method):
                     def _deferred_resolver(params, _method=msg.method):
@@ -408,6 +491,9 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
     finally:
+        heartbeat_stop.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=2.0)
         if warm_thread is not None and warm_thread.is_alive():
             warm_thread.join(timeout=5.0)
         scheduler.shutdown(wait=True)

@@ -1,4 +1,4 @@
-const { getValidTokens, refreshAccessToken, assertAuthSessionCurrent } = require('./google-session');
+const { getValidTokens, assertAuthSessionCurrent } = require('./google-session');
 const { googleApiFetch } = require('./google-api-fetch');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const nis = require('./autoimg-nis');

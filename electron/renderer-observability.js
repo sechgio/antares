@@ -28,6 +28,7 @@ const ALLOWED_EVENT_FIELDS = new Set([
   'duration_ms',
   'count',
   'reason',
+  'request_id',
 ]);
 const ALLOWED_LEVELS = new Set(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']);
 const ALLOWED_OUTCOMES = new Set([
@@ -99,7 +100,7 @@ function sanitizeRendererEvent(payload = {}) {
       if (typeof value === 'number' && Number.isFinite(value) && value >= 0) fields[key] = Math.round(value);
     } else if (key === 'count') {
       if (Number.isInteger(value) && value >= 0) fields[key] = value;
-    } else if (key === 'view' || key === 'status_class' || key === 'reason') {
+    } else if (key === 'view' || key === 'status_class' || key === 'reason' || key === 'request_id') {
       const safe = _safeToken(value, '');
       if (safe) fields[key] = safe;
     }

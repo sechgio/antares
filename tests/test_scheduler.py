@@ -272,6 +272,26 @@ def test_detect_limits_caps_at_6_below_16gb(monkeypatch) -> None:
     assert heavy <= 6
 
 
+def test_detect_limits_allows_one_heavy_worker_when_ram_is_low(monkeypatch) -> None:
+    from backend.core import scheduler as sched
+
+    monkeypatch.setattr(sched.os, 'cpu_count', lambda: 16)
+
+    class _Mem:
+        available = 512 * 1024 ** 2
+
+    class _Psutil:
+        @staticmethod
+        def virtual_memory():
+            return _Mem()
+
+    monkeypatch.setitem(__import__('sys').modules, 'psutil', _Psutil())
+    _light, heavy, queue, _light_queue = sched._detect_limits()
+
+    assert heavy == 1
+    assert queue == 2
+
+
 def test_submit_heavy_releases_slot_when_executor_submit_raises() -> None:
     from backend.core.scheduler import WorkScheduler
 

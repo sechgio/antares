@@ -130,6 +130,9 @@ async function run() {
         once: (event, callback) => {
           this.listeners[event] = callback;
         },
+        removeListener: (event, callback) => {
+          if (this.listeners[event] === callback) delete this.listeners[event];
+        },
         printToPDF: async (options) => {
           this.printOptions = options;
           return Buffer.from('%PDF-test');
@@ -321,6 +324,9 @@ async function run() {
           webRequest: { onBeforeRequest: () => {} },
         },
         once: (event, callback) => { this.listeners[event] = callback; },
+        removeListener: (event, callback) => {
+          if (this.listeners[event] === callback) delete this.listeners[event];
+        },
         printToPDF: () => new Promise((resolve) => { this.resolvePrint = resolve; }),
       };
       DeferredBrowserWindow.instances.push(this);
@@ -401,6 +407,9 @@ async function run() {
         this.webContents = {
           session: { webRequest: { onBeforeRequest: () => {} } },
           once: (event, callback) => { this.listeners[event] = callback; },
+          removeListener: (event, callback) => {
+            if (this.listeners[event] === callback) delete this.listeners[event];
+          },
           printToPDF: async () => Buffer.from('%PDF-never'),
         };
         HungBrowserWindow.instances.push(this);

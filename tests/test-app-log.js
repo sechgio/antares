@@ -42,6 +42,14 @@ assert(fs.existsSync(path.join(tmp, 'antares-backend-command-abc')) === false, '
 console.log('cleanStaleTempDirs: 5/5 escenarios OK');
 
 const dir = l.initAppLogs();
+const redactedJson = l.redactText('{"access_token":"secret-token","cookie":"secret-cookie"}');
+assert(!redactedJson.includes('secret-token') && !redactedJson.includes('secret-cookie'));
+const redactedCookieHeader = l.redactText('Cookie: sessionid=secret-one; csrf=secret-two');
+assert(!redactedCookieHeader.includes('secret-one') && !redactedCookieHeader.includes('secret-two'));
+const redactedCookieValue = l.redactText('cookie=sessionid=secret-one; csrf=secret-two');
+assert(!redactedCookieValue.includes('secret-one') && !redactedCookieValue.includes('secret-two'));
+console.log('redacción de secretos en JSON y cookies: OK');
+
 let syncAppendCalls = 0;
 const originalAppendFileSync = fs.appendFileSync;
 fs.appendFileSync = (...args) => {
@@ -98,6 +106,20 @@ await l.flushLogQueue();
 assert(fs.readFileSync(logFile, 'utf8').includes('linea posterior al fallo'), 'la cola sigue viva tras un writeBatch fallido');
 console.log('cadena de drain inmune a rechazos: OK');
 
+const originalEventAppend = fs.promises.appendFile;
+const dropsBeforeEventFailures = l.getDroppedEventCount();
+fs.promises.appendFile = async () => { throw new Error('simulated write failure'); };
+try {
+  l.appendLogEvent('WARN', 'event failure one');
+  await l.flushLogQueue();
+  l.appendLogEvent('WARN', 'event failure two');
+  await l.flushLogQueue();
+} finally {
+  fs.promises.appendFile = originalEventAppend;
+}
+assert.strictEqual(l.getDroppedEventCount(), dropsBeforeEventFailures + 2, 'cada fallo mantiene su cuenta acumulada');
+console.log('eventos descartados acumulados tras fallos de escritura: OK');
+
 // flush debe seguir el encadenado si llega otro lote mientras el anterior escribe.
 const raceDir = path.join(process.env.LOCALAPPDATA, 'flush-race');
 const raceFile = path.join(raceDir, 'antares-2026-09-18.log');
@@ -150,6 +172,46 @@ try {
   fs.promises.appendFile = realAppendFile;
 }
 console.log('flush espera lotes encadenados: OK');
+
+// El límite incluye los lotes ya extraídos del pending pero aún sin escribir.
+const boundedDir = path.join(process.env.LOCALAPPDATA, 'bounded-queue');
+const boundedFile = path.join(boundedDir, 'antares-bounded.log');
+const originalBoundedAppend = fs.promises.appendFile;
+let releaseBounded;
+let boundedStarted;
+const boundedGate = new Promise((resolve) => { releaseBounded = resolve; });
+const boundedStart = new Promise((resolve) => { boundedStarted = resolve; });
+let dropped = 0;
+fs.promises.appendFile = async (...args) => {
+  boundedStarted();
+  await boundedGate;
+  return originalBoundedAppend.apply(fs.promises, args);
+};
+try {
+  const writer = createAsyncLogWriter({
+    getLogsDir: () => boundedDir,
+    getMaxFileBytes: () => 1024 * 1024,
+    managedLogPattern: /^antares-.*\.log$/,
+    maxDirectoryBytes: 1024 * 1024,
+    maxPendingEntries: 1,
+    onDrop: () => { dropped += 1; },
+  });
+  writer.append(boundedFile, 'primer mensaje\n');
+  await boundedStart;
+  writer.append(boundedFile, 'mensaje descartado\n');
+  assert.strictEqual(dropped, 1, 'el lote en vuelo ocupa capacidad de la cola');
+  releaseBounded();
+  await writer.flush();
+  writer.append(boundedFile, 'mensaje posterior\n');
+  await writer.flush();
+  const boundedContent = fs.readFileSync(boundedFile, 'utf8');
+  assert(boundedContent.includes('primer mensaje') && boundedContent.includes('mensaje posterior'));
+  assert(!boundedContent.includes('mensaje descartado'));
+} finally {
+  releaseBounded?.();
+  fs.promises.appendFile = originalBoundedAppend;
+}
+console.log('límite de cola con escritura en vuelo: OK');
 
 for (const name of ['antares-staged-99999999', `antares-staged-${process.pid}`, 'antares-staged-88888888', 'antares-pdf-x1y2z3', 'antares-backend-command-abc']) {
   fs.rmSync(path.join(tmp, name), { recursive: true, force: true });

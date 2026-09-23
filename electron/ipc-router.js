@@ -339,12 +339,74 @@ function _ipcTelemetryVerbose() {
   return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
-function _estimateJsonBytes(value) {
+function _estimateStringJsonBytes(value) {
+  let bytes = Buffer.byteLength(value, 'utf8') + 2;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code === 0x22 || code === 0x5c) bytes += 1;
+    else if (code < 0x20) bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 1 : 5;
+  }
+  return bytes;
+}
+
+function _estimatePayloadBytes(value) {
+  const ancestors = new Set();
+  const estimate = (entry, inArray = false) => {
+    if (entry === null) return 4;
+    if (typeof entry === 'string') return _estimateStringJsonBytes(entry);
+    if (typeof entry === 'number') return Number.isFinite(entry) ? Buffer.byteLength(String(entry), 'utf8') : 4;
+    if (typeof entry === 'boolean') return entry ? 4 : 5;
+    if (typeof entry === 'undefined' || typeof entry === 'function' || typeof entry === 'symbol') return inArray ? 4 : 0;
+    if (typeof entry === 'bigint') throw new TypeError('BigInt is not JSON serializable');
+    if (Buffer.isBuffer(entry) || ArrayBuffer.isView(entry)) return entry.byteLength;
+    if (entry instanceof ArrayBuffer) return entry.byteLength;
+    if (typeof Blob !== 'undefined' && entry instanceof Blob) return entry.size;
+    if (ancestors.has(entry)) throw new TypeError('Circular payload');
+
+    ancestors.add(entry);
+    try {
+      if (Array.isArray(entry)) {
+        let bytes = 2;
+        for (let index = 0; index < entry.length; index += 1) {
+          if (index > 0) bytes += 1;
+          bytes += estimate(entry[index], true);
+        }
+        return bytes;
+      }
+
+      let bytes = 2;
+      let first = true;
+      for (const key in entry) {
+        if (!Object.prototype.hasOwnProperty.call(entry, key)) continue;
+        const child = entry[key];
+        if (typeof child === 'undefined' || typeof child === 'function' || typeof child === 'symbol') continue;
+        if (!first) bytes += 1;
+        first = false;
+        bytes += _estimateStringJsonBytes(key) + 1 + estimate(child);
+      }
+      return bytes;
+    } finally {
+      ancestors.delete(entry);
+    }
+  };
+
   try {
-    return Buffer.byteLength(JSON.stringify(value), 'utf8');
+    return estimate(value);
   } catch {
     return 0;
   }
+}
+
+function _ipcErrorCode(err) {
+  if (!err || typeof err !== 'object') return undefined;
+  if (typeof err.category === 'string' && err.category) return err.category;
+  if (err.code !== undefined && err.code !== null) return String(err.code);
+  const msg = typeof err.message === 'string' ? err.message : '';
+  if (/timeout/i.test(msg)) return 'IPC_TIMEOUT';
+  if (msg.includes('Backend process exited')) return 'BACKEND_EXITED';
+  if (msg.includes('stdin write failed')) return 'BACKEND_STDIN_WRITE_FAILED';
+  if (msg.includes('not available')) return 'BACKEND_UNAVAILABLE';
+  return undefined;
 }
 
 function _logIpcTelemetry({
@@ -355,6 +417,8 @@ function _logIpcTelemetry({
   responseBytes = 0,
   outcome = 'ok',
   waitedForDrain = false,
+  errorCode,
+  reason,
 }) {
   const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
   const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
@@ -383,7 +447,8 @@ function _logIpcTelemetry({
       outcome: normalizedOutcome,
       duration_ms: elapsedMs,
       bytes: requestBytes + responseBytes,
-      reason: waitedForDrain ? 'backpressure' : undefined,
+      error_code: errorCode || undefined,
+      reason: reason || (waitedForDrain ? 'backpressure' : undefined),
     },
   );
   if (slow || large || waitedForDrain || normalizedOutcome !== 'success') {
@@ -469,6 +534,8 @@ function _sendRequest(method, params) {
       elapsedMs: Date.now() - startedAt,
       requestBytes,
       outcome: 'rejected',
+      errorCode: _ipcErrorCode(reservation.error),
+      reason: reservation.error && reservation.error.details && reservation.error.details.reason,
     });
     return Promise.reject(reservation.error);
   }
@@ -511,6 +578,7 @@ function _sendRequest(method, params) {
           responseBytes: entry.responseBytes || 0,
           outcome,
           waitedForDrain: entry.waitedForDrain,
+          reason: outcome === 'rejected' && result && typeof result === 'object' ? result.reason : undefined,
         });
         settle(resolve, result);
       },
@@ -527,6 +595,7 @@ function _sendRequest(method, params) {
           responseBytes: entry.responseBytes || 0,
           outcome,
           waitedForDrain: entry.waitedForDrain,
+          errorCode: _ipcErrorCode(err),
         });
         settle(reject, err);
       },
@@ -611,6 +680,8 @@ async function _callBackend(method, params) {
           attempt: attempt + 1,
           reason: 'transient_error',
           outcome: 'degraded',
+          request_id: err && err.ipc_request_id ? err.ipc_request_id : undefined,
+          error_code: _ipcErrorCode(err),
         });
         console.warn(`[ipc-router] "${method}" transient failure (attempt ${attempt + 1}/${MID_FLIGHT_RETRIES + 1}): ${msg}. Waiting for backend...`);
         const ready = await waitForReady(STARTUP_WAIT_MS);
@@ -699,7 +770,7 @@ function registerIpcHandlers() {
       if (nativeHandler) {
         let nativeParams = params;
         const startedAt = Date.now();
-        const requestBytes = _estimateJsonBytes(params);
+        const requestBytes = _estimatePayloadBytes(params);
         try {
           const { _assertNoRawAbsolutePaths } = require('./file-capabilities');
           const catalog = _ipcCatalog();
@@ -719,6 +790,7 @@ function registerIpcHandlers() {
             requestBytes,
             responseBytes: 0,
             outcome: 'rejected',
+            errorCode: _ipcErrorCode(err),
           });
           throw err;
         }
@@ -726,7 +798,7 @@ function registerIpcHandlers() {
         try {
           const result = await nativeCall(method, nativeParams, win, { BrowserWindow, session, nativeImage });
           if (result && result.handled) {
-            const responseBytes = _estimateJsonBytes(result.result);
+            const responseBytes = _estimatePayloadBytes(result.result);
             _logIpcTelemetry({
               method,
               elapsedMs: Date.now() - startedAt,
@@ -743,6 +815,7 @@ function registerIpcHandlers() {
             requestBytes,
             responseBytes: 0,
             outcome: 'error',
+            errorCode: _ipcErrorCode(err),
           });
           throw err;
         }
@@ -756,7 +829,7 @@ function registerIpcHandlers() {
       backendParams = _validateAndResolveWriteParams(backendParams, win, method);
     } catch (err) {
       _tagValidationError(err, method);
-      _logIpcTelemetry({ method, elapsedMs: 0, requestBytes: _estimateJsonBytes(params), outcome: 'rejected' });
+      _logIpcTelemetry({ method, elapsedMs: 0, requestBytes: _estimatePayloadBytes(params), outcome: 'rejected', errorCode: _ipcErrorCode(err) });
       throw _toRendererIpcError(err);
     }
 
@@ -837,7 +910,8 @@ module.exports = {
   _writeStdinWithBackpressure,
   _getPendingRequestLimits,
   _logIpcTelemetry,
-  _estimateJsonBytes,
+  _estimatePayloadBytes,
+  _estimateJsonBytes: _estimatePayloadBytes,
   _maybeTokenizeResultPaths,
   getIpcBackpressureWaits,
   resetIpcBackpressureWaits,

@@ -39,6 +39,8 @@ def test_job_lifecycle_records_timestamps_duration_and_outcome(monkeypatch) -> N
     assert events[-1][1]["outcome"] == "success"
     assert events[-1][1]["job_id"] == "job-1"
     assert events[-1][1]["method"] == "conversion"
+    assert events[-1][1]["ok_count"] == 1
+    assert events[-1][1]["err_count"] == 0
     assert "private.png" not in str(events)
 
 
@@ -64,3 +66,5 @@ def test_failed_job_emits_failed_lifecycle_event(monkeypatch) -> None:
     assert [event[0] for event in events] == ["job.started", "job.failed", "job.finished"]
     assert events[1][1]["outcome"] == "failed"
     assert events[2][1]["outcome"] == "failed"
+    assert events[2][1]["ok_count"] == 0
+    assert events[2][1]["err_count"] == 1

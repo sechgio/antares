@@ -11,6 +11,7 @@ function createAsyncLogWriter({
   maxPendingEntries = 5_000,
 }) {
   let pendingEntries = [];
+  let queuedEntryCount = 0;
   let flushScheduled = false;
   let drainPromise = Promise.resolve();
   let budgetCounter = 0;
@@ -110,12 +111,18 @@ function createAsyncLogWriter({
           for (const entry of group.entries) entry.onSuccess?.();
         } catch {
           fileSizes.delete(target);
-          for (const _entry of group.entries) onDrop();
+          for (const entry of group.entries) {
+            onDrop();
+            entry.onFailure?.();
+          }
         }
       }
       await enforceBudgetThrottled(entries.length);
     } catch {
-      for (const _entry of entries) onDrop();
+      for (const entry of entries) {
+        onDrop();
+        entry.onFailure?.();
+      }
     }
   }
 
@@ -127,7 +134,9 @@ function createAsyncLogWriter({
       const entries = pendingEntries;
       pendingEntries = [];
       // El .catch impide que un rechazo envenene la cadena y desactive el logging.
-      drainPromise = drainPromise.then(() => writeBatch(entries)).catch(() => {});
+      drainPromise = drainPromise.then(() => writeBatch(entries)).catch(() => {}).finally(() => {
+        queuedEntryCount -= entries.length;
+      });
     });
   }
 
@@ -166,6 +175,7 @@ function createAsyncLogWriter({
   function flushSync() {
     const entries = pendingEntries;
     pendingEntries = [];
+    queuedEntryCount -= entries.length;
     if (entries.length === 0) return;
     try {
       fs.mkdirSync(getLogsDir(), { recursive: true });
@@ -179,16 +189,19 @@ function createAsyncLogWriter({
         entry.onSuccess?.();
       } catch {
         onDrop();
+        entry.onFailure?.();
       }
     }
   }
 
-  function append(basePath, line, onSuccess = undefined) {
-    if (pendingEntries.length >= maxPendingEntries) {
+  function append(basePath, line, onSuccess = undefined, onFailure = undefined) {
+    if (queuedEntryCount >= maxPendingEntries) {
       onDrop();
+      onFailure?.();
       return;
     }
-    pendingEntries.push({ basePath, line, onSuccess });
+    pendingEntries.push({ basePath, line, onSuccess, onFailure });
+    queuedEntryCount += 1;
     scheduleDrain();
   }
 

@@ -17,6 +17,13 @@ def test_redact_url_strips_access_token() -> None:
     assert "pk.test.secret" not in redacted
 
 
+def test_redact_url_hides_geocoding_query() -> None:
+    url = "https://nominatim.openstreetmap.org/search?q=Av+Privada+123&format=jsonv2"
+    redacted = _redact_url_for_log(url)
+    assert "Av+Privada+123" not in redacted
+    assert "q=%2A%2A%2A" in redacted or "q=***" in redacted
+
+
 def test_redact_url_without_query_unchanged() -> None:
     url = "https://tile.openstreetmap.org/1/2/3.png"
     assert _redact_url_for_log(url) == url

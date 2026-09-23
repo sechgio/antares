@@ -6,7 +6,9 @@ import {
   IMAGES_PER_PAGE,
   MAX_IMAGE_BYTES,
   MAX_LOGO_BYTES,
+  MAX_TOTAL_IMAGE_BYTES,
   MSG_IMAGE_TOO_LARGE,
+  MSG_IMAGE_TOTAL_TOO_LARGE,
   MSG_LOGO_INVALID,
   MSG_LOGO_TOO_LARGE,
   chunkArray,
@@ -206,6 +208,7 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
     dirtyRef.current = true;
     const errors: string[] = [];
     const accepted: LocalImage[] = [];
+    let totalBytes = images.reduce((total, image) => total + image.file.size, 0);
     for (const file of files) {
       if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
         errors.push(`Formato no admitido: ${file.name}`);
@@ -215,13 +218,18 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
         errors.push(MSG_IMAGE_TOO_LARGE(file.name));
         continue;
       }
+      if (totalBytes + file.size > MAX_TOTAL_IMAGE_BYTES) {
+        errors.push(MSG_IMAGE_TOTAL_TOO_LARGE);
+        continue;
+      }
       accepted.push({ file, objectUrl: URL.createObjectURL(file) });
+      totalBytes += file.size;
     }
     if (accepted.length > 0) {
       setImages((prev) => [...prev, ...accepted]);
     }
     return errors;
-  }, []);
+  }, [images]);
 
   const removeImage = useCallback((index: number) => {
     dirtyRef.current = true;
