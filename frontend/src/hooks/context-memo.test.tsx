@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { render } from '@testing-library/react';
 import { ToastProvider, useToast } from './useToast';
 import { DialogProvider, useDialog } from './useDialog';

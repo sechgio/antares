@@ -49,7 +49,6 @@ function child(
 
 describe('propagateContainerResize', () => {
   it('leaves children without constraints unchanged when moving the group', () => {
-    const g = groupAt('g1', { x: 10, y: 10, w: 100, h: 50 });
     const a = child('a', 'g1', { x: 20, y: 20, w: 30, h: 20 });
     const moved = groupAt('g1', { x: 30, y: 20, w: 100, h: 50 });
     const next = propagateContainerResize([moved, a], 'g1', { dx: 20, dy: 10, dw: 0, dh: 0 });

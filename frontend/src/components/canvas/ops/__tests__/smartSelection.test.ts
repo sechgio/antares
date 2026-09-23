@@ -22,7 +22,6 @@ function rectAt(id: string, x: number, y: number, w = 10, h = 10) {
 }
 
 const x = (l: ReturnType<typeof rectAt>) => parseMm(l.cssVars['--translate-x']);
-const y = (l: ReturnType<typeof rectAt>) => parseMm(l.cssVars['--translate-y']);
 
 describe('detectSmartSequence', () => {
   it('detects a horizontal row and sorts by x', () => {

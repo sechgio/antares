@@ -45,7 +45,6 @@ function extractClassNames(filePath: string): string[] {
 describe('CSS class audit', () => {
   const allCss = readAllCss();
   const tailwindConfig = readTailwindConfig();
-  const allDefined = `${allCss}\n${tailwindConfig}`;
 
   const SUSPECT_CLASSES = [
     'animate-shimmer',

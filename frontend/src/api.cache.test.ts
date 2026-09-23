@@ -93,7 +93,7 @@ describe('api cache dedupe', () => {
 
   it('dedupes concurrent getDbColumns calls', async () => {
     mockInvoke.mockResolvedValue({ columns: [], records: [], total: 0 });
-    const [a, b] = await Promise.all([api.getDbColumns(), api.getDbColumns()]);
+    await Promise.all([api.getDbColumns(), api.getDbColumns()]);
     expect(mockInvoke).toHaveBeenCalledTimes(1);
   });
 
@@ -157,7 +157,7 @@ describe('api cache dedupe', () => {
 
   it('dedupes concurrent getTheme calls', async () => {
     mockInvoke.mockResolvedValue({ name: 'test' });
-    const [a, b] = await Promise.all([api.getTheme(), api.getTheme()]);
+    await Promise.all([api.getTheme(), api.getTheme()]);
     expect(mockInvoke).toHaveBeenCalledTimes(1);
   });
 
