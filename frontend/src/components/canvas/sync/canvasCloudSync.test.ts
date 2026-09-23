@@ -82,17 +82,6 @@ function enqueue(data: unknown, error: unknown = null): void {
   supabaseMock.responses.push({ data, error });
 }
 
-function enqueueDeferred(): (data?: unknown, error?: unknown) => void {
-  let release!: (v: { data: unknown; error: unknown }) => void;
-  const pending = new Promise<{ data: unknown; error: unknown }>((resolve) => {
-    release = resolve;
-  });
-  supabaseMock.responses.push(pending);
-  return (data: unknown = null, error: unknown = null) => {
-    release({ data, error });
-  };
-}
-
 function resetMocks(): void {
   _resetCanvasPushQueueForTests();
   vi.mocked(api.canvasList).mockReset();

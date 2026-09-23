@@ -73,7 +73,6 @@ describe('Adversarial Stress Test: useCanvasHistory Memory Bounding & Diffing', 
 
     let currentDoc = doc;
     let past: HistoryStepDiff[] = [];
-    let future: HistoryStepDiff[] = [];
 
     const editTimes: number[] = [];
     const diffSizes: number[] = [];
@@ -94,7 +93,6 @@ describe('Adversarial Stress Test: useCanvasHistory Memory Bounding & Diffing', 
       };
       const trimmed = trimHistoryByBudget([...past, step], []);
       past = trimmed.past as HistoryStepDiff[];
-      future = trimmed.future as HistoryStepDiff[];
       currentDoc = nextDoc;
       editTimes.push(performance.now() - t0);
 
@@ -125,7 +123,6 @@ describe('Adversarial Stress Test: useCanvasHistory Memory Bounding & Diffing', 
   it('ADV-1.2: 100 complex layers with image value replacements (Multi-MB diffs) triggering budget trimming', () => {
     let currentDoc = createHeavyDocument(100, 10, 2048);
     let past: HistoryStepDiff[] = [];
-    let future: HistoryStepDiff[] = [];
 
     const stepSizes: number[] = [];
     for (let i = 0; i < 20; i++) {
@@ -146,7 +143,6 @@ describe('Adversarial Stress Test: useCanvasHistory Memory Bounding & Diffing', 
       };
       const trimmed = trimHistoryByBudget([...past, step], [], MAX_HISTORY, MAX_HISTORY_BYTES);
       past = trimmed.past as HistoryStepDiff[];
-      future = trimmed.future as HistoryStepDiff[];
       currentDoc = nextDoc;
       stepSizes.push(estimateStepBytes(step));
     }
