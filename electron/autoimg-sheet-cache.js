@@ -168,7 +168,6 @@ function resetSheetCache() {
 }
 
 module.exports = {
-  CACHE_TTL_MS,
   SHEET_CACHE_BUDGET_BYTES,
   SHEET_CACHE_BLOCKS,
   sheetCache,

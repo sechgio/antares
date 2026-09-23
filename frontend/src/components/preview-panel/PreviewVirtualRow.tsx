@@ -2,7 +2,7 @@ import React from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { getColumnWidthClass, isMonospaceColumn, HighlightMatch, renderStatusBadge } from './dataPreviewFormat';
 
-export interface VirtualRowItem {
+interface VirtualRowItem {
   row: Record<string, unknown>;
   originalIndex: number;
   photoInfo: { count: number; files: File[] };
@@ -20,7 +20,7 @@ export interface VirtualRowData {
   onHandleRowClick: (idx: number) => void;
 }
 
-export type VirtualRowProps = {
+type VirtualRowProps = {
   index: number;
   style: React.CSSProperties;
   ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
