@@ -78,6 +78,55 @@
   }
 }
 
+/* Conmutador de plantilla: centrado en el header, opción activa con acento */
+.iv2-header-switch {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border-medium);
+  border-radius: 10px;
+  background: var(--bg-input);
+}
+
+.iv2-header-switch > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 5px 13px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition-property: background-color, color;
+  transition-duration: 140ms;
+  transition-timing-function: ease-out;
+}
+
+.iv2-header-switch > button:hover:not(:disabled):not([aria-pressed='true']) {
+  color: var(--text-secondary);
+}
+
+.iv2-header-switch > button[aria-pressed='true'] {
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+  font-weight: 650;
+  box-shadow: none;
+}
+
+.iv2-header-switch > button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.iv2-app .tr-header h1 {
+  font-size: 14px;
+}
+
 .iv2-paper {
   width: min(100%, 210mm);
   height: 297mm;
@@ -264,4 +313,180 @@
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* Plantilla Reservorios 2: reglas espejo de backend/templates/informes_v2/reservorios_2.html */
+.iv2-header.r2-header {
+  margin-bottom: 1.3mm;
+  height: 44px;
+  grid-template-columns: 17.6% 1fr 17.6%;
+  gap: 6px;
+  border: 1px solid #1f6fa8;
+  border-radius: 0;
+  padding: 4px 5px;
+  align-items: stretch;
+}
+
+.r2-header .iv2-logo {
+  height: 34px;
+  overflow: hidden;
+}
+
+.r2-header .iv2-logo img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.r2-header .r2-logo-ph {
+  font-size: 7px;
+  color: #93aec6;
+}
+
+.r2-header .iv2-title {
+  align-self: center;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.r2-header .iv2-title h1,
+.r2-header .iv2-title h2 {
+  font-size: 11px;
+  font-weight: 800;
+  color: #1f6fa8;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.r2-info {
+  flex: 0 0 auto;
+  margin-bottom: 1.3mm;
+  font-size: 8px;
+  border-left: 1px solid #595959;
+  border-top: 1px solid #595959;
+}
+
+.r2-info-row {
+  display: grid;
+  grid-template-columns: 17% 30% 20% 33%;
+}
+
+.r2-info-row > div {
+  border-right: 1px solid #595959;
+  border-bottom: 1px solid #595959;
+  height: 13px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.r2-info-label {
+  background: #e7ecf4;
+  font-weight: 700;
+}
+
+.r2-info-value {
+  justify-content: flex-start;
+}
+
+.r2-table {
+  flex: 0 0 auto;
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin-bottom: 1.3mm;
+  font-size: 7.5px;
+}
+
+.r2-table th,
+.r2-table td {
+  border: 1px solid #595959;
+  padding: 0 2px;
+  height: 13px;
+  text-align: center;
+  vertical-align: middle;
+  overflow: hidden;
+  line-height: 1.05;
+}
+
+.r2-table th {
+  background: #1f6fa8;
+  color: #fff;
+  font-weight: 700;
+  font-size: 7.5px;
+  height: 14px;
+}
+
+.r2-table td.r2-label {
+  text-align: left;
+  font-weight: 400;
+  white-space: nowrap;
+  background: #e7ecf4;
+  padding-left: 4px;
+}
+
+.r2-table td.r2-sub {
+  background: #fff;
+  font-weight: 400;
+}
+
+.r2-table td.r2-obs {
+  text-align: left;
+  font-weight: 400;
+  background: #fff;
+}
+
+.r2-table tr.r2-total td {
+  background: #e7ecf4;
+  font-weight: 400;
+}
+
+.r2-um {
+  font-weight: 400;
+}
+
+.r2-table td.r2-ok {
+  color: #1a8f3c;
+  font-weight: 700;
+  font-size: 9px;
+}
+
+.r2-table td.r2-crit {
+  color: #c00000;
+  font-weight: 700;
+  font-size: 9px;
+}
+
+.iv2-photo-section.r2-photo-section {
+  border: 1px solid #595959;
+}
+
+.r2-photo-title {
+  border-bottom: 1px solid #595959;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 0;
+}
+
+.iv2-photo-grid.r2-photo-grid {
+  border: none;
+  padding: 0;
+  gap: 0.5mm;
+}
+
+.iv2-photo-cell.r2-photo-cell {
+  background: #f0f5fa;
+}
+
+.iv2-photo-cell.r2-photo-cell img {
+  object-fit: fill;
+}
+
+.r2-photo-ph {
+  font-size: 10px;
+  color: #93aec6;
 }

@@ -114,7 +114,7 @@ export default function TechnicalReportsApp() {
             variant="none"
             size="none"
             className="tr-secondary"
-            onClick={createReport}
+            onClick={() => void createReport()}
             disabled={busy}
           >
             <FilePlus2 size={16} />

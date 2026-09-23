@@ -23,16 +23,6 @@ BASE_COUNTS = {
     "canvas_documents": 10,
     "concurrent_jobs": 8,
 }
-LOAD_UNITS = {
-    "json_documents": "synthetic JSON documents",
-    "sqlite_records": "synthetic SQLite-shaped records",
-    "espacios_tasks": "synthetic Espacios tasks",
-    "users": "synthetic user records",
-    "spreadsheet_rows": "synthetic spreadsheet rows",
-    "images": "synthetic image payload descriptors",
-    "canvas_documents": "synthetic Canvas documents",
-    "concurrent_jobs": "synthetic queued jobs",
-}
 MAX_SERIALIZED_PAYLOAD_BYTES = 64 * 1024 * 1024
 MAX_RECORDED_ERRORS = 100
 Clock = Callable[[], float]

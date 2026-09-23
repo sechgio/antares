@@ -698,7 +698,7 @@ export default function EspaciosApp() {
           <code className="text-[var(--text-secondary)]">0005_espacios_active_user_fix</code>
           {' '}y{' '}
           <code className="text-[var(--text-secondary)]">0007_board_columns</code>
-          {' '}estén aplicadas (<code className="text-[var(--text-secondary)]">pwsh scripts/supabase-db-push.ps1</code>).
+          {' '}estén aplicadas en Supabase.
         </p>
         <Button variant="none" size="none"
           onClick={() => void sync.reloadAll()}

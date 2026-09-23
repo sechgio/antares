@@ -609,6 +609,34 @@ def test_stale_document_spill_is_still_discarded(tmp_path: Path, monkeypatch: py
     assert not spill.exists()
 
 
+def test_store_init_removes_orphan_tmp_files(tmp_path: Path) -> None:
+    """Un .tmp solo existe si el proceso murió entre write y rename."""
+    docs_dir = tmp_path / "documents"
+    docs_dir.mkdir()
+    (docs_dir / "doc-1.json").write_text(
+        json.dumps(create_empty_document()), encoding="utf-8"
+    )
+    orphan_doc_tmp = docs_dir / "doc-1.json.deadbeef.tmp"
+    orphan_doc_tmp.write_bytes(b"partial")
+
+    history_dir = docs_dir / "history"
+    history_dir.mkdir()
+    orphan_history_tmp = history_dir / "doc-1_history.json.cafe.tmp"
+    orphan_history_tmp.write_bytes(b"partial")
+
+    spill_dir = tmp_path / "spill"
+    spill_dir.mkdir()
+    orphan_spill_tmp = spill_dir / "document__x.json.abc.tmp"
+    orphan_spill_tmp.write_bytes(b"partial")
+
+    CanvasStore(docs_dir)
+
+    assert not orphan_doc_tmp.exists()
+    assert not orphan_history_tmp.exists()
+    assert not orphan_spill_tmp.exists()
+    assert (docs_dir / "doc-1.json").exists()
+
+
 def test_default_docs_dir_uses_user_data(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     user_root = tmp_path / "AntaresUser"
     monkeypatch.setattr(
@@ -1035,6 +1063,32 @@ def test_handlers_with_injected_store(tmp_path: Path, monkeypatch: pytest.Monkey
         canvas_handlers.canvas_save({"document": "not-an-object"})
 
 
+def test_bootstrap_returns_most_recently_updated_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = CanvasStore(tmp_path)
+
+    def _get_store() -> CanvasStore:
+        return store
+
+    monkeypatch.setattr("backend.core.canvas.get_canvas_store", _get_store)
+
+    # El orden del glob es por stem: los ids se eligen para que el orden por
+    # nombre sea el inverso del orden por updatedAt.
+    older = create_empty_document(name="Viejo")
+    older["id"] = "aaa-older"
+    older["updatedAt"] = "2020-01-01T00:00:00.000Z"
+    newer = create_empty_document(name="Reciente")
+    newer["id"] = "zzz-newer"
+    newer["updatedAt"] = "2026-01-01T00:00:00.000Z"
+    store.save(older, touch=False)
+    store.save(newer, touch=False)
+
+    boot = canvas_handlers.canvas_bootstrap({})
+    assert boot["document"]["id"] == "zzz-newer"
+    assert boot["document"]["name"] == "Reciente"
+
+
 def test_normalize_preserves_layer_meta_path() -> None:
     raw = create_empty_document()
     raw["layers"].append(
@@ -1195,6 +1249,133 @@ def test_duplicate_document_drops_orphan_parent_id() -> None:
     doc = duplicate_document(raw)
     child = next(layer for layer in doc["layers"] if layer["type"] == "text" and layer["name"] == "Child")
     assert "parentId" not in child
+
+
+def _text_layer(layer_id: str, **extra: Any) -> dict[str, Any]:
+    layer: dict[str, Any] = {
+        "id": layer_id,
+        "type": "text",
+        "name": layer_id,
+        "value": "",
+        "cssVars": {
+            "--width": "40mm",
+            "--height": "10mm",
+            "--translate-x": "10mm",
+            "--translate-y": "10mm",
+        },
+    }
+    layer.update(extra)
+    return layer
+
+
+def test_normalize_breaks_parent_id_cycle() -> None:
+    raw = create_empty_document()
+    raw["layers"].extend(
+        [
+            _text_layer("a", parentId="b"),
+            _text_layer("b", parentId="a"),
+            _text_layer("c", parentId="a"),
+        ]
+    )
+    doc = normalize_document(raw)
+    by_id = {layer["id"]: layer for layer in doc["layers"]}
+    # A→B→A se rompe en la primera capa del array que cierra el ciclo; el
+    # resto de la cadena queda intacto.
+    assert "parentId" not in by_id["a"]
+    assert by_id["b"]["parentId"] == "a"
+    assert by_id["c"]["parentId"] == "a"
+
+
+def test_normalize_preserves_child_before_parent_id_cycle() -> None:
+    raw = create_empty_document()
+    raw["layers"] = [
+        _text_layer("child", parentId="a"),
+        _text_layer("a", parentId="b"),
+        _text_layer("b", parentId="a"),
+    ]
+
+    doc = normalize_document(raw)
+    by_id = {layer["id"]: layer for layer in doc["layers"]}
+
+    assert by_id["child"]["parentId"] == "a"
+    assert "parentId" not in by_id["a"]
+    assert by_id["b"]["parentId"] == "a"
+
+
+def test_normalize_drops_dangling_boolean_ops() -> None:
+    raw = create_empty_document()
+    raw["layers"].extend(
+        [
+            {
+                **_text_layer("shape"),
+                "type": "rect",
+            },
+            {
+                **_text_layer("bool"),
+                "type": "boolean",
+                "meta": {
+                    "ops": [
+                        {"op": "union", "layerId": "shape"},
+                        {"op": "subtract", "layerId": "missing-layer"},
+                        {"op": "intersect", "layerId": "bool"},
+                    ]
+                },
+            },
+        ]
+    )
+    doc = normalize_document(raw)
+    by_id = {layer["id"]: layer for layer in doc["layers"]}
+    assert by_id["bool"]["meta"]["ops"] == [{"op": "union", "layerId": "shape"}]
+
+
+def test_normalize_drops_boolean_ops_when_all_operands_are_dangling() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            **_text_layer("bool"),
+            "type": "boolean",
+            "meta": {"ops": [{"op": "union", "layerId": "ghost"}]},
+        }
+    )
+    doc = normalize_document(raw)
+    bool_layer = next(layer for layer in doc["layers"] if layer["id"] == "bool")
+    assert "ops" not in bool_layer["meta"]
+
+
+def test_normalize_drops_legacy_meta_page_index() -> None:
+    raw = create_empty_document()
+    raw["layers"][0]["meta"] = {"pageIndex": 3}
+    doc = normalize_document(raw)
+    assert "pageIndex" not in doc["layers"][0].get("meta", {})
+
+
+def test_normalize_rows_data_requires_cells_shape() -> None:
+    raw = create_empty_document()
+    valid_rows = json.dumps({"cells": [["a", "b"]], "fieldKeys": [[None, "k"]]})
+    raw["layers"].extend(
+        [
+            {
+                **_text_layer("tbl-bad-json"),
+                "type": "table",
+                "meta": {"rowsData": "{not json"},
+            },
+            {
+                **_text_layer("tbl-no-cells"),
+                "type": "table",
+                "meta": {"rowsData": json.dumps({"notCells": []})},
+            },
+            {
+                **_text_layer("tbl-ok"),
+                "type": "table",
+                "meta": {"rowsData": valid_rows},
+            },
+        ]
+    )
+    doc = normalize_document(raw)
+    by_id = {layer["id"]: layer for layer in doc["layers"]}
+    assert "rowsData" not in by_id["tbl-bad-json"].get("meta", {})
+    assert "rowsData" not in by_id["tbl-no-cells"].get("meta", {})
+    assert by_id["tbl-ok"]["meta"]["rowsData"] == valid_rows
 
 
 def test_canvas_history_store_roundtrip(tmp_path: Path) -> None:
@@ -1400,6 +1581,38 @@ def test_store_index_detects_external_file_changes(tmp_path: Path) -> None:
     assert by_inner["name"] == "External"
 
 
+def test_store_index_detects_external_changes_to_existing_document(tmp_path: Path) -> None:
+    first_store = CanvasStore(tmp_path)
+    created = first_store.create(name="Original")
+    first_store.list_documents()
+
+    second_store = CanvasStore(tmp_path)
+    second_store.save({**created, "name": "Renamed elsewhere"}, touch=False)
+
+    assert first_store.list_documents()[0]["name"] == "Renamed elsewhere"
+
+
+def test_history_digest_detects_external_changes(tmp_path: Path) -> None:
+    first_store = CanvasStore(tmp_path)
+    created = first_store.create(name="Shared history")
+    doc_id = created["id"]
+    first_store.save_history(doc_id, [{"type": "diff", "ops": [{"value": "first"}]}], [])
+    stale_digest = first_store.get_history_digest(doc_id)
+
+    second_store = CanvasStore(tmp_path)
+    second_store.save_history(doc_id, [{"type": "diff", "ops": [{"value": "external"}]}], [])
+
+    with pytest.raises(ValueError, match="base"):
+        first_store.save_history_delta(
+            doc_id,
+            past_prefix=1,
+            past_suffix=[{"type": "diff", "ops": [{"value": "local"}]}],
+            future_prefix=0,
+            future_suffix=[],
+            base_digest=str(stale_digest),
+        )
+
+
 def test_save_history_drops_oversized_entries(tmp_path: Path) -> None:
     store = CanvasStore(tmp_path)
     created = store.create(name="Hist")
@@ -1602,25 +1815,29 @@ def test_duplicate_document_remaps_instanceOf_and_componentId() -> None:
 
 def test_normalize_allows_boolean_layer_type() -> None:
     raw = create_empty_document()
-    raw["layers"].append(
-        {
-            "id": "bool-1",
-            "type": "boolean",
-            "name": "Booleana",
-            "value": "",
-            "meta": {
-                "ops": [
-                    {"op": "union", "layerId": "a"},
-                    {"op": "subtract", "layerId": "b"},
-                ]
+    raw["layers"].extend(
+        [
+            _text_layer("a"),
+            _text_layer("b"),
+            {
+                "id": "bool-1",
+                "type": "boolean",
+                "name": "Booleana",
+                "value": "",
+                "meta": {
+                    "ops": [
+                        {"op": "union", "layerId": "a"},
+                        {"op": "subtract", "layerId": "b"},
+                    ]
+                },
+                "cssVars": {
+                    "--width": "40mm",
+                    "--height": "40mm",
+                    "--translate-x": "10mm",
+                    "--translate-y": "10mm",
+                },
             },
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "40mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-            },
-        }
+        ]
     )
     doc = normalize_document(raw)
     types = [layer["type"] for layer in doc["layers"]]
@@ -1656,6 +1873,7 @@ def test_normalize_preserves_mask_and_boolean_ops() -> None:
 
 def test_normalize_omits_invalid_mask_and_ops() -> None:
     raw = create_empty_document()
+    raw["layers"].append(_text_layer("ok"))
     raw["layers"].append(
         {
             "id": "bad-bool",

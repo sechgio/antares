@@ -199,6 +199,7 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
     useEffect(() => {
         return () => {
             flushPendingSaves();
+            panelsRef.current.forEach((panel) => revokePhotos(panel.photos));
         };
     }, [flushPendingSaves]);
 

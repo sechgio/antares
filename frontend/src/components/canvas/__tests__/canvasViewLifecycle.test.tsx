@@ -62,6 +62,7 @@ vi.mock('../sync/cloudQueue', () => ({
 
 vi.mock('../utils/imageBlobStore', () => ({
   serializeDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
+  persistDataUrlsAsCanvasAssets: vi.fn(async (doc: CanvasDocument) => doc),
   hydrateDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
   serializeHistorySteps: vi.fn(async (steps: unknown[]) => steps),
   hydrateHistorySteps: vi.fn(async (steps: unknown[]) => steps),
@@ -91,6 +92,10 @@ vi.mock('../presets/loadPresets', () => ({
 
 let latestStageDocument: CanvasDocument | null = null;
 let latestStageTool: CanvasTool | null = null;
+let latestStageActions: {
+  onPreviewLayers?: (layers: CanvasDocument['layers']) => void;
+  onCancelGesture?: () => void;
+} | null = null;
 let latestRightPanelProps: {
   pageMarginMm?: number;
   onPageMarginChange?: (mm: number) => void;
@@ -101,13 +106,18 @@ vi.mock('../editor/DesignStage', () => ({
     children,
     document,
     tool,
+    onPreviewLayers,
+    onCancelGesture,
   }: {
     children?: React.ReactNode;
     document: CanvasDocument;
     tool: CanvasTool;
+    onPreviewLayers: (layers: CanvasDocument['layers']) => void;
+    onCancelGesture: () => void;
   }) => {
     latestStageDocument = document;
     latestStageTool = tool;
+    latestStageActions = { onPreviewLayers, onCancelGesture };
     return <div data-testid="mock-design-stage">{children}</div>;
   },
 }));
@@ -200,6 +210,7 @@ describe('CanvasView lifecycle', () => {
     vi.mocked(api.canvasSaveHistory).mockResolvedValue({ success: true });
     pdfImportMocks.inspectPdfFile.mockReset();
     pdfImportMocks.importPdfFile.mockReset();
+    latestStageActions = null;
   });
 
   afterEach(() => {
@@ -238,6 +249,30 @@ describe('CanvasView lifecycle', () => {
       expect(currentStageDocument().settings?.pageMarginMm).toBe(5);
     });
     expect(latestRightPanelProps?.pageMarginMm).toBe(5);
+  });
+
+  it('does not autosave a live preview that is cancelled', async () => {
+    await renderReady();
+    vi.mocked(api.canvasSave).mockClear();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    act(() => latestRightPanelProps?.onPageMarginChange?.(5));
+    const previewLayers = currentStageDocument().layers.map((layer, index) =>
+      index === 0 ? { ...layer, name: 'Vista previa' } : layer,
+    );
+    act(() => latestStageActions?.onPreviewLayers?.(previewLayers));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(api.canvasSave).not.toHaveBeenCalled();
+
+    act(() => latestStageActions?.onCancelGesture?.());
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+
+    expect(api.canvasSave).toHaveBeenCalledTimes(1);
+    const saved = vi.mocked(api.canvasSave).mock.calls[0]![0] as CanvasDocument;
+    expect(saved.settings?.pageMarginMm).toBe(5);
+    expect(saved.layers[0]?.name).not.toBe('Vista previa');
+    vi.useRealTimers();
   });
 
   it('aborts an active pointer gesture before Space activates the hand tool', async () => {

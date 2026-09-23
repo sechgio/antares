@@ -75,9 +75,12 @@ function localImageDataRequest(fileRef: string): { path?: string; file_token?: s
 async function loadCachedDataUrl(
   key: string,
   request: () => Promise<{ dataUrl: string } | null>,
+  cacheResult: boolean,
 ): Promise<string | null> {
-  const hit = cacheGet(key);
-  if (hit) return hit;
+  if (cacheResult) {
+    const hit = cacheGet(key);
+    if (hit) return hit;
+  }
 
   const existing = inFlight.get(key);
   if (existing) return existing;
@@ -86,7 +89,7 @@ async function loadCachedDataUrl(
     try {
       const result = await runLimited(request);
       if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
-        cacheSet(key, result.dataUrl);
+        if (cacheResult) cacheSet(key, result.dataUrl);
         return result.dataUrl;
       }
       return null;
@@ -108,16 +111,20 @@ export async function getLocalThumbnail(
   if (typeof filePath !== 'string' || !filePath.trim()) return null;
 
   const edge = Number.isFinite(maxEdge) && maxEdge > 0 ? Math.floor(maxEdge) : DEFAULT_MAX_EDGE;
-  return loadCachedDataUrl(cacheKey(filePath, edge), () =>
-    api.localThumbnail(localImageRequest(filePath, edge)),
+  return loadCachedDataUrl(
+    cacheKey(filePath, edge),
+    () => api.localThumbnail(localImageRequest(filePath, edge)),
+    filePath.startsWith(READ_TOKEN_PREFIX),
   );
 }
 
 export async function getLocalImageDataUrl(filePath: string): Promise<string | null> {
   if (typeof filePath !== 'string' || !filePath.trim()) return null;
 
-  return loadCachedDataUrl(`${FULL_IMAGE_CACHE_PREFIX}${filePath}`, () =>
-    api.localImageDataUrl(localImageDataRequest(filePath)),
+  return loadCachedDataUrl(
+    `${FULL_IMAGE_CACHE_PREFIX}${filePath}`,
+    () => api.localImageDataUrl(localImageDataRequest(filePath)),
+    filePath.startsWith(READ_TOKEN_PREFIX),
   );
 }
 

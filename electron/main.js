@@ -48,6 +48,19 @@ process.on('uncaughtException', async (err) => {
   process.exit(1);
 });
 
+// Los 'Tab' ya los cubre render-process-gone del webContents de la ventana.
+app.on('child-process-gone', (_event, details) => {
+  try {
+    if (details && details.type === 'Tab') return;
+    appendLogEvent('ERROR', 'renderer.lifecycle', {
+      component: 'electron',
+      outcome: 'failed',
+      reason: 'child_process_gone',
+      message: `type=${details && details.type ? details.type : 'unknown'} reason=${details && details.reason ? details.reason : 'unknown'} exit_code=${details && Number.isInteger(details.exitCode) ? details.exitCode : 'unknown'}`,
+    });
+  } catch {}
+});
+
 const isDev = !app.isPackaged;
 const { isTrustedRendererFrame } = require('./renderer-trust');
 const CANVAS_ASSET_GC_INITIAL_DELAY_MS = 45_000;
@@ -191,7 +204,10 @@ if (typeof ipcMain.on === 'function') {
   });
 }
 
-const CANVAS_FLUSH_TIMEOUT_MS = 120000;
+// Debe superar el tier "long" del catálogo IPC (canvas_save/canvas_save_history,
+// 300 s): si el flush vence antes que el save en vuelo, el quit mata al backend
+// a mitad de escritura y se pierde la última edición.
+const CANVAS_FLUSH_TIMEOUT_MS = 310000;
 
 async function _cleanupStagedFiles() {
   try {

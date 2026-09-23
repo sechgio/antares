@@ -20,7 +20,7 @@ vi.mock('../lib/supabase', () => {
   const mockFrom = vi.fn(() => ({
     select: vi.fn(() => ({
       eq: vi.fn(() => ({
-        single: vi.fn(() => ({ data: null, error: null })),
+        maybeSingle: vi.fn(() => ({ data: null, error: null })),
       })),
     })),
   }));
@@ -39,13 +39,16 @@ vi.mock('../lib/supabase', () => {
   };
 });
 
-function mockProfile(row: { display_name: string; is_admin: boolean; is_disabled: boolean } | null) {
+function mockProfile(
+  row: { display_name: string; is_admin: boolean; is_disabled: boolean } | null,
+  error: { message: string } | null = null,
+) {
   (supabase.from as any).mockReturnValue({
     select: vi.fn(() => ({
       eq: vi.fn(() => ({
-        single: vi.fn(() => ({
+        maybeSingle: vi.fn(() => ({
           data: row,
-          error: row ? null : { message: 'not found' },
+          error,
         })),
       })),
     })),
@@ -54,14 +57,14 @@ function mockProfile(row: { display_name: string; is_admin: boolean; is_disabled
 
 describe('AuthProvider', () => {
   beforeEach(() => {
-    (supabase.auth.getSession as any).mockClear();
-    (supabase.auth.onAuthStateChange as any).mockClear();
-    (supabase.auth.signInWithPassword as any).mockClear();
-    (supabase.auth.signOut as any).mockClear();
-    (supabase.from as any).mockClear();
-    (supabase.channel as any).mockClear();
-    (supabase.removeChannel as any).mockClear();
-    (supabase.auth.onAuthStateChange as any).mockImplementation(() => ({
+    vi.mocked(supabase!.auth.getSession).mockClear();
+    vi.mocked(supabase!.auth.onAuthStateChange).mockClear();
+    vi.mocked(supabase!.auth.signInWithPassword).mockClear();
+    vi.mocked(supabase!.auth.signOut).mockClear();
+    vi.mocked(supabase!.from).mockClear();
+    vi.mocked(supabase!.channel).mockClear();
+    vi.mocked(supabase!.removeChannel).mockClear();
+    vi.mocked(supabase!.auth.onAuthStateChange).mockImplementation(() => ({
       data: { subscription: { unsubscribe: vi.fn() } },
     }));
     const channel = {
@@ -95,7 +98,7 @@ describe('AuthProvider', () => {
     (supabase.from as any).mockReturnValue({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          single: vi.fn(() => ({
+          maybeSingle: vi.fn(() => ({
             data: { display_name: 'A', is_admin: false, is_disabled: false },
             error: null,
           })),
@@ -147,7 +150,7 @@ describe('AuthProvider', () => {
     (supabase.from as any).mockReturnValue({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          single: vi.fn(() => ({
+          maybeSingle: vi.fn(() => ({
             data: { display_name: 'Late', is_admin: false, is_disabled: false },
             error: null,
           })),
@@ -230,6 +233,55 @@ describe('AuthProvider', () => {
     expect(result.current.error).toMatch(/desactivad/i);
   });
 
+  it('signs out and clears user when session profile does not exist', async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'tok',
+          user: { id: 'u-deleted', email: 'deleted@b.com', created_at: '2026-01-01' },
+        },
+      },
+      error: null,
+    });
+    mockProfile(null);
+    (supabase.auth.signOut as any).mockResolvedValue({ error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(result.current.user).toBeNull();
+    expect(result.current.error).toMatch(/desactivad/i);
+  });
+
+  it('keeps profile lookup failures retryable without signing out', async () => {
+    const user = { id: 'u1', email: 'a@b.com', created_at: '2026-01-01' };
+    vi.mocked(supabase!.auth.getSession).mockResolvedValue(
+      { data: { session: { access_token: 'tok', user } }, error: null } as unknown as
+        Awaited<ReturnType<NonNullable<typeof supabase>['auth']['getSession']>>,
+    );
+    mockProfile(null, { message: 'temporary network failure' });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+    vi.mocked(supabase!.auth.signInWithPassword).mockResolvedValue(
+      { data: { user }, error: null } as unknown as
+        Awaited<ReturnType<NonNullable<typeof supabase>['auth']['signInWithPassword']>>,
+    );
+
+    let signInResult: { error: string | null } = { error: null };
+    await act(async () => {
+      signInResult = await result.current.signIn('a@b.com', 'secret');
+    });
+
+    expect(signInResult.error).toBe('temporary network failure');
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+  });
+
   it('rejects signIn when the account is disabled', async () => {
     (supabase.auth.getSession as any).mockResolvedValue({ data: { session: null }, error: null });
     (supabase.auth.signInWithPassword as any).mockResolvedValue({
@@ -251,6 +303,34 @@ describe('AuthProvider', () => {
     let signInResult: { error: string | null } = { error: null };
     await act(async () => {
       signInResult = await result.current.signIn('disabled@b.com', 'secret');
+    });
+
+    expect(signInResult.error).toMatch(/desactivad/i);
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(result.current.user).toBeNull();
+  });
+
+  it('rejects signIn when the account profile does not exist', async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: null }, error: null });
+    (supabase.auth.signInWithPassword as any).mockResolvedValue({
+      data: {
+        session: { access_token: 'tok' },
+        user: { id: 'u-deleted', email: 'deleted@b.com', created_at: '2026-01-01' },
+      },
+      error: null,
+    });
+    mockProfile(null);
+    (supabase.auth.signOut as any).mockResolvedValue({ error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    let signInResult: { error: string | null } = { error: null };
+    await act(async () => {
+      signInResult = await result.current.signIn('deleted@b.com', 'secret');
     });
 
     expect(signInResult.error).toMatch(/desactivad/i);
@@ -301,6 +381,49 @@ describe('AuthProvider', () => {
     expect(result.current.error).toMatch(/desactivad/i);
   });
 
+  it('signs out when realtime deletes the current profile', async () => {
+    const handlers: Record<string, (payload?: unknown) => void> = {};
+    const channel = {
+      on: vi.fn((_event: string, filter: { event: string }, cb: (payload?: unknown) => void) => {
+        handlers[filter.event] = cb;
+        return channel;
+      }),
+      subscribe: vi.fn().mockReturnThis(),
+    };
+    (supabase.channel as any).mockReturnValue(channel);
+
+    (supabase.auth.getSession as any).mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'tok',
+          user: { id: 'u1', email: 'a@b.com', created_at: '2026-01-01' },
+        },
+      },
+      error: null,
+    });
+    mockProfile({ display_name: 'A', is_admin: false, is_disabled: false });
+    (supabase.auth.signOut as any).mockImplementation(() => new Promise(() => {}));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.user?.email).toBe('a@b.com');
+    });
+    await waitFor(() => {
+      expect(handlers['DELETE']).toBeDefined();
+    });
+
+    await act(async () => {
+      handlers['DELETE']?.();
+    });
+
+    await waitFor(() => {
+      expect(result.current.user).toBeNull();
+    });
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(result.current.error).toMatch(/desactivad/i);
+  });
+
   it('does not fetch profile twice on boot', async () => {
     const session = {
       access_token: 'tok',
@@ -311,7 +434,7 @@ describe('AuthProvider', () => {
     const fromSpy = vi.fn(() => ({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          single: vi.fn(() => ({
+          maybeSingle: vi.fn(() => ({
             data: { display_name: 'x', is_admin: false, is_disabled: false },
             error: null,
           })),
@@ -347,7 +470,7 @@ describe('AuthProvider', () => {
     const fromSpy = vi.fn(() => ({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          single: vi.fn(() => ({
+          maybeSingle: vi.fn(() => ({
             data: { display_name: 'sync', is_admin: false, is_disabled: false },
             error: null,
           })),

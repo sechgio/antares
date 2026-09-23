@@ -8,7 +8,6 @@ const {
   REPO_NAME,
   ROOT,
   sh,
-  trySh,
   shDetailed,
   parseLoopArgs,
   printLoopBanner,

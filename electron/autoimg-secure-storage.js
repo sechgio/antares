@@ -103,7 +103,23 @@ function readSecureJson(filename, namespace) {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     if (raw?.data && typeof raw.data === 'string') {
       const version = Number(raw.v) === 2 ? 2 : 1;
-      return decryptPayload(namespace, raw.data, version);
+      const payload = decryptPayload(namespace, raw.data, version);
+      if (version === 1 && _safeStorageAvailable()) {
+        try {
+          writeSecureJson(filename, namespace, payload);
+        } catch (err) {
+          // La lectura ya dio su payload: seguir con v1 en disco es válido, pero el
+          // fallo de la reescritura debe verse en la telemetría.
+          try {
+            require('./app-log').appendLogEvent('WARN', 'autoimg.storage_upgrade_failed', {
+              outcome: 'failed',
+              message: err && err.message ? err.message : String(err),
+            });
+          } catch {
+          }
+        }
+      }
+      return payload;
     }
     return null;
   } catch {

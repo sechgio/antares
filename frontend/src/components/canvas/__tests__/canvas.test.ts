@@ -1320,6 +1320,103 @@ describe('document model', () => {
     expect(normalized.layers[1]!.parentId).toBeUndefined();
   });
 
+  it('normalizeDocument breaks parentId cycles', () => {
+    const doc = createEmptyDocument('V2 cycle');
+    const css = {
+      '--width': '10mm',
+      '--height': '5mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    doc.layers = [
+      { id: 'a', type: 'text', name: 'A', value: '', pageIndex: 0, parentId: 'b', cssVars: css },
+      { id: 'b', type: 'text', name: 'B', value: '', pageIndex: 0, parentId: 'a', cssVars: css },
+      { id: 'c', type: 'text', name: 'C', value: '', pageIndex: 0, parentId: 'a', cssVars: css },
+    ];
+
+    const normalized = normalizeDocument(doc);
+    // A→B→A se rompe en la primera capa del array que cierra el ciclo, igual
+    // que en backend/models.py.
+    expect(normalized.layers[0]!.parentId).toBeUndefined();
+    expect(normalized.layers[1]!.parentId).toBe('a');
+    expect(normalized.layers[2]!.parentId).toBe('a');
+  });
+
+  it('preserves a child listed before a parent cycle', () => {
+    const doc = createEmptyDocument('V2 child before cycle');
+    const css = {
+      '--width': '10mm',
+      '--height': '5mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    doc.layers = [
+      { id: 'child', type: 'text', name: 'Child', value: '', pageIndex: 0, parentId: 'a', cssVars: css },
+      { id: 'a', type: 'text', name: 'A', value: '', pageIndex: 0, parentId: 'b', cssVars: css },
+      { id: 'b', type: 'text', name: 'B', value: '', pageIndex: 0, parentId: 'a', cssVars: css },
+    ];
+
+    const normalized = normalizeDocument(doc);
+
+    expect(normalized.layers[0]!.parentId).toBe('a');
+    expect(normalized.layers[1]!.parentId).toBeUndefined();
+    expect(normalized.layers[2]!.parentId).toBe('a');
+  });
+
+  it('normalizeDocument drops dangling and self boolean ops', () => {
+    const doc = createEmptyDocument('V2 ops');
+    const css = {
+      '--width': '10mm',
+      '--height': '5mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    doc.layers = [
+      { id: 'shape', type: 'rect', name: 'R', value: '', pageIndex: 0, cssVars: css },
+      {
+        id: 'bool',
+        type: 'boolean',
+        name: 'B',
+        value: '',
+        pageIndex: 0,
+        meta: {
+          ops: [
+            { op: 'union', layerId: 'shape' },
+            { op: 'subtract', layerId: 'missing-layer' },
+            { op: 'intersect', layerId: 'bool' },
+          ],
+        },
+        cssVars: css,
+      },
+    ];
+
+    const normalized = normalizeDocument(doc);
+    expect(normalized.layers[1]!.meta?.ops).toEqual([{ op: 'union', layerId: 'shape' }]);
+  });
+
+  it('normalizeDocument removes meta.ops when every operand is dangling', () => {
+    const doc = createEmptyDocument('V2 ops empty');
+    doc.layers = [
+      {
+        id: 'bool',
+        type: 'boolean',
+        name: 'B',
+        value: '',
+        pageIndex: 0,
+        meta: { ops: [{ op: 'union', layerId: 'ghost' }] },
+        cssVars: {
+          '--width': '10mm',
+          '--height': '5mm',
+          '--translate-x': '0mm',
+          '--translate-y': '0mm',
+        },
+      },
+    ];
+
+    const normalized = normalizeDocument(doc);
+    expect(normalized.layers[0]!.meta?.ops).toBeUndefined();
+  });
+
   it('normalizeDocument preserves legacy multipage layout without pages array', () => {
     const css = {
       '--width': '10mm',

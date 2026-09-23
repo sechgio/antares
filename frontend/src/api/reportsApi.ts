@@ -31,6 +31,7 @@ export interface InformesV2ListBody {
 export interface InformesV2ImportBody {
   filename: string;
   content_b64: string;
+  plantilla?: string;
 }
 
 export interface InformesV2RenderBody {
@@ -99,8 +100,11 @@ export const reportsApi = {
     _invoke<{ success: boolean; deleted_count: number; message: string }>('informes_v2_clear'),
   informesV2ImportFile: (body: InformesV2ImportBody) =>
     _invoke<{ success: boolean; message: string; deleted_count: number; imported_count: number; total_rows_in_file: number }>('informes_v2_import_file', body),
-  informesV2DownloadTemplate: () =>
-    _invoke<{ filename: string; content_b64: string; mime: string }>('informes_v2_download_template'),
+  informesV2DownloadTemplate: (plantilla?: string) =>
+    _invoke<{ filename: string; content_b64: string; mime: string }>(
+      'informes_v2_download_template',
+      plantilla ? { plantilla } : undefined,
+    ),
   informesV2RenderHtml: (body: InformesV2RenderBody) =>
     _invoke<{ html: string; filename: string }>('informes_v2_render_html', body),
   informesV2RenderConsolidatedHtml: (body?: {

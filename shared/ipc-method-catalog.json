@@ -92,7 +92,7 @@
     "formatos_update_mapping": { "handler": "backend:formatos" },
     "formatos_upload": { "handler": "backend:formatos" },
     "formats": { "handler": "backend:info", "idempotent": true },
-    "generar_ubicaciones": { "handler": "backend:ubicaciones", "lane": "heavy", "timeout": "long", "fileTokens": [["excelPath"]] },
+    "generar_ubicaciones": { "handler": "backend:ubicaciones", "lane": "heavy", "timeout": "heavy", "fileTokens": [["excelPath"]] },
     "history_delete": { "handler": "backend:history" },
     "history_delete_many": { "handler": "backend:history" },
     "history_export": { "handler": "backend:history" },

@@ -48,6 +48,9 @@ const EVENT_FIELDS = new Set([
   'component',
   'view',
   'count',
+  'dropped_events',
+  'ok_count',
+  'err_count',
   'rum_name',
   'rum_value',
   'rum_rating',
@@ -55,9 +58,14 @@ const EVENT_FIELDS = new Set([
   'rum_navigation_type',
 ]);
 const SENSITIVE_TEXT_RE = [
-  /(\b(?:authorization|proxy-authorization)\s*[:=]\s*bearer\s+)[^\s,;]+/gi,
-  /(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|secret)\s*[:=]\s*)(["']?)[^\s,;"']+\2/gi,
+  /(\b(?:authorization|proxy-authorization)\s*[:=]\s*(?:bearer|basic)\s+)[^\s,;]+/gi,
+  /(["']?\b(?:authorization|proxy-authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|secret|token|cookie)\b["']?\s*:\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;"']+)/gi,
+  /(\bcookie\s*:\s*)(?!")[^\r\n]*/gi,
+  /(\bcookie\s*=\s*)[^\r\n]*/gi,
+  /(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|secret|token|cookie)\s*[:=]\s*)(?:"[^",;]*"?|'[^',;]*'?|[^\s,;"']+)/gi,
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+  /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+  /(\bBearer\s+)[A-Za-z0-9._~+/=-]+/gi,
   /(?:[A-Za-z]:\\|\\\\|\/(?:Users|home|tmp|var|private|opt|mnt|workspace)\/)[^\s"'`]+/g,
 ];
 const STALE_TEMP_PREFIX_RE = /^antares-(?:backend-command|pdf|staged)-/;
@@ -74,6 +82,7 @@ let _sessionId = null;
 let _appVersion = null;
 let _backendVersion = null;
 let _droppedEventCount = 0;
+let _reservedDropReports = 0;
 
 function resolveAppDataDir() {
   if (process.platform === 'win32') {
@@ -155,15 +164,9 @@ function _fmtArg(arg) {
 function _redactText(text) {
   let safeText = String(text);
   for (const pattern of SENSITIVE_TEXT_RE) {
-    safeText = safeText.replace(pattern, (...matches) => {
-      if (matches.length > 2 && typeof matches[1] === 'string' && matches[1].includes('Bearer')) {
-        return `${matches[1]}[REDACTED]`;
-      }
-      if (matches.length > 3 && typeof matches[1] === 'string' && matches[2] !== undefined) {
-        return `${matches[1]}[REDACTED]`;
-      }
-      return '[REDACTED]';
-    });
+    safeText = safeText.replace(pattern, (...matches) =>
+      typeof matches[1] === 'string' ? `${matches[1]}[REDACTED]` : '[REDACTED]'
+    );
   }
   return safeText.replace(/[\r\n]+/g, ' ').slice(0, 4000);
 }
@@ -206,7 +209,7 @@ function _normaliseEventField(key, value) {
     const text = String(value ?? '').trim().toLowerCase();
     return RUM_NAV_TYPES.has(text) ? text : undefined;
   }
-  if (['pid', 'backend_pid', 'bytes', 'attempt', 'count', 'timeout_ms'].includes(key)) {
+  if (['pid', 'backend_pid', 'bytes', 'attempt', 'count', 'dropped_events', 'ok_count', 'err_count', 'timeout_ms'].includes(key)) {
     return Number.isInteger(value) && value >= 0 ? value : undefined;
   }
   if (key === 'duration_ms') {
@@ -234,8 +237,8 @@ const _logWriter = createAsyncLogWriter({
   onDrop: _markDroppedEvent,
 });
 
-function _appendManagedLine(basePath, line, onSuccess = undefined) {
-  _logWriter.append(basePath, line, onSuccess);
+function _appendManagedLine(basePath, line, onSuccess = undefined, onFailure = undefined) {
+  _logWriter.append(basePath, line, onSuccess, onFailure);
 }
 
 function flushLogQueue() {
@@ -258,7 +261,8 @@ function appendLogLine(level, text) {
 }
 
 function appendLogEvent(level, event, fields = {}) {
-  const pendingDrops = _droppedEventCount;
+  const pendingDrops = Math.max(0, _droppedEventCount - _reservedDropReports);
+  let reservedDrops = 0;
   const record = {
     schema_version: OBSERVABILITY_CONTRACT.schema_version,
     timestamp: new Date().toISOString(),
@@ -275,18 +279,26 @@ function appendLogEvent(level, event, fields = {}) {
     const safeValue = _normaliseEventField(key, value);
     if (safeValue !== undefined) record[key] = safeValue;
   }
-  if (pendingDrops > 0) record.dropped_events = pendingDrops;
+  if (pendingDrops > 0) {
+    record.dropped_events = pendingDrops;
+    _reservedDropReports += pendingDrops;
+    reservedDrops = pendingDrops;
+  }
   try {
+    const releaseDropReservation = (persisted) => {
+      if (reservedDrops === 0) return;
+      _reservedDropReports -= reservedDrops;
+      if (persisted) _droppedEventCount -= reservedDrops;
+      reservedDrops = 0;
+    };
     _appendManagedLine(
       _todayObservabilityLogPath(),
       `${JSON.stringify(record)}\n`,
-      () => {
-        if (pendingDrops > 0) {
-          _droppedEventCount = Math.max(0, _droppedEventCount - pendingDrops);
-        }
-      },
+      () => releaseDropReservation(true),
+      () => releaseDropReservation(false),
     );
   } catch {
+    _reservedDropReports -= reservedDrops;
     _markDroppedEvent();
   }
 }

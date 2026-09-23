@@ -154,7 +154,7 @@ export async function loadPanelsByType(reportType: ReportType): Promise<StoredPa
             resolve(items);
         };
         request.onerror = () => reject(request.error);
-    });
+    }).finally(() => db.close());
 }
 
 export async function savePanel(stored: StoredPanel): Promise<void> {
@@ -167,7 +167,7 @@ export async function savePanel(stored: StoredPanel): Promise<void> {
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
             tx.onabort = () => reject(tx.error);
-        });
+        }).finally(() => db.close());
     }, 'savePanel');
 }
 
@@ -181,7 +181,7 @@ export async function deleteStoredPanel(id: string): Promise<void> {
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
             tx.onabort = () => reject(tx.error);
-        });
+        }).finally(() => db.close());
     }, 'deletePanel');
 }
 
@@ -194,7 +194,7 @@ export async function loadBranding(reportType: ReportType): Promise<StoredBrandi
         const request = tx.objectStore(BRANDING_STORE).get(reportType);
         request.onsuccess = () => resolve((request.result as StoredBranding | undefined) ?? null);
         request.onerror = () => reject(request.error);
-    });
+    }).finally(() => db.close());
 }
 
 export async function saveBranding(stored: StoredBranding): Promise<void> {
@@ -207,6 +207,6 @@ export async function saveBranding(stored: StoredBranding): Promise<void> {
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
             tx.onabort = () => reject(tx.error);
-        });
+        }).finally(() => db.close());
     }, 'saveBranding');
 }

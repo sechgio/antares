@@ -10,6 +10,7 @@ import {
 } from './syncCompare';
 import { broadcastCanvasDocumentSaved } from './canvasRealtime';
 import { TimerScheduler } from './timerScheduler';
+import { notifyPushHealth } from './pushHealth';
 import { reportFrontendError, reportFrontendEvent } from '../../../utils/observability';
 import { errorMessage } from '@/utils/errors';
 import { withTimeout } from '@/utils/async';
@@ -468,12 +469,19 @@ export async function pullCanvasDocument(
     };
   }
 
-  const { assertDocumentImagesResolvable } = await import('../utils/imageBlobStore');
+  const { assertDocumentImagesResolvable, persistDataUrlsAsCanvasAssets } = await import(
+    '../utils/imageBlobStore'
+  );
   await assertDocumentImagesResolvable(remote.document);
-  await api.canvasSave(remote.document, { touch: false, slim: true });
+  // El doc remoto llega con imágenes embebidas como data: URLs; persistirlo
+  // así inflaría el JSON local hasta el límite de 16 MiB. Se re-suben como
+  // canvas-asset: antes de guardar y se devuelve el doc con refs para que la
+  // hidratación produzca blob: urls limpias en memoria.
+  const storedRemote = await persistDataUrlsAsCanvasAssets(remote.document);
+  await api.canvasSave(storedRemote, { touch: false, slim: true });
   return {
     kind: 'applied',
-    document: remote.document,
+    document: storedRemote,
     remoteUpdatedAt: remote.updatedAt,
   };
 }
@@ -493,7 +501,7 @@ let opChain: Promise<unknown> = Promise.resolve();
 
 const pendingPushById = new Map<
   string,
-  { doc: CanvasDocument; options?: { forceResurrect?: boolean } }
+  { id: string; doc?: CanvasDocument; options?: { forceResurrect?: boolean } }
 >();
 let pushFlushQueued = false;
 let pushFlushPromise: Promise<void> | null = null;
@@ -632,9 +640,11 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
 
   if (toPullIds.length > 0) {
     const docs = await fetchRemoteDocuments(toPullIds);
-    await Promise.all(docs.map((doc) => api.canvasSave(doc, { touch: false, slim: true })));
-    pulled = docs.length;
-    for (const doc of docs) {
+    const { persistDataUrlsAsCanvasAssets } = await import('../utils/imageBlobStore');
+    const storedDocs = await Promise.all(docs.map((doc) => persistDataUrlsAsCanvasAssets(doc)));
+    await Promise.all(storedDocs.map((doc) => api.canvasSave(doc, { touch: false, slim: true })));
+    pulled = storedDocs.length;
+    for (const doc of storedDocs) {
       if (options.openDocumentId === doc.id && !options.openDirty) {
         reloadOpenId = doc.id;
       }
@@ -767,15 +777,18 @@ async function publishAcceptedPush(result: CanvasPushResult): Promise<void> {
 }
 
 const PUSH_RETRY_BASE_MS = 5_000;
-const PUSH_RETRY_MAX_ATTEMPTS = 6;
+const PUSH_RETRY_MAX_DELAY_MS = 120_000;
 const pushRetry = new TimerScheduler(() => {
   if (pendingPushById.size === 0) return;
   void flushPendingPushes().catch(() => {});
 });
 
+// Sin tope de intentos: un push que se rinde queda stale en cloud sin que el
+// usuario lo sepa. El backoff se acota a 2 min; el siguiente save o el sync
+// al enfocar la ventana adelanta el reintento de todos modos.
 function schedulePendingPushRetry(): void {
-  if (pushRetry.pending || pushRetry.attempts >= PUSH_RETRY_MAX_ATTEMPTS) return;
-  const delay = Math.min(PUSH_RETRY_BASE_MS * 2 ** pushRetry.attempts, 120_000);
+  if (pushRetry.pending) return;
+  const delay = Math.min(PUSH_RETRY_BASE_MS * 2 ** pushRetry.attempts, PUSH_RETRY_MAX_DELAY_MS);
   pushRetry.attempts += 1;
   pushRetry.schedule(delay);
 }
@@ -792,17 +805,19 @@ function flushPendingPushes(): Promise<void> {
     let firstError: unknown = null;
     for (const item of batch) {
       try {
-        const result = await pushCanvasDocumentResult(item.doc, item.options);
+        const doc = item.doc ?? normalizeDocument((await api.canvasGet(item.id)).document as CanvasDocument);
+        const result = await pushCanvasDocumentResult(doc, item.options);
         await publishAcceptedPush(result);
       } catch (err) {
         firstError ??= err;
-        if (!pendingPushById.has(item.doc.id)) {
-          pendingPushById.set(item.doc.id, item);
+        if (!pendingPushById.has(item.id)) {
+          pendingPushById.set(item.id, { id: item.id, options: item.options });
         }
       }
     }
     if (firstError) {
       schedulePendingPushRetry();
+      notifyPushHealth(true);
       reportFrontendError({
         kind: 'sync_error',
         view: 'canvas.push',
@@ -812,6 +827,7 @@ function flushPendingPushes(): Promise<void> {
       throw firstError;
     }
     pushRetry.reset();
+    notifyPushHealth(false);
   });
   pushFlushPromise = flush;
   opChain = flush.catch(() => {});
@@ -822,7 +838,7 @@ export function queueCanvasCloudPush(
   doc: CanvasDocument,
   options?: { forceResurrect?: boolean },
 ): Promise<void> {
-  pendingPushById.set(doc.id, { doc, options });
+  pendingPushById.set(doc.id, { id: doc.id, doc, options });
   return flushPendingPushes();
 }
 
@@ -833,6 +849,11 @@ export function _resetCanvasPushQueueForTests(): void {
 
 export function queueCanvasCloudDelete(id: string): Promise<void> {
   const next = opChain.then(async () => {
+    pendingPushById.delete(id);
+    if (pendingPushById.size === 0) {
+      pushRetry.cancel();
+      notifyPushHealth(false);
+    }
     try {
       await markRemoteCanvasDeleted(id);
     } catch (err) {
@@ -897,12 +918,16 @@ export async function restoreCanvasVersion(
   );
   if (error || !data?.document) return null;
 
-  const { serializeDocumentImages } = await import('../utils/imageBlobStore');
+  const { serializeDocumentImages, persistDataUrlsAsCanvasAssets } = await import(
+    '../utils/imageBlobStore'
+  );
   const restoredDoc = normalizeDocument({
     ...(data.document as CanvasDocument),
     updatedAt: new Date().toISOString(),
   });
-  const serialized = await serializeDocumentImages(restoredDoc);
+  const serialized = await persistDataUrlsAsCanvasAssets(
+    await serializeDocumentImages(restoredDoc),
+  );
 
   await api.canvasSave(serialized, { touch: true, slim: true });
   await queueCanvasCloudPush(serialized, { forceResurrect: true });

@@ -160,14 +160,7 @@ npm run build:win
 
 ## 🗄️ Despliegue y Migraciones de Supabase (Desarrolladores)
 
-Para aplicar migraciones de esquema en la base de datos de Supabase, utiliza el script del proyecto configurando tus variables de entorno locales:
-
-```powershell
-# Requiere en tu sesión local (nunca commits): SUPABASE_ACCESS_TOKEN y SUPABASE_DB_PASSWORD.
-# Opcional: SUPABASE_PROJECT_ID (por defecto el project ref autorizado del repo).
-
-pwsh scripts/supabase-db-push.ps1
-```
+Para aplicar migraciones de esquema, conecta el complemento Supabase de Codex, verifica el proyecto remoto y aplica las migraciones locales que falten según su historial.
 
 ---
 

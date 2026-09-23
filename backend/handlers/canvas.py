@@ -173,7 +173,10 @@ def canvas_list(params: dict[str, Any]) -> dict[str, Any]:
 def canvas_bootstrap(params: dict[str, Any]) -> dict[str, Any]:
     store = _canvas_core.get_canvas_store()
     documents = store.list_documents()
-    document = store.get(str(documents[0]["id"])) if documents else None
+    # El listado viene ordenado por stem (uuid): bootstrap debe reabrir el
+    # documento editado más recientemente, no el primero por nombre.
+    latest = max(documents, key=lambda d: d.get("updatedAt") or "", default=None)
+    document = store.get(str(latest["id"])) if latest else None
     return {"documents": documents, "document": document}
 
 

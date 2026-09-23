@@ -11,7 +11,7 @@ import sys
 import threading
 import traceback
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -42,11 +42,13 @@ _EVENT_FIELDS = {
     "count",
     "dropped_events",
     "duration_ms",
+    "err_count",
     "error_code",
     "job_id",
     "lane",
     "message",
     "method",
+    "ok_count",
     "operation_id",
     "outcome",
     "pid",
@@ -65,18 +67,29 @@ _EVENT_FIELDS = {
 }
 _TEXT_REDACTIONS = (
     (
-        re.compile(r"(\b(?:authorization|proxy-authorization)\s*[:=]\s*bearer\s+)[^\s,;]+", re.IGNORECASE),
+        re.compile(
+            r"(\b(?:authorization|proxy-authorization)\s*[:=]\s*(?:bearer|basic)\s+)[^\s,;]+",
+            re.IGNORECASE,
+        ),
         r"\1[REDACTED]",
     ),
     (
         re.compile(
-            r"(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|secret)\s*[:=]\s*)"
-            r"[\"']?[^\s,;\"']+[\"']?",
+            r"(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|secret|token|cookie)\s*[:=]\s*)"
+            r"(?:\"[^\",;]*\"?|'[^',;]*'?|[^\s,;\"']+)",
             re.IGNORECASE,
         ),
         r"\1[REDACTED]",
     ),
     (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "[REDACTED]"),
+    (
+        re.compile(r"\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
+        "[REDACTED]",
+    ),
+    (
+        re.compile(r"(\bBearer\s+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE),
+        r"\1[REDACTED]",
+    ),
     (
         re.compile(r"(?:[A-Za-z]:\\|\\\\|/(?:Users|home|tmp|var|private|opt|mnt|workspace)/)[^\s\"'`]+"),
         "[REDACTED]",
@@ -105,6 +118,15 @@ def redact_text(value: Any) -> str:
     for pattern, replacement in _TEXT_REDACTIONS:
         safe = pattern.sub(replacement, safe)
     return re.sub(r"[\r\n]+", " ", safe)[:4000]
+
+
+def bind_context(fn: Callable[..., Any]) -> Callable[..., Any]:
+    ctx = contextvars.copy_context()
+
+    def _bound(*args: Any, **kwargs: Any) -> Any:
+        return ctx.copy().run(fn, *args, **kwargs)
+
+    return _bound
 
 
 def get_context() -> dict[str, Any]:
@@ -193,12 +215,29 @@ def _safe_field(key: str, value: Any) -> tuple[bool, Any]:
         return True, redact_text(value)
     if key == "outcome":
         return (True, value) if value in _OUTCOMES else (False, None)
-    if key in {"pid", "backend_pid", "bytes", "attempt", "timeout_ms"}:
-        return (True, value) if isinstance(value, int) and value >= 0 else (False, None)
+    if key in {
+        "pid",
+        "backend_pid",
+        "bytes",
+        "attempt",
+        "timeout_ms",
+        "ok_count",
+        "err_count",
+        "count",
+        "dropped_events",
+    }:
+        return (
+            (True, value)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            else (False, None)
+        )
     if key == "duration_ms":
         return (
             (True, round(value))
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0
+            if isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value >= 0
             else (False, None)
         )
     safe = _safe_token(value)

@@ -41,6 +41,7 @@ const SMOKE_METHODS = [
   'canvas_list',
   'sellador_inspect_pdf',
   'sellador_render_page',
+  'spreadsheet_export_volantes_template',
 ];
 
 function assertSmokeMethodsInCatalog() {
@@ -79,6 +80,7 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
     let settled = false;
     let ready = false;
     let templateCount = 0;
+    let renderPreview = null;
 
     const sendRequest = (id, method, params) => {
       proc.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
@@ -197,17 +199,35 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
             ));
             return;
           }
+          renderPreview = {
+            mimeType: result.mime_type,
+            width: result.rendered_width,
+            height: result.rendered_height,
+          };
+          sendRequest('volantes-template', 'spreadsheet_export_volantes_template', {});
+          continue;
+        }
+        if (msg.id === 'volantes-template') {
+          const result = msg.result;
+          if (
+            msg.error
+            || !result
+            || typeof result.content_b64 !== 'string'
+            || !result.content_b64.startsWith('UEsDB')
+          ) {
+            finish(new Error(
+              `spreadsheet_export_volantes_template smoke failed (pandas/openpyxl import chain): ` +
+              `${JSON.stringify(msg.error || result || null)}`,
+            ));
+            return;
+          }
           console.log(
             `[build-backend] Post-build smoke OK: templates_list=${templateCount} ` +
-            `canvas_list=ok sellador_render_page=${result.mime_type}`,
+            `canvas_list=ok sellador_render_page=ok volantes_template=pandas+openpyxl`,
           );
           finish(null, {
             count: templateCount,
-            preview: {
-              mimeType: result.mime_type,
-              width: result.rendered_width,
-              height: result.rendered_height,
-            },
+            preview: renderPreview,
           });
         }
       }

@@ -1,20 +1,34 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
 from backend.core.informes_v2.models import (
     DIAMETERS,
     LINEA_ROWS,
+    PLANTILLA_VALUES,
     VALVULA_ROWS,
     InformeV2,
     create_empty_report,
     report_id_from_number,
 )
+from backend.core.informes_v2.reservorios2_importer import (
+    CLASICA_COLUMN_PREFIXES,
+    R2_COLUMN_PREFIXES,
+    InformePayload,
+    extend_column_mappings,
+    fill_reservorios2_report,
+    is_tecnico_row,
+    normalize_header_value,
+)
+from backend.core.informes_v2.reservorios2_importer import (
+    R2_TEMPLATE_HEADERS as R2_TEMPLATE_HEADERS,
+)
 from backend.core.tabular_report_import import (
+    ReportRow,
     import_reports,
-    normalize_tabular_header,
     normalize_tabular_key,
     parse_csv_rows,
     parse_xlsx_rows,
@@ -60,6 +74,11 @@ COLUMN_MAPPING: dict[str, str] = {
     "observacion": "medidas_observacion",
     "observaciones": "medidas_observacion",
     "obs": "medidas_observacion",
+    "plantilla": "plantilla",
+    "contratista": "contratista",
+    "codigoinfraestructura": "cod_infraestructura",
+    "codinfraestructura": "cod_infraestructura",
+    "codinfra": "cod_infraestructura",
 }
 
 VALVULA_ALIASES = {
@@ -137,46 +156,92 @@ for field, aliases in MEDIDA_ALIASES.items():
     for alias in aliases:
         COLUMN_MAPPING[alias] = f"medidas_{field}"
 
-
-def normalize_header_value(value: str) -> str:
-    return normalize_tabular_header(value, strip_quotes=True)
+R2_COLUMN_MAPPING = extend_column_mappings(COLUMN_MAPPING)
 
 
-def normalize_csv_key(value: str) -> str:
-    return normalize_tabular_key(value, COLUMN_MAPPING, normalize_header_value)
+def normalize_csv_key(value: str, column_mapping: dict[str, str] = COLUMN_MAPPING) -> str:
+    return normalize_tabular_key(value, column_mapping, normalize_header_value)
 
 
-def import_reports_from_bytes(filename: str, content: bytes) -> list[dict[str, Any]]:
+def import_reports_from_bytes(
+    filename: str,
+    content: bytes,
+    plantilla: str | None = None,
+) -> list[dict[str, Any]]:
+    def parse_for_import(
+        content_to_parse: bytes,
+        parser: Callable[[bytes, dict[str, str]], list[ReportRow]],
+    ) -> list[ReportRow]:
+        if plantilla != "reservorios2":
+            return parser(content_to_parse, COLUMN_MAPPING)
+        classic_rows = parser(content_to_parse, COLUMN_MAPPING)
+        if any(any(key.startswith("linea_") for key in row) for row in classic_rows):
+            return classic_rows
+        if not classic_rows:
+            return parser(content_to_parse, R2_COLUMN_MAPPING)
+        classic_rows.clear()
+        r2_rows = parser(content_to_parse, R2_COLUMN_MAPPING)
+        return r2_rows if r2_rows else parser(content_to_parse, COLUMN_MAPPING)
+
+    def transform_row(row: ReportRow, fallback_report_number: int) -> InformePayload:
+        report = transform_flat_to_nested(row, fallback_report_number, plantilla)
+        # Las columnas del archivo identifican la plantilla: una plantilla Nueva
+        # importada con el switch en Clásica (o al revés) nace con su formato.
+        if any(key.startswith(R2_COLUMN_PREFIXES) for key in row) or is_tecnico_row(row):
+            report["plantilla"] = "reservorios2"
+        elif any(key.startswith(CLASICA_COLUMN_PREFIXES) for key in row):
+            report["plantilla"] = "clasica"
+        elif row.get("plantilla") in PLANTILLA_VALUES:
+            report["plantilla"] = row["plantilla"]
+        elif plantilla in PLANTILLA_VALUES:
+            report["plantilla"] = plantilla
+        return report
+
     return import_reports(
         filename,
         content,
-        parse_csv=parse_csv_file,
-        parse_xlsx=parse_xlsx_file,
-        transform_row=transform_flat_to_nested,
+        parse_csv=lambda data: parse_for_import(data, parse_csv_file),
+        parse_xlsx=lambda data: parse_for_import(data, parse_xlsx_file),
+        transform_row=transform_row,
         to_int=_safe_int,
     )
 
 
-def parse_csv_file(content: bytes) -> list[dict[str, Any]]:
-    return parse_csv_rows(content, column_mapping=COLUMN_MAPPING, normalize_key=normalize_csv_key)
-
-
-def parse_xlsx_file(content: bytes) -> list[dict[str, Any]]:
-    return parse_xlsx_rows(
+def parse_csv_file(
+    content: bytes,
+    column_mapping: dict[str, str] = COLUMN_MAPPING,
+) -> list[ReportRow]:
+    return parse_csv_rows(
         content,
-        column_mapping=COLUMN_MAPPING,
-        normalize_header=normalize_header_value,
-        normalize_key=normalize_csv_key,
+        column_mapping=column_mapping,
+        normalize_key=lambda value: normalize_csv_key(value, column_mapping),
     )
 
 
-def transform_flat_to_nested(row: dict[str, Any], fallback_report_number: int = 1) -> dict[str, Any]:
+def parse_xlsx_file(
+    content: bytes,
+    column_mapping: dict[str, str] = COLUMN_MAPPING,
+) -> list[ReportRow]:
+    return parse_xlsx_rows(
+        content,
+        column_mapping=column_mapping,
+        normalize_header=normalize_header_value,
+        normalize_key=lambda value: normalize_csv_key(value, column_mapping),
+    )
+
+
+def transform_flat_to_nested(
+    row: ReportRow,
+    fallback_report_number: int = 1,
+    plantilla_hint: str | None = None,
+) -> InformePayload:
     informe_id = _safe_int(row.get("informe_id"), 0)
     if informe_id <= 0:
         informe_id = fallback_report_number
 
     report = create_empty_report(informe_id)
     report["id"] = report_id_from_number(informe_id)
+    report["plantilla"] = _safe_str(row.get("plantilla"), report["plantilla"]).lower()
 
     photo_id = _safe_str(row.get("photo_id"))
     estacion = _safe_str(row.get("estacion"))
@@ -192,6 +257,8 @@ def transform_flat_to_nested(row: dict[str, Any], fallback_report_number: int = 
             "fecha_ejecucion": _format_fecha(row.get("fecha_ejecucion")),
             "suministro": suministro,
             "sgio": _safe_str(row.get("sgio")),
+            "contratista": _safe_str(row.get("contratista")),
+            "cod_infraestructura": _safe_str(row.get("cod_infraestructura")),
         }
     )
 
@@ -224,6 +291,8 @@ def transform_flat_to_nested(row: dict[str, Any], fallback_report_number: int = 
             "observacion": _safe_str(row.get("medidas_observacion")),
         }
     )
+
+    fill_reservorios2_report(report, row, plantilla_hint)
     report["last_modified"] = datetime.now().isoformat()
     return InformeV2.normalize(report)
 

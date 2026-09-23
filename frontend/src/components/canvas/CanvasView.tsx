@@ -402,8 +402,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       dismissedRemoteAtRef.current = null;
       void (async () => {
         try {
-          const hydrated = await hydrateDocumentImages(conflict.remoteDoc!, { strict: true });
-          await api.canvasSave(conflict.remoteDoc!, { touch: false, slim: true });
+          const { persistDataUrlsAsCanvasAssets } = await import('./utils/imageBlobStore');
+          const persistedRemote = await persistDataUrlsAsCanvasAssets(conflict.remoteDoc!);
+          await api.canvasSave(persistedRemote, { touch: false, slim: true });
+          const hydrated = await hydrateDocumentImages(persistedRemote, { strict: true });
           history.replaceDocument(hydrated);
           handleRemoteDocumentApplied(hydrated);
           await refreshList();
@@ -518,7 +520,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     if (!active) return;
     if (!history.hasUnsavedEditsRef.current) return;
     if (autosavePendingRef.current) return;
-    const delay = autosaveDelayForDoc(history.documentRef.current);
+    if (gestureBaselineRef.current || panelBaselineRef.current || renameBaselineRef.current) return;
+    const delay = autosaveDelayForDoc(history.document);
     const timer = window.setTimeout(() => flushAutosaveRef.current(), delay);
     return () => {
       window.clearTimeout(timer);
@@ -530,12 +533,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         autosaveRetryTimerRef.current = null;
       }
     };
-  }, [active, history.past, history.future, history.documentRef, history.hasUnsavedEdits, history.hasUnsavedEditsRef]);
+  }, [active, history.document, history.hasUnsavedEdits, history.hasUnsavedEditsRef, history.revision]);
 
   useEffect(() => {
     if (active) return;
+    if (gestureBaselineRef.current || panelBaselineRef.current || renameBaselineRef.current) return;
     flushAutosaveRef.current();
-  }, [active]);
+  }, [active, history.revision]);
 
   useEffect(() => {
     autosaveUnmountedRef.current = false;
@@ -549,7 +553,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     };
   }, []);
   useEffect(() => {
-    const live = collectImageRefsFromLayers(history.documentRef.current.layers);
+    const live = collectImageRefsFromLayers(history.document.layers);
     for (const ref of collectImageRefsFromHistory(history.past)) live.add(ref);
     for (const ref of collectImageRefsFromHistory(history.future)) live.add(ref);
     for (const layer of clipboard) {
@@ -563,7 +567,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       }
     }
     sweepOrphanBlobs(live);
-  }, [history.documentRef, history.past, history.future, clipboard]);
+  }, [history.document, history.past, history.future, clipboard]);
 
   const onBeforeUnload = useCallback(() => {
     if (!history.hasUnsavedEditsRef.current) return;

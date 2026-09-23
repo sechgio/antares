@@ -83,7 +83,7 @@ export async function loadSession(): Promise<StoredSession | null> {
     const request = tx.objectStore(STORE).get(SESSION_KEY);
     request.onsuccess = () => resolve((request.result as StoredSession | undefined) ?? null);
     request.onerror = () => reject(request.error);
-  });
+  }).finally(() => db.close());
 }
 
 export async function saveSession(session: EvidenciaSession): Promise<void> {
@@ -97,7 +97,7 @@ export async function saveSession(session: EvidenciaSession): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
-    });
+    }).finally(() => db.close());
   } catch (err) {
     reportFrontendError({
       kind: 'storage_error',

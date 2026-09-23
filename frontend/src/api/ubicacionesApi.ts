@@ -19,6 +19,8 @@ export interface PreviewUbicacionParams {
   zoom?: number;
   customStyles?: Record<string, unknown>;
   manualData?: UbicacionManualData;
+  geocode?: boolean;
+  geocodeCountry?: string;
 }
 
 interface PreviewUbicacionData {
@@ -53,6 +55,8 @@ export interface GenerarUbicacionesParams {
   zoom?: number;
   customStyles?: Record<string, unknown>;
   manualData?: UbicacionManualData;
+  geocode?: boolean;
+  geocodeCountry?: string;
 }
 
 export interface GenerarUbicacionesData {
@@ -61,6 +65,11 @@ export interface GenerarUbicacionesData {
   outputDir: string;
   consolidado: boolean;
   consolidatedPath: string | null;
+  geocodificados?: number;
+  geocodeFailures?: Array<{
+    cod_componente: string;
+    motivo: 'missing_address' | 'not_found';
+  }>;
 }
 
 export type GenerarUbicacionesResponse = GenerarUbicacionesData;

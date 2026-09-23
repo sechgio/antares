@@ -10,7 +10,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.core.observability import log_event
+from backend.core.observability import bind_context, log_event
 from backend.utils.lazy import LazySingleton
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ def _detect_limits() -> tuple[int, int, int, int]:
     heavy_cap = 8 if available_gb >= 16 else 6
     ram_divisor = 2 if available_gb >= 16 else 3
     ram_limited_heavy = max(1, int(available_gb // ram_divisor))
-    heavy_workers = max(2, min(max(1, cpu_count // 2), ram_limited_heavy, heavy_cap))
+    heavy_workers = max(1, min(max(1, cpu_count // 2), ram_limited_heavy, heavy_cap))
     heavy_queue_limit = max(heavy_workers, heavy_workers * 2)
     light_queue_limit = _light_queue_default(light_workers)
     if available_gb < 1.0:
@@ -270,7 +270,7 @@ class WorkScheduler:
                 self._light_slots.release()
 
         try:
-            future = self._light_executor.submit(_wrapped)
+            future = self._light_executor.submit(bind_context(_wrapped))
         except Exception:
             with self._lock:
                 self._light_outstanding -= 1
@@ -347,7 +347,7 @@ class WorkScheduler:
                 self._notify_heavy()
 
         try:
-            future = self._heavy_executor.submit(_wrapped)
+            future = self._heavy_executor.submit(bind_context(_wrapped))
         except Exception:
             with self._lock:
                 self._heavy_outstanding -= 1

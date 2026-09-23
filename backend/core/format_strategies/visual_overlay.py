@@ -6,7 +6,7 @@ from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 
-from backend.core.format_strategies.shared import _clone_page_shallow, _escape_pdf_text
+from backend.core.format_strategies.shared import _escape_pdf_text
 
 
 def _build_overlay_stamp_pdf(ll_x: float, ll_y: float, ur_x: float, ur_y: float, clean_name: str, overlay_stream: str) -> bytes:
@@ -147,13 +147,15 @@ class VisualOverlayStrategy:
             msg = "Visual overlay requires mapping configuration"
             raise ValueError(msg)
         writer = PdfWriter()
-        reader = PdfReader(io.BytesIO(template_bytes))
-        target_page_idx = min(mapping.get("page", 0), len(reader.pages) - 1)
-        base_page = writer.add_page(reader.pages[target_page_idx])
-        if mapping.get("blank_mcids"):
-            _blank_number_in_xobject(base_page, mapping["blank_mcids"])
+        reader: PdfReader | None = None
         for number in range(desde, hasta + 1):
-            page = base_page if number == desde else _clone_page_shallow(writer, base_page)
+            if reader is None:
+                reader = PdfReader(io.BytesIO(template_bytes))
+            target_page_idx = min(mapping.get("page", 0), len(reader.pages) - 1)
+            writer.add_page(reader.pages[target_page_idx])
+            page = writer.pages[-1]
+            if mapping.get("blank_mcids"):
+                _blank_number_in_xobject(page, mapping["blank_mcids"])
             _apply_visual_overlay(page, number, mapping)
         buffer = io.BytesIO()
         writer.write(buffer)
@@ -163,11 +165,13 @@ class VisualOverlayStrategy:
 class SimpleOverlayStrategy:
     def generate(self, template_bytes: bytes, desde: int, hasta: int, mapping: dict[str, Any] | None = None) -> bytes:
         writer = PdfWriter()
-        reader = PdfReader(io.BytesIO(template_bytes))
-        target_page_idx = min(_DEFAULT_OVERLAY_MAPPING.get("page", 0), len(reader.pages) - 1)
-        base_page = writer.add_page(reader.pages[target_page_idx])
+        reader: PdfReader | None = None
         for number in range(desde, hasta + 1):
-            page = base_page if number == desde else _clone_page_shallow(writer, base_page)
+            if reader is None:
+                reader = PdfReader(io.BytesIO(template_bytes))
+            target_page_idx = min(_DEFAULT_OVERLAY_MAPPING.get("page", 0), len(reader.pages) - 1)
+            writer.add_page(reader.pages[target_page_idx])
+            page = writer.pages[-1]
             _apply_visual_overlay(page, number, _DEFAULT_OVERLAY_MAPPING)
         buffer = io.BytesIO()
         writer.write(buffer)

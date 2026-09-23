@@ -162,4 +162,19 @@ describe('renderOtherPagesPreview staging', () => {
     expect(mocks.selladorRenderPage).toHaveBeenCalledTimes(5);
     expect(release).not.toHaveBeenCalled();
   });
+
+  it('renders only the requested pages from a large document', async () => {
+    const progress: Array<Array<{ pageNum: number }>> = [];
+
+    await renderOtherPagesPreview(baseOptions({
+      pdfPath: 'antares-read_visible',
+      pageCount: 1000,
+      pageNumbers: [7, 42],
+      onProgress: (previews: Array<{ pageNum: number }>) => progress.push(previews),
+    }));
+
+    expect(mocks.selladorRenderPage.mock.calls.map(([params]) => (params as { page_num: number }).page_num))
+      .toEqual([7, 42]);
+    expect(progress[progress.length - 1].map(({ pageNum }) => pageNum)).toEqual([7, 42]);
+  });
 });

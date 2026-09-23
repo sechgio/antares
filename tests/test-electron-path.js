@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 const { getBackendCommand } = require('../electron/backend-command.js');
 
-const { assert, finish, counters } = require('./helpers/harness');
+const { assert, counters } = require('./helpers/harness');
 
 console.log('Testing getBackendCommand...\n');
 

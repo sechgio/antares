@@ -45,6 +45,13 @@ def _read_backend_keys(typeddict: type) -> set[str]:
     return set(typeddict.__required_keys__)
 
 
+def _read_frontend_const(path: pathlib.Path, name: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    m = re.search(rf"export const {name}\s*=\s*'([^']*)'", text)
+    assert m, f"{name} missing in {path}"
+    return m.group(1)
+
+
 def test_ficha_schema_parity() -> None:
     frontend = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "fichas-tecnicas" / "types.ts"
     backend = pathlib.Path(__file__).resolve().parent.parent / "backend" / "core" / "fichas_tecnicas" / "types.py"
@@ -60,13 +67,19 @@ def test_informe_schema_parity() -> None:
     frontend = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "informes-v2" / "types.ts"
     backend = pathlib.Path(__file__).resolve().parent.parent / "backend" / "core" / "informes_v2" / "types.py"
     assert frontend.exists() and backend.exists()
+    from backend.core.informes_v2.models import PLANTILLA_VALUES, R2_TITULO_LINEA1, R2_TITULO_LINEA2
     from backend.core.informes_v2.types import (
         InformeDiameterRow,
         InformeHeader,
         InformeMedidas,
         InformeStatus,
         InformeV2Document,
+        InspeccionRow,
+        PlantillaId,
         ReservoirType,
+        Reservorios2Data,
+        Reservorios2Medidas,
+        Reservorios2Row,
     )
 
     fe_fields = _read_frontend_interface(frontend, "InformeV2")
@@ -74,8 +87,16 @@ def test_informe_schema_parity() -> None:
     assert set(_read_frontend_interface(frontend, "ReportHeader")) == _read_backend_keys(InformeHeader)
     assert set(_read_frontend_interface(frontend, "MedidasData")) == _read_backend_keys(InformeMedidas)
     assert set(_read_frontend_interface(frontend, "DiameterRow")) == _read_backend_keys(InformeDiameterRow)
+    assert set(_read_frontend_interface(frontend, "InspeccionRow")) == _read_backend_keys(InspeccionRow)
+    assert set(_read_frontend_interface(frontend, "Reservorios2Row")) == _read_backend_keys(Reservorios2Row)
+    assert set(_read_frontend_interface(frontend, "Reservorios2Medidas")) == _read_backend_keys(Reservorios2Medidas)
+    assert set(_read_frontend_interface(frontend, "Reservorios2Data")) == _read_backend_keys(Reservorios2Data)
+    assert set(get_args(PlantillaId)) == _read_frontend_literals(frontend, "PlantillaId")
+    assert set(get_args(PlantillaId)) == set(PLANTILLA_VALUES)
     assert set(get_args(InformeStatus)) == _read_frontend_literals(frontend, "ReportStatus")
     assert set(get_args(ReservoirType)) == _read_frontend_literals(frontend, "ReservoirType")
+    assert _read_frontend_const(frontend, "R2_TITULO_LINEA1") == R2_TITULO_LINEA1
+    assert _read_frontend_const(frontend, "R2_TITULO_LINEA2") == R2_TITULO_LINEA2
 
 
 def test_technical_report_schema_parity() -> None:

@@ -9,6 +9,7 @@ import type {
   CanvasRealtimeSubscription,
 } from '../sync/canvasRealtime';
 import { normalizeDocument, type CanvasDocument } from '../types';
+import { subscribeCanvasPushHealth } from '../sync/pushHealth';
 import { hydrateDocumentImages } from '../utils/imageBlobStore';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 import { reportFrontendEvent } from '../../../utils/observability';
@@ -449,6 +450,14 @@ export function useCanvasSync({
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [runCloudSync, active]);
+
+  // La cola de push reintenta en background; sus fallos no pasan por
+  // runCloudSync, así que el badge necesita su propia señal de salud.
+  useEffect(() => {
+    return subscribeCanvasPushHealth((unhealthy) => {
+      setSyncStatus(unhealthy ? 'error' : 'idle');
+    });
+  }, []);
 
   return {
     runCloudSync,

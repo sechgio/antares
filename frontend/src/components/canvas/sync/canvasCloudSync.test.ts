@@ -11,6 +11,7 @@ import {
   _resetCanvasPushQueueForTests,
 } from './canvasCloudSync';
 import { isNewer, shouldPushCanvasRow } from './syncCompare';
+import { notifyPushHealth, subscribeCanvasPushHealth } from './pushHealth';
 import { withTimeout } from '../../../utils/async';
 
 const supabaseMock = vi.hoisted(() => {
@@ -917,6 +918,60 @@ describe('opChain push serialization', () => {
     });
   });
 
+  it('removes a deleted document from the pending retry queue', async () => {
+    vi.useFakeTimers();
+    const doc = makeDoc({ id: 'doc-deleted-retry' });
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'XX001', message: 'temporary failure' },
+    });
+
+    try {
+      const push = queueCanvasCloudPush(doc);
+      const failed = expect(push).rejects.toThrow('temporary failure');
+      await vi.advanceTimersByTimeAsync(0);
+      await failed;
+
+      await queueCanvasCloudDelete(doc.id);
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      expect(api.canvasGet).not.toHaveBeenCalled();
+      expect(supabaseMock.rpc).toHaveBeenCalledWith(
+        'canvas_delete_document_lww_v2',
+        expect.objectContaining({ p_id: doc.id }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears unhealthy push status when deleting its last failed retry', async () => {
+    vi.useFakeTimers();
+    notifyPushHealth(false);
+    const doc = makeDoc({ id: 'doc-deleted-health' });
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'XX001', message: 'temporary failure' },
+    });
+    const events: boolean[] = [];
+    const unsubscribe = subscribeCanvasPushHealth((unhealthy) => events.push(unhealthy));
+
+    try {
+      const push = queueCanvasCloudPush(doc);
+      const failed = expect(push).rejects.toThrow('temporary failure');
+      await vi.advanceTimersByTimeAsync(0);
+      await failed;
+      expect(events.at(-1)).toBe(true);
+
+      await queueCanvasCloudDelete(doc.id);
+
+      expect(events.at(-1)).toBe(false);
+    } finally {
+      unsubscribe();
+      vi.useRealTimers();
+    }
+  });
+
   it('publishes only an accepted queued push', async () => {
     await queueCanvasCloudPush(makeDoc({
       id: 'doc-queued',
@@ -970,6 +1025,8 @@ describe('opChain push serialization', () => {
   it('automatically retries a failed queued push with backoff', async () => {
     vi.useFakeTimers();
     const doc = makeDoc({ id: 'doc-auto-retry', updatedAt: '2026-07-22T12:00:00Z' });
+    const latest = makeDoc({ id: doc.id, name: 'latest', updatedAt: '2026-07-22T12:01:00Z' });
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: latest });
     let calls = 0;
     supabaseMock.rpc.mockImplementation(async (name: string) => {
       if (name === 'canvas_push_document_lww_v2') {
@@ -988,7 +1045,73 @@ describe('opChain push serialization', () => {
 
     await vi.advanceTimersByTimeAsync(5_000);
     expect(calls).toBeGreaterThanOrEqual(2);
+    expect(api.canvasGet).toHaveBeenCalledWith(doc.id);
+    expect(supabaseMock.rpc).toHaveBeenLastCalledWith(
+      'canvas_push_document_lww_v2',
+      expect.objectContaining({ p_document: expect.objectContaining({
+        id: latest.id, name: latest.name, updatedAt: latest.updatedAt,
+      }) }),
+    );
     vi.useRealTimers();
+  });
+
+  it('keeps retrying a failed push beyond the old six-attempt cap', async () => {
+    vi.useFakeTimers();
+    const doc = makeDoc({ id: 'doc-stale-retry', updatedAt: '2026-07-22T12:00:00Z' });
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: doc });
+    let calls = 0;
+    supabaseMock.rpc.mockImplementation(async (name: string) => {
+      if (name === 'canvas_push_document_lww_v2') {
+        calls += 1;
+        return { data: null, error: { code: 'XX001', message: 'still failing' } };
+      }
+      return { data: true, error: null };
+    });
+
+    const push = queueCanvasCloudPush(doc);
+    const settled = expect(push).rejects.toThrow('still failing');
+    await vi.advanceTimersByTimeAsync(0);
+    await settled;
+    expect(calls).toBe(1);
+
+    // El tope viejo abandonaba la cola tras 6 reintentos (7 intentos totales).
+    // Con backoff acotado a 2 min, diez minutos virtuales deben seguir
+    // produciendo reintentos.
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(calls).toBeGreaterThan(7);
+    vi.useRealTimers();
+  });
+
+  it('reports push health transitions to subscribers while retrying', async () => {
+    vi.useFakeTimers();
+    const doc = makeDoc({ id: 'doc-health', updatedAt: '2026-07-22T12:00:00Z' });
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: doc });
+    let calls = 0;
+    supabaseMock.rpc.mockImplementation(async (name: string) => {
+      if (name === 'canvas_push_document_lww_v2') {
+        calls += 1;
+        if (calls === 1) return { data: null, error: { code: 'XX001', message: 'temporary failure' } };
+        return { data: true, error: null };
+      }
+      return { data: true, error: null };
+    });
+
+    const events: boolean[] = [];
+    const unsubscribe = subscribeCanvasPushHealth((unhealthy) => events.push(unhealthy));
+    try {
+      const push = queueCanvasCloudPush(doc);
+      const settled = expect(push).rejects.toThrow('temporary failure');
+      await vi.advanceTimersByTimeAsync(0);
+      await settled;
+      expect(events.at(-1)).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(events.at(-1)).toBe(false);
+    } finally {
+      unsubscribe();
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -11,9 +12,10 @@ from backend.core.jobs import get_job_manager
 
 logger = logging.getLogger(__name__)
 
-_dest_scan_cache: OrderedDict[str, tuple[float, set[str]]] = OrderedDict()
+_dest_scan_cache: OrderedDict[str, tuple[float, set[str], int]] = OrderedDict()
 _dest_scan_lock = threading.Lock()
 _MAX_DEST_SCAN_CACHE = 32
+_MAX_DEST_SCAN_CACHE_BYTES = 64 * 1024 * 1024
 _MAX_DEST_SCAN_ENTRIES = 100_000
 
 
@@ -47,10 +49,15 @@ def _scan_dest_out_keys(destino: str | Path) -> set[str] | None:
         logger.debug("scandir failed for destino=%s; falling back to exists()", dest, exc_info=True)
         return None
     with _dest_scan_lock:
-        _dest_scan_cache[cache_key] = (dir_mtime, set(keys))
-        _dest_scan_cache.move_to_end(cache_key)
-        while len(_dest_scan_cache) > _MAX_DEST_SCAN_CACHE:
-            _dest_scan_cache.popitem(last=False)
+        _dest_scan_cache.pop(cache_key, None)
+        cached_bytes = sys.getsizeof(keys) + sum(sys.getsizeof(key) for key in keys)
+        if cached_bytes <= _MAX_DEST_SCAN_CACHE_BYTES:
+            _dest_scan_cache[cache_key] = (dir_mtime, set(keys), cached_bytes)
+            while (
+                len(_dest_scan_cache) > _MAX_DEST_SCAN_CACHE
+                or sum(entry[2] for entry in _dest_scan_cache.values()) > _MAX_DEST_SCAN_CACHE_BYTES
+            ):
+                _dest_scan_cache.popitem(last=False)
     return keys
 
 

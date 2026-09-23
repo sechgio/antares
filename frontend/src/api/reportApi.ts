@@ -30,6 +30,7 @@ export function createReportApi<TReport, TListItem>(
     update: async (id: string, item: TReport) => (await spec.update(id, item)).item as TReport,
     delete: (id: string) => spec.delete(id),
     clear: () => spec.clear(),
-    importFile: (filename: string, content_b64: string) => spec.importFile({ filename, content_b64 }),
+    importFile: (filename: string, content_b64: string, extra?: Record<string, unknown>) =>
+      spec.importFile({ ...(extra ?? {}), filename, content_b64 }),
   };
 }

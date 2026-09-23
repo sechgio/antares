@@ -230,7 +230,7 @@ def _parse_excel_columns(df: Any) -> tuple[Any, ...]:
             col_lat = "lat_tmp"
             col_lon = "lon_tmp"
         else:
-            return None, None, None, None, None, None
+            return col_cod, col_dir, col_loc, col_dist, col_lat, col_lon
 
     return col_cod, col_dir, col_loc, col_dist, col_lat, col_lon
 
@@ -250,8 +250,8 @@ def _extract_row_data(
         "direccion": row[col_dir] if col_dir and not _is_na(row[col_dir]) else "",
         "localidad": row[col_loc] if col_loc and not _is_na(row[col_loc]) else "",
         "distrito": row[col_dist] if col_dist and not _is_na(row[col_dist]) else "",
-        "lat": row[col_lat],
-        "lon": row[col_lon],
+        "lat": row[col_lat] if col_lat else None,
+        "lon": row[col_lon] if col_lon else None,
     }
 
 
@@ -297,6 +297,16 @@ def _compose_ubicacion_image(
 
     border_w = max(1, round(int(spec["border"]) * scale))
     draw.rectangle([0, 0, out_w - 1, out_h - 1], outline=(0, 0, 0), width=border_w)
+    if datos.get("_geocoded_by") == "nominatim":
+        attribution_font = _get_font(False, max(8, round(22 * scale)))
+        draw.text(
+            (round(24 * scale), map_height - round(36 * scale)),
+            "Geocodificación: © OpenStreetMap contributors",
+            fill=(0, 0, 0),
+            font=attribution_font,
+            stroke_width=max(1, round(2 * scale)),
+            stroke_fill=(255, 255, 255),
+        )
 
     cod = str(datos.get("cod_componente", ""))
     dir_str = str(datos.get("direccion", ""))

@@ -9,6 +9,7 @@ interface Props {
   appClassName?: string;
   surface?: string;
   actions: ReactNode;
+  headerCenter?: ReactNode;
   importInputRef: RefObject<HTMLInputElement | null>;
   onImportFile: (file: File) => void;
   mobileTab: ReportWorkspaceMobileTab;
@@ -32,6 +33,7 @@ export default function ReportWorkspaceShell({
   appClassName,
   surface,
   actions,
+  headerCenter,
   importInputRef,
   onImportFile,
   mobileTab,
@@ -55,6 +57,7 @@ export default function ReportWorkspaceShell({
     >
       <header className="tr-header">
         <h1>{title}</h1>
+        {headerCenter ? <div className="tr-header-center">{headerCenter}</div> : null}
         <div className="tr-header-toolbar">
           <div className="tr-header-actions">{actions}</div>
         </div>

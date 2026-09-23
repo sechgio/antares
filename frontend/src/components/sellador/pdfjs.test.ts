@@ -23,7 +23,7 @@ function fakePage(width: number, height: number) {
 }
 
 function fakePdf(width = 612, height = 792) {
-  return { getPage: vi.fn().mockResolvedValue(fakePage(width, height)) };
+  return { getPage: vi.fn().mockResolvedValue(fakePage(width, height)), destroy: vi.fn(async () => {}) };
 }
 
 describe('sellador/pdfjs', () => {
@@ -43,6 +43,16 @@ describe('sellador/pdfjs', () => {
     const size = await getPdfPageSize(b64, 2);
     expect(pdf.getPage).toHaveBeenCalledWith(2);
     expect(size).toEqual({ width: 300, height: 400 });
+    expect(pdf.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('getPdfPageSize libera el documento si falla la lectura', async () => {
+    const pdf = fakePdf();
+    pdf.getPage.mockRejectedValueOnce(new Error('lectura fallida'));
+    getDocument.mockReturnValue({ promise: Promise.resolve(pdf) });
+    ensurePdfJs.mockResolvedValue({ getDocument });
+    await expect(getPdfPageSize(b64)).rejects.toThrow('lectura fallida');
+    expect(pdf.destroy).toHaveBeenCalledOnce();
   });
 
   it('renderPdfPageToDataUrl clampa el scale entre MIN y MAX pixel width', async () => {

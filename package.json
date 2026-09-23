@@ -28,6 +28,7 @@
     "test:stress": "cd backend && uv run --project .. --locked --extra dev pytest ../tests/test_stress_conversion.py -v -m slow",
     "bench:ipc": "uv run --project . --locked --extra dev python scripts/benchmark_ipc_latency.py",
     "bench:scalability": "uv run --project . --locked --extra dev python scripts/scalability_baseline.py --scale 1x --output benchmarks/scalability-1x.json",
+    "read:logs": "node scripts/read-logs.js",
     "lint:python": "uv run --project . --locked --extra dev ruff check backend tests scripts",
     "lint:fix": "uv run --project . --locked --extra dev ruff check backend tests scripts --fix",
     "typecheck:backend": "uv run --project . --locked --extra dev mypy backend",

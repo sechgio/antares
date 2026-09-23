@@ -65,6 +65,13 @@ function resolvePythonCommand() {
   return 'python';
 }
 
+function pyInstallerPath() {
+  return (process.env.PATH || '')
+    .split(path.delimiter)
+    .filter((entry) => !/(?:^|[\\/])(?:mingw64|ucrt64)[\\/]bin[\\/]?$/i.test(entry))
+    .join(path.delimiter);
+}
+
 async function main() {
   if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
@@ -87,7 +94,7 @@ async function main() {
         cwd: backendDir,
         stdio: 'inherit',
         shell: true,
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' },
+        env: { ...process.env, PATH: pyInstallerPath(), PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' },
       },
     );
 

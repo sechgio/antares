@@ -27,8 +27,6 @@ async function main() {
 
   let sheetModifiedTime = '2026-08-06T10:00:00.000Z';
   let readRangesCalls = 0;
-  let readRangeCalls = 0;
-  let scanFoldersCalls = 0;
   let configWriteFails = false;
 
   const bdHeader = ['NIS', 'SGIO', 'DESTINO', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
@@ -67,7 +65,6 @@ async function main() {
     getAuthStatus: async () => ({ authenticated: true, email: 'u@x.com' }),
     openSpreadsheet: async () => ({ sheet_id: 'sheetCacheBudget01', name: 'AutoIMG' }),
     readRange: async (range) => {
-      readRangeCalls += 1;
       if (String(range).startsWith('FOLDERS')) return { values: folderRows };
       if (String(range).startsWith('LOGS')) return { values: logRows };
       if (String(range).startsWith('BD_ARRASTRE')) return { values: arrastreRows };
@@ -106,7 +103,6 @@ async function main() {
     getFileMetadata: async () => ({ modifiedTime: sheetModifiedTime, version: '1' }),
     assertDriveFolder: async (folder_id) => ({ folder_id, name: 'JUAN' }),
     listFolder: async (_folderId, opts = {}) => {
-      scanFoldersCalls += 1;
       if (typeof opts.onPage === 'function') {
         opts.onPage({ pageFiles: [], totalSoFar: 0, hasMore: false });
       }

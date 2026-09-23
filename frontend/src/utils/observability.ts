@@ -40,6 +40,7 @@ export interface FrontendEventReport {
   durationMs?: number;
   count?: number;
   reason?: string;
+  requestId?: string;
 }
 
 function safeText(value: unknown, maxLength: number): string | undefined {
@@ -80,7 +81,9 @@ export function reportFrontendEvent(report: FrontendEventReport): void {
     };
     const status = safeToken(report.status);
     const reason = safeToken(report.reason);
+    const requestId = safeToken(report.requestId);
     if (status) fields.status_class = status;
+    if (requestId) fields.request_id = requestId;
     if (report.outcome) fields.outcome = report.outcome;
     if (typeof report.durationMs === 'number' && Number.isFinite(report.durationMs) && report.durationMs >= 0) {
       fields.duration_ms = Math.round(report.durationMs);
