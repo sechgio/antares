@@ -54,9 +54,6 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/main.py" = ["E402"]
-# B023: _submit_one captura task_queue/in_flight/futures, reasignados en el loop
-# de chunks. Se llama en la misma iteración; no es late-binding del iterador.
-"backend/handlers/conversion.py" = ["B023"]
 
 [tool.mypy]
 python_version = "3.10"

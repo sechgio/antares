@@ -6,7 +6,6 @@ let _autoUpdater = null;
 let _updateInProgress = false;
 let _updateInProgressTimer = null;
 let _updateDownloaded = false;
-let _downloadProgress = 0;
 let _availableVersion = null;
 let _manualCheckRequested = false;
 let _periodicCheckTimer = null;
@@ -102,7 +101,6 @@ function setupAutoUpdater(isDev) {
   updater.on('update-available', (info) => {
     _armUpdateInProgress();
     _updateDownloaded = false;
-    _downloadProgress = 0;
     _lastLoggedPercent = -1;
     _availableVersion = info?.version || 'unknown';
     logInfo('[auto-updater] versión disponible:', info?.version);
@@ -127,7 +125,6 @@ function setupAutoUpdater(isDev) {
 
   updater.on('download-progress', (p) => {
     if (p && Number.isFinite(p.percent)) {
-      _downloadProgress = p.percent;
       const rounded = Math.round(p.percent);
       if (rounded !== _lastLoggedPercent) {
         _lastLoggedPercent = rounded;
@@ -144,7 +141,6 @@ function setupAutoUpdater(isDev) {
   updater.on('update-downloaded', (info) => {
     _clearUpdateInProgress();
     _updateDownloaded = true;
-    _downloadProgress = 100;
     _availableVersion = info?.version || _availableVersion;
     logInfo('[auto-updater] descarga lista.');
     _broadcastToRenderer('auto-update-status', {
@@ -156,7 +152,6 @@ function setupAutoUpdater(isDev) {
 
   updater.on('error', (err) => {
     _clearUpdateInProgress();
-    _downloadProgress = 0;
     console.warn('[auto-updater] error:', err && err.message ? err.message : err);
     _broadcastToRenderer('auto-update-status', {
       status: 'error',

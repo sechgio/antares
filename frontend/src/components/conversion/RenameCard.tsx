@@ -3,7 +3,7 @@ import Card from '../ui/Card';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
 import Toggle from '../ui/Toggle';
-import type { RenamePattern, DBRecord, MappingResult, PreviewItem } from '../../types';
+import type { DBRecord, MappingResult, PreviewItem } from '../../types';
 import { PencilLine, Tags, Database, ArrowRight, AlertTriangle } from 'lucide-react';
 import { fileNameFromPath } from './helpers';
 import Button from '@/components/ui/Button';
@@ -20,7 +20,6 @@ interface RenameCardProps {
   previewTruncated?: boolean;
   previewTotalFiles?: number | null;
   onClearMapping?: () => void;
-  namingMode: string;
   onNamingModeChange: (mode: string) => void;
   patron: string;
   onPatronChange: (p: string) => void;
@@ -28,7 +27,6 @@ interface RenameCardProps {
   onSecuenciaChange: (s: number) => void;
   useFilenameSeq: boolean;
   onToggleFilenameSeq: (v: boolean) => void;
-  namingPresets: RenamePattern[];
   fields: string[];
   dbColumns?: string[];
   dbRecords?: DBRecord[];

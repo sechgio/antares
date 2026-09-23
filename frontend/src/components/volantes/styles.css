@@ -545,28 +545,6 @@ textarea.vgen-input {
     margin-left: 0;
 }
 
-.vgen-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    color: var(--vgen-ink);
-    margin-bottom: 6px;
-    line-height: 1.2;
-    user-select: none;
-}
-
-.vgen-label svg {
-    flex-shrink: 0;
-    width: 13px;
-    height: 13px;
-    color: var(--vgen-ink-soft);
-    opacity: 1;
-    stroke-width: 1.75;
-}
-
 .vgen-label-sm {
     display: block;
     font-size: 0.65rem;

@@ -14,12 +14,10 @@ export interface LogoData {
 export interface FieldDef {
     key: string;
     label: string;
-    wide?: boolean;
     multiline?: boolean;
     rows?: number;
     type?: string;
     section?: 'generales' | 'localizacion' | 'trabajo';
-    required?: boolean;
 }
 
 export interface ReportTypeConfig {
@@ -38,8 +36,6 @@ export interface ReportTypeConfig {
     };
     pageLabelFormat: 'hoja' | 'pagina';
     photosPerPage?: number;
-    gridColumns?: number;
-    gridRows?: number;
 }
 
 export type HeaderMap = Record<string, string>;

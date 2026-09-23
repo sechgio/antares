@@ -168,21 +168,6 @@ class HandlerRegistry:
         with self._lock:
             return self._map.keys()
 
-    def items(self) -> Any:
-        self.warm()
-        with self._lock:
-            return self._map.items()
-
-    def __len__(self) -> int:
-        self.warm()
-        with self._lock:
-            return len(self._map)
-
-    def __iter__(self) -> Any:
-        self.warm()
-        with self._lock:
-            return iter(self._map)
-
 
 HANDLERS = HandlerRegistry()
 

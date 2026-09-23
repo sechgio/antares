@@ -31,11 +31,9 @@ describe('reportes-campo report model', () => {
         expect(chunkArray([1, 2, 3, 4, 5, 6, 7], 6)).toEqual([[1, 2, 3, 4, 5, 6], [7]]);
     });
 
-    it('uses a 3x2 photo grid on every report template', () => {
+    it('uses six photos per page on every report template', () => {
         for (const reportType of REPORT_TYPES) {
             expect(reportType.photosPerPage).toBe(6);
-            expect(reportType.gridColumns).toBe(3);
-            expect(reportType.gridRows).toBe(2);
         }
     });
 

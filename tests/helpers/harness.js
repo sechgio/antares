@@ -109,7 +109,6 @@ function makeFakeProc({ pid = 12345, closeOnKill = true, ready = true } = {}) {
 function patchSpawn(impl) {
   const childProcess = require('child_process');
   const originalSpawn = childProcess.spawn;
-  childProcess.spawn = impl;
   const state = { count: 0, restore: () => { childProcess.spawn = originalSpawn; } };
   childProcess.spawn = (...args) => {
     state.count += 1;

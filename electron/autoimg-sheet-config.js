@@ -122,7 +122,6 @@ module.exports = {
   RENAME_DEST_CONFIG_KEY,
   parseAutoSyncConfig,
   readConfigValue,
-  upsertConfigValues,
   tryUpsertConfigValues,
   ensureSheetId,
   statusFieldsFromBatch,

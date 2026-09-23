@@ -48,8 +48,6 @@ function stubAppearanceBridge(
   window.electronAPI = {
     invoke: async (method, params) => (await invoke(method, params)) ?? {},
     onNotify: () => () => {},
-    onUpdateAvailable: () => () => {},
-    onUpdateDownloaded: () => () => {},
   };
 }
 

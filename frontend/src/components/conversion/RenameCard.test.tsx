@@ -5,7 +5,6 @@ import RenameCard from './RenameCard';
 const baseProps = {
   files: ['C:\\fotos\\IMG-001.jpg'],
   usarRename: true,
-  namingMode: 'custom',
   onNamingModeChange: vi.fn(),
   patron: '{codigo}_{nombre}{ext}',
   onPatronChange: vi.fn(),
@@ -13,7 +12,6 @@ const baseProps = {
   onSecuenciaChange: vi.fn(),
   useFilenameSeq: true,
   onToggleFilenameSeq: vi.fn(),
-  namingPresets: [],
   fields: ['codigo', 'nombre'],
   dbColumns: ['codigo', 'nombre'],
   dbRecords: [{ codigo: 'IMG-001', nombre: 'Casa matriz' }],

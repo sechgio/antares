@@ -19,48 +19,8 @@ import {
 } from '../utils/cuadranteRanges';
 import { loadSession, saveSession, storedToSession } from '../utils/storage';
 
-interface EvidenciaMetadataState {
-  title: string;
-  cuadranteLabel: string;
-  showCuadranteLabel: boolean;
-  cuadranteRanges: CuadranteRange[];
-  currentCuadrante: string;
-}
-
-interface EvidenciaAssetsState {
-  logoLeft: LogoAsset | null;
-  logoRight: LogoAsset | null;
-  images: LocalImage[];
-}
-
-interface EvidenciaPaginationState {
-  pages: LocalImage[][];
-  currentPageIndex: number;
-  currentPageImages: LocalImage[];
-  totalPages: number;
-}
-
-interface EvidenciaSessionActions {
-  setTitle: (val: string) => void;
-  setCuadranteLabel: (val: string) => void;
-  setShowCuadranteLabel: (val: boolean) => void;
-  setCuadranteRanges: (ranges: CuadranteRange[]) => void;
-  addCuadranteRange: () => void;
-  setLogo: (side: 'left' | 'right', file: File | null) => string | null;
-  addImages: (files: File[]) => Promise<string[]>;
-  removeImage: (index: number) => void;
-  clearImages: () => void;
-  resolveCuadrante: (pageNum: number) => string;
-  setCurrentPageIndex: (idx: number) => void;
-  setIsExporting: (v: boolean) => void;
-}
-
 export interface EvidenciaSessionHookResult {
-  metadata: EvidenciaMetadataState;
-  assets: EvidenciaAssetsState;
-  pagination: EvidenciaPaginationState;
   isExporting: boolean;
-  actions: EvidenciaSessionActions;
 
   title: string;
   cuadranteLabel: string;
@@ -286,48 +246,8 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
     [cuadranteRanges],
   );
 
-  const metadata: EvidenciaMetadataState = {
-    title,
-    cuadranteLabel,
-    showCuadranteLabel,
-    cuadranteRanges,
-    currentCuadrante,
-  };
-
-  const assets: EvidenciaAssetsState = {
-    logoLeft,
-    logoRight,
-    images,
-  };
-
-  const pagination: EvidenciaPaginationState = {
-    pages,
-    currentPageIndex,
-    currentPageImages,
-    totalPages,
-  };
-
-  const actions: EvidenciaSessionActions = {
-    setTitle,
-    setCuadranteLabel,
-    setShowCuadranteLabel,
-    setCuadranteRanges,
-    addCuadranteRange,
-    setLogo,
-    addImages,
-    removeImage,
-    clearImages,
-    resolveCuadrante,
-    setCurrentPageIndex,
-    setIsExporting,
-  };
-
   return {
-    metadata,
-    assets,
-    pagination,
     isExporting,
-    actions,
     title,
     cuadranteLabel,
     showCuadranteLabel,

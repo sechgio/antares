@@ -1,5 +1,3 @@
-const path = require('path');
-
 const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
 
 function run() {

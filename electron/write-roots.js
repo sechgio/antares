@@ -158,12 +158,10 @@ function _assertSafePdfOutputPath(outputPath) {
 }
 
 module.exports = {
-  _allowedWriteRoots,
   _loadPersistedWriteRoots,
   _registerWriteRootFromPath,
   _isUnderRegisteredWriteRoot,
   _isUnderStandardUserDir,
-  _isUnderAllowedPdfWriteDir,
   _sanitizeFilename,
   _sanitizePdfOutputPath,
   _assertSafePdfOutputPath,

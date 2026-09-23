@@ -15,12 +15,11 @@ export type PanelTemplateId = 'aviso-corte-ad';
 
 export interface PanelTemplateOption {
   id: PanelTemplateId;
-  label: string;
   htmlTemplate: string;
 }
 
 const PANEL_TEMPLATE_OPTIONS: PanelTemplateOption[] = [
-  { id: 'aviso-corte-ad', label: 'aviso corte ad', htmlTemplate: 'panel-aviso-corte.html' },
+  { id: 'aviso-corte-ad', htmlTemplate: 'panel-aviso-corte.html' },
 ];
 
 export const DEFAULT_PANEL_TEMPLATE: PanelTemplateId = 'aviso-corte-ad';

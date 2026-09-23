@@ -1,8 +1,6 @@
 
-const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-
 let passed = 0;
 let failed = 0;
 
