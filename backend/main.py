@@ -196,13 +196,7 @@ def _ipc_telemetry_verbose() -> bool:
     return raw in {"1", "true", "yes"}
 
 
-def _maybe_log_ipc_timing(
-    method_name: str,
-    elapsed_ms: float,
-    *,
-    ok: bool,
-    request_id: str | int | None = None,
-) -> None:
+def _maybe_log_ipc_timing(method_name: str, elapsed_ms: float, *, ok: bool, request_id: str | int | None=None) -> None:
     slow = elapsed_ms >= 5_000.0
     sampled = request_id is not None and zlib.crc32(str(request_id).encode("utf-8")) % 100 == 0
     if not _ipc_telemetry_verbose() and not slow and ok and not sampled:
