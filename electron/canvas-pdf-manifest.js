@@ -25,7 +25,7 @@ function decodeManifest(manifestB64) {
 }
 
 async function embedCanvasManifest(pdfBytes, manifestB64) {
-  if (!pdfBytes || (typeof pdfBytes !== 'string' && !Buffer.isBuffer(pdfBytes) && !(pdfBytes instanceof Uint8Array))) {
+  if (!pdfBytes || (typeof pdfBytes !== 'string' && !(pdfBytes instanceof Uint8Array))) {
     throw new Error('PDF requerido para adjuntar el manifiesto');
   }
   const manifest = decodeManifest(manifestB64);

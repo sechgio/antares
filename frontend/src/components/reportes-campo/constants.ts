@@ -17,13 +17,9 @@ function formatDateDisplay(isoDate: string): string {
 }
 
 export const CHUNK_SIZE = 6;
-const GRID_COLUMNS = 3;
-const GRID_ROWS = 2;
 
 const PHOTO_GRID_DEFAULTS = {
     photosPerPage: CHUNK_SIZE,
-    gridColumns: GRID_COLUMNS,
-    gridRows: GRID_ROWS,
 } as const;
 
 export { chunkArray } from '@/utils/chunk';
@@ -37,13 +33,13 @@ export const REPORT_TYPES: ReportTypeConfig[] = [
         filename: 'panel_fotografico.pdf',
         defaultTitulo: 'Panel Fotográfico',
         fields: [
-            { key: 'titulo', label: 'Título del Reporte', wide: true, section: 'generales' },
+            { key: 'titulo', label: 'Título del Reporte', section: 'generales' },
             { key: 'CENTRO', label: 'Centro de Servicios', section: 'generales' },
             { key: 'FECHA_TRABAJO', label: 'Fecha de Trabajo', type: 'date', section: 'generales' },
-            { key: 'DIRECCIONES_AFECTADAS', label: 'Direcciones Afectadas', wide: true, section: 'localizacion' },
+            { key: 'DIRECCIONES_AFECTADAS', label: 'Direcciones Afectadas', section: 'localizacion' },
             { key: 'DISTRITO', label: 'Distrito', section: 'localizacion' },
             { key: 'ESTADO', label: 'Estado', section: 'generales' },
-            { key: 'ACTIVIDAD', label: 'Actividad', wide: true, multiline: true, rows: 1, section: 'trabajo' },
+            { key: 'ACTIVIDAD', label: 'Actividad', multiline: true, rows: 1, section: 'trabajo' },
             { key: 'CUADRILLA', label: 'Cuadrilla', section: 'trabajo' },
         ],
         infoBarItems: [
@@ -75,11 +71,11 @@ export const REPORT_TYPES: ReportTypeConfig[] = [
         filename: 'desinfeccion_reservorios.pdf',
         defaultTitulo: 'Desinfección de Reservorios',
         fields: [
-            { key: 'titulo', label: 'Título del Reporte', wide: true, section: 'generales' },
+            { key: 'titulo', label: 'Título del Reporte', section: 'generales' },
             { key: 'FECHA_TRABAJO', label: 'Fecha de Trabajo', type: 'date', section: 'generales' },
             { key: 'NIS', label: 'NIS', section: 'generales' },
             { key: 'SGIO', label: 'SGIO', section: 'generales' },
-            { key: 'DIRECCION', label: 'Dirección', wide: true, section: 'localizacion' },
+            { key: 'DIRECCION', label: 'Dirección', section: 'localizacion' },
             { key: 'DISTRITO', label: 'Distrito', section: 'localizacion' },
         ],
         infoBarItems: [
@@ -102,14 +98,14 @@ export const REPORT_TYPES: ReportTypeConfig[] = [
         filename: 'maquina_balde.pdf',
         defaultTitulo: 'Máquina de Balde',
         fields: [
-            { key: 'titulo', label: 'Título del Reporte', wide: true, section: 'generales' },
+            { key: 'titulo', label: 'Título del Reporte', section: 'generales' },
             { key: 'FECHA_TRABAJO', label: 'Fecha de Trabajo', type: 'date', section: 'generales' },
             { key: 'NIS', label: 'NIS', section: 'generales' },
             { key: 'SGIO', label: 'SGIO', section: 'generales' },
-            { key: 'DIRECCION', label: 'Dirección', wide: true, multiline: true, rows: 1, section: 'localizacion' },
+            { key: 'DIRECCION', label: 'Dirección', multiline: true, rows: 1, section: 'localizacion' },
             { key: 'LOCALIDAD', label: 'Localidad', section: 'localizacion' },
             { key: 'DISTRITO', label: 'Distrito', section: 'localizacion' },
-            { key: 'ACTIVIDAD', label: 'Actividad', wide: true, multiline: true, rows: 1, section: 'trabajo' },
+            { key: 'ACTIVIDAD', label: 'Actividad', multiline: true, rows: 1, section: 'trabajo' },
         ],
         infoBarItems: [
             { label: 'Fecha de Trabajo', valueKey: 'FECHA_TRABAJO', format: formatDateDisplay },

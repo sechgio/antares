@@ -168,10 +168,6 @@ export function useCanvasClipboard({
   );
 
   return {
-    clipboard,
-    setClipboard,
-    clipboardCoordinatorRef,
-    applyPasteLayers,
     pasteClipboard,
     pasteReplaceClipboard,
     copyLayersToClipboard,

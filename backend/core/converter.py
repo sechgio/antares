@@ -229,10 +229,7 @@ def convertir_imagen(
             if rw <= 0 or rh <= 0:
                 msg = f"Dimensiones de resize inválidas ({rw}x{rh})"
                 raise ValueError(msg)
-            try:
-                scale = max(img.width / rw, img.height / rh) if rw and rh else 1.0
-            except ZeroDivisionError:
-                scale = 1.0
+            scale = max(img.width / rw, img.height / rh)
             if scale >= 4.0:
                 resample = _BOX
             elif scale >= 3.0:

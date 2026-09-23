@@ -340,11 +340,6 @@ async function startPythonBackend(isDev, attempt = 1) {
     return;
   }
   if (attempt === 1) {
-    if (_isShuttingDown) {
-      logInfo('[backend-spawner] Shutdown requested, aborting start.');
-      _clearStartCycle();
-      return;
-    }
     if (_currentStart?.inProgress) {
       console.warn('[backend-spawner] Start already in progress, skipping duplicate.');
       return;

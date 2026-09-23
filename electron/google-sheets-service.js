@@ -10,7 +10,6 @@ const {
   captureAuthSession: _captureAuthSession,
   isAuthSessionCurrent: _isAuthSessionCurrent,
   sessionStoreKey: _sessionStoreKey,
-  assertAuthSessionCurrent: _assertAuthSessionCurrent,
   getValidTokens,
   refreshAccessToken,
   isInvalidGrantResponse,

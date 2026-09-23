@@ -107,20 +107,6 @@ def import_into_store(
     }
 
 
-def filter_by_optional_ids(
-    items: list[dict[str, Any]],
-    raw_ids: Any,
-    empty_message: str,
-) -> list[dict[str, Any]]:
-    selected = items
-    if isinstance(raw_ids, list) and raw_ids:
-        allowed = {str(item_id) for item_id in raw_ids}
-        selected = [item for item in items if str(item["id"]) in allowed]
-    if not selected:
-        raise ValueError(empty_message)
-    return selected
-
-
 def get_items_by_optional_ids(
     store: Any,
     raw_ids: Any,

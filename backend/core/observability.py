@@ -279,8 +279,6 @@ def configure_logging(stream: Any = None) -> None:
     root.setLevel(logging.INFO)
     logging.getLogger("weasyprint").setLevel(logging.WARNING)
     logging.getLogger("fontTools").setLevel(logging.WARNING)
-    if not root.handlers:
-        root.addHandler(logging.StreamHandler(output))
     for h in root.handlers:
         if isinstance(h, logging.StreamHandler):
             h.setFormatter(JsonLogFormatter())

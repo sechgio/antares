@@ -143,9 +143,6 @@ async function runOpenDialog(method, params = {}, dialog, window) {
 
 module.exports = {
   _webContentsIdFromWindow,
-  _createReadFileTokens,
-  resultFromOpenDialog,
-  resultFromSaveDialog,
   runSaveDialog,
   runFolderDialog,
   runOpenDialog,
