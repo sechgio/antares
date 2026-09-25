@@ -177,6 +177,24 @@ describe('Artboard drag gestures', () => {
     expect(moved.cssVars['--translate-y']).toBe('100mm');
   });
 
+  it('keeps the selection chrome in the same frame as the moved layer', () => {
+    const layer = createLayer('rect');
+    const { container } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 20 * mm, clientY: 100 });
+    tick();
+
+    expect(node.style.transform).toBe('translate(151px, 378px)');
+    expect(screen.getByTestId('canvas-selection-chrome').style.left).toBe('151px');
+
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 100 + 20 * mm, clientY: 100 });
+    });
+  });
+
   it('prepares equal-gap references only after a drag starts and only once', () => {
     const layer = createLayer('rect');
     const { container } = setup([layer], [layer.id]);
@@ -542,6 +560,31 @@ describe('Artboard drag gestures', () => {
     expect(onSelectIds).not.toHaveBeenCalled();
   });
 
+  it('applies Shift axis lock as soon as it is pressed mid-drag, without moving the pointer', () => {
+    const layer = createLayer('rect');
+    const { container, onChangeLayers } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 30 * mm, clientY: 100 + 10 * mm });
+    act(() => tick());
+    expect(node.style.transform).not.toContain('378px');
+
+    fireEvent.keyDown(window, { key: 'Shift', shiftKey: true });
+    act(() => tick());
+    expect(node.style.transform).toContain('378px');
+
+    fireEvent.keyUp(window, { key: 'Shift', shiftKey: false });
+    act(() => tick());
+    expect(node.style.transform).not.toContain('378px');
+
+    fireEvent.keyDown(window, { key: 'Shift', shiftKey: true });
+    fireEvent.pointerUp(window, { clientX: 100 + 30 * mm, clientY: 100 + 10 * mm });
+    const moved = (onChangeLayers.mock.calls[0][0] as CanvasLayer[]).find((l) => l.id === layer.id)!;
+    expect(moved.cssVars['--translate-y']).toBe('100mm');
+  });
+
   it('treats a pointerdown + pointerup without travel as a click (no commit)', () => {
     const layer = createLayer('rect');
     const { container, onChangeLayers } = setup([layer], [layer.id]);
@@ -551,6 +594,36 @@ describe('Artboard drag gestures', () => {
     fireEvent.pointerUp(window, { clientX: 100, clientY: 100 });
     act(() => tick());
 
+    expect(onChangeLayers).not.toHaveBeenCalled();
+  });
+
+  it('click without travel on a member of a multi-selection selects only that layer (Figma)', () => {
+    const a = createLayer('rect');
+    const b = createLayer('rect');
+    const document = createEmptyDocument('Test');
+    document.layers.push(a, b);
+    const onSelect = vi.fn();
+    const onChangeLayers = vi.fn();
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[a.id, b.id]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={onSelect}
+        onSelectIds={() => {}}
+        onChangeLayers={onChangeLayers}
+      />,
+    );
+    const nodeA = container.querySelector<HTMLElement>(`[data-layer-id="${a.id}"]`)!;
+
+    fireEvent.pointerDown(nodeA, { button: 0, clientX: 100, clientY: 100 });
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.pointerUp(window, { clientX: 100, clientY: 100 });
+
+    expect(onSelect).toHaveBeenCalledWith(a.id, false);
     expect(onChangeLayers).not.toHaveBeenCalled();
   });
 
@@ -598,6 +671,64 @@ describe('Artboard drag gestures', () => {
       fireEvent.pointerUp(window, { clientX: 100 + 25 * mm, clientY: 100 });
     });
     expect(onChangeLayers).not.toHaveBeenCalled();
+  });
+
+  it('keeps shadow and filter while moving but defers them while resizing', () => {
+    const layer = createLayer('rect', {
+      cssVars: {
+        ...createLayer('rect').cssVars,
+        '--box-shadow': '0 10px 20px rgba(0,0,0,0.5)',
+        '--filter-blur': '4px',
+      },
+    });
+    const { container } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const mm = 96 / 25.4;
+    expect(node.style.boxShadow).toContain('rgba');
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 20 * mm, clientY: 100 });
+    act(() => tick());
+    expect(node.style.boxShadow).toContain('rgba');
+    expect(node.style.filter).toContain('blur');
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 100 + 20 * mm, clientY: 100 });
+    });
+
+    const se = screen.getByTestId('canvas-resize-handle-se');
+    fireEvent.pointerDown(se, { button: 0, clientX: 300, clientY: 300 });
+    fireEvent.pointerMove(window, { clientX: 300 + 10 * mm, clientY: 300 + 10 * mm });
+    act(() => tick());
+    expect(node.style.boxShadow).toBe('');
+    expect(node.style.filter).toBe('');
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 300 + 10 * mm, clientY: 300 + 10 * mm });
+    });
+  });
+
+  it('passes stable gesture handlers to the selection chrome across re-renders', () => {
+    const layer = createLayer('rect');
+    const document = createEmptyDocument('Test');
+    document.layers.push(layer);
+    const selectedIds = [layer.id];
+    const props = {
+      document,
+      selectedIds,
+      zoom: 1,
+      tool: 'select' as const,
+      pan: { x: 0, y: 0 },
+    };
+    const { rerender } = render(
+      <Artboard {...props} onPan={() => {}} onSelect={() => {}} onSelectIds={() => {}} onChangeLayers={() => {}} />,
+    );
+    const handle = () => screen.getByTestId('canvas-rotate-handle');
+    const before = Object.keys(handle()).find((k) => k.startsWith('__reactProps'))!;
+    const onRotateBefore = (handle() as unknown as Record<string, { onPointerDown: unknown }>)[before].onPointerDown;
+    rerender(
+      <Artboard {...props} onPan={() => {}} onSelect={() => {}} onSelectIds={() => {}} onChangeLayers={() => {}} />,
+    );
+    const onRotateAfter = (handle() as unknown as Record<string, { onPointerDown: unknown }>)[before].onPointerDown;
+    expect(onRotateAfter).toBe(onRotateBefore);
   });
 
   it('Escape aborts resize without committing', () => {
@@ -706,6 +837,34 @@ describe('Artboard drag gestures', () => {
     const resized = committed.find((l) => l.id === layer.id)!;
     expect(parseFloat(resized.cssVars['--width'])).toBeGreaterThan(50);
     expect(parseFloat(resized.cssVars['--height'])).toBeGreaterThan(40);
+  });
+
+  it('resizes from any point of a selection edge and from the enlarged corner hit area (Figma)', () => {
+    const layer = createLayer('rect');
+    const { onChangeLayers } = setup([layer], [layer.id]);
+    const mm = 96 / 25.4;
+
+    const east = screen.getByTestId('canvas-resize-edge-e');
+    expect(east.style.cursor).toBe('ew-resize');
+    fireEvent.pointerDown(east, { button: 0, clientX: 300, clientY: 300 });
+    fireEvent.pointerMove(window, { clientX: 300 + 10 * mm, clientY: 300 + 10 * mm });
+    act(() => tick());
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 300 + 10 * mm, clientY: 300 + 10 * mm });
+    });
+    const widened = (onChangeLayers.mock.calls[0][0] as CanvasLayer[]).find((l) => l.id === layer.id)!;
+    expect(widened.cssVars['--width']).toBe('60mm');
+    expect(widened.cssVars['--height']).toBe(layer.cssVars['--height']);
+
+    const corner = screen.getByTestId('canvas-resize-hit-se');
+    fireEvent.pointerDown(corner, { button: 0, clientX: 300, clientY: 300 });
+    fireEvent.pointerMove(window, { clientX: 300 + 10 * mm, clientY: 300 + 10 * mm });
+    act(() => tick());
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 300 + 10 * mm, clientY: 300 + 10 * mm });
+    });
+    const grown = (onChangeLayers.mock.calls[1][0] as CanvasLayer[]).find((l) => l.id === layer.id)!;
+    expect(parseFloat(grown.cssVars['--height'])).toBeGreaterThan(parseFloat(layer.cssVars['--height']));
   });
 
   it('coalesces resize to DOM geometry mid-gesture and commits once on pointerup', () => {
@@ -866,7 +1025,7 @@ describe('Artboard drag gestures', () => {
     }
   });
 
-  it('zooms with a compositor transform, not CSS zoom (pinch/zoom jank)', () => {
+  it('renders a stationary zoomed artboard at native resolution', () => {
     const layer = createLayer('rect');
     const document = createEmptyDocument('Test');
     document.layers.push(layer);
@@ -874,7 +1033,7 @@ describe('Artboard drag gestures', () => {
       <Artboard
         document={document}
         selectedIds={[]}
-        zoom={1.5}
+        zoom={5.97}
         tool="select"
         pan={{ x: 0, y: 0 }}
         onPan={() => {}}
@@ -884,10 +1043,67 @@ describe('Artboard drag gestures', () => {
       />,
     );
     const artboard = container.querySelector<HTMLElement>('[data-testid="canvas-artboard"]')!;
-    expect(artboard.style.zoom).toBe('');
-    expect(artboard.style.transform).toContain('scale(1.5)');
-    expect(artboard.style.transformOrigin).toBe('center center');
-    expect(artboard.style.willChange).toBe('transform');
+    expect(artboard.style.zoom).toBe('5.97');
+    expect(artboard.style.position).toBe('absolute');
+    expect(artboard.style.left).toBe('50%');
+    expect(artboard.style.top).toBe('50%');
+    expect(artboard.style.transform).toBe('translate(-50%, -50%)');
+    expect(artboard.style.willChange).toBe('');
+  });
+
+  it('uses the compositor during camera motion and restores native zoom after settling', () => {
+    vi.useFakeTimers();
+    try {
+      let notify!: (zoom: number, pan: { x: number; y: number }) => void;
+      let currentZoom = 1;
+      const onContextMenu = vi.fn();
+      const onZoom = vi.fn();
+      const camera = {
+        subscribe: (listener: typeof notify) => { notify = listener; return () => {}; },
+        getZoom: () => currentZoom,
+        getPan: () => ({ x: 0, y: 0 }),
+      };
+      const { container } = render(
+        <Artboard
+          document={createEmptyDocument('Test')}
+          selectedIds={[]}
+          zoom={1}
+          tool="select"
+          pan={{ x: 0, y: 0 }}
+          camera={camera}
+          onPan={() => {}}
+          onSelect={() => {}}
+          onSelectIds={() => {}}
+          onChangeLayers={() => {}}
+          onContextMenu={onContextMenu}
+          onZoom={onZoom}
+        />,
+      );
+      const artboard = container.querySelector<HTMLElement>('[data-testid="canvas-artboard"]')!;
+
+      act(() => { currentZoom = 5.97; notify(5.97, { x: 0, y: 0 }); });
+      expect(artboard.style.zoom).toBe('1');
+      expect(artboard.style.transform).toBe('scale(5.97)');
+      expect(artboard.style.willChange).toBe('transform');
+
+      act(() => vi.advanceTimersByTime(140));
+      expect(artboard.style.zoom).toBe('5.97');
+      expect(artboard.style.transform).toBe('translate(-50%, -50%)');
+      expect(artboard.style.willChange).toBe('');
+
+      const clientX = 20 * (96 / 25.4) * 5.97;
+      fireEvent.contextMenu(screen.getByTestId('canvas-viewport'), { clientX, clientY: 0 });
+      expect(onContextMenu).toHaveBeenCalledWith(null, clientX, 0, { x: 20, y: 0 });
+
+      vi.useRealTimers();
+      fireEvent.pointerDown(artboard, { pointerId: 1, pointerType: 'touch', button: 0, clientX: 0, clientY: 0 });
+      fireEvent.pointerDown(artboard, { pointerId: 2, pointerType: 'touch', button: 0, clientX: 100, clientY: 0 });
+      fireEvent.pointerMove(artboard, { pointerId: 2, pointerType: 'touch', clientX: 50, clientY: 0 });
+      act(() => tick());
+      expect(onZoom).toHaveBeenCalledWith(2.985);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('point-click on artboard selects top-most layer under cursor', () => {

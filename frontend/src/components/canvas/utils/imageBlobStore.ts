@@ -480,21 +480,30 @@ export async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promis
 
   let changed = false;
   const layers: CanvasLayer[] = [];
+  const storedRefsByDataUrl = new Map<string, string>();
   for (const layer of doc.layers) {
     if (!isImageOrLogoLayer(layer) || !layer.value?.startsWith('data:')) {
       layers.push(layer);
       continue;
     }
+    const dataUrl = layer.value;
+    const storedRef = storedRefsByDataUrl.get(dataUrl);
+    if (storedRef !== undefined) {
+      changed = true;
+      layers.push({ ...layer, value: storedRef });
+      continue;
+    }
     try {
-      const storedRef = await withAssetPersistenceLock(async () => {
-        const res = await fetch(layer.value);
+      const persistedRef = await withAssetPersistenceLock(async () => {
+        const res = await fetch(dataUrl);
         const buf = await res.arrayBuffer();
         const stored = await putAsset(buf);
         if (!stored?.ref) throw new Error('asset ref missing');
         return stored.ref;
       });
       changed = true;
-      layers.push({ ...layer, value: storedRef });
+      storedRefsByDataUrl.set(dataUrl, persistedRef);
+      layers.push({ ...layer, value: persistedRef });
     } catch {
       layers.push(layer);
     }

@@ -56,6 +56,19 @@ export function ancestorIds(
   return out;
 }
 
+export function siblingLayerId(layers: CanvasLayer[], id: string, step: 1 | -1): string | null {
+  const layer = layers.find((l) => l.id === id);
+  if (!layer) return null;
+  const parentId = layer.parentId ?? null;
+  const siblings = layers.filter(
+    (l) => (l.parentId ?? null) === parentId && l.type !== 'frame' && l.visible !== false,
+  );
+  if (siblings.length < 2) return null;
+  const i = siblings.indexOf(layer);
+  if (i < 0) return null;
+  return siblings[(i + step + siblings.length) % siblings.length]!.id;
+}
+
 export function childIdsOf(layers: CanvasLayer[], parentId: string): string[] {
   return layers.filter((l) => l.parentId === parentId).map((l) => l.id);
 }

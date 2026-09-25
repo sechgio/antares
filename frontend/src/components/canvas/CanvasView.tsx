@@ -1339,7 +1339,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     setDocument: history.setDocument,
     selectedIds,
     pageIndex,
-    setPageIndex,
     pageLayers,
     uiLocked,
     runUndo,

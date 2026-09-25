@@ -6,7 +6,7 @@ const { EventEmitter } = require('events');
 const { assert, finish, stubModule, evictModule, installInertTimers } = require('./helpers/harness');
 
 function makeHarness() {
-  const state = { loadFileCalls: 0, loadURLCalls: [], currentURL: 'file:///app/dist/index.html' };
+  const state = { loadFileCalls: 0, loadURLCalls: [], logEvents: [], currentURL: 'file:///app/dist/index.html' };
 
   const webContents = new EventEmitter();
   webContents.session = { webRequest: { onHeadersReceived: () => {} } };
@@ -39,7 +39,9 @@ function makeHarness() {
     app: { isPackaged: true },
     shell: { openExternal: () => Promise.resolve() },
   });
-  stubModule('electron/app-log.js', { appendLogEvent: () => {} });
+  stubModule('electron/app-log.js', {
+    appendLogEvent: (...args) => state.logEvents.push(args),
+  });
 
   evictModule('electron/window-manager.js');
   return state;
@@ -92,6 +94,13 @@ async function main() {
     assert(otherKey.prevented === false, 'Control+W no dispara el reintento');
     const keyUp = fireReload(state.win.webContents, { type: 'keyUp' });
     assert(keyUp.prevented === false, 'keyUp no dispara el reintento');
+
+    state.win.emit('ready-to-show');
+    const readyEvent = state.logEvents.find(([, event, fields]) =>
+      event === 'renderer.lifecycle' && fields.reason === 'ready_to_show',
+    );
+    assert(readyEvent !== undefined, 'ready-to-show records the desktop startup duration');
+    assert(Number.isFinite(readyEvent[2].duration_ms), 'ready-to-show duration is finite');
   } finally {
     timers.restore();
     evictModule('electron/window-manager.js');

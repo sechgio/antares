@@ -19,6 +19,29 @@ export function escapeToAbort(getSession: () => { abort: () => void }): (ev: Key
   };
 }
 
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Meta', 'Alt']);
+
+export function modifierReplay(schedule: (ev: PointerEvent) => void) {
+  let last: PointerEvent | null = null;
+  return {
+    onMove(ev: PointerEvent) {
+      last = ev;
+      schedule(ev);
+    },
+    onKey(ev: KeyboardEvent) {
+      if (!last || !MODIFIER_KEYS.has(ev.key)) return;
+      schedule(new PointerEvent('pointermove', {
+        clientX: last.clientX,
+        clientY: last.clientY,
+        shiftKey: ev.shiftKey,
+        ctrlKey: ev.ctrlKey,
+        metaKey: ev.metaKey,
+        altKey: ev.altKey,
+      }));
+    },
+  };
+}
+
 interface ArtboardViewportGestureDeps {
   frameRef: RefObject<HTMLDivElement | null>;
   zoomRef: MutableRefObject<number>;

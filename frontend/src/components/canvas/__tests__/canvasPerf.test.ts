@@ -7,6 +7,7 @@ import { setActivePageLayers } from '../ops/pages';
 import { patchLayersById, replaceLayerById } from '../ops/patchLayers';
 import { moveSelection, rotateSelection } from '../ops/selectionTransform';
 import { selectLayersByIds } from '../ops/mixedSelection';
+import { resolveBooleanRender } from '../ops/booleanOps';
 import type { CanvasDocument } from '../types';
 
 function makeLayers(n: number) {
@@ -52,6 +53,37 @@ describe('canvas perf hot path', () => {
   it('moveSelection zero delta returns same array ref', () => {
     const layers = makeLayers(50);
     expect(moveSelection(layers, ['l0'], 0, 0)).toBe(layers);
+  });
+
+  it('resolves 3000 boolean layers without rebuilding the document index per layer', () => {
+    const layers = Array.from({ length: 3_000 }, (_, index) =>
+      createLayer('boolean', {
+        id: `b${index}`,
+        meta: { ops: [{ op: 'union', layerId: 'missing' }] },
+      }),
+    );
+    const start = performance.now();
+    for (const layer of layers) resolveBooleanRender(layer, layers);
+
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  it('uses the current boolean operands after the document layer array changes', () => {
+    const firstOperand = createLayer('rect', { id: 'first' });
+    const booleanLayer = createLayer('boolean', {
+      id: 'union',
+      meta: { ops: [{ op: 'union', layerId: 'first' }] },
+    });
+    const first = resolveBooleanRender(booleanLayer, [firstOperand, booleanLayer]);
+    const secondOperand = createLayer('rect', { id: 'second' });
+    const nextBooleanLayer = {
+      ...booleanLayer,
+      meta: { ...booleanLayer.meta, ops: [{ op: 'union' as const, layerId: 'second' }] },
+    };
+    const second = resolveBooleanRender(nextBooleanLayer, [secondOperand, nextBooleanLayer]);
+
+    expect(first.order.map((item) => item.layerId)).toEqual(['union', 'first']);
+    expect(second.order.map((item) => item.layerId)).toEqual(['union', 'second']);
   });
 
   it('expandWithDescendants on deep tree includes all descendants', () => {

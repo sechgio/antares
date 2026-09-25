@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Artboard from '../editor/Artboard';
 import { MM_TO_PX } from '../ops/drawHelpers';
 import { createGuide } from '../ops/guides';
-import { createEmptyDocument, DEFAULT_PAGE_MARGIN_MM, type CanvasDocument } from '../types';
+import { A4_HEIGHT_PX, A4_WIDTH_PX, createEmptyDocument, DEFAULT_PAGE_MARGIN_MM, type CanvasDocument } from '../types';
 import { createLayer } from '../constants';
 
 describe('Artboard guide dragging', () => {
@@ -331,6 +331,72 @@ describe('Artboard guide dragging', () => {
     );
     expect(screen.getByTestId('canvas-ruler-top')).toBeInTheDocument();
     expect(screen.getByTestId('canvas-ruler-left')).toBeInTheDocument();
+  });
+});
+
+describe('Artboard page label', () => {
+  it('follows the zoomed page without scaling the label text', () => {
+    const document = createEmptyDocument('Label');
+    const { rerender } = render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={8}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const label = screen.getByText(/Página A4 — 210 × 297 mm/);
+    expect(label.parentElement).toBe(screen.getByTestId('canvas-pan-layer'));
+    expect(label.style.fontSize).toBe('11px');
+    expect(label.style.left).toBe(`${(A4_WIDTH_PX * (1 - 8)) / 2}px`);
+    expect(label.style.top).toBe(`${(A4_HEIGHT_PX * (1 - 8)) / 2 - 22}px`);
+
+    rerender(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={0.5}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    expect(label.style.left).toBe(`${(A4_WIDTH_PX * (1 - 0.5)) / 2}px`);
+    expect(label.style.top).toBe(`${(A4_HEIGHT_PX * (1 - 0.5)) / 2 - 22}px`);
+  });
+
+  it('tracks camera animation frames before React receives the final zoom', () => {
+    let emitZoom: ((zoom: number, pan: { x: number; y: number }) => void) | undefined;
+    render(
+      <Artboard
+        document={createEmptyDocument('Label')}
+        selectedIds={[]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        camera={{
+          subscribe: (listener) => { emitZoom = listener; return () => {}; },
+          getZoom: () => 1,
+          getPan: () => ({ x: 0, y: 0 }),
+        }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const label = screen.getByText(/Página A4 — 210 × 297 mm/);
+    act(() => emitZoom?.(8, { x: 0, y: 0 }));
+    expect(label.style.left).toBe(`${(A4_WIDTH_PX * (1 - 8)) / 2}px`);
+    expect(label.style.top).toBe(`${(A4_HEIGHT_PX * (1 - 8)) / 2 - 22}px`);
   });
 });
 

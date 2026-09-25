@@ -13,6 +13,7 @@ import {
   getThumbnailUrl,
   hydrateDocumentImages,
   pinImageRefs,
+  persistDataUrlsAsCanvasAssets,
   registerImageBlob,
   releaseImageBlob,
   serializeDocumentImages,
@@ -153,6 +154,31 @@ describe("applySavedDocumentKeepingImages", () => {
 });
 
 describe("canvas-asset refs", () => {
+  it("persists a repeated Data URL only once", async () => {
+    const dataUrl = "data:image/png;base64,AQID";
+    const canvasAssetPut = vi.fn(async () => ({ ref: "canvas-asset:shared" }));
+    const fetchStub = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    } as Response);
+    (window as unknown as { electronAPI?: unknown }).electronAPI = { canvasAssetPut };
+
+    try {
+      const persisted = await persistDataUrlsAsCanvasAssets(doc([
+        layer("image-1", "image", dataUrl),
+        layer("image-2", "image", dataUrl),
+      ]));
+
+      expect(fetchStub).toHaveBeenCalledTimes(1);
+      expect(canvasAssetPut).toHaveBeenCalledTimes(1);
+      expect(persisted.layers.map((item) => item.value)).toEqual([
+        "canvas-asset:shared",
+        "canvas-asset:shared",
+      ]);
+    } finally {
+      fetchStub.mockRestore();
+    }
+  });
+
   it("countCanvasAssetRefs cuenta solo refs canvas-asset en image/logo", () => {
     const d = doc([
       layer("a", "image", "canvas-asset:r1"),

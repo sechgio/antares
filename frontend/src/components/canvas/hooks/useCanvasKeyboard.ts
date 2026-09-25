@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { CanvasContextMenuState } from '../editor/ContextMenu';
 import type { ViewportNavApi } from '../editor/DesignStage';
-import { expandWithDescendants, isLayerContainer } from '../ops/layerTree';
+import { expandWithDescendants, isLayerContainer, siblingLayerId } from '../ops/layerTree';
 import {
   alignLayers,
   bringForward,
@@ -286,6 +286,23 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
           startInlineEdit(selectedIds[0], { seed: e.key });
           return;
         }
+      }
+
+      if (
+        e.key === 'Tab' &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        selectedIds.length === 1 &&
+        (e.target === globalThis.document.body ||
+          (e.target as HTMLElement | null)?.closest?.('[data-testid="canvas-viewport"]'))
+      ) {
+        const next = siblingLayerId(pageLayers, selectedIds[0], e.shiftKey ? 1 : -1);
+        if (next) {
+          e.preventDefault();
+          setSelectedIds([next]);
+        }
+        return;
       }
 
       if (e.key === 'F2') {

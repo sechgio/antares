@@ -1,4 +1,5 @@
 import type { MutableRefObject, RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import type { CanvasGuide, CanvasLayer } from '../types';
 import { MM_TO_PX } from '../ops/drawHelpers';
 import {
@@ -29,7 +30,7 @@ import type {
   PointerGestureOwner,
   PointerGestureSession,
 } from '../ops/pointerGestureSession';
-import { escapeToAbort } from './artboardViewportGestures';
+import { escapeToAbort, modifierReplay } from './artboardViewportGestures';
 import { cloneLayers } from './artboardTransformGestures';
 
 interface SelectionMoveDeps {
@@ -54,7 +55,7 @@ interface SelectionMoveDeps {
   abortGesturePreview: (restore?: { layers: CanvasLayer[]; ids: string[] }) => void;
   setGuidesIfChanged: (next: SmartGuide[]) => void;
   setDistanceLabelsIfChanged: (next: DistanceLabel[]) => void;
-  setGestureActive: (active: boolean) => void;
+  setGestureActive: (active: 'move') => void;
   setGestureBbox: (box: RectMm | null) => void;
 }
 
@@ -125,7 +126,7 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
       if (!gestureDirtyRef.current) {
         onPreviewLayersRef.current?.(layersRef.current);
         gestureDirtyRef.current = true;
-        setGestureActive(true);
+        setGestureActive('move');
         setCanvasGestureActive(true);
       }
       gestureLayersRef.current = moved;
@@ -150,7 +151,7 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
     let othersRects: RectMm[] = [];
     let refGaps: ReturnType<typeof collectReferenceGaps> | undefined;
 
-    const raf = createGestureRaf((ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => flushSync(() => {
       if (pinchGestureRef.current) return;
       const dxPx = ev.clientX - startClientX;
       const dyPx = ev.clientY - startClientY;
@@ -251,10 +252,12 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
         setGestureBbox(null);
         setDistanceLabelsIfChanged([]);
       }
-    });
+    }));
+    const replay = modifierReplay(raf.schedule);
+    const escape = escapeToAbort(() => session);
     let session: PointerGestureSession;
     session = pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
+      onMove: replay.onMove,
       onEnd: () => {
         raf.flush();
         setGuidesIfChanged([]);
@@ -262,7 +265,11 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
         endGesture();
         if (!dragging) options?.onClickWithoutDrag?.();
       },
-      onKeyDown: escapeToAbort(() => session),
+      onKeyDown: (ev) => {
+        escape(ev);
+        replay.onKey(ev);
+      },
+      onKeyUp: replay.onKey,
       onAbort: () => {
         raf.cancel();
         abortGesturePreview({ layers: originLayers, ids });
@@ -380,6 +387,7 @@ export function createArtboardSelectionHandlers(deps: SelectionHandlersDeps) {
       }
     } else if (wasSelected && current.length > 1) {
       ids = current;
+      onClickWithoutDrag = () => onSelectRef.current(targetId, false);
     } else {
       ids = [targetId];
       onSelectRef.current(targetId, false);

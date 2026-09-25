@@ -140,6 +140,23 @@ async function run() {
     res = await ipcMain.handlers.get('auto-update-install')({ trusted: true });
     assert(res.success === false && /desarrollo/i.test(res.reason), 'dev install reports unavailable');
 
+    console.log('\nperformance benchmark mode:');
+    timers.timeouts.length = 0;
+    timers.intervals.length = 0;
+    ipcMain.handlers.clear();
+    const previousBenchmarkFlag = process.env.ANTARES_PERF_BENCHMARK;
+    process.env.ANTARES_PERF_BENCHMARK = '1';
+    try {
+      mod = freshAutoUpdater();
+      mod.setupAutoUpdater(false);
+      assert(timers.timeouts.length === 0, 'benchmark mode does not schedule an update check');
+      assert(timers.intervals.length === 0, 'benchmark mode does not schedule periodic update checks');
+      assert(ipcMain.handlers.size === 0, 'benchmark mode does not initialize updater handlers');
+    } finally {
+      if (previousBenchmarkFlag === undefined) delete process.env.ANTARES_PERF_BENCHMARK;
+      else process.env.ANTARES_PERF_BENCHMARK = previousBenchmarkFlag;
+    }
+
     console.log('\npackaged mode:');
     timers.timeouts.length = 0;
     win.sent.length = 0;
