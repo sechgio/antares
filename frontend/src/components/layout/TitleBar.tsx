@@ -8,6 +8,7 @@ import Button from '@/components/ui/Button';
 // Importarla en directo metería ese vendor en el grafo estático del shell (lo mide
 // frontend/scripts/shell-preload-budget.mjs) y el arranque en frío lo pagaría.
 const TaskNotificationsBell = lazy(() => import('./TaskNotificationsBell'));
+const RadioWidget = lazy(() => import('./radio/RadioWidget'));
 
 const bellPlaceholder = (
   <div className="relative flex h-full" aria-hidden>
@@ -32,6 +33,9 @@ export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEsp
       className="app-titlebar flex h-9 shrink-0 items-center justify-end overflow-visible border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] select-none"
     >
       <div className="app-titlebar-controls flex h-full items-stretch overflow-visible">
+        <Suspense fallback={null}>
+          <RadioWidget />
+        </Suspense>
         <Suspense fallback={bellPlaceholder}>
           <TaskNotificationsBell onOpenEspacios={onOpenEspacios} />
         </Suspense>
