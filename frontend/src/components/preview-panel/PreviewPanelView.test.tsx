@@ -124,7 +124,7 @@ describe('PreviewPanelView column mapping', () => {
     expect(await screen.findByText('SGIO EXTRA')).toBeInTheDocument();
   }, 15000);
 
-  it('re-fetches a previous spill sheet after switching away from it', async () => {
+  it('does not retain rows from the active spill sheet between selections', async () => {
     vi.mocked(api.spreadsheetParse).mockReset().mockResolvedValue({
       workbookName: 'datos.xlsx',
       sheets: [],
@@ -158,12 +158,16 @@ describe('PreviewPanelView column mapping', () => {
 
     await waitFor(() => expect(getRows).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Hoja' }));
-    fireEvent.click(await screen.findByRole('option', { name: /Sheet2/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /Sheet1/ }));
     await waitFor(() => expect(getRows).toHaveBeenCalledTimes(2));
 
     fireEvent.click(screen.getByRole('button', { name: 'Hoja' }));
-    fireEvent.click(await screen.findByRole('option', { name: /Sheet1/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /Sheet2/ }));
     await waitFor(() => expect(getRows).toHaveBeenCalledTimes(3));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hoja' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Sheet1/ }));
+    await waitFor(() => expect(getRows).toHaveBeenCalledTimes(4));
   }, 15000);
 
   it('ignores stale file parses and cleans discarded spill results', async () => {

@@ -10,6 +10,14 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 EnvironmentGetter = Callable[[], Environment]
 
 
+def resolve_core_templates_dir(module_file: str | Path) -> Path:
+    module_dir = Path(module_file).resolve().parent
+    bundled = module_dir.parent.parent / "templates"
+    if bundled.exists():
+        return bundled
+    return module_dir.parent / "templates"
+
+
 def make_cached_jinja_environment(
     templates_dir: Callable[[], Path],
     template_name: str,

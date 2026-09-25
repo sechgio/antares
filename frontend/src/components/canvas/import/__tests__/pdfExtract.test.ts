@@ -230,6 +230,64 @@ describe('extractPdfDocument', () => {
     );
   });
 
+  it('applies the image byte budget across pages while extracting', async () => {
+    const makeImagePage = (images: Uint8Array[]) => {
+      const imageObjects = new Map(images.map((bytes, index) => [`image-${index}`, {
+        width: 1,
+        height: 1,
+        mimeType: 'image/png',
+        bytes,
+      }]));
+      return {
+        getViewport: () => ({ width: 612, height: 792 }),
+        getOperatorList: vi.fn(async () => ({
+          fnArray: images.map(() => 3),
+          argsArray: images.map((_, index) => [`image-${index}`]),
+        })),
+        getTextContent: vi.fn(async () => ({ items: [], styles: {} })),
+        getAnnotations: vi.fn(async () => []),
+        objs: { get: (id: string) => imageObjects.get(id) },
+        cleanup: vi.fn(),
+      };
+    };
+    const pages = [
+      makeImagePage([new Uint8Array(4)]),
+      makeImagePage([new Uint8Array(4), new Uint8Array(1)]),
+    ];
+    const pdf = {
+      numPages: pages.length,
+      getPage: vi.fn(async (pageNumber: number) => pages[pageNumber - 1]),
+      getAttachments: vi.fn(async () => null),
+      cleanup: vi.fn(async () => undefined),
+      destroy: vi.fn(async () => undefined),
+    };
+    pdfjsMock.ensurePdfJs.mockResolvedValue({
+      OPS: { paintImageXObject: 3 },
+      getDocument: vi.fn(() => ({ promise: Promise.resolve(pdf) })),
+    });
+
+    const result = await extractPdfDocument(new Uint8Array([1]), {
+      limits: { maxImageBytesTotal: 5 },
+    });
+
+    expect(result.pages[0]!.primitives.filter((item) => item.kind === 'image')).toHaveLength(1);
+    expect(result.pages[1]!.primitives.filter((item) => item.kind === 'image')).toHaveLength(1);
+    expect(result.pages[1]!.primitives).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'unsupported', reason: 'unsupported-operator' }),
+      ]),
+    );
+    expect(result.pages[1]!.warnings).toContain('Página 2: imagen omitida por límite de bytes');
+    expect(result.pages[1]!.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reason: 'limit-exceeded',
+          message: 'La imagen supera el presupuesto agregado de imágenes',
+        }),
+      ]),
+    );
+  });
+
   it('skips heuristic page extraction when the manifest can be used', async () => {
     const manifestBytes = new Uint8Array([123, 125]);
     const page = makePage(1);

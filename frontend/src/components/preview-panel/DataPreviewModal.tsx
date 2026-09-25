@@ -129,18 +129,24 @@ export default function DataPreviewModal({
 
   const imagesByRecordId = useMemo(
     () =>
-      buildImagesByRecordId(data as Record<string, string>[], idColumn, images),
-    [data, idColumn, images],
+      open
+        ? buildImagesByRecordId(data as Record<string, string>[], idColumn, images)
+        : new Map<string, File[]>(),
+    [open, data, idColumn, images],
   );
 
   const rowPhotoMap = useMemo(
-    () => buildRowPhotoMap(data, idColumn, imagesByRecordId),
-    [data, idColumn, imagesByRecordId],
+    () => open
+      ? buildRowPhotoMap(data, idColumn, imagesByRecordId)
+      : new Map<number, { count: number; files: File[] }>(),
+    [open, data, idColumn, imagesByRecordId],
   );
 
   const photoStats = useMemo(
-    () => computePhotoStats(data, rowPhotoMap),
-    [data, rowPhotoMap],
+    () => open
+      ? computePhotoStats(data, rowPhotoMap)
+      : { total: 0, withPhotos: 0, withoutPhotos: 0 },
+    [open, data, rowPhotoMap],
   );
 
   const visibleHeaders = useMemo(() => {
@@ -148,8 +154,8 @@ export default function DataPreviewModal({
   }, [headers, hiddenColumns]);
 
   const filteredAndSortedRows = useMemo(
-    () =>
-      filterAndSortRows({
+    () => open
+      ? filterAndSortRows({
         data,
         headers,
         rowPhotoMap,
@@ -157,8 +163,9 @@ export default function DataPreviewModal({
         query: debouncedQuery,
         sortCol,
         sortDir,
-      }),
-    [data, headers, rowPhotoMap, photoFilter, debouncedQuery, sortCol, sortDir],
+      })
+      : [],
+    [open, data, headers, rowPhotoMap, photoFilter, debouncedQuery, sortCol, sortDir],
   );
 
   const handleHeaderClick = (colKey: string) => {
