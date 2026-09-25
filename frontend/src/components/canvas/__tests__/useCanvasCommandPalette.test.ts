@@ -25,7 +25,6 @@ function makeInput(doc: CanvasDocument, overrides: Partial<CanvasPaletteInput> =
     setDocument: vi.fn(),
     selectedIds: [],
     pageIndex: 0,
-    setPageIndex: vi.fn(),
     pageLayers: doc.layers.filter((l) => (l.pageIndex ?? 0) === 0),
     uiLocked: false,
     runUndo: vi.fn(),
@@ -293,10 +292,10 @@ describe('useCanvasCommandPalette', () => {
     exportPagePng.mockClear();
     const doc = { ...makeDoc([]), name: 'informe' };
     palette(makeInput(doc, { pageIndex: 1 })).runners.get('export:pagePng')!();
-    expect(exportPagePng).toHaveBeenCalledWith('informe-pagina-2', 2);
+    expect(exportPagePng).toHaveBeenCalledWith('informe-pagina-2', 2, doc, 1);
   });
 
-  it('export:documentPng recorre las páginas y restaura la página inicial', async () => {
+  it('export:documentPng recorre las páginas sin cambiar la página visible', async () => {
     exportPagePng.mockClear();
     const doc = {
       ...makeDoc([]),
@@ -307,8 +306,7 @@ describe('useCanvasCommandPalette', () => {
         { id: 'p3', name: 'Tres' },
       ],
     };
-    const setPageIndex = vi.fn();
-    palette(makeInput(doc, { pageIndex: 1, setPageIndex })).runners.get('export:documentPng')!();
+    palette(makeInput(doc, { pageIndex: 1 })).runners.get('export:documentPng')!();
 
     await vi.waitFor(() => expect(exportPagePng).toHaveBeenCalledTimes(3));
     expect(exportPagePng.mock.calls.map(([name]) => name)).toEqual([
@@ -316,7 +314,7 @@ describe('useCanvasCommandPalette', () => {
       'informe-pagina-2',
       'informe-pagina-3',
     ]);
-    expect(setPageIndex.mock.calls.map(([index]) => index)).toEqual([0, 1, 2, 1]);
+    expect(exportPagePng.mock.calls.map(([, , , pageIndex]) => pageIndex)).toEqual([0, 1, 2]);
   });
 
   it('export:documentPng se deshabilita cuando el documento tiene una página', () => {

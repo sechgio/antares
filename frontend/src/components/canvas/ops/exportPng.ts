@@ -1,3 +1,11 @@
+import { createElement } from 'react';
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
+import type { CanvasDocument } from '../types';
+import { A4_HEIGHT_PX, A4_WIDTH_PX } from '../types';
+import { getActivePageLayers } from '../ops/pages';
+import { compositionHiddenLayerIds } from './booleanOps';
+import PageLayerPreview from '../editor/PageLayerPreview';
 
 const SELECTION_RING = '0 0 0 1px var(--cv-accent)';
 const ACCENT_RING_TOKEN = 'var(--cv-accent)';
@@ -179,25 +187,36 @@ export function cloneArtboardForExport(artboard: HTMLElement): HTMLElement {
   return clone;
 }
 
-export async function exportPagePng(name: string, scale: number): Promise<void> {
-  const artboard = document.querySelector('[data-testid="canvas-artboard"]') as HTMLElement | null;
-  if (!artboard) return;
-
-  const width = Math.max(1, artboard.offsetWidth);
-  const height = Math.max(1, artboard.offsetHeight);
-
+export async function exportPagePng(
+  name: string,
+  scale: number,
+  canvasDocument: CanvasDocument,
+  pageIndex: number,
+): Promise<void> {
+  const pageLayers = getActivePageLayers(canvasDocument, pageIndex);
+  const hiddenLayerIds = compositionHiddenLayerIds(pageLayers);
+  const exportDocument = {
+    ...canvasDocument,
+    layers: canvasDocument.layers.map((layer) =>
+      hiddenLayerIds.has(layer.id) ? { ...layer, visible: false } : layer,
+    ),
+  };
   const wrap = document.createElement('div');
-  wrap.setAttribute('data-testid', 'canvas-export-wrap');
-  wrap.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;overflow:hidden;background:transparent;pointer-events:none;`;
-
-  const page = cloneArtboardForExport(artboard);
-  page.style.position = 'relative';
-  page.style.left = '0';
-  page.style.top = '0';
-  wrap.appendChild(page);
+  wrap.style.cssText = `position:fixed;left:-100000px;top:0;width:${A4_WIDTH_PX}px;height:${A4_HEIGHT_PX}px;overflow:hidden;background:transparent;pointer-events:none;`;
   document.body.appendChild(wrap);
+  const root = createRoot(wrap);
 
   try {
+    flushSync(() => {
+      root.render(createElement(PageLayerPreview, { document: exportDocument, pageIndex }));
+    });
+    const page = wrap.querySelector<HTMLElement>('[data-testid="page-layer-preview"]');
+    if (!page) return;
+    page.style.boxShadow = 'none';
+    const images = Array.from(page.querySelectorAll('img'));
+    for (const image of images) image.loading = 'eager';
+    if (document.fonts?.ready) await document.fonts.ready;
+    await Promise.all(images.map((image) => image.decode?.().catch(() => undefined)));
     const { toPng } = await import('html-to-image');
     const dataUrl = await toPng(wrap, {
       pixelRatio: scale,
@@ -207,6 +226,7 @@ export async function exportPagePng(name: string, scale: number): Promise<void> 
   } catch (err) {
     console.error('Error exporting page PNG:', err);
   } finally {
+    root.unmount();
     wrap.remove();
   }
 }

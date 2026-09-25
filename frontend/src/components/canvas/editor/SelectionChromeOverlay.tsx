@@ -9,6 +9,8 @@ import { screenChromePx } from '../ops/textTypography';
 import { MeasurementBadge } from './CanvasRulers';
 
 const HANDLE = 7;
+const EDGE_HIT = 8;
+const CORNER_HIT = 14;
 const RADIUS_HANDLE = 8;
 const ROTATE_HANDLE_OFFSET = 20;
 const ROTATE_KNOB = 8;
@@ -115,6 +117,22 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
   ];
   const activeRadiusHandle =
     radiusCorners.find((c) => c.id === radiusDragCorner) ?? radiusCorners[0]!;
+  const edgeHalf = screenChromePx(EDGE_HIT, zoom) / 2;
+  const edgeInX = Math.min(edgeHalf, w / 4);
+  const edgeInY = Math.min(edgeHalf, h / 4);
+  const cornerHit = screenChromePx(CORNER_HIT, zoom);
+  const edgeHits: Array<[HandlePos, number, number, number, number, string]> = [
+    ['n', x, y - edgeHalf, w, edgeHalf + edgeInY, 'ns-resize'],
+    ['s', x, y + h - edgeInY, w, edgeInY + edgeHalf, 'ns-resize'],
+    ['w', x - edgeHalf, y, edgeHalf + edgeInX, h, 'ew-resize'],
+    ['e', x + w - edgeInX, y, edgeInX + edgeHalf, h, 'ew-resize'],
+  ];
+  const cornerHits: Array<[HandlePos, number, number, string]> = [
+    ['nw', x, y, 'nwse-resize'],
+    ['ne', x + w, y, 'nesw-resize'],
+    ['se', x + w, y + h, 'nwse-resize'],
+    ['sw', x, y + h, 'nesw-resize'],
+  ];
 
   return (
     <>
@@ -197,6 +215,32 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
               onPointerDown={onRotate}
             />
           </WithHoverTooltip>
+          {edgeHits.map(([pos, left, top, width, height, cursorName]) => (
+            <div
+              key={`edge-${pos}`}
+              data-testid={`canvas-resize-edge-${pos}`}
+              style={{ position: 'absolute', left, top, width, height, cursor: cursorName, zIndex: 38 }}
+              onPointerDown={(ev) => onResize(ev, pos)}
+            />
+          ))}
+          {cornerHits.map(([pos, left, top, cursorName]) => (
+            <div
+              key={`hit-${pos}`}
+              data-testid={`canvas-resize-hit-${pos}`}
+              style={{
+                position: 'absolute',
+                left,
+                top,
+                width: cornerHit,
+                height: cornerHit,
+                marginLeft: -cornerHit / 2,
+                marginTop: -cornerHit / 2,
+                cursor: cursorName,
+                zIndex: 40,
+              }}
+              onPointerDown={(ev) => onResize(ev, pos)}
+            />
+          ))}
           {(
             [
               ['nw', x, y, 'nwse-resize'],

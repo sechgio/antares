@@ -238,6 +238,7 @@ function Artboard({
   const viewportRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const panLayerRef = useRef<HTMLDivElement>(null);
+  const pageLabelRef = useRef<HTMLDivElement>(null);
   const drawStart = useRef<{ xMm: number; yMm: number } | null>(null);
   const [draft, setDraft] = useState<DrawRect | null>(null);
   const [marquee, setMarquee] = useState<RectMm | null>(null);
@@ -308,7 +309,7 @@ function Artboard({
   const pinchGestureRef = useRef(false);
   const [viewportSize, setViewportSize] = useState<{ w: number; h: number } | null>(null);
   const [gestureLayers, setGestureLayers] = useState<CanvasLayer[] | null>(null);
-  const [gestureActive, setGestureActive] = useState(false);
+  const [gestureActive, setGestureActive] = useState<false | 'move' | 'transform'>(false);
   const [gestureBbox, setGestureBbox] = useState<RectMm | null>(null);
   const gestureDirtyRef = useRef(false);
   const gestureLayersRef = useRef<CanvasLayer[] | null>(null);
@@ -334,8 +335,9 @@ function Artboard({
   onCommitEditRef.current = onCommitEdit;
   const editingLayerIdRef = useRef(editingLayerId);
   editingLayerIdRef.current = editingLayerId;
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
+  const displayZoom = camera?.getZoom() ?? zoom;
+  const zoomRef = useRef(displayZoom);
+  zoomRef.current = displayZoom;
   const pageSizeRef = useRef({ widthMm: document.page.widthMm, heightMm: document.page.heightMm });
   pageSizeRef.current = { widthMm: document.page.widthMm, heightMm: document.page.heightMm };
   const pageMarginMm = resolvePageMarginMm(document.settings);
@@ -427,7 +429,7 @@ function Artboard({
     if (!gestureDirtyRef.current) {
       onPreviewLayersRef.current?.(layersRef.current);
       gestureDirtyRef.current = true;
-      setGestureActive(true);
+      setGestureActive('transform');
       setCanvasGestureActive(true);
     }
     gestureLayersRef.current = moved;
@@ -488,8 +490,8 @@ function Artboard({
     applyLayerDomGeometry(frame, gestureLayersRef.current, imperativeMoveIdsRef.current);
   }, [gestureActive]);
 
-  const navRef = useRef({ zoom, pan, onZoom, onPan });
-  navRef.current = { zoom, pan, onZoom, onPan };
+  const navRef = useRef({ zoom: displayZoom, pan: camera?.getPan() ?? pan, onZoom, onPan });
+  navRef.current = { zoom: displayZoom, pan: camera?.getPan() ?? pan, onZoom, onPan };
 
   const cameraMovingRef = useRef(false);
   const cameraMovingTimerRef = useRef<number | null>(null);
@@ -505,8 +507,22 @@ function Artboard({
       }
       const frame = frameRef.current;
       if (frame) {
+        if (!cameraMovingRef.current) {
+          frame.style.position = 'relative';
+          frame.style.left = '';
+          frame.style.top = '';
+          frame.style.zoom = '1';
+          frame.style.transformOrigin = 'center center';
+          frame.style.willChange = 'transform';
+          frame.style.backfaceVisibility = 'hidden';
+        }
         frame.style.transform = `scale(${z})`;
         frame.style.setProperty('--cv-camera-zoom', String(z));
+      }
+      const pageLabel = pageLabelRef.current;
+      if (pageLabel) {
+        pageLabel.style.left = `${(A4_WIDTH_PX * (1 - z)) / 2}px`;
+        pageLabel.style.top = `${(A4_HEIGHT_PX * (1 - z)) / 2 - 22}px`;
       }
       if (!cameraMovingRef.current) {
         cameraMovingRef.current = true;
@@ -892,7 +908,7 @@ function Artboard({
     beginSelectionMove,
   });
 
-  const { startResize, startRotate, startRadiusResize } = createArtboardTransformGestures({
+  const transformGesturesRef = useLiveRef(createArtboardTransformGestures({
     frameRef,
     zoomRef,
     layersRef,
@@ -914,7 +930,19 @@ function Artboard({
     setGuidesIfChanged,
     setGestureBbox,
     setRadiusDrag,
-  });
+  }));
+  const startResize = useCallback<ReturnType<typeof createArtboardTransformGestures>['startResize']>(
+    (e, corner) => transformGesturesRef.current.startResize(e, corner),
+    [transformGesturesRef],
+  );
+  const startRotate = useCallback<ReturnType<typeof createArtboardTransformGestures>['startRotate']>(
+    (e) => transformGesturesRef.current.startRotate(e),
+    [transformGesturesRef],
+  );
+  const startRadiusResize = useCallback<ReturnType<typeof createArtboardTransformGestures>['startRadiusResize']>(
+    (e, corner) => transformGesturesRef.current.startRadiusResize(e, corner),
+    [transformGesturesRef],
+  );
 
   const { startPanDrag, beginMarquee } = createArtboardViewportGestures({
     frameRef,
@@ -1049,14 +1077,17 @@ function Artboard({
           ref={frameRef}
           data-testid="canvas-artboard"
           style={{
-            '--cv-camera-zoom': zoom,
-            position: 'relative',
+            '--cv-camera-zoom': displayZoom,
+            position: cameraMoving ? 'relative' : 'absolute',
+            left: cameraMoving ? undefined : '50%',
+            top: cameraMoving ? undefined : '50%',
             width: designW,
             height: designH,
-            transform: `scale(${zoom})`,
-            transformOrigin: 'center center',
-            willChange: 'transform',
-            backfaceVisibility: 'hidden',
+            zoom: cameraMoving ? 1 : displayZoom,
+            transform: cameraMoving ? `scale(${displayZoom})` : 'translate(-50%, -50%)',
+            transformOrigin: cameraMoving ? 'center center' : undefined,
+            willChange: cameraMoving ? 'transform' : undefined,
+            backfaceVisibility: cameraMoving ? 'hidden' : undefined,
             background: '#ffffff',
             boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
             cursor:
@@ -1117,32 +1148,6 @@ function Artboard({
               }}
             />
           )}
-          <div
-            style={{
-              position: 'absolute',
-              top: -22,
-              left: 0,
-              fontSize: 11,
-              lineHeight: '16px',
-              color: '#8c8c8c',
-              background: 'var(--cv-panel)',
-              padding: '1px 6px',
-              borderRadius: 3,
-              whiteSpace: 'nowrap',
-              pointerEvents: 'none',
-            }}
-          >
-            Página A4 — 210 × 297 mm · {Math.round(zoom * 100)}%
-            {placing && (
-              <span style={{ marginLeft: 8, color: 'var(--cv-accent)' }}>· Arrastra para dibujar</span>
-            )}
-            {editableSelected.length > 1 && (
-              <span style={{ marginLeft: 8, color: 'var(--cv-accent)' }}>
-                · {editableSelected.length} seleccionados
-              </span>
-            )}
-          </div>
-
           {renderLayers.map((layer) => (
             <LayerNode
               key={layer.id}
@@ -1152,7 +1157,7 @@ function Artboard({
               }
               documentLayers={displayLayers}
               selected={selectedIdSet.has(layer.id)}
-              moving={(gestureLayers !== null || gestureActive) && selectedIdSet.has(layer.id)}
+              moving={(gestureLayers !== null || gestureActive === 'transform') && selectedIdSet.has(layer.id)}
               panning={panning || cameraMoving}
               interactive={interactive && !panning}
               editing={editingLayerId === layer.id}
@@ -1418,6 +1423,32 @@ function Artboard({
               onGapPointerDown={beginGapDrag}
               onTidy={tidySmartSelection}
             />
+          )}
+        </div>
+        <div
+          ref={pageLabelRef}
+          style={{
+            position: 'absolute',
+            top: (designH * (1 - zoom)) / 2 - 22,
+            left: (designW * (1 - zoom)) / 2,
+            fontSize: 11,
+            lineHeight: '16px',
+            color: '#8c8c8c',
+            background: 'var(--cv-panel)',
+            padding: '1px 6px',
+            borderRadius: 3,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+          }}
+        >
+          Página A4 — 210 × 297 mm · {Math.round(zoom * 100)}%
+          {placing && (
+            <span style={{ marginLeft: 8, color: 'var(--cv-accent)' }}>· Arrastra para dibujar</span>
+          )}
+          {editableSelected.length > 1 && (
+            <span style={{ marginLeft: 8, color: 'var(--cv-accent)' }}>
+              · {editableSelected.length} seleccionados
+            </span>
           )}
         </div>
       </div>

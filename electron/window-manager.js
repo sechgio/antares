@@ -179,6 +179,12 @@ function createWindow(isDev) {
 
   mainWindow.once('ready-to-show', () => {
     clearTimeout(loadWatchdog);
+    appendLogEvent('INFO', 'renderer.lifecycle', {
+      component: 'electron',
+      outcome: 'success',
+      reason: 'ready_to_show',
+      duration_ms: Math.round(process.uptime() * 1000),
+    });
     mainWindow.maximize();
     mainWindow.show();
   });

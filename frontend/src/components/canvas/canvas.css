@@ -1321,6 +1321,9 @@ select.canvas-input option {
 .canvas-dot-bg[data-canvas-panning='1'] {
   cursor: grabbing;
 }
+body:not([data-canvas-gesture]) .canvas-dot-bg[data-canvas-tool='select']:not([data-canvas-panning='1']) [data-testid='canvas-artboard'] [data-layer-id]:hover {
+  outline: calc(1px / var(--cv-camera-zoom, 1)) solid var(--cv-accent);
+}
 .canvas-dot-bg[data-canvas-tool='rect'],
 .canvas-dot-bg[data-canvas-tool='ellipse'],
 .canvas-dot-bg[data-canvas-tool='line'],

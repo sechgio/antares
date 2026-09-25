@@ -121,6 +121,31 @@ describe('useCanvasKeyboard', () => {
     }
   });
 
+  it('Tab / Shift+Tab seleccionan la capa hermana siguiente / anterior (Figma)', () => {
+    const a = createLayer('rect');
+    const b = createLayer('rect');
+    const c = createLayer('rect');
+    const doc = makeDoc([a, b, c]);
+    const input = makeInput(doc, { selectedIds: [b.id] });
+    renderHook(() => useCanvasKeyboard(input));
+    const e = press(input, { key: 'Tab', target: document.body });
+    expect(e.defaultPrevented).toBe(true);
+    expect(input.setSelectedIds).toHaveBeenLastCalledWith([a.id]);
+    press(input, { key: 'Tab', shiftKey: true, target: document.body });
+    expect(input.setSelectedIds).toHaveBeenLastCalledWith([c.id]);
+  });
+
+  it('Tab fuera del lienzo conserva la navegación de foco', () => {
+    const a = createLayer('rect');
+    const b = createLayer('rect');
+    const doc = makeDoc([a, b]);
+    const input = makeInput(doc, { selectedIds: [b.id] });
+    renderHook(() => useCanvasKeyboard(input));
+    const e = press(input, { key: 'Tab', target: document.createElement('button') });
+    expect(e.defaultPrevented).toBe(false);
+    expect(input.setSelectedIds).not.toHaveBeenCalled();
+  });
+
   it('Ctrl+D duplica capas editables y selecciona las copias', () => {
     const text = createLayer('text');
     const doc = makeDoc([text]);

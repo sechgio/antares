@@ -16,6 +16,7 @@ import {
   snapEqualGaps,
   upsertGuide,
 } from '../ops/guides';
+import { MIN_GUIDE_GAP_MM } from '../ops/guideMeasurements';
 import {
   prepareSnapRails,
   snapGuidePosition,
@@ -25,6 +26,40 @@ import {
 import { createEmptyDocument, resolvePageMarginMm, DEFAULT_PAGE_MARGIN_MM } from '../types';
 import { createLayer } from '../constants';
 import { MM_TO_PX } from '../ops/drawHelpers';
+
+function collectReferenceGapsByPairScan(
+  others: Array<{ x: number; y: number; w: number; h: number }>,
+  page: { widthMm: number; heightMm: number },
+) {
+  const xs = new Set<number>();
+  const ys = new Set<number>();
+  for (const other of others) {
+    if (other.x > MIN_GUIDE_GAP_MM) xs.add(other.x);
+    const rightGap = page.widthMm - (other.x + other.w);
+    if (rightGap > MIN_GUIDE_GAP_MM) xs.add(rightGap);
+    if (other.y > MIN_GUIDE_GAP_MM) ys.add(other.y);
+    const bottomGap = page.heightMm - (other.y + other.h);
+    if (bottomGap > MIN_GUIDE_GAP_MM) ys.add(bottomGap);
+  }
+  const overlaps = (a0: number, a1: number, b0: number, b1: number) =>
+    Math.max(a0, b0) < Math.min(a1, b1);
+  for (let i = 0; i < others.length; i++) {
+    for (let j = 0; j < others.length; j++) {
+      if (i === j) continue;
+      const a = others[i]!;
+      const b = others[j]!;
+      if (overlaps(a.y, a.y + a.h, b.y, b.y + b.h)) {
+        const gap = b.x - (a.x + a.w);
+        if (gap > MIN_GUIDE_GAP_MM) xs.add(gap);
+      }
+      if (overlaps(a.x, a.x + a.w, b.x, b.x + b.w)) {
+        const gap = b.y - (a.y + a.h);
+        if (gap > MIN_GUIDE_GAP_MM) ys.add(gap);
+      }
+    }
+  }
+  return { x: [...xs], y: [...ys] };
+}
 
 describe('guides', () => {
   it('upsertGuide adds and updates by id', () => {
@@ -200,6 +235,98 @@ describe('guides', () => {
     );
     expect(result.dx).toBeCloseTo(-4, 5);
     expect(result.labels.some((l) => l.axis === 'x' && Math.abs(l.valueMm - 8) < 0.01)).toBe(true);
+  });
+
+  it('collects the same ordered reference gaps when rectangles are duplicated', () => {
+    const a = { x: 10, y: 10, w: 20, h: 10 };
+    const b = { x: 38, y: 10, w: 20, h: 10 };
+    const c = { x: 70, y: 30, w: 20, h: 10 };
+    const page = { widthMm: 210, heightMm: 297 };
+
+    expect(collectReferenceGaps([a, b, { ...a }, c, { ...b }], page)).toEqual(
+      collectReferenceGaps([a, b, c], page),
+    );
+  });
+
+  it('preserves exhaustive reference gaps and order for mixed geometry', () => {
+    const page = { widthMm: 210, heightMm: 297 };
+
+    for (let seed = 0; seed < 24; seed++) {
+      const rects = Array.from({ length: 24 }, (_, index) => ({
+        x: ((index * 37 + seed * 11) % 31) - 5,
+        y: ((index * 19 + seed * 7) % 23) - 3,
+        w: (index + seed) % 7 === 0 ? 0 : 1 + ((index + seed) % 4),
+        h: (index + seed) % 9 === 0 ? 0 : 1 + ((index + seed) % 5),
+      }));
+      const withDuplicates = rects.flatMap((rect, index) =>
+        index % 3 === 0 ? [rect, { ...rect }] : [rect],
+      );
+
+      expect(collectReferenceGaps(withDuplicates, page)).toEqual(
+        collectReferenceGapsByPairScan(withDuplicates, page),
+      );
+    }
+  });
+
+  it('keeps duplicate-heavy reference gap setup within budget', () => {
+    const rect = { x: 10, y: 10, w: 20, h: 10 };
+    const duplicates = Array.from({ length: 6_000 }, () => ({ ...rect }));
+    const start = performance.now();
+    const gaps = collectReferenceGaps(duplicates, { widthMm: 210, heightMm: 297 });
+
+    expect(gaps).toEqual(collectReferenceGaps([rect], { widthMm: 210, heightMm: 297 }));
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  it('keeps dense unique grid reference gap setup within budget', () => {
+    const rects = Array.from({ length: 3_000 }, (_, index) => ({
+      x: (index % 50) * 4,
+      y: Math.floor(index / 50) * 4,
+      w: 2,
+      h: 2,
+    }));
+    const start = performance.now();
+    const gaps = collectReferenceGaps(rects, { widthMm: 210, heightMm: 297 });
+
+    expect(gaps.x.length).toBeGreaterThan(0);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  it('preserves ordered reference gaps for equidistant rows in either direction', () => {
+    const page = { widthMm: 210, heightMm: 297 };
+    const ascending = Array.from({ length: 24 }, (_, index) => ({
+      x: index * 2,
+      y: 20,
+      w: 1,
+      h: 10,
+    }));
+    const descending = Array.from({ length: 24 }, (_, index) => ({
+      x: (23 - index) * 2,
+      y: 20,
+      w: 1,
+      h: 10,
+    }));
+
+    expect(collectReferenceGaps(ascending, page)).toEqual(
+      collectReferenceGapsByPairScan(ascending, page),
+    );
+    expect(collectReferenceGaps(descending, page)).toEqual(
+      collectReferenceGapsByPairScan(descending, page),
+    );
+  });
+
+  it('keeps a dense equidistant row reference-gap setup under budget', () => {
+    const rects = Array.from({ length: 6_000 }, (_, index) => ({
+      x: index * 2,
+      y: 20,
+      w: 1,
+      h: 10,
+    }));
+    const start = performance.now();
+    const gaps = collectReferenceGaps(rects, { widthMm: 210, heightMm: 297 });
+
+    expect(gaps.x).toContain(11_997);
+    expect(performance.now() - start).toBeLessThan(100);
   });
 
   it('preserves reference insertion order when two gap sizes are equally near', () => {

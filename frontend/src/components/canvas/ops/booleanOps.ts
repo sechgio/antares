@@ -120,6 +120,7 @@ export function applyBooleanCompose(
 }
 
 const compositionHiddenCache = new WeakMap<CanvasLayer[], Set<string>>();
+const booleanLayerIndexCache = new WeakMap<CanvasLayer[], Map<string, CanvasLayer>>();
 
 export function compositionHiddenLayerIds(layers: CanvasLayer[]): Set<string> {
   const cached = compositionHiddenCache.get(layers);
@@ -157,7 +158,11 @@ export function resolveBooleanRender(
     return { order: [] };
   }
 
-  const byId = new Map(allLayers.map((l) => [l.id, l]));
+  let byId = booleanLayerIndexCache.get(allLayers);
+  if (!byId) {
+    byId = new Map(allLayers.map((l) => [l.id, l]));
+    booleanLayerIndexCache.set(allLayers, byId);
+  }
   const origin = layerBox(booleanLayer);
   const order: BooleanRenderItem[] = [
     {

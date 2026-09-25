@@ -15,10 +15,38 @@ import {
   expandWithDescendants,
   flattenLayerTree,
   reconcileExpandedContainers,
+  siblingLayerId,
 } from '../ops/layerTree';
 import { setActivePageLayers } from '../ops/pages';
 import { moveSelection } from '../ops/selectionTransform';
-import { parseMm, type CanvasDocument } from '../types';
+import { parseMm, type CanvasDocument, type CanvasLayer } from '../types';
+
+describe('siblingLayerId', () => {
+  const group = createLayer('group', { id: 'g1' });
+  const a = createLayer('rect', { id: 'a' });
+  const hidden = createLayer('rect', { id: 'h', visible: false });
+  const b = createLayer('rect', { id: 'b' });
+  const child = createLayer('rect', { id: 'c', parentId: 'g1' });
+  const layers = [a, group, hidden, child, b];
+
+  it('Tab walks down the layers panel (lower in the stack) and wraps, skipping hidden and children', () => {
+    expect(siblingLayerId(layers, 'b', -1)).toBe('g1');
+    expect(siblingLayerId(layers, 'g1', -1)).toBe('a');
+    expect(siblingLayerId(layers, 'a', -1)).toBe('b');
+    expect(siblingLayerId(layers, 'a', 1)).toBe('g1');
+  });
+
+  it('returns null without other siblings', () => {
+    expect(siblingLayerId(layers, 'c', 1)).toBeNull();
+  });
+
+  it('returns null when the selected layer is hidden or a frame', () => {
+    const frame: CanvasLayer = { ...createLayer('rect'), id: 'f1', type: 'frame' };
+    const withFrame = [...layers, frame];
+    expect(siblingLayerId(withFrame, 'h', 1)).toBeNull();
+    expect(siblingLayerId(withFrame, 'f1', -1)).toBeNull();
+  });
+});
 
 describe('layerTree', () => {
   it('nests children under group/grid by parentId', () => {

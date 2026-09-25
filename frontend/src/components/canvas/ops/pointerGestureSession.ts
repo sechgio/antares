@@ -10,6 +10,7 @@ export type PointerGestureSessionOptions = {
   onMove: (ev: PointerEvent) => void;
   onEnd: (ev: PointerEvent | null, reason: 'up') => void;
   onKeyDown?: (ev: KeyboardEvent) => void;
+  onKeyUp?: (ev: KeyboardEvent) => void;
   onAbort?: () => void;
 };
 
@@ -72,12 +73,14 @@ export function createPointerGestureSession(
   let onUp!: (ev: PointerEvent) => void;
   let onCancel!: (ev: PointerEvent) => void;
   let onKey: ((ev: KeyboardEvent) => void) | null = null;
+  let onKeyUp: ((ev: KeyboardEvent) => void) | null = null;
 
   const detach = () => {
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onCancel);
     if (onKey) window.removeEventListener('keydown', onKey);
+    if (onKeyUp) window.removeEventListener('keyup', onKeyUp);
   };
 
   const session: PointerGestureSession = {
@@ -127,11 +130,18 @@ export function createPointerGestureSession(
         options.onKeyDown!(ev);
       }
     : null;
+  onKeyUp = options.onKeyUp
+    ? (ev: KeyboardEvent) => {
+        if (finished) return;
+        options.onKeyUp!(ev);
+      }
+    : null;
 
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onCancel);
   if (onKey) window.addEventListener('keydown', onKey);
+  if (onKeyUp) window.addEventListener('keyup', onKeyUp);
 
   activeSession = session;
   return session;

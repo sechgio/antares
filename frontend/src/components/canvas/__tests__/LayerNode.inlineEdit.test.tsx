@@ -177,6 +177,18 @@ describe('LayerNode inline edit', () => {
     expect(onEditValue).toHaveBeenCalledWith(layer.id, 'Mundo', expect.any(Number));
   });
 
+  it('keeps the editor at content height and focused when clicking the layer padding', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const { container } = render(
+      <LayerNode layer={layer} selected interactive scale={1} editing {...baseHandlers} />,
+    );
+    const editor = screen.getByTestId('canvas-inline-editor');
+    const node = container.querySelector('[data-layer-id]') as HTMLElement;
+    expect(editor.style.height).toBe('');
+    expect(fireEvent.mouseDown(node)).toBe(false);
+    expect(fireEvent.mouseDown(editor)).toBe(true);
+  });
+
   it('commits on Escape and does not start drag from the editor', () => {
     const layer = createLayer('text', { value: 'Hola' });
     const onCommitEdit = vi.fn();

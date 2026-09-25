@@ -61,6 +61,11 @@ function _broadcastToRenderer(channel, data) {
 }
 
 function setupAutoUpdater(isDev) {
+  if (process.env.ANTARES_PERF_BENCHMARK === '1') {
+    logInfo('[auto-updater] desactivado (benchmark local).');
+    return;
+  }
+
   if (isDev || !app.isPackaged) {
     logInfo('[auto-updater] desactivado (modo dev / app no empaquetada). Registrando manejadores mock.');
 

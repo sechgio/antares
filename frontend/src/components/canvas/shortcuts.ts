@@ -19,6 +19,7 @@ export const CANVAS_SHORTCUTS: Array<{ keys: string; action: string }> = [
   { keys: 'Ctrl+Shift+R', action: 'Pegar para reemplazar' },
   { keys: 'Ctrl+K · Ctrl+P', action: 'Paleta de comandos' },
   { keys: 'Ctrl+clic', action: 'Seleccionar capa cubierta (deep select)' },
+  { keys: 'Tab / Shift+Tab', action: 'Seleccionar capa hermana siguiente / anterior' },
   { keys: 'Doble clic en grupo', action: 'Entrar al grupo (Esc o clic fuera para salir)' },
   { keys: 'Alt+C', action: 'Cuentagotas de color' },
   { keys: 'Alt + pasar el cursor', action: 'Medir distancia a otra capa' },

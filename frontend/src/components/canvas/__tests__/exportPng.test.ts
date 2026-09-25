@@ -1,9 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { act } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   cloneArtboardForExport,
+  exportPagePng,
   needsImageCacheBust,
   stripSelectionChrome,
 } from '../ops/exportPng';
+import { createLayer } from '../constants';
+import { createEmptyDocument } from '../types';
+
+const { toPngSpy } = vi.hoisted(() => ({
+  toPngSpy: vi.fn<(node: HTMLElement) => Promise<string>>(),
+}));
+
+vi.mock('html-to-image', () => ({ toPng: toPngSpy }));
+
+beforeEach(() => {
+  toPngSpy.mockReset().mockResolvedValue('data:image/png;base64,AA==');
+});
 
 describe('needsImageCacheBust', () => {
   it('is false for blob: and data: images (and empty roots)', () => {
@@ -127,5 +141,71 @@ describe('cloneArtboardForExport', () => {
     cloneArtboardForExport(board);
     expect(board.children).toHaveLength(4);
     expect(board.style.transform).toBe('scale(1.5)');
+  });
+});
+
+describe('exportPagePng', () => {
+  it('renders every document layer instead of exporting only mounted viewport layers', async () => {
+    const doc = createEmptyDocument('Export');
+    doc.layers = [
+      createLayer('rect', {
+        id: 'left',
+        cssVars: {
+          '--translate-x': '5mm',
+          '--translate-y': '150mm',
+          '--width': '10mm',
+          '--height': '10mm',
+        },
+      }),
+      createLayer('rect', {
+        id: 'center',
+        cssVars: {
+          '--translate-x': '100mm',
+          '--translate-y': '150mm',
+          '--width': '10mm',
+          '--height': '10mm',
+        },
+      }),
+      createLayer('rect', {
+        id: 'operand',
+        cssVars: {
+          '--translate-x': '50mm',
+          '--translate-y': '150mm',
+          '--width': '10mm',
+          '--height': '10mm',
+        },
+      }),
+      createLayer('rect', {
+        id: 'right',
+        cssVars: {
+          '--translate-x': '195mm',
+          '--translate-y': '150mm',
+          '--width': '10mm',
+          '--height': '10mm',
+        },
+      }),
+      createLayer('boolean', {
+        id: 'composed',
+        meta: { ops: [{ op: 'union', layerId: 'operand' }] },
+      }),
+    ];
+    const layerIds: string[] = [];
+    toPngSpy.mockImplementation(async (node) => {
+      layerIds.push(
+        ...Array.from(node.querySelectorAll<HTMLElement>('[data-layer-id]')).map(
+          (layer) => layer.dataset.layerId ?? '',
+        ),
+      );
+      return 'data:image/png;base64,AA==';
+    });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    try {
+      await act(async () => exportPagePng('page', 2, doc, 0));
+    } finally {
+      clickSpy.mockRestore();
+    }
+
+    expect(layerIds).toEqual(['left', 'center', 'right', 'composed']);
   });
 });

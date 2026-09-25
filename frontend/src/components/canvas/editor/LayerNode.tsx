@@ -388,6 +388,9 @@ function LayerNode({
       data-layer-id={layer.id}
       style={style}
       onPointerDown={onPointerDown}
+      onMouseDown={(e) => {
+        if (editing && e.target !== editorRef.current) e.preventDefault();
+      }}
       onDoubleClick={(e) => {
         if (!interactive || editing) return;
         if (layer.type === 'group' || layer.type === 'grid') {
@@ -492,7 +495,7 @@ function LayerNode({
           }}
           style={{
             width: '100%',
-            height: '100%',
+            fieldSizing: 'content',
             margin: 0,
             padding: 0,
             border: 'none',

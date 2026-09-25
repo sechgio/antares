@@ -45,6 +45,7 @@ const GAP_MATCH_TOLERANCE_MM = 0.1;
 
 type ReferenceGaps = { x: number[]; y: number[] };
 type OrderedReferenceGaps = { x: Uint32Array; y: Uint32Array };
+type GapAxis = 'x' | 'y';
 
 const orderedReferenceGapsCache = new WeakMap<ReferenceGaps, OrderedReferenceGaps>();
 
@@ -104,14 +105,97 @@ export function isGuideRemovalPoint(
   return clientY < viewportRect.top + rulerSize + GUIDE_REMOVE_SLACK_PX;
 }
 
+function collectOverlappingPairGaps(
+  others: RectMm[],
+  overlapAxis: GapAxis,
+  gapAxis: GapAxis,
+): number[] {
+  const intervals = others.flatMap((rect, index) => {
+    const start = overlapAxis === 'x' ? rect.x : rect.y;
+    const end = start + (overlapAxis === 'x' ? rect.w : rect.h);
+    return end > start ? [{ rect, index, start, end }] : [];
+  });
+  intervals.sort((a, b) => a.start - b.start || a.index - b.index);
+
+  if (intervals.length === others.length && intervals.length > 1) {
+    const first = intervals[0]!;
+    const second = intervals[1]!;
+    const firstGapStart = gapAxis === 'x' ? first.rect.x : first.rect.y;
+    const firstGapSize = gapAxis === 'x' ? first.rect.w : first.rect.h;
+    const gapStep =
+      (gapAxis === 'x' ? second.rect.x : second.rect.y) - firstGapStart;
+    let regularlySpaced = gapStep !== 0;
+
+    for (let i = 0; regularlySpaced && i < intervals.length; i += 1) {
+      const interval = intervals[i]!;
+      const gapStart = gapAxis === 'x' ? interval.rect.x : interval.rect.y;
+      const gapSize = gapAxis === 'x' ? interval.rect.w : interval.rect.h;
+      regularlySpaced =
+        interval.start === first.start &&
+        interval.end === first.end &&
+        gapSize === firstGapSize &&
+        gapStart === firstGapStart + gapStep * i;
+    }
+
+    if (regularlySpaced) {
+      const gaps: number[] = [];
+      const step = Math.abs(gapStep);
+      for (let distance = 1; distance < intervals.length; distance += 1) {
+        const gap = step * distance - firstGapSize;
+        if (gap > MIN_GUIDE_GAP_MM) gaps.push(gap);
+      }
+      return gaps;
+    }
+  }
+
+  const active: typeof intervals = [];
+  const orderedGaps = new Map<number, number>();
+  const addGap = (gap: number, order: number) => {
+    if (gap <= MIN_GUIDE_GAP_MM) return;
+    const previousOrder = orderedGaps.get(gap);
+    if (previousOrder === undefined || order < previousOrder) orderedGaps.set(gap, order);
+  };
+
+  for (const current of intervals) {
+    for (let i = active.length - 1; i >= 0; i--) {
+      const previous = active[i]!;
+      if (previous.end <= current.start) {
+        active.splice(i, 1);
+        continue;
+      }
+
+      const previousStart = gapAxis === 'x' ? previous.rect.x : previous.rect.y;
+      const previousSize = gapAxis === 'x' ? previous.rect.w : previous.rect.h;
+      const currentStart = gapAxis === 'x' ? current.rect.x : current.rect.y;
+      const currentSize = gapAxis === 'x' ? current.rect.w : current.rect.h;
+      addGap(currentStart - (previousStart + previousSize), previous.index * others.length + current.index);
+      addGap(previousStart - (currentStart + currentSize), current.index * others.length + previous.index);
+    }
+    active.push(current);
+  }
+
+  return [...orderedGaps]
+    .sort((left, right) => left[1] - right[1])
+    .map(([gap]) => gap);
+}
+
 export function collectReferenceGaps(
   others: RectMm[],
   page: { widthMm: number; heightMm: number },
 ): ReferenceGaps {
   const xs = new Set<number>();
   const ys = new Set<number>();
+  const seen = new Set<string>();
+  const uniqueOthers: RectMm[] = [];
 
-  for (const o of others) {
+  for (const other of others) {
+    const key = `${other.x},${other.y},${other.w},${other.h}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueOthers.push(other);
+  }
+
+  for (const o of uniqueOthers) {
     if (o.x > MIN_GUIDE_GAP_MM) xs.add(o.x);
     const rightGap = page.widthMm - (o.x + o.w);
     if (rightGap > MIN_GUIDE_GAP_MM) xs.add(rightGap);
@@ -120,21 +204,8 @@ export function collectReferenceGaps(
     if (bottomGap > MIN_GUIDE_GAP_MM) ys.add(bottomGap);
   }
 
-  for (let i = 0; i < others.length; i++) {
-    for (let j = 0; j < others.length; j++) {
-      if (i === j) continue;
-      const a = others[i]!;
-      const b = others[j]!;
-      if (boxesOverlapOnAxis(a.y, a.y + a.h, b.y, b.y + b.h)) {
-        const gap = b.x - (a.x + a.w);
-        if (gap > MIN_GUIDE_GAP_MM) xs.add(gap);
-      }
-      if (boxesOverlapOnAxis(a.x, a.x + a.w, b.x, b.x + b.w)) {
-        const gap = b.y - (a.y + a.h);
-        if (gap > MIN_GUIDE_GAP_MM) ys.add(gap);
-      }
-    }
-  }
+  for (const gap of collectOverlappingPairGaps(uniqueOthers, 'y', 'x')) xs.add(gap);
+  for (const gap of collectOverlappingPairGaps(uniqueOthers, 'x', 'y')) ys.add(gap);
 
   return { x: [...xs], y: [...ys] };
 }

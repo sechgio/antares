@@ -1,4 +1,5 @@
 import type { MutableRefObject, RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import type { CanvasGuide, CanvasLayer } from '../types';
 import { clientToMm, MM_TO_PX } from '../ops/drawHelpers';
 import {
@@ -32,7 +33,7 @@ import {
 } from '../ops/cornerRadiusGesture';
 import { cornerRadiusPx, type CornerId } from '../ops/layerStyle';
 import { createFrameRectCache } from './frameRectCache';
-import { escapeToAbort } from './artboardViewportGestures';
+import { escapeToAbort, modifierReplay } from './artboardViewportGestures';
 
 export function cloneLayers(layers: CanvasLayer[], deepIds?: ReadonlySet<string>): CanvasLayer[] {
   if (!deepIds || deepIds.size === 0) {
@@ -125,7 +126,7 @@ export function createArtboardTransformGestures(deps: ArtboardTransformGestureDe
       pageMarginRef.current,
     );
 
-    const raf = createGestureRaf((ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => flushSync(() => {
       const z = zoomRef.current;
       if (pinchGestureRef.current) return;
       const dx = (ev.clientX - startX) / (z * MM_TO_PX);
@@ -155,16 +156,22 @@ export function createArtboardTransformGestures(deps: ArtboardTransformGestureDe
       const resized = resizeSelection(snapshot, ids, corner, 0, 0, { targetBox: nextBox });
       applyImperativePreview(resized, ids);
       setGestureBbox(selectionBounds(resized, ids));
-    });
+    }));
+    const replay = modifierReplay(raf.schedule);
+    const escape = escapeToAbort(() => session);
     let session: PointerGestureSession;
     session = pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
+      onMove: replay.onMove,
       onEnd: () => {
         raf.flush();
         setGuidesIfChanged([]);
         endGesture();
       },
-      onKeyDown: escapeToAbort(() => session),
+      onKeyDown: (ev) => {
+        escape(ev);
+        replay.onKey(ev);
+      },
+      onKeyUp: replay.onKey,
       onAbort: () => {
         raf.cancel();
         abortGesturePreview({ layers: originLayers, ids });
@@ -189,22 +196,28 @@ export function createArtboardTransformGestures(deps: ArtboardTransformGestureDe
     const startAngle = angleFromCenter(cx, cy, start.xMm, start.yMm);
     gestureDirtyRef.current = false;
 
-    const raf = createGestureRaf((ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => flushSync(() => {
       const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       const angle = angleFromCenter(cx, cy, cur.xMm, cur.yMm);
       const delta = angle - startAngle;
       const rotated = rotateSelection(snapshot, ids, delta, { snap15: ev.shiftKey });
       applyImperativePreview(rotated, ids);
       setGestureBbox(selectionBounds(rotated, ids));
-    });
+    }));
+    const replay = modifierReplay(raf.schedule);
+    const escape = escapeToAbort(() => session);
     let session: PointerGestureSession;
     session = pointerGestures.start({
-      onMove: (ev) => raf.schedule(ev),
+      onMove: replay.onMove,
       onEnd: () => {
         raf.flush();
         endGesture();
       },
-      onKeyDown: escapeToAbort(() => session),
+      onKeyDown: (ev) => {
+        escape(ev);
+        replay.onKey(ev);
+      },
+      onKeyUp: replay.onKey,
       onAbort: () => {
         raf.cancel();
         abortGesturePreview({ layers: originLayers, ids });

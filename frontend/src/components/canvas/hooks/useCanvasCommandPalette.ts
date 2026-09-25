@@ -40,7 +40,6 @@ export interface CanvasPaletteInput {
   setDocument: (doc: CanvasDocument) => void;
   selectedIds: string[];
   pageIndex: number;
-  setPageIndex: (index: number) => void;
   pageLayers: CanvasLayer[];
   uiLocked: boolean;
   runUndo: () => void;
@@ -86,7 +85,6 @@ export function useCanvasCommandPalette(
     setDocument: setPaletteDocument,
     selectedIds,
     pageIndex,
-    setPageIndex,
     pageLayers,
     uiLocked,
     runUndo,
@@ -529,7 +527,13 @@ export function useCanvasCommandPalette(
         id: 'export:pagePng',
         label: 'Exportar página actual (PNG)',
         group: 'Documento',
-        run: () => void exportPagePng(`${doc.name}-pagina-${pageIndex + 1}`, PAGE_PNG_SCALE),
+        run: () =>
+          void exportPagePng(
+            `${doc.name}-pagina-${pageIndex + 1}`,
+            PAGE_PNG_SCALE,
+            doc,
+            pageIndex,
+          ),
       },
       {
         id: 'export:documentPng',
@@ -539,13 +543,13 @@ export function useCanvasCommandPalette(
         run: () => {
           void (async () => {
             for (let page = 0; page < pageCount; page++) {
-              setPageIndex(page);
-              await new Promise((resolve) =>
-                requestAnimationFrame(() => requestAnimationFrame(resolve)),
+              await exportPagePng(
+                `${doc.name}-pagina-${page + 1}`,
+                PAGE_PNG_SCALE,
+                doc,
+                page,
               );
-              await exportPagePng(`${doc.name}-pagina-${page + 1}`, PAGE_PNG_SCALE);
             }
-            setPageIndex(pageIndex);
           })();
         },
       },
