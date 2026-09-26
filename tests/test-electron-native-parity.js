@@ -34,15 +34,15 @@ function main() {
   const byHandler = (bucket) =>
     new Set(Object.keys(catalog).filter((m) => catalog[m].handler === bucket));
 
-  const { NATIVE_METHODS: sourceNative, ALLOWED_RENDERER_METHODS, BACKEND_METHODS } =
-    require('../electron/ipc-methods');
+  const { NATIVE_METHODS: sourceNative, METHOD_NAMES: ALLOWED_RENDERER_METHODS, BACKEND_METHODS } =
+    require('../shared/ipc-method-catalog');
   const { NATIVE_METHODS: dialogNative } = require('../electron/dialog-handlers');
   const { AUTOIMG_METHODS } = require('../electron/autoimg-ipc-methods');
   const { UBICACIONES_METHODS } = require('../electron/ubicaciones-ipc-methods');
 
   check(
     Array.isArray(sourceNative) && new Set(sourceNative).size === sourceNative.length,
-    'ipc-methods.NATIVE_METHODS es una lista sin duplicados'
+    'catalog.NATIVE_METHODS es una lista sin duplicados'
   );
   const source = new Set(sourceNative);
 

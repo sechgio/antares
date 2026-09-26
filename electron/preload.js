@@ -11,7 +11,7 @@ function resolveAllowedMethods() {
     }
   }
   try {
-    const { ALLOWED_RENDERER_METHODS } = require('./ipc-methods');
+    const { METHOD_NAMES: ALLOWED_RENDERER_METHODS } = require('../shared/ipc-method-catalog');
     return new Set(ALLOWED_RENDERER_METHODS);
   } catch {
     return new Set();

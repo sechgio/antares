@@ -1,5 +1,5 @@
 import { reportFrontendError } from '../../../utils/observability';
-import { isIndexedDbAvailable } from '../../../utils/persistence';
+import { isIndexedDbAvailable, runIdbWrite } from '../../../utils/persistence';
 import { DEFAULT_CUADRANTE_LABEL } from '../constants';
 import type { EvidenciaSession, LocalImage, LogoAsset, StoredImage, StoredLogo, StoredSession } from '../types';
 import { migrateLegacyCuadrante } from './cuadranteRanges';
@@ -89,15 +89,8 @@ export async function loadSession(): Promise<StoredSession | null> {
 export async function saveSession(session: EvidenciaSession): Promise<void> {
   if (!isIndexedDbAvailable()) return;
   try {
-    const db = await openDb();
     const stored = sessionToStored({ ...session, updatedAt: Date.now() });
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(stored, SESSION_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    }).finally(() => db.close());
+    await runIdbWrite(openDb, STORE, (os) => os.put(stored, SESSION_KEY));
   } catch (err) {
     reportFrontendError({
       kind: 'storage_error',

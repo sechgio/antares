@@ -32,11 +32,24 @@ const {
   runOpenDialog,
 } = require('./file-dialogs');
 
-const NATIVE_METHODS = new Set(require('./ipc-methods').NATIVE_METHODS);
+const NATIVE_METHODS = new Set(require('../shared/ipc-method-catalog').NATIVE_METHODS);
 
 function _resolveTokenPath(token, webContentsId) {
   const cap = resolveCapability(token, 'read', webContentsId ?? null);
   return cap.path;
+}
+
+function _resolveReadPathParam(params, webContentsId) {
+  let resolvedPath = params && params.path;
+  if (typeof resolvedPath === 'string' && resolvedPath.startsWith('antares-read_')) {
+    resolvedPath = _resolveTokenPath(resolvedPath, webContentsId);
+    registerAllowedReadPath(resolvedPath);
+  }
+  if (params && params.file_token) {
+    resolvedPath = _resolveTokenPath(params.file_token, webContentsId);
+    registerAllowedReadPath(resolvedPath);
+  }
+  return resolvedPath;
 }
 
 function registerFileInputPath(rawPath) {
@@ -163,15 +176,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 
   if (method === 'local_thumbnail') {
     const { nativeImage } = electronModules;
-    let resolvedPath = params && params.path;
-    if (typeof resolvedPath === 'string' && resolvedPath.startsWith('antares-read_')) {
-      resolvedPath = _resolveTokenPath(resolvedPath, webContentsId);
-      registerAllowedReadPath(resolvedPath);
-    }
-    if (params && params.file_token) {
-      resolvedPath = _resolveTokenPath(params.file_token, webContentsId);
-      registerAllowedReadPath(resolvedPath);
-    }
+    const resolvedPath = _resolveReadPathParam(params, webContentsId);
     const result = await createLocalThumbnail(
       resolvedPath,
       params && params.maxEdge,
@@ -181,15 +186,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   }
 
   if (method === 'local_image_data_url') {
-    let resolvedPath = params && params.path;
-    if (typeof resolvedPath === 'string' && resolvedPath.startsWith('antares-read_')) {
-      resolvedPath = _resolveTokenPath(resolvedPath, webContentsId);
-      registerAllowedReadPath(resolvedPath);
-    }
-    if (params && params.file_token) {
-      resolvedPath = _resolveTokenPath(params.file_token, webContentsId);
-      registerAllowedReadPath(resolvedPath);
-    }
+    const resolvedPath = _resolveReadPathParam(params, webContentsId);
     const result = await createLocalImageDataUrl(resolvedPath);
     return { handled: true, result };
   }

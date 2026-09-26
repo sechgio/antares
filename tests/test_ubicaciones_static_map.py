@@ -518,7 +518,18 @@ def _make_single_page_pdfs(tmp_path: Path, count: int = 1) -> list[str]:
     return paths
 
 
-def test_merge_consolidated_pdfs_falls_back_when_default_locked(
+def _consolidate_pages(page_paths: list[str], output_dir: str) -> str:
+    writer = ub.create_consolidated_writer()
+    try:
+        for page_path in page_paths:
+            ub.append_page_to_writer(writer, page_path)
+            os.remove(page_path)
+        return ub._save_consolidated_writer(writer, output_dir)
+    finally:
+        ub.close_consolidated_writer(writer)
+
+
+def test_consolidated_writer_falls_back_when_default_locked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     page_paths = _make_single_page_pdfs(tmp_path, 1)
@@ -531,13 +542,13 @@ def test_merge_consolidated_pdfs_falls_back_when_default_locked(
 
     monkeypatch.setattr(os, "replace", fake_replace)
 
-    saved_path = ub._merge_consolidated_pdfs(page_paths, str(tmp_path))
+    saved_path = _consolidate_pages(page_paths, str(tmp_path))
 
     assert saved_path.endswith("ubicaciones_consolidado_2.pdf")
     assert (tmp_path / "ubicaciones_consolidado_2.pdf").is_file()
 
 
-def test_merge_consolidated_pdfs_falls_back_on_windows_sharing_violation(
+def test_consolidated_writer_falls_back_on_windows_sharing_violation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     page_paths = _make_single_page_pdfs(tmp_path, 1)
@@ -552,13 +563,13 @@ def test_merge_consolidated_pdfs_falls_back_on_windows_sharing_violation(
 
     monkeypatch.setattr(os, "replace", fake_replace)
 
-    saved_path = ub._merge_consolidated_pdfs(page_paths, str(tmp_path))
+    saved_path = _consolidate_pages(page_paths, str(tmp_path))
 
     assert saved_path.endswith("ubicaciones_consolidado_2.pdf")
     assert (tmp_path / "ubicaciones_consolidado_2.pdf").is_file()
 
 
-def test_merge_consolidated_pdfs_raises_clear_error_when_all_paths_locked(
+def test_consolidated_writer_raises_clear_error_when_all_paths_locked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     page_paths = _make_single_page_pdfs(tmp_path, 1)
@@ -569,13 +580,13 @@ def test_merge_consolidated_pdfs_raises_clear_error_when_all_paths_locked(
     monkeypatch.setattr(os, "replace", always_denied)
 
     with pytest.raises(PermissionError, match="Cierra el archivo"):
-        ub._merge_consolidated_pdfs(page_paths, str(tmp_path))
+        _consolidate_pages(page_paths, str(tmp_path))
 
 
-def test_merge_consolidated_pdfs_produces_multipage_pdf(tmp_path: Path) -> None:
+def test_consolidated_writer_produces_multipage_pdf(tmp_path: Path) -> None:
     page_paths = _make_single_page_pdfs(tmp_path, 3)
 
-    result = ub._merge_consolidated_pdfs(page_paths, str(tmp_path))
+    result = _consolidate_pages(page_paths, str(tmp_path))
 
     assert os.path.exists(result)
     reader = PdfReader(result)

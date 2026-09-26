@@ -225,7 +225,6 @@ def test_handler_keeps_legacy_test_surface() -> None:
     assert callable(hub._http_get)
     assert callable(hub._resolve_provider)
     assert callable(hub._encode_preview_data)
-    assert callable(hub._merge_consolidated_pdfs)
     assert hub._excel_cache is u_cache._excel_cache
     assert hub._preview_composed_cache is u_cache._preview_composed_cache
     assert hub.urllib is not None
