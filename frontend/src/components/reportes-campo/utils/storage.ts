@@ -9,7 +9,7 @@ import type {
     StoredPhoto,
 } from '../types';
 import { reportFrontendError } from '../../../utils/observability';
-import { isIndexedDbAvailable } from '../../../utils/persistence';
+import { isIndexedDbAvailable, runIdbWrite } from '../../../utils/persistence';
 import { errorMessage } from '@/utils/errors';
 
 export function photoFileToStored(photo: PhotoFile): StoredPhoto {
@@ -159,30 +159,12 @@ export async function loadPanelsByType(reportType: ReportType): Promise<StoredPa
 
 export async function savePanel(stored: StoredPanel): Promise<void> {
     if (!isIndexedDbAvailable()) return;
-    return enqueueWrite(async () => {
-        const db = await openDb();
-        await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(STORE, 'readwrite');
-            tx.objectStore(STORE).put(stored);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-            tx.onabort = () => reject(tx.error);
-        }).finally(() => db.close());
-    }, 'savePanel');
+    return enqueueWrite(() => runIdbWrite(openDb, STORE, (os) => os.put(stored)), 'savePanel');
 }
 
 export async function deleteStoredPanel(id: string): Promise<void> {
     if (!isIndexedDbAvailable()) return;
-    return enqueueWrite(async () => {
-        const db = await openDb();
-        await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(STORE, 'readwrite');
-            tx.objectStore(STORE).delete(id);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-            tx.onabort = () => reject(tx.error);
-        }).finally(() => db.close());
-    }, 'deletePanel');
+    return enqueueWrite(() => runIdbWrite(openDb, STORE, (os) => os.delete(id)), 'deletePanel');
 }
 
 export async function loadBranding(reportType: ReportType): Promise<StoredBranding | null> {
@@ -199,14 +181,5 @@ export async function loadBranding(reportType: ReportType): Promise<StoredBrandi
 
 export async function saveBranding(stored: StoredBranding): Promise<void> {
     if (!isIndexedDbAvailable()) return;
-    return enqueueWrite(async () => {
-        const db = await openDb();
-        await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(BRANDING_STORE, 'readwrite');
-            tx.objectStore(BRANDING_STORE).put(stored);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-            tx.onabort = () => reject(tx.error);
-        }).finally(() => db.close());
-    }, 'saveBranding');
+    return enqueueWrite(() => runIdbWrite(openDb, BRANDING_STORE, (os) => os.put(stored)), 'saveBranding');
 }
