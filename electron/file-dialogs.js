@@ -31,7 +31,7 @@ function resultFromSaveDialog(response) {
 }
 
 const FOLDER_SCAN_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.webp', '.tiff', '.tif', '.bmp', '.gif', '.ico', '.pdf',
+  '.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff', '.bmp', '.gif', '.ico', '.pdf',
   '.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mpg', '.mpeg',
 ]);
 
@@ -125,7 +125,7 @@ async function runOpenDialog(method, params = {}, dialog, window) {
     title: params.title || (properties.includes('openDirectory') ? 'Seleccionar carpeta' : 'Seleccionar archivos'),
     properties,
     filters: params.filters || [
-      { name: 'Archivos compatibles', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff', 'gif', 'ico', 'pdf', 'mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm', 'm4v', '3gp', 'mpg', 'mpeg', 'xlsx', 'xls'] },
+      { name: 'Archivos compatibles', extensions: [...FOLDER_SCAN_EXTENSIONS, '.xlsx', '.xls'].map((ext) => ext.slice(1)) },
       { name: 'Todos los archivos', extensions: ['*'] },
     ],
   });

@@ -6,7 +6,6 @@ const ROOT = path.resolve(__dirname, '..');
 const API_PATH = path.join(ROOT, 'frontend', 'src', 'api.ts');
 const API_DIR = path.join(ROOT, 'frontend', 'src', 'api');
 const PRELOAD_PATH = path.join(ROOT, 'electron', 'preload.js');
-const ALLOWLIST_PATH = path.join(ROOT, 'electron', 'ipc-methods.js');
 const CATALOG_PATH = path.join(ROOT, 'shared', 'ipc-method-catalog.js');
 
 const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones))$/;
@@ -68,7 +67,6 @@ function extractPreloadMethods(source) {
 function main() {
   const apiSource = fs.readFileSync(API_PATH, 'utf8');
   const preloadSource = fs.readFileSync(PRELOAD_PATH, 'utf8');
-  const allowlistModule = require(ALLOWLIST_PATH);
   const catalog = require(CATALOG_PATH);
 
   // api.ts es una fachada: los invokes reales viven en frontend/src/api/*.ts.
@@ -82,7 +80,7 @@ function main() {
   }
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'autoimg_scan_all']);
-  const allowed = allowlistModule.ALLOWED_RENDERER_METHODS;
+  const allowed = catalog.METHOD_NAMES;
 
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
   const unexpectedInAllowlist = [...allowed].filter((m) => !knownUsedMethods.has(m));

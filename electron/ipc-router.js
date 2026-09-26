@@ -33,13 +33,12 @@ let _ipcMethodsCache = null;
 
 function _loadIpcMethods() {
   if (_ipcMethodsCache) return _ipcMethodsCache;
-  _ipcMethodsCache = require('./ipc-methods');
+  _ipcMethodsCache = require('../shared/ipc-method-catalog');
   return _ipcMethodsCache;
 }
 
 function reloadIpcMethods() {
   const modules = [
-    './ipc-methods',
     './autoimg-ipc-methods',
     './ubicaciones-ipc-methods',
     '../shared/ipc-method-catalog',
@@ -56,7 +55,7 @@ function reloadIpcMethods() {
 }
 
 function _getAllowedMethods() {
-  return _loadIpcMethods().ALLOWED_RENDERER_METHODS;
+  return _loadIpcMethods().METHOD_NAMES;
 }
 
 function _ipcCatalog() {

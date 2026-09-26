@@ -24,7 +24,7 @@ function createWindow(isDev) {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const iconPath = path.join(__dirname, '..', 'assets', 'icon.ico');
 
-  const { ALLOWED_RENDERER_METHODS: allowedNow } = require('./ipc-methods');
+  const { METHOD_NAMES: allowedNow } = require('../shared/ipc-method-catalog');
   const allowedList = [...allowedNow];
   const allowedMethodsArg = `--allowed-ipc-methods=${JSON.stringify(allowedList)}`;
   const isPackagedArg = `--app-is-packaged=${isDev ? '0' : '1'}`;

@@ -32,7 +32,7 @@ const {
   runOpenDialog,
 } = require('./file-dialogs');
 
-const NATIVE_METHODS = new Set(require('./ipc-methods').NATIVE_METHODS);
+const NATIVE_METHODS = new Set(require('../shared/ipc-method-catalog').NATIVE_METHODS);
 
 function _resolveTokenPath(token, webContentsId) {
   const cap = resolveCapability(token, 'read', webContentsId ?? null);
