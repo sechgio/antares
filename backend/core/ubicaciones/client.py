@@ -62,12 +62,18 @@ def _resolve_api_key(map_opts: dict[str, Any] | None) -> str | None:  # allowlis
     return os.environ.get("ANTARES_MAPS_API_KEY") or os.environ.get("ANTARES_GOOGLE_MAPS_KEY") or None
 
 
-def _cap_fetch_size(width: int, height: int) -> tuple[int, int]:
+def _scale_to_max_dim(width: int, height: int, cap: int) -> tuple[int, int]:
+    width = max(1, int(width))
+    height = max(1, int(height))
     longest = max(width, height)
-    if longest <= _MAP_FETCH_MAX_DIM:
-        return max(1, width), max(1, height)
-    scale = _MAP_FETCH_MAX_DIM / longest
+    if longest <= cap:
+        return width, height
+    scale = cap / longest
     return max(1, round(width * scale)), max(1, round(height * scale))
+
+
+def _cap_fetch_size(width: int, height: int) -> tuple[int, int]:
+    return _scale_to_max_dim(width, height, _MAP_FETCH_MAX_DIM)
 
 
 def _redact_url_for_log(url: str) -> str:
@@ -235,13 +241,7 @@ def _fetch_xyz_tiles_map(
 
 
 def _google_static_map_size(width: int, height: int) -> tuple[int, int]:
-    width = max(1, int(width))
-    height = max(1, int(height))
-    longest = max(width, height)
-    if longest <= 640:
-        return width, height
-    scale = 640 / longest
-    return max(1, round(width * scale)), max(1, round(height * scale))
+    return _scale_to_max_dim(width, height, 640)
 
 
 def _fetch_google_static_map(lat: float, lon: float, width: int, height: int, zoom: int, key: str) -> Image.Image:

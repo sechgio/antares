@@ -88,28 +88,11 @@ def _save_consolidated_writer(writer: Any, output_dir: str) -> str:
     return _write_consolidated_pdf(tmp_path, base_path)
 
 
-def _merge_consolidated_pdfs(page_paths: list[str], output_dir: str) -> str:
-    if not page_paths:
-        raise ValueError("No hay imágenes para guardar en el PDF consolidado.")
-    try:
-        from pypdf import PdfWriter
-
-        writer = PdfWriter()
-        for page_path in page_paths:
-            writer.append(page_path)
-        return _save_consolidated_writer(writer, output_dir)
-    finally:
-        for page_path in page_paths:
-            with contextlib.suppress(OSError):
-                os.remove(page_path)
-
-
 __all__ = [
     "_CONSOLIDATED_PDF_NAME",
     "_MAX_CONSOLIDATED_PAGE_BYTES",
     "_consolidated_pdf_permission_error",
     "_is_destination_locked",
-    "_merge_consolidated_pdfs",
     "_save_consolidated_writer",
     "_write_consolidated_pdf",
     "append_page_to_writer",

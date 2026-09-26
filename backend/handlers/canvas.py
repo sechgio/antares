@@ -33,19 +33,14 @@ logger = logging.getLogger(__name__)
 _spill_replace_lock = threading.Lock()
 
 
-def _spill_file_path(doc_id: str, suffix: str = ".json") -> Path:
+def _spill_file_path(doc_id: str, suffix: str = ".json", *, legacy: bool = False) -> Path:
     store = _canvas_core.get_canvas_store()
     spill_dir = store.docs_dir.parent / "spill"
     safe_id = Path(str(doc_id)).name or "unknown"
+    if legacy:
+        return spill_dir / f"{safe_id}{suffix}"
     prefix = HISTORY_SPILL_PREFIX if suffix == "_history.json" else DOCUMENT_SPILL_PREFIX
     return spill_dir / f"{prefix}{safe_id}.json"
-
-
-def _legacy_spill_file_path(doc_id: str, suffix: str = ".json") -> Path:
-    store = _canvas_core.get_canvas_store()
-    spill_dir = store.docs_dir.parent / "spill"
-    safe_id = Path(str(doc_id)).name or "unknown"
-    return spill_dir / f"{safe_id}{suffix}"
 
 
 def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") -> str | None:
@@ -87,7 +82,7 @@ def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") 
 
 
 def _cleanup_spill(doc_id: str, suffix: str = ".json") -> None:
-    for path in {_spill_file_path(doc_id, suffix), _legacy_spill_file_path(doc_id, suffix)}:
+    for path in {_spill_file_path(doc_id, suffix), _spill_file_path(doc_id, suffix, legacy=True)}:
         try:
             path.unlink(missing_ok=True)
         except OSError as exc:
@@ -100,11 +95,29 @@ def _cleanup_spill(doc_id: str, suffix: str = ".json") -> None:
             )
 
 
-def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, context: str = "canvas_save") -> None:
+def _memory_pressure_mb() -> int | None:
     if not is_memory_pressure():
+        return None
+    return (_available_bytes() or 0) // (1024 * 1024)
+
+
+def _raise_memory_pressure(available_mb: int, spill_path: str | None, context: str, retry_hint: str) -> None:
+    raise MemoryPressureError(
+        f"Memoria baja ({available_mb}MB < {MEMORY_PRESSURE_THRESHOLD_MB}MB): {retry_hint}",
+        details={
+            "available_mb": available_mb,
+            "threshold_mb": MEMORY_PRESSURE_THRESHOLD_MB,
+            "retry_after_ms": MEMORY_PRESSURE_RETRY_AFTER_MS,
+            "spill_path": spill_path,
+            "context": context,
+        },
+    )
+
+
+def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, context: str = "canvas_save") -> None:
+    available_mb = _memory_pressure_mb()
+    if available_mb is None:
         return
-    available = _available_bytes() or 0
-    available_mb = available // (1024 * 1024)
     spill_path: str | None = None
     if isinstance(document, dict):
         doc_id = str(document.get("id") or "unknown")
@@ -125,24 +138,13 @@ def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, c
             outcome="rejected",
             message=f"canvas memory_pressure: context={context} available_mb={available_mb} < {MEMORY_PRESSURE_THRESHOLD_MB}",
         )
-    raise MemoryPressureError(
-        f"Memoria baja ({available_mb}MB < {MEMORY_PRESSURE_THRESHOLD_MB}MB): "
-        f"reintente en {MEMORY_PRESSURE_RETRY_AFTER_MS}ms",
-        details={
-            "available_mb": available_mb,
-            "threshold_mb": MEMORY_PRESSURE_THRESHOLD_MB,
-            "retry_after_ms": MEMORY_PRESSURE_RETRY_AFTER_MS,
-            "spill_path": spill_path,
-            "context": context,
-        },
-    )
+    _raise_memory_pressure(available_mb, spill_path, context, f"reintente en {MEMORY_PRESSURE_RETRY_AFTER_MS}ms")
 
 
 def _check_history_memory_pressure(doc_id: str, past: Any, future: Any) -> None:
-    if not is_memory_pressure():
+    available_mb = _memory_pressure_mb()
+    if available_mb is None:
         return
-    available = _available_bytes() or 0
-    available_mb = available // (1024 * 1024)
     spill_path = _spill_payload(str(doc_id), {"past": past, "future": future}, suffix="_history.json")
     if spill_path:
         log_event(
@@ -152,16 +154,11 @@ def _check_history_memory_pressure(doc_id: str, past: Any, future: Any) -> None:
             outcome="degraded",
             message=f"canvas history memory_pressure spill: doc_id={Path(str(doc_id)).name} available_mb={available_mb}",
         )
-    raise MemoryPressureError(
-        f"Memoria baja ({available_mb}MB < {MEMORY_PRESSURE_THRESHOLD_MB}MB): "
+    _raise_memory_pressure(
+        available_mb,
+        spill_path,
+        "canvas_save_history",
         f"historial en espera, reintente en {MEMORY_PRESSURE_RETRY_AFTER_MS}ms",
-        details={
-            "available_mb": available_mb,
-            "threshold_mb": MEMORY_PRESSURE_THRESHOLD_MB,
-            "retry_after_ms": MEMORY_PRESSURE_RETRY_AFTER_MS,
-            "spill_path": spill_path,
-            "context": "canvas_save_history",
-        },
     )
 
 @with_locale
