@@ -31,7 +31,7 @@ function resultFromSaveDialog(response) {
 }
 
 const FOLDER_SCAN_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff', '.bmp', '.gif', '.ico', '.pdf',
+  '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.gif', '.ico', '.pdf',
   '.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mpg', '.mpeg',
 ]);
 
