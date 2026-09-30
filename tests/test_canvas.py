@@ -433,19 +433,6 @@ def test_normalize_meta_rejects_non_finite_auto_layout_values_and_non_boolean_wr
     }
 
 
-def test_normalize_clamps_guide_page_index() -> None:
-    raw = create_empty_document()
-    raw["guides"] = [
-        {"id": "g-p1", "axis": "x", "posMm": 20, "pageIndex": 1},
-        {"id": "g-bad", "axis": "y", "posMm": 5, "pageIndex": -3},
-    ]
-    doc = normalize_document(raw)
-    assert doc["guides"] == [
-        {"id": "g-p1", "axis": "x", "posMm": 20.0, "pageIndex": 0},
-        {"id": "g-bad", "axis": "y", "posMm": 5.0, "pageIndex": 0},
-    ]
-
-
 def _strict_json_loads(text: str) -> Any:
     """json.loads que rechaza los literales NaN/Infinity que JSON no define."""
 
@@ -2071,14 +2058,15 @@ def test_canvas_save_slim_returns_meta_only(
     assert persisted is not None and persisted["layers"][-1]["value"] == "x" * 200_000
 
 
-def test_store_save_history_serializes_the_payload_once(
+def test_store_save_history_assembles_payload_from_entry_encodings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = CanvasStore(tmp_path)
-    created = store.create(name="History single encode")
+    created = store.create(name="History assembled payload")
     doc_id = str(created["id"])
     entry = {"type": "diff", "ops": [{"v": "y" * 50_000}]}
+    expected = encode_canvas_json({"past": [entry], "future": [entry]})
 
     real_dumps = canvas_store_mod.json.dumps
     calls: list[int] = []
@@ -2092,20 +2080,21 @@ def test_store_save_history_serializes_the_payload_once(
 
     store.save_history(doc_id, [entry], [entry])
 
-    assert len(calls) == 1, f"the history payload must be serialized once, got {len(calls)}"
-    assert store._history_path_for(doc_id).exists()
+    assert calls == [], "the aggregated history payload must not be serialized again"
+    assert store._history_path_for(doc_id).read_bytes() == expected
 
 
-def test_canvas_save_handler_serializes_history_once(
+def test_canvas_save_handler_assembles_history_payload_from_entry_encodings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = CanvasStore(tmp_path)
     monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
     monkeypatch.setattr(canvas_handlers, "is_memory_pressure", lambda: False)
-    created = store.create(name="History IPC single encode")
+    created = store.create(name="History IPC assembled payload")
     doc_id = str(created["id"])
     entry = {"type": "diff", "ops": [{"v": "z" * 50_000}]}
+    expected = encode_canvas_json({"past": [entry], "future": [entry]})
 
     real_dumps = canvas_store_mod.json.dumps
     calls: list[int] = []
@@ -2119,7 +2108,8 @@ def test_canvas_save_handler_serializes_history_once(
 
     canvas_handlers.canvas_save_history({"id": doc_id, "past": [entry], "future": [entry]})
 
-    assert len(calls) == 1, f"canvas_save_history must serialize the payload once, got {len(calls)}"
+    assert calls == [], "canvas_save_history must not serialize the aggregated payload again"
+    assert store._history_path_for(doc_id).read_bytes() == expected
 
 
 def test_canvas_save_reports_unencodable_documents_as_validation_errors(

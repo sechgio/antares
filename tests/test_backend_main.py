@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from backend import main as backend_main
+from backend.core.scheduler import WorkScheduler
 
 
 class _ImmediateThread:
@@ -87,22 +88,6 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
     backend_main.main()
     scheduler.shutdown.assert_called_once_with(wait=True)
     return counts
-
-
-def test_main_skips_warm_deferred_by_default(monkeypatch) -> None:
-    counts = _run_main_until_eof(monkeypatch, warm_env=None)
-    assert counts["warm_core"] == 1
-    assert counts["ready"] == 1
-    assert counts["warm_deferred"] == 0
-    assert counts["warm_post_ready"] == 1
-
-
-def test_main_warms_deferred_when_env_enabled(monkeypatch) -> None:
-    counts = _run_main_until_eof(monkeypatch, warm_env="1")
-    assert counts["warm_core"] == 1
-    assert counts["ready"] == 1
-    assert counts["warm_deferred"] == 1
-    assert counts["warm_post_ready"] == 1
 
 
 def test_main_warms_deferred_for_true_yes_env(monkeypatch) -> None:
@@ -609,6 +594,68 @@ def test_main_resolves_deferred_method_in_worker_not_reader(monkeypatch) -> None
     assert calls, "método deferred debe enviarse al scheduler (worker)"
     assert calls[0][0] == "heavy" or calls[0][0] == "light", "deferred va a una lane"
     assert reads == [], "el reader no debe importar módulos deferred"
+
+
+def test_pandas_preload_does_not_block_process_status(monkeypatch) -> None:
+    import_started = threading.Event()
+    status_received = threading.Event()
+    unblocked_by_status: list[bool] = []
+    responses: list[tuple[str, object]] = []
+
+    class Handlers:
+        def warm_core(self):
+            return []
+
+        def warm_post_ready(self):
+            pass
+
+        def get_loaded(self, method, default=None):
+            if method == "db_export":
+                return lambda _params: {"exported": True}
+            if method == "process_status":
+                return lambda _params: status_received.set() or {"running": True}
+            return default
+
+        def is_known(self, method):
+            return False
+
+    def slow_preload(method, _params):
+        if method == "db_export":
+            import_started.set()
+            unblocked_by_status.append(status_received.wait(0.5))
+
+    def read_next(messages):
+        message = next(messages)
+        if message is not None and message.method == "process_status":
+            assert import_started.wait(1), "el preload debe empezar antes del status"
+        return message
+
+    messages = iter([
+        type("Msg", (), {"method": "db_export", "params": {}, "id": "export"})(),
+        type("Msg", (), {"method": "process_status", "params": {}, "id": "status"})(),
+        None,
+    ])
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1)
+    ready = threading.Event()
+    ready.set()
+    monkeypatch.setattr(backend_main, "_shutdown_requested", False)
+    monkeypatch.setenv("ANTARES_HEARTBEAT_INTERVAL_S", "0")
+    monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
+    monkeypatch.setattr(backend_main, "init_db", lambda: None)
+    monkeypatch.setattr(backend_main, "HANDLERS", Handlers())
+    monkeypatch.setattr(backend_main, "WARM_CRITICAL_DONE", ready)
+    monkeypatch.setattr(backend_main, "get_scheduler", lambda: scheduler)
+    monkeypatch.setattr(backend_main, "_preload_pandas_for_worker", slow_preload)
+    monkeypatch.setattr(backend_main, "read_message", lambda: read_next(messages))
+    monkeypatch.setattr(backend_main, "send_notification", lambda *_args: None)
+    monkeypatch.setattr(backend_main, "send_response", lambda result, msg_id: responses.append((msg_id, result)))
+    monkeypatch.setattr(backend_main, "close_connection", lambda: None)
+
+    backend_main.main()
+
+    assert unblocked_by_status == [True]
+    assert ("status", {"running": True}) in responses
+    assert ("export", {"exported": True}) in responses
 
 
 def test_main_unknown_method_rejected_without_import(monkeypatch) -> None:

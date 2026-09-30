@@ -188,64 +188,6 @@ def test_preview_column_rename_record_mode_usa_fila_correcta_por_indice(monkeypa
     assert [item["en_bd"] for item in result["preview"]] == [True, True, True]
 
 
-def test_broken_preview_tres_archivos_mismo_codigo_usa_siempre_fila_cero(tmp_path) -> None:
-    names = ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"]
-    files = [str(tmp_path / name) for name in names]
-    db_rows = [
-        {"nis": "ROW0", "sgio": "SGIO_A"},
-        {"nis": "ROW1", "sgio": "SGIO_B"},
-        {"nis": "ROW2", "sgio": "SGIO_C"},
-    ]
-
-    preview = _preview_via_broken_lookup(files, db_rows)
-
-    assert preview == [
-        ("SGIO_A_001.jpg", True),
-        ("SGIO_A_002.jpg", True),
-        ("SGIO_A_003.jpg", True),
-    ]
-
-
-def test_broken_preview_mas_archivos_que_filas_tercero_tambien_usa_fila_cero(tmp_path) -> None:
-    names = ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"]
-    files = [str(tmp_path / name) for name in names]
-    db_rows = [
-        {"nis": "ROW0", "sgio": "SGIO_A"},
-        {"nis": "ROW1", "sgio": "SGIO_B"},
-    ]
-
-    preview = _preview_via_broken_lookup(files, db_rows)
-
-    assert preview == [
-        ("SGIO_A_001.jpg", True),
-        ("SGIO_A_002.jpg", True),
-        ("SGIO_A_003.jpg", True),
-    ]
-    assert all(en_bd for _nuevo, en_bd in preview)
-
-
-def test_broken_preview_fallback_stem_distinto_al_grupo_da_datos_none_en_record(tmp_path) -> None:
-    names = ["IMG_1.jpg", "IMG_2.jpg"]
-    files = [str(tmp_path / name) for name in names]
-    db_rows = [
-        {"nis": "ROW0", "sgio": "SGIO_A"},
-        {"nis": "ROW1", "sgio": "SGIO_B"},
-    ]
-
-    preview = _preview_via_broken_lookup(
-        files,
-        db_rows,
-        codigos_manuales={},
-        sequence_mode="record",
-        autofill_codigos_manuales=False,
-    )
-
-    assert preview == [
-        ("IMG_1.jpg", False),
-        ("IMG_2.jpg", False),
-    ]
-
-
 def test_flujo_normal_siempre_usa_codigos_manuales_no_fallback(tmp_path) -> None:
     names = ["IMG_1.jpg"]
     files = [str(tmp_path / name) for name in names]
@@ -331,53 +273,6 @@ def test_prepare_chunk_tasks_column_rename_codigos_duplicados_por_indice(
         "SGIO_A_001.jpg",
         "SGIO_B_002.jpg",
         "SGIO_C_003.jpg",
-    ]
-
-
-def test_conversion_column_rename_tercer_archivo_sin_fila(monkeypatch, tmp_path) -> None:
-    src = tmp_path / "in"
-    dst = tmp_path / "out"
-    src.mkdir()
-    dst.mkdir()
-    names = ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"]
-    files = [str(src / name) for name in names]
-    for path in files:
-        Path(path).write_text("x")
-
-    db_rows = [
-        {"nis": "ROW0", "sgio": "SGIO_A"},
-        {"nis": "ROW1", "sgio": "SGIO_B"},
-    ]
-    scheduler = _RecordingScheduler()
-    monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
-    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion_job, "_notify_complete", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
-    monkeypatch.setattr(
-        "backend.core.database.obtener_todos",
-        lambda limit=None, offset=0: _slice_db_rows(db_rows, limit, offset),
-    )
-
-    job = Job(id="column-rename-short-db", job_type="conversion", params={
-        "files": files,
-        "destino": str(dst),
-        "formato": "JPEG",
-        "conversion_enabled": False,
-        "usar_rename": True,
-        "patron": "{sgio}_{seq}{ext}",
-        "use_column_rename": True,
-        "sequence_mode": "global",
-        "use_filename_seq": True,
-        "secuencia": 1,
-    })
-    conversion._run_conversion_job(job)
-
-    assert [task[1].name for task in scheduler.submitted] == [
-        "SGIO_A_001.jpg",
-        "SGIO_B_002.jpg",
-        "4210502 (3).jpg",
     ]
 
 

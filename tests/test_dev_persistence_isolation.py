@@ -63,10 +63,3 @@ def test_formatos_legacy_catalog_migrates_once(tmp_path: Path, monkeypatch) -> N
     (legacy_dir / "catalog.json").write_text('[{"id": "viejo"}]', encoding="utf-8")
     formatos._migrate_legacy_data_dir()
     assert json.loads((data_dir / "catalog.json").read_text(encoding="utf-8")) == [{"id": "nuevo"}]
-
-
-def test_bundled_data_template_integrity() -> None:
-    fichas_file = Path(resource_path("data/fichas_tecnicas.json"))
-    if fichas_file.exists():
-        content = fichas_file.read_text(encoding="utf-8").strip()
-        assert isinstance(json.loads(content), dict)

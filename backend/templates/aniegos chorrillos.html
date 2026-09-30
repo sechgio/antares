@@ -205,14 +205,72 @@
             overflow: hidden;
         }
 
-        /* === UNIFIED PHOTO GRID === */
+        /* === UNIFIED PHOTO GRID: 6 images -> 3 columns x 2 rows (default) === */
         .photo-grid {
             flex: 1;
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-rows: repeat(2, minmax(0, 1fr));
             gap: 2mm;
             width: 100%;
             height: 100%;
+        }
+
+        /* === LAYOUT: 3 IMAGES (2 top + 1 centered bottom) === */
+        .layout-3 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-rows: repeat(2, minmax(0, 1fr));
+        }
+
+        /* === LAYOUT: 2 IMAGES (stacked and vertically centered) === */
+        .layout-2 {
+            grid-template-columns: minmax(0, 1fr);
+            grid-template-rows: repeat(2, minmax(0, 1fr));
+            align-items: center;
+        }
+
+        .layout-2 .photo-item {
+            width: 100%;
+            height: calc(50% - 1mm);
+        }
+
+        .layout-3 .photo-item:nth-child(3) {
+            grid-column: 1 / -1;
+            justify-self: center;
+            width: calc(50% - 1mm);
+        }
+
+        /* === LAYOUT: 4 IMAGES (2x2 grid) === */
+        .layout-4 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-rows: repeat(2, minmax(0, 1fr));
+        }
+
+        /* === LAYOUT: 6 IMAGES (3x2) — full-bleed (previous version behavior) === */
+        .layout-6 .photo-item img {
+            object-fit: fill;
+        }
+
+        /* === LAYOUT: 5 IMAGES (3 top + 2 centered bottom) === */
+        .layout-5 {
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            grid-template-rows: repeat(2, minmax(0, 1fr));
+        }
+
+        .layout-5 .photo-item:nth-child(-n+3) {
+            grid-column: span 2;
+        }
+
+        .layout-5 .photo-item:nth-child(4) {
+            grid-column: 2 / span 2;
+        }
+
+        .layout-5 .photo-item:nth-child(5) {
+            grid-column: 4 / span 2;
+        }
+
+        .layout-5 .photo-item img {
+            object-fit: fill;
         }
 
         .photo-item {
@@ -224,8 +282,8 @@
             overflow: hidden;
             width: 100%;
             height: 100%;
+            min-height: 0;
             padding: 0;
-            /* Removed padding to match volanteo closer or keep if needed, but volanteo has padding on grid not cell? No, volanteo has no padding on cell, img is 100% */
         }
 
         .photo-item img {
@@ -236,67 +294,9 @@
             display: block;
         }
 
-        /* === LAYOUT: 1 IMAGE (single centered) === */
-        .layout-1 {
-            grid-template-columns: 1fr;
-            grid-template-rows: 1fr;
-            justify-items: center;
-            align-items: center;
-        }
-
-        .layout-1 .photo-item {
-            max-width: 70%;
-        }
-
-        /* === LAYOUT: 2 IMAGES (side by side, centered) === */
-        .layout-2 {
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: 1fr;
-            align-items: stretch;
-        }
-
-        /* === LAYOUT: 3 IMAGES (2 top + 1 centered bottom) === */
-        .layout-3 {
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: repeat(2, 1fr);
-        }
-
-        .layout-3 .photo-item:nth-child(3) {
-            grid-column: 1 / -1;
-            justify-self: center;
-            width: calc(50% - 1mm);
-        }
-
-        /* === LAYOUT: 4 IMAGES (2x2 grid) === */
-        .layout-4 {
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: repeat(2, 1fr);
-            align-items: stretch;
-        }
-
-        /* === LAYOUT: 5 IMAGES (2+2+1 centered) === */
-        .layout-5 {
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: repeat(3, 1fr);
-        }
-
-        .layout-5 .photo-item:nth-child(5) {
-            grid-column: 1 / -1;
-            justify-self: center;
-            width: calc(50% - 1mm);
-        }
-
-        /* === LAYOUT: 6 IMAGES (3 rows x 2 cols) === */
-        .layout-6 {
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: repeat(3, 1fr);
-            align-items: stretch;
-        }
-
-        /* === DEFAULT GRID (fallback) === */
-        .layout-grid {
-            grid-template-columns: 1fr 1fr;
-            grid-auto-rows: 1fr;
+        .photo-placeholder {
+            width: 100%;
+            height: 100%;
         }
 
         .no-photos {

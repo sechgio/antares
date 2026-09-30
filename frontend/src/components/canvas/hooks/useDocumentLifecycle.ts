@@ -164,14 +164,20 @@ export function useDocumentLifecycle({
     ]);
     try {
       const serialized = await serializeDocumentImages(document);
+      // Evita reenviar el historial si el debounce ya guardó esta revisión
+      // del mismo documento.
+      const historyAlreadyPersisted =
+        lastSavedHistorySigRef.current === `${snapshot.documentId}:${snapshot.revision}`;
       const [savedRes, histPersistOk] = await Promise.all([
         api.canvasSave(serialized, { slim: true }),
-        persistHistoryStacks(document.id, past, future)
-          .then(() => true)
-          .catch((err) => {
-            warnHistoryPersistFailed(err);
-            return false;
-          }),
+        historyAlreadyPersisted
+          ? Promise.resolve(true)
+          : persistHistoryStacks(document.id, past, future)
+              .then(() => true)
+              .catch((err) => {
+                warnHistoryPersistFailed(err);
+                return false;
+              }),
       ]);
       // Slim responses return only backend-stamped meta; the persisted content
       // is the serialized document we sent.

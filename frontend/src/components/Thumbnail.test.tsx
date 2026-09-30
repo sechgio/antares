@@ -3,10 +3,12 @@ import { act, render, waitFor } from '@testing-library/react';
 import Thumbnail from './Thumbnail';
 
 const getLocalThumbnail = vi.fn();
+const getCachedLocalThumbnail = vi.fn();
 const stageFileForIpc = vi.fn();
 
 vi.mock('../utils/localThumb', () => ({
   getLocalThumbnail: (...args: unknown[]) => getLocalThumbnail(...args),
+  getCachedLocalThumbnail: (...args: unknown[]) => getCachedLocalThumbnail(...args),
 }));
 
 vi.mock('../utils/stageFile', () => ({
@@ -49,15 +51,19 @@ class MockIntersectionObserver {
 
 describe('Thumbnail', () => {
   const absPath = 'C:\\photos\\sample.jpg';
+  let originalElectronApi: Window['electronAPI'];
 
   beforeEach(() => {
+    originalElectronApi = window.electronAPI;
     getLocalThumbnail.mockReset();
+    getCachedLocalThumbnail.mockReset();
     stageFileForIpc.mockReset();
     MockIntersectionObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
   });
 
   afterEach(() => {
+    window.electronAPI = originalElectronApi;
     vi.unstubAllGlobals();
   });
 
@@ -111,7 +117,39 @@ describe('Thumbnail', () => {
 
     await waitFor(() => expect(container.querySelector('img')).not.toBeNull());
     expect(stageFileForIpc).toHaveBeenCalledWith(file);
-    expect(getLocalThumbnail).toHaveBeenCalledWith('antares-read_staged', 256);
+    expect(getLocalThumbnail).toHaveBeenCalledWith('antares-read_staged', 256, file);
+  });
+
+  it('uses the registered Electron path instead of staging a dropped File', async () => {
+    const file = new File(['image'], 'sample.jpg', { type: 'image/jpeg' });
+    const getPathForFile = vi.fn(() => absPath);
+    window.electronAPI = { ...window.electronAPI!, getPathForFile };
+    getLocalThumbnail.mockResolvedValue('data:image/jpeg;base64,thumb');
+
+    const { container } = render(<Thumbnail path={absPath} file={file} variant="card" />);
+    await act(async () => MockIntersectionObserver.instances[0]?.trigger(true));
+
+    await waitFor(() => expect(container.querySelector('img')).not.toBeNull());
+    expect(getPathForFile).toHaveBeenCalledWith(file);
+    expect(stageFileForIpc).not.toHaveBeenCalled();
+    expect(getLocalThumbnail).toHaveBeenCalledWith(absPath, 256);
+  });
+
+  it('reuses a staged File thumbnail after its cell remounts', async () => {
+    const file = new File(['image'], 'sample.jpg', { type: 'image/jpeg' });
+    getCachedLocalThumbnail.mockReturnValueOnce(undefined).mockReturnValueOnce('data:image/jpeg;base64,thumb');
+    stageFileForIpc.mockResolvedValue('antares-read_staged');
+    getLocalThumbnail.mockResolvedValue('data:image/jpeg;base64,thumb');
+
+    const first = render(<Thumbnail path={absPath} file={file} />);
+    await act(async () => MockIntersectionObserver.instances[0]?.trigger(true));
+    await waitFor(() => expect(first.container.querySelector('img')).not.toBeNull());
+    first.unmount();
+
+    const second = render(<Thumbnail path={absPath} file={file} />);
+    await act(async () => MockIntersectionObserver.instances[1]?.trigger(true));
+    await waitFor(() => expect(second.container.querySelector('img')).not.toBeNull());
+    expect(stageFileForIpc).toHaveBeenCalledTimes(1);
   });
 
   it('does not forward a legacy display path without a token or File', async () => {

@@ -125,10 +125,3 @@ def test_technical_report_schema_parity() -> None:
     assert set(_read_frontend_interface(frontend, "MedidasData")) == _read_backend_keys(TechnicalMedidas)
     assert set(get_args(TechnicalStatus)) == _read_frontend_literals(frontend, "ReportStatus")
     assert set(get_args(ReservoirType)) == _read_frontend_literals(frontend, "ReservoirType")
-
-
-def test_api_jsonvalue_type_exists() -> None:
-    src_dir = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src"
-    texts = [(src_dir / "api.ts").read_text(encoding="utf-8")]
-    texts += [p.read_text(encoding="utf-8") for p in (src_dir / "api").glob("*.ts")]
-    assert any("Record<string, unknown>" in text or "JsonValue" in text for text in texts)

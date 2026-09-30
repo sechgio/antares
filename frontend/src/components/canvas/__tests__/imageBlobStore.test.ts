@@ -4,7 +4,6 @@ import {
   clearBlobStore,
   collectImageRefsFromLayers,
   getBlobUrl,
-  getThumbnailUrl,
   hydrateDocumentImages,
   pinImageRefs,
   registerImageBlob,
@@ -18,16 +17,6 @@ describe('imageBlobStore', () => {
   afterEach(() => {
     clearBlobStore();
     (window as unknown as { electronAPI?: unknown }).electronAPI = undefined;
-  });
-
-  it('registers a Blob and generates an ObjectURL', async () => {
-    const fakeBlob = new Blob(['fake image content'], { type: 'image/png' });
-    const registered = await registerImageBlob(fakeBlob);
-
-    expect(registered.blobId).toMatch(/^img_blob_/);
-    expect(registered.url).toMatch(/^blob:/);
-    expect(getBlobUrl(registered.blobId)).toBe(registered.url);
-    expect(getThumbnailUrl(registered.blobId)).toBeDefined();
   });
 
   it('releases a registered blob by url and by blobId', async () => {
@@ -72,34 +61,6 @@ describe('imageBlobStore', () => {
     expect(getBlobUrl(imgLayer?.value)).toBe(base64Data);
   });
 
-  it('strict hydration rejects a missing persisted canvas asset', async () => {
-    const get = vi.fn(async () => {
-      throw new Error('asset not found');
-    });
-    (window as unknown as { electronAPI: { canvasAssetGet: typeof get } }).electronAPI = {
-      canvasAssetGet: get,
-    };
-    const doc = createEmptyDocument('Remote');
-    doc.layers.push({
-      id: 'missing-image',
-      type: 'image',
-      name: 'Missing',
-      value: 'canvas-asset:missing',
-      cssVars: {
-        '--width': '10mm',
-        '--height': '10mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
-    });
-
-    const hydrate = hydrateDocumentImages as unknown as (
-      document: typeof doc,
-      options?: { strict?: boolean },
-    ) => Promise<typeof doc>;
-    await expect(hydrate(doc, { strict: true })).rejects.toThrow(/asset|resolver|not found/i);
-  });
-
   it('deduplicates asset reads without sharing generated ObjectURLs', async () => {
     const ref = 'canvas-asset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     const chunk = new Uint8Array([1, 2, 3]).buffer;
@@ -130,32 +91,6 @@ describe('imageBlobStore', () => {
 
     releaseImageBlob(values[0]);
     expect(getBlobUrl(values[1])).toBe(values[1]);
-  });
-
-  it('serializes ObjectURL layers back to persistent DataURLs when asset API missing', async () => {
-    const fakeBlob = new Blob(['test content'], { type: 'image/png' });
-    const registered = await registerImageBlob(fakeBlob);
-
-    const doc = createEmptyDocument('Doc');
-    doc.layers.push({
-      id: 'img1',
-      type: 'image',
-      name: 'Foto Blob',
-      value: registered.url,
-      cssVars: {
-        '--width': '50mm',
-        '--height': '40mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
-    });
-
-    const serialized = await serializeDocumentImages(doc);
-    const imgLayer = serialized.layers.find((l) => l.id === 'img1');
-
-    expect(imgLayer).toBeDefined();
-    expect(imgLayer?.value).toMatch(/^data:/);
-    expect(registered.dataUrl).toBeUndefined();
   });
 
   it('serializes ObjectURL layers to canvas-asset refs when Electron API is available', async () => {

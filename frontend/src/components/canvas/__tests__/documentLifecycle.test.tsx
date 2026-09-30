@@ -370,6 +370,44 @@ describe('useDocumentLifecycle', () => {
     );
   });
 
+  it('save: skips the history flight when the debounce already persisted this revision', async () => {
+    vi.useFakeTimers();
+    const { result } = renderLifecycle();
+
+    await act(async () => {
+      result.current.history.setDocument({ ...result.current.history.document, name: 'Edit A' });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.canvasSaveHistory).toHaveBeenCalledTimes(1);
+    vi.mocked(api.canvasSaveHistory).mockClear();
+
+    await act(async () => {
+      await result.current.onSave();
+    });
+    expect(api.canvasSave).toHaveBeenCalled();
+    expect(api.canvasSaveHistory).not.toHaveBeenCalled();
+  });
+
+  it('save: persists history inside the save when the debounce has not flushed it yet', async () => {
+    vi.useFakeTimers();
+    const { result } = renderLifecycle();
+    await act(async () => {
+      result.current.history.setDocument({ ...result.current.history.document, name: 'Edit B' });
+    });
+    await act(async () => {
+      await result.current.onSave();
+    });
+    expect(api.canvasSaveHistory).toHaveBeenCalledWith(
+      'doc-a',
+      result.current.history.past,
+      result.current.history.future,
+    );
+  });
+
   it('retries history persistence after a transient failure for the same revision', async () => {
     vi.useFakeTimers();
     vi.mocked(api.canvasSaveHistory)

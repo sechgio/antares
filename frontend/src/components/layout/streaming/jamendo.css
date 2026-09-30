@@ -1,0 +1,54 @@
+/* Jamendo: pestaña tipográfica subrayada — sin caja, píldora ni icono; solo el
+   nombre con una línea que se vuelve ámbar cuando suena. Panel con buscador
+   relleno, filas de hover redondeado y duración tabular; el acento ámbar queda
+   reservado a lo vivo, el foco y el volumen. */
+.antares-jamendo-bar{display:flex;align-items:center;gap:2px;height:100%;color:var(--text-muted);--jamendo-accent:#f2a50f}
+.antares-jamendo-browse{position:relative;display:flex;align-items:center;height:22px;padding:0 8px;border-radius:3px;min-width:0;color:var(--text-secondary);transition:background-color .15s ease,color .15s ease}
+.antares-jamendo-browse::after{content:'';position:absolute;left:8px;right:8px;bottom:3px;height:1px;background:color-mix(in srgb,var(--text-muted) 40%,transparent);transition:background .15s ease,height .15s ease,opacity .15s ease}
+.antares-jamendo-browse:hover{background:var(--bg-elevated);color:var(--text-primary)}
+.antares-jamendo-browse:focus-visible{outline:1px solid var(--jamendo-accent);outline-offset:1px}
+[data-jamendo-status=live] .antares-jamendo-browse::after{background:var(--jamendo-accent);height:2px}
+[data-jamendo-status=connecting] .antares-jamendo-browse::after{background:var(--jamendo-accent);opacity:.45}
+.antares-jamendo-bar .jamendo-name{max-width:104px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:11px;line-height:16px;font-weight:500}
+.antares-jamendo-action{display:flex;align-items:center;justify-content:center;border-radius:3px;color:inherit;transition:background-color .15s ease,color .15s ease}
+.antares-jamendo-action:hover{background:var(--bg-elevated);color:var(--text-primary)}
+.antares-jamendo-bar .antares-jamendo-action{width:18px;height:18px;padding:0;flex-shrink:0}
+.antares-jamendo-play svg{fill:currentColor}
+.antares-jamendo-action-icon{display:flex;align-items:center;justify-content:center;width:12px;height:12px;flex-shrink:0;overflow:hidden}
+.antares-jamendo-panel{width:292px;max-width:calc(100vw - 24px)}
+.antares-jamendo-search{display:flex;align-items:center;height:34px;padding:6px 8px 2px}
+.antares-jamendo-search-field{flex:1;min-width:0;display:flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:5px;background:var(--bg-elevated);color:var(--text-muted);transition:box-shadow .15s ease}
+.antares-jamendo-search-field:focus-within{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--jamendo-accent) 60%,transparent)}
+.antares-jamendo-search-field input{flex:1;width:0;min-width:0;background:transparent;border:0;outline:0;font-size:12px;color:var(--text-primary)}
+.antares-jamendo-search-field input::placeholder{color:var(--text-muted)}
+.antares-jamendo-search-loader{display:flex;align-items:center;justify-content:center;width:16px;flex-shrink:0;font-size:12px;color:var(--text-muted)}
+.antares-jamendo-list{height:168px;max-height:calc(100dvh - 180px);min-height:80px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 4px}
+.antares-jamendo-list-label{padding:0 12px 3px;font-size:9px;line-height:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-muted)}
+.antares-jamendo-row{display:flex;align-items:center}
+.antares-jamendo-row-main{display:flex;align-items:center;gap:8px;flex:1;min-width:0;text-align:left;height:36px;padding:2px 8px;cursor:pointer;border-radius:5px;color:inherit;transition:background-color .12s ease}
+.antares-jamendo-row:hover .antares-jamendo-row-main,.antares-jamendo-row[data-current=true] .antares-jamendo-row-main{background:var(--bg-elevated)}
+.antares-jamendo-row-main:focus-visible{outline:1px solid var(--jamendo-accent);outline-offset:-1px}
+.antares-jamendo-row-mark{display:flex;align-items:center;justify-content:center;width:12px;height:14px;flex-shrink:0;color:var(--text-muted);opacity:0;transition:opacity .12s ease}
+.antares-jamendo-row:hover .antares-jamendo-row-mark,.antares-jamendo-row:focus-within .antares-jamendo-row-mark,.antares-jamendo-row[data-current=true] .antares-jamendo-row-mark,.antares-jamendo-row[data-pending=true] .antares-jamendo-row-mark{opacity:1}
+.antares-jamendo-row[data-current=true] .antares-jamendo-row-mark{color:var(--jamendo-accent)}
+.antares-jamendo-row[data-current=true] .antares-jamendo-row-name{color:var(--jamendo-accent)}
+.antares-jamendo-row-copy{min-width:0;flex:1}
+.antares-jamendo-row-name{display:block;font-size:12px;line-height:15px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.antares-jamendo-row-artist{display:block;font-size:11px;line-height:14px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.antares-jamendo-row-duration{flex-shrink:0;font-size:10px;line-height:14px;font-variant-numeric:tabular-nums;color:var(--text-muted)}
+.antares-jamendo-foot{padding:2px 8px 6px}
+.antares-jamendo-now{display:flex;align-items:center;gap:6px;min-height:24px;min-width:0;font-size:11px;line-height:16px;color:var(--text-secondary)}
+.antares-jamendo-live{display:none;width:5px;height:5px;flex-shrink:0;border-radius:50%;background:var(--jamendo-accent);opacity:.4}
+.antares-jamendo-now .antares-jamendo-live{display:block}
+[data-jamendo-status=live] .antares-jamendo-now .antares-jamendo-live{opacity:1;animation:antares-jamendo-live 1.6s ease-in-out infinite}
+@keyframes antares-jamendo-live{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.antares-jamendo-live{animation:none!important}}
+.antares-jamendo-panel[data-jamendo-status=live] .antares-jamendo-now{color:var(--text-primary)}
+.antares-jamendo-now-text{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
+.antares-jamendo-open{min-width:0;flex-shrink:0;display:inline-flex;align-items:center;color:inherit;text-decoration:none}
+.antares-jamendo-open:hover{text-decoration:underline;color:var(--text-primary)}
+.antares-jamendo-transport{display:flex;align-items:center;gap:3px;height:28px}
+.antares-jamendo-transport .antares-jamendo-action{width:18px;height:18px;padding:0;flex-shrink:0}
+.antares-jamendo-transport-space{flex:1;min-width:6px}
+.antares-jamendo-transport input{width:72px;min-width:0;height:2px;accent-color:var(--jamendo-accent);cursor:pointer}
+.antares-jamendo-error{font-size:11px;line-height:17px;color:var(--text-secondary);padding:6px 10px 12px}

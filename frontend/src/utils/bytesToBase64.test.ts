@@ -19,6 +19,16 @@ describe('bytesToBase64', () => {
     expect(atob(encoded).length).toBe(size);
     expect(arrayBufferToBase64(bytes.buffer)).toBe(encoded);
   });
+
+  it('encodes large non-aligned views without one growing binary string', () => {
+    const bytes = new Uint8Array(2 * 1024 * 1024 + 5);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251;
+    const view = bytes.subarray(1, bytes.length - 2);
+
+    const decoded = base64ToBytes(bytesToBase64(view));
+    expect(decoded.length).toBe(view.length);
+    expect(decoded.every((value, index) => value === view[index])).toBe(true);
+  });
 });
 
 describe('base64ToBytes', () => {

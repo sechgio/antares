@@ -5,6 +5,17 @@ export function estimateStringBytes(value: string): number {
   return value.length * 2;
 }
 
+export function hashPdfBase64(value: string): string {
+  let first = 2166136261;
+  let second = 2246822519;
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value.charCodeAt(i);
+    first = Math.imul(first ^ char, 16777619);
+    second = Math.imul(second ^ char, 3266489917);
+  }
+  return `${value.length}:${(first >>> 0).toString(16)}:${(second >>> 0).toString(16)}`;
+}
+
 export function createObjectIdentity<T extends object>(): (value: T) => number {
   let nextIdentity = 1;
   const identities = new WeakMap<T, number>();
@@ -113,3 +124,8 @@ export function createLruMap<K, V>(
     },
   };
 }
+
+export const selladorPreviewCache = createLruMap<string, string>({
+  maxBytes: SELLADOR_PREVIEW_CACHE_MAX_BYTES,
+  sizeOf: estimateStringBytes,
+});

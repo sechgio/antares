@@ -34,7 +34,7 @@ _SUPPORTED_FORMATS = frozenset({"xlsx", "xls", "csv"})
 _CSV_SNIFF_BYTES = 64 * 1024
 
 _SPILL_CACHE_MAX_ENTRIES = 2
-_SPILL_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024
+_SPILL_CACHE_MAX_ENTRY_BYTES = 32 * 1024 * 1024
 
 _spill_cache: OrderedDict[tuple[str, int, int], dict[str, Any]] = OrderedDict()
 _spill_cache_lock = threading.Lock()

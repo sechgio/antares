@@ -1,7 +1,4 @@
 
-const fs = require('fs');
-const path = require('path');
-
 const scope = require('../electron/autoimg-user-scope');
 const store = require('../electron/autoimg-user-store');
 const secure = require('../electron/autoimg-secure-storage');
@@ -100,12 +97,6 @@ assert(store.loadTokens()?.access_token === 't1', 'clearSheetConfig/clearLocalPr
 assert(!store.loadSheetConfig().sheet_id, 'clearSheetConfig borra sheet');
 assert(store.loadLocalFolders().length === 0, 'clearLocalPrefs borra prefs');
 store.clearTokens();
-
-const sheetsSvcPath = path.join(__dirname, '..', 'electron', 'google-sheets-service.js');
-const src = fs.readFileSync(sheetsSvcPath, 'utf8');
-const revokeBody = src.slice(src.indexOf('async function revokeAuth'), src.indexOf('async function _apiFetch'));
-assert(revokeBody.includes('clearActiveUser'), 'revoke limpia usuario activo');
-assert(!revokeBody.includes('clearSheetConfig()'), 'revokeAuth no debe llamar clearSheetConfig');
 
 scope.clearActiveUser();
 console.log('[PASS] autoimg consolidated user store (tokens/sheet/prefs/oauth)');

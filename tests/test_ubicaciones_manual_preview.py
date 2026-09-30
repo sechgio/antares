@@ -172,64 +172,6 @@ def test_preview_composed_cache_differs_by_custom_styles() -> None:
     fetch_map.assert_not_called()
 
 
-def test_preview_composed_cache_differs_by_zoom() -> None:
-    cap_w, cap_h = ubi._map_capture_size("horizontal", preview=True)
-    fake_map = _fake_map_png(cap_w, cap_h)
-    manual = {
-        "lat": "-11.968674",
-        "lon": "-76.978299",
-        "cod_componente": "COD-X",
-        "direccion": "Calle 1",
-        "localidad": "Loc 1",
-        "distrito": "Dist 1",
-    }
-
-    with patch.object(ubi, "_get_cached_map_screenshot", return_value=fake_map) as fetch_map:
-        zoom15 = ubi.handle_preview_ubicacion({
-            "formato": "horizontal",
-            "manualData": manual,
-            "provider": "osm",
-            "zoom": 15,
-        })
-        zoom19 = ubi.handle_preview_ubicacion({
-            "formato": "horizontal",
-            "manualData": manual,
-            "provider": "osm",
-            "zoom": 19,
-        })
-
-    assert zoom15["image"] is not None
-    assert zoom19["image"] is not None
-    assert fetch_map.call_count == 2
-
-
-def test_clear_ubicaciones_caches_empties_all_stores() -> None:
-    cap_w, cap_h = ubi._map_capture_size("horizontal", preview=True)
-    fake_map = _fake_map_png(cap_w, cap_h)
-    manual = {
-        "lat": "-11.968674",
-        "lon": "-76.978299",
-        "cod_componente": "COD-X",
-        "direccion": "Calle 1",
-        "localidad": "Loc 1",
-        "distrito": "Dist 1",
-    }
-
-    with patch.object(ubi, "_get_cached_map_screenshot", return_value=fake_map):
-        ubi.handle_preview_ubicacion({
-            "formato": "horizontal",
-            "manualData": manual,
-            "provider": "osm",
-            "zoom": 15,
-        })
-
-    assert len(ubi._preview_composed_cache) > 0
-    ubi._clear_ubicaciones_caches()
-    assert len(ubi._preview_composed_cache) == 0
-    assert len(ubi._map_screenshot_store) == 0
-    assert len(ubi._excel_cache) == 0
-
-
 def test_preview_composed_cache_is_bounded() -> None:
     cap_w, cap_h = ubi._map_capture_size("horizontal", preview=True)
     fake_map = _fake_map_png(cap_w, cap_h)

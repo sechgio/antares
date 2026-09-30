@@ -15,6 +15,7 @@ export interface ExcelSource {
   normalizedColumns: string[];
   rows: ExcelRow[];
   warnings: string[];
+  sourceId?: string;
 }
 
 export interface MatchRule {

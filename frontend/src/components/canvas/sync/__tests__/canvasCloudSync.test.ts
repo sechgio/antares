@@ -17,7 +17,6 @@ vi.mock('../../../../utils/observability', () => ({
 import {
   listRemoteCanvasMeta,
   markRemoteCanvasDeleted,
-  pushCanvasDocument,
   pushCanvasDocumentResult,
 } from '../canvasCloudSync';
 
@@ -128,56 +127,6 @@ describe('pushCanvasDocumentResult', () => {
     expect((await pushCanvasDocumentResult(doc())).accepted).toBe(false);
   });
 
-  it('rpc v2 acepta/rechaza según data booleana', async () => {
-    getSupabaseClient.mockResolvedValue(
-      makeSupabase({ rpc: async () => ({ data: true, error: null }) }),
-    );
-    expect((await pushCanvasDocumentResult(doc())).accepted).toBe(true);
-    getSupabaseClient.mockResolvedValue(
-      makeSupabase({ rpc: async () => ({ data: false, error: null }) }),
-    );
-    expect((await pushCanvasDocumentResult(doc())).accepted).toBe(false);
-  });
-
-  it('error de rpc real lanza su mensaje', async () => {
-    getSupabaseClient.mockResolvedValue(
-      makeSupabase({
-        rpc: async () => ({
-          data: null,
-          error: { message: 'permiso denegado' },
-        }),
-      }),
-    );
-    await expect(pushCanvasDocumentResult(doc())).rejects.toThrow(
-      'permiso denegado',
-    );
-  });
-
-  it('rpc v2 ausente cae al legacy rpc', async () => {
-    const rpc = vi.fn(async (name: string) =>
-      name === 'canvas_push_document_lww_v2'
-        ? { data: null, error: { message: 'nf', code: 'PGRST202' } }
-        : { data: true, error: null },
-    );
-    getSupabaseClient.mockResolvedValue(makeSupabase({ rpc }));
-    expect((await pushCanvasDocumentResult(doc())).accepted).toBe(true);
-    expect(rpc).toHaveBeenCalledWith(
-      'canvas_push_document_lww',
-      expect.anything(),
-    );
-  });
-
-  it('sin ningún rpc LWW lanza error claro', async () => {
-    const rpc = vi.fn(async () => ({
-      data: null,
-      error: { message: 'nf', code: 'PGRST202' },
-    }));
-    getSupabaseClient.mockResolvedValue(makeSupabase({ rpc }));
-    await expect(pushCanvasDocumentResult(doc())).rejects.toThrow(
-      'ningún RPC LWW',
-    );
-  });
-
   it('sin rpc + forceResurrect hace select+upsert', async () => {
     getSupabaseClient.mockResolvedValue(
       makeSupabase({
@@ -223,31 +172,6 @@ describe('pushCanvasDocumentResult', () => {
       pushCanvasDocumentResult(doc(), { forceResurrect: true }),
     ).rejects.toThrow('sel fail');
   });
-
-  it('documento >16MiB lanza antes de tocar la red', async () => {
-    const rpc = vi.fn();
-    getSupabaseClient.mockResolvedValue(makeSupabase({ rpc }));
-    const big = doc({
-      layers: [
-        {
-          id: 'x',
-          type: 'text',
-          name: 'x',
-          value: 'a'.repeat(17 * 1024 * 1024),
-          cssVars: {},
-        },
-      ] as never,
-    });
-    await expect(pushCanvasDocumentResult(big)).rejects.toThrow('16 MiB');
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it('pushCanvasDocument devuelve solo accepted', async () => {
-    getSupabaseClient.mockResolvedValue(
-      makeSupabase({ rpc: async () => ({ data: true, error: null }) }),
-    );
-    expect(await pushCanvasDocument(doc())).toBe(true);
-  });
 });
 
 describe('markRemoteCanvasDeleted', () => {
@@ -255,25 +179,6 @@ describe('markRemoteCanvasDeleted', () => {
     getSupabaseClient.mockResolvedValue(null);
     expect(await markRemoteCanvasDeleted('d')).toBe(false);
     getSupabaseClient.mockResolvedValue(makeSupabase({ userId: null }));
-    expect(await markRemoteCanvasDeleted('d')).toBe(false);
-  });
-
-  it('rpc v2 devuelve su boolean', async () => {
-    getSupabaseClient.mockResolvedValue(
-      makeSupabase({ rpc: async () => ({ data: true, error: null }) }),
-    );
-    expect(await markRemoteCanvasDeleted('d')).toBe(true);
-  });
-
-  it('rpc ausente cae a update+select; vacío = tombstone suprimido', async () => {
-    getSupabaseClient.mockResolvedValue(
-      makeSupabase({
-        rpc: async () => {
-          throw { code: 'PGRST202', message: 'missing' };
-        },
-        update: { data: [], error: null },
-      }),
-    );
     expect(await markRemoteCanvasDeleted('d')).toBe(false);
   });
 

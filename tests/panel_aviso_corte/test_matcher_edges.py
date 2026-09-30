@@ -128,6 +128,49 @@ def test_build_panels_include_empty_intercala_vacios_en_su_fila() -> None:
     assert [p.cuadrante for p in result.panels] == ["C-A", "C-B", "C-C"]
 
 
+def test_build_panels_normaliza_cada_fila_e_imagen_una_sola_vez(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.panel_aviso_corte import matcher
+
+    calls = 0
+    original = matcher._normalize
+
+    def counting(s: str) -> str:
+        nonlocal calls
+        calls += 1
+        return original(s)
+
+    monkeypatch.setattr(matcher, "_normalize", counting)
+    rows = [{"Clave": f"K{i}"} for i in range(50)]
+    images = [f"FOTO_{i}.jpg" for i in range(40)]
+    result = build_panels(_source(["Clave"], rows), _rule(strategy="prefix"), images, None, "skip_empty")
+    assert result.summary.unmatched_images == 40
+    assert calls == len(rows) + len(images)
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        _rule(strategy="prefix"),
+        _rule(strategy="contains"),
+        _rule(strategy="exact"),
+        _rule(strategy="regex", regex_pattern=r"foto-(?P<clave>\d+)?"),
+        _rule(strategy="regex", regex_pattern=r".*?(?P<clave>[a-z]+)$"),
+    ],
+)
+def test_candidate_index_equivale_a_match_image_to_row(rule: MatchRule) -> None:
+    from backend.core.panel_aviso_corte.matcher import _candidate_index
+
+    images = [
+        "A1.jpg", "a1_2.JPG", "Á1-3.png", "A10.jpg", "foto-1.jpg", "foto-12", "foto-.jpg",
+        "b.jpg", "B.png", "A1.jpg", "ñu.tar.gz", "xa1", "",
+    ]
+    compiled = compile_match_rule(rule)
+    candidates = _candidate_index(rule, images, compiled)
+    for value in ["A1", "a", "1", "12", "Ñu", "b", "", "  ", "zzz", "foto", "a1_2"]:
+        expected = [i for i, name in enumerate(images) if match_image_to_row(rule, value, name, compiled)]
+        assert list(candidates(_normalize(value))) == expected, value
+
+
 def test_build_panels_address_column_fallback_cuando_no_existe() -> None:
     src = _source(["Clave"], [{"Clave": "A1"}])
     result = build_panels(src, _rule(strategy="prefix"), ["A1_foto.jpg"], "direccion faltante", "include_empty")

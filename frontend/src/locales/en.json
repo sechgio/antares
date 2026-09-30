@@ -120,6 +120,7 @@
   "auth.working": "Working…",
   "tab.panel": "Panel",
   "tab.petdex": "Petdex",
+  "tab.plugins": "Plugins",
   "panel.title": "User Panel",
   "panel.subtitle": "Manage users, roles and permissions",
   "panel.createUser": "Create user",

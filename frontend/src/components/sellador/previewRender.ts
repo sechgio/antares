@@ -1,10 +1,9 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { api } from '../../api';
 import {
-  createLruMap,
   createObjectIdentity,
-  estimateStringBytes,
-  SELLADOR_PREVIEW_CACHE_MAX_BYTES,
+  hashPdfBase64,
+  selladorPreviewCache,
 } from './lruMap';
 import { loadPdfDocument } from './pdfjs';
 import { acquireStagedFile, type StagedFileHandle } from '../../utils/stageFile';
@@ -18,10 +17,6 @@ import type { PdfPageSize, StampRect } from './utils';
 
 const WIDTH_BUCKET = 80;
 const OTHER_PAGES_CACHE_VERSION = 'disp-v1';
-const otherPagesRenderCache = createLruMap<string, string>({
-  maxBytes: SELLADOR_PREVIEW_CACHE_MAX_BYTES,
-  sizeOf: estimateStringBytes,
-});
 const fileCacheIdentity = createObjectIdentity<File>();
 
 function bucketContainerWidth(width: number): number {
@@ -38,13 +33,14 @@ export function otherPagesCacheKey(
   containerW: number,
   stampUrl: string | null,
   stampRects: StampRect[],
+  base64Fingerprint?: string,
 ): string {
   const source = pdfPath
     ?? (pdfFile
       ? `file:${fileCacheIdentity(pdfFile)}:${pdfFile.name}:${pdfFile.size}:${pdfFile.lastModified}`
-      : `b64:${pdfBase64?.length ?? 0}`);
-  const stamp = stampRects.map((r) => `${r.x},${r.y},${r.width},${r.height}`).join('|') || 'none';
-  return `${OTHER_PAGES_CACHE_VERSION}:${sourceRevision}:${source}:${pageNum}:${containerW}:${stampUrl ?? 'none'}:${stamp}`;
+      : `b64:${base64Fingerprint ?? hashPdfBase64(pdfBase64 ?? '')}`);
+  const stamp = stampRects.map((r) => [r.x, r.y, r.width, r.height].map((value) => value.toFixed(2)).join(',')).join('|') || 'none';
+  return `other:${OTHER_PAGES_CACHE_VERSION}:${sourceRevision}:${source}:${pageNum}:${bucketContainerWidth(containerW)}:${stampUrl ?? 'none'}:${stamp}`;
 }
 
 async function loadStampImage(stampUrl: string): Promise<HTMLImageElement> {
@@ -183,6 +179,7 @@ export async function renderOtherPagesPreview(
   } = options;
 
   const bucketedWidth = bucketContainerWidth(containerW);
+  const base64Fingerprint = !pdfPath && !pdfFile && pdfBase64 ? hashPdfBase64(pdfBase64) : undefined;
   const previews: Array<{ pageNum: number; url: string; stampCount: number }> = [];
   const pagesToRender = [...new Set(
     pageNumbers ?? Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => index + 2),
@@ -227,8 +224,9 @@ export async function renderOtherPagesPreview(
         bucketedWidth,
         stampUrl,
         stampRects,
+        base64Fingerprint,
       );
-      let url = otherPagesRenderCache.get(cacheKey);
+      let url = selladorPreviewCache.get(cacheKey);
       if (!url) {
         if (pdfPath) {
           url = await renderPageWithStampFromPath(
@@ -259,7 +257,7 @@ export async function renderOtherPagesPreview(
         } else {
           break;
         }
-        otherPagesRenderCache.set(cacheKey, url);
+        selladorPreviewCache.set(cacheKey, url);
       }
       previews.push({ pageNum, url, stampCount: stampsOnPage });
       reportProgress();

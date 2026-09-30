@@ -148,6 +148,13 @@ export default function PanelAvisoCorteApp() {
             </Button>
           </div>
 
+          {session.isMatching && (
+            <div role="status" className="flex items-center gap-2 px-1 text-[11px] text-[var(--text-muted)]">
+              <Loader2 size={13} className="animate-spin" />
+              Emparejando imágenes…
+            </div>
+          )}
+
           {session.matchResult && (
             <SummaryPanel
               result={session.matchResult}

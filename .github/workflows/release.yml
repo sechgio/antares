@@ -134,8 +134,9 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_JAMENDO_CLIENT_ID: ${{ secrets.VITE_JAMENDO_CLIENT_ID }}
         run: |
-          $required = @('VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY')
+          $required = @('VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_JAMENDO_CLIENT_ID')
           foreach ($name in $required) {
             $value = [Environment]::GetEnvironmentVariable($name)
             if ([string]::IsNullOrWhiteSpace($value)) {
@@ -147,6 +148,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_JAMENDO_CLIENT_ID: ${{ secrets.VITE_JAMENDO_CLIENT_ID }}
         run: npx concurrently "npm run build:backend" "npm run build:frontend"
 
       - name: Build Electron App

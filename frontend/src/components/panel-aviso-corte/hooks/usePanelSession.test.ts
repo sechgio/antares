@@ -196,6 +196,108 @@ describe("usePanelSession", () => {
     expect(result.current.errors).toEqual([]);
   });
 
+  it("computeMatch coalesce llamadas en vuelo en una sola repetición y descarta el resultado viejo", async () => {
+    let resolveFirst: (v: typeof matchResponse) => void = () => {};
+    const stale = { ...matchResponse, panels: [{ ...matchResponse.panels[0], cuadrante: "VIEJO" }] };
+    computeMatchApi
+      .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }))
+      .mockResolvedValue(matchResponse);
+    const { result } = renderHook(() => usePanelSession());
+    await act(async () => {
+      await result.current.addImages([img("42.png")]);
+    });
+    act(() => {
+      result.current.setExcelSource(excelSource([{ ID: "42" }]));
+    });
+    let first: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.computeMatch();
+    });
+    expect(result.current.isMatching).toBe(true);
+    await act(async () => {
+      await result.current.computeMatch();
+      await result.current.computeMatch();
+    });
+    expect(computeMatchApi).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveFirst(stale);
+      await first;
+    });
+    await waitFor(() => expect(result.current.isMatching).toBe(false));
+    expect(computeMatchApi).toHaveBeenCalledTimes(2);
+    expect(result.current.matchResult?.panels[0].cuadrante).toBe("C1");
+  });
+
+  it("computeMatch apaga isMatching si la repetición sale por una guardia temprana", async () => {
+    let resolveFirst: (v: typeof matchResponse) => void = () => {};
+    computeMatchApi
+      .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }))
+      .mockResolvedValue(matchResponse);
+    const { result } = renderHook(() => usePanelSession());
+    await act(async () => {
+      await result.current.addImages([img("42.png")]);
+    });
+    act(() => {
+      result.current.setExcelSource(excelSource([{ ID: "42" }]));
+    });
+    let first: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.computeMatch();
+    });
+    expect(result.current.isMatching).toBe(true);
+    act(() => {
+      result.current.clearImages();
+    });
+    await act(async () => {
+      await result.current.computeMatch();
+    });
+    await act(async () => {
+      resolveFirst(matchResponse);
+      await first;
+    });
+    await waitFor(() => expect(result.current.isMatching).toBe(false));
+    expect(computeMatchApi).toHaveBeenCalledTimes(1);
+    expect(result.current.matchResult).toBeNull();
+  });
+
+  it("computeMatch envía source_id en vez de las filas cuando el Excel tiene sourceId", async () => {
+    const { result } = renderHook(() => usePanelSession());
+    await act(async () => {
+      await result.current.addImages([img("42.png")]);
+    });
+    act(() => {
+      result.current.setExcelSource({ ...excelSource([{ ID: "42" }]), sourceId: "src-1" });
+    });
+    await act(async () => {
+      await result.current.computeMatch();
+    });
+    const body = computeMatchApi.mock.calls[0][0];
+    expect(body.source_id).toBe("src-1");
+    expect(body).not.toHaveProperty("rows");
+    expect(result.current.matchResult?.panels[0].cuadrante).toBe("C1");
+  });
+
+  it("computeMatch reenvía las filas si el backend ya no tiene el Excel en caché", async () => {
+    computeMatchApi.mockResolvedValueOnce({ sourceMissing: true });
+    const { result } = renderHook(() => usePanelSession());
+    await act(async () => {
+      await result.current.addImages([img("42.png")]);
+    });
+    act(() => {
+      result.current.setExcelSource({ ...excelSource([{ ID: "42" }]), sourceId: "src-1" });
+    });
+    await act(async () => {
+      await result.current.computeMatch();
+    });
+    expect(computeMatchApi).toHaveBeenCalledTimes(2);
+    expect(computeMatchApi.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ rows: [{ ID: "42" }] }),
+    );
+    expect(computeMatchApi.mock.calls[1][0]).not.toHaveProperty("source_id");
+    expect(result.current.matchResult?.panels[0].cuadrante).toBe("C1");
+    expect(result.current.errors).toEqual([]);
+  });
+
   it("previewPanels agrupa imágenes de a 4 cuando no hay match ni excel", async () => {
     const { result } = renderHook(() => usePanelSession());
     await act(async () => {

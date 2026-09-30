@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getLocalThumbnail, getLocalImageDataUrl, _resetLocalThumbForTests } from './localThumb';
+import { getLocalThumbnail, getCachedLocalThumbnail, getLocalImageDataUrl, _resetLocalThumbForTests } from './localThumb';
 
 const localThumbnail = vi.fn();
 const localImageDataUrl = vi.fn();
@@ -37,6 +37,28 @@ describe('getLocalThumbnail', () => {
 
     expect(await getLocalThumbnail('C:\\photos\\replaceable.jpg', 256)).toContain('first');
     expect(await getLocalThumbnail('C:\\photos\\replaceable.jpg', 256)).toContain('second');
+    expect(localThumbnail).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses a staged File thumbnail across different read tokens', async () => {
+    const file = new File(['image'], 'sample.jpg', { type: 'image/jpeg' });
+    localThumbnail.mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,staged' });
+
+    expect(await getLocalThumbnail('antares-read_first', 256, file)).toContain('staged');
+    expect(getCachedLocalThumbnail(file, 256)).toContain('staged');
+    expect(await getLocalThumbnail('antares-read_second', 256, file)).toContain('staged');
+    expect(localThumbnail).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not conflate distinct File objects with identical metadata', async () => {
+    const first = new File(['a'], 'same.jpg', { lastModified: 123 });
+    const second = new File(['b'], 'same.jpg', { lastModified: 123 });
+    localThumbnail
+      .mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,first' })
+      .mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,second' });
+
+    expect(await getLocalThumbnail('antares-read_first', 256, first)).toContain('first');
+    expect(await getLocalThumbnail('antares-read_second', 256, second)).toContain('second');
     expect(localThumbnail).toHaveBeenCalledTimes(2);
   });
 

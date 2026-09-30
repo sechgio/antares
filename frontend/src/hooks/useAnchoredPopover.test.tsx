@@ -129,7 +129,7 @@ describe('useAnchoredPopover', () => {
     expect(screen.getByTestId('popup-trigger')).toHaveStyle({ left: '450px', width: '150px' });
   });
 
-  it('repositions on window resize and scroll', () => {
+  it.each(['resize', 'scroll'])('repositions on window %s', (eventName) => {
     render(<Harness />);
     fireEvent.click(screen.getByText('trigger'));
     const popup = screen.getByTestId('popup-trigger');
@@ -140,7 +140,7 @@ describe('useAnchoredPopover', () => {
       toJSON: () => ({}),
     } as DOMRect);
 
-    fireEvent(window, new Event('resize'));
+    fireEvent(window, new Event(eventName));
     // top = 50 + 6 = 56, left = 30
     expect(popup).toHaveStyle({ top: '56px', left: '30px' });
   });

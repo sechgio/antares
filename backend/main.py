@@ -96,6 +96,7 @@ _PANDAS_METHODS = frozenset({
     "db_parse_mapping",
     "db_template",
     "generar_ubicaciones",
+    "panel_aviso_corte_parse_excel",
     "panel_aviso_corte_template",
     "preview_ubicacion",
     "spreadsheet_export_volantes_template",
@@ -222,6 +223,7 @@ def _dispatch(handler, params, msg_id, method_name) -> None:
 def _dispatch_with_context(handler, params, msg_id, method_name) -> None:
     if method_name in _WARM_WAIT_METHODS:
         WARM_CRITICAL_DONE.wait(timeout=_WARM_WAIT_TIMEOUT)
+    _preload_pandas_for_worker(method_name, params)
     ipc_phase_telemetry.mark(msg_id, "dispatch_start")
     ipc_phase_telemetry.set_fields(msg_id, method=method_name)
     t0 = time.perf_counter()
@@ -436,7 +438,6 @@ def main() -> None:
                     _consecutive_errors = max(0, _consecutive_errors - 1)
                     continue
 
-                _preload_pandas_for_worker(msg.method, msg.params)
                 handler = HANDLERS.get_loaded(msg.method)
                 if handler is None and HANDLERS.is_known(msg.method):
                     def _deferred_resolver(params, _method=msg.method):

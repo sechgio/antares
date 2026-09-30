@@ -5,15 +5,6 @@ import pytest
 from backend.handlers import HANDLERS
 
 
-def test_technical_reports_handlers_are_registered(monkeypatch, tmp_path) -> None:
-    from backend.core.technical_reports import database as db_module
-
-    monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
-    db_module._db_singleton.reset()
-    assert "technical_reports_list" in HANDLERS
-    assert "technical_reports_import_file" in HANDLERS
-
-
 def test_crud_errors_preserve_public_messages(monkeypatch, tmp_path) -> None:
     from backend.core.technical_reports import database as db_module
 

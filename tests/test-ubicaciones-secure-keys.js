@@ -97,6 +97,12 @@ function main() {
         console.error(`[FAIL] resolve cache unbounded: ${size} entries (max 32)`);
         failed = true;
       }
+      ubicacionesKeys.setUbicacionesApiKeys({ google: 'rotated-key' });
+      const rotated = ubicacionesKeys.resolveProviderApiKey('google');
+      if (rotated !== 'rotated-key') {
+        console.error(`[FAIL] setUbicacionesApiKeys did not refresh resolve cache: ${rotated}`);
+        failed = true;
+      }
     } finally {
       try {
         fs.unlinkSync(filePath);

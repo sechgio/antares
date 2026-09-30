@@ -11,15 +11,6 @@ from backend.core.config_theme import (
 )
 
 
-def test_default_theme_uses_neutral_professional_identity() -> None:
-    assert DEFAULT_THEME["name"] == "Slate Professional"
-    assert DEFAULT_THEME["accent"] == "#3B82F6"
-    assert DEFAULT_THEME["accent_light"] == "#93C5FD"
-    assert DEFAULT_THEME["blue_hover"] == "#14B8A6"
-    assert "Slate Professional" in config_theme.PRESETS
-    assert load_preset("Slate Professional")["name"] == "Slate Professional"
-
-
 def test_save_and_load_theme_roundtrip(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(config_theme, "_CONFIG_PATH", tmp_path / "theme_config.json")
     theme = dict(DEFAULT_THEME)
@@ -84,7 +75,7 @@ def test_all_presets_define_required_theme_keys() -> None:
 
 def test_preset_list_includes_varied_appearance_styles() -> None:
     names = set(config_theme.PRESETS)
-    assert {"Porcelain Light", "Graphite Focus", "Olive Operations", "Copper Night", "Midnight Ocean", "Forest Zen", "Royal Purple", "Arctic Frost"}.issubset(names)
+    assert {"Porcelain Light", "Graphite Focus", "Olive Operations", "Copper Night", "Forest Zen", "Royal Purple", "Arctic Frost"}.issubset(names)
 
 
 def test_default_theme_strictly_matches_shared_default_theme_json() -> None:
@@ -93,7 +84,7 @@ def test_default_theme_strictly_matches_shared_default_theme_json() -> None:
     shared_theme = json.loads(shared_path.read_text(encoding="utf-8"))
 
     assert shared_theme == DEFAULT_THEME
-    assert shared_theme == load_preset("Slate Professional")
+    assert shared_theme == load_preset("Vanta Black")
 
 
 def test_frontend_theme_contract_parity() -> None:
@@ -116,5 +107,5 @@ def test_frontend_theme_contract_parity() -> None:
     assert appearance_view.is_file(), f"Missing AppearanceView: {appearance_view}"
     view_text = appearance_view.read_text(encoding="utf-8")
     assert "DEFAULT_THEME" in view_text
-    assert "bg: '#0F172A'" not in view_text, "AppearanceView.tsx must not hardcode Slate Professional colors"
+    assert "bg: '#0F172A'" not in view_text, "AppearanceView.tsx must not hardcode theme colors"
 

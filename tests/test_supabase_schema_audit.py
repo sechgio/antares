@@ -471,11 +471,23 @@ def test_canvas_document_versions_not_writable_by_clients() -> None:
 
 
 def test_realtime_policies_stay_scoped_to_canvas_topics() -> None:
-    rt = [(name, pol.expr) for (table, name), pol in STATE.policies.items() if table == "realtime.messages"]
+    rt = [
+        (name, pol)
+        for (table, name), pol in STATE.policies.items()
+        if table == "realtime.messages"
+    ]
     assert rt, "faltan políticas de autorización en realtime.messages"
-    for name, text in rt:
-        assert "canvas-document:%" in text, f"{name} no limita el topic canvas-document:*"
-        assert "'broadcast'" in text and "'presence'" in text, f"{name} no limita extension"
+    for name, pol in rt:
+        assert "canvas-document:%" in pol.expr, f"{name} no limita el topic canvas-document:*"
+        assert "'broadcast'" in pol.expr and "'presence'" in pol.expr, (
+            f"{name} no limita extension"
+        )
+        assert "private.is_active_user()" in pol.expr, (
+            f"{name} no exige usuario activo vía helper privado"
+        )
+    bases = {name: pol.base for name, pol in rt}
+    assert "for select" in bases["canvas_realtime_receive"]
+    assert "for insert" in bases["canvas_realtime_send"]
 
 
 def test_realtime_publication_membership_is_exact() -> None:
@@ -532,3 +544,59 @@ def test_deleted_profile_realtime_event_can_be_filtered_by_user_id() -> None:
         migrations,
         re.IGNORECASE,
     ), "DELETE de user_profiles necesita REPLICA IDENTITY FULL para soportar el filtro realtime por usuario"
+
+
+def test_espacios_task_activity_migration_invariants() -> None:
+    """Invariantes de detalle de las migraciones T03/T04 de Espacios.
+
+    Relevo de tests/test-espacios-t03-t04-migration.js: los asserts de RLS,
+    grants efectivos y publication ya los cubre este audit sobre el estado
+    final; aquí quedan solo los detalles internos que ese modelo no captura.
+    """
+    migrations = {p.name: p.read_text(encoding="utf-8") for p in MIGRATIONS_DIR.glob("*.sql")}
+    priority = migrations["20260915191815_espacios_tarea_priority.sql"].lower()
+    feature = migrations["20260915191816_espacios_task_activity_and_my_tasks.sql"].lower()
+
+    assert re.search(
+        r"alter table public\.tareas add column (if not exists )?priority text", priority
+    ), "falta la columna priority pendiente de T01"
+    assert re.search(r"check \(length\(btrim\(body\)\) > 0\)", feature), (
+        "tarea_comments debe rechazar comentarios vacíos"
+    )
+    assert re.search(r"create index idx_tarea_comments_tarea_created", feature), (
+        "falta índice de comentarios por tarea y fecha"
+    )
+    assert re.search(r"create index idx_tarea_activity_tarea_created", feature), (
+        "falta índice de actividad por tarea y fecha"
+    )
+    assert re.search(
+        r"grant select, insert, update, delete on table public\.tarea_comments to authenticated",
+        feature,
+    ), "grants de comentarios deben limitarse a authenticated"
+    assert re.search(r"grant select on table public\.tarea_activity to authenticated", feature), (
+        "tarea_activity debe ser solo lectura para clientes"
+    )
+    assert re.search(r"revoke all on table public\.tarea_activity from anon, authenticated", feature), (
+        "la manipulación de actividad debe quedar revocada"
+    )
+    assert re.search(r"security definer", feature), (
+        "el trigger de actividad debe usar privilegios acotados"
+    )
+    assert re.search(r"is distinct from", feature), (
+        "el trigger debe comparar cambios campo a campo"
+    )
+    assert re.search(
+        r"create view public\.mis_tareas[\s\S]*security_invoker\s*=\s*true", feature
+    ), "mis_tareas debe respetar RLS del llamador"
+    assert re.search(
+        r"create view public\.mis_tareas_origenes[\s\S]*security_invoker\s*=\s*true", feature
+    ), "mis_tareas_origenes debe respetar RLS del llamador"
+    assert re.search(r"t\.assignee_id\s*=\s*\(select auth\.uid\(\)\)", feature), (
+        "la vista solo debe devolver tareas propias"
+    )
+    assert re.search(r"author_id uuid references auth\.users\(id\) on delete set null", feature), (
+        "los comentarios deben conservarse al borrar un usuario"
+    )
+    assert re.search(r"author_name text not null", feature), (
+        "los comentarios deben guardar una etiqueta legible del autor"
+    )

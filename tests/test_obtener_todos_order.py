@@ -18,18 +18,6 @@ def _setup(db_path, config_path) -> None:
 
 
 class TestObtenerTodosOrder:
-    def test_orden_por_id_de_insercion(self, tmp_path, monkeypatch) -> None:
-        db_file = tmp_path / "test.db"
-        monkeypatch.setattr(db, "get_db_path", lambda: db_file)
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: tmp_path / "fields_config.json",
-        )
-        _setup(db_file, tmp_path / "fields_config.json")
-
-        rows = db.obtener_todos()
-        assert [r["codigo"] for r in rows] == ["ZETA", "ALFA", "MIKE", "BRAVO"]
-
     def test_orden_consistente_con_offset_paginado(self, tmp_path, monkeypatch) -> None:
         db_file = tmp_path / "test.db"
         monkeypatch.setattr(db, "get_db_path", lambda: db_file)

@@ -13,6 +13,7 @@ import { historyApi } from './api/historyApi';
 import { panelAvisoCorteApi } from './api/panelAvisoCorteApi';
 import { reportsApi } from './api/reportsApi';
 import { selladorApi } from './api/selladorApi';
+import { createSpotifyApi } from './api/spotifyApi';
 import { spreadsheetApi } from './api/spreadsheetApi';
 import { systemApi } from './api/systemApi';
 import { toolsApi } from './api/toolsApi';
@@ -57,6 +58,15 @@ export type {
   HtmlToPdfResponse,
   ImageOptimizerSaveFilesResponse,
 } from './api/toolsApi';
+export type {
+  SpotifyAlbumsParams,
+  SpotifyAuthStatus,
+  SpotifyLibraryParams,
+  SpotifyOAuthConfigStatus,
+  SpotifyPlaybackParams,
+  SpotifyPlaylistsParams,
+  SpotifySearchParams,
+} from './api/spotifyApi';
 
 export function _resetCanvasHistoryTransportForTests(): void {
   resetCanvasHistoryTransportForTests();
@@ -77,4 +87,5 @@ export const api = {
   ...panelAvisoCorteApi,
   ...evidenciaVolanteoApi,
   ...createAutoimgApi(_invoke),
+  ...createSpotifyApi(_invoke),
 };

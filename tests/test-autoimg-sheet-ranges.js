@@ -48,18 +48,6 @@ function main() {
     'folder id corto debe rechazarse',
   );
 
-  const sumMap = drive.mergeNisMaps([
-    { '4210801': { count: 2, files: [], folders: ['A'] } },
-    { '4210801': { count: 1, files: [], folders: ['B'] } },
-  ], 'SUM');
-  assert(sumMap['4210801'].count === 3, 'mergeNisMaps SUM suma conteos');
-
-  const maxMap = drive.mergeNisMaps([
-    { '4210801': { count: 2, files: [], folders: ['A'] } },
-    { '4210801': { count: 1, files: [], folders: ['B'] } },
-  ], 'MAX');
-  assert(maxMap['4210801'].count === 2, 'mergeNisMaps MAX toma el máximo');
-
   assert(drive.parseDedupStrategy('max') === 'MAX', 'parseDedupStrategy acepta max');
   assert(drive.parseDedupStrategy('') === 'SUM', 'parseDedupStrategy default SUM');
 

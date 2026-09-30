@@ -30,6 +30,9 @@ def test_large_spreadsheet_uses_indexed_spill(tmp_path: Path, monkeypatch) -> No
 
     parsed = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
 
+    assert parsed["sheets"] == []
+    assert parsed["sheet_meta"][0]["rowCount"] == 41
+    assert parsed["workbookName"]
     spill_path = Path(parsed["result_path"])
     assert spill_path.read_bytes()[:16] == b"SQLite format 3\x00"
 

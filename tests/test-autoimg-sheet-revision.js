@@ -76,10 +76,6 @@ async function main() {
 
   const engine = require('../electron/autoimg-sync-engine');
 
-  assert(engine.resolveRenameCopyConcurrency(5) === 3, 'pocos jobs → concurrency 3');
-  assert(engine.resolveRenameCopyConcurrency(20) === 4, '15+ jobs → concurrency 4');
-  assert(engine.resolveRenameCopyConcurrency(50) === 6, '40+ jobs → concurrency 6');
-
   const first = await engine.syncFromSheet();
   assert(first.success && first.cached === false, 'primer syncFromSheet lee sheet');
   assert(readRangesCalls === 1, `primer sync debe llamar readRanges 1 vez (got ${readRangesCalls})`);

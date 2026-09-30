@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from backend.core import database as db
@@ -54,6 +56,17 @@ class TestParseIdRenameMapping:
         excel = tmp_path / "map.xlsx"
         _write_mapping_excel(excel, [("A.jpg", "uno"), ("A.jpg", "dos")])
         with pytest.raises(ValueError, match="duplicado"):
+            db.parse_id_rename_mapping(str(excel))
+
+    def test_duplicate_id_keeps_excel_row_without_iterrows(self, tmp_path) -> None:
+        import pandas as pd
+
+        excel = tmp_path / "map.xlsx"
+        _write_mapping_excel(excel, [("A.jpg", "uno"), ("A.jpg", "dos")])
+        with (
+            patch.object(pd.DataFrame, "iterrows", side_effect=AssertionError("iterrows called")),
+            pytest.raises(ValueError, match=r"ID duplicado 'A\.jpg' en la fila 3"),
+        ):
             db.parse_id_rename_mapping(str(excel))
 
     def test_trims_whitespace(self, tmp_path) -> None:

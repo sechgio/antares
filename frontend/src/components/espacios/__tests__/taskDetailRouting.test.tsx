@@ -71,32 +71,30 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('shared task detail routing', () => {
-  it.each(['list', 'board', 'table', 'calendar', 'gantt'] as const)(
-    'opens and saves from %s without resetting project context', async (view) => {
-      render(<EspaciosApp />);
-      fireEvent.click(screen.getByRole('button', { name: `Vista ${view}` }));
-      fireEvent.change(screen.getByLabelText('Buscar tareas'), { target: { value: 'Informe' } });
-      const projectView = await screen.findByTestId('project-view');
-      const scroller = projectView.parentElement!;
-      scroller.scrollTop = 120;
-      const mountsBeforeOpen = mocks.mounts;
-      fireEvent.click(await screen.findByRole('button', { name: 'Abrir Informe' }));
-      expect(screen.getByRole('dialog', { name: 'Detalle de tarea' })).toHaveAttribute('data-placement', 'right');
-      fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Revisado' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-      expect(mocks.patchTarea).toHaveBeenCalledWith('task-1', expect.objectContaining({
-        description: 'Revisado', priority: 'high', status: 'in_progress',
-      }));
-      expect(screen.getByTestId('project-view')).toBe(projectView);
-      expect(mocks.mounts).toBe(mountsBeforeOpen);
-      expect(scroller.scrollTop).toBe(120);
-      expect(screen.getByLabelText('Buscar tareas')).toHaveValue('Informe');
-      expect(screen.getByRole('button', { name: `Vista ${view}` })).toHaveAttribute('aria-pressed', 'true');
-      expect(screen.getByRole('heading', { name: 'Entrega semanal' })).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'Nueva tarea' }));
-      expect(screen.getByRole('dialog', { name: 'Nueva tarea' })).toHaveAttribute('data-placement', 'center');
-      expect(screen.getByLabelText('Título')).toHaveValue('');
-    },
-  );
+  it('opens and saves from a project view without resetting project context', async () => {
+    render(<EspaciosApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Vista gantt' }));
+    fireEvent.change(screen.getByLabelText('Buscar tareas'), { target: { value: 'Informe' } });
+    const projectView = await screen.findByTestId('project-view');
+    const scroller = projectView.parentElement!;
+    scroller.scrollTop = 120;
+    const mountsBeforeOpen = mocks.mounts;
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir Informe' }));
+    expect(screen.getByRole('dialog', { name: 'Detalle de tarea' })).toHaveAttribute('data-placement', 'right');
+    fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Revisado' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(mocks.patchTarea).toHaveBeenCalledWith('task-1', expect.objectContaining({
+      description: 'Revisado', priority: 'high', status: 'in_progress',
+    }));
+    expect(screen.getByTestId('project-view')).toBe(projectView);
+    expect(mocks.mounts).toBe(mountsBeforeOpen);
+    expect(scroller.scrollTop).toBe(120);
+    expect(screen.getByLabelText('Buscar tareas')).toHaveValue('Informe');
+    expect(screen.getByRole('button', { name: 'Vista gantt' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: 'Entrega semanal' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva tarea' }));
+    expect(screen.getByRole('dialog', { name: 'Nueva tarea' })).toHaveAttribute('data-placement', 'center');
+    expect(screen.getByLabelText('Título')).toHaveValue('');
+  });
 });

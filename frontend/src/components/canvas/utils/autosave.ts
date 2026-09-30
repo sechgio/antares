@@ -33,12 +33,23 @@ export function estimateCanvasDocumentBytes(doc: CanvasDocument): number {
   return estimateJsonBytes(doc, new Set<object>());
 }
 
+// Las revisiones son inmutables: reutiliza el delay para el mismo documento.
+const delayByDoc = new WeakMap<CanvasDocument, number>();
+
 export function autosaveDelayForDoc(doc: CanvasDocument | null | undefined): number {
   if (!doc || !Array.isArray(doc.layers)) return AUTOSAVE_DEBOUNCE_MS;
 
+  const cached = delayByDoc.get(doc);
+  if (cached !== undefined) return cached;
+
   const estimatedBytes = estimateCanvasDocumentBytes(doc);
   const layerCount = doc.layers.length;
-  if (estimatedBytes > LARGE_BYTES || layerCount > LARGE_LAYER_COUNT) return AUTOSAVE_LARGE_MS;
-  if (estimatedBytes > MEDIUM_BYTES || layerCount > MEDIUM_LAYER_COUNT) return AUTOSAVE_MEDIUM_MS;
-  return AUTOSAVE_DEBOUNCE_MS;
+  let delay = AUTOSAVE_DEBOUNCE_MS;
+  if (estimatedBytes > LARGE_BYTES || layerCount > LARGE_LAYER_COUNT) {
+    delay = AUTOSAVE_LARGE_MS;
+  } else if (estimatedBytes > MEDIUM_BYTES || layerCount > MEDIUM_LAYER_COUNT) {
+    delay = AUTOSAVE_MEDIUM_MS;
+  }
+  delayByDoc.set(doc, delay);
+  return delay;
 }

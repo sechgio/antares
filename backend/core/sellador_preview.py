@@ -3,7 +3,9 @@ from __future__ import annotations
 import io
 import logging
 import math
+from collections import OrderedDict
 from pathlib import Path
+from threading import Lock
 from typing import Literal
 
 from PIL import Image
@@ -18,6 +20,10 @@ _PREVIEW_MIME = {"png": "image/png", "jpeg": "image/jpeg"}
 
 PreviewFormat = Literal["png", "jpeg"]
 logger = logging.getLogger(__name__)
+_PATH_PREVIEW_CACHE_MAX_BYTES = 4 * 1024 * 1024
+_path_preview_cache: OrderedDict[tuple[object, ...], dict[str, float | str]] = OrderedDict()
+_path_preview_cache_bytes = 0
+_path_preview_cache_lock = Lock()
 
 
 def _require_fitz():
@@ -164,10 +170,25 @@ def render_pdf_page_preview(
     enforce_max_width: bool = False,
     image_format: PreviewFormat = "jpeg",
 ) -> dict[str, float | str]:
+    global _path_preview_cache_bytes
     fitz = _require_fitz()
     path = Path(pdf_path).expanduser().resolve()
+    try:
+        stat = path.stat()
+    except OSError:
+        stat = None
+    key = (
+        str(path), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
+        page_num, max_width, minimum_dpi, enforce_max_width, image_format,
+    ) if stat else None
+    if key:
+        with _path_preview_cache_lock:
+            cached = _path_preview_cache.get(key)
+            if cached is not None:
+                _path_preview_cache.move_to_end(key)
+                return dict(cached)
     with fitz.open(path) as doc:
-        return _render_doc_page(
+        result = _render_doc_page(
             doc,
             page_num,
             max_width,
@@ -175,6 +196,25 @@ def render_pdf_page_preview(
             enforce_max_width=enforce_max_width,
             image_format=image_format,
         )
+    try:
+        current_stat = path.stat()
+    except OSError:
+        current_stat = None
+    if key and stat is not None and current_stat is not None and (
+        current_stat.st_dev, current_stat.st_ino, current_stat.st_size, current_stat.st_mtime_ns
+    ) == (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns):
+        size = len(str(result["image_base64"]))
+        if size <= _PATH_PREVIEW_CACHE_MAX_BYTES:
+            with _path_preview_cache_lock:
+                previous = _path_preview_cache.pop(key, None)
+                if previous is not None:
+                    _path_preview_cache_bytes -= len(str(previous["image_base64"]))
+                _path_preview_cache[key] = result
+                _path_preview_cache_bytes += size
+                while _path_preview_cache_bytes > _PATH_PREVIEW_CACHE_MAX_BYTES:
+                    _, evicted = _path_preview_cache.popitem(last=False)
+                    _path_preview_cache_bytes -= len(str(evicted["image_base64"]))
+    return result
 
 
 def render_pdf_bytes_page_preview(

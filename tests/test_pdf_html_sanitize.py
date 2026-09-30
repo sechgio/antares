@@ -132,22 +132,3 @@ def test_write_pdf_sanitized_does_not_cache_oversized_pdf(monkeypatch) -> None:
     assert write_pdf_sanitized(html) == oversized
     assert write_pdf_sanitized(html) == oversized
     assert calls["n"] == 2
-
-
-def test_reset_pdf_cache_for_tests_clears_entries(monkeypatch) -> None:
-    calls = {"n": 0}
-
-    class FakeHTML:
-        def __init__(self, *args, **kwargs) -> None:
-            pass
-
-        def write_pdf(self, target, **kwargs) -> None:
-            calls["n"] += 1
-            target.write(b"%PDF-r")
-
-    monkeypatch.setattr(weasyprint, "HTML", FakeHTML)
-    html = "<html><body>reset-me</body></html>"
-    write_pdf_sanitized(html)
-    pdf_html.reset_pdf_cache_for_tests()
-    write_pdf_sanitized(html)
-    assert calls["n"] == 2

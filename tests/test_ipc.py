@@ -1,9 +1,12 @@
 
 import json
 import os
+import sys
 import time
+from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from backend.version import __version__
 from tests.conftest import await_ready, spawn_backend, stop_backend
@@ -75,34 +78,48 @@ def test_oversized_request_does_not_desynchronize_real_backend() -> None:
 
 
 class TestIPC:
-    def test_version(self, backend_process) -> None:
-        resp = _rpc_call(backend_process, "version", {})
-        assert "result" in resp
-        assert resp["result"]["version"] == __version__
+    def test_process_start_converts_image_through_rpc(self, tmp_path: Path) -> None:
+        source = tmp_path / "entrada.png"
+        Image.new("RGB", (8, 8), (23, 45, 67)).save(source)
+        destination = tmp_path / "salida"
+        env = os.environ.copy()
+        if sys.platform == "win32":
+            env["LOCALAPPDATA"] = str(tmp_path)
+        elif sys.platform == "darwin":
+            env["HOME"] = str(tmp_path)
+        else:
+            env["XDG_DATA_HOME"] = str(tmp_path)
+        proc, stderr_lines = spawn_backend(env)
 
-    def test_formats(self, backend_process) -> None:
-        resp = _rpc_call(backend_process, "formats", {})
-        assert "result" in resp
-        formats = resp["result"]["formats"]
-        assert "JPEG" in formats
-        assert "PNG" in formats
-        assert "WEBP" in formats
+        try:
+            await_ready(proc, stderr_lines)
+            started = _rpc_call(proc, "process_start", {
+                "files": [str(source)],
+                "destino": str(destination),
+                "formato": "JPEG",
+                "usar_rename": False,
+            })
+            assert started["result"]["started"] is True, started
+            job_id = started["result"]["job_id"]
 
-    def test_db_columns_shape(self, backend_process) -> None:
-        resp = _rpc_call(backend_process, "db_columns", {})
-        assert "result" in resp
-        assert isinstance(resp["result"]["records"], list)
-        assert "columns" in resp["result"]
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                response = _rpc_call(proc, "process_status", {"job_id": job_id})
+                assert response["jsonrpc"] == "2.0", response
+                status = response["result"]
+                if not status["running"]:
+                    break
+                time.sleep(0.05)
+            else:
+                pytest.fail("Conversion job did not finish within 15 seconds")
 
-    def test_theme_get(self, backend_process) -> None:
-        resp = _rpc_call(backend_process, "theme_get", {})
-        assert "result" in resp
-        assert "name" in resp["result"]
-
-    def test_history_list_shape(self, backend_process) -> None:
-        resp = _rpc_call(backend_process, "history_list", {})
-        assert "result" in resp
-        assert isinstance(resp["result"]["runs"], list)
+            assert status["total"] == 1
+            assert status["result"] == {"ok_count": 1, "err_count": 0, "cancelled": False}
+            with Image.open(destination / "entrada.jpg") as converted:
+                assert converted.format == "JPEG"
+                assert converted.size == (8, 8)
+        finally:
+            stop_backend(proc)
 
     def test_unknown_method(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "nonexistent_method", {})

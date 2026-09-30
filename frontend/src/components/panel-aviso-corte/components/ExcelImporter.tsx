@@ -36,6 +36,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
         normalizedColumns: resp.normalizedColumns,
         rows: resp.rows,
         warnings: resp.warnings,
+        sourceId: resp.sourceId,
       });
     } catch (e: unknown) {
       setError(errorMessage(e, 'Error al importar Excel'));

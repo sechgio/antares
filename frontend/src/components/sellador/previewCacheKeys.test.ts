@@ -26,4 +26,26 @@ describe('sellador preview cache keys', () => {
 
     expect(first).not.toBe(second);
   });
+
+  it('distinguishes base64 PDFs of the same length in both previews', () => {
+    expect(buildCacheKey(null, 'AAAA', null, 1, 800, 0))
+      .not.toBe(buildCacheKey(null, 'BBBB', null, 1, 800, 0));
+    expect(otherPagesCacheKey(null, 'AAAA', null, 0, 2, 800, null, []))
+      .not.toBe(otherPagesCacheKey(null, 'BBBB', null, 0, 2, 800, null, []));
+  });
+
+  it('reuses other-page previews for width jitter and subpixel stamp jitter', () => {
+    const first = otherPagesCacheKey(null, 'AAAA', null, 0, 2, 800, 'blob:stamp', [
+      { x: 20.001, y: 30, width: 60, height: 40 },
+    ]);
+    const second = otherPagesCacheKey(null, 'AAAA', null, 0, 2, 801, 'blob:stamp', [
+      { x: 20.002, y: 30, width: 60, height: 40 },
+    ]);
+    const moved = otherPagesCacheKey(null, 'AAAA', null, 0, 2, 800, 'blob:stamp', [
+      { x: 20.02, y: 30, width: 60, height: 40 },
+    ]);
+
+    expect(first).toBe(second);
+    expect(first).not.toBe(moved);
+  });
 });

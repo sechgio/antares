@@ -160,4 +160,70 @@ describe('RadioWidget player lifecycle', () => {
     });
     expect(document.querySelector('audio')).not.toBeNull();
   });
+
+  it('reconnects the same station after a stall instead of stopping', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+      vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+      vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+      vi.stubGlobal('AudioContext', undefined);
+
+      const player = createPlayer();
+      await player.play();
+      const media = document.querySelector('audio')!;
+      media.dispatchEvent(new Event('playing'));
+      expect(player.status.get()).toBe('live');
+
+      media.dispatchEvent(new Event('waiting'));
+      expect(player.status.get()).toBe('connecting');
+      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      const retried = document.querySelector('audio');
+      expect(retried).not.toBeNull();
+      expect(retried).not.toBe(media);
+      expect(player.status.get()).toBe('connecting');
+
+      retried!.dispatchEvent(new Event('playing'));
+      expect(player.status.get()).toBe('live');
+
+      player.dispose();
+      expect(document.querySelector('audio')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops with error once reconnect attempts are exhausted', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+      vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+      vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+      vi.stubGlobal('AudioContext', undefined);
+
+      const player = createPlayer();
+      await player.play();
+      const media = document.querySelector('audio')!;
+      media.dispatchEvent(new Event('playing'));
+      expect(player.status.get()).toBe('live');
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const dead = document.querySelector('audio')!;
+        dead.dispatchEvent(new Event('error'));
+        await vi.advanceTimersByTimeAsync(3_000);
+        expect(document.querySelector('audio')).not.toBe(dead);
+        expect(player.status.get()).toBe('connecting');
+      }
+
+      document.querySelector('audio')!.dispatchEvent(new Event('error'));
+      expect(player.status.get()).toBe('error');
+      expect(document.querySelector('audio')).toBeNull();
+
+      player.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

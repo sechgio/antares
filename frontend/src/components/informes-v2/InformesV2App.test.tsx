@@ -55,6 +55,7 @@ describe('InformesV2App', () => {
       mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
     mocks.api.dialogSave.mockResolvedValue({ paths: ['C:\\salida.pdf'] });
+    mocks.api.informesV2RenderHtml.mockResolvedValue({ html: '<html></html>', filename: 'salida.pdf' });
     mocks.api.informesV2RenderConsolidatedHtml.mockResolvedValue({ html: '<html></html>', filename: 'salida.pdf', count: 1 });
     mocks.api.htmlToPdf.mockResolvedValue({ filename: 'salida.pdf', saved_path: 'C:\\salida.pdf' });
     mocks.saveFeatureHistory.mockResolvedValue(undefined);
@@ -251,7 +252,63 @@ describe('InformesV2App', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Consolidado' }));
     });
 
-    await waitFor(() => expect(mocks.api.informesV2RenderConsolidatedHtml).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.addToast).toHaveBeenCalledWith(
+      { message: 'PDF consolidado generado (1): C:\\salida.pdf', type: 'success' },
+    ));
+    expect(mocks.api.informesV2RenderConsolidatedHtml).toHaveBeenCalled();
+    expect(mocks.api.htmlToPdf).toHaveBeenCalledWith(expect.objectContaining({
+      html: '<html></html>', filename: 'salida.pdf', outputPath: 'C:\\salida.pdf', return_base64: false,
+    }));
+    expect(mocks.saveFeatureHistory).toHaveBeenCalledWith(
+      'informe_v2', 'salida.pdf', { type: 'consolidado', count: 1 }, 1,
+    );
     expect(mocks.api.informesV2Get).not.toHaveBeenCalled();
+  });
+
+  it('exports the selected report to PDF and records its history', async () => {
+    render(<InformesV2App />);
+    fireEvent.click(await screen.findByText('ESTACION 1'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'PDF', exact: true })).toBeEnabled());
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'PDF', exact: true }));
+    });
+
+    expect(mocks.api.informesV2RenderHtml).toHaveBeenCalledWith(expect.objectContaining({ id: 'IV2-0001' }));
+    expect(mocks.api.htmlToPdf).toHaveBeenCalledWith(expect.objectContaining({
+      html: '<html></html>', filename: 'salida.pdf', outputPath: 'C:\\salida.pdf', return_base64: false,
+    }));
+    expect(mocks.saveFeatureHistory).toHaveBeenCalledWith(
+      'informe_v2', 'salida.pdf', { type: 'individual', reportId: 'IV2-0001' },
+    );
+    expect(mocks.addToast).toHaveBeenCalledWith({ message: 'PDF generado: C:\\salida.pdf', type: 'success' });
+  });
+
+  it('does not render or record a PDF when the save dialog is cancelled', async () => {
+    mocks.api.dialogSave.mockResolvedValue({ paths: [] });
+    render(<InformesV2App />);
+    await screen.findByText('ESTACION 1');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Consolidado' }));
+    });
+
+    expect(mocks.api.dialogSave).toHaveBeenCalled();
+    expect(mocks.api.informesV2RenderConsolidatedHtml).not.toHaveBeenCalled();
+    expect(mocks.api.htmlToPdf).not.toHaveBeenCalled();
+    expect(mocks.saveFeatureHistory).not.toHaveBeenCalled();
+  });
+
+  it('reports PDF conversion failure without recording success', async () => {
+    mocks.api.htmlToPdf.mockRejectedValue(new Error('falló conversión'));
+    render(<InformesV2App />);
+    await screen.findByText('ESTACION 1');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Consolidado' }));
+    });
+
+    expect(mocks.addToast).toHaveBeenCalledWith({ message: 'falló conversión', type: 'error' });
+    expect(mocks.saveFeatureHistory).not.toHaveBeenCalled();
   });
 });

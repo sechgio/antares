@@ -170,15 +170,15 @@ describe('applyThemeToCSS', () => {
 });
 
 describe('DEFAULT_THEME', () => {
-  it('matches the canonical Slate Professional identity and defines all required theme tokens', () => {
-    expect(DEFAULT_THEME.name).toBe('Slate Professional');
-    expect(DEFAULT_THEME.bg).toBe('#0F172A');
-    expect(DEFAULT_THEME.bg_secondary).toBe('#172033');
-    expect(DEFAULT_THEME.fg).toBe('#F8FAFC');
-    expect(DEFAULT_THEME.accent).toBe('#3B82F6');
-    expect(DEFAULT_THEME.border).toBe('#334155');
-    expect(DEFAULT_THEME.error).toBe('#EF4444');
-    expect(DEFAULT_THEME.warning).toBe('#F59E0B');
-    expect(DEFAULT_THEME.success).toBe('#22C55E');
+  it('matches the canonical Vanta Black identity and defines all required theme tokens', () => {
+    expect(DEFAULT_THEME.name).toBe('Vanta Black');
+    expect(DEFAULT_THEME.bg).toBe('#000000');
+    expect(DEFAULT_THEME.bg_secondary).toBe('#050505');
+    expect(DEFAULT_THEME.fg).toBe('#FFFFFF');
+    expect(DEFAULT_THEME.accent).toBe('#00FF88');
+    expect(DEFAULT_THEME.border).toBe('#111111');
+    expect(DEFAULT_THEME.error).toBe('#FF2222');
+    expect(DEFAULT_THEME.warning).toBe('#FFBB00');
+    expect(DEFAULT_THEME.success).toBe('#00FF66');
   });
 });

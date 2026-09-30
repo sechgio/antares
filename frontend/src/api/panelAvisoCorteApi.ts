@@ -3,16 +3,17 @@ import { _invoke } from './core';
 
 export const panelAvisoCorteApi = {
   panelAvisoCorteParseExcel: (body: { xlsx_b64: string; filename: string }) =>
-    _invoke<{ columns: string[]; normalizedColumns: string[]; rows: Array<Record<string, string>>; warnings: string[] }>('panel_aviso_corte_parse_excel', body),
+    _invoke<{ columns: string[]; normalizedColumns: string[]; rows: Array<Record<string, string>>; warnings: string[]; sourceId: string }>('panel_aviso_corte_parse_excel', body),
   panelAvisoCorteComputeMatch: (body: {
-    rows: Array<Record<string, string>>;
+    rows?: Array<Record<string, string>>;
+    source_id?: string;
     key_column: string;
     strategy: string;
     pattern?: string;
     address_column?: string;
     image_names: string[];
     export_mode: string;
-  }) => _invoke<PanelMatchResponse>('panel_aviso_corte_compute_match', body),
+  }) => _invoke<PanelMatchResponse | { sourceMissing: true }>('panel_aviso_corte_compute_match', body),
   panelAvisoCorteRenderPdf: (body: {
     panels: Array<Record<string, unknown>> | PanelVM[];
     logos: { left_b64?: string; right_b64?: string };

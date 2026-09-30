@@ -11,6 +11,10 @@ import {
   type Station,
 } from './core';
 
+const STALL_TIMEOUT_MS = 30_000;
+const RETRY_DELAY_MS = 3_000;
+const MAX_RETRIES = 2;
+
 export interface RadioPlayer {
   station: Atom<Station>;
   favorites: Atom<Station[]>;
@@ -49,6 +53,7 @@ export function createPlayer(): RadioPlayer {
   let output: GainNode | null = null;
   const waveformData = new Float32Array(2048);
   let generation = 0;
+  let retries = 0;
   let timeout: number | undefined;
   let disposed = false;
   let lastVolume = volume.get() || 25;
@@ -77,6 +82,7 @@ export function createPlayer(): RadioPlayer {
 
   async function play(next: Station = station.get(), analyse = true) {
     if (disposed || !validStation(next)) return;
+    if (!sameStation(next, station.get())) retries = 0;
     stop();
     const token = generation;
     station.set(next);
@@ -99,6 +105,10 @@ export function createPlayer(): RadioPlayer {
       if (metered) {
         plainStreams.add(next.url);
         void play(next, false);
+      } else if (retries < MAX_RETRIES) {
+        retries++;
+        generation++;
+        timeout = window.setTimeout(() => void play(next), RETRY_DELAY_MS);
       } else {
         stop('error');
       }
@@ -106,6 +116,7 @@ export function createPlayer(): RadioPlayer {
     element.addEventListener('playing', () => {
       if (current()) {
         window.clearTimeout(timeout);
+        retries = 0;
         status.set('live');
       }
     });
@@ -116,12 +127,12 @@ export function createPlayer(): RadioPlayer {
       if (current()) {
         status.set('connecting');
         window.clearTimeout(timeout);
-        timeout = window.setTimeout(fail, 15000);
+        timeout = window.setTimeout(fail, STALL_TIMEOUT_MS);
       }
     });
     element.addEventListener('error', fail);
     element.addEventListener('ended', fail);
-    timeout = window.setTimeout(fail, 15000);
+    timeout = window.setTimeout(fail, STALL_TIMEOUT_MS);
     element.src = next.url;
     try {
       if (metered) {

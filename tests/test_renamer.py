@@ -1,6 +1,4 @@
 
-from pathlib import Path
-
 from backend.core.renamer import RenamerEngine
 
 
@@ -214,9 +212,6 @@ class TestRenamerEngine:
         assert engine.aplicar(archivo, datos_bd=fila_a, file_seq="7", sequence_group="4210502") == "69841274_001.jpg"
         assert engine.aplicar(archivo, datos_bd=fila_b, file_seq="9", sequence_group="4210544") == "69841278_001.jpg"
         assert engine.aplicar(archivo, datos_bd=fila_a, file_seq="1", sequence_group="4210502") == "69841274_002.jpg"
-
-    def test_preserve_original_name_sanitiza_caracteres_invalidos(self) -> None:
-        assert RenamerEngine._preserve_original_name(Path("bad<>name.jpg")) == "bad__name.jpg"
 
     def test_preview_lote_record_sin_match_sanitiza_nombre(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])

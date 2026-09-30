@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { getLocalThumbnail } from '../utils/localThumb';
+import { getCachedLocalThumbnail, getLocalThumbnail } from '../utils/localThumb';
 import { stageFileForIpc } from '../utils/stageFile';
+import { getElectronFilePath } from '../utils/pdfAssets';
 
 export type ThumbnailViewState =
   | { kind: 'out_of_view' }
@@ -53,30 +54,26 @@ export default function Thumbnail({ path, fileToken, file, size = 48, variant = 
     let cancelled = false;
     setState({ kind: 'fetching' });
 
-    const resolveReference = async (): Promise<string | null> => {
-      if (fileToken?.startsWith('antares-read_')) return fileToken;
+    const loadThumbnail = async (): Promise<string | null> => {
+      if (fileToken?.startsWith('antares-read_')) return getLocalThumbnail(fileToken, 256);
       if (file) {
+        const filePath = getElectronFilePath(file);
+        if (filePath) return getLocalThumbnail(filePath, 256);
+        const cached = getCachedLocalThumbnail(file, 256);
+        if (cached) return cached;
         const staged = await stageFileForIpc(file);
-        if (staged) return staged;
-        return null;
+        return staged ? getLocalThumbnail(staged, 256, file) : null;
       }
       return null;
     };
 
-    resolveReference().then((fileRef) => {
+    loadThumbnail().then((thumb) => {
       if (cancelled) return;
-      if (!fileRef) {
+      if (thumb) {
+        setState({ kind: 'ready', displaySrc: thumb, imageLoaded: false });
+      } else {
         setState({ kind: 'error' });
-        return;
       }
-      return getLocalThumbnail(fileRef, 256).then((thumb) => {
-        if (cancelled) return;
-        if (thumb) {
-          setState({ kind: 'ready', displaySrc: thumb, imageLoaded: false });
-        } else {
-          setState({ kind: 'error' });
-        }
-      });
     }).catch(() => {
       if (!cancelled) setState({ kind: 'error' });
     });

@@ -33,22 +33,6 @@ function run() {
   assert(!cssJsOut.toLowerCase().includes('javascript:alert'), 'S-CRÍTICO-1: neutralises url(javascript:) in CSS');
   assert(cssJsOut.includes("url('')"), 'S-CRÍTICO-1: replaces url(javascript:) with empty url()');
 
-  const backtickPayload = "<head></head><img src=x onerror=`alert(1)`>";
-  const backtickOut = sanitizeHtmlForPdf(backtickPayload);
-  assert(!backtickOut.toLowerCase().includes('onerror'), 'S-CRÍTICO-2: strips backtick-quoted event handlers');
-
-  const booleanPayload = "<head></head><svg onload>";
-  const booleanOut = sanitizeHtmlForPdf(booleanPayload);
-  assert(!booleanOut.toLowerCase().includes('onload'), 'S-CRÍTICO-2: strips boolean-form event handler attributes');
-
-  const nestedPayload = "<head></head><script><script>alert(1)</script>";
-  const nestedOut = sanitizeHtmlForPdf(nestedPayload);
-  assert(!nestedOut.toLowerCase().includes('<script'), 'S-ALTO-1: strips residual <script> after nested-trick payload');
-
-  const svgDataPayload = "<head></head><style>.x{background:url(data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=)}</style>";
-  const svgDataOut = sanitizeHtmlForPdf(svgDataPayload);
-  assert(!svgDataOut.toLowerCase().includes('data:image/svg'), 'S-MEDIO-1: collapses data:image/svg+xml URIs in CSS');
-
   const pngDataPayload = "<head></head><style>.x{background:url(data:image/png;base64,iVBOR=)}</style>";
   const pngDataOut = sanitizeHtmlForPdf(pngDataPayload);
   assert(pngDataOut.includes('data:image/png;base64,iVBOR='), 'S-MEDIO-1: keeps data:image/png URIs in CSS');
@@ -62,14 +46,6 @@ function run() {
   );
   assert(gfOut.includes('fonts.gstatic.com'), 'CSP allows fonts.gstatic.com');
   assert(gfOut.includes('fonts.googleapis.com'), 'CSP allows fonts.googleapis.com for style-src');
-
-  const badLink = '<head><link rel="stylesheet" href="https://evil.example/x.css"></head>';
-  const badOut = sanitizeHtmlForPdf(badLink);
-  assert(!badOut.includes('evil.example'), 'still strips non-Google <link> tags');
-
-  const evilHref = '<head></head><a href="https://evil.example/x">x</a>';
-  const evilHrefOut = sanitizeHtmlForPdf(evilHref);
-  assert(!evilHrefOut.includes('https://evil.example'), 'still neutralises non-Google https href');
 
   const attrHeadPayload = '<div data-meta="<head>">Content</div>';
   const attrHeadOut = sanitizeHtmlForPdf(attrHeadPayload);

@@ -22,6 +22,7 @@ import {
   subscribeTaskActivity,
   unsubscribeEspaciosSync,
 } from '../api/realtime';
+import { supabase } from '../../../lib/supabase';
 
 describe('subscribeEspaciosSync', () => {
   beforeEach(() => {
@@ -40,6 +41,19 @@ describe('subscribeEspaciosSync', () => {
     subscribeEspaciosSync('e1', 'p1', vi.fn(), onStatus);
     expect(onStatus).toHaveBeenCalledWith('connecting');
     expect(onStatus).toHaveBeenCalledWith('live');
+    expect(channel.on).toHaveBeenCalledTimes(4);
+    for (const [table, filter] of [
+      ['espacios', undefined],
+      ['proyectos', 'espacio_id=eq.e1'],
+      ['tareas', 'proyecto_id=eq.p1'],
+      ['board_columns', 'proyecto_id=eq.p1'],
+    ]) {
+      expect(channel.on).toHaveBeenCalledWith(
+        'postgres_changes',
+        { event: '*', schema: 'public', table, ...(filter ? { filter } : {}) },
+        expect.any(Function),
+      );
+    }
   });
 
   it('reports offline when supabase is unavailable', async () => {
@@ -54,6 +68,7 @@ describe('subscribeEspaciosSync', () => {
   it('unsubscribes via removeChannel', () => {
     const ch = subscribeEspaciosSync('e1', 'p1', vi.fn());
     unsubscribeEspaciosSync(ch);
+    expect(supabase?.removeChannel).toHaveBeenCalledWith(ch);
   });
 });
 

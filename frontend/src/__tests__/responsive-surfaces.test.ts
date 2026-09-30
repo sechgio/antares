@@ -74,7 +74,6 @@ describe('responsive surface contracts', () => {
     expect(reportShell).toContain('data-mobile-tab={mobileTab}');
     expect(fichas).toContain('"data-focus-mode": focusMode ? "on" : "off"');
     expect(fichas).not.toContain("gridTemplateColumns: '0px 1fr 0px'");
-    expect(reportShell).toContain('role="tablist"');
     const fichasCss = readSource('components/technical-reports/technical-reports.css');
     expect(fichasCss).toContain('.ft-app .tr-workspace.is-focus');
     expect(fichasCss).toContain('grid-template-columns: minmax(0, 1fr)');

@@ -275,6 +275,54 @@ def test_generar_ubicaciones_excel_without_coord_columns_geocodes(tmp_path: Path
     assert http.call_count == 2
 
 
+def test_generar_ubicaciones_excel_preserves_numeric_code_without_iterrows(tmp_path: Path) -> None:
+    import pandas as pd
+
+    excel_path = tmp_path / "numericos.xlsx"
+    pd.DataFrame({
+        "cod_componente": [1],
+        "latitud": [-12.1],
+        "longitud": [-77.1],
+    }).to_excel(excel_path, index=False)
+
+    with (
+        patch.object(pd.DataFrame, "iterrows", side_effect=AssertionError("iterrows called")),
+        patch.object(ubi, "generar_imagen_ubicacion") as render,
+    ):
+        resp = ubi.handle_generar_ubicaciones({
+            "excelPath": str(excel_path),
+            "outputDir": str(tmp_path / "out"),
+        })
+
+    assert resp["generados"] == 1
+    assert render.call_args[0][0]["cod_componente"] == 1.0
+    assert render.call_args[0][0]["_out_filename"] == "1.0.pdf"
+
+
+def test_generar_ubicaciones_excel_reuses_geocode_for_repeated_address(tmp_path: Path) -> None:
+    import pandas as pd
+
+    excel_path = tmp_path / "repetidas.xlsx"
+    pd.DataFrame({
+        "cod_componente": ["UBI-1", "UBI-2"],
+        "direccion": ["Av X 123", "Av X 123"],
+    }).to_excel(excel_path, index=False)
+
+    with (
+        patch.object(geo, "_http_get", return_value=_nominatim_payload()) as http,
+        patch.object(ubi, "generar_imagen_ubicacion") as render,
+    ):
+        resp = ubi.handle_generar_ubicaciones({
+            "excelPath": str(excel_path),
+            "outputDir": str(tmp_path / "out"),
+            "geocode": True,
+        })
+
+    assert resp["generados"] == resp["geocodificados"] == 2
+    assert [call.args[0]["cod_componente"] for call in render.call_args_list] == ["UBI-1", "UBI-2"]
+    assert http.call_count == 1
+
+
 def test_generar_ubicaciones_excel_without_coords_keeps_error(tmp_path: Path) -> None:
     import pandas as pd
 

@@ -177,4 +177,17 @@ describe('renderOtherPagesPreview staging', () => {
       .toEqual([7, 42]);
     expect(progress[progress.length - 1].map(({ pageNum }) => pageNum)).toEqual([7, 42]);
   });
+
+  it('reuses the rendered page across adjacent container widths', async () => {
+    const options = baseOptions({
+      pdfPath: 'antares-read_bucket',
+      pageNumbers: [2],
+      sourceRevision: 8,
+    });
+
+    await renderOtherPagesPreview(options);
+    await renderOtherPagesPreview({ ...options, containerW: 801 });
+
+    expect(mocks.selladorRenderPage).toHaveBeenCalledTimes(1);
+  });
 });

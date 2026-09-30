@@ -19,23 +19,23 @@ _THEME_KEYS = frozenset([
 ])
 
 _FALLBACK_DEFAULT_THEME: dict[str, str] = {
-    "name": "Slate Professional",
-    "bg": "#0F172A",
-    "bg_secondary": "#172033",
-    "fg": "#F8FAFC",
-    "fg_muted": "#94A3B8",
-    "fg_secondary": "#CBD5E1",
-    "fg_tertiary": "#64748B",
-    "accent": "#3B82F6",
-    "accent_light": "#93C5FD",
-    "accent_hover": "#2563EB",
-    "accent_dark": "#1E40AF",
-    "border": "#334155",
-    "blue_hover": "#14B8A6",
-    "error": "#EF4444",
-    "warning": "#F59E0B",
-    "success": "#22C55E",
-    "orange": "#38BDF8",
+    "name": "Vanta Black",
+    "bg": "#000000",
+    "bg_secondary": "#050505",
+    "fg": "#FFFFFF",
+    "fg_muted": "#333333",
+    "fg_secondary": "#666666",
+    "fg_tertiary": "#1A1A1A",
+    "accent": "#00FF88",
+    "accent_light": "#55FFAA",
+    "accent_hover": "#00CC66",
+    "accent_dark": "#009944",
+    "border": "#111111",
+    "blue_hover": "#33FF99",
+    "error": "#FF2222",
+    "warning": "#FFBB00",
+    "success": "#00FF66",
+    "orange": "#FF5500",
 }
 
 
@@ -62,17 +62,17 @@ def _load_presets() -> dict[str, dict[str, str]]:
             data = json.load(f)
         if not isinstance(data, dict):
             logger.warning("presets.json is not a dict, using default only")
-            return {"Slate Professional": dict(DEFAULT_THEME)}
+            return {"Vanta Black": dict(DEFAULT_THEME)}
         valid: dict[str, dict[str, str]] = {}
         for name, preset in data.items():
             if isinstance(preset, dict) and _THEME_KEYS.issubset(preset.keys()):
                 valid[name] = preset
             else:
                 logger.warning("Preset '%s' missing keys, skipping", name)
-        return valid or {"Slate Professional": dict(DEFAULT_THEME)}
+        return valid or {"Vanta Black": dict(DEFAULT_THEME)}
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Error loading presets.json: %s", exc)
-        return {"Slate Professional": dict(DEFAULT_THEME)}
+        return {"Vanta Black": dict(DEFAULT_THEME)}
 
 
 PRESETS: dict[str, dict[str, str]] = _load_presets()

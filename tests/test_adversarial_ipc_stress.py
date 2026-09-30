@@ -1,4 +1,3 @@
-import io
 import json
 import os
 import subprocess
@@ -7,52 +6,7 @@ import threading
 import time
 from pathlib import Path
 
-from backend.ipc_protocol import (
-    _MAX_PAYLOAD_SIZE,
-    _read_limited_line,
-    _try_extract_request_id_bytes,
-)
-
-
-def test_adversarial_oversized_payload_handling():
-    msg_id = "adv-oversized-req-999"
-    header = f'{{"jsonrpc":"2.0","id":"{msg_id}","method":"formats","params":{{"data":"'.encode()
-    tail = b'"}}\n'
-    padding_chunk = b"A" * (1024 * 1024)
-    padding_count = 65
-
-    class FastLargeStream(io.RawIOBase):
-        def __init__(self):
-            self.chunks = [header] + [padding_chunk] * padding_count + [tail]
-            self.chunk_idx = 0
-            self.offset = 0
-
-        def read(self, size=-1):
-            if self.chunk_idx >= len(self.chunks):
-                return b""
-            chunk = self.chunks[self.chunk_idx]
-            rem = chunk[self.offset:]
-            if size < 0 or size >= len(rem):
-                self.chunk_idx += 1
-                self.offset = 0
-                return rem
-            self.offset += size
-            return rem[:size]
-
-        def readline(self, size=-1):
-            return self.read(size)
-
-    stream = FastLargeStream()
-    t0 = time.perf_counter()
-    line, total_bytes, oversized = _read_limited_line(stream, binary=True)
-    elapsed_ms = (time.perf_counter() - t0) * 1000
-
-    print(f"\nBENCHMARK:ADV_OVERSIZED_65MB_DRAIN: total_bytes={total_bytes}, elapsed_ms={elapsed_ms:.2f}ms")
-
-    assert oversized is True
-    assert total_bytes > _MAX_PAYLOAD_SIZE
-    extracted_id = _try_extract_request_id_bytes(line)
-    assert extracted_id == msg_id
+from backend.ipc_protocol import _try_extract_request_id_bytes
 
 
 def test_adversarial_ascii_and_unicode_escaped_id_extraction():

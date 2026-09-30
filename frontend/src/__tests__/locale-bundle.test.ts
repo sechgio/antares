@@ -42,6 +42,13 @@ describe('locale bundle contracts', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(es).sort());
   });
 
+  it('has no empty values in the Spanish bundle', () => {
+    const empty = Object.entries(es)
+      .filter(([, value]) => typeof value === 'string' && !value.trim())
+      .map(([key]) => key);
+    expect(empty).toEqual([]);
+  });
+
   it('includes the optimizer interaction vocabulary in both bundles', () => {
     const optimizerKeys = Object.keys(es).filter((key) => key.startsWith('optimizer.'));
 

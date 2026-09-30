@@ -40,6 +40,14 @@ function run() {
   assert(!/\bnpm install\b/.test(ci), 'CI never performs mutable npm install');
   assert(ci.includes('persist-credentials: false'), 'CI checkout does not persist Git credentials');
   assertActionsPinned(ci, 'CI');
+  const [linuxJob, windowsJob = ''] = ci.split(/^  test-windows:\s*$/m);
+  assert(linuxJob.includes('run: npm run ci'), 'Linux CI runs the shared quality gate');
+  assert(Boolean(windowsJob), 'CI retains the Windows test job');
+  assert(windowsJob.includes('runs-on: windows-latest'), 'Windows tests run on Windows');
+  assert(windowsJob.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
+  assert(windowsJob.includes('WEASYPRINT_DLL_DIRECTORIES='), 'Windows tests configure WeasyPrint DLLs');
+  assert(windowsJob.includes('run: node scripts/run-test-suites.js'), 'Windows CI runs the test suites');
+  assert(windowsJob.includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
 
   assert(nodeVersion === '22.12.0', '.node-version pins Node 22.12.0');
   assert(setupCi.includes("node-version-file: '.node-version'"), 'setup-ci reads the committed Node version file');
@@ -54,6 +62,7 @@ function run() {
 
   assert(packageJson.scripts.ci.includes('npm run audit:node'), 'shared CI gate includes Node dependency audits');
   assert(packageJson.scripts.ci.includes('npm run check:ratchet'), 'shared CI gate includes the quality ratchet');
+  assert(packageJson.scripts.ci.includes('npm test'), 'shared CI gate runs the full test suite');
   assert(
     packageJson.scripts['typecheck:backend'].includes('uv run --project . --locked --extra dev mypy backend'),
     'backend typecheck uses the locked Python environment',

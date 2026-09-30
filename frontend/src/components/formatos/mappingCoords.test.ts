@@ -44,9 +44,9 @@ describe('mappingCoords', () => {
   it('maps rect to percentage overlay style', () => {
     expect(mappingRectToOverlayStyle({ x: 297.5, y: 42.1, width: 140, height: 20 }, PAGE)).toEqual({
       left: '50%',
-      top: `${(42.1 / 842) * 100}%`,
-      width: `${(140 / 595) * 100}%`,
-      height: `${(20 / 842) * 100}%`,
+      top: '5%',
+      width: '23.52941176470588%',
+      height: '2.375296912114014%',
     });
   });
 
@@ -54,7 +54,7 @@ describe('mappingCoords', () => {
     expect(mappingFontNameToCss('Helvetica-Bold')).toContain('Helvetica');
     expect(mappingFontWeight('Courier-Bold')).toBe(700);
     expect(mappingColorCss(0.1176, 0.2275, 0.5412)).toBe('rgb(30, 58, 138)');
-    expect(mappingTextTopPercent(25, 13, 842)).toBe(`${((25 + 13 - 13 * 0.718) / 842) * 100}%`);
+    expect(mappingTextTopPercent(25, 13, 842)).toBe('3.404513064133017%');
   });
 
   it('converts mapping colors to hex', () => {

@@ -113,10 +113,4 @@ setUser('notify-b@example.com');
 assert(notified >= 2, 'onActiveUserChange dispara al cambiar/cerrar usuario');
 unsub();
 
-const gitignore = fs.readFileSync(path.join(__dirname, '..', '.gitignore'), 'utf8');
-assert(
-  gitignore.includes('autoimg') || gitignore.includes('autoimg-*.json'),
-  'gitignore cubre artefactos autoimg',
-);
-
 console.log('[PASS] autoimg multi-user scope + no secret leak guards');

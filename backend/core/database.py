@@ -729,10 +729,7 @@ def parse_id_rename_mapping_full(
     result: dict[str, str] = {}
     seen_ids: set[str] = set()
 
-    for row_idx, row in df.iterrows():
-        excel_row = int(row_idx) + 2
-        raw_id = row.get(chosen_id)
-        raw_rename = row.get(chosen_rename)
+    for excel_row, (raw_id, raw_rename) in enumerate(zip(df[chosen_id], df[chosen_rename], strict=True), start=2):
 
         if pd.isna(raw_id) or not str(raw_id).strip():
             msg = f"ID vacío en la fila {excel_row} de la columna '{chosen_id}'"

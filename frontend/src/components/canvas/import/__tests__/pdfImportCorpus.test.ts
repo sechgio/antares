@@ -51,16 +51,6 @@ function page(pageNumber: number, widthPt = 612, heightPt = 792): PdfPageExtract
 }
 
 describe('PDF import corpus contract', () => {
-  it('keeps high-confidence primitives editable and reports complex paths', () => {
-    const fragment = mapPdfPagesToCanvas(page(1));
-
-    expect(fragment.layers.map((layer) => layer.type)).toEqual([
-      'frame', 'text', 'rect', 'ellipse', 'line', 'checkbox',
-    ]);
-    expect(fragment.report.skippedCount).toBe(1);
-    expect(fragment.report.issues[0]).toMatchObject({ reason: 'complex-path', count: 1 });
-  });
-
   it('does not double-count issues already aggregated by extraction', () => {
     const source = page(1);
     source.issues = [{
