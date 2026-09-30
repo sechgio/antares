@@ -7,6 +7,10 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Plugins de la barra de título**: Spotify (con OAuth), Audius, Jamendo y Archive se pueden activar y ordenar desde Ajustes.
+- **Notas adhesivas**: se pueden crear y organizar notas locales desde la barra de título.
+
 ### Fixed
 - **Mensajes de error de herramientas**: `EvidenciaVolanteoError` y `PanelAvisoCorteError` derivan ahora de `ValueError`, así que la UI vuelve a mostrar el texto propio de la herramienta en lugar de "Error interno del servidor".
 - **Canvas / pegar**: pegar una capa que todavía estaba en el documento duplicaba el id y terminaba borrando la capa original; el portapapeles se re-keyea antes de clonar.
