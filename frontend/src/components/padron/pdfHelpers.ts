@@ -9,8 +9,7 @@ export function clearImageBase64Cache(): void {
 }
 
 export function loadImageAsBase64(url: string): Promise<string> {
-  if (!url) return Promise.resolve(url);
-  if (url.startsWith('data:')) return Promise.resolve(url);
+  if (!url || url.startsWith('data:')) return Promise.resolve(url);
 
   const cached = _imageBase64Cache.get(url);
   if (cached) return cached;

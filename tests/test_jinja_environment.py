@@ -4,7 +4,26 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from backend.core.jinja_environment import make_cached_jinja_environment
+from backend.core.jinja_environment import make_cached_jinja_environment, resolve_core_templates_dir
+
+
+def test_resolve_core_templates_dir_prefers_bundled_path(tmp_path: Path) -> None:
+    module_file = tmp_path / "backend" / "core" / "feature" / "rendering.py"
+    module_file.parent.mkdir(parents=True)
+    bundled = tmp_path / "backend" / "templates"
+    bundled.mkdir(parents=True)
+    (tmp_path / "backend" / "core" / "templates").mkdir()
+
+    assert resolve_core_templates_dir(module_file) == bundled.resolve()
+
+
+def test_resolve_core_templates_dir_falls_back_to_core_path(tmp_path: Path) -> None:
+    module_file = tmp_path / "backend" / "core" / "feature" / "rendering.py"
+    module_file.parent.mkdir(parents=True)
+    fallback = tmp_path / "backend" / "core" / "templates"
+    fallback.mkdir(parents=True)
+
+    assert resolve_core_templates_dir(module_file) == fallback.resolve()
 
 
 def test_cached_environment_reuses_configured_instance(tmp_path: Path) -> None:

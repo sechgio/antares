@@ -19,7 +19,7 @@ from backend.core.docx_helpers import (
     set_row_height,
     set_vertical_align,
 )
-from backend.core.jinja_environment import make_cached_jinja_environment
+from backend.core.jinja_environment import make_cached_jinja_environment, resolve_core_templates_dir
 from backend.utils.image_data import (
     build_image_uris,
     contain_fit_cm,
@@ -72,15 +72,8 @@ def resolve_panel_template_file(template_id: str | None) -> str:
     return filename
 
 
-def _template_dir() -> Path:
-    bundled = Path(__file__).resolve().parent.parent.parent / "templates"
-    if bundled.exists():
-        return bundled
-    return Path(__file__).resolve().parent.parent / "templates"
-
-
 _environment = make_cached_jinja_environment(
-    _template_dir, PANEL_TEMPLATE_FILES[DEFAULT_PANEL_TEMPLATE_ID]
+    lambda: resolve_core_templates_dir(__file__), PANEL_TEMPLATE_FILES[DEFAULT_PANEL_TEMPLATE_ID]
 )
 
 

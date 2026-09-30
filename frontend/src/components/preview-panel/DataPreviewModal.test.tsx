@@ -1,8 +1,12 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { afterEach, describe, it, expect, beforeAll, vi } from 'vitest';
+import * as recordMatching from '../../utils/recordMatching';
 import DataPreviewModal from './DataPreviewModal';
+import * as modalRows from './utils/modalRows';
 
 describe('DataPreviewModal', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeAll(() => {
     if (!window.requestAnimationFrame) {
       window.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(cb, 0) as unknown as number;
@@ -74,6 +78,32 @@ describe('DataPreviewModal', () => {
 
     const virtualRows = container.querySelectorAll('tbody td div[style*="position"] , tbody td div.flex');
     expect(virtualRows.length).toBeGreaterThan(0);
+  });
+
+  it('defers photo maps and filtering while closed', () => {
+    const buildImagesByRecordId = vi.spyOn(recordMatching, 'buildImagesByRecordId');
+    const buildRowPhotoMap = vi.spyOn(modalRows, 'buildRowPhotoMap');
+    const computePhotoStats = vi.spyOn(modalRows, 'computePhotoStats');
+    const filterAndSortRows = vi.spyOn(modalRows, 'filterAndSortRows');
+    const data = Array.from({ length: 2000 }, (_, index) => ({ ID: `ID_${index}` }));
+
+    render(
+      <DataPreviewModal
+        open={false}
+        onClose={() => {}}
+        data={data}
+        headers={['ID']}
+        images={[]}
+        idColumn="ID"
+        selectedIndex="0"
+        onSelectRow={() => {}}
+      />,
+    );
+
+    expect(buildImagesByRecordId).not.toHaveBeenCalled();
+    expect(buildRowPhotoMap).not.toHaveBeenCalled();
+    expect(computePhotoStats).not.toHaveBeenCalled();
+    expect(filterAndSortRows).not.toHaveBeenCalled();
   });
 
   it('debounces search filtering and still highlights matches', async () => {

@@ -10,7 +10,7 @@ export function useOperationCoordinator() {
     try {
       return await operation();
     } finally {
-      activeOperationsRef.current = Math.max(0, activeOperationsRef.current - 1);
+      activeOperationsRef.current -= 1;
       if (activeOperationsRef.current === 0) setBusy(false);
     }
   }, []);

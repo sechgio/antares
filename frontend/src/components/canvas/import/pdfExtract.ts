@@ -25,6 +25,9 @@ import type {
 
 type PdfRecord = Record<string, unknown>;
 type PdfOperatorList = { fnArray?: unknown[]; argsArray?: unknown[][] };
+interface PdfImageBudget {
+  usedBytes: number;
+}
 
 const IDENTITY: PdfMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 
@@ -295,6 +298,7 @@ async function extractOperators(
   operatorList: PdfOperatorList,
   pdfjs: typeof import('pdfjs-dist'),
   limits: PdfImportLimits,
+  imageBudget: PdfImageBudget,
 ): Promise<{ primitives: PdfPrimitive[]; warnings: string[]; issues: PdfImportIssue[] }> {
   const functions = Array.isArray(operatorList.fnArray) ? operatorList.fnArray : [];
   const argsArray = Array.isArray(operatorList.argsArray) ? operatorList.argsArray : [];
@@ -305,6 +309,11 @@ async function extractOperators(
   const stack: GraphicsState[] = [];
   let state = emptyGraphicsState();
   let imageCount = 0;
+  const skipImageForByteBudget = (box: PdfBox) => {
+    primitives.push({ kind: 'unsupported', box, reason: 'unsupported-operator', sourceOpCount: 1 });
+    warnings.push(`Página ${pageNumber}: imagen omitida por límite de bytes`);
+    addIssue(issueMap, pageNumber, 'limit-exceeded', 'La imagen supera el presupuesto agregado de imágenes');
+  };
 
   for (let index = 0; index < functions.length; index += 1) {
     const name = opName(functions[index], names);
@@ -361,14 +370,23 @@ async function extractOperators(
         primitives.push(unsupportedPrimitive(pageNumber, 'limit-exceeded', 'La página supera el límite de imágenes', issueMap));
         continue;
       }
-      const asset = await imageAssetFromObject(page, args[0], `page-${pageNumber}-image-${index}`);
       const placement = matrixBox({ x: 0, y: 0, width: 1, height: 1 }, state.matrix);
-      if (!asset || !placement) {
+      if (!placement) {
         primitives.push(unsupportedPrimitive(pageNumber, 'unsupported-operator', 'Imagen PDF no disponible como asset editable', issueMap));
-      } else if (asset.bytes.byteLength > limits.maxImageBytesTotal) {
-        primitives.push(unsupportedPrimitive(pageNumber, 'limit-exceeded', 'Imagen PDF supera el presupuesto de bytes', issueMap));
+      } else if (imageBudget.usedBytes >= limits.maxImageBytesTotal) {
+        skipImageForByteBudget(placement.box);
       } else {
-        primitives.push({ kind: 'image', box: placement.box, asset, rotationDeg: placement.rotationDeg });
+        const asset = await imageAssetFromObject(page, args[0], `page-${pageNumber}-image-${index}`);
+        if (!asset) {
+          primitives.push(unsupportedPrimitive(pageNumber, 'unsupported-operator', 'Imagen PDF no disponible como asset editable', issueMap));
+        } else if (asset.bytes.byteLength > limits.maxImageBytesTotal) {
+          primitives.push(unsupportedPrimitive(pageNumber, 'limit-exceeded', 'Imagen PDF supera el presupuesto de bytes', issueMap));
+        } else if (imageBudget.usedBytes + asset.bytes.byteLength > limits.maxImageBytesTotal) {
+          skipImageForByteBudget(placement.box);
+        } else {
+          imageBudget.usedBytes += asset.bytes.byteLength;
+          primitives.push({ kind: 'image', box: placement.box, asset, rotationDeg: placement.rotationDeg });
+        }
       }
     } else {
       const paint = isPaintOperation(name);
@@ -531,6 +549,7 @@ async function extractPage(
   pdfjs: typeof import('pdfjs-dist'),
   limits: PdfImportLimits,
   remainingOperators: number,
+  imageBudget: PdfImageBudget,
 ): Promise<PdfPageExtraction> {
   const pageRecord = asRecord(page);
   const viewport = typeof pageRecord.getViewport === 'function'
@@ -561,7 +580,7 @@ async function extractPage(
     typeof getTextContent === 'function' ? (getTextContent as () => Promise<unknown>).call(page) : Promise.resolve({ items: [], styles: {} }),
     typeof getAnnotations === 'function' ? (getAnnotations as (options: { intent: string }) => Promise<unknown>).call(page, { intent: 'display' }) : Promise.resolve([]),
   ]);
-  const operatorResult = await extractOperators(pageNumber, page, operatorList, pdfjs, limits);
+  const operatorResult = await extractOperators(pageNumber, page, operatorList, pdfjs, limits, imageBudget);
   const textResult = extractText(pageNumber, textContent, limits);
   const annotationResult = extractAnnotations(pageNumber, annotations);
   return {
@@ -609,6 +628,7 @@ export async function extractPdfDocument(
 
   const pages: PdfPageExtraction[] = [];
   let totalOperators = 0;
+  const imageBudget: PdfImageBudget = { usedBytes: 0 };
   let manifestBytes: Uint8Array | undefined;
   try {
     const getAttachments = (pdf as unknown as PdfRecord).getAttachments;
@@ -629,6 +649,7 @@ export async function extractPdfDocument(
           pdfjs,
           limits,
           limits.maxOperatorsTotal - totalOperators,
+          imageBudget,
         );
         totalOperators += extracted.operators;
         pages.push(extracted);

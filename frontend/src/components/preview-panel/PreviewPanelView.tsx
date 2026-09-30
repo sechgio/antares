@@ -311,7 +311,9 @@ export default function PreviewPanelView() {
           const rows = await fetchSheetRows(spillToken, nextName);
           if (gen !== sheetLoadGenRef.current) return;
           sh = { ...sh, rows, rowCount: rows.length };
-          setSheets((prev) => prev.map((s) => (s.name === nextName ? sh! : s)));
+          setSheets((prev) => prev.map((s) => (
+            s.name === nextName ? { ...s, rows: [], rowCount: rows.length } : s
+          )));
         } catch (err: unknown) {
           if (gen !== sheetLoadGenRef.current) return;
           const msg = errorMessage(err, String(err));
@@ -331,6 +333,7 @@ export default function PreviewPanelView() {
     (
       allSheets: { name: string; rows: unknown[][]; rowCount?: number }[],
       warnings?: string[],
+      spillBacked = false,
     ) => {
       if (!allSheets.length) {
         addToast({
@@ -341,15 +344,18 @@ export default function PreviewPanelView() {
       }
       warnings?.forEach((w) => addToast({ message: w, type: "warning" }));
       const pick = pickSheetToLoad(allSheets);
+      const sheetsToStore = spillBacked
+        ? allSheets.map((sheet) => ({ ...sheet, rows: [] as unknown[][] }))
+        : allSheets;
       if (!pick) {
         addToast({
           message: "El archivo está vacío o no tiene filas con datos",
           type: "error",
         });
-        setSheets(allSheets);
+        setSheets(sheetsToStore);
         return;
       }
-      setSheets(allSheets);
+      setSheets(sheetsToStore);
       setSelectedSheetName(pick.name);
       if (pick.rows.length > 0) {
         loadSheetData(pick);
@@ -409,7 +415,7 @@ export default function PreviewPanelView() {
         }));
         const pick = pickSheetToLoad(stubs);
         if (!pick) {
-          applyParsedSheets(stubs, res.warnings);
+          applyParsedSheets(stubs, res.warnings, true);
           return;
         }
         const rows = await fetchSheetRows(token, pick.name);
@@ -420,7 +426,7 @@ export default function PreviewPanelView() {
         const loaded = stubs.map((s) =>
           s.name === pick.name ? { ...s, rows, rowCount: rows.length } : s,
         );
-        applyParsedSheets(loaded, res.warnings);
+        applyParsedSheets(loaded, res.warnings, true);
         return;
       }
 
