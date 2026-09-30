@@ -7,6 +7,9 @@ import { setPluginEnabled, TITLEBAR_PLUGINS } from '../../plugins';
 vi.mock('./TitleBarPlugins', () => ({
   default: () => <div data-testid="titlebar-plugins" />,
 }));
+vi.mock('./TaskNotificationsBell', () => ({
+  default: () => null,
+}));
 
 function renderTitleBar() {
   return render(
