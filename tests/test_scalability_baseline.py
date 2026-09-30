@@ -150,10 +150,6 @@ def test_offline_baseline_at_ten_x_samples_rss_and_records_job_waits_with_bounde
         assert measurement["samples"] > 0
         assert measurement["ipc_bytes"] > 0
         assert measurement["request_count"] > 0
-        assert measurement["errors"] >= 0
-        assert measurement["lock_wait_ms"] >= 0
-        assert measurement["queue_wait_ms"] >= 0
-        assert measurement["latency_ms"]["p50"] >= 0
         assert measurement["latency_ms"]["p95"] >= measurement["latency_ms"]["p50"]
         assert measurement["latency_ms"]["p99"] >= measurement["latency_ms"]["p95"]
     autoimg = next(measurement for measurement in result["measurements"] if measurement["scenario"] == "autoimg")

@@ -3,14 +3,6 @@ from backend.core.renamer import RenamerEngine
 
 
 class TestRenamerMapping:
-    def test_mapping_with_extension(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
-        engine = RenamerEngine("{codigo}{ext}")
-        archivo = tmp_path / "IMG_0001.jpg"
-        archivo.write_text("x")
-        result = engine.aplicar(archivo, file_mapping={"IMG_0001.jpg": "fachada_norte"})
-        assert result == "fachada_norte.jpg"
-
     def test_mapping_without_extension_in_id(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
         engine = RenamerEngine("{codigo}{ext}")

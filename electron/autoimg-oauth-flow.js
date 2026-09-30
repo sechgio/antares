@@ -55,7 +55,7 @@ function stopCallbackServer() {
   }
 }
 
-function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState }) {
+function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState, callbackPath = '/callback' }) {
   stopCallbackServer();
 
   return new Promise((resolve, reject) => {
@@ -86,7 +86,7 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState 
         return;
       }
 
-      if (pathname !== '/callback' && pathname !== '/') {
+      if (pathname !== callbackPath && pathname !== '/') {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end('Not found');
         return;

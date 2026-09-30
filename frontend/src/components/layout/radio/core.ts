@@ -13,6 +13,7 @@ export type PlayerStatus = 'paused' | 'connecting' | 'live' | 'error' | 'elsewhe
 export type MeterMode = 'levels' | 'activity';
 
 export const NIGHTRIDE = 'https://stream.nightride.fm/';
+export const SOMAFM = 'https://ice6.somafm.com';
 export const PRESETS: Station[] = [
   { id: 'chillsynth', name: 'Chillsynth', description: 'Enfoque suave · sintes cálidos', provider: 'Nightride FM', url: `${NIGHTRIDE}chillsynth.mp3`, homepage: 'https://nightride.fm/?station=chillsynth' },
   { id: 'nightride', name: 'Nightride', description: 'Synthwave · madrugada', provider: 'Nightride FM', url: `${NIGHTRIDE}nightride.mp3`, homepage: 'https://nightride.fm/' },
@@ -21,6 +22,14 @@ export const PRESETS: Station[] = [
   { id: 'paradise-main', name: 'Main Mix', description: 'Ecléctico · selección humana', provider: 'Radio Paradise', url: 'https://stream.radioparadise.com/aac-128', homepage: 'https://radioparadise.com/' },
   { id: 'paradise-mellow', name: 'Mellow Mix', description: 'Un ritmo más calmado', provider: 'Radio Paradise', url: 'https://stream.radioparadise.com/mellow-flac', homepage: 'https://radioparadise.com/' },
   { id: 'eve-radio', name: 'EVE Radio', description: 'GamingNow · radio de la comunidad EVE', provider: 'GamingNow', url: 'https://media01.gamingnow.net:8010/erweb.mp3', homepage: 'https://gamingnow.net/eve-radio/' },
+  { id: 'somafm-groovesalad', name: 'Groove Salad', description: 'Ambient · downtempo', provider: 'SomaFM', url: `${SOMAFM}/groovesalad-128-mp3`, homepage: 'https://somafm.com/groovesalad/' },
+  { id: 'somafm-dronezone', name: 'Drone Zone', description: 'Ambient atmosférico', provider: 'SomaFM', url: `${SOMAFM}/dronezone-128-mp3`, homepage: 'https://somafm.com/dronezone/' },
+  { id: 'somafm-secretagent', name: 'Secret Agent', description: 'Lounge · banda sonora', provider: 'SomaFM', url: `${SOMAFM}/secretagent-128-mp3`, homepage: 'https://somafm.com/secretagent/' },
+  { id: 'somafm-fluid', name: 'Fluid', description: 'Hip-hop instrumental', provider: 'SomaFM', url: `${SOMAFM}/fluid-128-mp3`, homepage: 'https://somafm.com/fluid/' },
+  { id: 'somafm-lush', name: 'Lush', description: 'Vocal · chillout', provider: 'SomaFM', url: `${SOMAFM}/lush-128-mp3`, homepage: 'https://somafm.com/lush/' },
+  { id: 'somafm-sonicuniverse', name: 'Sonic Universe', description: 'Jazz · vanguardia', provider: 'SomaFM', url: `${SOMAFM}/sonicuniverse-128-mp3`, homepage: 'https://somafm.com/sonicuniverse/' },
+  { id: 'somafm-defcon', name: 'DEF CON Radio', description: 'Electrónica · hacking', provider: 'SomaFM', url: `${SOMAFM}/defcon-128-mp3`, homepage: 'https://somafm.com/defcon/' },
+  { id: 'somafm-cliqhop', name: 'Cliqhop idm', description: 'IDM · blipsnbeats', provider: 'SomaFM', url: `${SOMAFM}/cliqhop-128-mp3`, homepage: 'https://somafm.com/cliqhop/' },
 ];
 
 export const T = {
@@ -82,11 +91,20 @@ export function createBudgetedLoop(
   tick: () => void,
   { fps, idleWhen }: { fps: number; idleWhen?: () => boolean },
 ) {
-  const run = () => {
-    if (!idleWhen?.()) tick();
+  let id: number | undefined;
+  const idle = () => idleWhen?.() === true;
+  const stop = () => {
+    window.clearInterval(id);
+    id = undefined;
   };
-  const id = window.setInterval(run, 1000 / fps);
-  return { wake: run, dispose: () => window.clearInterval(id) };
+  const wake = () => {
+    if (idle() || id !== undefined) return;
+    // El interval se autoapaga al quedar idle: dejarlo girando serían 12
+    // comprobaciones por segundo sin pinta mientras no suena nada.
+    id = window.setInterval(() => (idle() ? stop() : tick()), 1000 / fps);
+  };
+  wake();
+  return { wake, dispose: stop };
 }
 
 export const storage = {

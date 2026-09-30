@@ -447,21 +447,21 @@ class CanvasStore:
             return item
         return normalize_document(item)
 
-    def _select_history_entries(
+    def _select_encoded_history_entries(
         self,
         items: list[dict[str, Any]],  # allowlist: dict[str, Any]
         max_history: int,
         doc_id: str,
-    ) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
-        selected: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
+    ) -> list[bytes]:
+        selected: list[bytes] = []
         for d in items[-max_history:]:
             if not isinstance(d, dict):
                 continue
-            item = self._normalize_history_item(d)
-            if not _history_entry_size_ok(item):
+            encoded = encode_canvas_json(self._normalize_history_item(d))
+            if len(encoded) > _MAX_HISTORY_ENTRY_BYTES:
                 logger.warning("Dropping oversized canvas history entry for %s", doc_id)
                 continue
-            selected.append(item)
+            selected.append(encoded)
         return selected
 
     def get_history(self, doc_id: str) -> dict[str, list[dict[str, Any]]]:  # allowlist: dict[str, Any]
@@ -499,13 +499,13 @@ class CanvasStore:
             path = self._history_path_for(str(doc_id))
             self.history_dir.mkdir(parents=True, exist_ok=True)
             try:
-                norm_past = self._select_history_entries(past, max_history, str(doc_id))
-                norm_future = self._select_history_entries(future, max_history, str(doc_id))
-            except (TypeError, ValueError, UnicodeError) as exc:
-                raise ValueError("El historial Canvas contiene datos no serializables") from exc
-            payload = {"past": norm_past, "future": norm_future}
-            try:
-                encoded = encode_canvas_json(payload)
+                # Reutiliza los bytes de cada entrada con los separadores canónicos
+                # de encode_canvas_json, sin serializar de nuevo las pilas.
+                encoded_past = self._select_encoded_history_entries(past, max_history, str(doc_id))
+                encoded_future = self._select_encoded_history_entries(future, max_history, str(doc_id))
+                encoded = (
+                    b'{"past":[' + b",".join(encoded_past) + b'],"future":[' + b",".join(encoded_future) + b"]}"
+                )
             except (TypeError, ValueError, UnicodeError) as exc:
                 raise ValueError("El historial Canvas contiene datos no serializables") from exc
             if len(encoded) > MAX_CANVAS_HISTORY_BYTES:

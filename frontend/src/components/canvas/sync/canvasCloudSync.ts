@@ -126,10 +126,14 @@ export async function pushCanvasDocumentResult(
     countCanvasAssetRefs,
   } = await import('../utils/imageBlobStore');
   if (countCanvasAssetRefs(doc) > 0) {
+    // canvasAssetInfo permite acotar el tamaño del JSON con los assets embebidos;
+    // sin él, comprueba el tamaño exacto después de la expansión.
     await assertCanvasAssetExpansionWithinBytes(doc, MAX_CLOUD_CANVAS_DOCUMENT_BYTES);
     doc = await embedCanvasAssetsAsDataUrls(doc, { strict: true });
+    if (!window.electronAPI?.canvasAssetInfo) assertCloudCanvasDocumentSize(doc);
+  } else {
+    assertCloudCanvasDocumentSize(doc);
   }
-  assertCloudCanvasDocumentSize(doc);
 
   const updatedAt = doc.updatedAt || new Date().toISOString();
 

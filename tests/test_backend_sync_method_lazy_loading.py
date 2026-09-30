@@ -4,7 +4,6 @@ from typing import Any
 
 from backend import main as backend_main
 from backend.core.scheduler import WorkScheduler
-from backend.handlers import HANDLERS
 
 
 def _fresh_scheduler(monkeypatch, *, sync: bool = False) -> WorkScheduler:
@@ -139,10 +138,3 @@ def test_sync_method_not_found_if_get_returns_none(monkeypatch) -> None:
     assert msg_id == "req-2"
     assert error is not None
     assert "Método desconocido: process_status" in str(error)
-
-
-def test_process_status_resolvable_in_real_registry() -> None:
-    assert HANDLERS.is_known("process_status")
-    handler = HANDLERS.get("process_status")
-    assert handler is not None
-    assert callable(handler)

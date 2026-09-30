@@ -6,15 +6,11 @@ describe('useDebouncedValue', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('devuelve el valor inicial inmediatamente', () => {
-    const { result } = renderHook(() => useDebouncedValue('a', 100));
-    expect(result.current).toBe('a');
-  });
-
   it('no actualiza antes del delay y sí después', () => {
     const { result, rerender } = renderHook(({ v }) => useDebouncedValue(v, 100), {
       initialProps: { v: 'a' },
     });
+    expect(result.current).toBe('a');
     rerender({ v: 'b' });
     expect(result.current).toBe('a');
     act(() => vi.advanceTimersByTime(99));
@@ -48,12 +44,14 @@ describe('useDebouncedValue', () => {
     expect(result.current).toBe('b');
   });
 
-  it('al desmontar no actualiza estado', () => {
+  it('al desmontar cancela el timer pendiente', () => {
     const { result, rerender, unmount } = renderHook(({ v }) => useDebouncedValue(v, 100), {
       initialProps: { v: 'a' },
     });
     rerender({ v: 'b' });
+    expect(vi.getTimerCount()).toBe(1);
     unmount();
+    expect(vi.getTimerCount()).toBe(0);
     act(() => vi.advanceTimersByTime(500));
     expect(result.current).toBe('a');
   });

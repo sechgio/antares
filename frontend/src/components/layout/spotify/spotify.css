@@ -1,0 +1,52 @@
+.antares-spotify-bar{flex-shrink:0;margin-inline-start:5px}
+.antares-spotify-bar .antares-radio-browse{flex-shrink:0;gap:5px}
+.antares-spotify-mark{flex-shrink:0;color:var(--text-muted)}
+.antares-spotify-bar[data-spotify-playing=true] .antares-spotify-mark{color:var(--accent-primary)}
+.antares-spotify-bar .radio-name{flex:none;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:11px;line-height:16px}
+.antares-spotify-bar[data-spotify-playing=true] .radio-name{color:var(--accent-primary)}
+.antares-spotify-bar:not([data-spotify-ready=true]) .antares-radio-action{opacity:.4}
+.antares-spotify-bar:not([data-spotify-ready=true]) .antares-radio-action:hover{opacity:1}
+@media (max-width:680px){
+  .antares-spotify-bar .radio-name,.antares-radio-bar .radio-name{display:none}
+  .antares-radio-waveform{display:none}
+}
+.antares-spotify-panel{width:300px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 56px);overflow-y:auto;overscroll-behavior:contain}
+.antares-spotify-now{padding:6px 6px 0;min-height:52px;min-width:0}
+.antares-spotify-now-text{font-size:11px;color:var(--text-secondary);margin-left:5px}
+.antares-spotify-now-hint{display:block;font-size:10px;color:var(--text-muted);margin:2px 0 4px}
+.antares-spotify-track{display:flex;flex-direction:column;min-width:0}
+.antares-spotify-track-name{font-size:12px;line-height:17px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.antares-spotify-track-meta{font-size:10px;line-height:14px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.antares-spotify-progress{display:flex;align-items:center;gap:6px;margin-top:4px}
+.antares-spotify-time{font-size:9px;color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0}
+.antares-spotify-progress-bar{flex:1;height:3px;border-radius:2px;background:var(--bg-elevated);overflow:hidden}
+.antares-spotify-progress-bar>div{height:100%;background:var(--accent-primary);border-radius:2px}
+.antares-spotify-device{display:flex;align-items:center;gap:4px;margin-top:3px;font-size:10px;color:var(--text-muted)}
+.antares-spotify-tabs{display:flex;gap:2px;padding:4px 2px 2px;border-top:1px solid var(--border-subtle);margin-top:4px}
+.antares-spotify-tab{flex:1;padding:3px 0;border-radius:4px;font-size:10px;color:var(--text-muted);text-align:center}
+.antares-spotify-tab:hover{background:var(--bg-elevated);color:var(--text-primary)}
+.antares-spotify-tab[data-active=true]{background:var(--bg-elevated);color:var(--accent-primary)}
+.antares-spotify-row-meta{display:block;font-size:9px;line-height:13px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.antares-spotify-list{height:auto;max-height:200px;min-height:0}
+.antares-spotify-results{display:flex;flex-direction:column;max-height:220px;overflow-y:auto;overscroll-behavior:contain}
+.antares-spotify-notice{padding:2px 6px;font-size:10px;color:var(--accent-primary)}
+.antares-spotify-active{display:flex;align-items:center;justify-content:center;width:16px;color:var(--accent-primary);flex-shrink:0}
+.antares-spotify-liked{color:var(--accent-primary)}
+.antares-spotify-refresh{display:flex;justify-content:flex-end;padding:2px 4px}
+.antares-spotify-link{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--text-muted);padding:2px 4px;border-radius:3px}
+.antares-spotify-link:hover{color:var(--text-primary);background:var(--bg-elevated)}
+.antares-spotify-footer{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 2px;border-top:1px solid var(--border-subtle);margin-top:4px}
+.antares-spotify-hint{font-size:10px;line-height:14px;color:var(--text-muted);padding:2px 6px}
+.antares-spotify-hint code{font-size:9px;color:var(--text-secondary)}
+.antares-spotify-setup{display:flex;flex-direction:column;gap:6px;padding:6px}
+.antares-spotify-config-row{display:flex;align-items:center;gap:6px}
+.antares-spotify-config-value{flex:1;min-width:0;font-family:var(--font-mono,monospace);font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.antares-spotify-form{display:flex;flex-direction:column;gap:6px}
+.antares-spotify-input{width:100%;height:24px;padding:0 6px;border:1px solid var(--border-subtle);border-radius:4px;background:transparent;font-size:11px;color:var(--text-primary);outline:0;font-family:var(--font-mono,monospace)}
+.antares-spotify-input:focus{border-color:var(--border-medium)}
+.antares-spotify-input::placeholder{color:var(--text-muted)}
+.antares-spotify-primary{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;padding:6px 0;border-radius:6px;border:1px solid var(--border-medium);background:var(--bg-base);font-size:11px;color:var(--text-secondary);transition:color .15s,border-color .15s}
+.antares-spotify-primary:hover:not(:disabled){border-color:var(--border-active);color:var(--text-primary)}
+.antares-spotify-primary:disabled{opacity:.5}
+.antares-spotify-awaiting{display:flex;flex-direction:column;gap:4px}
+.antares-spotify-awaiting-line{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-muted)}

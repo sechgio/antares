@@ -14,10 +14,12 @@ import { subscribeHistoryReexecute } from './components/history/historyEvents';
 import { api, onNotify } from './api';
 import { acknowledgeCanvasFlush } from './utils/ackCanvasFlush';
 import { bootThemeFromBackend } from './utils/themeApplier';
+import { usePluginEnabled } from './plugins';
 
 const LoginScreen = React.lazy(() => import('./auth/LoginScreen'));
 const SettingsModal = React.lazy(() => import('./components/settings/SettingsModal'));
 const PetMascot = React.lazy(() => import('./components/layout/PetMascot'));
+const StickyNotesLayer = React.lazy(() => import('./components/sticky-notes/StickyNotesLayer'));
 
 const ConversionView = React.lazy(() => import('./components/conversion/ConversionView'));
 const FormatosView = React.lazy(() => import('./components/formatos/FormatosView'));
@@ -145,6 +147,7 @@ function AppContent() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<ConfigSectionId>('appearance');
   const [petEnabled, setPetEnabled] = useState(isPetMascotEnabled);
+  const stickyNotesEnabled = usePluginEnabled('sticky-notes');
 
   const handleTabChange = useCallback((tab: TabId) => {
     if (tab === 'canvas') {
@@ -301,6 +304,11 @@ function AppContent() {
       {petEnabled && (
         <Suspense fallback={null}>
           <PetMascot />
+        </Suspense>
+      )}
+      {stickyNotesEnabled && (
+        <Suspense fallback={null}>
+          <StickyNotesLayer />
         </Suspense>
       )}
     </div>

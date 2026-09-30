@@ -173,63 +173,6 @@ def test_parse_csv_reads_windows_ansi_file(tmp_path: Path) -> None:
     ]
 
 
-def test_parse_spills_large_result_to_disk(tmp_path: Path, monkeypatch) -> None:
-    from backend.handlers import spreadsheet as ss
-    from backend.handlers.spreadsheet import spreadsheet_get_rows
-
-    monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 2_000)
-
-    staged = tmp_path / "grande.xlsx"
-    rows = [["C" + str(c) for c in range(20)] for _ in range(50)]
-    rows[0] = [f"H{c}" for c in range(20)]
-    _write_xlsx(staged, rows)
-
-    result = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
-
-    assert result["sheets"] == []
-    assert "result_path" in result
-    assert Path(result["result_path"]).is_file()
-    page = spreadsheet_get_rows({"result_path": result["result_path"], "sheet_index": 0, "limit": 50})
-    assert len(page["rows"]) == 50
-    assert result["sheet_meta"][0]["rowCount"] == 50
-    assert result["workbookName"]
-
-
-def test_get_rows_pages_spilled_cache(tmp_path: Path, monkeypatch) -> None:
-    from backend.handlers import spreadsheet as ss
-    from backend.handlers.spreadsheet import spreadsheet_get_rows
-
-    monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 500)
-    staged = tmp_path / "page.xlsx"
-    rows = [[f"H{c}" for c in range(8)]] + [[str(r), "a", "b", "c", "d", "e", "f", "g"] for r in range(40)]
-    _write_xlsx(staged, rows)
-
-    parsed = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
-    assert "result_path" in parsed, parsed
-    page = spreadsheet_get_rows(
-        {
-            "result_path": parsed["result_path"],
-            "sheet_index": 0,
-            "offset": 0,
-            "limit": 10,
-        },
-    )
-    assert page["total"] == 41
-    assert len(page["rows"]) == 10
-    assert page["has_more"] is True
-    assert page["rows"][0][0] == "H0"
-
-    page2 = spreadsheet_get_rows(
-        {
-            "result_path": parsed["result_path"],
-            "offset": 10,
-            "limit": 10,
-        },
-    )
-    assert len(page2["rows"]) == 10
-    assert page2["rows"][0][0] == "9"
-
-
 def test_b64_inline_uses_unique_temp_file() -> None:
     from backend.handlers.spreadsheet import _resolve_input_path
 
@@ -376,45 +319,6 @@ def test_b64_inline_rejects_oversized_payload(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="excede"):
         ss._resolve_input_path({"xlsx_b64": oversized_b64})
-
-
-def test_get_rows_does_not_read_indexed_spill_as_text(tmp_path: Path, monkeypatch) -> None:
-    from backend.handlers import spreadsheet as ss
-    from backend.handlers.spreadsheet import spreadsheet_get_rows
-
-    monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 500)
-    staged = tmp_path / "cache.xlsx"
-    rows = [[f"H{c}" for c in range(8)]] + [
-        [str(r), "a", "b", "c", "d", "e", "f", "g"] for r in range(60)
-    ]
-    _write_xlsx(staged, rows)
-
-    parsed = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
-    assert "result_path" in parsed, parsed
-    spill_path = Path(parsed["result_path"]).resolve()
-
-    real_read_text = Path.read_text
-    reads: list[str] = []
-
-    def spy_read_text(self: Path, *args: Any, **kwargs: Any) -> str:
-        reads.append(str(self))
-        return real_read_text(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", spy_read_text)
-
-    page1 = spreadsheet_get_rows(
-        {"result_path": parsed["result_path"], "sheet_index": 0, "offset": 0, "limit": 10},
-    )
-    assert len(page1["rows"]) == 10
-
-    page2 = spreadsheet_get_rows(
-        {"result_path": parsed["result_path"], "offset": 10, "limit": 10},
-    )
-    assert len(page2["rows"]) == 10
-    assert page2["rows"][0][0] == "9"
-
-    spill_reads = [p for p in reads if p == str(spill_path)]
-    assert spill_reads == []
 
 
 def test_get_rows_observes_indexed_spill_changes(tmp_path: Path, monkeypatch) -> None:

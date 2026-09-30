@@ -3,12 +3,15 @@ import { Minus, Square, X, Settings } from 'lucide-react';
 import UpdateButton from './UpdateButton';
 import { HoverTooltip } from '@/components/ui/HoverTooltip';
 import Button from '@/components/ui/Button';
+import { usePluginEnabled } from '../../plugins';
 
 // La campana arrastra useDueNotifications → la API de espacios → @supabase/supabase-js.
 // Importarla en directo metería ese vendor en el grafo estático del shell (lo mide
 // frontend/scripts/shell-preload-budget.mjs) y el arranque en frío lo pagaría.
 const TaskNotificationsBell = lazy(() => import('./TaskNotificationsBell'));
-const RadioWidget = lazy(() => import('./radio/RadioWidget'));
+// Los plugins llevan dnd-kit dentro: lazy para que vendor-dnd no entre al
+// grafo estático del shell (misma razón que la campana, ver arriba).
+const TitleBarPlugins = lazy(() => import('./TitleBarPlugins'));
 
 const bellPlaceholder = (
   <div className="relative flex h-full" aria-hidden>
@@ -27,15 +30,23 @@ interface TitleBarProps {
 }
 
 export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEspacios }: TitleBarProps) {
+  const radioEnabled = usePluginEnabled('radio-live');
+  const spotifyEnabled = usePluginEnabled('spotify');
+  const audiusEnabled = usePluginEnabled('audius');
+  const jamendoEnabled = usePluginEnabled('jamendo');
+  const archiveEnabled = usePluginEnabled('archive');
+  const hasTitlebarPlugins = radioEnabled || spotifyEnabled || audiusEnabled || jamendoEnabled || archiveEnabled;
   return (
     <div
       data-testid="app-titlebar"
       className="app-titlebar flex h-9 shrink-0 items-center justify-end overflow-visible border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] select-none"
     >
       <div className="app-titlebar-controls flex h-full items-stretch overflow-visible">
-        <Suspense fallback={null}>
-          <RadioWidget />
-        </Suspense>
+        {hasTitlebarPlugins && (
+          <Suspense fallback={null}>
+            <TitleBarPlugins />
+          </Suspense>
+        )}
         <Suspense fallback={bellPlaceholder}>
           <TaskNotificationsBell onOpenEspacios={onOpenEspacios} />
         </Suspense>

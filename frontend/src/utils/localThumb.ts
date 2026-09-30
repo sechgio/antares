@@ -12,6 +12,8 @@ const READ_TOKEN_PREFIX = 'antares-read_';
 
 const cache = new Map<string, string>();
 let cachePayloadChars = 0;
+let fileIds = new WeakMap<File, number>();
+let nextFileId = 0;
 
 const inFlight = new Map<string, Promise<string | null>>();
 
@@ -31,6 +33,19 @@ const runLimited = createConcurrencyLimiter(resolveConcurrency());
 
 function cacheKey(filePath: string, maxEdge: number): string {
   return `${filePath}\0${maxEdge}`;
+}
+
+function fileCacheKey(file: File, maxEdge: number): string {
+  let id = fileIds.get(file);
+  if (id === undefined) {
+    id = ++nextFileId;
+    fileIds.set(file, id);
+  }
+  return `file\0${id}\0${maxEdge}`;
+}
+
+export function getCachedLocalThumbnail(file: File, maxEdge: number): string | undefined {
+  return cacheGet(fileCacheKey(file, maxEdge));
 }
 
 function cacheGet(key: string): string | undefined {
@@ -107,12 +122,13 @@ async function loadCachedDataUrl(
 export async function getLocalThumbnail(
   filePath: string,
   maxEdge: number = DEFAULT_MAX_EDGE,
+  stagedFile?: File,
 ): Promise<string | null> {
   if (typeof filePath !== 'string' || !filePath.trim()) return null;
 
   const edge = Number.isFinite(maxEdge) && maxEdge > 0 ? Math.floor(maxEdge) : DEFAULT_MAX_EDGE;
   return loadCachedDataUrl(
-    cacheKey(filePath, edge),
+    stagedFile && filePath.startsWith(READ_TOKEN_PREFIX) ? fileCacheKey(stagedFile, edge) : cacheKey(filePath, edge),
     () => api.localThumbnail(localImageRequest(filePath, edge)),
     filePath.startsWith(READ_TOKEN_PREFIX),
   );
@@ -131,6 +147,8 @@ export async function getLocalImageDataUrl(filePath: string): Promise<string | n
 export function _resetLocalThumbForTests(): void {
   cache.clear();
   cachePayloadChars = 0;
+  fileIds = new WeakMap<File, number>();
+  nextFileId = 0;
   inFlight.clear();
   runLimited.reset();
 }

@@ -1,13 +1,14 @@
 
-const CHUNK = 0x8000;
+// Múltiplo de 3 para concatenar bloques base64 sin padding intermedio.
+const CHUNK = 0x6000;
 
 export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
+  const chunks: string[] = [];
   for (let offset = 0; offset < bytes.length; offset += CHUNK) {
     const slice = bytes.subarray(offset, offset + CHUNK);
-    binary += String.fromCharCode.apply(null, slice as unknown as number[]);
+    chunks.push(btoa(String.fromCharCode(...slice)));
   }
-  return btoa(binary);
+  return chunks.join('');
 }
 
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {

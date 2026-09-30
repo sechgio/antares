@@ -6,10 +6,10 @@ const { EventEmitter } = require('events');
 const { assert, finish, stubModule, evictModule, installInertTimers } = require('./helpers/harness');
 
 function makeHarness() {
-  const state = { loadFileCalls: 0, loadURLCalls: [], logEvents: [], currentURL: 'file:///app/dist/index.html' };
+  const state = { loadFileCalls: 0, loadURLCalls: [], logEvents: [], calls: [], windowOpts: null, currentURL: 'file:///app/dist/index.html' };
 
   const webContents = new EventEmitter();
-  webContents.session = { webRequest: { onHeadersReceived: () => {} } };
+  webContents.session = { webRequest: { onHeadersReceived: () => {}, onBeforeSendHeaders: () => {} } };
   webContents.setBackgroundThrottling = () => {};
   webContents.setWindowOpenHandler = () => {};
   webContents.isLoadingMainFrame = () => false;
@@ -19,8 +19,8 @@ function makeHarness() {
   const win = new EventEmitter();
   win.webContents = webContents;
   win.isDestroyed = () => false;
-  win.show = () => {};
-  win.maximize = () => {};
+  win.show = () => { state.calls.push('show'); };
+  win.maximize = () => { state.calls.push('maximize'); };
   win.isVisible = () => true;
   win.loadFile = () => {
     state.loadFileCalls += 1;
@@ -34,7 +34,7 @@ function makeHarness() {
 
   state.win = win;
   stubModule('electron', {
-    BrowserWindow: function FakeBrowserWindow() { return win; },
+    BrowserWindow: function FakeBrowserWindow(opts) { state.windowOpts = opts; return win; },
     screen: { getPrimaryDisplay: () => ({ workAreaSize: { width: 1280, height: 800 } }) },
     app: { isPackaged: true },
     shell: { openExternal: () => Promise.resolve() },
@@ -61,6 +61,7 @@ async function main() {
     createWindow(false);
 
     assert(state.loadFileCalls === 1, 'createWindow carga el renderer empaquetado con loadFile');
+    assert(state.windowOpts && state.windowOpts.show === false, 'la ventana nace oculta hasta que el contenido está listo');
 
     // Fallo de carga -> reintento automático -> segundo fallo -> página de fallo.
     state.loadFileRejects = true;
@@ -68,6 +69,7 @@ async function main() {
     await new Promise((resolve) => timers.original.setTimeout(resolve, 25));
 
     assert(state.loadURLCalls.length === 1, 'el segundo fallo muestra la página de recuperación');
+    assert(state.calls.includes('show'), 'la ventana se hace visible cuando la carga inicial falla');
     const page = decodeURIComponent(state.loadURLCalls[0].replace('data:text/html;charset=utf-8,', ''));
     assert(page.includes('Ctrl+R'), 'la página de fallo anuncia la tecla de reintento');
     assert(!page.includes('Ver → Recargar'), 'la página ya no promete un menú inalcanzable');
@@ -96,6 +98,10 @@ async function main() {
     assert(keyUp.prevented === false, 'keyUp no dispara el reintento');
 
     state.win.emit('ready-to-show');
+    assert(
+      state.calls.slice(-2).join(',') === 'maximize,show',
+      'ready-to-show maximiza y muestra la ventana en ese orden',
+    );
     const readyEvent = state.logEvents.find(([, event, fields]) =>
       event === 'renderer.lifecycle' && fields.reason === 'ready_to_show',
     );

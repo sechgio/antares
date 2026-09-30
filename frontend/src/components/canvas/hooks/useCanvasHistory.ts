@@ -184,11 +184,9 @@ export function useCanvasHistory(initial: CanvasDocument) {
     const current = documentRef.current;
     const prev = isHistoryStepDiff(step) ? applyDocumentDiff(current, step.undoDiff) : step;
 
-    const futureStep: HistoryStepDiff = {
-      type: 'diff',
-      undoDiff: computeDocumentDiff(current, prev),
-      redoDiff: computeDocumentDiff(prev, current),
-    };
+    // Reutiliza el diff en ambos sentidos; para un snapshot guarda el documento
+    // actual, que permitirá volver con redo.
+    const futureStep: HistoryStep = isHistoryStepDiff(step) ? step : current;
 
     const trimmed = trimHistoryByBudget(p.slice(0, -1), [...futureRef.current, futureStep]);
     pastRef.current = trimmed.past;
@@ -209,11 +207,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
     const current = documentRef.current;
     const next = isHistoryStepDiff(step) ? applyDocumentDiff(current, step.redoDiff) : step;
 
-    const pastStep: HistoryStepDiff = {
-      type: 'diff',
-      undoDiff: computeDocumentDiff(next, current),
-      redoDiff: computeDocumentDiff(current, next),
-    };
+    const pastStep: HistoryStep = isHistoryStepDiff(step) ? step : current;
 
     const trimmed = trimHistoryByBudget([...pastRef.current, pastStep], f.slice(0, -1));
     futureRef.current = trimmed.future;

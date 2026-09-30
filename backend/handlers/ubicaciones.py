@@ -275,7 +275,11 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:  # allowlist: d
         ):
             raise ValueError("El Excel debe tener columnas 'latitud' y 'longitud'.")
 
-        for index, row in df.iterrows():
+        rows = df.iterrows() if not df.columns.is_unique else (
+            (index, dict(zip(df.columns, values, strict=True)))
+            for index, values in zip(df.index, df.to_numpy(), strict=True)
+        )
+        for index, row in rows:
             datos = _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
             lat = _coerce_coord(datos["lat"])
             lon = _coerce_coord(datos["lon"])

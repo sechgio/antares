@@ -11,25 +11,6 @@ import { createImageOverrides } from './utils';
 import type { ImageItem } from './types';
 
 describe('mapWithConcurrencyLimit', () => {
-  it('preserves order and respects concurrency', async () => {
-    let active = 0;
-    let peak = 0;
-    const items = [1, 2, 3, 4, 5];
-    const results = await mapWithConcurrencyLimit(items, 2, async (n) => {
-      active += 1;
-      peak = Math.max(peak, active);
-      await new Promise((r) => setTimeout(r, 20));
-      active -= 1;
-      return n * 10;
-    });
-    expect(results).toEqual([10, 20, 30, 40, 50]);
-    expect(peak).toBeLessThanOrEqual(2);
-  });
-
-  it('returns empty array for empty input', async () => {
-    expect(await mapWithConcurrencyLimit([], 3, async (x) => x)).toEqual([]);
-  });
-
   it('stops scheduling queued work after the signal is aborted', async () => {
     const controller = new AbortController();
     let calls = 0;

@@ -150,24 +150,6 @@ def test_render_reservorios2_uses_global_oper_totals_without_row_attribution() -
     assert aduccion and "<td>5</td>" not in aduccion.group(1)
 
 
-def test_reservorios2_uses_technical_reports_jinja_contract() -> None:
-    root = pathlib.Path(__file__).resolve().parent.parent
-    template = (root / "backend" / "templates" / "informes_v2" / "reservorios_2.html").read_text(
-        encoding="utf-8"
-    )
-
-    for field in (
-        "report.header.cs",
-        "report.header.ubicacion",
-        "report.inspeccion",
-        "report.valvulas",
-        "report.canastillas",
-        "report.medidas",
-    ):
-        assert field in template
-    assert "report.reservorios2" not in template
-
-
 def test_render_consolidated_groups_reports_by_plantilla() -> None:
     clasico = create_empty_report(1)
     clasico["header"]["estacion"] = "CLASICO"

@@ -39,6 +39,7 @@ function main() {
   const { NATIVE_METHODS: dialogNative } = require('../electron/dialog-handlers');
   const { AUTOIMG_METHODS } = require('../electron/autoimg-ipc-methods');
   const { UBICACIONES_METHODS } = require('../electron/ubicaciones-ipc-methods');
+  const { SPOTIFY_METHODS } = require('../electron/spotify-ipc-methods');
 
   check(
     Array.isArray(sourceNative) && new Set(sourceNative).size === sourceNative.length,
@@ -83,6 +84,7 @@ function main() {
     ['NATIVE_METHODS', source, catalogNatives],
     ['AUTOIMG_METHODS', AUTOIMG_METHODS, byHandler('native:autoimg')],
     ['UBICACIONES_METHODS', UBICACIONES_METHODS, byHandler('native:ubicaciones')],
+    ['SPOTIFY_METHODS', SPOTIFY_METHODS, byHandler('native:spotify')],
   ];
   for (const [name, exported, expected] of buckets) {
     check(setsEqual(exported, expected), `${name} coincide con su bucket del catálogo`);

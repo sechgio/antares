@@ -155,11 +155,14 @@ describe('GanttView', () => {
     const { container } = render(<GanttView tareas={tareas} onDatesChange={vi.fn()} />);
     const scroll = container.querySelector('.gantt-scroll')!;
     expect(scroll).toBeTruthy();
+    const dayHeadWidth = () =>
+      (container.querySelector('.gantt-day-head') as HTMLElement | null)!.style.width;
 
+    expect(dayHeadWidth()).toBe('72px');
     fireEvent.wheel(scroll, { deltaY: 120, ctrlKey: true });
+    expect(parseFloat(dayHeadWidth())).toBeLessThan(72);
     fireEvent.wheel(scroll, { deltaY: -120, ctrlKey: true });
-
-    expect(screen.getByText('Tarea zoom')).toBeInTheDocument();
+    expect(dayHeadWidth()).toBe('72px');
   });
 
   it('switches Día / Semana / Mes presets to distinct column widths and spans', () => {

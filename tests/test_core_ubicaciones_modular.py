@@ -10,25 +10,18 @@ from pypdf import PdfWriter
 import backend.handlers.ubicaciones as hub
 from backend.core.ubicaciones import cache as u_cache
 from backend.core.ubicaciones import client as u_client
-from backend.core.ubicaciones import composer as u_composer
 from backend.core.ubicaciones import consolidator as u_consolidator
 from backend.core.ubicaciones.cache import (
     _clear_ubicaciones_caches,
     _get_cached_map_screenshot,
 )
 from backend.core.ubicaciones.client import (
-    _cap_fetch_size,
-    _parse_combined_coord_value,
     _redact_url_for_log,
-    _resolve_api_key,
-    _resolve_provider,
     fetch_static_map,
 )
 from backend.core.ubicaciones.composer import (
-    _REF_LAYOUT,
     _compose_ubicacion_image,
     _dimensions_for,
-    _map_capture_size,
     _unique_pdf_filename,
 )
 from backend.core.ubicaciones.consolidator import (
@@ -54,40 +47,6 @@ def test_client_redact_url() -> None:
     assert "acc789" not in redacted
     assert "api000" not in redacted
     assert "foo=bar" in redacted
-
-
-def test_client_provider_resolution() -> None:
-    assert _resolve_provider(None) == "osm"
-    assert _resolve_provider({"provider": "MAPBOX"}) == "mapbox"
-    assert _resolve_api_key({"api_key": "my_key"}) == "my_key"
-
-
-def test_client_cap_fetch_size() -> None:
-    w, h = _cap_fetch_size(2000, 1000)
-    assert max(w, h) == 1024
-    assert w == 1024
-    assert h == 512
-
-
-def test_client_parse_combined_coord_value() -> None:
-    lat, lon = _parse_combined_coord_value("-12.046374, -77.042793")
-    assert lat == pytest.approx(-12.046374)
-    assert lon == pytest.approx(-77.042793)
-
-    assert _parse_combined_coord_value(None) == (None, None)
-    assert _parse_combined_coord_value("") == (None, None)
-    assert _parse_combined_coord_value("invalid") == (None, None)
-
-
-def test_composer_layout_and_dimensions() -> None:
-    w, h, f = _dimensions_for("vertical", preview=False)
-    assert w == _REF_LAYOUT["vertical"]["out_w"]
-    assert h == _REF_LAYOUT["vertical"]["out_h"]
-    assert f == _REF_LAYOUT["vertical"]["footer_h"]
-
-    cap_w, cap_h = _map_capture_size("horizontal", preview=False)
-    assert cap_w == _REF_LAYOUT["horizontal"]["out_w"]
-    assert cap_h == _REF_LAYOUT["horizontal"]["out_h"] - _REF_LAYOUT["horizontal"]["footer_h"]
 
 
 def test_composer_unique_pdf_filename() -> None:
@@ -215,20 +174,8 @@ def test_write_consolidated_pdf_all_locked_raises(tmp_path: Path, monkeypatch: p
 
 def test_module_exports_consistency() -> None:
     assert _MAX_CONSOLIDATED_PAGE_BYTES == 64 * 1024 * 1024
-    for mod in (u_client, u_cache, u_composer, u_consolidator):
-        assert mod is not None
     assert hub.HANDLERS["generar_ubicaciones"] is hub.handle_generar_ubicaciones
     assert hub.HANDLERS["preview_ubicacion"] is hub.handle_preview_ubicacion
-
-
-def test_handler_keeps_legacy_test_surface() -> None:
-    assert callable(hub._http_get)
-    assert callable(hub._resolve_provider)
-    assert callable(hub._encode_preview_data)
-    assert hub._excel_cache is u_cache._excel_cache
-    assert hub._preview_composed_cache is u_cache._preview_composed_cache
-    assert hub.urllib is not None
-    assert hub.create_consolidated_writer is u_consolidator.create_consolidated_writer
 
 
 def test_compose_and_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:

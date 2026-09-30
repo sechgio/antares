@@ -197,6 +197,9 @@ describe('syncCanvasDocuments', () => {
 
     expect(result.pulled).toBe(1);
     expect(result.reloadOpenId).toBe('doc-1');
+    expect(supabaseMock.from).toHaveBeenCalledWith('canvas_documents');
+    expect(supabaseMock.chainable.in).toHaveBeenCalledWith('id', ['doc-1']);
+    expect(supabaseMock.chainable.is).toHaveBeenCalledWith('deleted_at', null);
     expect(vi.mocked(api.canvasSave)).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'doc-1',

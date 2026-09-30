@@ -135,7 +135,7 @@ export default function PetMascot() {
     let lastTime = performance.now();
     let frameAccum = 0;
     const TICK_MS = 130;
-    const walkSpeed = 4 / TICK_MS;
+    const walkSpeed = 12 / TICK_MS;
 
     const tick = () => {
       setFrameCol((f) => (f + 1) % 8);

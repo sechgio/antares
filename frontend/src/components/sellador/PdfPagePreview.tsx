@@ -3,10 +3,9 @@ import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '../../api';
 import { acquireStagedFile } from '../../utils/stageFile';
 import {
-  createLruMap,
   createObjectIdentity,
-  estimateStringBytes,
-  SELLADOR_PREVIEW_CACHE_MAX_BYTES,
+  hashPdfBase64,
+  selladorPreviewCache,
 } from './lruMap';
 import type { PdfPageSize } from './utils';
 import { loadPdfDocument, renderPdfPageToDataUrl } from './pdfjs';
@@ -29,10 +28,6 @@ interface PdfPagePreviewProps {
 const DEFAULT_WIDTH = 900;
 const WIDTH_BUCKET = 80;
 const RENDER_CACHE_VERSION = 'disp-v1';
-const renderCache = createLruMap<string, string>({
-  maxBytes: SELLADOR_PREVIEW_CACHE_MAX_BYTES,
-  sizeOf: estimateStringBytes,
-});
 const fileCacheIdentity = createObjectIdentity<File>();
 
 function bucketRenderWidth(width: number): number {
@@ -51,9 +46,9 @@ export function buildCacheKey(
   const source = pdfPath?.trim()
     || (pdfFile
       ? `file:${fileCacheIdentity(pdfFile)}:${pdfFile.name}:${pdfFile.size}:${pdfFile.lastModified}`
-      : `b64:${pdfBase64?.length ?? 0}`);
+      : `b64:${hashPdfBase64(pdfBase64 ?? '')}`);
   const pixelWidth = selladorPreviewPixelWidth(cssWidth);
-  return `${RENDER_CACHE_VERSION}:${sourceRevision}:${source}:${pageNum}:${pixelWidth}`;
+  return `main:${RENDER_CACHE_VERSION}:${sourceRevision}:${source}:${pageNum}:${pixelWidth}`;
 }
 
 export default function PdfPagePreview({
@@ -79,7 +74,10 @@ export default function PdfPagePreview({
   const renderWidth = useMemo(() => bucketRenderWidth(width), [width]);
   const usePathMode = !!pdfPath?.trim();
   const previewPixelWidth = useMemo(() => selladorPreviewPixelWidth(renderWidth), [renderWidth]);
-  const cacheKey = buildCacheKey(pdfPath, pdfBase64, pdfFile, pageNum, renderWidth, sourceRevision);
+  const cacheKey = useMemo(
+    () => buildCacheKey(pdfPath, pdfBase64, pdfFile, pageNum, renderWidth, sourceRevision),
+    [pdfPath, pdfBase64, pdfFile, pageNum, renderWidth, sourceRevision],
+  );
 
   useEffect(() => {
     pageSizeReportedRef.current = false;
@@ -89,7 +87,7 @@ export default function PdfPagePreview({
   useEffect(() => {
     if (!pdfPath && !pdfBase64 && !pdfFile) return undefined;
 
-    const cached = renderCache.get(cacheKey);
+    const cached = selladorPreviewCache.get(cacheKey);
     if (cached) {
       setPageImageUrl(cached);
       hasDisplayedImageRef.current = true;
@@ -112,7 +110,7 @@ export default function PdfPagePreview({
         });
         if (cancelled) return;
         const url = `data:${rendered.mime_type};base64,${rendered.image_base64}`;
-        renderCache.set(cacheKey, url);
+        selladorPreviewCache.set(cacheKey, url);
         setPageImageUrl(url);
         hasDisplayedImageRef.current = true;
         if (!pageSizeReportedRef.current) {
@@ -147,7 +145,7 @@ export default function PdfPagePreview({
       try {
         const rendered = await renderPdfPageToDataUrl(pdf, pageNum, renderWidth, selladorPreviewDpr());
         if (cancelled) return;
-        renderCache.set(cacheKey, rendered.url);
+        selladorPreviewCache.set(cacheKey, rendered.url);
         setPageImageUrl(rendered.url);
         hasDisplayedImageRef.current = true;
         if (!pageSizeReportedRef.current) {
@@ -166,7 +164,7 @@ export default function PdfPagePreview({
     renderPage().catch((err) => {
       if (cancelled) return;
       setLoading(false);
-      if (!renderCache.get(cacheKey)) {
+      if (!selladorPreviewCache.get(cacheKey)) {
         setPageImageUrl(null);
       }
       setError(errorMessage(err, 'No se pudo renderizar el PDF.'));
@@ -176,7 +174,7 @@ export default function PdfPagePreview({
   }, [cacheKey, pageNum, pdfBase64, pdfFile, pdfPath, previewPixelWidth, renderKey, renderWidth, sourceRevision, usePathMode]);
 
   const retry = useCallback(() => {
-    renderCache.delete(cacheKey);
+    selladorPreviewCache.delete(cacheKey);
     setRenderKey((value) => value + 1);
   }, [cacheKey]);
 

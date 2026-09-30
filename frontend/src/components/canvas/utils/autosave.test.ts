@@ -43,4 +43,15 @@ describe('adaptive autosave budget', () => {
   it('keeps an empty document on the short debounce', () => {
     expect(autosaveDelayForDoc(null)).toBe(AUTOSAVE_DEBOUNCE_MS);
   });
+
+  it('caches the delay per document object instead of re-walking per keystroke', () => {
+    const doc = createEmptyDocument('Cached');
+    expect(autosaveDelayForDoc(doc)).toBe(AUTOSAVE_DEBOUNCE_MS);
+
+    doc.layers[0]!.value = 'X'.repeat(3 * 1024 * 1024);
+    expect(autosaveDelayForDoc(doc)).toBe(AUTOSAVE_DEBOUNCE_MS);
+
+    const nextRevision = { ...doc };
+    expect(autosaveDelayForDoc(nextRevision)).toBe(AUTOSAVE_LARGE_MS);
+  });
 });

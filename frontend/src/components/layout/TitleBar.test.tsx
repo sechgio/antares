@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import TitleBar from './TitleBar';
 import { DialogProvider } from '../../hooks/useDialog';
+import { setPluginEnabled, TITLEBAR_PLUGINS } from '../../plugins';
+
+vi.mock('./TitleBarPlugins', () => ({
+  default: () => <div data-testid="titlebar-plugins" />,
+}));
 
 function renderTitleBar() {
   return render(
@@ -12,6 +17,22 @@ function renderTitleBar() {
 }
 
 describe('TitleBar', () => {
+  it('updates when each plugin is enabled or disabled without changing hook order', async () => {
+    renderTitleBar();
+    await screen.findByTestId('titlebar-plugins');
+
+    act(() => setPluginEnabled('radio-live', false));
+    expect(screen.queryByTestId('titlebar-plugins')).toBeNull();
+
+    for (const id of TITLEBAR_PLUGINS) {
+      act(() => setPluginEnabled(id, true));
+      expect(await screen.findByTestId('titlebar-plugins')).toBeInTheDocument();
+
+      act(() => setPluginEnabled(id, false));
+      expect(screen.queryByTestId('titlebar-plugins')).toBeNull();
+    }
+  });
+
   it('renders the themed titlebar container', () => {
     renderTitleBar();
 

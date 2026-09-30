@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import {
   useCanvasHistory,
@@ -12,6 +12,14 @@ import {
 import { createEmptyDocument, parseMm, type CanvasDocument } from '../types';
 import type { HistoryStepDiff } from '../utils/canvasDiff';
 import { computeDocumentDiff } from '../utils/canvasDiff';
+
+vi.mock('../utils/canvasDiff', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/canvasDiff')>();
+  return {
+    ...actual,
+    computeDocumentDiff: vi.fn(actual.computeDocumentDiff),
+  };
+});
 
 function cloneDoc(doc: CanvasDocument): CanvasDocument {
   return {
@@ -135,6 +143,57 @@ describe('useCanvasHistory gesture coalesce', () => {
     expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
       40,
     );
+  });
+
+  it('undo and redo reuse the popped step without recomputing diffs', () => {
+    const base = createEmptyDocument('Test');
+    const text = createLayer('text');
+    text.cssVars['--translate-x'] = '0mm';
+    base.layers.push(text);
+    const { result } = renderHook(() => useCanvasHistory(base));
+
+    act(() => {
+      result.current.setDocument(withMovedText(result.current.document, 10));
+    });
+    const popped = result.current.past[result.current.past.length - 1];
+    vi.mocked(computeDocumentDiff).mockClear();
+
+    act(() => {
+      result.current.undo();
+    });
+    expect(computeDocumentDiff).not.toHaveBeenCalled();
+    expect(result.current.future[result.current.future.length - 1]).toBe(popped);
+
+    act(() => {
+      result.current.redo();
+    });
+    expect(computeDocumentDiff).not.toHaveBeenCalled();
+    expect(result.current.past[result.current.past.length - 1]).toBe(popped);
+    expect(
+      parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x']),
+    ).toBe(10);
+  });
+
+  it('undo of a snapshot step pushes the live document instead of computing diffs', () => {
+    const base = createEmptyDocument('Test');
+    const text = createLayer('text');
+    text.cssVars['--translate-x'] = '0mm';
+    base.layers.push(text);
+    const { result } = renderHook(() => useCanvasHistory(base));
+
+    const snapshot = withMovedText(cloneDoc(result.current.document), 42);
+    act(() => {
+      result.current.restoreHistory([snapshot], []);
+    });
+    const live = result.current.document;
+    vi.mocked(computeDocumentDiff).mockClear();
+
+    act(() => {
+      result.current.undo();
+    });
+    expect(computeDocumentDiff).not.toHaveBeenCalled();
+    expect(result.current.document).toBe(snapshot);
+    expect(result.current.future[result.current.future.length - 1]).toBe(live);
   });
 
   it('supports rapid successive undos in one act', () => {

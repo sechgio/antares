@@ -10,6 +10,40 @@ afterEach(async () => {
   await i18n.changeLanguage('es');
 });
 
+// Node 22 expone `localStorage` global experimental que devuelve undefined sin
+// `--localstorage-file` y ensombrece el de jsdom; se repone un Storage en memoria
+// cuando el global viene roto para que las pruebas con persistencia funcionen.
+if (typeof window !== 'undefined') {
+  const map = new Map<string, string>();
+  const store: Storage = {
+    get length() {
+      return map.size;
+    },
+    clear: () => {
+      map.clear();
+    },
+    getItem: (key: string) => map.get(String(key)) ?? null,
+    key: (index: number) => [...map.keys()][index] ?? null,
+    removeItem: (key: string) => {
+      map.delete(String(key));
+    },
+    setItem: (key: string, value: string) => {
+      map.set(String(key), String(value));
+    },
+  };
+  for (const target of [globalThis, window]) {
+    let ok = false;
+    try {
+      ok = typeof target.localStorage === 'object';
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      Object.defineProperty(target, 'localStorage', { value: store, configurable: true, writable: true });
+    }
+  }
+}
+
 if (typeof globalThis.ResizeObserver !== 'function') {
   class ResizeObserverStub {
     callback: ResizeObserverCallback;

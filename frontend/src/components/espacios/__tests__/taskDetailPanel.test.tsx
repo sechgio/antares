@@ -45,6 +45,8 @@ describe('task detail panel', () => {
     expect(screen.getByLabelText('Descripción')).toHaveAttribute('rows', '6');
     expect(screen.getByLabelText('Persona asignada')).toHaveTextContent('Ana');
     expect(screen.getByLabelText('Prioridad de la tarea')).toHaveTextContent('Alta');
+    expect(screen.getByLabelText('Fecha de inicio').querySelector('.app-date-picker-trigger-value')).not.toHaveClass('is-placeholder');
+    expect(screen.getByLabelText('Fecha de vencimiento').querySelector('.app-date-picker-trigger-value')).not.toHaveClass('is-placeholder');
     expect(panel.querySelector('form')?.parentElement).toHaveClass('overflow-y-auto', 'min-h-0');
   });
 

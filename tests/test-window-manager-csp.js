@@ -29,7 +29,18 @@ function run() {
     assert(csp.includes('https://fonts.gstatic.com'), 'font-src allows fonts.gstatic.com');
     assert(/https:\/\/[\w.*-]+\.supabase\.co/.test(csp), 'connect-src allows Supabase HTTPS');
     assert(/wss:\/\/[\w.*-]+\.supabase\.co/.test(csp), 'connect-src allows Supabase Realtime WSS');
+    assert(csp.includes('https://*.audius.co'), 'connect-src allows Audius API hosts');
+    assert(csp.includes('https://api.jamendo.com'), 'connect-src allows Jamendo API');
+    assert(csp.includes('https://archive.org'), 'connect-src allows Internet Archive API');
+    assert(csp.includes('https://ice6.somafm.com'), 'connect-src allows SomaFM metadata');
   }
+  const prodScriptSources = prodCsp.match(/(?:^|;)\s*script-src\s+([^;]+)/)?.[1] ?? '';
+  assert(prodScriptSources.trim() === "'self'", 'production scripts are restricted to self');
+
+  assert(
+    source.includes('onBeforeSendHeaders') && /delete\s+requestHeaders\.(R|r)eferer/.test(source),
+    'cross-origin Referer is stripped (Icecast anti-hotlink 403s)',
+  );
 
   assert(
     /\\\*\\\.supabase\\\.co/.test(source) && source.includes('_resolvePinnedSupabaseHost'),

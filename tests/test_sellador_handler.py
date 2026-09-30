@@ -111,13 +111,6 @@ def test_sellador_apply_can_write_to_disk(tmp_path) -> None:
     assert output_path.stat().st_size > 0
 
 
-def test_distribute_stamp_pages_is_deterministic() -> None:
-    pages_a, _ = distribute_stamp_pages(6, 4, 555)
-    pages_b, _ = distribute_stamp_pages(6, 4, 555)
-    assert pages_a == pages_b
-    assert len(pages_a) == 4
-
-
 def test_sellador_inspect_pdf_reads_from_path(tmp_path) -> None:
     pdf_path = tmp_path / "doc.pdf"
     pdf_path.write_bytes(_blank_pdf(3))

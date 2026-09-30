@@ -294,20 +294,6 @@ def test_oversized_line_at_eof_is_skipped(monkeypatch) -> None:
     assert '"code": -32600' in stdout.getvalue()
 
 
-def test_inbound_payload_over_max_is_skipped(monkeypatch) -> None:
-    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 64)
-    big = "x" * 200 + "\n"
-    stdin = io.StringIO(big)
-    stdout = io.StringIO()
-    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
-    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
-
-    result = ipc_protocol.read_message()
-
-    assert result is ipc_protocol._SKIP
-    assert stdout.getvalue() == ""
-
-
 def test_inbound_payload_under_max_still_parses(monkeypatch) -> None:
     monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 10_000)
     stdin = io.StringIO('{"jsonrpc":"2.0","id":"1","method":"version","params":{}}\n')

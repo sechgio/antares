@@ -84,6 +84,7 @@ function Signal({ player }: { player: RadioPlayer }) {
   const endpoints: Record<string, string> = {
     'stream.nightride.fm': `${NIGHTRIDE}status-json.xsl`,
     'media01.gamingnow.net': 'https://media01.gamingnow.net:8010/status-json.xsl',
+    'ice6.somafm.com': 'https://ice6.somafm.com/status-json.xsl',
   };
   const endpoint = endpoints[stream.hostname];
   const metadata = useIcecastMetadata(endpoint, status === 'live');

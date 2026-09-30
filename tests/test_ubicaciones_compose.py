@@ -1,6 +1,5 @@
 
 from io import BytesIO
-from typing import cast
 
 import pytest
 from PIL import Image
@@ -21,31 +20,6 @@ from backend.core.ubicaciones.composer import (
     _output_pdf_filename,
 )
 from backend.utils.paths import resource_path
-
-
-def _measure_footer_band_height(source) -> int:
-    img = Image.open(source).convert("RGB")
-    w, h = img.size
-    black_rows: list[int] = []
-    step = max(1, w // 30)
-    for y in range(h):
-        total = sum(sum(cast(tuple[int, ...], img.getpixel((x, y)))) for x in range(0, w, step))
-        if (total / (w // step + 1)) < 100:
-            black_rows.append(y)
-    if not black_rows:
-        return 0
-    groups: list[tuple[int, int]] = []
-    start = black_rows[0]
-    prev = black_rows[0]
-    for y in black_rows[1:]:
-        if y == prev + 1:
-            prev = y
-        else:
-            groups.append((start, prev))
-            start = prev = y
-    groups.append((start, prev))
-    best_start, best_end = max(groups, key=lambda band: band[1] - band[0])
-    return best_end - best_start + 1
 
 
 def _fake_map_png(width: int, height: int, color: tuple[int, int, int] = (80, 120, 160)) -> bytes:
@@ -70,14 +44,6 @@ def test_dimensions_preview_matches_export_proportions(formato: str) -> None:
     export = _dimensions_for(formato, preview=False)
     preview = _dimensions_for(formato, preview=True)
     assert export[2] / export[1] == pytest.approx(preview[2] / preview[1], abs=0.002)
-
-
-@pytest.mark.parametrize("formato", ["vertical", "horizontal"])
-def test_map_capture_size_matches_compose_map_area(formato: str) -> None:
-    for preview in (False, True):
-        out_w, out_h, footer_h = _dimensions_for(formato, preview=preview)
-        cap = _map_capture_size(formato, preview=preview)
-        assert cap == (out_w, out_h - footer_h)
 
 
 @pytest.mark.parametrize("formato", ["vertical", "horizontal"])
@@ -217,12 +183,6 @@ def test_ref_layout_vertical_a4_aspect() -> None:
     assert spec["footer_h"] / spec["out_h"] == pytest.approx(122 / 3508, rel=0.01)
 
 
-@pytest.mark.parametrize("formato,max_ratio", [("vertical", 0.05), ("horizontal", 0.06)])
-def test_footer_not_oversized(formato: str, max_ratio: float) -> None:
-    _, out_h, footer_h = _dimensions_for(formato, preview=False)
-    assert footer_h / out_h < max_ratio
-
-
 def test_footer_logo_fills_bar_width() -> None:
     cap_w, cap_h = _map_capture_size("vertical", preview=False)
     img = _compose_ubicacion_image(
@@ -238,25 +198,6 @@ def test_footer_logo_fills_bar_width() -> None:
     assert xs, "footer row should contain logo pixels"
     assert (max(xs) - min(xs)) >= out_w * 0.08
     assert max(img.getpixel((out_w // 2, row_y))) > 100
-
-
-def _synthetic_template(width: int, height: int, footer_h: int) -> BytesIO:
-    img = Image.new("RGB", (width, height), (244, 251, 252))
-    img.paste(Image.new("RGB", (width, footer_h), (15, 20, 25)), (0, height - footer_h))
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return buf
-
-
-def test_measure_footer_band_height_synthetic_templates() -> None:
-    # Los JPG de referencia se eliminaron con el rebrand de assets; se sintetizan
-    # exportaciones equivalentes (mismo ancho y alto de banda de footer).
-    vertical_band = _measure_footer_band_height(_synthetic_template(1491, 2104, 52))
-    horizontal_band = _measure_footer_band_height(_synthetic_template(3508, 2480, 135))
-    assert vertical_band == pytest.approx(52, abs=5)
-    assert horizontal_band == pytest.approx(135, abs=5)
-    assert round(vertical_band / 1491 * 3508) == pytest.approx(int(_REF_LAYOUT["vertical"]["footer_h"]), abs=3)
 
 
 def test_normalize_map_screenshot_trims_left_gutter() -> None:

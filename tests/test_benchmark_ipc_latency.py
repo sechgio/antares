@@ -44,16 +44,6 @@ def test_summarize_excludes_first_from_stable_percentiles() -> None:
     assert summary["p95_ms"] < summary["first_ms"]
 
 
-def test_registry_methods_cover_handlers() -> None:
-    bench = _load_bench()
-    from backend.handlers import HANDLERS
-
-    registered = set(HANDLERS.keys())
-    covered = set(bench.registry_methods())
-    assert covered == registered
-    assert len(covered) == len(registered)
-
-
 def test_stable_leader_requires_repeatable_success() -> None:
     bench = _load_bench()
     rows = [

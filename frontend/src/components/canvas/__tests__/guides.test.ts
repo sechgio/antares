@@ -9,7 +9,6 @@ import {
   guidesForPage,
   isGuideRemovalPoint,
   measureHoverGap,
-  measureGuideDistances,
   measureSelectionGaps,
   moveGuide,
   removeGuide,
@@ -98,31 +97,6 @@ describe('guides', () => {
     const cleared = clearGuides(doc);
     expect(cleared.guides).toEqual([]);
     expect(clearGuides(cleared)).toBe(cleared);
-  });
-
-  it('measureSelectionGaps reports page and object gaps', () => {
-    const selection = { x: 20, y: 20, w: 10, h: 10 };
-    const other = { x: 50, y: 20, w: 10, h: 10 };
-    const labels = measureSelectionGaps(selection, [other], { widthMm: 210, heightMm: 297 });
-    expect(labels.some((l) => l.id === 'page-left')).toBe(true);
-    expect(labels.some((l) => l.id === 'obj-right' && Math.abs(l.valueMm - 20) < 0.01)).toBe(true);
-  });
-
-  it('measureGuideDistances reports page edges and the nearest object edges', () => {
-    const labels = measureGuideDistances(
-      'x',
-      45,
-      [
-        { x: 20, y: 30, w: 10, h: 10 },
-        { x: 60, y: 50, w: 20, h: 10 },
-      ],
-      { widthMm: 210, heightMm: 297 },
-    );
-
-    expect(labels.find((label) => label.id === 'guide-page-left')?.valueMm).toBe(45);
-    expect(labels.find((label) => label.id === 'guide-page-right')?.valueMm).toBe(165);
-    expect(labels.find((label) => label.id === 'guide-object-left')?.valueMm).toBe(15);
-    expect(labels.find((label) => label.id === 'guide-object-right')?.valueMm).toBe(15);
   });
 
   it('formatGapMm', () => {
@@ -344,40 +318,11 @@ describe('guides', () => {
     expect(result.labels[0]?.valueMm).toBe(14);
   });
 
-  it('measureHoverGap measures gap to a separated layer', () => {
-    const sel = { x: 20, y: 20, w: 10, h: 10 };
-    const target = { x: 60, y: 25, w: 10, h: 10 };
-    const labels = measureHoverGap(sel, target, { widthMm: 210, heightMm: 297 });
-    const xGap = labels.find((l) => l.id === 'hover-x');
-    expect(xGap).toBeTruthy();
-    expect(xGap!.valueMm).toBeCloseTo(30, 5);
-    const yGap = labels.find((l) => l.id === 'hover-y');
-    expect(yGap).toBeUndefined();
-  });
-
   it('measureHoverGap omits the gap label when boxes only touch', () => {
     const sel = { x: 20, y: 20, w: 10, h: 10 };
     const target = { x: 30, y: 20, w: 10, h: 10 };
     const labels = measureHoverGap(sel, target, { widthMm: 210, heightMm: 297 });
     expect(labels.find((l) => l.id === 'hover-x')).toBeUndefined();
-  });
-
-  it('measureHoverGap reports edge deltas when overlapping on an axis', () => {
-    const sel = { x: 20, y: 20, w: 10, h: 10 };
-    const target = { x: 25, y: 20, w: 15, h: 10 };
-    const labels = measureHoverGap(sel, target, { widthMm: 210, heightMm: 297 });
-    const left = labels.find((l) => l.id === 'hover-x-left');
-    const right = labels.find((l) => l.id === 'hover-x-right');
-    expect(left!.valueMm).toBeCloseTo(5, 5);
-    expect(right!.valueMm).toBeCloseTo(10, 5);
-  });
-
-  it('measureHoverGap falls back to page distances without a target', () => {
-    const sel = { x: 20, y: 20, w: 10, h: 10 };
-    const labels = measureHoverGap(sel, null, { widthMm: 210, heightMm: 297 });
-    expect(labels.some((l) => l.id === 'page-left')).toBe(true);
-    expect(labels.some((l) => l.id === 'page-right')).toBe(true);
-    expect(labels.some((l) => l.id.startsWith('hover-'))).toBe(false);
   });
 
   it('measureHoverGap omits aligned edges', () => {

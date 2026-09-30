@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { History, Palette, X, Users, PawPrint, type LucideIcon } from 'lucide-react';
+import { History, Palette, X, Users, PawPrint, Puzzle, type LucideIcon } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { CONFIG_SECTION_DEFINITIONS, type ConfigSectionId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
@@ -11,6 +11,7 @@ const AppearanceView = React.lazy(() => import('./AppearanceView'));
 const HistoryView = React.lazy(() => import('../history/HistoryView'));
 const PanelView = React.lazy(() => import('./PanelView'));
 const PetdexView = React.lazy(() => import('./PetdexView'));
+const PluginsView = React.lazy(() => import('./PluginsView'));
 
 const sectionFallback = (
   <div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">
@@ -30,6 +31,7 @@ const SECTION_ICONS: Record<ConfigSectionId, LucideIcon> = {
   history: History,
   panel: Users,
   petdex: PawPrint,
+  plugins: Puzzle,
 };
 
 const SECTION_LABEL_KEYS: Record<ConfigSectionId, string> = {
@@ -37,6 +39,7 @@ const SECTION_LABEL_KEYS: Record<ConfigSectionId, string> = {
   history: 'tab.history',
   panel: 'tab.panel',
   petdex: 'tab.petdex',
+  plugins: 'tab.plugins',
 };
 
 const SECTION_HINTS: Record<ConfigSectionId, string> = {
@@ -44,6 +47,7 @@ const SECTION_HINTS: Record<ConfigSectionId, string> = {
   history: 'Revisa las ejecuciones anteriores',
   panel: 'Gestiona usuarios y permisos',
   petdex: 'Colecciona y activa mascotas animadas',
+  plugins: 'Activa y desactiva plugins',
 };
 
 const SECTION_OVERFLOW: Record<ConfigSectionId, string> = {
@@ -51,6 +55,7 @@ const SECTION_OVERFLOW: Record<ConfigSectionId, string> = {
   history: 'h-full overflow-hidden',
   panel: 'h-full overflow-y-auto',
   petdex: 'h-full overflow-y-auto',
+  plugins: 'h-full overflow-y-auto',
 };
 
 const SECTION_VIEWS: Record<ConfigSectionId, React.LazyExoticComponent<React.ComponentType>> = {
@@ -58,6 +63,7 @@ const SECTION_VIEWS: Record<ConfigSectionId, React.LazyExoticComponent<React.Com
   history: HistoryView,
   panel: PanelView,
   petdex: PetdexView,
+  plugins: PluginsView,
 };
 
 export default function SettingsModal({ isOpen, section, onSectionChange, onClose }: SettingsModalProps) {

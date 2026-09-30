@@ -1,0 +1,64 @@
+/* Archive: grupo segmentado de celda única — icono enmarcado, nombre y
+   transporte comparten un contenedor hairline; opuesto a la píldora con
+   acento de las demás fuentes. Monocromo; el acento cálido solo marca lo
+   que suena. */
+.antares-archive-bar{display:flex;align-items:center;height:100%;color:var(--text-muted);--archive-accent:#c9a86a}
+.antares-archive-group{display:flex;align-items:stretch;height:22px;border:1px solid color-mix(in srgb,var(--text-muted) 30%,transparent);border-radius:5px;overflow:hidden;color:var(--text-secondary);background:color-mix(in srgb,var(--bg-elevated) 35%,transparent)}
+.antares-archive-group>*{display:flex;align-items:stretch;min-width:0}
+.antares-archive-group>*+*{border-left:1px solid color-mix(in srgb,var(--text-muted) 22%,transparent)}
+.antares-archive-browse{display:flex;align-items:center;min-width:0;color:inherit;transition:background-color .15s ease,color .15s ease}
+.antares-archive-browse:hover{background:color-mix(in srgb,var(--bg-elevated) 80%,transparent);color:var(--text-primary)}
+.antares-archive-browse:focus-visible{box-shadow:inset 0 0 0 1px var(--archive-accent)}
+.antares-archive-mark{display:flex;align-items:center;justify-content:center;align-self:stretch;width:22px;flex-shrink:0;border-right:1px solid color-mix(in srgb,var(--text-muted) 22%,transparent);color:var(--text-muted);transition:color .15s ease}
+[data-archive-status=live] .antares-archive-mark,[data-archive-status=connecting] .antares-archive-mark{color:var(--archive-accent)}
+.antares-archive-cell-name{display:flex;align-items:center;gap:6px;padding:0 9px;min-width:0}
+.antares-archive-bar .archive-name{max-width:96px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:11px;line-height:16px;font-weight:500}
+.antares-archive-live{display:none;width:4px;height:4px;flex-shrink:0;background:var(--archive-accent);opacity:.35}
+.antares-archive-now .antares-archive-live{display:block}
+[data-archive-status=live] .antares-archive-live{display:block;opacity:1;animation:antares-archive-live 1.6s ease-in-out infinite}
+[data-archive-status=connecting] .antares-archive-live{display:block}
+@keyframes antares-archive-live{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.antares-archive-live{animation:none!important}}
+.antares-archive-action{display:flex;align-items:center;justify-content:center;border-radius:2px;color:inherit;transition:background-color .15s ease,color .15s ease}
+.antares-archive-action:hover{background:color-mix(in srgb,var(--bg-elevated) 80%,transparent);color:var(--text-primary)}
+.antares-archive-action:focus-visible{box-shadow:inset 0 0 0 1px var(--archive-accent)}
+.antares-archive-group .antares-archive-action{flex:1;min-width:24px;padding:0;border-radius:0}
+.antares-archive-play svg{fill:currentColor}
+.antares-archive-action-icon{display:flex;align-items:center;justify-content:center;width:12px;height:12px;flex-shrink:0;overflow:hidden}
+.antares-archive-panel{width:300px;max-width:calc(100vw - 24px)}
+.antares-archive-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:8px 10px 7px;border-bottom:1px solid var(--border-subtle)}
+.antares-archive-title{font-size:9px;line-height:12px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:var(--text-secondary)}
+.antares-archive-sub{font-size:9px;line-height:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.antares-archive-search{display:flex;align-items:center;gap:7px;height:32px;margin:0 10px;padding:0 1px;color:var(--text-muted);border-bottom:1px solid var(--border-subtle)}
+.antares-archive-search:focus-within{border-bottom-color:var(--archive-accent);color:var(--text-secondary)}
+.antares-archive-search input{flex:1;width:0;min-width:0;background:transparent;border:0;outline:0;font-size:12px;color:var(--text-primary)}
+.antares-archive-search input::placeholder{color:var(--text-muted)}
+.antares-archive-search-loader{display:flex;align-items:center;justify-content:center;width:16px;flex-shrink:0;font-size:12px;color:var(--text-muted)}
+.antares-archive-list{height:176px;max-height:calc(100dvh - 200px);min-height:80px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:2px 0}
+.antares-archive-row{display:flex;align-items:center}
+.antares-archive-row+.antares-archive-row{border-top:1px solid color-mix(in srgb,var(--border-subtle) 60%,transparent)}
+.antares-archive-row-main{display:flex;align-items:center;gap:9px;flex:1;min-width:0;text-align:left;padding:7px 10px;cursor:pointer;color:inherit;box-shadow:inset 0 0 0 0 transparent;transition:box-shadow .15s ease,background-color .15s ease}
+.antares-archive-row-main:focus-visible{outline:1px solid var(--archive-accent);outline-offset:-1px}
+.antares-archive-row:hover .antares-archive-row-main{background:color-mix(in srgb,var(--bg-elevated) 55%,transparent)}
+.antares-archive-row[data-current=true] .antares-archive-row-main{box-shadow:inset 2px 0 0 0 var(--archive-accent)}
+.antares-archive-row-mark{position:relative;width:16px;height:14px;flex-shrink:0}
+.antares-archive-row-index{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;font-size:9px;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.03em;color:var(--text-muted);transition:opacity .12s ease}
+.antares-archive-row-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);opacity:0;transition:opacity .12s ease}
+.antares-archive-row:hover .antares-archive-row-index,.antares-archive-row:focus-within .antares-archive-row-index,.antares-archive-row[data-current=true] .antares-archive-row-index{opacity:0}
+.antares-archive-row:hover .antares-archive-row-icon,.antares-archive-row:focus-within .antares-archive-row-icon,.antares-archive-row[data-current=true] .antares-archive-row-icon{opacity:1}
+.antares-archive-row[data-current=true] .antares-archive-row-icon{color:var(--archive-accent)}
+.antares-archive-row[data-current=true] .antares-archive-row-name{color:var(--archive-accent)}
+.antares-archive-row-copy{min-width:0;flex:1}
+.antares-archive-row-name{display:block;font-size:12px;line-height:15px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.antares-archive-row-artist{display:block;font-size:10px;line-height:14px;letter-spacing:.02em;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.antares-archive-foot{border-top:1px solid var(--border-subtle);padding:0 10px 4px}
+.antares-archive-now{display:flex;align-items:center;gap:6px;min-height:26px;padding-top:5px;min-width:0;font-size:11px;line-height:16px;color:var(--text-secondary)}
+.antares-archive-panel[data-archive-status=live] .antares-archive-now{color:var(--text-primary)}
+.antares-archive-now-text{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
+.antares-archive-open{min-width:0;flex-shrink:0;display:inline-flex;align-items:center;color:inherit;text-decoration:none}
+.antares-archive-open:hover{text-decoration:underline;color:var(--text-primary)}
+.antares-archive-transport{display:flex;align-items:center;gap:3px;height:28px}
+.antares-archive-transport .antares-archive-action{width:18px;height:18px;padding:0;flex-shrink:0}
+.antares-archive-transport-space{flex:1;min-width:6px}
+.antares-archive-transport input{width:72px;min-width:0;height:2px;accent-color:var(--text-muted);cursor:pointer}
+.antares-archive-error{font-size:11px;line-height:17px;color:var(--text-secondary);padding:6px 10px 12px}

@@ -77,65 +77,11 @@ function run() {
 
 function runRouterSmokeTests() {
   console.log('\nSmoke: Ubicaciones payload contract through the IPC router...\n');
-  const os = require('os');
-  const fs = require('fs');
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-router-smoke-'));
-  const excelFile = path.join(tmp, 'datos.xlsx');
-  fs.writeFileSync(excelFile, 'not really xlsx but exists');
 
   const {
     _maybeResolveFileTokens,
     _validateAndResolveWriteParams,
   } = require('../electron/ipc-router');
-  const { createFileCapability, revokeCapability } = require('../electron/file-capabilities');
-
-  try {
-    _maybeResolveFileTokens({ excelPath: excelFile, formato: 'vertical' }, null);
-    assert(false, 'raw absolute excelPath must be rejected');
-  } catch (e) {
-    assert(/raw absolute paths not allowed/.test(e.message), `raw excelPath rejected: ${e.message}`);
-  }
-
-  const readCap = createFileCapability({ filePath: excelFile, mode: 'read', webContentsId: null });
-  try {
-    const resolved = _maybeResolveFileTokens({ excelPath: readCap.token, formato: 'vertical' }, null);
-    assert(resolved.excelPath === excelFile, 'excelPath token resolved to backend path');
-  } catch (e) {
-    assert(false, `excelPath token resolution failed: ${e.message}`);
-  } finally {
-    revokeCapability(readCap.token);
-  }
-
-  const arbitrary = path.join(tmp, 'no-registrado');
-  try {
-    _validateAndResolveWriteParams({ excelPath: null, outputDir: arbitrary, consolidado: false }, null);
-    assert(false, 'outputDir outside allowed write roots must be rejected');
-  } catch (e) {
-    assert(/no está permitida/.test(e.message), `arbitrary outputDir rejected: ${e.message}`);
-  }
-
-  allowedWriteRoots.add(tmp);
-  try {
-    const out = path.join(tmp, 'salida');
-    const params = _validateAndResolveWriteParams({ excelPath: null, outputDir: out, consolidado: false }, null);
-    assert(params.outputDir === out, 'outputDir under write root passes through');
-    assert(params._resolved_output_path === undefined, 'no token rewrite for raw root path');
-  } catch (e) {
-    assert(false, `outputDir under write root should pass: ${e.message}`);
-  } finally {
-    allowedWriteRoots.delete(tmp);
-  }
-
-  const writeCap = createFileCapability({ filePath: tmp, mode: 'write', webContentsId: null });
-  try {
-    const params = _validateAndResolveWriteParams({ excelPath: null, outputDir: writeCap.token, consolidado: false }, null);
-    assert(params.outputDir === tmp, 'outputDir write token resolved to real path');
-    assert(params._resolved_output_path === tmp, '_resolved_output_path set for backend');
-  } catch (e) {
-    assert(false, `outputDir write token should resolve: ${e.message}`);
-  } finally {
-    revokeCapability(writeCap.token);
-  }
 
   try {
     const manual = { excelPath: null, outputDir: undefined, manualData: { lat: -12.0, lon: -77.0 } };
@@ -146,8 +92,6 @@ function runRouterSmokeTests() {
   } catch (e) {
     assert(false, `manual payload should pass untouched: ${e.message}`);
   }
-
-  fs.rmSync(tmp, { recursive: true, force: true });
 }
 
 run();

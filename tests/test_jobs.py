@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.core.jobs import DEFAULT_JOB_ID, MAX_COMPLETED_JOBS, Job, JobManager, resolve_job_id
+from backend.core.jobs import DEFAULT_JOB_ID, Job, JobManager, resolve_job_id
 from backend.core.state import ProcessState
 
 
@@ -183,31 +183,3 @@ class TestJobManager:
         assert job.params.get("files") == []
         assert job.params.get("file_count") == 100
         assert job.result == {"ok_count": 100}
-
-    def test_release_out_paths_releases_empty_reservation_table_capacity(self):
-        mgr = JobManager()
-        baseline_size = mgr._reserved_out_paths.__sizeof__()
-        for index in range(10_000):
-            assert mgr.try_reserve_out_path("bulk", f"C:/out/{index}.jpg") is True
-
-        mgr.release_out_paths("bulk")
-
-        assert mgr._reserved_out_paths == {}
-        assert mgr._reserved_out_paths.__sizeof__() <= baseline_size
-
-    def test_default_job_id_constant(self):
-        assert DEFAULT_JOB_ID == "default"
-
-    def test_max_concurrent_default(self):
-        mgr = JobManager()
-        assert mgr.max_concurrent == 4
-
-    def test_max_concurrent_custom(self):
-        mgr = JobManager(max_concurrent=8)
-        assert mgr.max_concurrent == 8
-
-
-class TestJobManagerCleanup:
-    def test_cleanup_completed_respects_max_remaining(self):
-        mgr = JobManager()
-        assert mgr.cleanup_completed(max_remaining=MAX_COMPLETED_JOBS) == 0

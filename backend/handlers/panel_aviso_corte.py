@@ -1,14 +1,38 @@
 from __future__ import annotations
 
 import base64
+import threading
+import uuid
+from collections import OrderedDict
 from typing import Any
 
 from backend.core.panel_aviso_corte import build_panels, parse_excel_bytes, render_docx, render_pdf
-from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, MatchRule
+from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, ExcelSource, MatchRule
 from backend.core.panel_aviso_corte.serialization import deserialize_panel
 from backend.handlers.common import validate_params, with_locale
 from backend.utils.atomic_write import atomic_output_file
 from backend.utils.image_data import decode_b64_payload
+
+_SOURCE_CACHE_MAX = 2
+_source_cache: OrderedDict[str, ExcelSource] = OrderedDict()
+_source_cache_lock = threading.Lock()
+
+
+def _remember_source(source: ExcelSource) -> str:
+    source_id = uuid.uuid4().hex
+    with _source_cache_lock:
+        _source_cache[source_id] = source
+        while len(_source_cache) > _SOURCE_CACHE_MAX:
+            _source_cache.popitem(last=False)
+    return source_id
+
+
+def _cached_source(source_id: str) -> ExcelSource | None:
+    with _source_cache_lock:
+        source = _source_cache.get(source_id)
+        if source is not None:
+            _source_cache.move_to_end(source_id)
+        return source
 
 
 @with_locale
@@ -29,6 +53,7 @@ def panel_aviso_corte_parse_excel(params: dict[str, Any]) -> dict[str, Any]:
         "normalizedColumns": list(source.normalized_columns),
         "rows": [dict(r) for r in source.rows],
         "warnings": list(source.warnings),
+        "sourceId": _remember_source(source),
     }
 
 @with_locale
@@ -41,10 +66,14 @@ def panel_aviso_corte_compute_match(params: dict[str, Any]) -> dict[str, Any]:
     address_column = params.get("address_column")
     image_names = params.get("image_names", [])
     export_mode = str(params.get("export_mode", "skip_empty"))
-    if not rows:
+    source_id = str(params.get("source_id") or "")
+    excel_source = _cached_source(source_id) if source_id else None
+    if excel_source is None and not rows:
+        if source_id:
+            return {"sourceMissing": True}
         msg = "rows es requerido"
         raise ValueError(msg)
-    if len(rows) > MAX_EXCEL_ROWS:
+    if excel_source is None and len(rows) > MAX_EXCEL_ROWS:
         msg = f"El Excel excede el máximo de {MAX_EXCEL_ROWS} filas"
         raise ValueError(msg)
     if not key_column:
@@ -53,11 +82,16 @@ def panel_aviso_corte_compute_match(params: dict[str, Any]) -> dict[str, Any]:
     if not image_names:
         msg = "image_names es requerido"
         raise ValueError(msg)
-    columns = tuple(str(k) for k in rows[0]) if rows else ()
-    from backend.core.panel_aviso_corte.importer import _normalize_column_name
-    normalized_columns = tuple(_normalize_column_name(c) for c in columns)
-    from backend.core.panel_aviso_corte.models import ExcelSource
-    excel_source = ExcelSource(filename="inline.xlsx", columns=columns, normalized_columns=normalized_columns, rows=tuple(dict(r) for r in rows))
+    if excel_source is None:
+        columns = tuple(str(k) for k in rows[0])
+        from backend.core.panel_aviso_corte.importer import _normalize_column_name
+        normalized_columns = tuple(_normalize_column_name(c) for c in columns)
+        excel_source = ExcelSource(
+            filename="inline.xlsx",
+            columns=columns,
+            normalized_columns=normalized_columns,
+            rows=tuple(dict(r) for r in rows),
+        )
     rule = MatchRule(key_column=key_column, strategy=strategy, regex_pattern=pattern or None)  # type: ignore[arg-type]
     result = build_panels(source=excel_source, rule=rule, image_names=image_names, address_column=address_column or None, export_mode=export_mode)  # type: ignore[arg-type]
     from backend.core.panel_aviso_corte.serialization import serialize_panel

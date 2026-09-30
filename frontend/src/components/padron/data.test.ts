@@ -22,11 +22,7 @@ describe('padron output format data', () => {
     });
   });
 
-  it('defines the volante lurigancho output format without changing the default', () => {
-    expect(OUTPUT_FORMAT_OPTIONS[0]).toMatchObject({
-      value: 'service-interruption',
-      label: 'Plantilla actual',
-    });
+  it('defines the volante lurigancho output format', () => {
     expect(OUTPUT_FORMAT_OPTIONS).toContainEqual({
       value: 'volante-lurigancho',
       label: 'volante lurigancho',

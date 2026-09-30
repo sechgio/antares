@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from bisect import bisect_left
 from typing import TYPE_CHECKING
 
 from .errors import InvalidMatchRuleError
@@ -18,7 +19,7 @@ from .models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 
 _ALLOWED_CHARS_RE: re.Pattern[str] = re.compile(r"[^0-9A-Za-z _\-]")
@@ -110,10 +111,13 @@ def compile_match_rule(rule: MatchRule) -> re.Pattern[str] | None:
 
 
 def match_image_to_row(rule: MatchRule, cell_value: str, filename: str, compiled: re.Pattern[str] | None = None) -> bool:
-    normalized_value = _normalize(cell_value)
     stem, _ = os.path.splitext(filename)
-    normalized_stem = _normalize(stem)
+    return _match_normalized(rule, _normalize(cell_value), _normalize(stem), compiled)
 
+
+def _match_normalized(
+    rule: MatchRule, normalized_value: str, normalized_stem: str, compiled: re.Pattern[str] | None = None,
+) -> bool:
     if not normalized_value:
         return False
 
@@ -129,6 +133,44 @@ def match_image_to_row(rule: MatchRule, cell_value: str, filename: str, compiled
         assert compiled is not None
         return match_regex(normalized_value, normalized_stem, compiled)
     return False
+
+
+def _candidate_index(
+    rule: MatchRule, image_names: Sequence[str], compiled: re.Pattern[str] | None,
+) -> Callable[[str], Sequence[int]]:
+    stems = [_normalize(os.path.splitext(name)[0]) for name in image_names]
+    if rule.strategy in ("exact", "regex"):
+        by_key: dict[str, list[int]] = {}
+        for idx, stem in enumerate(stems):
+            key: str | None = stem
+            if rule.strategy == "regex":
+                assert compiled is not None
+                m = compiled.match(stem)
+                captured = m.group("clave") if m else None
+                key = _normalize(captured) if captured is not None else None
+            if key is not None:
+                by_key.setdefault(key, []).append(idx)
+        return lambda value: by_key.get(value, ()) if value else ()
+    if rule.strategy == "prefix":
+        order = sorted(range(len(stems)), key=stems.__getitem__)
+        sorted_stems = [stems[i] for i in order]
+
+        def by_prefix(value: str) -> Sequence[int]:
+            if not value:
+                return ()
+            hits: list[int] = []
+            for pos in range(bisect_left(sorted_stems, value), len(sorted_stems)):
+                if not sorted_stems[pos].startswith(value):
+                    break
+                hits.append(order[pos])
+            return sorted(hits)
+
+        return by_prefix
+    if rule.strategy == "contains":
+        return lambda value: [idx for idx, stem in enumerate(stems) if value in stem] if value else ()
+    return lambda value: [
+        idx for idx, stem in enumerate(stems) if _match_normalized(rule, value, stem, compiled)
+    ]
 
 
 def build_panels(
@@ -183,16 +225,15 @@ def build_panels(
 
     all_entries: list[tuple[str, str, int]] = []
     panels_by_row: list[tuple[int, Panel]] = []
+    candidates = _candidate_index(rule, image_names, compiled)
 
     for row_idx, row in enumerate(source.rows):
         cell_value = row.get(key_col_original, "")
-        matched_for_row: list[str] = []
-
-        for img_name in image_names:
-            if img_name in assigned_images:
-                continue
-            if match_image_to_row(rule, cell_value, img_name, compiled):
-                matched_for_row.append(img_name)
+        matched_for_row = [
+            image_names[idx]
+            for idx in candidates(_normalize(cell_value))
+            if image_names[idx] not in assigned_images
+        ]
 
         if not matched_for_row:
             if export_mode == "include_empty":

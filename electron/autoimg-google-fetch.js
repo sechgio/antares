@@ -34,7 +34,7 @@ function _statusClass(status) {
   return Number.isInteger(status) ? `${Math.floor(status / 100)}xx` : undefined;
 }
 
-function _emitGoogleApi({ url, httpMethod, outcome, status, attempt, durationMs, reason }) {
+function _emitGoogleApi({ url, httpMethod, outcome, status, attempt, durationMs, reason, provider = 'google' }) {
   try {
     const endpoint = _endpointLabel(url);
     appendLogEvent(
@@ -43,10 +43,10 @@ function _emitGoogleApi({ url, httpMethod, outcome, status, attempt, durationMs,
         : outcome === 'success'
           ? 'INFO'
           : 'WARN',
-      'google.api',
+      `${provider}.api`,
       {
         component: 'electron',
-        provider: 'google',
+        provider,
         outcome,
         attempt,
         duration_ms: durationMs,
@@ -169,6 +169,7 @@ async function fetchWithRetry(
     baseDelayMs = DEFAULT_RETRY_BASE_DELAY_MS,
     maxDelayMs = DEFAULT_RETRY_MAX_DELAY_MS,
     retryUnsafeMethods = false,
+    provider = 'google',
   } = {},
 ) {
   const method = String(options.method || 'GET').toUpperCase();
@@ -184,6 +185,7 @@ async function fetchWithRetry(
         _emitGoogleApi({
           url,
           httpMethod: method,
+          provider,
           outcome: error?.name === 'AbortError' ? 'cancelled' : error?.name === 'TimeoutError' ? 'timeout' : 'failed',
           attempt: attempt + 1,
           durationMs: Date.now() - startedAt,
@@ -194,6 +196,7 @@ async function fetchWithRetry(
       _emitGoogleApi({
         url,
         httpMethod: method,
+        provider,
         outcome: 'degraded',
         attempt: attempt + 1,
         durationMs: Date.now() - startedAt,
@@ -209,6 +212,7 @@ async function fetchWithRetry(
           _emitGoogleApi({
             url,
             httpMethod: method,
+            provider,
             outcome: 'success',
             status: res.status,
             attempt: attempt + 1,
@@ -220,6 +224,7 @@ async function fetchWithRetry(
         _emitGoogleApi({
           url,
           httpMethod: method,
+          provider,
           outcome: 'failed',
           status: res.status,
           attempt: attempt + 1,
@@ -232,6 +237,7 @@ async function fetchWithRetry(
     _emitGoogleApi({
       url,
       httpMethod: method,
+      provider,
       outcome: 'degraded',
       status: res.status,
       attempt: attempt + 1,

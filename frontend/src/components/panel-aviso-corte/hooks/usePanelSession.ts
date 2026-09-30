@@ -38,6 +38,7 @@ export interface PanelSession {
   matchResult: MatchResult | null;
   currentPageIndex: number;
   isExporting: boolean;
+  isMatching: boolean;
   errors: string[];
   setHeaderForm: (v: HeaderFormState) => void;
   setLogoLeft: (file: File | null) => string | null;
@@ -89,6 +90,7 @@ export function usePanelSession(): PanelSession {
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isExporting, setIsExportingState] = useState(false);
+  const [isMatching, setIsMatching] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
   const imagesRef = useRef(images);
@@ -202,28 +204,27 @@ export function usePanelSession(): PanelSession {
     [_findColumnValue]
   );
 
-  const matchTokenRef = useRef(0);
+  const matchInFlightRef = useRef(false);
+  const matchPendingRef = useRef(false);
 
-  const computeMatch = useCallback(async () => {
+  const computeMatch = useCallback(async function runMatch(): Promise<void> {
+    if (matchInFlightRef.current) {
+      matchPendingRef.current = true;
+      return;
+    }
     const src = excelRef.current;
-    if (!src) {
-      setMatchResult(null);
-      return;
-    }
     const imgs = imagesRef.current;
-    if (!imgs.length) {
-      setMatchResult(null);
-      return;
-    }
     const rule = matchRuleRef.current;
-    if (!rule.keyColumn) {
+    if (!src || !imgs.length || !rule.keyColumn) {
       setMatchResult(null);
+      setIsMatching(false);
       return;
     }
-    const token = ++matchTokenRef.current;
+    matchInFlightRef.current = true;
+    setIsMatching(true);
     try {
-      const resp = await api.panelAvisoCorteComputeMatch({
-        rows: src.rows,
+      const request = (sendRows: boolean) => api.panelAvisoCorteComputeMatch({
+        ...(sendRows || !src.sourceId ? { rows: src.rows } : { source_id: src.sourceId }),
         key_column: rule.keyColumn,
         strategy: rule.strategy,
         pattern: rule.regexPattern,
@@ -231,7 +232,10 @@ export function usePanelSession(): PanelSession {
         image_names: imgs.map((i) => i.file.name),
         export_mode: exportModeRef.current,
       });
-      if (token !== matchTokenRef.current) return;
+      let resp = await request(false);
+      if ('sourceMissing' in resp) resp = await request(true);
+      if ('sourceMissing' in resp) throw new Error('Error en emparejamiento');
+      if (matchPendingRef.current) return;
       const panels = resp.panels.map(panelResponseToVm);
       const summary = resp.summary;
       setMatchResult({
@@ -250,9 +254,17 @@ export function usePanelSession(): PanelSession {
       });
       setCurrentPageIndex(0);
     } catch (e: unknown) {
-      if (token !== matchTokenRef.current) return;
+      if (matchPendingRef.current) return;
       setErrors([errorMessage(e, 'Error en emparejamiento')]);
       setMatchResult(null);
+    } finally {
+      matchInFlightRef.current = false;
+      if (matchPendingRef.current) {
+        matchPendingRef.current = false;
+        void runMatch();
+      } else {
+        setIsMatching(false);
+      }
     }
   }, []);
 
@@ -315,6 +327,7 @@ export function usePanelSession(): PanelSession {
     matchResult,
     currentPageIndex,
     isExporting,
+    isMatching,
     errors,
     setHeaderForm: setHeaderFormState,
     setLogoLeft,

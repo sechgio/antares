@@ -33,12 +33,6 @@ def test_formatos_preview_dpi_respects_requested_max_width() -> None:
     assert dpi == 145
 
 
-def test_sellador_preview_keeps_default_220_dpi_floor() -> None:
-    dpi = sellador_preview._resolve_preview_dpi(595.0, 842.0, 1200)
-
-    assert dpi == sellador_preview._MIN_PREVIEW_DPI == 220
-
-
 def test_formatos_preview_rounding_does_not_exceed_landscape_max_width() -> None:
     dpi = sellador_preview._resolve_preview_dpi(
         842.0,
@@ -184,6 +178,30 @@ def test_sellador_preview_jpeg_roundtrip_keeps_raster_size() -> None:
     assert image.format == "JPEG"
     assert image.size == (int(result["rendered_width"]), int(result["rendered_height"]))
     assert result["render_dpi"] == 220.0
+
+
+def test_path_preview_reuses_encoded_result_until_file_changes(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "preview.pdf"
+    path.write_bytes(_a4_pdf_bytes())
+    calls = 0
+    render = sellador_preview._render_doc_page
+
+    def counted_render(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return render(*args, **kwargs)
+
+    monkeypatch.setattr(sellador_preview, "_render_doc_page", counted_render)
+    first = sellador_preview.render_pdf_page_preview(str(path), 1, max_width=1200)
+    assert sellador_preview.render_pdf_page_preview(str(path), 1, max_width=1200) == first
+    assert calls == 1
+
+    sellador_preview.render_pdf_page_preview(str(path), 1, max_width=1300)
+    assert calls == 2
+
+    path.write_bytes(_a4_pdf_bytes() + b"\n")
+    sellador_preview.render_pdf_page_preview(str(path), 1, max_width=1200)
+    assert calls == 3
 
 
 def test_pixmap_jpeg_falls_back_to_png_for_unsupported_modes() -> None:

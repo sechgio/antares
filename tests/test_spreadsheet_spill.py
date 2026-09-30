@@ -219,3 +219,35 @@ def test_load_sheet_cache_rejects_oversized_cache(tmp_path: Path, monkeypatch) -
     cache.write_text(json.dumps({"sheets": [{"name": "S", "rows": []}]}), encoding="utf-8")
     with pytest.raises(ValueError, match="demasiado grande"):
         ss._load_sheet_cache(cache)
+
+
+def test_legacy_large_json_pages_reuse_cache_and_reload_after_change(tmp_path: Path, monkeypatch) -> None:
+    from backend.handlers import spreadsheet as ss
+
+    monkeypatch.setattr(ss, "_spill_dir", lambda: tmp_path)
+    cache = tmp_path / "legacy.json"
+    cache.write_text(json.dumps({"sheets": [{"name": "S", "rows": [["a" * (9 * 1024 * 1024)], ["b"]]}]}), encoding="utf-8")
+    real_read_text = Path.read_text
+    reads = 0
+
+    def tracking_read_text(path: Path, *args, **kwargs) -> str:
+        nonlocal reads
+        if path == cache:
+            reads += 1
+        return real_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", tracking_read_text)
+    ss._clear_spreadsheet_caches()
+    try:
+        first = spreadsheet_get_rows({"result_path": str(cache), "offset": 0, "limit": 1})
+        second = spreadsheet_get_rows({"result_path": str(cache), "offset": 1, "limit": 1})
+        assert first["total"] == second["total"] == 2
+        assert second["rows"] == [["b"]]
+        assert reads == 1
+
+        cache.write_text(json.dumps({"sheets": [{"name": "S", "rows": [["c"]]}]}), encoding="utf-8")
+        changed = spreadsheet_get_rows({"result_path": str(cache), "offset": 0, "limit": 1})
+        assert changed["rows"] == [["c"]]
+        assert reads == 2
+    finally:
+        ss._clear_spreadsheet_caches()

@@ -339,10 +339,10 @@ describe('AuthProvider', () => {
   });
 
   it('signs out when realtime marks the current profile as disabled', async () => {
-    let profileHandler: ((payload: { new: Record<string, unknown> }) => void) | null = null;
+    const handlers: Record<string, (payload: { new: Record<string, unknown> }) => void> = {};
     const channel = {
-      on: vi.fn((_event: string, _filter: unknown, cb: (payload: { new: Record<string, unknown> }) => void) => {
-        profileHandler = cb;
+      on: vi.fn((_event: string, filter: { event: string }, cb: (payload: { new: Record<string, unknown> }) => void) => {
+        handlers[filter.event] = cb;
         return channel;
       }),
       subscribe: vi.fn().mockReturnThis(),
@@ -366,13 +366,14 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(result.current.user?.email).toBe('a@b.com');
     });
-    await waitFor(() => {
-      expect(profileHandler).not.toBeNull();
-    });
+    await waitFor(() => expect(handlers.UPDATE).toBeDefined());
+    expect(channel.on).toHaveBeenCalledWith('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: 'user_id=eq.u1' }, expect.any(Function));
 
-    await act(async () => {
-      profileHandler?.({ new: { user_id: 'u1', is_disabled: true, is_admin: false, display_name: 'A' } });
-    });
+    await act(async () => { handlers.UPDATE({ new: { user_id: 'u1', is_disabled: false } }); });
+    expect(result.current.user?.id).toBe('u1');
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+
+    await act(async () => { handlers.UPDATE({ new: { user_id: 'u1', is_disabled: true, is_admin: false, display_name: 'A' } }); });
 
     await waitFor(() => {
       expect(result.current.user).toBeNull();

@@ -118,6 +118,7 @@ export default function AppearanceView() {
   const { t } = useTranslation();
   const { addToast } = useToast();
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const presetListRef = useRef<HTMLDivElement | null>(null);
   const [theme, setTheme] = useState<ThemeConfig | null>(null);
   const [presets, setPresets] = useState<string[]>([]);
   const [mode, setMode] = useState<ThemeMode>('dark');
@@ -173,6 +174,15 @@ export default function AppearanceView() {
   }, [commitThemeState]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (!presetOpen) return;
+    const list = presetListRef.current;
+    const selected = list?.querySelector<HTMLElement>('[data-selected="true"]');
+    if (list && selected) {
+      list.scrollTop = Math.max(0, selected.offsetTop - (list.clientHeight - selected.clientHeight) / 2);
+    }
+  }, [presetOpen]);
 
   const visibleTheme = useMemo(() => {
     if (!theme) return null;
@@ -467,12 +477,13 @@ export default function AppearanceView() {
                   <ChevronDown size={15} className={`text-[var(--text-secondary)] transition-transform ${presetOpen ? 'rotate-180' : ''}`} />
                 </Button>
                 {presetOpen && (
-                  <div className="absolute right-0 z-20 mt-1 max-h-[320px] w-full overflow-auto rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1 shadow-2xl">
+                  <div ref={presetListRef} className="absolute right-0 z-20 mt-1 max-h-[320px] w-full overflow-auto rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1 shadow-2xl">
                     {presets.map((name) => {
                       const active = theme.name === name;
                       return (
                         <Button variant="none" size="none"
                           key={name}
+                          data-selected={active ? 'true' : 'false'}
                           onClick={() => applyPreset(name)}
                           className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] transition-colors ${
                             active ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'
