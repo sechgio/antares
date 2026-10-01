@@ -1,9 +1,6 @@
 /**
- * Capa de lectura/escritura del PR sobre la API de GitHub, compartida por las auditorías de revisión.
- *
- * Todo se resuelve con `gh` para no pedir tokens propios. Las colecciones se paginan por REST en
- * ráfagas acotadas: el listado de archivos de un PR de cientos de cambios es lo más lento de auditar,
- * y GraphQL responde 499 de forma intermitente cuando GitHub aún está calculando ese diff.
+ * Acceso a PRs mediante `gh`, compartido por las auditorías de revisión.
+ * Pagina por REST para evitar los 499 de GraphQL mientras GitHub calcula el diff.
  */
 
 const fs = require('fs');
@@ -32,7 +29,7 @@ function settle(promise) {
   );
 }
 
-// Los reintentos absorben los 499/5xx transitorios: costar más tiempo vale menos que tumbar la puerta.
+// Reintenta fallos 499/5xx transitorios.
 async function withRetry(fn, attempts = FETCH_ATTEMPTS, baseDelayMs = 500) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt++) {

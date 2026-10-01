@@ -27,8 +27,7 @@ function cleanup() {
 cleanup();
 
 function testUpgradeFailureIsTelemetered({ name, namespace, payload }) {
-  // readSecureJson reescribe a v2 cuando encuentra un sobre v1 con safeStorage
-  // disponible; en pruebas headless ese electrón no existe, así que se inyecta.
+  // Inyecta safeStorage para probar la migración v1 a v2 sin Electron.
   secure.writeSecureJson(name, namespace, payload);
 
   const appLog = require('../electron/app-log');

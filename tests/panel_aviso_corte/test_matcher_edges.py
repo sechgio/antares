@@ -45,7 +45,7 @@ def test_normalize_date_str_formatos() -> None:
 
 def test_compile_match_rule_solo_regex_y_validaciones() -> None:
     assert compile_match_rule(_rule(strategy="exact")) is None
-    # MatchRule.__post_init__ valida al construir; compile_match_rule revalida por si se le pasa una regla no normalizada
+    # __post_init__ rechaza reglas inválidas al construirlas.
     with pytest.raises(InvalidMatchRuleError):
         _rule(strategy="regex", regex_pattern="([")
     with pytest.raises(InvalidMatchRuleError):
@@ -53,7 +53,7 @@ def test_compile_match_rule_solo_regex_y_validaciones() -> None:
     compiled = compile_match_rule(_rule(strategy="regex", regex_pattern=r"foto-(?P<clave>\d+)"))
     assert compiled is not None
 
-    # regla inconsistente (bypaseando __post_init__) → compile_match_rule defiende igual
+    # Modifica el fixture después de __post_init__ para comprobar la revalidación.
     rule = _rule(strategy="regex", regex_pattern=r"foto-(?P<clave>\d+)")
     object.__setattr__(rule, "regex_pattern", "([")
     with pytest.raises(InvalidMatchRuleError, match="inválida"):
@@ -121,8 +121,7 @@ def test_build_panels_include_empty_intercala_vacios_en_su_fila() -> None:
         None,
         "include_empty",
     )
-    # El agrupamiento de 4 comparte hoja entre A y C, pero la hoja vacía de B
-    # conserva su lugar entre ambas en el PDF y en el preview.
+    # La hoja vacía de B conserva su posición entre las imágenes agrupadas de A y C.
     assert [p.source_row_index for p in result.panels] == [0, 1, 2]
     assert [len(p.imagenes) for p in result.panels] == [4, 0, 1]
     assert [p.cuadrante for p in result.panels] == ["C-A", "C-B", "C-C"]

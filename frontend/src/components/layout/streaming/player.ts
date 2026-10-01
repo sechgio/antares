@@ -4,12 +4,12 @@ import type { StreamTrack } from './core';
 
 export type StreamStatus = 'paused' | 'connecting' | 'live' | 'error';
 
-export interface StreamPlayer {
-  queue: Atom<StreamTrack[]>;
-  track: Atom<StreamTrack | null>;
+export interface StreamPlayer<T extends { id: string } = StreamTrack> {
+  queue: Atom<T[]>;
+  track: Atom<T | null>;
   status: Atom<StreamStatus>;
   volume: Atom<number>;
-  select: (track: StreamTrack, queue?: StreamTrack[]) => void;
+  select: (track: T, queue?: T[]) => void;
   toggle: () => void;
   next: () => void;
   previous: () => void;
@@ -18,7 +18,13 @@ export interface StreamPlayer {
   dispose: () => void;
 }
 
-export function createStreamPlayer(sourceId: string): StreamPlayer {
+export function createStreamPlayer(sourceId: string): StreamPlayer;
+export function createStreamPlayer<T extends { id: string }>(
+  sourceId: string, resolveStream: (track: T) => string,
+): StreamPlayer<T>;
+export function createStreamPlayer<T extends { id: string; stream?: string } = StreamTrack>(
+  sourceId: string, resolveStream: (track: T) => string = (item) => item.stream!,
+): StreamPlayer<T> {
   const store = {
     get<T>(key: string, fallback: T): T {
       try {
@@ -39,8 +45,8 @@ export function createStreamPlayer(sourceId: string): StreamPlayer {
   const volume = atom<number>(
     Number.isFinite(storedVolume) ? Math.max(0, Math.min(100, storedVolume)) : 25,
   );
-  const queue = atom<StreamTrack[]>([]);
-  const track = atom<StreamTrack | null>(null);
+  const queue = atom<T[]>([]);
+  const track = atom<T | null>(null);
   const status = atom<StreamStatus>('paused');
   let audio: HTMLAudioElement | null = null;
   let disposed = false;
@@ -69,17 +75,17 @@ export function createStreamPlayer(sourceId: string): StreamPlayer {
     return element;
   }
 
-  function load(item: StreamTrack) {
+  function load(item: T) {
     const element = ensureAudio();
     track.set(item);
     status.set('connecting');
-    element.src = item.stream;
+    element.src = resolveStream(item);
     void element.play().catch(() => {
       if (!disposed) status.set('error');
     });
   }
 
-  function select(item: StreamTrack, list?: StreamTrack[]) {
+  function select(item: T, list?: T[]) {
     if (disposed) return;
     if (list) queue.set(list);
     load(item);

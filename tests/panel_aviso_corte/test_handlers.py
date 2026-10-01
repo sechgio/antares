@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 
 import pytest
 
@@ -253,6 +254,34 @@ def test_render_docx_resolves_write_token_saved_path(monkeypatch, tmp_path) -> N
     assert result["saved_path"] == str(resolved_file)
     assert result["filename"] == "panel_final.docx"
     assert resolved_file.read_bytes() == b"PK\x03\x04docx-token-content"
+
+
+@pytest.mark.parametrize("raw_format", ["pdf", "docx", "PDF", "DOCX", "other"])
+@pytest.mark.parametrize("save_to_disk", [False, True])
+def test_render_preserves_export_response(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, raw_format: str, save_to_disk: bool,
+) -> None:
+    fmt = "docx" if raw_format.lower() == "docx" else "pdf"
+    content = b"export-content"
+    filename = f"panel.{fmt}"
+    monkeypatch.setattr(handler_module, f"render_{fmt}", lambda **kwargs: (content, filename))
+    output = tmp_path / f"salida.{fmt}"
+    response = handler_module.panel_aviso_corte_render_pdf({
+        "panels": [_panel_payload()], "format": raw_format,
+        **({"output_path": "antares-write_token", "_resolved_output_path": str(output)} if save_to_disk else {}),
+    })
+    expected = {
+        "content_base64": "" if save_to_disk else base64.b64encode(content).decode("ascii"),
+        **({"saved_path": str(output)} if save_to_disk else {}),
+        "filename": output.name if save_to_disk else filename,
+        "format": fmt,
+        "mime_type": "application/pdf" if fmt == "pdf" else
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+    assert response == expected
+    assert list(response) == list(expected)
+    if save_to_disk:
+        assert output.read_bytes() == content
 
 
 @pytest.mark.parametrize("invalid_path", ["", "   "])

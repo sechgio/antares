@@ -88,7 +88,6 @@ describe('Informes v2 FormPanel', () => {
     expect(screen.getByText('Línea')).toBeInTheDocument();
     expect(screen.queryByText('Contratista')).not.toBeInTheDocument();
 
-    // el conmutador de plantilla vive en el header de la app, no en el panel
     expect(screen.queryByRole('group', { name: 'Plantilla' })).not.toBeInTheDocument();
   });
 

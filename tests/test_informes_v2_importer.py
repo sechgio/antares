@@ -293,7 +293,6 @@ def test_import_detects_reservorios2_from_columns() -> None:
     buf = BytesIO()
     wb.save(buf)
 
-    # Las columnas R2 mandan aunque el switch de la UI diga "clasica".
     report = import_reports_from_bytes("plantilla_nueva.xlsx", buf.getvalue(), "clasica")[0]
     assert report["plantilla"] == "reservorios2"
 

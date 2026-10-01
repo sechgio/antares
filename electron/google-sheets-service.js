@@ -367,15 +367,10 @@ function _tabNameFromRange(range) {
   return tab.replace(/^'+|'+$/g, '');
 }
 
-function _tabNameFromResponse(range) {
-  const tab = String(range || '').split('!')[0] || '';
-  return tab.replace(/^'+|'+$/g, '');
-}
-
 function _mapBatchGetResult(ranges, valueRanges) {
   const byRange = Object.fromEntries(ranges.map((range) => [range, []]));
   for (const entry of valueRanges || []) {
-    const tab = _tabNameFromResponse(entry.range);
+    const tab = _tabNameFromRange(entry.range);
     const key = ranges.find((range) => _tabNameFromRange(range) === tab);
     if (key) byRange[key] = entry.values || [];
   }

@@ -60,6 +60,18 @@ function _broadcastToRenderer(channel, data) {
   }
 }
 
+function _isTrustedUpdateRequest(event, method) {
+  const { _isAllowedIpcSender } = require('./ipc-router');
+  if (_isAllowedIpcSender(event)) return true;
+  appendLogEvent('WARN', 'security.rejected', {
+    component: 'electron',
+    outcome: 'rejected',
+    reason: 'untrusted_sender',
+    method,
+  });
+  return false;
+}
+
 function setupAutoUpdater(isDev) {
   if (process.env.ANTARES_PERF_BENCHMARK === '1') {
     logInfo('[auto-updater] desactivado (benchmark local).');
@@ -70,14 +82,7 @@ function setupAutoUpdater(isDev) {
     logInfo('[auto-updater] desactivado (modo dev / app no empaquetada). Registrando manejadores mock.');
 
     ipcMain.handle('auto-update-check', async (event) => {
-      const { _isAllowedIpcSender } = require('./ipc-router');
-      if (!_isAllowedIpcSender(event)) {
-        appendLogEvent('WARN', 'security.rejected', {
-          component: 'electron',
-          outcome: 'rejected',
-          reason: 'untrusted_sender',
-          method: 'auto-update-check',
-        });
+      if (!_isTrustedUpdateRequest(event, 'auto-update-check')) {
         return { success: false, reason: 'untrusted sender' };
       }
       logInfo('[auto-updater] (dev) Manual check requested. Mocking up-to-date.');
@@ -92,14 +97,7 @@ function setupAutoUpdater(isDev) {
     });
 
     ipcMain.handle('auto-update-install', async (event) => {
-      const { _isAllowedIpcSender } = require('./ipc-router');
-      if (!_isAllowedIpcSender(event)) {
-        appendLogEvent('WARN', 'security.rejected', {
-          component: 'electron',
-          outcome: 'rejected',
-          reason: 'untrusted_sender',
-          method: 'auto-update-install',
-        });
+      if (!_isTrustedUpdateRequest(event, 'auto-update-install')) {
         return { success: false, reason: 'untrusted sender' };
       }
       return { success: false, reason: 'No disponible en modo desarrollo' };
@@ -216,14 +214,7 @@ function setupAutoUpdater(isDev) {
   }, 6 * 60 * 60 * 1000);
 
   ipcMain.handle('auto-update-check', async (event) => {
-    const { _isAllowedIpcSender } = require('./ipc-router');
-    if (!_isAllowedIpcSender(event)) {
-      appendLogEvent('WARN', 'security.rejected', {
-        component: 'electron',
-        outcome: 'rejected',
-        reason: 'untrusted_sender',
-        method: 'auto-update-check',
-      });
+    if (!_isTrustedUpdateRequest(event, 'auto-update-check')) {
       return { success: false, reason: 'untrusted sender' };
     }
     logInfo('[auto-updater] Manual check requested. In progress:', _updateInProgress);
@@ -245,14 +236,7 @@ function setupAutoUpdater(isDev) {
   });
 
   ipcMain.handle('auto-update-install', async (event) => {
-    const { _isAllowedIpcSender } = require('./ipc-router');
-    if (!_isAllowedIpcSender(event)) {
-      appendLogEvent('WARN', 'security.rejected', {
-        component: 'electron',
-        outcome: 'rejected',
-        reason: 'untrusted_sender',
-        method: 'auto-update-install',
-      });
+    if (!_isTrustedUpdateRequest(event, 'auto-update-install')) {
       return { success: false, reason: 'untrusted sender' };
     }
     if (!_updateDownloaded || !_autoUpdater) {

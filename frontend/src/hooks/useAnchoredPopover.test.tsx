@@ -112,7 +112,6 @@ describe('useAnchoredPopover', () => {
     render(<Harness estimatedHeight={100} />);
     fireEvent.click(screen.getByText('trigger'));
 
-    // top = 700 - 100 - 6 = 594
     expect(screen.getByTestId('popup-trigger')).toHaveStyle({ top: '594px' });
   });
 
@@ -125,7 +124,6 @@ describe('useAnchoredPopover', () => {
     render(<Harness align="end" estimatedWidth={150} />);
     fireEvent.click(screen.getByText('trigger'));
 
-    // left = rect.right - width = 600 - 150 = 450
     expect(screen.getByTestId('popup-trigger')).toHaveStyle({ left: '450px', width: '150px' });
   });
 
@@ -141,7 +139,6 @@ describe('useAnchoredPopover', () => {
     } as DOMRect);
 
     fireEvent(window, new Event(eventName));
-    // top = 50 + 6 = 56, left = 30
     expect(popup).toHaveStyle({ top: '56px', left: '30px' });
   });
 

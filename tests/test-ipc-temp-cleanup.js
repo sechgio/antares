@@ -14,8 +14,7 @@ const {
 async function main() {
   console.log('Testing IPC temp cleanup...\n');
 
-  // Cada sweep encadena el GC de assets de Canvas, que borra archivos: aíslenlo
-  // en un HOME temporal para no tocar los datos reales del usuario.
+  // Aísla los datos de usuario: cada sweep ejecuta el GC de Canvas y puede borrar assets.
   const fakeHome = await fsp.mkdtemp(path.join(os.tmpdir(), 'antares-ipc-temp-cleanup-'));
   process.env.LOCALAPPDATA = fakeHome;
   process.env.XDG_DATA_HOME = fakeHome;

@@ -6,14 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
     <style>
-        /* Reset & Base */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
-        /* Shared A4 Dimensions */
         @page {
             size: A4;
             margin: 0;
@@ -48,7 +46,6 @@
             page-break-after: auto;
         }
 
-        /* Header */
         .header {
             display: flex;
             justify-content: space-between;
@@ -93,7 +90,6 @@
             color: #000;
         }
 
-        /* Info Bar */
         .info-bar {
             display: flex;
             justify-content: space-between;
@@ -128,7 +124,6 @@
             color: #000;
         }
 
-        /* Section Title */
         .section-title {
             font-size: 10pt;
             font-weight: bold;
@@ -140,7 +135,6 @@
             flex-shrink: 0;
         }
 
-        /* Localization Section */
         .localizacion {
             margin-bottom: 3mm;
             flex-shrink: 0;
@@ -245,7 +239,6 @@
             font-style: italic;
         }
 
-        /* Empty state */
         .no-photos {
             flex: 1;
             display: flex;
@@ -257,7 +250,6 @@
             border: 1px solid #0066cc;
         }
 
-        /* Screen preview styles */
         @media screen {
             html,
             body {
@@ -328,7 +320,6 @@
 <body>
     {% for report in reports %}
     <div class="page">
-        <!-- Header -->
         <header class="header">
             <div class="header-logo">
                 {% if logo_left %}
@@ -349,7 +340,6 @@
             </div>
         </header>
 
-        <!-- Info Bar -->
         <div class="info-bar">
             <div class="info-item">
                 <div class="info-label">Centro de Servicios:</div>
@@ -369,7 +359,6 @@
             </div>
         </div>
 
-        <!-- 1.0 Localización -->
         <section class="localizacion">
             <div class="section-title">1.0 Localización</div>
 
@@ -396,7 +385,6 @@
             </div>
         </section>
 
-        <!-- 2.0 Panel Fotográfico -->
         <section class="panel-fotografico">
             <div class="section-title">2.0 Panel Fotográfico</div>
 

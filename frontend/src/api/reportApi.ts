@@ -13,9 +13,7 @@ export interface ReportListResult<TListItem> {
   total?: number;
 }
 
-// Wire convention (H2): report handlers return { items, total } for lists,
-// { item } for get/create/update and { deleted_id } for deletes; the factory
-// exposes them to the UI as `reports`.
+// Adapta { items, total } a { reports, total } y extrae `item` de las respuestas individuales.
 export function createReportApi<TReport, TListItem>(
   spec: ReportApiSpec<TReport>,
 ) {

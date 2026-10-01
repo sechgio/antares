@@ -32,7 +32,6 @@ describe("filterItemsInRange", () => {
     expect(filterItemsInRange(items, -5, 100, 5).map((i) => i.item)).toEqual([
       1, 2, 3, 5,
     ]);
-    // start clampea a max y end a [start, max]: rango degenera a {5}
     expect(filterItemsInRange(items, 9, 2, 5).map((i) => i.item)).toEqual([5]);
   });
 });

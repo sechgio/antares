@@ -208,11 +208,7 @@ function readCommittedBaseline() {
   }
 }
 
-/**
- * El techo que juzga es el commiteado: si se leyera el archivo del árbol de
- * trabajo, subir un techo localmente bastaría para pasar la puerta sin que nadie
- * lo vea. El archivo local manda sólo cuando no hay baseline en HEAD.
- */
+// Usa el techo de HEAD para impedir que un aumento local eluda el check.
 function chooseBaseline({ committed, local }) {
   if (committed) return { baseline: committed, source: 'HEAD' };
   if (local) return { baseline: local, source: 'worktree' };

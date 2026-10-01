@@ -42,7 +42,6 @@ describe('computeDragRect', () => {
 
   it('resize ajusta width y preserva aspect', () => {
     const out = computeDragRect('resize', rect, start, { x: 300, y: 0 }, page);
-    // nextWidth = 300-100 = 200, aspect = 2 → height = 100
     expect(out).toEqual({ x: 100, y: 200, width: 200, height: 100 });
   });
 

@@ -56,8 +56,6 @@ function _sanitizeError(err) {
   return new Error(`Error de Spotify: ${message.slice(0, 280)}`);
 }
 
-// -- spotify_playback ---------------------------------------------------------
-
 const _EMPTY_PLAYBACK = {
   get_currently_playing: ['is_playing', 'Spotify no está reproduciendo nada ahora mismo.'],
   get_state: ['has_active_device', 'No hay una sesión de reproducción de Spotify activa.'],
@@ -158,8 +156,6 @@ const _PLAYBACK_ACTIONS = {
   recently_played: _pbRecentlyPlayed,
 };
 
-// -- spotify_devices / spotify_queue / spotify_search -------------------------
-
 const _DEVICES_ACTIONS = {
   list: () => client.request('GET', '/me/player/devices'),
   transfer: async (params, action) => _ok(action, await client.request('PUT', '/me/player', {
@@ -203,8 +199,6 @@ async function _search(params) {
   });
 }
 
-// -- spotify_playlists ---------------------------------------------------------
-
 const _playlistPath = (params, suffix = '') =>
   `/playlists/${client.normalizeSpotifyId(String(params.playlist_id || ''), 'playlist')}${suffix}`;
 
@@ -243,8 +237,6 @@ const _PLAYLISTS_ACTIONS = {
   }),
 };
 
-// -- spotify_albums ------------------------------------------------------------
-
 const _albumPath = (params, suffix = '') =>
   `/albums/${client.normalizeSpotifyId(String(params.album_id || params.id || ''), 'album')}${suffix}`;
 
@@ -252,8 +244,6 @@ const _ALBUMS_ACTIONS = {
   get: (params) => client.request('GET', _albumPath(params), { params: { market: params.market } }),
   tracks: (params) => client.request('GET', _albumPath(params, '/tracks'), { params: _pageParams(params) }),
 };
-
-// -- spotify_library ------------------------------------------------------------
 
 function _libRemoveUris(params, itemType) {
   const ids = _asList(params.ids ?? params.items).map((item) => client.normalizeSpotifyId(item, itemType));
@@ -290,8 +280,6 @@ function _dispatch(table, defaultAction) {
     return handler(params, action);
   };
 }
-
-// -- handleSpotifyCall ----------------------------------------------------------
 
 async function handleSpotifyCall(method, params = {}) {
   if (!SPOTIFY_METHODS.has(method)) return { handled: false };

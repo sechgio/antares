@@ -201,7 +201,6 @@ describe('sticky-notes store', () => {
   it('promotes the body to a one-line title while it is still default', () => {
     const n = createNote();
     saveNoteBody(n.id, 'primera línea útil\nresto del cuerpo');
-    // igual que el plugin: título = cuerpo en una línea, truncado a 48
     expect(getNote(n.id)?.title).toBe('primera línea útil resto del cuerpo');
     expect(noteTopic(getNote(n.id)!)).toBe('primera línea útil resto del cuerpo');
   });

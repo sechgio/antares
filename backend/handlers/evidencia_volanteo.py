@@ -37,49 +37,33 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
     image_paths = {str(k): str(v) for k, v in (params.get("image_paths") or {}).items() if v is not None}
 
     if fmt == "docx":
-        docx_bytes, filename = render_docx(document, logos, images, image_paths)
-        if output_path:
-            resolved = params.get("_resolved_output_path") or output_path
-            with atomic_output_file(resolved, extension=".docx", write_token=params.get("_write_token")) as target:
-                target.tmp_path.write_bytes(docx_bytes)
-            out = target.destination
-            return {
-                "content_base64": "",
-                "saved_path": str(out),
-                "filename": out.name,
-                "format": "docx",
-                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            }
-        encoded = base64.b64encode(docx_bytes).decode("ascii")
-        return {
-            "content_base64": encoded,
-            "filename": filename,
-            "format": "docx",
-            "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        }
-
-    if preview_html:
-        pdf_bytes, filename = render_pdf_html(preview_html)
+        content, filename = render_docx(document, logos, images, image_paths)
+        mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     else:
-        pdf_bytes, filename = render_pdf(document, logos, images, image_paths)
+        fmt = "pdf"
+        if preview_html:
+            content, filename = render_pdf_html(preview_html)
+        else:
+            content, filename = render_pdf(document, logos, images, image_paths)
+        mime_type = "application/pdf"
     if output_path:
         resolved = params.get("_resolved_output_path") or output_path
-        with atomic_output_file(resolved, extension=".pdf", write_token=params.get("_write_token")) as target:
-            target.tmp_path.write_bytes(pdf_bytes)
+        with atomic_output_file(resolved, extension=f".{fmt}", write_token=params.get("_write_token")) as target:
+            target.tmp_path.write_bytes(content)
         out = target.destination
         return {
             "content_base64": "",
             "saved_path": str(out),
             "filename": out.name,
-            "format": "pdf",
-            "mime_type": "application/pdf",
+            "format": fmt,
+            "mime_type": mime_type,
         }
-    encoded = base64.b64encode(pdf_bytes).decode("ascii")
+    encoded = base64.b64encode(content).decode("ascii")
     return {
         "content_base64": encoded,
         "filename": filename,
-        "format": "pdf",
-        "mime_type": "application/pdf",
+        "format": fmt,
+        "mime_type": mime_type,
     }
 
 

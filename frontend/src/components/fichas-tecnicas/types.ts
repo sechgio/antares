@@ -1,5 +1,3 @@
-import { isoDateStamp } from '../../utils/dates';
-
 export interface ProductoQuimico {
   producto: string;
   composicion: string;
@@ -116,19 +114,6 @@ export const createEmptyFicha = (): FichaTecnica => ({
   status: 'draft',
   last_modified: '',
 });
-
-export function createTemplatePlaceholderFicha(): FichaTecnica {
-  const today = isoDateStamp();
-  return {
-    ...createEmptyFicha(),
-    id: 'XXXXXXXX',
-    os_numero: 'OS-0000-000000',
-    cliente: 'NOMBRE DEL CLIENTE',
-    direccion: 'DIRECCION DE LA OBRA',
-    distrito: 'DISTRITO',
-    fecha: today,
-  };
-}
 
 export function normalizeFicha(ficha: Partial<FichaTecnica> | null | undefined): FichaTecnica {
   const base = createEmptyFicha();

@@ -13,17 +13,6 @@ export async function loadPdfDocument(pdfBase64: string) {
   return pdfjs.getDocument({ data: safeBase64ToBytes(pdfBase64) }).promise;
 }
 
-export async function getPdfPageSize(pdfBase64: string, pageNum = 1): Promise<PdfPageSize> {
-  const pdf = await loadPdfDocument(pdfBase64);
-  try {
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 1 });
-    return { width: viewport.width, height: viewport.height };
-  } finally {
-    await pdf.destroy();
-  }
-}
-
 export async function renderPdfPageToDataUrl(
   pdf: PDFDocumentProxy,
   pageNum: number,

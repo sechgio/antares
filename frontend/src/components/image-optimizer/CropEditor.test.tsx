@@ -63,12 +63,10 @@ describe('CropEditor', () => {
     render(
       <CropEditor image={makeImage()} aspectRatio="1:1" cropOrigin="bottom" onClose={vi.fn()} onSave={vi.fn()} />,
     );
-    // 800x600 con 1:1 → cropType vertical → offset X
     expect(screen.getByText(/X \d+%/)).toBeInTheDocument();
   });
 
   it('offset Y visible cuando el recorte es horizontal', () => {
-    // imagen alta con ratio ancho → horizontal
     render(
       <CropEditor
         image={makeImage({ sourceWidth: 400, sourceHeight: 900 })}
@@ -106,14 +104,12 @@ describe('CropEditor', () => {
 
     const cropBox = container.querySelector('.cursor-grab')!;
     fireEvent.mouseDown(cropBox);
-    // overlay raíz recibe el mouseMove
     fireEvent.mouseMove(container.firstElementChild!, { clientX: 100, clientY: 300 });
     fireEvent.mouseUp(container.firstElementChild!);
     fireEvent.click(screen.getByText('Aplicar'));
     const saved = onSave.mock.calls[0][1] as { x: number; y: number };
     expect(saved.x).toBeGreaterThanOrEqual(0);
     expect(saved.x).toBeLessThanOrEqual(1);
-    // offset se desplazó del centro (0.5) hacia la izquierda
     expect(saved.x).toBeLessThan(0.5);
   });
 
@@ -124,7 +120,6 @@ describe('CropEditor', () => {
     );
     fireEvent.mouseMove(container.firstElementChild!, { clientX: 10, clientY: 10 });
     fireEvent.click(screen.getByText('Aplicar'));
-    // crop vertical: offset inicial {x:0.5, y:0}
     expect(onSave).toHaveBeenCalledWith('img-1', { x: 0.5, y: 0 });
   });
 

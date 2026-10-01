@@ -80,8 +80,7 @@ async function run() {
     }),
   ];
 
-  // Capture timers instead of scheduling real ones: the module arms an 8s
-  // initial check, a 6h periodic interval and a 30min stuck-flag timeout.
+  // Captura los timers para probar arranque, sondeo y timeout sin esperar intervalos reales.
   const timers = { timeouts: [], intervals: [], cleared: [] };
   const realTimers = {
     setTimeout: global.setTimeout,
@@ -124,8 +123,10 @@ async function run() {
 
     let res = await ipcMain.handlers.get('auto-update-check')({ trusted: false });
     assert(res.success === false && res.reason === 'untrusted sender', 'dev check rejects untrusted sender');
+    assert(logEvents.at(-1)?.fields.method === 'auto-update-check', 'dev rejection identifies check channel');
     res = await ipcMain.handlers.get('auto-update-install')({ trusted: false });
     assert(res.success === false && res.reason === 'untrusted sender', 'dev install rejects untrusted sender');
+    assert(logEvents.at(-1)?.fields.method === 'auto-update-install', 'dev rejection identifies install channel');
 
     res = await ipcMain.handlers.get('auto-update-check')({ trusted: true });
     assert(res.success === true, 'dev check succeeds for trusted sender');
@@ -191,8 +192,10 @@ async function run() {
 
     res = await ipcMain.handlers.get('auto-update-check')({ trusted: false });
     assert(res.success === false && res.reason === 'untrusted sender', 'prod check rejects untrusted sender');
+    assert(logEvents.at(-1)?.fields.method === 'auto-update-check', 'prod rejection identifies check channel');
     res = await ipcMain.handlers.get('auto-update-install')({ trusted: false });
     assert(res.success === false && res.reason === 'untrusted sender', 'prod install rejects untrusted sender');
+    assert(logEvents.at(-1)?.fields.method === 'auto-update-install', 'prod rejection identifies install channel');
 
     logEvents.length = 0;
     fakeUpdater.emit('checking-for-update');

@@ -33,7 +33,6 @@ describe('padron/excel parseWorkbook', () => {
     expect(rec.label).toBe('Hoja1 - Fila 2');
     expect(rec.data.distrito).toBe('LIMA');
     expect(rec.data.areaAfectada).toBe('Centro');
-    // fecha ISO → dd/mm/yyyy
     expect(rec.data.fechaInicio).toBe('10/03/2025');
   });
 

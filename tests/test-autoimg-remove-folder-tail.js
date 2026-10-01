@@ -13,8 +13,7 @@ function installMock(resolvedPath, exports) {
 
 const HEADER = ['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS'];
 
-// Hoja de trabajo que imita spreadsheets.values.update: solo se reemplazan las
-// filas del rango enviado, las que siguen quedan intactas.
+// Como spreadsheets.values.update, el fixture conserva las filas fuera del rango enviado.
 function makeSheet(initialRows) {
   let rows = initialRows.map((row) => row.slice());
 

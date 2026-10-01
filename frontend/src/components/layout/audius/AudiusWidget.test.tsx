@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import AudiusWidget from './AudiusWidget';
 import { fetchTrending, resetAudiusForTests, searchTracks, streamUrl, toTrack } from './core';
 import { createAudiusPlayer } from './player';
+import { createStreamPlayer } from '../streaming/player';
 
 const json = (data: unknown) => ({ ok: true, json: async () => data });
 
@@ -44,6 +45,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   resetAudiusForTests();
+  for (const source of ['audius', 'jamendo', 'archive', 'test-other']) {
+    window.localStorage.removeItem(`antares.${source}.volume`);
+  }
 });
 
 describe('Audius core mapping', () => {
@@ -134,6 +138,86 @@ describe('Audius API client', () => {
 });
 
 describe('Audius player lifecycle', () => {
+  it.each(['audius', 'jamendo', 'archive'])('preserves playback, errors, volume and disposal for %s', async (source) => {
+    mockMedia();
+    window.localStorage.setItem(`antares.${source}.volume`, '38');
+    window.localStorage.setItem('antares.test-other.volume', '62');
+    const player = source === 'audius' ? createAudiusPlayer() : createStreamPlayer(source);
+    const one = { ...toTrack(RAW_ONE)!, stream: 'https://audio.example/one.mp3' };
+    const two = { ...toTrack(RAW_TWO)!, stream: 'https://audio.example/two.mp3' };
+    const url = (item: typeof one) => source === 'audius' ? streamUrl(item) : item.stream;
+    expect(player.volume.get()).toBe(38);
+    expect(player.status.get()).toBe('paused');
+    expect(document.querySelector('audio')).toBeNull();
+    player.queue.set([one, two]);
+    player.toggle();
+    const media = document.querySelector('audio')!;
+    expect(media.getAttribute('src')).toBe(url(one));
+    expect(media.volume).toBe(0.38);
+    media.dispatchEvent(new Event('playing'));
+    expect(player.status.get()).toBe('live');
+    player.toggle();
+    expect(player.status.get()).toBe('paused');
+    player.toggle();
+    expect(player.status.get()).toBe('connecting');
+    player.previous();
+    expect(player.track.get()).toBe(two);
+    expect(media.getAttribute('src')).toBe(url(two));
+    media.dispatchEvent(new Event('ended'));
+    expect(player.track.get()).toBe(one);
+    player.next();
+    expect(player.track.get()).toBe(two);
+    media.dispatchEvent(new Event('error'));
+    expect(player.status.get()).toBe('error');
+    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(new Error('blocked'));
+    player.select(one);
+    await Promise.resolve();
+    expect(player.status.get()).toBe('error');
+    player.setVolume(300);
+    expect(player.volume.get()).toBe(100);
+    player.setVolume(-5);
+    expect(player.volume.get()).toBe(0);
+    player.setVolume(47);
+    player.mute();
+    expect(player.volume.get()).toBe(0);
+    player.mute();
+    expect(media.volume).toBe(0.47);
+    expect(window.localStorage.getItem(`antares.${source}.volume`)).toBe('47');
+    expect(window.localStorage.getItem('antares.test-other.volume')).toBe('62');
+    player.dispose();
+    expect(media.getAttribute('src')).toBeNull();
+    expect(document.querySelector('audio')).toBeNull();
+    media.dispatchEvent(new Event('playing'));
+    media.dispatchEvent(new Event('ended'));
+    expect(player.status.get()).toBe('error');
+    expect(player.track.get()).toBe(one);
+    const calls = vi.mocked(HTMLMediaElement.prototype.play).mock.calls.length;
+    player.select(two);
+    player.toggle();
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(calls);
+    const restored = source === 'audius' ? createAudiusPlayer() : createStreamPlayer(source);
+    expect(restored.volume.get()).toBe(47);
+    restored.dispose();
+  });
+
+  it('resolves the Audius host again when advancing after discovery', async () => {
+    mockMedia();
+    const fetch = vi.fn().mockImplementation((input: string) => Promise.resolve(
+      json({ data: input === 'https://api.audius.co' ? ['https://creator.audius.co/'] : [RAW_ONE, RAW_TWO] }),
+    ));
+    vi.stubGlobal('fetch', fetch);
+    const player = createAudiusPlayer();
+    player.select(toTrack(RAW_ONE)!, [toTrack(RAW_ONE)!, toTrack(RAW_TWO)!]);
+    expect(document.querySelector('audio')!.getAttribute('src')).toContain('https://api.audius.co/');
+    expect(fetch).not.toHaveBeenCalled();
+    await fetchTrending();
+    player.next();
+    expect(document.querySelector('audio')!.getAttribute('src')).toBe(
+      'https://creator.audius.co/v1/tracks/bbbbbb/stream?app_name=antares',
+    );
+    player.dispose();
+  });
+
   it('does not autoplay on mount, advances the queue on end and releases audio on dispose', () => {
     mockMedia();
     const player = createAudiusPlayer();

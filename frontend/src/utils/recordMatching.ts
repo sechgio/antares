@@ -29,15 +29,16 @@ export function naturalSortFilesByName(a: File, b: File): number {
   return a.name.localeCompare(b.name);
 }
 
-export function buildImagesByRecordId(
+export function buildImagesByRecordId<T extends { name: string }>(
   rows: Record<string, string>[],
   idColumn: string,
-  images: File[],
-): Map<string, File[]> {
+  images: T[],
+  sort = true,
+): Map<string, T[]> {
   const recordIds = new Set(
     rows.map((row) => normalizeRecordId(row[idColumn] ?? '')).filter(Boolean),
   );
-  const index = new Map<string, File[]>();
+  const index = new Map<string, T[]>();
   if (!idColumn || recordIds.size === 0) return index;
 
   for (const image of images) {
@@ -51,8 +52,10 @@ export function buildImagesByRecordId(
     }
   }
 
-  for (const matched of index.values()) {
-    matched.sort((a, b) => naturalSortByName(a.name, b.name));
+  if (sort) {
+    for (const matched of index.values()) {
+      matched.sort((a, b) => naturalSortByName(a.name, b.name));
+    }
   }
   return index;
 }

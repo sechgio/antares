@@ -10,9 +10,7 @@ afterEach(async () => {
   await i18n.changeLanguage('es');
 });
 
-// Node 22 expone `localStorage` global experimental que devuelve undefined sin
-// `--localstorage-file` y ensombrece el de jsdom; se repone un Storage en memoria
-// cuando el global viene roto para que las pruebas con persistencia funcionen.
+// Repone Storage en memoria si el localStorage experimental de Node oculta el de jsdom y falla.
 if (typeof window !== 'undefined') {
   const map = new Map<string, string>();
   const store: Storage = {
@@ -80,8 +78,7 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   });
 }
 
-// Ningún test debe abrir sockets reales (p. ej. Supabase Realtime vía undici).
-// El stub satisface la API que usan los clientes pero nunca conecta.
+// El stub impide que los clientes WebSocket abran conexiones reales durante los tests.
 if (typeof window !== 'undefined') {
   class WebSocketStub {
     static readonly CONNECTING = 0;

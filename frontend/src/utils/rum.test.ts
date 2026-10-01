@@ -61,7 +61,6 @@ describe('rum', () => {
     await vi.waitFor(() => expect(onCLS).toHaveBeenCalled());
     expect(onINP).toHaveBeenCalled();
     expect(onLCP).toHaveBeenCalled();
-    // una métrica enviada por el callback llega a api.telemetry
     const send = onCLS.mock.calls[0][0] as (m: unknown) => void;
     send({ name: 'CLS', value: 0.1, rating: 'good', delta: 0.1, id: 'x' });
     await vi.waitFor(() => expect(telemetry).toHaveBeenCalledWith(
