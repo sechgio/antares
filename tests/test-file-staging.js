@@ -46,6 +46,46 @@ async function main() {
   }
 
   {
+    const session3b = createStagedSession({ name: 'concurrent.bin', size: 8, webContentsId: 1 });
+    await appendStagedChunk(session3b.token, Buffer.from('first'), 1);
+    const originalAppendFile = fs.promises.appendFile;
+    let releaseWrite;
+    const writeBlocked = new Promise((resolve) => { releaseWrite = resolve; });
+    let writeStarted;
+    const started = new Promise((resolve) => { writeStarted = resolve; });
+    fs.promises.appendFile = async (...args) => {
+      writeStarted();
+      await writeBlocked;
+      return originalAppendFile(...args);
+    };
+    try {
+      const append = appendStagedChunk(session3b.token, Buffer.from('end'), 1);
+      await started;
+      let completed = false;
+      const completion = completeStagedSession(session3b.token, 1).then((value) => {
+        completed = true;
+        return value;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.strictEqual(completed, false, 'completion must wait for an in-flight chunk');
+      await assert.rejects(
+        () => appendStagedChunk(session3b.token, Buffer.from('late'), 1),
+        /already completed/,
+        'new chunks must be rejected once completion starts',
+      );
+      releaseWrite();
+      await append;
+      const cap3b = await completion;
+      assert.strictEqual(cap3b.size, 8, 'capability size includes the in-flight chunk');
+      assert.strictEqual(fs.readFileSync(cap3b.path, 'utf8'), 'firstend');
+    } finally {
+      fs.promises.appendFile = originalAppendFile;
+      releaseWrite();
+      await abortStagedSession(session3b.token);
+    }
+  }
+
+  {
     const session4 = createStagedSession({ name: 'cleanup.xlsx', size: 4, webContentsId: 1 });
     await appendStagedChunk(session4.token, Buffer.from('data'), 1);
     const cap4 = await completeStagedSession(session4.token, 1);
