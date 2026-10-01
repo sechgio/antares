@@ -459,9 +459,7 @@ function Artboard({
       setCanvasGestureActive(false);
       setGuidesIfChanged([]);
       setDistanceLabelsIfChanged([]);
-      // El preview vivo ya llegó al documento vía onPreviewLayers/updateSilent; sin
-      // avisar al dueño del baseline quedaba el gesto abortado sin entrada en el
-      // historial y el baseline apuntando a un preview muerto.
+      // Notifica el aborto al dueño del baseline: updateSilent ya aplicó el preview al documento.
       onCancelGestureRef.current?.();
     },
     [setGuidesIfChanged, setDistanceLabelsIfChanged],

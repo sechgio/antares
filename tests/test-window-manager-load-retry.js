@@ -1,6 +1,5 @@
-// El reintento manual de la página de fallo de carga se captura con before-input-event
-// en el proceso principal: la CSP de producción no permite script en una página data:
-// y renderer-trust rechaza ese frame, así que no puede ser un botón.
+// before-input-event permite reintentar desde la página data:, cuyo frame y scripts
+// están bloqueados por renderer-trust y la CSP de producción.
 
 const { EventEmitter } = require('events');
 const { assert, finish, stubModule, evictModule, installInertTimers } = require('./helpers/harness');
@@ -74,13 +73,11 @@ async function main() {
     assert(page.includes('Ctrl+R'), 'la página de fallo anuncia la tecla de reintento');
     assert(!page.includes('Ver → Recargar'), 'la página ya no promete un menú inalcanzable');
 
-    // Ctrl+R sobre la página data: reintenta la carga real.
     const beforeManual = state.loadFileCalls;
     let event = fireReload(state.win.webContents);
     assert(event.prevented === true, 'Ctrl+R en la página de fallo consume el evento');
     assert(state.loadFileCalls === beforeManual + 1, 'Ctrl+R en la página de fallo vuelve a cargar el renderer');
 
-    // Ctrl+R con el renderer sano no cambia de comportamiento (antes no había acelerador).
     state.loadFileRejects = false;
     state.currentURL = 'file:///app/dist/index.html';
     const before = state.loadFileCalls;
@@ -88,7 +85,6 @@ async function main() {
     assert(event.prevented === false, 'Ctrl+R fuera de la página de fallo no se intercepta');
     assert(state.loadFileCalls === before, 'Ctrl+R con el renderer cargado no recarga');
 
-    // Sin modificador y con otra tecla, no dispara.
     state.currentURL = 'data:text/html;charset=utf-8,x';
     const unmodified = fireReload(state.win.webContents, { control: false });
     assert(unmodified.prevented === false, 'la tecla R sin Control no dispara el reintento');

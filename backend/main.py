@@ -285,9 +285,7 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
     ipc_phase_telemetry.set_fields(msg_id, method=method_name, lane=lane)
     ipc_phase_telemetry.mark(msg_id, "enqueue")
     scheduler = get_scheduler()
-    # El pre-check solo importa handlers.canvas cuando hay presión de memoria
-    # real; sin presión los checks internos no-opean, así que evitamos bloquear
-    # el lector JSON-RPC con el serialized_import del módulo pesado.
+    # Importar handlers.canvas solo bajo presión de memoria evita bloquear el lector JSON-RPC.
     if method_name in ("canvas_save", "canvas_save_history") and is_memory_pressure():
         request_params = params if isinstance(params, dict) else {}
         try:
@@ -297,7 +295,7 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
             )
 
             if method_name == "canvas_save":
-                doc = request_params.get("document")
+                doc = None if "expected_updated_at" in request_params else request_params.get("document")
                 _check_memory_pressure_or_spill(doc if isinstance(doc, dict) else None, context="canvas_save")
             else:
                 _check_history_memory_pressure(

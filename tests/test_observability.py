@@ -112,7 +112,6 @@ def test_install_exception_hooks_captures_uncaught_exceptions(monkeypatch: pytes
         assert len(records) == 1
         assert len(mock_sys_called) == 2
 
-        # Thread exception
         if hasattr(threading, "excepthook"):
 
             class DummyThread:
@@ -161,21 +160,17 @@ def test_log_message_emits_structured_batch_events() -> None:
             log_message("Advertencia de formato", "warn", state=state)
 
         assert len(records) == 3
-        # First log (ok -> INFO, success)
         assert getattr(records[0], "observability_event", None) == "conversion.batch.item"
         assert records[0].levelno == logging.INFO
         assert getattr(records[0], "observability_fields", {}).get("outcome") == "success"
 
-        # Second log (error -> ERROR, failed)
         assert getattr(records[1], "observability_event", None) == "conversion.batch.item"
         assert records[1].levelno == logging.ERROR
         assert getattr(records[1], "observability_fields", {}).get("outcome") == "failed"
 
-        # Third log (warn -> WARNING)
         assert getattr(records[2], "observability_event", None) == "conversion.batch.item"
         assert records[2].levelno == logging.WARNING
 
-        # In-memory target.logs buffer preserved
         assert len(state.logs) == 3
         assert state.logs[0]["message"] == "Advertencia de formato"
         assert state.logs[1]["message"] == "Error convirtiendo img.png"
@@ -203,7 +198,6 @@ def test_ubicaciones_client_structured_http_logging(monkeypatch: pytest.MonkeyPa
     handler = TestLogHandler()
     logger.addHandler(handler)
     try:
-        # 1. HTTP 503 error
         def mock_urlopen_503(req: Any, timeout: float = 12.0) -> Any:
             raise urllib.error.HTTPError(
                 url="https://tile.openstreetmap.org/18/1/1.png",
@@ -223,7 +217,6 @@ def test_ubicaciones_client_structured_http_logging(monkeypatch: pytest.MonkeyPa
         assert fields.get("outcome") == "failed"
         assert fields.get("error_code") == "503"
 
-        # 2. Timeout error
         def mock_urlopen_timeout(req: Any, timeout: float = 12.0) -> Any:
             raise TimeoutError("Connection timed out")
 
@@ -235,7 +228,6 @@ def test_ubicaciones_client_structured_http_logging(monkeypatch: pytest.MonkeyPa
         assert records[1].levelno == logging.WARNING
         assert getattr(records[1], "observability_fields", {}).get("outcome") == "timeout"
 
-        # 3. Deadline exceeded
         monkeypatch.setattr("time.sleep", lambda _: None)
         res3 = _http_get("https://tile.openstreetmap.org/18/1/1.png", headers={}, timeout=1, deadline=0.0)
         assert res3 is None

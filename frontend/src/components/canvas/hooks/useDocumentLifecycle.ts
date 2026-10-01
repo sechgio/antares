@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import { api, apiRetryAfterMs } from '../../../api';
-import { queueCanvasCloudDelete, queueCanvasCloudPush } from '../sync/cloudQueue';
+import { queueCanvasCloudDelete, queueCanvasCloudPush, recordPendingCanvasDelete } from '../sync/cloudQueue';
 import { isNewer } from '../sync/syncCompare';
 import { normalizeDocument, type CanvasDocument, type CanvasDocumentSummary } from '../types';
 import {
@@ -430,8 +430,12 @@ export function useDocumentLifecycle({
       await withDocSwitchLock(async () => {
         try {
           const deletedId = history.document.id;
-          await api.canvasDelete(deletedId);
-          void Promise.resolve(queueCanvasCloudDelete(deletedId)).catch(logCloudPersistFailure);
+          recordPendingCanvasDelete(deletedId, true);
+          try {
+            await api.canvasDelete(deletedId);
+          } finally {
+            void Promise.resolve(queueCanvasCloudDelete(deletedId)).catch(logCloudPersistFailure);
+          }
           const list = await api.canvasList();
           if (list.documents.length) {
             await openDocumentWithHistory(list.documents[0].id);

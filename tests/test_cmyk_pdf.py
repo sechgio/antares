@@ -205,9 +205,7 @@ def test_canvas_export_cmyk_pdf_large_persists_to_disk(monkeypatch):
 
 
 def test_canvas_export_cmyk_pdf_paired_pages_count_once(tmp_path):
-    """El frontend aplana el documento antes de exportar, así que contexts y pages
-    ya son 1:1 con las páginas de salida. Contarlos como producto rechazaba desde
-    15 páginas un CMYK que el RGB sí imprimía."""
+    """El frontend ya pareó contexts y pages: el límite cuenta pares, no su producto."""
     doc = create_empty_document(name="Paired 15")
     doc["pages"] = [{"id": f"page-{i}", "name": f"Página {i + 1}"} for i in range(15)]
     output_path = tmp_path / "paired15.pdf"

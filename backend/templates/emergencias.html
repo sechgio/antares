@@ -23,7 +23,6 @@
             padding: 0;
         }
 
-        /* PRINT STYLES */
         @media print {
             @page {
                 size: A4;
@@ -53,7 +52,6 @@
             }
         }
 
-        /* SCREEN PREVIEW STYLES */
         @media screen {
 
             html,
@@ -64,7 +62,6 @@
                 overflow: hidden;
             }
 
-            /* .page styles are already defined below, effectively centering it in the flex container of PreviewPanel */
             .page {
                 margin: 0 auto;
                 background: white;
@@ -132,7 +129,6 @@
             color: #000;
         }
 
-        /* === TOP INFO BAR === */
         .info-bar {
             display: flex;
             border: 1px solid #ccc;
@@ -168,7 +164,6 @@
             color: #000;
         }
 
-        /* === SECTION HEADERS === */
         .section-title {
             font-size: 10pt;
             font-weight: bold;
@@ -180,7 +175,6 @@
             flex-shrink: 0;
         }
 
-        /* === DATA GRIDS === */
         .localizacion {
             margin-bottom: 3mm;
             flex-shrink: 0;
@@ -297,7 +291,6 @@
             height: calc(50% - 1mm);
         }
 
-        /* DEFAULT PHOTO SPACING */
         .layout-grid {
             justify-content: space-between;
             align-content: space-between;
@@ -328,7 +321,6 @@
     {% for report in report_list %}
     <div class="page" style="page-break-after: always;">
 
-        <!-- HEADER -->
         <div class="header">
             <div class="logo">
                 {% if logo_left %}
@@ -347,7 +339,6 @@
             </div>
         </div>
 
-        <!-- INFO BAR -->
         <div class="info-bar">
             <div class="info-item">
                 <span class="info-label">CENTRO DE SERVICIO:</span>
@@ -363,7 +354,6 @@
             </div>
         </div>
 
-        <!-- 1.0 LOCALIZACION -->
         <section class="localizacion">
             <div class="section-title">1.0 LOCALIZACIÓN</div>
             <table class="loc-table">
@@ -380,7 +370,6 @@
             </table>
         </section>
 
-        <!-- 2.0 DETALLES -->
         <section class="localizacion">
             <div class="section-title">2.0 DETALLES DE ORDEN DE TRABAJO</div>
             <table class="loc-table">
@@ -393,7 +382,6 @@
             </table>
         </section>
 
-        <!-- 3.0 PANEL FOTOGRAFICO -->
         <div class="section-title">3.0 PANEL FOTOGRÁFICO</div>
         <div class="photo-section">
             {% if report.images %}

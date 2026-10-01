@@ -42,7 +42,6 @@
             page-break-after: avoid;
         }
 
-        /* ==================== HEADER ==================== */
         .header {
             display: grid;
             grid-template-columns: 120px 1fr 160px;
@@ -114,7 +113,6 @@
             color: #d4a017;
         }
 
-        /* ==================== METADATA & INFO ==================== */
         .metadata-box {
             display: flex;
             justify-content: flex-end;
@@ -188,7 +186,6 @@
             border-right: none;
         }
 
-        /* ==================== TABLES COMMON ==================== */
         .section-table {
             width: 100%;
             border-collapse: collapse;
@@ -244,7 +241,6 @@
             font-weight: bold;
         }
 
-        /* ==================== ACTIVIDADES ESPECÍFICO ==================== */
         .actividades-table .num-col {
             text-align: left;
             padding-left: 8px;
@@ -255,14 +251,12 @@
             padding-left: 10px;
         }
 
-        /* ==================== INSPECCIÓN ESPECÍFICO ==================== */
         .inspection-table .sub-label {
             font-weight: 600;
             padding-left: 12px;
             background: #f8f9fa !important;
         }
 
-        /* ==================== PANEL FOTOGRAFICO ==================== */
         .photo-section {
             page-break-before: always;
             border: 2px solid #0066a1;
@@ -323,13 +317,11 @@
     {% for report in reports %}
     <div class="page-container">
 
-        <!-- HEADER -->
         <div class="header">
             <div class="logo-left">
                 {% if logo_left %}
                 <img src="{{ logo_left }}" class="logo-img" />
                 {% else %}
-                <!-- Blank default -->
                 {% endif %}
             </div>
             <div class="header-title">
@@ -339,12 +331,10 @@
                 {% if logo_right %}
                 <img src="{{ logo_right }}" class="logo-img" />
                 {% else %}
-                <!-- Blank default -->
                 {% endif %}
             </div>
         </div>
 
-        <!-- METADATA -->
         <div class="metadata-box">
             <table class="metadata-table">
                 <tr>
@@ -360,7 +350,6 @@
             </table>
         </div>
 
-        <!-- INFO SECTION -->
         <div class="info-section">
             <div class="info-row two-cols">
                 <div class="info-label">C.S :</div>
@@ -393,7 +382,6 @@
             </div>
         </div>
 
-        <!-- INSPECCIÓN TABLE -->
         <table class="section-table inspection-table">
             <thead>
                 <tr>
@@ -538,7 +526,6 @@
             </tbody>
         </table>
 
-        <!-- VÁLVULAS TABLE -->
         <table class="section-table valvulas-table">
             <colgroup>
                 <col class="col-main-label">
@@ -680,7 +667,6 @@
             </tbody>
         </table>
 
-        <!-- CANASTILLA TABLE -->
         <table class="section-table valvulas-table">
             <colgroup>
                 <col class="col-main-label">
@@ -797,7 +783,6 @@
             </tbody>
         </table>
 
-        <!-- MEDIDAS TABLE -->
         <table class="section-table medidas-table">
             <colgroup>
                 <col style="width: 65%;">
@@ -835,7 +820,6 @@
             </tbody>
         </table>
 
-        <!-- ACTIVIDADES EJECUTADAS TABLE -->
         <table class="section-table actividades-table">
             <colgroup>
                 <col class="col-main-label">

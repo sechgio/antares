@@ -36,8 +36,8 @@ const IPC_METHOD_TIMEOUTS: Record<IpcTimeoutTier, number> = ipcMethodCatalog.tim
 const IPC_METHOD_ENTRIES = ipcMethodCatalog.methods as Record<string, { timeout?: IpcTimeoutTier; handler?: string }>;
 const FE_STARTUP_BUFFER_MS = 60_000;
 const FE_TIMEOUT_BUFFER_MS = 10_000;
-// El buffer de startup solo cubre el cold-start del backend: tras el primer
-// invoke exitoso deja de aplicar y los tiers del catálogo mandan.
+// El buffer cubre cada arranque del backend; tras su primera respuesta
+// deja de aplicar hasta el siguiente reinicio.
 let _backendSeenReady = false;
 
 export function _resetBackendReadyForTests(): void {
@@ -294,7 +294,10 @@ export const _invoke = async <T>(method: string, params?: Record<string, unknown
 
 export function onNotify(callback: (method: string, params: unknown) => void) {
   if (!window.electronAPI) return () => {};
-  return window.electronAPI.onNotify(callback);
+  return window.electronAPI.onNotify((method, params) => {
+    if (method === 'backend.starting' || method === 'backend.restarting') _backendSeenReady = false;
+    callback(method, params);
+  });
 }
 
 export interface BackendHealthStatus {
@@ -320,7 +323,9 @@ export async function getBackendStatus(): Promise<BackendStatus> {
   if (!window.electronAPI) {
     return { state: 'unavailable', ready: false, lastError: null, stderrTail: '' };
   }
-  return window.electronAPI.backendStatus() as Promise<BackendStatus>;
+  const status = await window.electronAPI.backendStatus() as BackendStatus;
+  if (!status.ready) _backendSeenReady = false;
+  return status;
 }
 
 export async function restartBackend(): Promise<{ success: boolean; state: string }> {
@@ -328,6 +333,7 @@ export async function restartBackend(): Promise<{ success: boolean; state: strin
     throw new Error('Electron IPC no disponible');
   }
   try {
+    _backendSeenReady = false;
     return await (window.electronAPI.backendRestart() as Promise<{ success: boolean; state: string }>);
   } catch (err: unknown) {
     reportFrontendError({

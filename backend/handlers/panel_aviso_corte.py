@@ -126,7 +126,7 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     image_paths = {str(k): str(v) for k, v in image_paths_raw.items() if v is not None}
     export_mode = str(params.get("export_mode", "skip_empty"))
     if fmt == "docx":
-        docx_bytes, filename = render_docx(
+        content, filename = render_docx(
             panels=panels,
             logos=logos,
             images=images,
@@ -134,51 +134,36 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
             export_mode=export_mode,  # type: ignore[arg-type]
             template_id=template_id,
         )
-        if output_path:
-            resolved = params.get("_resolved_output_path") or output_path
-            with atomic_output_file(resolved, extension=".docx") as target:
-                target.tmp_path.write_bytes(docx_bytes)
-            out = target.destination
-            return {
-                "content_base64": "",
-                "saved_path": str(out),
-                "filename": out.name,
-                "format": "docx",
-                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            }
-        encoded = base64.b64encode(docx_bytes).decode("ascii")
-        return {
-            "content_base64": encoded,
-            "filename": filename,
-            "format": "docx",
-            "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        }
-    pdf_bytes, filename = render_pdf(
-        panels=panels,
-        logos=logos,
-        images=images,
-        image_paths=image_paths,
-        export_mode=export_mode,  # type: ignore[arg-type]
-        template_id=template_id,
-    )
+        mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    else:
+        fmt = "pdf"
+        content, filename = render_pdf(
+            panels=panels,
+            logos=logos,
+            images=images,
+            image_paths=image_paths,
+            export_mode=export_mode,  # type: ignore[arg-type]
+            template_id=template_id,
+        )
+        mime_type = "application/pdf"
     if output_path:
         resolved = params.get("_resolved_output_path") or output_path
-        with atomic_output_file(resolved, extension=".pdf") as target:
-            target.tmp_path.write_bytes(pdf_bytes)
+        with atomic_output_file(resolved, extension=f".{fmt}") as target:
+            target.tmp_path.write_bytes(content)
         out = target.destination
         return {
             "content_base64": "",
             "saved_path": str(out),
             "filename": out.name,
-            "format": "pdf",
-            "mime_type": "application/pdf",
+            "format": fmt,
+            "mime_type": mime_type,
         }
-    encoded = base64.b64encode(pdf_bytes).decode("ascii")
+    encoded = base64.b64encode(content).decode("ascii")
     return {
         "content_base64": encoded,
         "filename": filename,
-        "format": "pdf",
-        "mime_type": "application/pdf",
+        "format": fmt,
+        "mime_type": mime_type,
     }
 
 @with_locale

@@ -19,9 +19,7 @@ def _load_canvas_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
             return cast("dict[str, Any]", json.loads(p.read_text(encoding="utf-8")))  # allowlist: dict[str, Any]
     except Exception:
         pass
-    # Fallback cuando el schema no es legible (p.ej. recurso no empaquetado):
-    # los tipos de capa se derivan del Literal de types.py — mismo conjunto que
-    # valida test_canvas_schema_parity, sin lista duplicada.
+    # Si el schema no es legible, usa el Literal de types.py para conservar la paridad.
     from typing import get_args
 
     from backend.core.canvas.types import CanvasLayerType
@@ -163,10 +161,8 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
             else:
                 cleaned[bool_key] = bool(value)
     if "rowsData" in raw and raw["rowsData"] is not None:
-        # La tabla guarda sus celdas como JSON dentro del string: solo se
-        # conserva si parsea a un objeto con "cells" lista (misma condición
-        # que parseTableData en el frontend; si no, la tabla muestra su
-        # grilla por defecto y el dato corrupto no se perpetúa en disco).
+        # Conserva solo JSON con "cells" lista, como parseTableData en el frontend;
+        # los datos inválidos se descartan para mostrar la grilla por defecto.
         rows_text = str(raw["rowsData"])
         try:
             parsed_rows = json.loads(rows_text)

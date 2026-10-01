@@ -165,8 +165,7 @@ describe('useCanvasKeyboard', () => {
     const doc = makeDoc([text]);
     const input = makeInput(doc, { selectedIds: [text.id] });
     renderHook(() => useCanvasKeyboard(input));
-    // Con Shift el navegador entrega key 'D' pero code sigue siendo 'KeyD', y el
-    // chord pertenece al atajo global del shell.
+    // Shift cambia key a 'D', pero conserva code='KeyD'.
     const e = press(input, { key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true });
     expect(e.defaultPrevented).toBe(false);
     expect(input.setAllLayers).not.toHaveBeenCalled();

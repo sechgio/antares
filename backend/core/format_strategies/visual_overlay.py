@@ -164,15 +164,4 @@ class VisualOverlayStrategy:
 
 class SimpleOverlayStrategy:
     def generate(self, template_bytes: bytes, desde: int, hasta: int, mapping: dict[str, Any] | None = None) -> bytes:
-        writer = PdfWriter()
-        reader: PdfReader | None = None
-        for number in range(desde, hasta + 1):
-            if reader is None:
-                reader = PdfReader(io.BytesIO(template_bytes))
-            target_page_idx = min(_DEFAULT_OVERLAY_MAPPING.get("page", 0), len(reader.pages) - 1)
-            writer.add_page(reader.pages[target_page_idx])
-            page = writer.pages[-1]
-            _apply_visual_overlay(page, number, _DEFAULT_OVERLAY_MAPPING)
-        buffer = io.BytesIO()
-        writer.write(buffer)
-        return buffer.getvalue()
+        return VisualOverlayStrategy().generate(template_bytes, desde, hasta, _DEFAULT_OVERLAY_MAPPING)

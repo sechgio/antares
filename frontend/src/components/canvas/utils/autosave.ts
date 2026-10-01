@@ -42,10 +42,15 @@ export function autosaveDelayForDoc(doc: CanvasDocument | null | undefined): num
   const cached = delayByDoc.get(doc);
   if (cached !== undefined) return cached;
 
+  if (doc.layers.length > LARGE_LAYER_COUNT) {
+    delayByDoc.set(doc, AUTOSAVE_LARGE_MS);
+    return AUTOSAVE_LARGE_MS;
+  }
+
   const estimatedBytes = estimateCanvasDocumentBytes(doc);
   const layerCount = doc.layers.length;
   let delay = AUTOSAVE_DEBOUNCE_MS;
-  if (estimatedBytes > LARGE_BYTES || layerCount > LARGE_LAYER_COUNT) {
+  if (estimatedBytes > LARGE_BYTES) {
     delay = AUTOSAVE_LARGE_MS;
   } else if (estimatedBytes > MEDIUM_BYTES || layerCount > MEDIUM_LAYER_COUNT) {
     delay = AUTOSAVE_MEDIUM_MS;

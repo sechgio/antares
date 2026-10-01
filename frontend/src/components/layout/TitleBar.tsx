@@ -5,12 +5,9 @@ import { HoverTooltip } from '@/components/ui/HoverTooltip';
 import Button from '@/components/ui/Button';
 import { usePluginEnabled } from '../../plugins';
 
-// La campana arrastra useDueNotifications → la API de espacios → @supabase/supabase-js.
-// Importarla en directo metería ese vendor en el grafo estático del shell (lo mide
-// frontend/scripts/shell-preload-budget.mjs) y el arranque en frío lo pagaría.
+// El import lazy mantiene Supabase fuera del bundle inicial del shell.
 const TaskNotificationsBell = lazy(() => import('./TaskNotificationsBell'));
-// Los plugins llevan dnd-kit dentro: lazy para que vendor-dnd no entre al
-// grafo estático del shell (misma razón que la campana, ver arriba).
+// Los plugins se cargan aparte para excluir dnd-kit del bundle inicial.
 const TitleBarPlugins = lazy(() => import('./TitleBarPlugins'));
 
 const bellPlaceholder = (

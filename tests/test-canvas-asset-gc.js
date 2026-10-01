@@ -1,4 +1,5 @@
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const { evictModule } = require('./helpers/harness');
 
@@ -20,6 +21,7 @@ async function main() {
     const {
       putCanvasAsset,
       getCanvasAsset,
+      getCanvasAssetInfo,
       assetsDir,
       gcOrphanCanvasAssets,
       GC_GRACE_MS,
@@ -39,8 +41,7 @@ async function main() {
       'utf8',
     );
 
-    // A pending marker protects an unreferenced asset past the mtime grace.
-    // This is the put-vs-GC window for a doc that has not been saved yet.
+    // El marcador protege assets aún no referenciados después de vencer la gracia del mtime.
     const pendingAsset = await putCanvasAsset(Buffer.from('pending-asset-eeeeeeee'));
     const pendingAssetPath = path.join(assetsDir(), pendingAsset.asset_id);
     const pendingOld = (Date.now() - GC_GRACE_MS - 60_000) / 1000;
@@ -49,7 +50,6 @@ async function main() {
     assert.ok(fs.existsSync(pendingAssetPath), 'pending asset kept past mtime grace');
     assert.ok(protectedRes.removed === 0, `nothing removed while pending: ${JSON.stringify(protectedRes)}`);
 
-    // Once the marker expires (or the asset gets referenced), GC can collect it.
     const pendingFile = path.join(fakeHome, 'Antares', 'canvas', 'spill', 'pending-assets.json');
     await fsp.writeFile(
       pendingFile,
@@ -66,7 +66,7 @@ async function main() {
     const orphanPath = path.join(assetsDir(), orphan.asset_id);
     const old = (Date.now() - GC_GRACE_MS - 60_000) / 1000;
     fs.utimesSync(orphanPath, old, old);
-    // Expire the orphan's marker too so this GC pass can collect it.
+    // Vence también el marcador del huérfano para permitir su recolección.
     await fsp.writeFile(
       pendingFile,
       JSON.stringify([{ id: orphan.asset_id, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }]),
@@ -114,10 +114,9 @@ async function main() {
 
     const young = await putCanvasAsset(Buffer.from('young-orphan-cccccccc'));
     const youngPath = path.join(assetsDir(), young.asset_id);
-    // With a live pending marker the young asset is protected without grace.
     await gcOrphanCanvasAssets({ nowMs: Date.now(), graceMs: GC_GRACE_MS });
     assert.ok(fs.existsSync(youngPath), 'young unreferenced asset kept by pending marker');
-    // Expire the marker: the mtime grace window still protects a fresh write.
+    // Al vencer el marcador, la gracia del mtime aún protege el asset reciente.
     await fsp.writeFile(
       pendingFile,
       JSON.stringify([{ id: young.asset_id, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }]),
@@ -126,6 +125,89 @@ async function main() {
     const grace = await gcOrphanCanvasAssets({ nowMs: Date.now(), graceMs: GC_GRACE_MS });
     assert.ok(fs.existsSync(youngPath), 'young unreferenced asset kept by grace');
     assert.ok(grace.skippedGrace >= 1, 'skippedGrace counted');
+
+    const reusableBytes = Buffer.from('reusable-image-bytes');
+    const reusable = await putCanvasAsset(reusableBytes);
+    const reusablePath = path.join(assetsDir(), reusable.asset_id);
+    fs.utimesSync(reusablePath, old, old);
+    await fsp.writeFile(pendingFile, JSON.stringify([{ id: reusable.asset_id, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }]));
+    const realReadFile = fsp.readFile;
+    const realCreateHash = crypto.createHash;
+    let assetReads = 0;
+    let checksumCalls = 0;
+    fsp.readFile = async (file, ...args) => {
+      if (file === reusablePath) assetReads += 1;
+      return realReadFile.call(fsp, file, ...args);
+    };
+    crypto.createHash = (algorithm, ...args) => {
+      if (algorithm === 'sha256') checksumCalls += 1;
+      return realCreateHash.call(crypto, algorithm, ...args);
+    };
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        assert.deepStrictEqual(await getCanvasAssetInfo(reusable.ref), {
+          ref: reusable.ref, asset_id: reusable.asset_id, bytes: reusableBytes.length,
+        });
+      }
+      assert.strictEqual(assetReads, 1, 'unchanged asset info reads and verifies the bytes only once');
+      assert.strictEqual(checksumCalls, 1, 'asset info reuses the bounded stat-keyed checksum cache');
+    } finally {
+      fsp.readFile = realReadFile;
+      crypto.createHash = realCreateHash;
+    }
+    await gcOrphanCanvasAssets({ graceMs: GC_GRACE_MS });
+    assert.ok(fs.existsSync(reusablePath), 'reusing an old asset renews its pending marker before document save');
+    await fsp.writeFile(reusablePath, Buffer.alloc(reusableBytes.length, 0));
+    fs.utimesSync(reusablePath, old + 1, old + 1);
+    await assert.rejects(() => getCanvasAssetInfo(reusable.ref), /checksum/i);
+    await putCanvasAsset(reusableBytes);
+    assert.deepStrictEqual(await getCanvasAsset(reusable.ref), reusableBytes, 'same-sized corruption can be repaired');
+    await fsp.rm(reusablePath);
+    await assert.rejects(() => getCanvasAssetInfo(reusable.ref), /ENOENT/);
+    await putCanvasAsset(reusableBytes);
+    assert.strictEqual((await getCanvasAssetInfo(reusable.ref)).ref, reusable.ref, 'a deleted asset can be restored');
+
+    const racing = await putCanvasAsset(Buffer.from('GC-before-reference-validation'));
+    const racingPath = path.join(assetsDir(), racing.asset_id);
+    fs.utimesSync(racingPath, old, old);
+    await fsp.writeFile(pendingFile, '[]');
+    let releaseGc;
+    let signalGc;
+    const gcPaused = new Promise((resolve) => { signalGc = resolve; });
+    const gcGate = new Promise((resolve) => { releaseGc = resolve; });
+    let pauseNextRead = true;
+    const realStat = fsp.stat;
+    let validationStarted = false;
+    fsp.stat = async (file, ...args) => {
+      if (file === racingPath) validationStarted = true;
+      return realStat.call(fsp, file, ...args);
+    };
+    fsp.readFile = async (file, ...args) => {
+      if (file === pendingFile && pauseNextRead) {
+        pauseNextRead = false;
+        signalGc();
+        await gcGate;
+      }
+      return realReadFile.call(fsp, file, ...args);
+    };
+    try {
+      const collecting = gcOrphanCanvasAssets({ graceMs: GC_GRACE_MS });
+      await gcPaused;
+      const checked = getCanvasAssetInfo(racing.ref).then(() => null, (error) => error);
+      await Promise.resolve();
+      assert.strictEqual(validationStarted, false, 'reference validation waits until GC releases the write lock');
+      releaseGc();
+      await collecting;
+      const missing = await checked;
+      assert.ok(missing && /ENOENT/.test(missing.message), 'validation after GC must reject a deleted cached ref');
+      await putCanvasAsset(Buffer.from('GC-before-reference-validation'));
+      await Promise.all([getCanvasAssetInfo(racing.ref), gcOrphanCanvasAssets({ graceMs: GC_GRACE_MS })]);
+      assert.ok(fs.existsSync(racingPath), 'validation before GC protects the reused asset');
+    } finally {
+      releaseGc();
+      fsp.readFile = realReadFile;
+      fsp.stat = realStat;
+    }
 
     console.log('  ✓ GC removes stale orphans, keeps refs + grace');
     console.log('\nAll canvas-asset-gc tests passed.');

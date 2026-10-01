@@ -325,12 +325,7 @@ def test_submit_light_does_not_inflate_submitted_when_executor_submit_raises() -
 
 
 def test_metrics_probes_ram_without_holding_the_lock(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`metrics()` no puede retener `_lock` mientras consulta la RAM.
-
-    Ese lock es el mismo que `_heavy_cond` suelta mientras los workers del lane
-    heavy esperan un slot: un `import psutil` o un syscall lento dentro del lock
-    congela el scheduler entero.
-    """
+    """Consultar la RAM fuera de _lock evita bloquear a los workers que esperan slots heavy."""
     import psutil
 
     from backend.core.scheduler import WorkScheduler
@@ -343,8 +338,7 @@ def test_metrics_probes_ram_without_holding_the_lock(monkeypatch: pytest.MonkeyP
     observed: dict[str, bool] = {}
 
     def fake_virtual_memory() -> _Vm:
-        # Otro hilo: un RLock se reentría en el mismo hilo y aprobaría el test
-        # aunque metrics() siguiera reteniendo el lock.
+        # Usa otro hilo: la reentrada de RLock ocultaría que metrics() retiene el lock.
         seen: dict[str, bool] = {}
 
         def probe() -> None:

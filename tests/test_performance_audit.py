@@ -201,14 +201,11 @@ def test_warm_prewarms_history_schema_without_pandas_sync() -> None:
     ]
     assert not any("pandas" in ln or "openpyxl" in ln for ln in post_ready_imports)
 
-    # Regresión: el warm post-ready de pandas/openpyxl retenía serialized_import
-    # durante ~45-120 s y bloqueaba la carga lazy de handlers (C1 del audit).
+    # El warm de pandas/openpyxl no debe bloquear la carga lazy de handlers.
     assert not hasattr(HandlerRegistry, "warm_pandas_sync")
     assert "warm_pandas" not in inspect.getsource(backend_main)
 
-    # Regresión: el warm post-ready de weasyprint retenía serialized_import
-    # durante el import frío (>90 s medidos en máquina degradada) y bloqueaba
-    # _load_module con el mismo mecanismo que C1.
+    # El warm de weasyprint tampoco debe retener serialized_import durante el import frío.
     assert "write_pdf_sanitized" not in post_ready
     assert "pdf_html" not in post_ready
 

@@ -22,8 +22,7 @@ const REALTIME_PULL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
 export interface UseCanvasSyncOptions {
   historyDocRef: React.MutableRefObject<CanvasDocument>;
-  // Fuente única de "doc abierto dirty": deriva de hasUnsavedEdits + baselines
-  // en el momento de la lectura (no un espejo manual).
+  // Evalúa hasUnsavedEdits y los baselines al leer.
   isOpenDirty: () => boolean;
   refreshList: () => Promise<void>;
   replaceDocument: CanvasHistoryHandle['replaceDocument'];
@@ -79,8 +78,7 @@ export function useCanvasSync({
   const [collaborators, setCollaborators] = useState<CanvasCollaborator[]>([]);
 
   const currentDocumentId = documentId ?? historyDocRef.current.id;
-  // Ref-wrapper: el getter puede ser una lambda inline (identidad inestable);
-  // leerlo desde el ref mantiene estables las deps de effects/callbacks.
+  // El ref evita rearmar efectos si cambia la identidad del getter.
   const isOpenDirtyRef = useRef(isOpenDirty);
   isOpenDirtyRef.current = isOpenDirty;
   const currentOpenDirty = isOpenDirtyRef.current();
@@ -128,9 +126,7 @@ export function useCanvasSync({
         try {
           await refreshList();
           if (result.conflict && onConflictRef.current) {
-            // El sync general solo genera conflictos del documento abierto al
-            // inicio; si el usuario cambió de documento en vuelo, el conflicto
-            // pertenece al doc anterior y no debe alcanzar la UI ni el resolver.
+            // Descarta conflictos del documento anterior si el usuario cambió durante el sync.
             if (result.conflict.localDoc.id === historyDocRef.current.id) {
               onConflictRef.current(result.conflict);
             }
@@ -168,6 +164,7 @@ export function useCanvasSync({
         openDocumentId: openId,
         openDocument: historyDocRef.current,
         openDirty: openDirtyAtStart,
+        getOpenState: () => ({ document: historyDocRef.current, dirty: isOpenDirtyRef.current() }),
         guarded: effectiveGuarded,
         followUp: (retryResult) => {
           if (effectiveGuarded) initialGuardedRef.current = true;
@@ -225,6 +222,9 @@ export function useCanvasSync({
       const result = await pullCanvasDocument(targetDocumentId, {
         localDocument: historyDocRef.current,
         openDirty: isOpenDirtyRef.current(),
+        getOpenState: () => isCurrentPull()
+          ? { document: historyDocRef.current, dirty: isOpenDirtyRef.current() }
+          : null,
       });
       if (!isCurrentPull()) return;
 

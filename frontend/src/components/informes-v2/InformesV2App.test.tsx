@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   addToast: vi.fn(),
@@ -29,6 +29,8 @@ vi.mock('../../utils/history', () => ({ saveFeatureHistory: mocks.saveFeatureHis
 import InformesV2App from './InformesV2App';
 import { createEmptyInforme } from './types';
 import type { InformeV2ListItem } from './types';
+import * as exportPdf from './exportPdf';
+import * as pdfAssets from '../../utils/pdfAssets';
 
 const report = { ...createEmptyInforme(1), header: { ...createEmptyInforme(1).header, estacion: 'ESTACION 1' } };
 
@@ -40,6 +42,8 @@ const listItem: InformeV2ListItem = {
 };
 
 describe('InformesV2App', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.confirm.mockResolvedValue(true);
@@ -126,7 +130,6 @@ describe('InformesV2App', () => {
     fireEvent.click(nueva);
 
     expect(nueva).toHaveAttribute('aria-pressed', 'true');
-    // la vista cambia a la plantilla Reservorios 2 aunque no haya informe abierto
     expect(document.querySelector('.r2-info')).toBeInTheDocument();
 
     await act(async () => {
@@ -282,6 +285,43 @@ describe('InformesV2App', () => {
       'informe_v2', 'salida.pdf', { type: 'individual', reportId: 'IV2-0001' },
     );
     expect(mocks.addToast).toHaveBeenCalledWith({ message: 'PDF generado: C:\\salida.pdf', type: 'success' });
+  });
+
+  it('prepares only each report\'s photo candidates in the consolidated export', async () => {
+    const items = [listItem, { ...listItem, id: 'IV2-0002', header: { ...listItem.header, photo_id: ' f-02 ' } }];
+    mocks.api.informesV2List.mockResolvedValue({ items });
+    const preparePhotos = vi.spyOn(exportPdf, 'preparePhotosForExport');
+    vi.spyOn(pdfAssets, 'fileToPdfImageSource').mockImplementation(async (file, key, paths) => {
+      const path = `antares-local-image:${key}`;
+      paths[path] = `token-${file.name}`;
+      return path;
+    });
+    render(<InformesV2App />);
+    fireEvent.click((await screen.findAllByText('ESTACION 1'))[0]);
+    await screen.findByLabelText('ID de imágenes');
+    const names = ['F-01_7.jpg', 'F-01_3.jpg', 'F-01_1.jpg', 'F-01_2.jpg', 'F-01_4.jpg', 'F-01_5.jpg', 'F-01_6.jpg', 'F-02.jpg', 'other.jpg'];
+    const input = screen.getByText('Cargar fotos').closest('label')?.querySelector('input[type="file"]');
+    expect(input).not.toBeNull();
+    fireEvent.change(input!, { target: { files: names.map((name) => new File(['x'], name, { type: 'image/jpeg' })) } });
+    await waitFor(() => expect(mocks.addToast).toHaveBeenCalledWith({ message: '9 fotos cargadas', type: 'success' }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Consolidado' }));
+    });
+
+    expect(preparePhotos).toHaveBeenCalledTimes(2);
+    expect(preparePhotos.mock.calls.map(([photos]) => photos.map((photo) => photo.name))).toEqual([
+      names.slice(0, 7), ['F-02.jpg'],
+    ]);
+    expect(mocks.api.informesV2RenderConsolidatedHtml).toHaveBeenCalledWith(expect.objectContaining({
+      images_by_id: {
+        'IV2-0001': Array.from({ length: 6 }, (_, i) => ({ path: `antares-local-image:iv2-IV2-0001-${i}`, name: `F-01_${i + 1}.jpg` })),
+        'IV2-0002': [{ path: 'antares-local-image:iv2-IV2-0002-0', name: 'F-02.jpg' }],
+      },
+    }));
+    expect(mocks.api.htmlToPdf).toHaveBeenCalledWith(expect.objectContaining({
+      localImagePaths: expect.objectContaining({ 'antares-local-image:iv2-IV2-0002-0': 'token-F-02.jpg' }),
+    }));
   });
 
   it('does not render or record a PDF when the save dialog is cancelled', async () => {

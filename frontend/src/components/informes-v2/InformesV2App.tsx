@@ -24,6 +24,7 @@ import {
   type LogoAsset,
 } from './exportPdf';
 import { matchPhotosForId } from './photoMatch';
+import { buildImagesByRecordId, normalizeRecordId } from '../../utils/recordMatching';
 import type { PhotoAsset, PlantillaId } from './types';
 import { errorMessage } from '@/utils/errors';
 
@@ -210,9 +211,10 @@ export default function InformesV2App() {
 
         const localImagePaths: Record<string, string> = {};
         const imagesById: Record<string, Array<{ path: string; name?: string }>> = {};
+        const photosById = buildImagesByRecordId(items.map((report) => report.header), 'photo_id', photos, false);
         for (const report of items) {
           imagesById[report.id] = await preparePhotosForExport(
-            photos,
+            photosById.get(normalizeRecordId(report.header.photo_id)) ?? [],
             report.header.photo_id,
             `iv2-${report.id}`,
             localImagePaths,

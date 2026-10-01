@@ -6,8 +6,7 @@ import { createArtboardPathGapGestures } from '../editor/artboardTransformGestur
 import type { PointerGestureSessionOptions } from '../ops/pointerGestureSession';
 import type { CanvasLayer } from '../types';
 
-// El dueno del gesto graba las opciones de la sesion para poder disparar onAbort
-// sin tener que simular un pointercancel real desde el arbol de React.
+// Captura las opciones para invocar onAbort sin simular pointercancel en React.
 function sessionRecorder() {
   let options: PointerGestureSessionOptions | null = null;
   const pointerGestures = {

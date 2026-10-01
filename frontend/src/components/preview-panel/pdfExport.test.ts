@@ -139,7 +139,6 @@ describe("preview panel PDF export helpers", () => {
 
   it("requiresImages sin idColumn o sin idValue filtra filas sin imágenes", () => {
     const rows = [{ OT: "A1" }, {}];
-    // sin idColumn no hay forma de matchear → todas las filas quedan fuera
     expect(
       selectRowsForPdfExport({
         data: rows,

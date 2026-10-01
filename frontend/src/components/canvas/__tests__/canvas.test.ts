@@ -1333,8 +1333,7 @@ describe('document model', () => {
     ];
 
     const normalized = normalizeDocument(doc);
-    // A→B→A se rompe en la primera capa del array que cierra el ciclo, igual
-    // que en backend/models.py.
+    // Rompe el ciclo en la primera capa, como backend/core/canvas/models.py.
     expect(normalized.layers[0]!.parentId).toBeUndefined();
     expect(normalized.layers[1]!.parentId).toBe('a');
     expect(normalized.layers[2]!.parentId).toBe('a');

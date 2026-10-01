@@ -69,9 +69,7 @@ function main() {
   const preloadSource = fs.readFileSync(PRELOAD_PATH, 'utf8');
   const catalog = require(CATALOG_PATH);
 
-  // api.ts es una fachada: los invokes reales viven en frontend/src/api/*.ts.
-  // Se aplican ambos patrones a cada archivo (_invoke para los wrappers y
-  // invoke para autoimgApi, que recibe el callee inyectado).
+  // Revisa también api/*.ts: los wrappers usan _invoke y autoimgApi recibe invoke inyectado.
   const apiMethods = extractApiMethods(apiSource);
   for (const file of fs.readdirSync(API_DIR).filter((f) => f.endsWith('.ts'))) {
     const moduleSource = fs.readFileSync(path.join(API_DIR, file), 'utf8');

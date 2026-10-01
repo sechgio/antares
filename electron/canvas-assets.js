@@ -276,6 +276,10 @@ async function getCanvasAssetInfo(assetIdOrRef) {
   const stat = await fsp.stat(dest);
   if (!stat.isFile()) throw new Error('canvas asset not found');
   if (stat.size > MAX_ASSET_BYTES) throw new Error('canvas asset too large');
+  if (verifiedAssetStatKeys.get(id.toLowerCase()) !== assetStatKey(stat)) {
+    await getCanvasAsset(id);
+  }
+  await markAssetPending(id.toLowerCase());
   return { asset_id: id, ref: toAssetRef(id), bytes: stat.size };
 }
 
@@ -367,8 +371,8 @@ module.exports = {
   toAssetRef,
   putCanvasAsset,
   getCanvasAsset,
-  getCanvasAssetInfo,
+  getCanvasAssetInfo: (ref) => withAssetWriteLock(() => getCanvasAssetInfo(ref), 0),
   canvasAssetUsageBytes,
   cachedCanvasAssetUsageBytes,
-  gcOrphanCanvasAssets,
+  gcOrphanCanvasAssets: (options) => withAssetWriteLock(() => gcOrphanCanvasAssets(options), 0),
 };

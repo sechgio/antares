@@ -88,7 +88,6 @@ def test_parse_xlsx_sin_filas_devuelve_vacio() -> None:
     wb = Workbook()
     buf = io.BytesIO()
     wb.save(buf)
-    # hoja activa sin datos → iter_rows produce una celda vacía; headers + nada útil
     assert parse_xlsx_bytes(buf.getvalue()) == []
 
 

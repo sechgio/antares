@@ -1,6 +1,4 @@
 
-const NIS_FILE_RE = /^(\d{7})(?:[_-][A-Za-z0-9]+)*$/;
-
 const NIS_SLOT_RE = /^(\d{7})[_-]([1-9]\d*)([A-Za-z])?$/i;
 
 function stripExtension(filename) {
@@ -14,12 +12,6 @@ function stripExtension(filename) {
 function extractNis(filename) {
   const base = stripExtension(filename);
   if (!base) return null;
-
-  const primary = base.match(NIS_FILE_RE);
-  if (primary) return primary[1];
-
-  const loose = base.match(/^(\d{7})(?=[_-]|$)/);
-  if (loose) return loose[1];
 
   const mid = base.match(/(?:^|[^\d])(\d{7})(?=[_\-.\s]|$|[^\d])/);
   return mid ? mid[1] : null;
@@ -44,13 +36,13 @@ function accumulateNisFiles(nisMap, files, folderName) {
       map[nis].slots = new Set(map[nis].slots || []);
     }
     map[nis].count += 1;
+    const slot = extractSlot(name);
     map[nis].files.push({
       name,
       id: file.id,
       modifiedTime: file.modifiedTime,
-      slot: extractSlot(name),
+      slot,
     });
-    const slot = extractSlot(name);
     if (slot != null) map[nis].slots.add(slot);
     if (folderName && !map[nis].folders.includes(folderName)) {
       map[nis].folders.push(folderName);
@@ -96,10 +88,7 @@ function mergeNisMaps(maps, strategy = 'SUM') {
       for (const s of slots) merged[nis].slots.add(s);
     }
   }
-  for (const entry of Object.values(merged)) {
-    entry.slots = [...entry.slots].sort((a, b) => a - b);
-  }
-  return merged;
+  return finalizeNisMap(merged);
 }
 
 function computeEstado(cantidad) {

@@ -106,6 +106,11 @@ function resolveReadToken(token, webContentsId) {
 
 function maybeResolveFileTokens(params, win, method) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
+  if ('_resolved_file_token_path' in params || '_resolved_file_token_name' in params) {
+    params = { ...params };
+    delete params._resolved_file_token_path;
+    delete params._resolved_file_token_name;
+  }
   const { _assertNoRawAbsolutePaths } = require('./file-capabilities');
   const allowRawAbsolutePathKeys = RAW_OUTPUT_PATH_METHODS.has(method)
     ? RAW_OUTPUT_PATH_KEYS
@@ -246,10 +251,8 @@ async function cleanupStagedTokens(tokens, webContentsId = null) {
   await Promise.all(tokens.map((token) => cleanupStagedCapability(token, webContentsId)));
 }
 
-// Extensions that Windows would load or that hijack a shell handler. Writing
-// one of these into Documentos/Descargas turns a renderer compromise into code
-// execution, so the fallback branch rejects them even though it accepts the
-// document formats Antares actually produces.
+// El fallback Documentos/Descargas rechaza archivos ejecutables para impedir
+// que un renderer comprometido escriba código que Windows pueda ejecutar.
 const FORBIDDEN_FALLBACK_EXTENSIONS = new Set([
   '.bat', '.cmd', '.com', '.cpl', '.dll', '.exe', '.hta', '.jar', '.js', '.jse',
   '.lnk', '.msc', '.msi', '.msp', '.ocx', '.ps1', '.psm1', '.reg', '.scr',
@@ -257,9 +260,8 @@ const FORBIDDEN_FALLBACK_EXTENSIONS = new Set([
 ]);
 
 function _outputExtension(resolvedPath) {
-  // Windows drops trailing dots/spaces and truncates at the first ':' (alternate
-  // data stream), so "informe.exe." and "informe.exe:data" still load as an
-  // executable and must be caught here.
+  // Windows ignora puntos/espacios finales y trata ':' como stream alternativo:
+  // "informe.exe." e "informe.exe:data" deben detectarse como ejecutables.
   const base = path.basename(resolvedPath).replace(/[ .]+$/, '');
   const colon = base.indexOf(':');
   const name = colon === -1 ? base : base.slice(0, colon);
@@ -277,8 +279,6 @@ function _assertAllowedRawOutputPath(outRaw) {
       ? (fs.lstatSync(resolved).isDirectory() ? resolved : path.dirname(resolved))
       : path.dirname(resolved);
     const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
-    // El predicado se lee de write-roots, su dueño, y no del facade de dialogs:
-    // las pruebas del router stubean dialog-handlers y ese stub no lo expone.
     const { _isUnderStandardUserDir } = require('./write-roots');
     if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
       if (!_isUnderStandardUserDir(dir)) {

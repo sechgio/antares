@@ -29,7 +29,7 @@ export const canvasApi = {
   canvasGet: (id: string) => _invoke<{ document: CanvasDocument }>('canvas_get', { id }),
   canvasSave: (
     document: CanvasDocument,
-    opts?: { touch?: boolean; slim?: boolean },
+    opts?: { touch?: boolean; slim?: boolean; expectedUpdatedAt?: string },
   ) =>
     _invoke<{
       document:
@@ -43,6 +43,7 @@ export const canvasApi = {
       document,
       ...(opts?.touch === false ? { touch: false } : {}),
       ...(opts?.slim ? { slim: true } : {}),
+      ...(opts?.expectedUpdatedAt !== undefined ? { expected_updated_at: opts.expectedUpdatedAt } : {}),
     }),
   canvasCreate: (name?: string) =>
     _invoke<{ document: CanvasDocument }>('canvas_create', name ? { name } : {}),

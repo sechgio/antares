@@ -151,10 +151,13 @@ export default function AutoIMGApp() {
         setGlobalError(String(p.detail || p.code || 'Error de AutoIMG'));
       }
       if (method === 'autoimg.sync.from_complete') {
+        const cached = params && typeof params === 'object'
+          && (params as Record<string, unknown>).cached === true;
+        if (cached && status?.connected && status.sheetLinked && !bootstrapError) return;
         loadBootstrap(true);
       }
     });
-  }, [loadBootstrap]);
+  }, [loadBootstrap, status, bootstrapError]);
 
   const handleSynced = useCallback(() => {
     loadBootstrap(true);

@@ -6,14 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
     <style>
-        /* Reset & Base */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
-        /* A4 Dimensions */
         @page {
             size: A4 portrait;
             margin: 0;
@@ -29,7 +27,6 @@
             padding: 0;
         }
 
-        /* Page Container */
         .page {
             width: 210mm;
             height: 297mm;
@@ -49,7 +46,6 @@
             page-break-after: auto;
         }
 
-        /* Header */
         .header {
             display: flex;
             justify-content: space-between;
@@ -100,7 +96,6 @@
             line-height: 1.4;
         }
 
-        /* Data Fields Section */
         .data-fields {
             display: grid;
             grid-template-columns: 2fr 1fr;
@@ -137,7 +132,6 @@
             text-overflow: ellipsis;
         }
 
-        /* Photo Panel Section */
         .panel-fotografico {
             flex: 1;
             display: flex;
@@ -157,7 +151,6 @@
             min-height: 200mm;
         }
 
-        /* Grid 3x2 (6 images) */
         .photo-grid-3x2 {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -239,7 +232,6 @@
             font-style: italic;
         }
 
-        /* Empty state - No Photos */
         .no-photos {
             flex: 1;
             display: flex;
@@ -254,7 +246,6 @@
             text-align: center;
         }
 
-        /* Screen preview styles */
         @media screen {
             body {
                 width: 100%;
@@ -281,7 +272,6 @@
             }
         }
 
-        /* Print/PDF styles */
         @media print {
             @page {
                 size: A4;
@@ -307,7 +297,6 @@
 <body>
     {% for report in reports %}
     <div class="page">
-        <!-- Header -->
         <header class="header">
             <div class="header-logo">
                 {% if logo_left %}
@@ -328,7 +317,6 @@
             </div>
         </header>
 
-        <!-- Data Fields -->
         <section class="data-fields">
             <div class="data-field">
                 <span class="data-label">Código de Infraestructura:</span>
@@ -348,7 +336,6 @@
             </div>
         </section>
 
-        <!-- Photo Panel - Adaptive Grid -->
         <section class="panel-fotografico">
             {% if report.images and report.images|length > 0 %}
             {% if report.images|length == 5 %}

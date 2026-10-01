@@ -54,7 +54,6 @@ def test_db_fields_update_rollback_cuando_init_db_falla(monkeypatch) -> None:
     monkeypatch.setattr("backend.core.database.init_db", _boom)
     with pytest.raises(RuntimeError, match="init falló"):
         h.db_fields_update({"fields": [{"name": "new"}]})
-    # el rollback restaura los campos anteriores tras guardar los nuevos
     assert saved == [[{"name": "new"}], [{"name": "old"}]]
 
 

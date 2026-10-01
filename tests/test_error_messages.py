@@ -39,9 +39,7 @@ def test_user_error_message_hides_unexpected_internals():
 
 
 def test_user_error_message_keeps_tool_domain_errors():
-    """Evidencia Volanteo y Aviso de Corte escriben sus mensajes en español en
-    errores de dominio; aplanarlos a "Error interno del servidor" deja al
-    usuario sin la causa (documento vacío, Excel inválido, regla inválida)."""
+    """Conserva los mensajes de dominio de Evidencia Volanteo y Aviso de Corte."""
     from backend.core.evidencia_volanteo.errors import EvidenciaVolanteoError, RenderingError
     from backend.core.panel_aviso_corte.errors import (
         InvalidExcelError,

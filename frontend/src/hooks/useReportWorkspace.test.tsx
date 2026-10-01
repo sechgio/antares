@@ -360,8 +360,6 @@ describe('useReportWorkspace', () => {
     });
 
     await act(async () => {
-      // El refresh de la lista no es parte de la operación de guardado: su
-      // fallo no debe convertir un guardado exitoso en error.
       await expect(result.current.saveCurrent()).resolves.toBeTruthy();
     });
   });

@@ -47,8 +47,7 @@ function main() {
   );
   const source = new Set(sourceNative);
 
-  // Las listas de Electron se proyectan desde el catálogo; si el filtro se rompe o
-  // alguien edita una proyección a mano, el método queda inalcanzable en runtime.
+  // Una proyección incompleta del catálogo deja métodos inalcanzables.
   const catalogNatives = byHandler('native:dialog');
   check(setsEqual(source, catalogNatives), 'NATIVE_METHODS == los native:dialog del catálogo');
   check(
@@ -58,8 +57,7 @@ function main() {
   check(setsEqual(ALLOWED_RENDERER_METHODS, new Set(Object.keys(catalog))),
     'ALLOWED_RENDERER_METHODS == todos los métodos del catálogo');
 
-  // Un método declarado nativo sin rama en handleDialogCall caería al fallthrough de
-  // diálogos y contestaría un file open en vez de su operación real.
+  // Un nativo sin rama propia cae al diálogo de apertura por defecto.
   const dialogSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'dialog-handlers.js'), 'utf8');
   const branches = new Set([...dialogSrc.matchAll(/method === '([^']+)'/g)].map((m) => m[1]));
   const openDialogFallthrough = new Set(['dialog_files', 'dialog_dest']);
@@ -75,7 +73,6 @@ function main() {
     `handleDialogCall no atiende métodos fuera de native:dialog${ramaHuérfana.length ? ` (sobran: ${ramaHuérfana.join(', ')})` : ''}`
   );
 
-  // partición: todo método del catálogo cae en exactamente un bucket de enrutado.
   const backendFromCatalog = new Set(
     Object.keys(catalog).filter((m) => catalog[m].handler.startsWith('backend:'))
   );

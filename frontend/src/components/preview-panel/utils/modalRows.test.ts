@@ -148,10 +148,8 @@ describe("toggleHiddenColumn", () => {
     expect(h1.has("a")).toBe(true);
     const h2 = toggleHiddenColumn(h1, "b", 3);
     expect(h2.has("b")).toBe(true);
-    // quedaría 0 visibles → no aplica
     const h3 = toggleHiddenColumn(h2, "c", 3);
     expect(h3.has("c")).toBe(false);
-    // des-ocultar siempre funciona
     expect(toggleHiddenColumn(h2, "a", 3).has("a")).toBe(false);
   });
 });

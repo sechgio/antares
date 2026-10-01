@@ -69,7 +69,11 @@ function reorderSiblingsExtreme(
   return result;
 }
 
-export function bringToFront(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
+function reorderSelectedSiblings(
+  layers: CanvasLayer[],
+  ids: string[],
+  place: 'front' | 'back',
+): CanvasLayer[] {
   const idSet = new Set(ids);
   const selected = layers.filter((l) => idSet.has(l.id) && !isLocked(l) && l.type !== 'frame');
   if (!selected.length) return layers;
@@ -84,29 +88,17 @@ export function bringToFront(layers: CanvasLayer[], ids: string[]): CanvasLayer[
 
   let next = layers;
   for (const siblingIds of byParent.values()) {
-    next = reorderSiblingsExtreme(next, siblingIds, 'front');
+    next = reorderSiblingsExtreme(next, siblingIds, place);
   }
   return next;
 }
 
+export function bringToFront(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
+  return reorderSelectedSiblings(layers, ids, 'front');
+}
+
 export function sendToBack(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
-  const idSet = new Set(ids);
-  const selected = layers.filter((l) => idSet.has(l.id) && !isLocked(l) && l.type !== 'frame');
-  if (!selected.length) return layers;
-
-  const byParent = new Map<string | undefined, string[]>();
-  for (const layer of selected) {
-    const parent = resolvedParentId(layers, layer);
-    const list = byParent.get(parent) ?? [];
-    list.push(layer.id);
-    byParent.set(parent, list);
-  }
-
-  let next = layers;
-  for (const siblingIds of byParent.values()) {
-    next = reorderSiblingsExtreme(next, siblingIds, 'back');
-  }
-  return next;
+  return reorderSelectedSiblings(layers, ids, 'back');
 }
 
 export function duplicateLayers(

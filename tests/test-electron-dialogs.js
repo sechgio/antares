@@ -751,7 +751,6 @@ async function run() {
     }
   }
 
-  // Test logs_open_folder
   {
     let openedPath = null;
     const fakeShell = {
@@ -767,7 +766,6 @@ async function run() {
     assert(openedPath === res.result.path, 'shell.openPath debe ser llamado con el path de logs');
   }
 
-  // Test diagnostics_export
   {
     const cancelDialog = {
       async showSaveDialog() {

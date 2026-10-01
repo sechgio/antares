@@ -127,7 +127,6 @@ def test_render_report_html_reservorios2_template() -> None:
     assert html.count("LOZA DE TECHO") == 1
     assert html.count('<td class="r2-sub">INTERIOR</td>') == 3
     assert html.count('<td class="r2-sub">EXTERIOR</td>') == 3
-    # secciones exclusivas de la plantilla clásica
     assert "DIAMETRO DE TUBERIA" not in html
     assert "LÍNEA" not in html
     assert "TIRANTE DE LIMPIEZA" not in html
@@ -198,7 +197,7 @@ def test_reservorios2_template_css_is_mirrored_in_the_preview() -> None:
     ).read_text(encoding="utf-8")
 
     template_rules = _css_rules(template)
-    # un comentario cerrado de mas temprano se traga la regla siguiente en Chromium
+    # Un cierre de comentario sobrante impide que Chromium lea la siguiente regla.
     assert not [sel for sel in template_rules if "*/" in sel]
 
     preview_rules = _css_rules(f"<style>{preview}</style>")
@@ -219,8 +218,7 @@ def test_shared_selectors_between_plantillas_no_se_pisan() -> None:
     templates = pathlib.Path(__file__).resolve().parent.parent / "backend" / "templates" / "informes_v2"
     clasica = _css_rules((templates / "informe_v2.html").read_text(encoding="utf-8"))
     r2 = _css_rules((templates / "reservorios_2.html").read_text(encoding="utf-8"))
-    # el export consolidado concatena los documentos: dos reglas iguales sobre el mismo
-    # selector se resuelven por orden, no por plantilla
+    # El export consolidado concatena documentos: los selectores compartidos compiten por orden.
     for selector in sorted(set(clasica) & set(r2)):
         for prop in sorted(set(clasica[selector]) & set(r2[selector])):
             assert clasica[selector][prop] == r2[selector][prop], (

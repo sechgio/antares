@@ -6,14 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
     <style>
-        /* Reset & Base */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
-        /* A4 Dimensions */
         @page {
             size: A4 portrait;
             margin: 0;
@@ -29,7 +27,6 @@
             padding: 0;
         }
 
-        /* Page Container */
         .page {
             width: 210mm;
             height: 297mm;
@@ -47,7 +44,6 @@
             page-break-after: auto;
         }
 
-        /* Header with Logo */
         .header {
             display: flex;
             flex-direction: row;
@@ -81,7 +77,6 @@
             line-height: 1.4;
         }
 
-        /* Certificate Title */
         .certificate-title {
             text-align: center;
             font-size: 13pt;
@@ -91,7 +86,6 @@
             letter-spacing: 0.3px;
         }
 
-        /* Description Text */
         .description {
             text-align: justify;
             margin-bottom: 8mm;
@@ -99,7 +93,6 @@
             line-height: 1.6;
         }
 
-        /* Service Options - 2 columns */
         .service-options {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -123,7 +116,6 @@
             flex: 1;
         }
 
-        /* Information Fields - Label : Value format */
         .info-fields {
             margin-bottom: 15mm;
         }
@@ -152,7 +144,6 @@
             flex: 1;
         }
 
-        /* Signatures Section */
         .signatures {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -188,7 +179,6 @@
             font-size: 10pt;
         }
 
-        /* Screen preview styles */
         @media screen {
             body {
                 width: 100%;
@@ -210,7 +200,6 @@
             }
         }
 
-        /* Print/PDF styles */
         @media print {
             @page {
                 size: A4;
@@ -236,7 +225,6 @@
 <body>
     {% for report in reports %}
     <div class="page">
-        <!-- Header with Logo -->
         <header class="header">
             <div class="header-logo">
                 {% if logo_left %}
@@ -250,17 +238,14 @@
             </div>
         </header>
 
-        <!-- Certificate Title -->
         <div class="certificate-title">
             CERTIFICADO N° {{ report.data.get('NUMERO CERTIFICADO', '-') }}
         </div>
 
-        <!-- Description -->
         <div class="description">
             Por el presente certificamos que se han realizado los servicios de saneamiento ambiental correspondiente a:
         </div>
 
-        <!-- Service Options - 2 column layout -->
         <div class="service-options">
             <div class="service-option">
                 <span class="service-checkbox">a)</span>
@@ -281,7 +266,6 @@
             </div>
         </div>
 
-        <!-- Information Fields -->
         <div class="info-fields">
             <div class="info-field">
                 <span class="info-label">NOMBRE</span>
@@ -315,7 +299,6 @@
             </div>
         </div>
 
-        <!-- Signatures -->
         <div class="signatures">
             <div class="signature-block">
                 <div class="signature-line"></div>

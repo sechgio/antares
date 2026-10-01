@@ -85,7 +85,7 @@ describe('restoreCanvasVersion', () => {
     const versionDoc = makeDoc();
     supabaseMock.responses.push({ data: { document: versionDoc }, error: null });
     supabaseMock.responses.push({ data: null, error: null });
-    supabaseMock.responses.push({ data: null, error: null });
+    supabaseMock.responses.push({ data: [{ id: 'doc-1' }], error: null });
 
     const restored = await restoreCanvasVersion('doc-1', 'ver-1');
 

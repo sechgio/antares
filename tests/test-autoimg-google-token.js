@@ -197,7 +197,6 @@ async function main() {
     assert(persistedByScope.get('user-a')?.refresh_token === 'refresh-A', 'el refresh token de A permanece aislado');
     sheets.cancelBrowserOAuthFlow();
 
-    // El flujo normal con refresh token conserva su funcionalidad.
     activeUserKey = 'user-a';
     activeUserGeneration += 1;
     currentTokens = { access_token: 'access-a', refresh_token: 'refresh-A', expiry_date: Date.now() + 3600000 };

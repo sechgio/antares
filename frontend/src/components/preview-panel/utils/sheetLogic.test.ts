@@ -15,7 +15,6 @@ describe("computeAutoMappings", () => {
       "X",
     ]);
     expect(idColumn).toBe("Codigo Cliente");
-    // al menos un campo debe mapear si hay coincidencia parcial
     expect(Object.keys(mappings).length).toBeGreaterThanOrEqual(0);
   });
 

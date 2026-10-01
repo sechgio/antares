@@ -1,5 +1,4 @@
-// Shared helpers for plain-node test scripts in tests/.
-// Runner contract: tests report via exit code; console output is informational.
+// El resultado de los tests depende del exit code; la salida de consola es informativa.
 
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -57,8 +56,7 @@ async function waitFor(predicate, maxTurns = 500) {
 
 function _resolveRepoModule(spec) {
   if (path.isAbsolute(spec)) return require.resolve(spec);
-  // Bare package names (e.g. 'electron') must resolve via node_modules;
-  // repo-relative paths (e.g. 'electron/backend-spawner.js') resolve from root.
+  // Busca paquetes en node_modules y, como fallback, módulos relativos a la raíz del repo.
   try {
     return require.resolve(spec);
   } catch {

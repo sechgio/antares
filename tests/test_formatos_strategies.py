@@ -27,6 +27,30 @@ def test_simple_overlay_generate_page_count() -> None:
     assert "0000002" not in (reader.pages[0].extract_text() or "")
 
 
+def test_simple_overlay_preserves_default_mapping_and_pdf_bytes() -> None:
+    from backend.core.format_strategies.visual_overlay import _DEFAULT_OVERLAY_MAPPING
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.add_blank_page(width=300, height=400)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    simple = get_strategy("simple_overlay")
+    visual = get_strategy("visual_overlay")
+    default_before = _DEFAULT_OVERLAY_MAPPING.copy()
+    for template in (_minimal_pdf_bytes(), buffer.getvalue(), _bundled_template("template-d")):
+        for desde, hasta in ((1, 1), (1, 3), (42, 43), (3, 2)):
+            expected = visual.generate(template, desde, hasta, _DEFAULT_OVERLAY_MAPPING)
+            for mapping in (None, {}, {"page": 1, "padding": 1, "blank_mcids": [63]}):
+                result = simple.generate(template, desde, hasta, mapping)
+                assert result == expected
+                pages = PdfReader(io.BytesIO(result)).pages
+                assert len(pages) == max(0, hasta - desde + 1)
+                for index, page in enumerate(pages):
+                    assert str(desde + index).zfill(7) in (page.extract_text() or "")
+    assert default_before == _DEFAULT_OVERLAY_MAPPING
+
+
 def test_legacy_xobject_rejects_blank_template() -> None:
     strategy = get_strategy("legacy_xobject")
     template = _minimal_pdf_bytes()
@@ -155,7 +179,6 @@ def test_legacy_xobject_generate_con_template_bundled() -> None:
     pdf_bytes = strategy.generate(_bundled_template("template-d"), 42, 43, mapping=None)
     reader = PdfReader(io.BytesIO(pdf_bytes))
     assert len(reader.pages) == 2
-    # el XObject del correlativo se reemplazó por el número padded
     xobjects = reader.pages[0]["/Resources"].get("/XObject")
     assert xobjects is not None
     blobs = [

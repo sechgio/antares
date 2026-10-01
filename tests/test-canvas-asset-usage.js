@@ -14,8 +14,7 @@ async function main() {
   process.env.LOCALAPPDATA = fakeHome;
   process.env.XDG_DATA_HOME = fakeHome;
 
-  // `canvas-assets.js` captures `fs.promises` by reference, so patching the
-  // object's methods after requiring it still counts the module's calls.
+  // canvas-assets conserva la referencia a fs.promises, por lo que estos parches interceptan sus llamadas.
   const fsp = fs.promises;
   const realReaddir = fsp.readdir;
   const realStat = fsp.stat;
@@ -79,11 +78,9 @@ async function main() {
       'the incremental counter tracks the payloads',
     );
 
-    // Files created outside the module make the counter stale; GC is the
-    // reconciliation point and must bring it back in line with the directory.
+    // El GC debe reconciliar el contador con archivos creados fuera del módulo.
     const strayBytes = 32;
     await fs.promises.writeFile(path.join(dir, 'f'.repeat(64)), Buffer.alloc(strayBytes, 1));
-    // Legacy/non-64-hex asset names (32-128 hex) count toward the quota too.
     const legacyBytes = 24;
     await fs.promises.writeFile(path.join(dir, 'a'.repeat(32)), Buffer.alloc(legacyBytes, 1));
     assert.strictEqual(
@@ -110,7 +107,6 @@ async function main() {
       'GC reconciles the cached total with the directory',
     );
 
-    // Replacing a corrupted asset must keep the counter consistent.
     const victim = results[3];
     const victimPath = path.join(dir, victim.asset_id);
     await fs.promises.writeFile(victimPath, 'tiny');

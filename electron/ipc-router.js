@@ -341,10 +341,16 @@ function _ipcTelemetryVerbose() {
 
 function _estimateStringJsonBytes(value) {
   let bytes = Buffer.byteLength(value, 'utf8') + 2;
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code === 0x22 || code === 0x5c) bytes += 1;
-    else if (code < 0x20) bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 1 : 5;
+  const escapes = /["\\\x00-\x1f]/g;
+  while (escapes.test(value)) {
+    let index = escapes.lastIndex - 1;
+    for (; index < value.length; index += 1) {
+      const code = value.charCodeAt(index);
+      if (code === 0x22 || code === 0x5c) bytes += 1;
+      else if (code < 0x20) bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 1 : 5;
+      else break;
+    }
+    escapes.lastIndex = index;
   }
   return bytes;
 }

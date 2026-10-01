@@ -204,13 +204,16 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
     document = params["document"]
     if not isinstance(document, dict):
         raise ValidationError("document debe ser un objeto")
-    # CanvasStore validates the serialized document without encoding it twice.
-    _check_memory_pressure_or_spill(document, context="canvas_save")
+    # CanvasStore valida el tamaño al serializar; aquí solo se comprueba la memoria.
+    _check_memory_pressure_or_spill(None if "expected_updated_at" in params else document, context="canvas_save")
     touch = params.get("touch", True)
     if not isinstance(touch, bool):
         touch = True
+    expected_updated_at = params.get("expected_updated_at")
+    if "expected_updated_at" in params and not isinstance(expected_updated_at, str):
+        raise ValidationError("expected_updated_at debe ser un texto")
     try:
-        saved = _canvas_core.get_canvas_store().save(document, touch=touch)
+        saved = _canvas_core.get_canvas_store().save(document, touch=touch, expected_updated_at=expected_updated_at)
     except ValueError as exc:
         details = None
         if isinstance(exc, CanvasDocumentTooLargeError):
@@ -218,8 +221,7 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
         raise ValidationError(str(exc), details=details) from exc
     _cleanup_spill(str(document.get("id") or "unknown"))
     if params.get("slim"):
-        # Avoid echoing a multi-MB document back over IPC; the caller already
-        # holds the serialized document and only needs backend-stamped meta.
+        # El cliente ya tiene el contenido; devolver solo metadatos evita duplicarlo por IPC.
         return {"document": _document_meta(saved), "slim": True}
     return {"document": saved}
 
@@ -362,7 +364,7 @@ def canvas_save_history(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(past, list) or not isinstance(future, list):
         msg = "past and future must be arrays"
         raise ValueError(msg)
-    # CanvasStore validates retained history without encoding it twice.
+    # CanvasStore valida el tamaño del historial retenido al serializar.
     _check_history_memory_pressure(doc_id, past, future)
     store = _canvas_core.get_canvas_store()
     try:

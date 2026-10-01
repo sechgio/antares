@@ -548,22 +548,6 @@ RUN_TYPE_REGISTRY: dict[str, RunTypeMeta] = {
 
 ALL_RUN_TYPES: list[str] = list(RUN_TYPE_REGISTRY.keys())
 
-UNKNOWN_RUN_TYPE: RunTypeMeta = RunTypeMeta(
-    id="unknown",
-    label_key="history.runTypes._unknown",
-    description_key="history.runTypes._unknown",
-    color_token="var(--text-muted)",
-    options_schema=_ANY_OBJECT,
-    files_schema=_ANY_ARRAY,
-    stats=(),
-    filter_group="hidden",
-)
-
-
-def get_run_type(run_type: str) -> RunTypeMeta:
-    return RUN_TYPE_REGISTRY.get(run_type) or UNKNOWN_RUN_TYPE
-
-
 def validate_run_payload(run_type: str, options: Any, files: Any) -> None:
     meta = RUN_TYPE_REGISTRY.get(run_type)
     if meta is None:
@@ -574,30 +558,3 @@ def validate_run_payload(run_type: str, options: Any, files: Any) -> None:
         jsonschema.validate(instance=options or {}, schema=meta.options_schema)
     if meta.files_schema:
         jsonschema.validate(instance=files or [], schema=meta.files_schema)
-
-
-def registry_payload() -> dict[str, Any]:
-    return {
-        "run_types": [
-            {
-                "id": meta.id,
-                "label_key": meta.label_key,
-                "description_key": meta.description_key,
-                "color_token": meta.color_token,
-                "show_patron": meta.show_patron,
-                "filter_group": meta.filter_group,
-                "options_schema": meta.options_schema,
-                "files_schema": meta.files_schema,
-                "stats": [
-                    {
-                        "key": stat.key,
-                        "label_key": stat.label_key,
-                        "color_token": stat.color_token,
-                    }
-                    for stat in meta.stats
-                ],
-            }
-            for meta in RUN_TYPE_REGISTRY.values()
-        ],
-        "all_run_types": ALL_RUN_TYPES,
-    }

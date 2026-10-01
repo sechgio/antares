@@ -49,13 +49,13 @@ _Avoid_: Mapa, Location tool
 
 ## Infra
 
-**IPC lane**: Clasificación `light`/`heavy`/`canvas`/`sync` que determina el pool de `WorkScheduler`.
+**IPC lane**: Clasificación `light`/`heavy` que determina el pool de `WorkScheduler`; `sync` se ejecuta en línea en `backend/main.py`.
 _Avoid_: Queue, Thread
 
 **Source of truth**: Para Canvas, el JSON en disco; cloud Supabase es espejo best-effort LWW por `updatedAt`.
 _Avoid_: Master, Primary (ambiguo)
 
-**Espacios**: Módulo colaborativo con Supabase Realtime (distinto de Canvas que es local-first sin realtime).
+**Espacios**: Módulo colaborativo con Supabase Realtime. Canvas es local-first y usa Realtime para presencia e invalidación de snapshots, sin merge de operaciones por capa.
 _Avoid_: Workspace (genérico), Project
 
 **AutoIMG**: Pipeline Drive/Sheets que sincroniza carpetas, autentica vía Google OAuth y renombra por `BdImgTable`.

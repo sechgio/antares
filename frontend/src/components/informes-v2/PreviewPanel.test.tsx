@@ -104,7 +104,6 @@ describe('Informes v2 PreviewPanel', () => {
     expect(grid.querySelectorAll('img')).toHaveLength(1);
     expect(document.querySelector('.iv2-logo img')).toHaveAttribute('src', 'data:image/png;base64,left');
 
-    // sin secciones de la plantilla clásica
     expect(screen.queryByText('DIAMETRO DE TUBERIA')).not.toBeInTheDocument();
     expect(screen.queryByText('TIRANTE DE LIMPIEZA')).not.toBeInTheDocument();
     expect(screen.queryByText(/ESTACION:/)).not.toBeInTheDocument();

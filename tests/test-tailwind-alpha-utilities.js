@@ -1,12 +1,8 @@
-// Tailwind 3 no puede aplicar un modificador de alfa a un valor arbitrario que sea
-// `var(--token)`: la utilidad no se genera y la clase queda muerta en silencio (no
-// hay error ni aviso en el build). Lo mismo pasa con `shadow-[... var(--x)/NN ...]`,
-// que emite una declaration CSS inválida. Este guard fallar si vuelve a aparecer
-// alguna de las dos formas en el fuente de la UI.
+// Tailwind 3 omite las utilidades `var(--token)/NN` y genera CSS inválido para
+// `shadow-[... var(--x)/NN ...]`; este guard detecta ambas formas.
 //
 // Formas correctas:
-//   - color de la paleta del tema: `bg-mc-ink/50` (tailwind.config.js resuelve el
-//     alfa con color-mix).
+//   - Paleta del tema: `bg-mc-ink/50` (alfa resuelto con color-mix en tailwind.config.js).
 //   - token CSS arbitrario: `bg-[color:color-mix(in_srgb,var(--x)_50%,transparent)]`.
 
 const fs = require('fs');

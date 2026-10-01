@@ -53,10 +53,8 @@ describe('canvas runtime excel', () => {
     expect(data.nombre).toBe('ACME');
     expect(data.NOMBRE).toBe('ACME');
     expect(data.zona).toBe('Lima');
-    // mapping con columna vacía no añade nada
     expect('vacio' in data).toBe(false);
     expect('VACIO' in data).toBe(false);
-    // la fila original se conserva
     expect(data.Cliente).toBe('ACME');
   });
 

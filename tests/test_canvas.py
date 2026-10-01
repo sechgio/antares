@@ -15,7 +15,7 @@ from backend.core.canvas.models import (
     normalize_document,
 )
 from backend.core.canvas.store import CanvasStore, encode_canvas_json, migrate_legacy_canvas_documents
-from backend.core.exceptions import NotFoundError, ValidationError
+from backend.core.exceptions import NotFoundError, ResourceLockedError, ValidationError
 from backend.handlers import canvas as canvas_handlers
 
 
@@ -38,6 +38,29 @@ def test_store_save_can_preserve_updated_at(tmp_path: Path) -> None:
     assert saved["name"] == "Renamed"
     listed = store.list_documents()
     assert listed[0]["updatedAt"] == "2020-01-01T00:00:00.000Z"
+
+
+def test_store_conditional_save_preserves_concurrent_local_edit(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    base = store.save({**create_empty_document(), "updatedAt": "2026-09-01T00:00:00Z"}, touch=False)
+    local = store.save({**base, "name": "Local", "updatedAt": "2026-09-03T00:00:00Z"}, touch=False)
+    with pytest.raises(ResourceLockedError, match="cambió"):
+        store.save({**base, "name": "Remote"}, touch=False, expected_updated_at=base["updatedAt"])
+    assert store.get(base["id"]) == local
+
+
+def test_store_conditional_save_requires_expected_presence(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    doc = create_empty_document()
+    saved = store.save(doc, touch=False, expected_updated_at="")
+    with pytest.raises(ResourceLockedError):
+        store.save(doc, touch=False, expected_updated_at="")
+    updated = store.save({**saved, "name": "Remote"}, touch=False, expected_updated_at=saved["updatedAt"])
+    assert updated["name"] == "Remote"
+    store.delete(doc["id"])
+    with pytest.raises(ResourceLockedError):
+        store.save(updated, touch=False, expected_updated_at=saved["updatedAt"])
+    assert store.get(doc["id"]) is None
 
 
 def test_store_rejects_document_above_local_storage_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -443,11 +466,7 @@ def _strict_json_loads(text: str) -> Any:
 
 
 def test_normalize_rejects_non_finite_values_across_the_document() -> None:
-    """Un float no finito debe caerse al fallback del propio campo.
-
-    JSON no tiene literal para Infinity/NaN: si atraviesan la normalización
-    quedan serializados en disco y el documento deja de poder leerse.
-    """
+    """Sustituye NaN/Infinity por el fallback del campo para conservar JSON válido."""
     raw = create_empty_document()
     raw["page"] = {"widthMm": float("inf"), "heightMm": float("nan")}
     raw["settings"] = {
@@ -555,11 +574,7 @@ def test_spill_comparison_reports_unknown_when_mtime_is_unreadable(tmp_path: Pat
 def test_document_spill_survives_an_unreadable_comparison(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Un stat transitoriamente fallido no puede borrar la unica copia nueva.
-
-    El spill se escribe cuando un guardado se rechaza por presion de memoria,
-    asi que su contenido es la edicion que aun no esta en el documento.
-    """
+    """Una comparación fallida debe conservar el spill con la edición aún no guardada."""
     store = CanvasStore(tmp_path / "documents")
     spill_dir = tmp_path / "spill"
     spill_dir.mkdir(parents=True, exist_ok=True)
@@ -1060,8 +1075,7 @@ def test_bootstrap_returns_most_recently_updated_document(
 
     monkeypatch.setattr("backend.core.canvas.get_canvas_store", _get_store)
 
-    # El orden del glob es por stem: los ids se eligen para que el orden por
-    # nombre sea el inverso del orden por updatedAt.
+    # Los ids invierten el orden por updatedAt para distinguirlo del orden del glob.
     older = create_empty_document(name="Viejo")
     older["id"] = "aaa-older"
     older["updatedAt"] = "2020-01-01T00:00:00.000Z"
@@ -1548,6 +1562,73 @@ def test_store_index_avoids_full_rescan_on_steady_state(tmp_path: Path, monkeypa
     assert read_calls == 0, f"Expected 0 reads (incremental delete), got {read_calls}"
 
 
+def test_store_index_reuses_unchanged_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for stem in ("a", "b", "c"):
+        body = {**create_empty_document(name=stem), "id": f"inner-{stem}"}
+        (tmp_path / f"{stem}.json").write_text(json.dumps(body), encoding="utf-8")
+    store = CanvasStore(tmp_path)
+    store.list_documents()
+    reads: list[str] = []
+    original = canvas_store_mod._extract_doc_meta
+
+    def counted(path: Path) -> tuple[str, str, str] | None:
+        reads.append(path.stem)
+        return original(path)
+
+    monkeypatch.setattr(canvas_store_mod, "_extract_doc_meta", counted)
+    changed = {**create_empty_document(name="Changed"), "id": "new-b", "updatedAt": "new"}
+    (tmp_path / "b.json").write_text(json.dumps(changed), encoding="utf-8")
+    listed = store.list_documents()
+    assert reads == ["b"]
+    assert listed == [
+        {"id": "a", "name": "a", "updatedAt": store.get("a")["updatedAt"]},
+        {"id": "b", "name": "Changed", "updatedAt": "new"},
+        {"id": "c", "name": "c", "updatedAt": store.get("c")["updatedAt"]},
+    ]
+    assert store.get("inner-b") is None
+    assert store.get("new-b")["name"] == "Changed"
+
+    local = store.get("b")
+    store.save({**local, "name": "Local"}, touch=False)
+    added = {**create_empty_document(name="Added"), "id": "inner-d"}
+    (tmp_path / "d.json").write_text(json.dumps(added), encoding="utf-8")
+    reads.clear()
+    assert [item["name"] for item in store.list_documents()] == ["a", "Local", "c", "Added"]
+    assert reads == ["d"]
+    assert store.get("new-b") is None
+    assert store.get("inner-d")["name"] == "Added"
+    (tmp_path / "a.json").unlink()
+    store.delete("d")
+    reads.clear()
+    assert [item["id"] for item in store.list_documents()] == ["b", "c"]
+    assert reads == []
+    assert store.get("inner-a") is None
+    assert store.get("inner-d") is None
+
+
+def test_store_index_preserves_alias_precedence_and_retries_unreadable_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for stem in ("a", "z"):
+        (tmp_path / f"{stem}.json").write_text(
+            json.dumps({**create_empty_document(name=stem), "id": "shared-alias"}), encoding="utf-8",
+        )
+    (tmp_path / "bad.json").write_text("invalid JSON", encoding="utf-8")
+    store = CanvasStore(tmp_path)
+    assert store.get("shared-alias")["name"] == "z"
+    (tmp_path / "z.json").unlink()
+    assert store.get("shared-alias")["name"] == "a"
+    original = canvas_store_mod._extract_doc_meta
+
+    def readable_now(path: Path) -> tuple[str, str, str] | None:
+        return ("Recovered", "", "recovered-alias") if path.stem == "bad" else original(path)
+
+    monkeypatch.setattr(canvas_store_mod, "_extract_doc_meta", readable_now)
+    (tmp_path / "new.json").write_text(json.dumps(create_empty_document(name="New")), encoding="utf-8")
+    assert [item["name"] for item in store.list_documents()] == ["a", "Recovered", "New"]
+    assert store.get("shared-alias")["name"] == "a"
+
+
 def test_store_index_detects_external_file_changes(tmp_path: Path) -> None:
     import json
 
@@ -1983,11 +2064,7 @@ def test_normalize_preserves_autolayout_padding_and_meta_variants() -> None:
 
 
 def _count_document_serializations(monkeypatch: pytest.MonkeyPatch, doc_id: str) -> list[int]:
-    """Count `json.dumps` calls that serialize the document carrying `doc_id`.
-
-    The payload reaches `json.dumps` as the normalized copy, so identity checks
-    do not work; matching on the document id does.
-    """
+    """Cuenta serializaciones por doc_id: la normalización crea una copia del documento."""
     real_dumps = canvas_store_mod.json.dumps
     calls: list[int] = []
 
@@ -2116,11 +2193,7 @@ def test_canvas_save_reports_unencodable_documents_as_validation_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A payload that cannot be encoded must still surface as a ValidationError.
-
-    `CanvasStore.save` now owns the single serialization, so it has to translate
-    encoding failures itself instead of relying on the handler pre-check.
-    """
+    """CanvasStore.save debe traducir los errores de serialización a ValidationError."""
     store = CanvasStore(tmp_path)
     monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
     monkeypatch.setattr(canvas_handlers, "is_memory_pressure", lambda: False)

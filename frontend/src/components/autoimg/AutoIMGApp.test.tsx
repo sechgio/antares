@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockApi, notifyState } = vi.hoisted(() => ({
@@ -20,6 +20,7 @@ const { mockApi, notifyState } = vi.hoisted(() => ({
     autoimgDriveStatus: vi.fn(async () => ({ connected: false })),
     autoimgLogsList: vi.fn(async () => ({ values: [] })),
     autoimgArrastreList: vi.fn(async () => ({ entries: [] })),
+    autoimgScanAndSync: vi.fn(async () => ({ success: true })),
   },
   notifyState: {
     callback: null as ((method: string, params?: unknown) => void) | null,
@@ -105,7 +106,7 @@ describe('AutoIMGApp layout and navigation', () => {
       expect(notifyState.callback).toBeTruthy();
     });
 
-    notifyState.callback!('autoimg.sync.from_complete');
+    notifyState.callback!('autoimg.sync.from_complete', { cached: true });
     notifyState.callback!('autoimg.sync.from_complete');
 
     expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(1);
@@ -118,6 +119,55 @@ describe('AutoIMGApp bootstrap refresh', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     notifyState.callback = null;
+  });
+
+  it('keeps valid coverage and folders without refreshing an unchanged Sheet', async () => {
+    const bootstrap = {
+      connected: true, sheetLinked: true, lastSync: '2026-07-03', autoSync: false,
+      totalNis: 10, completos: 8, faltantes: 2,
+      folders: [{ name: 'Cached folder', folder_id: 'abc', activo: true, ultimo_scan: '', cant_archivos: 0 }],
+      bdRows: [], logRows: [], arrastre: [],
+    };
+    mockApi.autoimgBootstrap.mockResolvedValue(bootstrap);
+    render(<AutoIMGApp />);
+    await waitFor(() => expect(screen.getByRole('status', { name: 'Cobertura y auto-sync' })).toHaveTextContent(/8\s*\/\s*10/));
+    act(() => {
+      notifyState.callback!('autoimg.sync.from_complete', { cached: true });
+      notifyState.callback!('autoimg.sync.from_complete', { cached: true });
+    });
+    expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Carpetas' }));
+    expect(screen.getByText('Cached folder')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+    fireEvent.click(screen.getByRole('button', { name: /Escanear/ }));
+    await waitFor(() => expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(2));
+    expect(mockApi.autoimgBootstrap).toHaveBeenLastCalledWith(true);
+  });
+
+  it.each([undefined, { cached: false }, { cached: 'true' }])('refreshes when cached is not explicitly true: %j', async (params) => {
+    mockApi.autoimgBootstrap.mockResolvedValue({
+      connected: true, sheetLinked: true, lastSync: '', autoSync: false,
+      folders: [], bdRows: [], logRows: [], arrastre: [],
+    });
+    render(<AutoIMGApp />);
+    await screen.findByRole('button', { name: /Escanear/ });
+    await act(async () => { notifyState.callback!('autoimg.sync.from_complete', params); });
+    expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(2);
+    expect(mockApi.autoimgBootstrap).toHaveBeenLastCalledWith(true);
+  });
+
+  it.each([
+    { connected: false, sheetLinked: true },
+    { connected: true, sheetLinked: false },
+    { connected: true, sheetLinked: true, error: 'Lectura fallida' },
+  ])('refreshes cached notifications without a valid snapshot: %j', async (status) => {
+    mockApi.autoimgBootstrap.mockResolvedValue({
+      ...status, lastSync: '', autoSync: false, folders: [], bdRows: [], logRows: [], arrastre: [],
+    });
+    render(<AutoIMGApp />);
+    await act(async () => {});
+    await act(async () => { notifyState.callback!('autoimg.sync.from_complete', { cached: true }); });
+    expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(2);
   });
 
   it('starts a new bootstrap after the previous one completes', async () => {

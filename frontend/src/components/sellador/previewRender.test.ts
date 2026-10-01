@@ -97,7 +97,6 @@ describe('renderOtherPagesPreview staging', () => {
       onProgress: (previews: Array<{ pageNum: number }>) => progress.push(previews),
     }));
 
-    // Pages 2..6 → five renders, but only one staged upload.
     expect(mocks.selladorRenderPage).toHaveBeenCalledTimes(5);
     expect(mocks.acquireStagedFile).toHaveBeenCalledTimes(1);
     expect(mocks.acquireStagedFile).toHaveBeenCalledWith(file);

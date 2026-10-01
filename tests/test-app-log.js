@@ -89,13 +89,11 @@ try {
   }
 }
 
-// flushSync persiste lo encolado sin esperar el tick asincrono (ruta de cierre/crash).
 l.appendLogLine('INFO', 'pendiente en cierre sincrono');
 l.flushLogQueueSync();
 assert(fs.readFileSync(logFile, 'utf8').includes('pendiente en cierre sincrono'), 'flushSync escribe el pending');
 console.log('flushSync en cierre sincrono: OK');
 
-// Un fallo de escritura no debe envenenar la cadena: lo posterior sigue llegando.
 fs.unlinkSync(logFile);
 fs.mkdirSync(logFile, { recursive: true }); // appendFile sobre un directorio falla (EISDIR/EPERM)
 l.appendLogLine('INFO', 'linea hacia destino roto');

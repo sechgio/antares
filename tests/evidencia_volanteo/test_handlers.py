@@ -1,6 +1,9 @@
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
+
 import pytest
 
 from backend.core.evidencia_volanteo import RenderingError
@@ -180,3 +183,32 @@ def test_render_handles_null_images_and_logos(monkeypatch) -> None:
             "format": "pdf",
         },
     )
+
+
+@pytest.mark.parametrize("raw_format", ["pdf", "docx", "PDF", "DOCX", "other"])
+@pytest.mark.parametrize("save_to_disk", [False, True])
+def test_render_preserves_export_response(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, raw_format: str, save_to_disk: bool,
+) -> None:
+    fmt = "docx" if raw_format.lower() == "docx" else "pdf"
+    content = b"export-content"
+    filename = f"evidencia.{fmt}"
+    monkeypatch.setattr(handler_module, f"render_{fmt}", lambda *args: (content, filename))
+    output = tmp_path / f"salida.{fmt}"
+    response = handler_module.evidencia_volanteo_render({
+        **_document_payload(), "format": raw_format,
+        **({"output_path": "antares-write_token", "_resolved_output_path": str(output),
+            "_write_token": "antares-write_token"} if save_to_disk else {}),
+    })
+    expected = {
+        "content_base64": "" if save_to_disk else base64.b64encode(content).decode("ascii"),
+        **({"saved_path": str(output)} if save_to_disk else {}),
+        "filename": output.name if save_to_disk else filename,
+        "format": fmt,
+        "mime_type": "application/pdf" if fmt == "pdf" else
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+    assert response == expected
+    assert list(response) == list(expected)
+    if save_to_disk:
+        assert output.read_bytes() == content

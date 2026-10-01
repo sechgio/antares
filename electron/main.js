@@ -141,8 +141,7 @@ function _shutdownOnce() {
   } catch (err) {
     console.warn('[main] killPython threw during shutdown:', err && err.message);
   }
-  // Las rutas will-quit/exit/SIGINT no pueden awaitear la cola asincrona; sin este
-  // respaldo sincrono se perderian los logs encolados aqui (regresion vs appendFileSync).
+  // will-quit/exit/SIGINT requieren un flush síncrono para conservar los logs pendientes.
   try {
     flushLogQueueSync();
   } catch {}

@@ -27,7 +27,6 @@
             background: #fff;
         }
 
-        /* PRINT STYLES */
         @media print {
 
             html,
@@ -46,7 +45,6 @@
             }
         }
 
-        /* SCREEN PREVIEW STYLES */
         @media screen {
 
             html,
@@ -57,7 +55,6 @@
                 overflow: visible;
             }
 
-            /* .page styles are already defined below, effectively centering it in the flex container of PreviewPanel */
             .page {
                 margin: 0 auto;
                 background: white;
@@ -116,7 +113,6 @@
             color: #0056b3;
         }
 
-        /* === TOP INFO BAR === */
         .info-bar {
             display: flex;
             flex-wrap: nowrap;
@@ -142,7 +138,6 @@
             color: #555;
         }
 
-        /* === SECTION HEADERS === */
         .section-title {
             font-size: 7.5pt;
             color: #0056b3;
@@ -154,7 +149,6 @@
             flex-shrink: 0;
         }
 
-        /* === DATA GRIDS === */
         .grid-6 {
             display: grid;
             grid-template-columns: auto 1fr auto 1fr auto 1fr;
@@ -240,7 +234,6 @@
             width: calc(50% - 1mm);
         }
 
-        /* === LAYOUT: 4 IMAGES (2x2 grid) === */
         .layout-4 {
             grid-template-columns: repeat(2, minmax(0, 1fr));
             grid-template-rows: repeat(2, minmax(0, 1fr));
@@ -319,7 +312,6 @@
     {% for report in report_list %}
     <div class="page" style="page-break-after: always;">
 
-        <!-- HEADER -->
         <div class="header">
             <div class="logo">
                 {% if logo_left %}
@@ -340,7 +332,6 @@
             </div>
         </div>
 
-        <!-- INFO BAR -->
         <div class="info-bar">
             <div class="info-item"><span class="info-label">CENTRO DE SERVICIOS:</span> {{ report.data.get('CENTRO',
                 '-') }}</div>
@@ -348,7 +339,6 @@
             <div class="info-item"><span class="info-label">SGIO:</span> {{ report.data.get('Nro OT', '-') }}</div>
         </div>
 
-        <!-- 1.0 LOCALIZACION -->
         <div class="section-title">1.0 LOCALIZACIÓN</div>
         <div class="grid-6">
             <span class="lbl">DIRECCION:</span>
@@ -365,7 +355,6 @@
             <div class="val">{{ report.data.get('FECHA', '-') }}</div>
         </div>
 
-        <!-- 2.0 DETALLES -->
         <div class="section-title">2.0 DETALLES DE ORDEN DE TRABAJO</div>
         <div class="grid-4">
             <span class="lbl">ACTIVIDAD:</span>
@@ -378,7 +367,6 @@
             <div class="val">{{ report.data.get('CUADRILLA', '-') }}</div>
         </div>
 
-        <!-- 3.0 PANEL FOTOGRAFICO -->
         <div class="section-title">3.0 PANEL FOTOGRÁFICO</div>
         <div class="photo-section">
             {% set img_count = report.images|length %}

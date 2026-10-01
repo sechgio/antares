@@ -7,7 +7,7 @@ vi.mock('../../lib/pdfjs', () => ({
   ensurePdfJs: () => ensurePdfJs(),
 }));
 
-import { getPdfPageSize, loadPdfDocument, renderPdfPageToDataUrl } from './pdfjs';
+import { loadPdfDocument, renderPdfPageToDataUrl } from './pdfjs';
 
 const b64 = 'QUJD'; // "ABC" en base64
 
@@ -36,25 +36,6 @@ describe('sellador/pdfjs', () => {
     expect(getDocument).toHaveBeenCalledWith({ data: expect.any(Uint8Array) });
   });
 
-  it('getPdfPageSize devuelve el tamaño sin escalar de la página pedida', async () => {
-    const pdf = fakePdf(300, 400);
-    getDocument.mockReturnValue({ promise: Promise.resolve(pdf) });
-    ensurePdfJs.mockResolvedValue({ getDocument });
-    const size = await getPdfPageSize(b64, 2);
-    expect(pdf.getPage).toHaveBeenCalledWith(2);
-    expect(size).toEqual({ width: 300, height: 400 });
-    expect(pdf.destroy).toHaveBeenCalledOnce();
-  });
-
-  it('getPdfPageSize libera el documento si falla la lectura', async () => {
-    const pdf = fakePdf();
-    pdf.getPage.mockRejectedValueOnce(new Error('lectura fallida'));
-    getDocument.mockReturnValue({ promise: Promise.resolve(pdf) });
-    ensurePdfJs.mockResolvedValue({ getDocument });
-    await expect(getPdfPageSize(b64)).rejects.toThrow('lectura fallida');
-    expect(pdf.destroy).toHaveBeenCalledOnce();
-  });
-
   it('renderPdfPageToDataUrl clampa el scale entre MIN y MAX pixel width', async () => {
     const page = fakePage(200, 100);
     const pdf = { getPage: vi.fn().mockResolvedValue(page) };
@@ -78,7 +59,6 @@ describe('sellador/pdfjs', () => {
   });
 
   it('renderPdfPageToDataUrl nunca escala por debajo del mínimo de preview', async () => {
-    // página muy ancha respecto al contenedor → scale bajo → clamp a MIN
     const page = fakePage(5000, 100);
     const pdf = { getPage: vi.fn().mockResolvedValue(page) };
     const ctx = { fillStyle: '', fillRect: vi.fn() };
@@ -91,7 +71,6 @@ describe('sellador/pdfjs', () => {
 
     await renderPdfPageToDataUrl(pdf as never, 1, 100, 1);
     const viewport = page.render.mock.calls[0][0].viewport;
-    // MIN_PREVIEW_PIXEL_WIDTH=900 → viewport.width clampa a 900
     expect(viewport.width).toBe(900);
     vi.restoreAllMocks();
   });

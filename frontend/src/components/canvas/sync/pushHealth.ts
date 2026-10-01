@@ -1,6 +1,4 @@
-// Señal de salud de la cola de push cloud. Vive fuera de canvasCloudSync
-// (módulo lazy que arrastra supabase) para que los hooks de UI puedan
-// suscribirse sin cargar el sync completo ni depender de dynamic import.
+// Permite observar la salud de la cola sin cargar canvasCloudSync ni Supabase.
 export type CanvasPushHealthListener = (unhealthy: boolean) => void;
 
 const pushHealthListeners = new Set<CanvasPushHealthListener>();

@@ -43,7 +43,7 @@ describe('measureGuideDistances', () => {
   });
 
   it('mide al borde de objeto más cercano a cada lado de la guía', () => {
-    const box = rect(10, 20, 30, 40); // bordes x en 10 y 40
+    const box = rect(10, 20, 30, 40);
     const labels = measureGuideDistances('x', 50, [box], PAGE);
     const objLeft = labels.find((l) => l.id === 'guide-object-left')!;
     expect(objLeft.x1).toBe(40);
@@ -53,14 +53,14 @@ describe('measureGuideDistances', () => {
   });
 
   it('con varias cajas elige el borde más cercano', () => {
-    const near = rect(30, 0, 10, 10); // borde derecho en 40
-    const far = rect(0, 0, 10, 10); // borde derecho en 10
+    const near = rect(30, 0, 10, 10);
+    const far = rect(0, 0, 10, 10);
     const labels = measureGuideDistances('x', 50, [far, near], PAGE);
     expect(labels.find((l) => l.id === 'guide-object-left')!.valueMm).toBe(10);
   });
 
   it('caja a la derecha de la guía produce guide-object-right', () => {
-    const box = rect(80, 5, 20, 20); // borde izquierdo en 80
+    const box = rect(80, 5, 20, 20);
     const labels = measureGuideDistances('x', 50, [box], PAGE);
     const objRight = labels.find((l) => l.id === 'guide-object-right')!;
     expect(objRight.x1).toBe(50);
@@ -91,8 +91,8 @@ describe('measureSelectionGaps', () => {
 
   it('mide hueco horizontal solo con cajas que solapan en Y', () => {
     const sel = rect(50, 50, 20, 20);
-    const aligned = rect(100, 55, 20, 20); // solapa en Y, separada en X
-    const offAxis = rect(100, 200, 20, 20); // no solapa en Y
+    const aligned = rect(100, 55, 20, 20);
+    const offAxis = rect(100, 200, 20, 20);
     const labels = measureSelectionGaps(sel, [aligned, offAxis], PAGE);
     const obj = labels.find((l) => l.id === 'obj-right')!;
     expect(obj.valueMm).toBe(30);
@@ -113,7 +113,7 @@ describe('measureSelectionGaps', () => {
 
   it('no emite hueco de objeto si las cajas se tocan', () => {
     const sel = rect(50, 50, 20, 20);
-    const touching = rect(70, 50, 20, 20); // x2 de sel = 70 = x de touching
+    const touching = rect(70, 50, 20, 20);
     const labels = measureSelectionGaps(sel, [touching], PAGE);
     expect(labels.find((l) => l.id === 'obj-right')).toBeUndefined();
   });
@@ -152,7 +152,7 @@ describe('measureHoverGap', () => {
 
   it('target solapado en X emite deltas de bordes en vez de gap', () => {
     const sel = rect(50, 50, 20, 20);
-    const target = rect(55, 50, 25, 20); // desplazado 5 en x, 10 más ancho
+    const target = rect(55, 50, 25, 20);
     const labels = measureHoverGap(sel, target, PAGE);
     expect(labels.find((l) => l.id === 'hover-x')).toBeUndefined();
     expect(labels.find((l) => l.id === 'hover-x-left')!.valueMm).toBe(5);
