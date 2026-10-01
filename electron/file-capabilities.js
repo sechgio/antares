@@ -214,6 +214,8 @@ function createStagedSession({ name, size, webContentsId }) {
     createdAt: _now(),
     expiresAt: _now() + TOKEN_TTL_MS,
     completed: false,
+    completing: false,
+    pendingWrite: Promise.resolve(),
   };
   _stagedSessions.set(token, session);
   _ensureSweep();
@@ -237,16 +239,20 @@ async function appendStagedChunk(token, chunk, webContentsId) {
   if (!session) throw new Error('staged session not found');
   if (_isExpired(session)) { _stagedSessions.delete(token); throw new Error('staged session expired'); }
   if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
-  if (session.completed) throw new Error('staged session already completed');
+  if (session.completed || session.completing) throw new Error('staged session already completed');
   const buf = _chunkToBuffer(chunk);
   if (buf.length === 0) throw new Error('empty chunk');
   if (buf.length > MAX_CHUNK_BYTES) throw new Error('chunk too large');
-  if (session.bytesWritten + buf.length > MAX_STAGED_FILE_BYTES) throw new Error('staged file exceeds 1 GiB');
-  await _ensureStagedRoot();
-  await fsp.appendFile(session.tmpPath, buf);
-  session.bytesWritten += buf.length;
-  session.expiresAt = _now() + TOKEN_TTL_MS;
-  return { bytesWritten: session.bytesWritten };
+  const write = session.pendingWrite.catch(() => {}).then(async () => {
+    if (session.bytesWritten + buf.length > MAX_STAGED_FILE_BYTES) throw new Error('staged file exceeds 1 GiB');
+    await _ensureStagedRoot();
+    await fsp.appendFile(session.tmpPath, buf);
+    session.bytesWritten += buf.length;
+    session.expiresAt = _now() + TOKEN_TTL_MS;
+    return { bytesWritten: session.bytesWritten };
+  });
+  session.pendingWrite = write;
+  return write;
 }
 
 async function completeStagedSession(token, webContentsId) {
@@ -254,23 +260,29 @@ async function completeStagedSession(token, webContentsId) {
   if (!session) throw new Error('staged session not found');
   if (_isExpired(session)) { _stagedSessions.delete(token); throw new Error('staged session expired'); }
   if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
-  if (session.completed) throw new Error('already completed');
-  let stat;
-  try { stat = await fsp.stat(session.tmpPath); } catch { throw new Error('staged file missing'); }
-  if (!stat.isFile()) throw new Error('not a file');
-  if (stat.size > MAX_STAGED_FILE_BYTES) throw new Error('staged file too large');
-  const cap = createFileCapability({
-    filePath: session.tmpPath,
-    mode: 'read',
-    webContentsId: session.webContentsId,
-    name: session.name,
-    size: stat.size,
-  });
-  cap.staged = true;
-  cap.stagedSessionToken = token;
-  session.completed = true;
-  session.readToken = cap.token;
-  return cap;
+  if (session.completed || session.completing) throw new Error('already completed');
+  session.completing = true;
+  try {
+    await session.pendingWrite;
+    let stat;
+    try { stat = await fsp.stat(session.tmpPath); } catch { throw new Error('staged file missing'); }
+    if (!stat.isFile()) throw new Error('not a file');
+    if (stat.size > MAX_STAGED_FILE_BYTES) throw new Error('staged file too large');
+    const cap = createFileCapability({
+      filePath: session.tmpPath,
+      mode: 'read',
+      webContentsId: session.webContentsId,
+      name: session.name,
+      size: stat.size,
+    });
+    cap.staged = true;
+    cap.stagedSessionToken = token;
+    session.completed = true;
+    session.readToken = cap.token;
+    return cap;
+  } finally {
+    session.completing = false;
+  }
 }
 
 async function abortStagedSession(token, webContentsId = null) {

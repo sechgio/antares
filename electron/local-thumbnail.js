@@ -11,6 +11,7 @@ const MAX_MAX_EDGE = 1024;
 const JPEG_QUALITY = 60;
 const DISK_CACHE_MAX_FILES = 400;
 const DISK_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+const DISK_CACHE_TRIM_INTERVAL_MS = 60 * 1000;
 const MAX_LOCAL_IMAGE_BYTES = 12 * 1024 * 1024;
 
 const EXT_MIME = {
@@ -23,8 +24,11 @@ const EXT_MIME = {
 
 let _cacheDir = null;
 let _trimScheduled = false;
+let _trimAfterWrite = false;
+let _nextReadTrimAt = 0;
 
 function setThumbnailCacheDir(dir) {
+  _nextReadTrimAt = 0;
   _cacheDir = dir ? String(dir) : null;
 }
 
@@ -95,13 +99,24 @@ async function _readDiskCache(cachePath) {
   }
 }
 
-function _scheduleTrim(cacheDir) {
-  if (_trimScheduled) return;
+function _scheduleTrim(cacheDir, afterWrite = false) {
+  if (_trimScheduled) {
+    if (afterWrite) _trimAfterWrite = true;
+    return;
+  }
+  if (!afterWrite && Date.now() < _nextReadTrimAt) return;
   _trimScheduled = true;
+  _nextReadTrimAt = Date.now() + DISK_CACHE_TRIM_INTERVAL_MS;
   setImmediate(() => {
-    _trimScheduled = false;
+    _trimAfterWrite = false;
     _trimDiskCache(cacheDir).catch((err) => {
       console.warn('[local-thumbnail] trim de cache falló:', err && err.message ? err.message : err);
+    }).finally(() => {
+      _trimScheduled = false;
+      if (_trimAfterWrite) {
+        _trimAfterWrite = false;
+        _scheduleTrim(cacheDir, true);
+      }
     });
   });
 }
@@ -112,7 +127,7 @@ async function _writeDiskCache(cacheDir, cachePath, jpegBuf) {
     const tmp = `${cachePath}.${process.pid}.tmp`;
     await fsp.writeFile(tmp, jpegBuf);
     await fsp.rename(tmp, cachePath);
-    _scheduleTrim(cacheDir);
+    _scheduleTrim(cacheDir, true);
   } catch (err) {
     console.warn('[local-thumbnail] escritura de cache falló:', err && err.message ? err.message : err);
   }

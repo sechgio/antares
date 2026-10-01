@@ -68,6 +68,21 @@ async function main() {
   assert.deepStrictEqual(tokenized.sheets, []);
 
   const { resolveCapability, revokeCapability } = require('../electron/file-capabilities');
+  const { _maybeResolveFileTokens } = require('../electron/ipc-file-policy');
+  for (const forgedPath of ['package.json', '~/.ssh/config', 'C:secret.csv']) {
+    const forged = { _resolved_file_token_path: forgedPath, _resolved_file_token_name: 'probe.csv' };
+    const sanitized = _maybeResolveFileTokens(forged, null, 'spreadsheet_parse');
+    assert.strictEqual(sanitized._resolved_file_token_path, undefined, 'renderer cannot supply resolved read paths');
+    assert.strictEqual(sanitized._resolved_file_token_name, undefined, 'renderer cannot supply resolved read names');
+    assert.strictEqual(forged._resolved_file_token_path, forgedPath, 'input must not be mutated');
+  }
+  const validated = _maybeResolveFileTokens({
+    result_file_token: tokenized.result_file_token,
+    _resolved_file_token_path: 'package.json',
+    _resolved_file_token_name: 'probe.csv',
+  }, null, 'spreadsheet_get_rows');
+  assert.strictEqual(validated._resolved_file_token_path, spillPath);
+  assert.strictEqual(validated._resolved_file_token_name, 'spreadsheet-result.json');
   const spillResolved = resolveCapability(tokenized.result_file_token, 'read', null);
   assert.strictEqual(spillResolved.path, spillPath);
   assert.strictEqual(spillResolved.name, 'spreadsheet-result.json');
