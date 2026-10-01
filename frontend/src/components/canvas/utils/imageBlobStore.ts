@@ -13,6 +13,7 @@ export interface RegisteredBlob {
   width: number;
   height: number;
   dataUrl?: string;
+  persistedAssetRef?: string;
 }
 
 const CANVAS_ASSET_REF_PREFIX = 'canvas-asset:';
@@ -224,9 +225,22 @@ function persistRegisteredBlob(
 
   const next = preferAssetRefs && putAsset
     ? withAssetPersistenceLock(async () => {
+        if (reg.persistedAssetRef && window.electronAPI?.canvasAssetInfo) {
+          try {
+            const info = await window.electronAPI.canvasAssetInfo(reg.persistedAssetRef);
+            if (info.ref === reg.persistedAssetRef && info.bytes === reg.blob.size) {
+              return reg.persistedAssetRef;
+            }
+          } catch {
+          }
+          delete reg.persistedAssetRef;
+        }
         try {
           const stored = await putAsset(await reg.blob.arrayBuffer());
-          if (stored?.ref) return stored.ref;
+          if (stored?.ref) {
+            reg.persistedAssetRef = stored.ref;
+            return stored.ref;
+          }
         } catch {
           reportFrontendEvent({
             event: 'storage.local',
@@ -546,6 +560,7 @@ export async function hydrateDocumentImages(
     const blob = new Blob([chunk]);
     for (const index of indexes) {
       const registered = await registerImageBlob(blob);
+      registered.persistedAssetRef = ref;
       layers[index] = { ...layers[index], value: registered.url };
       changed = true;
     }
@@ -611,6 +626,7 @@ async function hydrateLayerImageValue(val: string): Promise<string> {
     const chunk = await readCanvasAssetShared(getAsset, val);
     const blob = new Blob([chunk]);
     const reg = await registerImageBlob(blob);
+    reg.persistedAssetRef = val;
     return reg.url;
   } catch {
     return val;
@@ -659,17 +675,53 @@ async function mapDiffImageValues(
   return changed ? { ...diff, addedLayers, modifiedLayers } : diff;
 }
 
+// History steps are immutable; stable serialized identities let the transport reuse their prefix.
+const serializedHistorySteps = new WeakMap<HistoryStep, { step: HistoryStep; images: Map<string, string> }>();
+
 export async function serializeHistorySteps(steps: HistoryStep[]): Promise<HistoryStep[]> {
   const serialized: HistoryStep[] = [];
   for (const step of steps) {
-    if (isHistoryStepDiff(step)) {
-      const undoDiff = await mapDiffImageValues(step.undoDiff, persistLayerImageValue);
-      const redoDiff = await mapDiffImageValues(step.redoDiff, persistLayerImageValue);
-      if (undoDiff === step.undoDiff && redoDiff === step.redoDiff) serialized.push(step);
-      else serialized.push({ ...step, undoDiff, redoDiff });
-    } else {
-      serialized.push(await serializeDocumentImages(step));
+    const cached = serializedHistorySteps.get(step);
+    if (cached) {
+      let valid = true;
+      for (const [value, ref] of cached.images) {
+        if (await persistLayerImageValue(value) !== ref) {
+          valid = false;
+          break;
+        }
+      }
+      if (valid) {
+        serialized.push(cached.step);
+        continue;
+      }
+      serializedHistorySteps.delete(step);
     }
+    const images = new Map<string, string>();
+    let cacheable = true;
+    const rememberImage = (value: string, next: string) => {
+      if (!isManagedImageValue(value)) return;
+      if (!isCanvasAssetRef(next)) cacheable = false;
+      images.set(value, next);
+    };
+    let next: HistoryStep;
+    if (isHistoryStepDiff(step)) {
+      const mapValue = async (value: string) => {
+        const mapped = await persistLayerImageValue(value);
+        rememberImage(value, mapped);
+        return mapped;
+      };
+      const undoDiff = await mapDiffImageValues(step.undoDiff, mapValue);
+      const redoDiff = await mapDiffImageValues(step.redoDiff, mapValue);
+      next = undoDiff === step.undoDiff && redoDiff === step.redoDiff ? step : { ...step, undoDiff, redoDiff };
+    } else {
+      next = await serializeDocumentImages(step);
+      for (let index = 0; index < step.layers.length; index += 1) {
+        const layer = step.layers[index];
+        if (isImageOrLogoLayer(layer) && layer.value) rememberImage(layer.value, next.layers[index].value);
+      }
+    }
+    if (cacheable) serializedHistorySteps.set(step, { step: next, images });
+    serialized.push(next);
   }
   return serialized;
 }

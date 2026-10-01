@@ -59,9 +59,8 @@ export function useCanvasClipboard({
     (source: CanvasLayer[], offsetMm?: number) => {
       if (!source.length) return;
       const withIds = source.map((l) => ({ ...l, pageIndex }));
-      // El portapapeles conserva los ids de las capas copiadas. duplicateLayers
-      // emite un clon por cada aparición en el array, así que un id que también
-      // está en el documento borraría el original y clonaría dos veces.
+      // Asigna ids nuevos antes de duplicateLayers para evitar colisiones con
+      // las capas originales y clones duplicados.
       const rekeyed = new Map(withIds.map((l) => [l.id, newId()]));
       const incoming = withIds.map((l) => ({
         ...l,

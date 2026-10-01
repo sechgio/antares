@@ -7,6 +7,7 @@ import {
   createPointerGestureSession,
 } from '../ops/pointerGestureSession';
 import { createLayer } from '../constants';
+import type { DrawRect } from '../ops/drawHelpers';
 
 const pdfImportMocks = vi.hoisted(() => ({
   inspectPdfFile: vi.fn(),
@@ -93,6 +94,7 @@ vi.mock('../presets/loadPresets', () => ({
 let latestStageDocument: CanvasDocument | null = null;
 let latestStageTool: CanvasTool | null = null;
 let latestStageActions: {
+  onDrawLayer?: (tool: CanvasTool, rect: DrawRect) => void;
   onPreviewLayers?: (layers: CanvasDocument['layers']) => void;
   onCancelGesture?: () => void;
 } | null = null;
@@ -106,18 +108,20 @@ vi.mock('../editor/DesignStage', () => ({
     children,
     document,
     tool,
+    onDrawLayer,
     onPreviewLayers,
     onCancelGesture,
   }: {
     children?: React.ReactNode;
     document: CanvasDocument;
     tool: CanvasTool;
+    onDrawLayer: (tool: CanvasTool, rect: DrawRect) => void;
     onPreviewLayers: (layers: CanvasDocument['layers']) => void;
     onCancelGesture: () => void;
   }) => {
     latestStageDocument = document;
     latestStageTool = tool;
-    latestStageActions = { onPreviewLayers, onCancelGesture };
+    latestStageActions = { onDrawLayer, onPreviewLayers, onCancelGesture };
     return <div data-testid="mock-design-stage">{children}</div>;
   },
 }));
@@ -227,6 +231,28 @@ describe('CanvasView lifecycle', () => {
       expect(api.canvasBootstrap).toHaveBeenCalled();
     });
   }
+
+  it.each([
+    { placement: 'click', w: 0, h: 0, width: '50mm', height: '40mm' },
+    { placement: 'drag', w: 20, h: 10, width: '20mm', height: '10mm' },
+  ])('preserves negative coordinates and one undo entry for $placement placement', async ({ w, h, width, height }) => {
+    await renderReady();
+    const originalLayers = currentStageDocument().layers;
+
+    act(() => latestStageActions?.onDrawLayer?.('rect', { x: -12, y: -5, w, h }));
+
+    const layers = currentStageDocument().layers;
+    expect(layers).toHaveLength(originalLayers.length + 1);
+    expect(layers[layers.length - 1].cssVars).toMatchObject({
+      '--translate-x': '-12mm',
+      '--translate-y': '-5mm',
+      '--width': width,
+      '--height': height,
+    });
+
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true });
+    expect(currentStageDocument().layers).toEqual(originalLayers);
+  });
 
   it('restores the previous tool when focus is lost while Space is held', async () => {
     await renderReady();
@@ -957,8 +983,7 @@ describe('CanvasView lifecycle', () => {
 
     const ev = { returnValue: '', preventDefault: vi.fn() } as unknown as BeforeUnloadEvent;
     handler(ev);
-    // Sin bloqueo de cierre: el protocolo quit-flush (app.flush-canvas-before-quit)
-    // es el dueño del flush final; aquí solo dispara un save best-effort.
+    // app.flush-canvas-before-quit controla el cierre; beforeunload solo inicia un save de respaldo.
     expect(ev.preventDefault).not.toHaveBeenCalled();
     await act(async () => {
       await Promise.resolve();

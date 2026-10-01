@@ -504,6 +504,30 @@ def test_submit_handler_sends_response_when_scheduler_submit_raises(monkeypatch)
     assert msg_id == "42"
 
 
+def test_conditional_canvas_save_admission_does_not_spill_remote_payload(monkeypatch) -> None:
+    from backend.core.exceptions import MemoryPressureError
+    from backend.handlers import canvas as canvas_handlers
+
+    class FakeScheduler:
+        def metrics(self) -> dict:
+            return {}
+
+    payloads: list[object] = []
+
+    def reject(document=None, *, context="canvas_save"):
+        payloads.append(document)
+        raise MemoryPressureError("Memoria baja")
+
+    monkeypatch.setattr(backend_main, "get_scheduler", lambda: FakeScheduler())
+    monkeypatch.setattr(backend_main, "is_memory_pressure", lambda: True)
+    monkeypatch.setattr(canvas_handlers, "_check_memory_pressure_or_spill", reject)
+    monkeypatch.setattr(backend_main, "send_response", lambda *args, **kwargs: None)
+    assert backend_main._submit_handler(
+        lambda _params: {}, {"document": {"id": "remote"}, "expected_updated_at": "base"}, "44", "canvas_save",
+    ) is None
+    assert payloads == [None]
+
+
 def test_submit_handler_rejects_unexpected_memory_guard_failure(monkeypatch) -> None:
     from backend.handlers import canvas as canvas_handlers
 

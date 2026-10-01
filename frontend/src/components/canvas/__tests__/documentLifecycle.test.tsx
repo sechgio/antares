@@ -28,6 +28,7 @@ vi.mock('../../../api', async (importOriginal) => {
 vi.mock('../sync/cloudQueue', () => ({
   queueCanvasCloudPush: vi.fn(),
   queueCanvasCloudDelete: vi.fn(),
+  recordPendingCanvasDelete: vi.fn(),
 }));
 
 vi.mock('../../../utils/observability', () => ({
@@ -48,7 +49,7 @@ vi.mock('../utils/imageBlobStore', () => ({
 
 import { api } from '../../../api';
 import { reportFrontendEvent } from '../../../utils/observability';
-import { queueCanvasCloudDelete, queueCanvasCloudPush } from '../sync/cloudQueue';
+import { queueCanvasCloudDelete, queueCanvasCloudPush, recordPendingCanvasDelete } from '../sync/cloudQueue';
 import { hydrateHistorySteps } from '../utils/imageBlobStore';
 
 function makeDoc(id: string, name = id): CanvasDocument {
@@ -233,6 +234,9 @@ describe('useDocumentLifecycle', () => {
 
     expect(api.canvasSave).not.toHaveBeenCalled();
     expect(api.canvasDelete).toHaveBeenCalledWith('doc-a');
+    expect(recordPendingCanvasDelete).toHaveBeenCalledWith('doc-a', true);
+    expect(vi.mocked(recordPendingCanvasDelete).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(api.canvasDelete).mock.invocationCallOrder[0]);
     expect(queueCanvasCloudDelete).toHaveBeenCalledWith('doc-a');
     expect(api.canvasGet).toHaveBeenCalledWith('doc-b');
     expect(api.canvasGetHistory).toHaveBeenCalledWith('doc-b');
@@ -242,6 +246,14 @@ describe('useDocumentLifecycle', () => {
     );
     expect(mocks.resetViewportPan).toHaveBeenCalled();
     expect(mocks.flashStatus).toHaveBeenCalledWith('Documento eliminado');
+  });
+
+  it('delete: reconciles the persisted intent when the local IPC result is uncertain', async () => {
+    vi.mocked(api.canvasDelete).mockRejectedValueOnce(new Error('local delete failed'));
+    const { result, mocks } = renderLifecycle();
+    await act(async () => { await result.current.onDeleteDoc(); });
+    expect(queueCanvasCloudDelete).toHaveBeenCalledWith('doc-a');
+    expect(mocks.setStatus).toHaveBeenCalledWith('local delete failed');
   });
 
   it('delete: creates a fresh doc when the list is empty and pushes it', async () => {

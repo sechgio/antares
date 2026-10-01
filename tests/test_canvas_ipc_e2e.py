@@ -70,6 +70,25 @@ def _text_layer(layer_id: str, name: str, value: str) -> dict:
 
 class TestCanvasIpcE2E:
 
+    def test_conditional_save_rejects_stale_revision(self, backend) -> None:
+        proc, _stderr = backend
+        base = _rpc_call(proc, "canvas_create", {"name": "Base"})["result"]["document"]
+        local = {**base, "name": "Local", "updatedAt": "2099-01-01T00:00:00Z"}
+        assert "result" in _rpc_call(proc, "canvas_save", {"document": local, "touch": False})
+        stale = _rpc_call(proc, "canvas_save", {
+            "document": {**base, "name": "Remote"},
+            "touch": False,
+            "expected_updated_at": base["updatedAt"],
+        })
+        assert stale.get("error", {}).get("category") == "RESOURCE_LOCKED", stale
+        current = _rpc_call(proc, "canvas_get", {"id": base["id"]})["result"]["document"]
+        assert current["name"] == "Local"
+        accepted = _rpc_call(proc, "canvas_save", {
+            "document": {**current, "name": "Remote"}, "touch": False, "slim": True,
+            "expected_updated_at": current["updatedAt"],
+        })
+        assert accepted["result"]["document"]["name"] == "Remote"
+
     def test_canvas_full_crud_roundtrip(self, backend) -> None:
         proc, _stderr = backend
 

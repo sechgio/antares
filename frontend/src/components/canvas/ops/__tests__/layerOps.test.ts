@@ -85,6 +85,26 @@ describe("orden de apilado", () => {
     const out = bringToFront(nested, ["b"]);
     expect(ids(out)).toEqual(ids(nested));
   });
+
+  it.each([bringToFront, sendToBack])("conserva la referencia si no hay capas elegibles: %s", (reorder) => {
+    const layers = [rect("locked", 0, 0, 10, 10, { locked: true }), rect("frame", 0, 0, 10, 10, { type: "frame" })];
+    expect(reorder(layers, ["locked", "frame", "missing"])).toBe(layers);
+    expect(reorder(ls, [])).toBe(ls);
+  });
+
+  it("reordena varios padres sin cruzar sus hijos ni mutar la entrada", () => {
+    const layers = [
+      rect("p", 0, 0, 10, 10, { type: "group" }),
+      rect("q", 0, 0, 10, 10, { type: "group" }),
+      rect("a", 0, 0, 10, 10, { parentId: "p" }),
+      rect("b", 0, 0, 10, 10, { parentId: "p" }),
+      rect("c", 0, 0, 10, 10, { parentId: "q" }),
+      rect("d", 0, 0, 10, 10, { parentId: "q" }),
+    ];
+    expect(ids(bringToFront(layers, ["c", "a", "a"]))).toEqual(["p", "q", "b", "a", "d", "c"]);
+    expect(ids(sendToBack(layers, ["d", "b", "b"]))).toEqual(["p", "q", "b", "a", "d", "c"]);
+    expect(ids(layers)).toEqual(["p", "q", "a", "b", "c", "d"]);
+  });
 });
 
 describe("bringForward / sendBackward", () => {
@@ -209,8 +229,8 @@ describe("nudgeLayers / deleteLayers", () => {
     const inner = { ...rect("c", 5, 5), parentId: "f" };
     const ls = [frame, inner, rect("s")];
     const out = nudgeLayers(ls, ["f", "s"], 3, -2);
-    expect(tx(out.find((l) => l.id === "f")!)).toBe(0); // el frame no se mueve
-    expect(tx(out.find((l) => l.id === "c")!)).toBe(8); // su hijo sí (expande descendientes)
+    expect(tx(out.find((l) => l.id === "f")!)).toBe(0);
+    expect(tx(out.find((l) => l.id === "c")!)).toBe(8);
     expect(tx(out.find((l) => l.id === "s")!)).toBe(3);
     expect(ty(out.find((l) => l.id === "s")!)).toBe(-2);
   });

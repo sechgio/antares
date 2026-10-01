@@ -21,6 +21,7 @@ from backend.core.canvas.models import (
     normalize_document,
     utc_now_iso,
 )
+from backend.core.exceptions import ResourceLockedError
 from backend.utils.lazy import LazySingleton
 from backend.utils.paths import resource_path, user_data_path
 from backend.utils.validators import _WINDOWS_RESERVED_NAMES
@@ -200,6 +201,7 @@ class CanvasStore:
             migrate_legacy_canvas_documents(source=_legacy_docs_dir(), dest=self.docs_dir)
         self._index_stems: set[str] | None = None
         self._index_signatures: dict[str, _FileSignature] | None = None
+        self._metadata_cache: dict[str, tuple[str, str, str]] = {}
         self._inner_id_index: dict[str, Path] = {}
         self._listing_cache: list[dict[str, str]] = []
         self._history_digests: dict[str, str] = {}
@@ -389,6 +391,8 @@ class CanvasStore:
             current_signatures[path.stem] = signature
         if self._index_signatures == current_signatures:
             return
+        previous_signatures = self._index_signatures or {}
+        current_metadata: dict[str, tuple[str, str, str]] = {}
         self._index_stems = set(current_signatures)
         self._index_signatures = current_signatures
         self._inner_id_index = {}
@@ -396,14 +400,18 @@ class CanvasStore:
         for path in paths:
             if path.stem not in current_signatures:
                 continue
-            meta = _extract_doc_meta(path)
+            meta = self._metadata_cache.get(path.stem)
+            if meta is None or previous_signatures.get(path.stem) != current_signatures[path.stem]:
+                meta = _extract_doc_meta(path)
             if meta is None:
                 continue
+            current_metadata[path.stem] = meta
             doc_name, updated_at, inner_id = meta
             doc_id = path.stem
             if inner_id:
                 self._inner_id_index[inner_id] = path
             self._listing_cache.append({"id": doc_id, "name": doc_name, "updatedAt": updated_at})
+        self._metadata_cache = current_metadata
 
     def _find_path_by_inner_id(self, doc_id: str) -> Path | None:
         with self._index_lock:
@@ -431,8 +439,7 @@ class CanvasStore:
             if not isinstance(raw, dict):
                 logger.warning("Canvas document %s is not a JSON object; treating as unreadable", path)
                 return None
-            # Normalizing inside the guard too: a value the normalizer cannot
-            # absorb must surface as an unreadable document, not as a handler crash.
+            # Los errores de normalización también cuentan como documento ilegible.
             try:
                 doc = normalize_document(raw)
             except (TypeError, ValueError) as exc:
@@ -570,11 +577,21 @@ class CanvasStore:
                 max_history=max_history,
             )
 
-    def save(self, document: dict[str, Any], *, touch: bool = True) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    def save(
+        self,
+        document: dict[str, Any],  # allowlist: dict[str, Any]
+        *,
+        touch: bool = True,
+        expected_updated_at: str | None = None,
+    ) -> dict[str, Any]:  # allowlist: dict[str, Any]
         doc = normalize_document(document)
         if touch:
             doc["updatedAt"] = utc_now_iso()
         with self._doc_lock(doc["id"]):
+            if expected_updated_at is not None:
+                current = self.get(doc["id"])
+                if (current["updatedAt"] if current else "") != expected_updated_at:
+                    raise ResourceLockedError("El documento Canvas cambió durante la sincronización")
             path = self._path_for(doc["id"])
             self.docs_dir.mkdir(parents=True, exist_ok=True)
             try:
@@ -632,6 +649,7 @@ class CanvasStore:
                 return
             stem = path.stem
             inner_id = str(doc.get("id") or "")
+            self._metadata_cache[stem] = _meta_from_dict(doc)
             self._inner_id_index = {k: v for k, v in self._inner_id_index.items() if v != path}
             self._index_stems.add(stem)
             if self._index_signatures is not None:
@@ -651,6 +669,7 @@ class CanvasStore:
             if self._index_stems is None:
                 return
             self._index_stems.discard(stem)
+            self._metadata_cache.pop(stem, None)
             if self._index_signatures is not None:
                 self._index_signatures.pop(stem, None)
             self._inner_id_index = {k: v for k, v in self._inner_id_index.items() if v.stem != stem}

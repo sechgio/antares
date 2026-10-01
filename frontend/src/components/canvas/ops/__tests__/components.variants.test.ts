@@ -95,7 +95,6 @@ describe('components', () => {
         createEmptyDocument(),
       );
 
-      // Query with reversed property order
       const res = resolveVariantPatch(master, undefined, {
         Status: 'Active',
         Size: 'Large',
@@ -164,13 +163,10 @@ describe('components', () => {
         createEmptyDocument(),
       );
 
-      // Query has Role=Admin, Level=Low (mixed).
-      // Both match 1 property (score = 2).
       const res = resolveVariantPatch(master, undefined, {
         Role: 'Admin',
         Level: 'Medium',
       });
-      // Admin matches exactly (score 2), Medium doesn't match Level=High or Level=Low (score 0.5 for key match)
       expect(res.matchedKey).toBe('Role=Admin, Level=High');
       expect(res.patch['--background-color']).toBe('#DC2626');
     });
@@ -270,24 +266,21 @@ describe('components', () => {
             fieldKey: 'estado',
             mapping: { AP: 'Aprobado', RE: 'Rechazado' },
           },
-          // User manually customized text color override
           overrideVars: {
             '--color': '#FFFF00',
           },
         },
       };
 
-      // 1. With row data AP (Aprobado)
       const cssAP = applyInstanceOverrides(instance, master, { estado: 'AP' });
-      expect(cssAP['--background-color']).toBe('#22C55E'); // From variant
-      expect(cssAP['--width']).toBe(mm(60)); // From variant
-      expect(cssAP['--color']).toBe('#FFFF00'); // User override wins!
+      expect(cssAP['--background-color']).toBe('#22C55E');
+      expect(cssAP['--width']).toBe(mm(60));
+      expect(cssAP['--color']).toBe('#FFFF00');
 
-      // 2. With row data RE (Rechazado)
       const cssRE = applyInstanceOverrides(instance, master, { estado: 'RE' });
-      expect(cssRE['--background-color']).toBe('#EF4444'); // From variant
-      expect(cssRE['--width']).toBe(mm(50)); // From variant
-      expect(cssRE['--color']).toBe('#FFFF00'); // User override still wins!
+      expect(cssRE['--background-color']).toBe('#EF4444');
+      expect(cssRE['--width']).toBe(mm(50));
+      expect(cssRE['--color']).toBe('#FFFF00');
     });
 
     it('instantiateComponent accepts variantProps options and seeds initial state', () => {
@@ -367,8 +360,8 @@ describe('components', () => {
       const nextDoc = syncComponentToInstances(doc, 'm-sync', updatedMaster, rowData);
       const nextInst = nextDoc.layers.find((l) => l.id === 'inst-sync')!;
 
-      expect(nextInst.cssVars['--border-width']).toBe(mm(3)); // Master base updated
-      expect(nextInst.cssVars['--background-color']).toBe('#112233'); // Dynamic variant applied
+      expect(nextInst.cssVars['--border-width']).toBe(mm(3));
+      expect(nextInst.cssVars['--background-color']).toBe('#112233');
     });
   });
 });

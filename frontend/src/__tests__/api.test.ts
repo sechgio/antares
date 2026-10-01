@@ -4,6 +4,8 @@ import {
   AntaresAPIError,
   apiRetryAfterMs,
   restartBackend,
+  getBackendStatus,
+  onNotify,
   _resetBackendReadyForTests,
   _resetCanvasHistoryTransportForTests,
 } from '../api';
@@ -20,6 +22,13 @@ beforeEach(() => {
     onNotify: mockOnNotify,
     reportRendererError: mockReportRendererError,
   } as any;
+});
+
+it('sends the expected Canvas revision for a conditional save', async () => {
+  const document = { id: 'doc-a' } as Parameters<typeof api.canvasSave>[0];
+  mockInvoke.mockResolvedValue({ document });
+  await api.canvasSave(document, { touch: false, slim: true, expectedUpdatedAt: 'old-revision' });
+  expect(mockInvoke).toHaveBeenCalledWith('canvas_save', { document, touch: false, slim: true, expected_updated_at: 'old-revision' });
 });
 
 it('sends only the changed Canvas history suffix after a successful full save', async () => {
@@ -379,6 +388,29 @@ describe('API Client', () => {
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 40_000);
     expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), 100_000);
     setTimeoutSpy.mockRestore();
+  });
+
+  it.each(['backend.starting', 'backend.restarting', 'status', 'manual restart'])('restores the startup budget after %s', async (signal) => {
+    _resetBackendReadyForTests();
+    mockInvoke.mockResolvedValue({ version: '1' });
+    await api.version();
+    if (signal === 'status') {
+      window.electronAPI!.backendStatus = vi.fn().mockResolvedValue({ ready: false, state: 'starting' });
+      await getBackendStatus();
+    } else if (signal === 'manual restart') {
+      window.electronAPI!.backendRestart = vi.fn().mockResolvedValue({ success: true, state: 'starting' });
+      await restartBackend();
+    } else {
+      onNotify(vi.fn());
+      mockOnNotify.mock.calls.at(-1)![0](signal, {});
+    }
+    const timer = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      await api.version();
+      expect(timer).toHaveBeenCalledWith(expect.any(Function), 100_000);
+    } finally {
+      timer.mockRestore();
+    }
   });
 
   it('should retry once after a pre-execution retryable rejection', async () => {

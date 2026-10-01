@@ -14,14 +14,17 @@ import {
   hydrateDocumentImages,
   pinImageRefs,
   persistDataUrlsAsCanvasAssets,
+  registerAndPersistCanvasImage,
   registerImageBlob,
   releaseImageBlob,
   serializeDocumentImages,
+  serializeHistorySteps,
   sweepOrphanBlobs,
   trackImageRef,
 } from "./imageBlobStore";
 import type { CanvasDocument, CanvasLayer } from "../types";
 import type { HistoryStep } from "./canvasDiff";
+import { resetCanvasHistoryTransportForTests, saveCanvasHistoryIncrementally } from "../../../api/canvasHistoryTransport";
 
 let urlCounter = 0;
 const revoked: string[] = [];
@@ -48,6 +51,7 @@ const imageFile = (name = "p.png") =>
 
 beforeEach(() => {
   clearBlobStore();
+  resetCanvasHistoryTransportForTests();
   revoked.length = 0;
   (window as unknown as { electronAPI?: unknown }).electronAPI = undefined;
 });
@@ -118,6 +122,104 @@ describe("registerImageBlob / getBlobUrl / getThumbnailUrl", () => {
 });
 
 describe("serializeDocumentImages", () => {
+  it("reuses a validated asset across document and history saves without sending bytes again", async () => {
+    const ref = "canvas-asset:stored";
+    const blob = new Blob(["image"]);
+    const canvasAssetPut = vi.fn(async (_chunk: ArrayBuffer | Uint8Array) => ({ ref }));
+    const canvasAssetInfo = vi.fn(async () => ({ ref, bytes: blob.size }));
+    (window as { electronAPI?: unknown }).electronAPI = { canvasAssetPut, canvasAssetInfo };
+    const reg = await registerImageBlob(blob);
+    const d = doc([layer("i", "image", reg.url), layer("l", "logo", reg.blobId)]);
+
+    const first = await serializeDocumentImages(d);
+    const second = await serializeDocumentImages(d);
+    const history = await serializeHistorySteps([
+      { type: "diff", undoDiff: {}, redoDiff: { addedLayers: [d.layers[0]] } },
+    ]);
+
+    expect(second).toEqual(first);
+    expect(history[0]).toMatchObject({ redoDiff: { addedLayers: [{ value: ref }] } });
+    expect(d.layers.map((item) => item.value)).toEqual([reg.url, reg.blobId]);
+    expect(canvasAssetPut).toHaveBeenCalledTimes(1);
+    expect(canvasAssetInfo).toHaveBeenCalledTimes(2);
+    expect(canvasAssetPut.mock.calls[0][0].byteLength).toBe(blob.size);
+  });
+
+  it("repersists a cached asset after failed validation", async () => {
+    const ref = "canvas-asset:restored";
+    const blob = new Blob(["image"]);
+    const canvasAssetPut = vi.fn(async () => ({ ref }));
+    const canvasAssetInfo = vi.fn(async () => ({ ref, bytes: blob.size }));
+    (window as { electronAPI?: unknown }).electronAPI = { canvasAssetPut, canvasAssetInfo };
+    const reg = await registerImageBlob(blob);
+    const d = doc([layer("i", "image", reg.url)]);
+    await serializeDocumentImages(d);
+    canvasAssetInfo.mockRejectedValueOnce(new Error("asset unavailable"));
+
+    expect((await serializeDocumentImages(d)).layers[0].value).toBe(ref);
+    expect((await serializeDocumentImages(d)).layers[0].value).toBe(ref);
+    expect(canvasAssetPut).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reuse a cached asset with mismatched metadata", async () => {
+    const ref = "canvas-asset:stored";
+    const blob = new Blob(["image"]);
+    const canvasAssetPut = vi.fn(async () => ({ ref }));
+    const canvasAssetInfo = vi.fn(async () => ({ ref, bytes: 0 }));
+    (window as { electronAPI?: unknown }).electronAPI = { canvasAssetPut, canvasAssetInfo };
+    const reg = await registerImageBlob(blob);
+    const d = doc([layer("i", "image", reg.url)]);
+    await serializeDocumentImages(d);
+    expect((await serializeDocumentImages(d)).layers[0].value).toBe(ref);
+    expect(canvasAssetPut).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries persistence after a failure and still honors data URL export mode", async () => {
+    const ref = "canvas-asset:stored";
+    const blob = new Blob(["image"]);
+    const canvasAssetPut = vi.fn<(chunk: ArrayBuffer | Uint8Array) => Promise<{ ref: string }>>()
+      .mockRejectedValueOnce(new Error("storage unavailable"))
+      .mockResolvedValue({ ref });
+    const canvasAssetInfo = vi.fn(async () => ({ ref, bytes: blob.size }));
+    (window as { electronAPI?: unknown }).electronAPI = { canvasAssetPut, canvasAssetInfo };
+    const reg = await registerImageBlob(blob);
+    const d = doc([layer("i", "image", reg.url)]);
+
+    expect((await serializeDocumentImages(d)).layers[0].value).toMatch(/^data:/);
+    expect((await serializeDocumentImages(d)).layers[0].value).toBe(ref);
+    expect((await serializeDocumentImages(d, { preferAssetRefs: false })).layers[0].value).toMatch(/^data:/);
+    expect((await serializeDocumentImages(d)).layers[0].value).toBe(ref);
+    canvasAssetInfo.mockRejectedValueOnce(new Error("asset missing"));
+    canvasAssetPut.mockRejectedValueOnce(new Error("storage unavailable"));
+    expect((await serializeDocumentImages(d)).layers[0].value).toMatch(/^data:/);
+    expect((await serializeDocumentImages(d)).layers[0].value).toBe(ref);
+    expect((await serializeDocumentImages(d)).layers[0].value).toBe(ref);
+    expect(canvasAssetPut).toHaveBeenCalledTimes(4);
+    expect(canvasAssetInfo).toHaveBeenCalledTimes(3);
+  });
+
+  it("reuses hydrated document and history assets, and images persisted at registration", async () => {
+    const ref = "canvas-asset:stored";
+    const chunk = new Uint8Array([1, 2, 3]).buffer;
+    const canvasAssetGet = vi.fn(async () => ({ chunk }));
+    const canvasAssetInfo = vi.fn(async () => ({ ref, bytes: chunk.byteLength }));
+    const canvasAssetPut = vi.fn(async () => ({ ref }));
+    (window as { electronAPI?: unknown }).electronAPI = { canvasAssetGet, canvasAssetInfo, canvasAssetPut };
+    const hydrated = await hydrateDocumentImages(doc([layer("i", "image", ref)]));
+
+    expect((await serializeDocumentImages(hydrated)).layers[0].value).toBe(ref);
+    const { hydrateHistorySteps } = await import("./imageBlobStore");
+    const history = await hydrateHistorySteps([
+      { type: "diff", undoDiff: {}, redoDiff: { modifiedLayers: [{ id: "i", changes: { value: ref } }] } },
+    ]);
+    expect((await serializeHistorySteps(history))[0]).toMatchObject({ redoDiff: { modifiedLayers: [{ changes: { value: ref } }] } });
+    expect(canvasAssetPut).not.toHaveBeenCalled();
+
+    const url = await registerAndPersistCanvasImage(new Blob([chunk]));
+    expect((await serializeDocumentImages(doc([layer("new", "image", url)]))).layers[0].value).toBe(ref);
+    expect(canvasAssetPut).toHaveBeenCalledTimes(1);
+  });
+
   it("sin electronAPI devuelve dataUrl para blobs registrados", async () => {
     const reg = await registerImageBlob(new Blob(["img"]));
     const out = await serializeDocumentImages(
@@ -134,6 +236,62 @@ describe("serializeDocumentImages", () => {
     ]);
     const out = await serializeDocumentImages(d);
     expect(out.layers).toEqual(d.layers);
+  });
+});
+
+describe("serialized history identity", () => {
+  it("preserves image steps across incremental saves, undo and redo", async () => {
+    const reg = await registerImageBlob(new Blob(["img"]));
+    const ref = "canvas-asset:history";
+    const canvasAssetPut = vi.fn(async () => ({ ref }));
+    const canvasAssetInfo = vi.fn(async () => ({ ref, bytes: 3 }));
+    (window as { electronAPI?: unknown }).electronAPI = { canvasAssetPut, canvasAssetInfo };
+    const image: HistoryStep = {
+      type: "diff", undoDiff: {}, redoDiff: { addedLayers: [layer("i", "image", reg.url)] },
+    };
+    const text: HistoryStep = {
+      type: "diff", undoDiff: {}, redoDiff: { modifiedLayers: [{ id: "t", changes: { value: "texto" } }] },
+    };
+    const invoke = vi.fn(async (_params: Record<string, unknown>) => ({ success: true, digest: "digest" }));
+    const first = await serializeHistorySteps([image]);
+    await saveCanvasHistoryIncrementally(invoke, "history", first, []);
+    const next = await serializeHistorySteps([image, text]);
+    await saveCanvasHistoryIncrementally(invoke, "history", next, []);
+    expect(next[0]).toBe(first[0]);
+    expect(invoke.mock.calls[1][0]).toMatchObject({ past_prefix: 1, past: [text] });
+    await saveCanvasHistoryIncrementally(invoke, "history", await serializeHistorySteps([image]), await serializeHistorySteps([text]));
+    expect(invoke.mock.calls[2][0]).toMatchObject({ past_prefix: 1, past: [], future: [text] });
+    await saveCanvasHistoryIncrementally(invoke, "history", await serializeHistorySteps([image, text]), []);
+    expect(invoke.mock.calls[3][0]).toMatchObject({ past_prefix: 1, past: [text], future: [] });
+    expect(image).toMatchObject({ redoDiff: { addedLayers: [{ value: reg.url }] } });
+    expect(canvasAssetPut).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves snapshot identity and revalidates assets before reuse", async () => {
+    const reg = await registerImageBlob(new Blob(["img"]));
+    const ref = "canvas-asset:snapshot";
+    const canvasAssetPut = vi.fn(async () => ({ ref }));
+    const canvasAssetInfo = vi.fn(async () => ({ ref, bytes: 3 }));
+    (window as { electronAPI?: unknown }).electronAPI = { canvasAssetPut, canvasAssetInfo };
+    const snapshot = doc([layer("i", "logo", reg.url)]);
+    const [first] = await serializeHistorySteps([snapshot]);
+    expect((await serializeHistorySteps([snapshot]))[0]).toBe(first);
+    canvasAssetInfo.mockRejectedValueOnce(new Error("corrupt asset"));
+    expect((await serializeHistorySteps([snapshot]))[0]).toBe(first);
+    expect(canvasAssetPut).toHaveBeenCalledTimes(2);
+    canvasAssetInfo.mockRejectedValue(new Error("missing asset"));
+    canvasAssetPut.mockRejectedValue(new Error("write failed"));
+    const [fallback] = await serializeHistorySteps([snapshot]);
+    expect(fallback).not.toBe(first);
+    expect((fallback as CanvasDocument).layers[0].value).toMatch(/^data:/);
+    canvasAssetPut.mockResolvedValue({ ref });
+    const [recovered] = await serializeHistorySteps([snapshot]);
+    expect((recovered as CanvasDocument).layers[0].value).toBe(ref);
+    canvasAssetInfo.mockResolvedValue({ ref, bytes: 3 });
+    releaseImageBlob(reg.url);
+    const [released] = await serializeHistorySteps([snapshot]);
+    expect(released).not.toBe(recovered);
+    expect((released as CanvasDocument).layers[0].value).toBe(reg.url);
   });
 });
 

@@ -14,6 +14,7 @@ import { notifyPushHealth } from './pushHealth';
 import { reportFrontendError, reportFrontendEvent } from '../../../utils/observability';
 import { errorMessage } from '@/utils/errors';
 import { withTimeout } from '@/utils/async';
+import { pendingCanvasDeletes, recordPendingCanvasDelete, clearPendingCanvasDelete } from './cloudQueue';
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
@@ -324,6 +325,36 @@ export async function markRemoteCanvasDeleted(id: string): Promise<boolean> {
   return true;
 }
 
+async function replayPendingCanvasDeletes(): Promise<void> {
+  const ids = pendingCanvasDeletes(true);
+  if (ids.length === 0) return;
+  const supabase = await getSupabaseClient();
+  if (!supabase || !await sessionUserId()) return;
+  for (const id of ids) {
+    pendingPushById.delete(id);
+    try {
+      const local = await api.canvasGet(id);
+      if (local?.document) {
+        // El proceso anterior terminó antes de completar el borrado local.
+        clearPendingCanvasDelete(id);
+        continue;
+      }
+    } catch (err) {
+      if (!(err && typeof err === 'object' && 'category' in err && err.category === 'NOT_FOUND')) throw err;
+    }
+    if (!await markRemoteCanvasDeleted(id)) {
+      const { data, error } = await withTimeout(
+        supabase.from('canvas_documents').select('deleted_at').eq('id', id).maybeSingle(),
+        CLOUD_SYNC_TIMEOUT_MS,
+        'canvas-confirm-deleted',
+      );
+      if (error) throw new Error(error.message);
+      if (data && !data.deleted_at) throw new Error('El servidor no confirmó el borrado del documento');
+    }
+    clearPendingCanvasDelete(id);
+  }
+}
+
 async function fetchRemoteDocuments(ids: string[]): Promise<CanvasDocument[]> {
   const supabase = await getSupabaseClient();
   if (!supabase || ids.length === 0) return [];
@@ -394,8 +425,9 @@ export type TargetedCanvasPullResult =
 
 export async function pullCanvasDocument(
   documentId: string,
-  options: { localDocument: CanvasDocument; openDirty: boolean },
+  options: { localDocument: CanvasDocument; openDirty: boolean; getOpenState?: SyncOptions['getOpenState'] },
 ): Promise<TargetedCanvasPullResult> {
+  if (pendingCanvasDeletes().includes(documentId)) return { kind: 'unchanged' };
   const supabase = await getSupabaseClient();
   if (!supabase) return { kind: 'unchanged' };
   const uid = await sessionUserId();
@@ -477,12 +509,28 @@ export async function pullCanvasDocument(
     '../utils/imageBlobStore'
   );
   await assertDocumentImagesResolvable(remote.document);
-  // El doc remoto llega con imágenes embebidas como data: URLs; persistirlo
-  // así inflaría el JSON local hasta el límite de 16 MiB. Se re-suben como
-  // canvas-asset: antes de guardar y se devuelve el doc con refs para que la
-  // hidratación produzca blob: urls limpias en memoria.
+  // Convierte data: URLs a canvas-asset: antes de guardar para evitar el límite
+  // local de 16 MiB; la hidratación resuelve esas referencias a blob: URLs.
   const storedRemote = await persistDataUrlsAsCanvasAssets(remote.document);
-  await api.canvasSave(storedRemote, { touch: false, slim: true });
+  if (pendingCanvasDeletes().includes(documentId)) return { kind: 'unchanged' };
+  const current = options.getOpenState?.();
+  if (options.getOpenState && (!current || current.document.id !== documentId)) return { kind: 'unchanged' };
+  if (current?.dirty) {
+    return { kind: 'conflict', conflict: {
+      localDoc: current.document, remoteDoc: remote.document,
+      remoteUpdatedAt: remote.updatedAt, localUpdatedAt: current.document.updatedAt || '',
+    } };
+  }
+  try {
+    await api.canvasSave(storedRemote, {
+      touch: false, slim: true, expectedUpdatedAt: localDocument.updatedAt || '',
+    });
+  } catch (err) {
+    if (err && typeof err === 'object' && 'category' in err && err.category === 'RESOURCE_LOCKED') {
+      return { kind: 'unchanged' };
+    }
+    throw err;
+  }
   return {
     kind: 'applied',
     document: storedRemote,
@@ -494,6 +542,7 @@ export type SyncOptions = {
   openDocumentId?: string;
   openDocument?: CanvasDocument;
   openDirty?: boolean;
+  getOpenState?: () => { document: CanvasDocument; dirty: boolean } | null;
   guarded?: boolean;
   followUp?: (result: SyncResult) => void;
 };
@@ -517,6 +566,7 @@ function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
     // y resolverConflictLocalDoc recarga por id cuando falta.
     openDocument: b.openDocument,
     openDirty: Boolean(a?.openDirty || b.openDirty),
+    getOpenState: b.getOpenState ?? a?.getOpenState,
     guarded: Boolean(a?.guarded || b.guarded),
   };
 }
@@ -585,6 +635,8 @@ export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<Sy
 
 async function runSync(options: SyncOptions): Promise<SyncResult> {
   const empty: SyncResult = { pulled: 0, pushed: 0, deletedLocal: 0, skipped: false, pushErrors: 0 };
+  const deletingIds = new Set(pendingCanvasDeletes());
+  await replayPendingCanvasDeletes();
   const [remote, localRes] = await Promise.all([
     listRemoteCanvasMeta(),
     api.canvasList(),
@@ -607,6 +659,7 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   let conflictRemoteMeta: CanvasRemoteMeta | undefined;
   let conflictRemoteDeletedMeta: CanvasRemoteMeta | undefined;
   for (const r of remote) {
+    if (deletingIds.has(r.id) || pendingCanvasDeletes().includes(r.id)) continue;
     if (r.deleted_at) {
       const localDeleted = localById.get(r.id);
       if (!localDeleted) continue;
@@ -646,13 +699,29 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     const docs = await fetchRemoteDocuments(toPullIds);
     const { persistDataUrlsAsCanvasAssets } = await import('../utils/imageBlobStore');
     const storedDocs = await Promise.all(docs.map((doc) => persistDataUrlsAsCanvasAssets(doc)));
-    await Promise.all(storedDocs.map((doc) => api.canvasSave(doc, { touch: false, slim: true })));
-    pulled = storedDocs.length;
-    for (const doc of storedDocs) {
+    await Promise.all(storedDocs.map(async (doc) => {
+      if (deletingIds.has(doc.id) || pendingCanvasDeletes().includes(doc.id)) return;
+      const current = options.getOpenState?.();
+      if (current?.document.id === doc.id && current.dirty) {
+        conflict = {
+          localDoc: current.document, remoteDoc: doc,
+          remoteUpdatedAt: doc.updatedAt || '', localUpdatedAt: current.document.updatedAt || '',
+        };
+        return;
+      }
+      try {
+        await api.canvasSave(doc, {
+          touch: false, slim: true, expectedUpdatedAt: localById.get(doc.id)?.updatedAt || '',
+        });
+      } catch (err) {
+        if (err && typeof err === 'object' && 'category' in err && err.category === 'RESOURCE_LOCKED') return;
+        throw err;
+      }
+      pulled += 1;
       if (options.openDocumentId === doc.id && !options.openDirty) {
         reloadOpenId = doc.id;
       }
-    }
+    }));
   }
 
   if (conflictRemoteDeletedMeta && options.openDocumentId) {
@@ -714,6 +783,7 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
 
   const pushCandidates: LocalSummary[] = [];
   for (const local of localById.values()) {
+    if (deletingIds.has(local.id) || pendingCanvasDeletes().includes(local.id)) continue;
     const r = remoteById.get(local.id);
     if (r?.deleted_at) continue;
     const localTime = local.updatedAt || '';
@@ -783,13 +853,11 @@ async function publishAcceptedPush(result: CanvasPushResult): Promise<void> {
 const PUSH_RETRY_BASE_MS = 5_000;
 const PUSH_RETRY_MAX_DELAY_MS = 120_000;
 const pushRetry = new TimerScheduler(() => {
-  if (pendingPushById.size === 0) return;
+  if (pendingPushById.size === 0 && pendingCanvasDeletes().length === 0) return;
   void flushPendingPushes().catch(() => {});
 });
 
-// Sin tope de intentos: un push que se rinde queda stale en cloud sin que el
-// usuario lo sepa. El backoff se acota a 2 min; el siguiente save o el sync
-// al enfocar la ventana adelanta el reintento de todos modos.
+// Reintenta sin tope con backoff de hasta 2 min; guardar o enfocar adelanta el reintento.
 function schedulePendingPushRetry(): void {
   if (pushRetry.pending) return;
   const delay = Math.min(PUSH_RETRY_BASE_MS * 2 ** pushRetry.attempts, PUSH_RETRY_MAX_DELAY_MS);
@@ -804,13 +872,25 @@ function flushPendingPushes(): Promise<void> {
   pushFlushQueued = true;
   const flush = opChain.then(async () => {
     pushFlushQueued = false;
+    try {
+      await replayPendingCanvasDeletes();
+    } catch (err) {
+      schedulePendingPushRetry();
+      notifyPushHealth(true);
+      throw err;
+    }
     const batch = Array.from(pendingPushById.values());
     pendingPushById.clear();
     let firstError: unknown = null;
     for (const item of batch) {
+      if (pendingCanvasDeletes().includes(item.id)) continue;
       try {
         const doc = item.doc ?? normalizeDocument((await api.canvasGet(item.id)).document as CanvasDocument);
         const result = await pushCanvasDocumentResult(doc, item.options);
+        if (!result.accepted) {
+          firstError ??= new Error('El servidor conservó una versión más reciente del documento');
+          continue;
+        }
         await publishAcceptedPush(result);
       } catch (err) {
         firstError ??= err;
@@ -820,7 +900,7 @@ function flushPendingPushes(): Promise<void> {
       }
     }
     if (firstError) {
-      schedulePendingPushRetry();
+      if (pendingPushById.size > 0) schedulePendingPushRetry();
       notifyPushHealth(true);
       reportFrontendError({
         kind: 'sync_error',
@@ -830,8 +910,10 @@ function flushPendingPushes(): Promise<void> {
       });
       throw firstError;
     }
-    pushRetry.reset();
-    notifyPushHealth(false);
+    const hasPendingDeletes = pendingCanvasDeletes().length > 0;
+    if (hasPendingDeletes) schedulePendingPushRetry();
+    else pushRetry.reset();
+    notifyPushHealth(hasPendingDeletes);
   });
   pushFlushPromise = flush;
   opChain = flush.catch(() => {});
@@ -852,6 +934,7 @@ export function _resetCanvasPushQueueForTests(): void {
 }
 
 export function queueCanvasCloudDelete(id: string): Promise<void> {
+  recordPendingCanvasDelete(id);
   const next = opChain.then(async () => {
     pendingPushById.delete(id);
     if (pendingPushById.size === 0) {
@@ -859,8 +942,12 @@ export function queueCanvasCloudDelete(id: string): Promise<void> {
       notifyPushHealth(false);
     }
     try {
-      await markRemoteCanvasDeleted(id);
+      await replayPendingCanvasDeletes();
+      if (pendingCanvasDeletes().length > 0) schedulePendingPushRetry();
+      notifyPushHealth(pendingCanvasDeletes().length > 0);
     } catch (err) {
+      schedulePendingPushRetry();
+      notifyPushHealth(true);
       reportFrontendError({
         kind: 'sync_error',
         view: 'canvas.delete',

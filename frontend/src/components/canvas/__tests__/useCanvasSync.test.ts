@@ -425,6 +425,7 @@ describe('useCanvasSync conflict handling', () => {
     expect(pullCanvasDocument).toHaveBeenCalledWith('doc-1', {
       localDocument: localDoc,
       openDirty: false,
+      getOpenState: expect.any(Function),
     });
     expect(replaceDocument).toHaveBeenCalledWith(remoteDoc);
     expect(onRemoteDocumentApplied).toHaveBeenCalledWith(remoteDoc);

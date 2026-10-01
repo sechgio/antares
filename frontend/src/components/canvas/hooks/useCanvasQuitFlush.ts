@@ -22,7 +22,7 @@ interface UseCanvasQuitFlushOptions {
   panelBaselineRef: MutableRefObject<CanvasDocument | null>;
   gestureBaselineRef: MutableRefObject<CanvasDocument | null>;
   renameBaselineRef: MutableRefObject<CanvasDocument | null>;
-  // Fuente única de dirty: deriva de hasUnsavedEdits + baselines al leer.
+  // Evalúa hasUnsavedEdits y los baselines al leer.
   isOpenDirty: () => boolean;
 }
 
@@ -39,8 +39,7 @@ export function useCanvasQuitFlush({
   isOpenDirty,
 }: UseCanvasQuitFlushOptions): void {
   const flushRef = useRef<() => Promise<void>>(async () => {});
-  // El getter puede ser una lambda inline (identidad inestable): se lee desde
-  // un ref para no rearmar el flush en cada render.
+  // El ref evita rearmar el flush si cambia la identidad del getter.
   const isOpenDirtyRef = useRef(isOpenDirty);
   isOpenDirtyRef.current = isOpenDirty;
 

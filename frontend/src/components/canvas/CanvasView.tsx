@@ -338,11 +338,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const renameBaselineRef = useRef<typeof history.document | null>(null);
 
-  // Fuente única de "doc abierto dirty": deriva de hasUnsavedEdits + baselines
-  // en cada lectura (sin espejo manual que resincronizar). La edición inline
-  // cuenta aunque aún no hayamos comiteado: su contenido viaja por
-  // updateSilent, que no toca hasUnsavedEdits, y si no apareciera aquí el pull
-  // remoto lo sobrescribiría en vez de ofrecer conflicto.
+  // Incluye los baselines: updateSilent no marca hasUnsavedEdits y un pull remoto
+  // debe detectar también la edición inline pendiente para ofrecer conflicto.
   const isOpenDirty = useCallback(
     () =>
       isOpenDocumentDirty(
@@ -374,9 +371,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             const serialized = await serializeDocumentImages(mem);
             const res = await api.canvasSave(serialized, { touch: true, slim: true });
             const saved = normalizeDocument({ ...serialized, ...res.document });
-            // El doc persistido lleva el updatedAt estampado por el backend:
-            // hay que adoptarlo en memoria y limpiar el dirty flag para que las
-            // comparaciones LWW posteriores no comparen contra un estado viejo.
+            // Adopta el updatedAt del backend para las siguientes comparaciones LWW.
             if (historyDocRef.current.id === saved.id) {
               history.updateSilent(applySavedDocumentKeepingImages(mem, saved));
               history.markSaved();
@@ -525,9 +520,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const timer = window.setTimeout(() => flushAutosaveRef.current(), delay);
     return () => {
       window.clearTimeout(timer);
-      // Un retry pendiente pertenece al documento/activo anterior: al cambiar
-      // el estado relevante el debounce de este efecto vuelve a armarse si
-      // sigue habiendo cambios sin guardar.
+      // Cancela el retry anterior; el efecto rearma el debounce si quedan cambios pendientes.
       if (autosaveRetryTimerRef.current != null) {
         window.clearTimeout(autosaveRetryTimerRef.current);
         autosaveRetryTimerRef.current = null;
@@ -577,9 +570,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         autosavePendingRef.current = false;
       });
     }
-    // Sin preventDefault/returnValue: en Chromium es un prompt que compite con
-    // el protocolo de quit-flush (app.flush-canvas-before-quit); el save de
-    // arriba queda como respaldo best-effort.
+    // preventDefault/returnValue abrirían un prompt que compite con quit-flush;
+    // este save es un respaldo del protocolo app.flush-canvas-before-quit.
   }, [onSave]);
   useEffect(() => {
     if (!active) return;
@@ -856,8 +848,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const useDefault = isClickPlace(rect) || (rect.w === 0 && rect.h === 0);
     const w = useDefault ? defaults.w : Math.max(type === 'line' ? 1 : 4, rect.w);
     const h = useDefault ? defaults.h : Math.max(4, rect.h);
-    const x = useDefault ? rect.x : rect.x;
-    const y = useDefault ? rect.y : rect.y;
+    const x = rect.x;
+    const y = rect.y;
     layer.cssVars = {
       ...layer.cssVars,
       ...placeRectCssVars(x, y, w, h),

@@ -42,6 +42,20 @@ def test_successful_retry_cleans_document_spill(tmp_path: Path, monkeypatch: pyt
     assert not spill_path.exists()
 
 
+def test_conditional_remote_save_does_not_create_recovery_spill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = CanvasStore(tmp_path)
+    _install_store(monkeypatch, store)
+    local = store.create(name="Local")
+    _force_memory_pressure(monkeypatch, True)
+    with pytest.raises(MemoryPressureError) as caught:
+        canvas_handlers.canvas_save({
+            "document": {**local, "name": "Remote"}, "touch": False,
+            "expected_updated_at": local["updatedAt"],
+        })
+    assert caught.value.details["spill_path"] is None
+    assert store.get(local["id"])["name"] == "Local"
+
+
 def test_successful_retry_cleans_history_spill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = CanvasStore(tmp_path)
     _install_store(monkeypatch, store)

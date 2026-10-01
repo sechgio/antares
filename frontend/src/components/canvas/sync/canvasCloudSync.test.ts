@@ -13,6 +13,7 @@ import {
 import { isNewer, shouldPushCanvasRow } from './syncCompare';
 import { notifyPushHealth, subscribeCanvasPushHealth } from './pushHealth';
 import { withTimeout } from '../../../utils/async';
+import { recordPendingCanvasDelete, clearPendingCanvasDelete } from './cloudQueue';
 
 const supabaseMock = vi.hoisted(() => {
   const responses: Array<
@@ -83,6 +84,8 @@ function enqueue(data: unknown, error: unknown = null): void {
 }
 
 function resetMocks(): void {
+  for (const id of JSON.parse(localStorage.getItem('antares:canvas:pending-deletes') || '[]')) clearPendingCanvasDelete(id);
+  localStorage.clear();
   _resetCanvasPushQueueForTests();
   vi.mocked(api.canvasList).mockReset();
   vi.mocked(api.canvasGet).mockReset();
@@ -174,6 +177,40 @@ describe('shouldPushCanvasRow', () => {
 describe('syncCanvasDocuments', () => {
   beforeEach(resetMocks);
 
+  it('preserves an editor that becomes dirty during a general sync pull', async () => {
+    const local = makeDoc({ name: 'Local', updatedAt: '2026-07-01T00:00:00Z' });
+    const remote = makeDoc({ updatedAt: '2026-07-22T12:00:00Z' });
+    let dirty = false;
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [local] });
+    enqueue([{ id: local.id, updated_at: remote.updatedAt }]);
+    supabaseMock.responses.push(Promise.resolve().then(() => {
+      dirty = true;
+      return { data: [{ document: remote, updated_at: remote.updatedAt }], error: null };
+    }));
+    const result = await syncCanvasDocuments({
+      openDocumentId: local.id, openDirty: false,
+      getOpenState: () => ({ document: local, dirty }),
+    });
+    expect(result.pulled).toBe(0);
+    expect(result.conflict?.localDoc.name).toBe('Local');
+    expect(api.canvasSave).not.toHaveBeenCalled();
+  });
+
+  it('skips a general sync pull whose disk revision changed', async () => {
+    const local = makeDoc({ updatedAt: '2026-07-01T00:00:00Z' });
+    const remote = makeDoc({ updatedAt: '2026-07-22T12:00:00Z' });
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [local] });
+    vi.mocked(api.canvasSave).mockRejectedValue({ category: 'RESOURCE_LOCKED' });
+    enqueue([{ id: local.id, updated_at: remote.updatedAt }]);
+    enqueue([{ document: remote, updated_at: remote.updatedAt }]);
+    const result = await syncCanvasDocuments({ openDocumentId: local.id });
+    expect(result).toMatchObject({ pulled: 0, skipped: false });
+    expect(result.reloadOpenId).toBeUndefined();
+    expect(api.canvasSave).toHaveBeenCalledWith(expect.any(Object), {
+      touch: false, slim: true, expectedUpdatedAt: local.updatedAt,
+    });
+  });
+
   it('pulls remote doc when remote is newer and sets reloadOpenId', async () => {
     const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
     const remoteMeta = {
@@ -206,7 +243,7 @@ describe('syncCanvasDocuments', () => {
         name: 'New',
         updatedAt: '2026-07-22T12:00:00Z',
       }),
-      { touch: false, slim: true },
+      { touch: false, slim: true, expectedUpdatedAt: localDoc.updatedAt },
     );
   });
 
@@ -752,13 +789,73 @@ describe('syncCanvasDocuments', () => {
     expect(result.pulled).toBe(1);
     expect(vi.mocked(api.canvasSave)).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'doc-remote' }),
-      { touch: false, slim: true },
+      { touch: false, slim: true, expectedUpdatedAt: '' },
     );
   });
 });
 
 describe('opChain push serialization', () => {
   beforeEach(resetMocks);
+
+  it('replays an offline deletion after a restart before importing remote documents', async () => {
+    supabaseMock.getSession.mockResolvedValue({ data: { session: null } });
+    await queueCanvasCloudDelete('doc-1');
+    expect(JSON.parse(localStorage.getItem('antares:canvas:pending-deletes') || '[]')).toEqual(['doc-1']);
+    _resetCanvasPushQueueForTests();
+    supabaseMock.getSession.mockResolvedValue({ data: { session: { user: { id: 'user-1' } } } });
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [] });
+    enqueue([{ id: 'doc-1', updated_at: '2026-07-22T12:00:00Z', deleted_at: '2026-07-22T12:00:00Z' }]);
+    const result = await syncCanvasDocuments();
+    expect(result.pulled).toBe(0);
+    expect(api.canvasSave).not.toHaveBeenCalled();
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_delete_document_lww_v2', expect.objectContaining({ p_id: 'doc-1' }));
+    expect(localStorage.getItem('antares:canvas:pending-deletes')).toBeNull();
+  });
+
+  it('retains the deletion when the server fails and excludes it from a pull already in flight', async () => {
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [] });
+    enqueue([{ id: 'doc-1', updated_at: '2026-07-22T12:00:00Z' }]);
+    let release!: (response: { data: unknown; error: null }) => void;
+    supabaseMock.responses.push(new Promise((resolve) => { release = resolve; }));
+    const sync = syncCanvasDocuments();
+    await vi.waitFor(() => expect(supabaseMock.responses).toHaveLength(0));
+    supabaseMock.rpc.mockRejectedValueOnce(new Error('offline'));
+    const deletion = queueCanvasCloudDelete('doc-1');
+    const rejected = expect(deletion).rejects.toThrow('offline');
+    release({ data: [{ document: makeDoc(), updated_at: '2026-07-22T12:00:00Z' }], error: null });
+    await sync;
+    await rejected;
+    expect(api.canvasSave).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem('antares:canvas:pending-deletes') || '[]')).toEqual(['doc-1']);
+  });
+
+  it('does not send a prepared deletion while the document still exists locally', async () => {
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: makeDoc() });
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [makeDoc()] });
+    recordPendingCanvasDelete('doc-1', true);
+    enqueue([{ id: 'doc-1', updated_at: '2026-07-22T12:00:00Z' }]);
+    await syncCanvasDocuments();
+    expect(supabaseMock.rpc).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem('antares:canvas:pending-deletes') || '[]')).toEqual(['doc-1']);
+  });
+
+  it('keeps retrying an offline deletion until a session returns', async () => {
+    vi.useFakeTimers();
+    try {
+      supabaseMock.getSession.mockResolvedValue({ data: { session: null } });
+      await queueCanvasCloudDelete('doc-1');
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(supabaseMock.rpc).not.toHaveBeenCalled();
+      supabaseMock.getSession.mockResolvedValue({ data: { session: { user: { id: 'user-1' } } } });
+      vi.mocked(api.canvasGet).mockRejectedValue({ category: 'NOT_FOUND' });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_delete_document_lww_v2', expect.objectContaining({ p_id: 'doc-1' }));
+      expect(localStorage.getItem('antares:canvas:pending-deletes')).toBeNull();
+    } finally {
+      _resetCanvasPushQueueForTests();
+      vi.useRealTimers();
+    }
+  });
 
   it('runs queued push only after coalesced sync retry finishes', async () => {
     const events: string[] = [];
@@ -901,8 +998,8 @@ describe('opChain push serialization', () => {
     });
 
     queueCanvasCloudPush(makeDoc({ id: 'doc-1' }));
-    queueCanvasCloudDelete('doc-1');
     await vi.waitFor(() => expect(events).toEqual(['push']));
+    queueCanvasCloudDelete('doc-1');
 
     releasePush();
     await vi.waitFor(() => {
@@ -927,7 +1024,7 @@ describe('opChain push serialization', () => {
       await queueCanvasCloudDelete(doc.id);
       await vi.advanceTimersByTimeAsync(120_000);
 
-      expect(api.canvasGet).not.toHaveBeenCalled();
+      expect(api.canvasGet).toHaveBeenCalledTimes(1);
       expect(supabaseMock.rpc).toHaveBeenCalledWith(
         'canvas_delete_document_lww_v2',
         expect.objectContaining({ p_id: doc.id }),
@@ -978,15 +1075,25 @@ describe('opChain push serialization', () => {
     });
   });
 
-  it('does not publish a queued push rejected by LWW', async () => {
+  it('reports a queued push rejected by LWW without retrying the stale snapshot', async () => {
+    vi.useFakeTimers();
+    const events: boolean[] = [];
+    const unsubscribe = subscribeCanvasPushHealth((hasError) => events.push(hasError));
     supabaseMock.rpc.mockResolvedValueOnce({ data: false, error: null });
-
-    await expect(queueCanvasCloudPush(makeDoc({
-      id: 'doc-rejected',
-      updatedAt: '2026-07-22T12:00:00Z',
-    }))).resolves.toBeUndefined();
-
-    expect(realtimeMock.broadcastCanvasDocumentSaved).not.toHaveBeenCalled();
+    try {
+      await expect(queueCanvasCloudPush(makeDoc({
+        id: 'doc-rejected',
+        updatedAt: '2026-07-22T12:00:00Z',
+      }))).rejects.toThrow('El servidor conservó');
+      expect(events.at(-1)).toBe(true);
+      expect(realtimeMock.broadcastCanvasDocumentSaved).not.toHaveBeenCalled();
+      const calls = supabaseMock.rpc.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(supabaseMock.rpc).toHaveBeenCalledTimes(calls);
+    } finally {
+      unsubscribe();
+      vi.useRealTimers();
+    }
   });
 
   it('continues the batch and retries a failed queued document', async () => {
@@ -1066,9 +1173,7 @@ describe('opChain push serialization', () => {
     await settled;
     expect(calls).toBe(1);
 
-    // El tope viejo abandonaba la cola tras 6 reintentos (7 intentos totales).
-    // Con backoff acotado a 2 min, diez minutos virtuales deben seguir
-    // produciendo reintentos.
+    // Diez minutos virtuales superan el antiguo tope de reintentos con backoff de hasta 2 min.
     await vi.advanceTimersByTimeAsync(600_000);
     expect(calls).toBeGreaterThan(7);
     vi.useRealTimers();
@@ -1404,6 +1509,37 @@ describe('pushCanvasDocument', () => {
 describe('pullCanvasDocument', () => {
   beforeEach(resetMocks);
 
+  it('does not persist a pull when the editor became dirty during the fetch', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
+    const edited = { ...localDocument, name: 'Unsaved edit' };
+    const remote = makeDoc({ updatedAt: '2026-07-22T12:00:00Z' });
+    let dirty = false;
+    enqueue({ updated_at: remote.updatedAt });
+    supabaseMock.responses.push(Promise.resolve().then(() => {
+      dirty = true;
+      return { data: { document: remote, updated_at: remote.updatedAt }, error: null };
+    }));
+    const result = await pullCanvasDocument(localDocument.id, {
+      localDocument, openDirty: false,
+      getOpenState: () => ({ document: dirty ? edited : localDocument, dirty }),
+    });
+    expect(result).toMatchObject({ kind: 'conflict', conflict: { localDoc: { name: 'Unsaved edit' } } });
+    expect(api.canvasSave).not.toHaveBeenCalled();
+  });
+
+  it('does not report applied when the conditional write finds a concurrent save', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
+    const remote = makeDoc({ updatedAt: '2026-07-22T12:00:00Z' });
+    enqueue({ updated_at: remote.updatedAt });
+    enqueue({ document: remote, updated_at: remote.updatedAt });
+    vi.mocked(api.canvasSave).mockRejectedValue({ category: 'RESOURCE_LOCKED' });
+    await expect(pullCanvasDocument(localDocument.id, { localDocument, openDirty: false }))
+      .resolves.toMatchObject({ kind: 'unchanged' });
+    expect(api.canvasSave).toHaveBeenCalledWith(expect.any(Object), {
+      touch: false, slim: true, expectedUpdatedAt: localDocument.updatedAt,
+    });
+  });
+
   it('persists the remote snapshot before returning applied', async () => {
     const localDocument = makeDoc({
       name: 'Local',
@@ -1425,7 +1561,7 @@ describe('pullCanvasDocument', () => {
     expect(result).toMatchObject({ kind: 'applied', remoteUpdatedAt: '2026-07-22T12:00:00Z' });
     expect(vi.mocked(api.canvasSave)).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Remote', updatedAt: '2026-07-22T12:00:00Z' }),
-      { touch: false, slim: true },
+      { touch: false, slim: true, expectedUpdatedAt: localDocument.updatedAt },
     );
   });
 

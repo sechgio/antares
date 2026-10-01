@@ -9,6 +9,36 @@ import {
 } from './autosave';
 
 describe('adaptive autosave budget', () => {
+  it('skips the size walk when the layer count already requires the large delay', () => {
+    const doc = createEmptyDocument('Large by count');
+    doc.layers = Array.from({ length: 81 }, (_, index) => ({ ...doc.layers[0]!, id: `layer-${index}` }));
+    Object.defineProperty(doc.layers[0], 'value', { get: () => { throw new Error('unnecessary size walk'); } });
+    expect(autosaveDelayForDoc(doc)).toBe(AUTOSAVE_LARGE_MS);
+    expect(autosaveDelayForDoc(doc)).toBe(AUTOSAVE_LARGE_MS);
+  });
+
+  it.each([
+    [40, AUTOSAVE_DEBOUNCE_MS], [41, AUTOSAVE_MEDIUM_MS],
+    [80, AUTOSAVE_MEDIUM_MS], [81, AUTOSAVE_LARGE_MS],
+  ])('preserves the layer boundary at %i layers', (count, delay) => {
+    const doc = createEmptyDocument('Boundary');
+    doc.layers = Array.from({ length: count }, (_, index) => ({ ...doc.layers[0]!, id: `layer-${index}` }));
+    expect(autosaveDelayForDoc(doc)).toBe(delay);
+  });
+
+  it.each([
+    [512 * 1024, AUTOSAVE_DEBOUNCE_MS, AUTOSAVE_MEDIUM_MS],
+    [2 * 1024 * 1024, AUTOSAVE_MEDIUM_MS, AUTOSAVE_LARGE_MS],
+  ])('preserves the byte boundary at %i bytes', (bytes, atBoundary, aboveBoundary) => {
+    const doc = createEmptyDocument('Byte boundary');
+    doc.layers[0]!.value = '';
+    doc.layers[0]!.value = 'X'.repeat((bytes - estimateCanvasDocumentBytes(doc)) / 2);
+    expect(estimateCanvasDocumentBytes(doc)).toBe(bytes);
+    expect(autosaveDelayForDoc(doc)).toBe(atBoundary);
+    const next = { ...doc, layers: [{ ...doc.layers[0]!, value: doc.layers[0]!.value + 'X' }] };
+    expect(autosaveDelayForDoc(next)).toBe(aboveBoundary);
+  });
+
   it('estimates a large image document without serializing the whole document', () => {
     const doc = createEmptyDocument('Large');
     doc.layers[0]!.value = 'data:image/png;base64,' + 'X'.repeat(2 * 1024 * 1024);
