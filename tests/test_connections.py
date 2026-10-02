@@ -40,7 +40,7 @@ def test_provider_specs_loaded():
 
 
 def test_tokens_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr(connections, "user_data_path", lambda rel: tmp_path / rel)
     connections.put_tokens("github", {"access_token": "tok", "refresh_token": "r", "expiry_date": 9_999_999_999_999})
     loaded = connections.get_tokens("github")
     assert loaded is not None and loaded["access_token"] == "tok"
@@ -55,7 +55,7 @@ def test_unknown_provider_rejected():
 
 
 def test_fresh_access_token_refreshes(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr(connections, "user_data_path", lambda rel: tmp_path / rel)
     connections.put_tokens(
         "github",
         {
@@ -80,7 +80,7 @@ def test_fresh_access_token_refreshes(tmp_path, monkeypatch):
 
 
 def test_fresh_access_token_requires_connection(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr(connections, "user_data_path", lambda rel: tmp_path / rel)
     with pytest.raises(ValueError, match="Sin conexión"):
         connections.fresh_access_token("github")
 
