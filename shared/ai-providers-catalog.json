@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Antares AI providers catalog",
+  "version": 1,
+  "description": "Catálogo de proveedores de modelos IA en modo BYOK (bring your own key). Cada proveedor declara su tipo de autenticación, la base URL por defecto y cómo sondear el estado (endpoint que lista modelos). Las API keys se guardan selladas en el vault del backend y nunca vuelven al renderer; la UI solo ve la clave enmascarada.",
+  "providers": {
+    "openai": {
+      "label": "OpenAI",
+      "description": "GPT-4o, o-series y API compatible de OpenAI",
+      "docs": "https://platform.openai.com/api-keys",
+      "auth": { "type": "api_key", "header": "Authorization", "prefix": "Bearer ", "extra_headers": {} },
+      "base_url": "https://api.openai.com/v1",
+      "editable_base_url": true,
+      "status": { "path": "/models", "models_field": "data" }
+    },
+    "anthropic": {
+      "label": "Anthropic",
+      "description": "Claude y API Messages de Anthropic",
+      "docs": "https://console.anthropic.com/settings/keys",
+      "auth": {
+        "type": "api_key",
+        "header": "x-api-key",
+        "prefix": "",
+        "extra_headers": { "anthropic-version": "2023-06-01" }
+      },
+      "base_url": "https://api.anthropic.com",
+      "editable_base_url": true,
+      "status": { "path": "/v1/models", "models_field": "data" }
+    },
+    "ollama": {
+      "label": "Ollama (local)",
+      "description": "Modelos locales servidos por Ollama, sin clave",
+      "docs": "https://ollama.com",
+      "auth": { "type": "none", "header": "", "prefix": "", "extra_headers": {} },
+      "base_url": "http://127.0.0.1:11434",
+      "editable_base_url": true,
+      "status": { "path": "/api/tags", "models_field": "models" }
+    }
+  }
+}

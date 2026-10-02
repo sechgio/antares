@@ -6,6 +6,10 @@
     "heavy": 900000
   },
   "methods": {
+    "ai_provider_delete": { "handler": "backend:flows" },
+    "ai_provider_save": { "handler": "backend:flows" },
+    "ai_provider_status": { "handler": "backend:flows", "idempotent": true },
+    "ai_providers_list": { "handler": "backend:flows", "idempotent": true },
     "autoimg_arrastre_list": { "handler": "native:autoimg" },
     "autoimg_auto_sync_toggle": { "handler": "native:autoimg" },
     "autoimg_bootstrap": { "handler": "native:autoimg", "timeout": "long" },

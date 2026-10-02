@@ -4,6 +4,7 @@ import logging
 
 from backend.core import flows as _flows_core
 from backend.core.exceptions import NotFoundError, ValidationError
+from backend.core.flows import ai_providers as _ai_providers
 from backend.core.flows import connections as _connections
 from backend.core.flows.runner import FlowRunner, cancel_run
 from backend.core.flows.store import FlowStore
@@ -176,6 +177,56 @@ def _connection_token_delete(params: JsonObject) -> JsonObject:
         raise ValidationError(str(exc)) from exc
 
 
+@with_locale
+def _ai_providers_list(params: JsonObject) -> JsonObject:
+    specs = _ai_providers.load_provider_specs()
+    providers = []
+    for pid in sorted(specs):
+        spec = specs[pid]
+        providers.append(
+            {
+                "id": pid,
+                "label": spec.get("label", pid),
+                "description": spec.get("description", ""),
+                "docs": spec.get("docs", ""),
+                "editable_base_url": bool(spec.get("editable_base_url")),
+                "default_base_url": spec.get("base_url", ""),
+                **_ai_providers.public_state(pid),
+            }
+        )
+    return {"providers": providers}
+
+
+@with_locale
+@validate_params("provider")
+def _ai_provider_save(params: JsonObject) -> JsonObject:
+    provider = str(params["provider"])
+    config: JsonObject = {k: params[k] for k in ("api_key", "base_url") if k in params}
+    try:
+        _ai_providers.put_config(provider, config)
+        return {"provider": _ai_providers.public_state(provider)}
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
+@with_locale
+@validate_params("provider")
+def _ai_provider_delete(params: JsonObject) -> JsonObject:
+    try:
+        return _ai_providers.delete_config(str(params["provider"]))
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
+@with_locale
+@validate_params("provider")
+def _ai_provider_status(params: JsonObject) -> JsonObject:
+    try:
+        return {"provider": _ai_providers.status(str(params["provider"]))}
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
 HANDLERS = {
     "flows_list": _list,
     "flows_get": _get,
@@ -190,4 +241,8 @@ HANDLERS = {
     "flows_orchestratable_methods": _orchestratable_methods,
     "flows_connection_token_put": _connection_token_put,
     "flows_connection_token_delete": _connection_token_delete,
+    "ai_providers_list": _ai_providers_list,
+    "ai_provider_save": _ai_provider_save,
+    "ai_provider_delete": _ai_provider_delete,
+    "ai_provider_status": _ai_provider_status,
 }

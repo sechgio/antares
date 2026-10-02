@@ -4,6 +4,7 @@ import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import ConnectionsView from './ConnectionsView';
+import ProvidersView from './ProvidersView';
 import FlowEditor from './FlowEditor';
 import FlowList from './FlowList';
 import RunsView from './RunsView';
@@ -16,18 +17,6 @@ const SECTIONS: { value: Section; label: string }[] = [
   { value: 'connections', label: 'Conexiones' },
   { value: 'providers', label: 'Proveedores IA' },
 ];
-
-function ComingSoon({ title }: { title: string }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-      <p className="text-sm font-medium text-[var(--text-primary)]">{title}</p>
-      <p className="max-w-sm text-xs text-[var(--text-secondary)]">
-        Disponible en una próxima versión: conexiones OAuth a apps externas y proveedores de
-        modelos IA con tus propias claves.
-      </p>
-    </div>
-  );
-}
 
 export default function FlowsView() {
   const { addToast } = useToast();
@@ -93,7 +82,7 @@ export default function FlowsView() {
           ))}
         {section === 'runs' && <RunsView flowId={runsFlowId} />}
         {section === 'connections' && <ConnectionsView />}
-        {section === 'providers' && <ComingSoon title="Proveedores IA" />}
+        {section === 'providers' && <ProvidersView />}
       </div>
     </div>
   );
