@@ -73,10 +73,23 @@ describe('TaskNotificationsBell', () => {
 
   it('activa las notificaciones solo con sesión iniciada', () => {
     render(<TaskNotificationsBell onOpenEspacios={vi.fn()} />);
-    expect(useDueNotifications).toHaveBeenLastCalledWith(true);
+    expect(useDueNotifications).toHaveBeenLastCalledWith(true, undefined, 'u1');
 
     authUser = null;
     render(<TaskNotificationsBell onOpenEspacios={vi.fn()} />);
-    expect(useDueNotifications).toHaveBeenLastCalledWith(false);
+    expect(useDueNotifications).toHaveBeenLastCalledWith(false, undefined, undefined);
+  });
+
+  it('starts with the team scope and lets the user choose personal tasks', async () => {
+    render(<TaskNotificationsBell />);
+    expect(useDueNotifications).toHaveBeenLastCalledWith(true, undefined, 'u1');
+    fireEvent.click(screen.getByTestId('titlebar-notifications-button'));
+    expect(await screen.findByRole('button', { name: 'Equipo' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Mis tareas' }));
+    expect(useDueNotifications).toHaveBeenLastCalledWith(true, 'u1', 'u1');
+    expect(screen.getByRole('dialog', { name: 'Tareas cercanas a vencer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mis tareas' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Equipo' }));
+    expect(useDueNotifications).toHaveBeenLastCalledWith(true, undefined, 'u1');
   });
 });

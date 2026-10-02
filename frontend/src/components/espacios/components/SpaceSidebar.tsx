@@ -7,6 +7,8 @@ import SidebarNavItem from './SidebarNavItem';
 interface SpaceSidebarProps {
   espacios: Espacio[];
   proyectos: Proyecto[];
+  proyectosLoading?: boolean;
+  proyectosError?: string | null;
   activeEspacioId: string | null;
   activeProyectoId: string | null;
   myTasksActive: boolean;
@@ -26,6 +28,8 @@ interface SpaceSidebarProps {
 export default function SpaceSidebar({
   espacios,
   proyectos,
+  proyectosLoading = false,
+  proyectosError = null,
   activeEspacioId,
   activeProyectoId,
   myTasksActive,
@@ -146,7 +150,13 @@ export default function SpaceSidebar({
               </p>
             </li>
           )}
-          {activeEspacioId && proyectos.length === 0 && (
+          {proyectosLoading && (
+            <li role="status" className="px-3 py-4 text-xs text-[var(--text-muted)]">Cargando proyectos...</li>
+          )}
+          {proyectosError && !proyectosLoading && (
+            <li className="px-3 py-4 text-xs text-[var(--accent-red)]">No se pudieron cargar los proyectos</li>
+          )}
+          {activeEspacioId && proyectos.length === 0 && !proyectosLoading && !proyectosError && (
             <li className="rounded-lg border border-dashed border-[var(--border-subtle)] px-3 py-4 text-center">
               <p className="text-xs text-[var(--text-muted)]">Sin proyectos en este espacio</p>
               <Button variant="none" size="none"

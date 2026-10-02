@@ -7,6 +7,9 @@ import type { Tarea, VistaType } from '../types';
 const mocks = vi.hoisted(() => ({
   patchTarea: vi.fn().mockResolvedValue(undefined),
   addTarea: vi.fn().mockResolvedValue(undefined),
+  reloadAll: vi.fn().mockResolvedValue(undefined),
+  syncStates: { proyectosLoading: false, refreshing: false, proyectosError: null as string | null,
+    tareasError: null as string | null, columnsError: null as string | null },
   mounts: 0,
   task: {
     id: 'task-1', proyecto_id: 'project-1', title: 'Informe', description: null,
@@ -37,6 +40,7 @@ vi.mock('../hooks/useEspaciosSync', () => ({ useEspaciosSync: () => ({
   loading: false, tareasLoading: false, error: null, warning: null, realtimeStatus: 'SUBSCRIBED',
   setActiveEspacioId: vi.fn(), setActiveProyectoId: vi.fn(), clearWarning: vi.fn(),
   patchTarea: mocks.patchTarea, addTarea: mocks.addTarea,
+  reloadAll: mocks.reloadAll, ...mocks.syncStates,
 }) }));
 vi.mock('../components/SpaceSidebar', () => ({ default: () => null }));
 vi.mock('../components/EspaciosWelcome', () => ({ default: () => null }));
@@ -67,10 +71,27 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   mocks.mounts = 0;
+  mocks.syncStates = { proyectosLoading: false, refreshing: false, proyectosError: null, tareasError: null, columnsError: null };
 });
 afterEach(cleanup);
 
 describe('shared task detail routing', () => {
+  it('keeps a draft and shows a persistent retry action after a background load fails', async () => {
+    const { rerender } = render(<EspaciosApp />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir Informe' }));
+    fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Mi borrador' } });
+    mocks.syncStates.tareasError = 'No se pudieron cargar las tareas';
+    rerender(<EspaciosApp />);
+    expect(screen.getByRole('alert', { hidden: true })).toHaveTextContent('No se pudieron cargar las tareas');
+    expect(screen.getByLabelText('Descripción')).toHaveValue('Mi borrador');
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar carga', hidden: true }));
+    expect(mocks.reloadAll).toHaveBeenCalledWith(true);
+    mocks.syncStates.refreshing = true;
+    rerender(<EspaciosApp />);
+    expect(screen.getByRole('button', { name: 'Actualizando...', hidden: true })).toBeDisabled();
+    expect(screen.getByLabelText('Descripción')).toHaveValue('Mi borrador');
+  });
+
   it('opens and saves from a project view without resetting project context', async () => {
     render(<EspaciosApp />);
     fireEvent.click(screen.getByRole('button', { name: 'Vista gantt' }));
@@ -84,9 +105,7 @@ describe('shared task detail routing', () => {
     fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Revisado' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(mocks.patchTarea).toHaveBeenCalledWith('task-1', expect.objectContaining({
-      description: 'Revisado', priority: 'high', status: 'in_progress',
-    }));
+    expect(mocks.patchTarea).toHaveBeenCalledWith('task-1', { description: 'Revisado' }, mocks.task.updated_at);
     expect(screen.getByTestId('project-view')).toBe(projectView);
     expect(mocks.mounts).toBe(mountsBeforeOpen);
     expect(scroller.scrollTop).toBe(120);

@@ -1,5 +1,5 @@
 import { Bell } from 'lucide-react';
-import { useId, useLayoutEffect } from 'react';
+import { useId, useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { useDueNotifications } from '../espacios/hooks/useDueNotifications';
@@ -28,7 +28,10 @@ const URGENCY_LABEL: Record<DueUrgency, string> = {
 
 export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificationsBellProps) {
   const { user } = useAuth();
-  const { items, count, loading, error, refresh } = useDueNotifications(!!user);
+  const [scope, setScope] = useState('team');
+  const { items, count, loading, error, refresh } = useDueNotifications(
+    !!user, scope === 'mine' ? user?.id : undefined, user?.id,
+  );
   const {
     isOpen: open,
     position,
@@ -114,6 +117,18 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
                   {count}
                 </span>
               )}
+            </div>
+
+            <div role="group" aria-label="Alcance de vencimientos" className="flex gap-1 border-b border-[var(--border-subtle)] px-3 py-2">
+              {[{ value: 'team', label: 'Equipo' }, { value: 'mine', label: 'Mis tareas' }].map((option) => (
+                <Button key={option.value} variant="none" size="none"
+                  aria-pressed={scope === option.value}
+                  onClick={() => setScope(option.value)}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium ${scope === option.value ? 'bg-[var(--bg-elevated)] text-[var(--accent-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'}`}
+                >
+                  {option.label}
+                </Button>
+              ))}
             </div>
 
             <div className="max-h-[360px] overflow-y-auto p-1">

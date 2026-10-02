@@ -37,7 +37,7 @@ import {
   type TareaStatus,
   type VistaType,
 } from './types';
-import { fetchBoardColumns } from './api/espaciosApi';
+import { fetchBoardColumns, fetchTarea } from './api/espaciosApi';
 import { computeTaskStats, countActiveFilters, filterTareas } from './utils/filters';
 import {
   consumeEspaciosFocusTarget,
@@ -249,13 +249,14 @@ export default function EspaciosApp() {
   }, []);
 
   const handleTaskSubmit = useCallback(
-    async (input: TareaInput) => {
+    async (input: Partial<TareaInput>, expectedUpdatedAt?: string) => {
       if (editingTarea) {
-        await sync.patchTarea(editingTarea.id, input);
+        await sync.patchTarea(editingTarea.id, input, expectedUpdatedAt);
         if (showMyTasks) await myTasks.reload();
         addToast({ message: 'Tarea actualizada', type: 'success' });
       } else {
-        await sync.addTarea(input);
+        if (!input.title?.trim()) throw new Error('El título es obligatorio');
+        await sync.addTarea({ ...input, title: input.title });
         addToast({ message: 'Tarea creada', type: 'success' });
       }
     },
@@ -736,6 +737,8 @@ export default function EspaciosApp() {
         <SpaceSidebar
           espacios={sync.espacios}
           proyectos={sync.proyectos}
+          proyectosLoading={sync.proyectosLoading}
+          proyectosError={sync.proyectosError}
           activeEspacioId={sync.activeEspacioId}
           activeProyectoId={sync.activeProyectoId}
           myTasksActive={showMyTasks}
@@ -828,6 +831,21 @@ export default function EspaciosApp() {
             <EspaciosWelcome onCreateEspacio={() => setCreateModal('espacio')} />
           ) : (
             <>
+              {(sync.espaciosError || sync.proyectosError || sync.tareasError || sync.columnsError) && (
+                <div role="alert" className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-6 py-3">
+                  <p className="flex-1 text-sm text-[var(--accent-red)]">
+                    {[sync.espaciosError, sync.proyectosError, sync.tareasError, sync.columnsError].filter(Boolean).join(' · ')}
+                  </p>
+                  <Button variant="secondary" size="sm" disabled={sync.refreshing} onClick={() => void sync.reloadAll(true)}>
+                    {sync.refreshing ? 'Actualizando...' : 'Reintentar carga'}
+                  </Button>
+                </div>
+              )}
+              {(sync.realtimeStatus === 'offline' || sync.realtimeStatus === 'error') && (
+                <p role="status" className="shrink-0 border-b border-[var(--border-subtle)] px-6 py-2 text-xs text-[var(--text-muted)]">
+                  Los cambios de otras personas pueden tardar en aparecer. Se actualizarán al recuperar la conexión.
+                </p>
+              )}
               <ProjectHeader
                 proyecto={sync.activeProyecto}
                 stats={sync.activeProyecto ? taskStats : null}
@@ -868,7 +886,9 @@ export default function EspaciosApp() {
                     : 'overflow-y-auto py-2'
                 }`}
               >
-                {!sync.activeProyecto ? (
+                {sync.proyectosLoading && !sync.activeProyecto ? (
+                  <p role="status" className="p-6 text-sm text-[var(--text-muted)]">Cargando proyectos...</p>
+                ) : sync.proyectosError && !sync.activeProyecto ? null : !sync.activeProyecto ? (
                   <EmptyState
                     icon={FolderKanban}
                     title="Crea tu primer proyecto"
@@ -878,7 +898,7 @@ export default function EspaciosApp() {
                   />
                 ) : sync.tareasLoading && sync.tareas.length === 0 ? (
                   <TareasLoadingSkeleton view={activeView} />
-                ) : filtersHideAll ? (
+                ) : sync.tareasError && sync.tareas.length === 0 ? null : filtersHideAll ? (
                   <EmptyState
                     icon={SearchX}
                     title="Ninguna tarea coincide"
@@ -1001,6 +1021,11 @@ export default function EspaciosApp() {
         currentUserId={user?.id}
         onClose={closeTaskForm}
         onSubmit={handleTaskSubmit}
+        onReload={editingTarea ? async () => {
+          const current = await fetchTarea(editingTarea.id);
+          setEditingTarea((previous) => previous?.id === current.id ? current : previous);
+          return current;
+        } : undefined}
       />
 
       {createModal && (
