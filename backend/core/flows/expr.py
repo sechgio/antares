@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backend.core.flows.types import JsonObject
+
 _EXPR_PREFIX = "="
 _SEGMENT_RE = re.compile(r"\.([A-Za-z_][A-Za-z0-9_]*)|\[(\d+|\"[^\"]*\"|'[^']*')\]")
 
@@ -20,7 +22,7 @@ def is_expression(value: Any) -> bool:
     return isinstance(value, str) and value.startswith(_EXPR_PREFIX)
 
 
-def _lookup(path: str, memory: dict[str, Any]) -> Any:
+def _lookup(path: str, memory: JsonObject) -> Any:
     """Resuelve una ruta ``raíz.seg[i]`` dentro de la memoria del run."""
     if path.startswith(ROOT_NODES + "."):
         # ``nodes.<id>`` usa la primera parte tras 'nodes' como id de nodo
@@ -76,11 +78,11 @@ def _get(value: Any, key: Any, context: str) -> Any:
     raise ValueError(f"No se puede acceder a {key} sobre un valor no objeto ({context!r})")
 
 
-def eval_expression(expr: str, memory: dict[str, Any]) -> Any:
+def eval_expression(expr: str, memory: JsonObject) -> Any:
     return _lookup(expr[len(_EXPR_PREFIX) :], memory)
 
 
-def resolve(value: Any, memory: dict[str, Any]) -> Any:
+def resolve(value: Any, memory: JsonObject) -> Any:
     """Resuelve expresiones recursivamente en cadenas, listas y dicts."""
     if is_expression(value):
         return eval_expression(value, memory)

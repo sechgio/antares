@@ -12,6 +12,7 @@ import json
 import logging
 from typing import Any
 
+from backend.core.flows.types import JsonObject
 from backend.utils.paths import resource_path
 
 logger = logging.getLogger(__name__)
@@ -26,9 +27,9 @@ MAX_FLOW_EDGES = 500
 _SCHEMA_PATH = resource_path("shared/workflow-schema.json")
 
 
-def _load_schema() -> dict[str, Any]:
+def _load_schema() -> JsonObject:
     try:
-        data: dict[str, Any] = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+        data: JsonObject = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
         return data
     except (OSError, json.JSONDecodeError):
         return {}
@@ -45,7 +46,7 @@ def _node_kind_names() -> frozenset[str]:
     return NODE_KINDS
 
 
-def normalize_graph(graph: Any) -> dict[str, Any]:
+def normalize_graph(graph: Any) -> JsonObject:
     if not isinstance(graph, dict):
         raise ValueError("graph debe ser un objeto")
     nodes_in = graph.get("nodes")
@@ -61,7 +62,7 @@ def normalize_graph(graph: Any) -> dict[str, Any]:
     if len(edges_in) > MAX_FLOW_EDGES:
         raise ValueError(f"Demasiadas aristas (máx {MAX_FLOW_EDGES})")
 
-    nodes: list[dict[str, Any]] = []
+    nodes: list[JsonObject] = []
     for raw in nodes_in:
         if not isinstance(raw, dict):
             raise ValueError("Cada nodo debe ser un objeto")
@@ -93,7 +94,7 @@ def normalize_graph(graph: Any) -> dict[str, Any]:
             }
         )
 
-    edges: list[dict[str, Any]] = []
+    edges: list[JsonObject] = []
     for raw in edges_in:
         if not isinstance(raw, dict):
             raise ValueError("Cada arista debe ser un objeto")
@@ -113,7 +114,7 @@ def normalize_graph(graph: Any) -> dict[str, Any]:
     return {"nodes": nodes, "edges": edges}
 
 
-def validate_graph(graph: dict[str, Any]) -> None:
+def validate_graph(graph: JsonObject) -> None:
     """Valida la estructura del grafo normalizado. Lanza ValueError."""
     nodes = graph["nodes"]
     edges = graph["edges"]
@@ -154,7 +155,7 @@ def validate_graph(graph: dict[str, Any]) -> None:
     _assert_acyclic(nodes, edges)
 
 
-def _assert_acyclic(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
+def _assert_acyclic(nodes: list[JsonObject], edges: list[JsonObject]) -> None:
     indegree = {node["id"]: 0 for node in nodes}
     outgoing: dict[str, list[str]] = {node["id"]: [] for node in nodes}
     for edge in edges:

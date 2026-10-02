@@ -21,6 +21,7 @@ from typing import Any
 from backend.core.flows.expr import resolve
 from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore, _utc_now
+from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ class FlowRunner:
         self._store = store
         self._handler_getter = handler_getter
 
-    def start(self, flow_id: str, trigger_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def start(self, flow_id: str, trigger_payload: JsonObject | None = None) -> JsonObject:
         run = self._store.create_run(flow_id, trigger_payload)
         if run is None:
             raise ValueError(f"Flujo no encontrado: {flow_id}")
@@ -130,13 +131,13 @@ class FlowRunner:
         self._store.update_run(run_id, status="running", started_at=_utc_now())
 
         nodes = {n["id"]: n for n in graph["nodes"]}
-        inbound: dict[str, list[dict[str, Any]]] = {n["id"]: [] for n in graph["nodes"]}
+        inbound: dict[str, list[JsonObject]] = {n["id"]: [] for n in graph["nodes"]}
         for edge in graph["edges"]:
             inbound[edge["to_node"]].append(edge)
         order = self._topological_order(graph)
 
-        outputs: dict[str, dict[str, Any]] = {}
-        memory: dict[str, Any] = {
+        outputs: dict[str, JsonObject] = {}
+        memory: JsonObject = {
             "run": {
                 "run_id": run_id,
                 "flow_id": run["flow_id"],
@@ -146,7 +147,7 @@ class FlowRunner:
             "item": None,
             "items": [],
         }
-        steps: list[dict[str, Any]] = []
+        steps: list[JsonObject] = []
         any_error = False
 
         for node_id in order:
@@ -213,7 +214,7 @@ class FlowRunner:
         )
 
     @staticmethod
-    def _topological_order(graph: dict[str, Any]) -> list[str]:
+    def _topological_order(graph: JsonObject) -> list[str]:
         indegree = {n["id"]: 0 for n in graph["nodes"]}
         outgoing: dict[str, list[str]] = {n["id"]: [] for n in graph["nodes"]}
         for edge in graph["edges"]:
@@ -231,7 +232,7 @@ class FlowRunner:
         return order
 
     @staticmethod
-    def _step(node: dict[str, Any], status: str, started_at: str | None = None) -> dict[str, Any]:
+    def _step(node: JsonObject, status: str, started_at: str | None = None) -> JsonObject:
         return {
             "node_id": node["id"],
             "kind": node["kind"],
@@ -244,7 +245,7 @@ class FlowRunner:
             "error": None,
         }
 
-    def _execute_node(self, node: dict[str, Any], memory: dict[str, Any]) -> dict[str, Any]:
+    def _execute_node(self, node: JsonObject, memory: JsonObject) -> JsonObject:
         kind = node["kind"]
         if kind not in IMPLEMENTED_NODE_KINDS:
             raise ValueError(f"Tipo de nodo aún no implementado: {kind}")
@@ -260,7 +261,7 @@ class FlowRunner:
             return {"main": {"json": output}}
         raise ValueError(f"Tipo de nodo desconocido: {kind}")
 
-    def _run_tool_call(self, node: dict[str, Any], memory: dict[str, Any]) -> dict[str, Any]:
+    def _run_tool_call(self, node: JsonObject, memory: JsonObject) -> JsonObject:
         config = node.get("config") or {}
         method = config.get("method")
         if method not in ORCHESTRATABLE_METHODS:
@@ -274,7 +275,7 @@ class FlowRunner:
         return {"json": result}
 
     @staticmethod
-    def _run_condition(node: dict[str, Any], memory: dict[str, Any]) -> dict[str, Any]:
+    def _run_condition(node: JsonObject, memory: JsonObject) -> JsonObject:
         config = node.get("config") or {}
         field = config.get("field")
         op = config.get("op") or "eq"

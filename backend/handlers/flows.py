@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from backend.core import flows as _flows_core
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.flows.runner import FlowRunner, cancel_run
 from backend.core.flows.store import FlowStore
+from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 from backend.handlers import HANDLERS as _REGISTRY
 from backend.handlers.common import get_item_id, validate_params, with_locale
@@ -20,7 +20,7 @@ def _store() -> FlowStore:
     return _flows_core.get_flow_store()
 
 
-def _flow_or_raise(flow_id: str) -> dict[str, Any]:
+def _flow_or_raise(flow_id: str) -> JsonObject:
     flow = _store().get(flow_id)
     if flow is None:
         raise NotFoundError(f"Flujo no encontrado: {flow_id}")
@@ -28,18 +28,18 @@ def _flow_or_raise(flow_id: str) -> dict[str, Any]:
 
 
 @with_locale
-def _list(params: dict[str, Any]) -> dict[str, Any]:
+def _list(params: JsonObject) -> JsonObject:
     return {"flows": _store().list_flows()}
 
 
 @with_locale
 @validate_params("id")
-def _get(params: dict[str, Any]) -> dict[str, Any]:
+def _get(params: JsonObject) -> JsonObject:
     return {"flow": _flow_or_raise(get_item_id(params))}
 
 
 @with_locale
-def _create(params: dict[str, Any]) -> dict[str, Any]:
+def _create(params: JsonObject) -> JsonObject:
     name = str(params.get("name") or "Sin nombre")[:120]
     description = params.get("description")
     graph = params.get("graph")
@@ -56,7 +56,7 @@ def _create(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 @validate_params("id")
-def _update(params: dict[str, Any]) -> dict[str, Any]:
+def _update(params: JsonObject) -> JsonObject:
     flow_id = get_item_id(params)
     graph = params.get("graph")
     enabled = params.get("enabled")
@@ -80,7 +80,7 @@ def _update(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 @validate_params("id")
-def _delete(params: dict[str, Any]) -> dict[str, Any]:
+def _delete(params: JsonObject) -> JsonObject:
     flow_id = get_item_id(params)
     if not _store().delete(flow_id):
         raise NotFoundError(f"Flujo no encontrado: {flow_id}")
@@ -89,7 +89,7 @@ def _delete(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 @validate_params("id")
-def _duplicate(params: dict[str, Any]) -> dict[str, Any]:
+def _duplicate(params: JsonObject) -> JsonObject:
     flow_id = get_item_id(params)
     name = params.get("name")
     flow = _store().duplicate(flow_id, name if isinstance(name, str) else None)
@@ -100,7 +100,7 @@ def _duplicate(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 @validate_params("id")
-def _run(params: dict[str, Any]) -> dict[str, Any]:
+def _run(params: JsonObject) -> JsonObject:
     flow_id = get_item_id(params)
     _flow_or_raise(flow_id)
     trigger_payload = params.get("trigger_payload")
@@ -113,7 +113,7 @@ def _run(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 @validate_params("run_id")
-def _run_status(params: dict[str, Any]) -> dict[str, Any]:
+def _run_status(params: JsonObject) -> JsonObject:
     run = _store().get_run(str(params["run_id"]))
     if run is None:
         raise NotFoundError(f"Run no encontrado: {params['run_id']}")
@@ -121,7 +121,7 @@ def _run_status(params: dict[str, Any]) -> dict[str, Any]:
 
 
 @with_locale
-def _runs_list(params: dict[str, Any]) -> dict[str, Any]:
+def _runs_list(params: JsonObject) -> JsonObject:
     flow_id = params.get("flow_id")
     limit = params.get("limit")
     runs = _store().list_runs(
@@ -133,7 +133,7 @@ def _runs_list(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 @validate_params("run_id")
-def _run_cancel(params: dict[str, Any]) -> dict[str, Any]:
+def _run_cancel(params: JsonObject) -> JsonObject:
     run_id = str(params["run_id"])
     run = _store().get_run(run_id)
     if run is None:
@@ -146,7 +146,7 @@ def _run_cancel(params: dict[str, Any]) -> dict[str, Any]:
 
 
 @with_locale
-def _orchestratable_methods(params: dict[str, Any]) -> dict[str, Any]:
+def _orchestratable_methods(params: JsonObject) -> JsonObject:
     return {"methods": sorted(ORCHESTRATABLE_METHODS)}
 
 

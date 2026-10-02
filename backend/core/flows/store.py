@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.flows.schema import normalize_graph, validate_graph
+from backend.core.flows.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import user_data_path
 
@@ -32,7 +33,7 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
-def _normalize_flow(raw: dict[str, Any]) -> dict[str, Any] | None:
+def _normalize_flow(raw: JsonObject) -> JsonObject | None:
     flow_id = raw.get("id")
     graph = raw.get("graph")
     if not isinstance(flow_id, str) or not flow_id or not isinstance(graph, dict):
@@ -55,7 +56,7 @@ def _normalize_flow(raw: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _normalize_run(raw: dict[str, Any]) -> dict[str, Any] | None:
+def _normalize_run(raw: JsonObject) -> JsonObject | None:
     run_id = raw.get("id")
     flow_id = raw.get("flow_id")
     status = raw.get("status")
@@ -84,7 +85,7 @@ class FlowStore:
         self._runs_path = runs_path or user_data_path("flows/flow_runs.json")
         self._lock = threading.RLock()
 
-    def _read(self, path: Path, normalizer: Any) -> dict[str, dict[str, Any]]:
+    def _read(self, path: Path, normalizer: Any) -> dict[str, JsonObject]:
         if not path.exists():
             return {}
         import json
@@ -96,7 +97,7 @@ class FlowStore:
             return {}
         if not isinstance(raw, dict):
             return {}
-        items: dict[str, dict[str, Any]] = {}
+        items: dict[str, JsonObject] = {}
         for item_id, item in raw.items():
             if not isinstance(item, dict):
                 continue
@@ -105,19 +106,19 @@ class FlowStore:
                 items[str(item_id)] = normalized
         return items
 
-    def _read_flows(self) -> dict[str, dict[str, Any]]:
+    def _read_flows(self) -> dict[str, JsonObject]:
         return self._read(self._flows_path, _normalize_flow)
 
-    def _read_runs(self) -> dict[str, dict[str, Any]]:
+    def _read_runs(self) -> dict[str, JsonObject]:
         return self._read(self._runs_path, _normalize_run)
 
-    def _write_flows(self, flows: dict[str, dict[str, Any]]) -> None:
+    def _write_flows(self, flows: dict[str, JsonObject]) -> None:
         atomic_write_json(self._flows_path, flows)
 
-    def _write_runs(self, runs: dict[str, dict[str, Any]]) -> None:
+    def _write_runs(self, runs: dict[str, JsonObject]) -> None:
         ordered = sorted(runs.values(), key=lambda r: r.get("created_at") or "", reverse=True)
         per_flow: dict[str, int] = {}
-        kept: list[dict[str, Any]] = []
+        kept: list[JsonObject] = []
         for run in ordered:
             fid = run["flow_id"]
             count = per_flow.get(fid, 0)
@@ -127,7 +128,7 @@ class FlowStore:
             kept.append(run)
         atomic_write_json(self._runs_path, {r["id"]: r for r in kept})
 
-    def list_flows(self) -> list[dict[str, Any]]:
+    def list_flows(self) -> list[JsonObject]:
         with self._lock:
             flows = self._read_flows()
         metas = []
@@ -136,12 +137,12 @@ class FlowStore:
         metas.sort(key=lambda f: f.get("updated_at") or "", reverse=True)
         return metas
 
-    def get(self, flow_id: str) -> dict[str, Any] | None:
+    def get(self, flow_id: str) -> JsonObject | None:
         with self._lock:
             flow = self._read_flows().get(flow_id)
         return deepcopy(flow) if flow is not None else None
 
-    def create(self, name: str, graph: dict[str, Any] | None = None, description: str = "") -> dict[str, Any]:
+    def create(self, name: str, graph: JsonObject | None = None, description: str = "") -> JsonObject:
         if graph is None:
             graph = {
                 "nodes": [
@@ -158,7 +159,7 @@ class FlowStore:
         graph = normalize_graph(graph)
         validate_graph(graph)
         now = _utc_now()
-        flow: dict[str, Any] = {
+        flow: JsonObject = {
             "id": uuid.uuid4().hex[:12],
             "name": name or "Sin nombre",
             "description": description,
@@ -182,9 +183,9 @@ class FlowStore:
         name: str | None = None,
         description: str | None = None,
         enabled: bool | None = None,
-        graph: dict[str, Any] | None = None,
+        graph: JsonObject | None = None,
         expected_updated_at: str | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> JsonObject | None:
         with self._lock:
             flows = self._read_flows()
             flow = flows.get(flow_id)
@@ -219,7 +220,7 @@ class FlowStore:
                 self._write_runs(remaining)
         return True
 
-    def duplicate(self, flow_id: str, name: str | None = None) -> dict[str, Any] | None:
+    def duplicate(self, flow_id: str, name: str | None = None) -> JsonObject | None:
         source = self.get(flow_id)
         if source is None:
             return None
@@ -239,7 +240,7 @@ class FlowStore:
             flow["last_run_at"] = run_at
             self._write_flows(flows)
 
-    def create_run(self, flow_id: str, trigger_payload: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    def create_run(self, flow_id: str, trigger_payload: JsonObject | None = None) -> JsonObject | None:
         flow = self.get(flow_id)
         if flow is None:
             return None
@@ -262,7 +263,7 @@ class FlowStore:
         self._touch_last_run(flow_id, "queued", run["created_at"])
         return deepcopy(run)
 
-    def update_run(self, run_id: str, **fields: Any) -> dict[str, Any] | None:
+    def update_run(self, run_id: str, **fields: Any) -> JsonObject | None:
         with self._lock:
             runs = self._read_runs()
             run = runs.get(run_id)
@@ -281,12 +282,12 @@ class FlowStore:
                 self._touch_last_run(run["flow_id"], str(fields["status"]), run.get("finished_at") or _utc_now())
             return deepcopy(run)
 
-    def get_run(self, run_id: str) -> dict[str, Any] | None:
+    def get_run(self, run_id: str) -> JsonObject | None:
         with self._lock:
             run = self._read_runs().get(run_id)
         return deepcopy(run) if run is not None else None
 
-    def list_runs(self, flow_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def list_runs(self, flow_id: str | None = None, limit: int = 50) -> list[JsonObject]:
         with self._lock:
             runs = list(self._read_runs().values())
         if flow_id is not None:

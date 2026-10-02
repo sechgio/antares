@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Flujos**: nueva herramienta de automatización con editor visual de grafos (arrastrar y soltar nodos), ejecución manual sobre los métodos de la app marcados como orquestables y vista de ejecuciones con el resultado de cada nodo.
 - **Plugins de la barra de título**: Spotify (con OAuth), Audius, Jamendo y Archive se pueden activar y ordenar desde Ajustes.
 - **Notas adhesivas**: se pueden crear y organizar notas locales desde la barra de título.
 
