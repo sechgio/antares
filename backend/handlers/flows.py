@@ -4,6 +4,7 @@ import logging
 
 from backend.core import flows as _flows_core
 from backend.core.exceptions import NotFoundError, ValidationError
+from backend.core.flows import connections as _connections
 from backend.core.flows.runner import FlowRunner, cancel_run
 from backend.core.flows.store import FlowStore
 from backend.core.flows.types import JsonObject
@@ -150,6 +151,31 @@ def _orchestratable_methods(params: JsonObject) -> JsonObject:
     return {"methods": sorted(ORCHESTRATABLE_METHODS)}
 
 
+@with_locale
+@validate_params("provider", "tokens")
+def _connection_token_put(params: JsonObject) -> JsonObject:
+    """Espeja tokens OAuth gestionados por Electron en el vault del backend,
+    para que los nodos http_request puedan firmar con connection_ref."""
+    provider = str(params["provider"])
+    tokens = params["tokens"]
+    if not isinstance(tokens, dict) or not isinstance(tokens.get("access_token"), str):
+        raise ValidationError("tokens debe contener access_token")
+    try:
+        return _connections.put_tokens(provider, dict(tokens))
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
+@with_locale
+@validate_params("provider")
+def _connection_token_delete(params: JsonObject) -> JsonObject:
+    provider = str(params["provider"])
+    try:
+        return _connections.delete_tokens(provider)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
 HANDLERS = {
     "flows_list": _list,
     "flows_get": _get,
@@ -162,4 +188,6 @@ HANDLERS = {
     "flows_runs_list": _runs_list,
     "flows_run_cancel": _run_cancel,
     "flows_orchestratable_methods": _orchestratable_methods,
+    "flows_connection_token_put": _connection_token_put,
+    "flows_connection_token_delete": _connection_token_delete,
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Trash2, X } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
+import { connectionsApi } from '../../api/connectionsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
@@ -28,6 +29,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: Props) {
   const { addToast } = useToast();
   const [methods, setMethods] = useState<string[]>([]);
+  const [connections, setConnections] = useState<{ id: string; label: string; connected: boolean }[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -37,6 +39,15 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
         if (alive) setMethods(res.methods);
       })
       .catch((err) => addToast({ message: errorMessage(err, 'No se pudieron cargar los métodos'), type: 'error' }));
+    connectionsApi
+      .connectionsProviders()
+      .then((res) => {
+        if (alive)
+          setConnections(
+            res.providers.map((p) => ({ id: p.id, label: p.label, connected: p.connected })),
+          );
+      })
+      .catch(() => {});
     return () => {
       alive = false;
     };
@@ -206,6 +217,91 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
               <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
                 Usa = para comparar contra otra expresión.
               </p>
+            </div>
+          </>
+        )}
+
+        {node.kind === 'http_request' && (
+          <>
+            <div>
+              <FieldLabel>URL</FieldLabel>
+              <Input
+                value={String(node.config.url ?? '')}
+                onChange={(e) => patchConfig({ url: e.target.value })}
+                placeholder="https://api.ejemplo.com/datos"
+                spellCheck={false}
+                className="font-mono text-xs"
+              />
+              <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                Solo http/https; admite expresiones =…
+              </p>
+            </div>
+            <div>
+              <FieldLabel>Método</FieldLabel>
+              <ThemedSelect
+                value={String(node.config.method ?? 'GET')}
+                onChange={(v) => patchConfig({ method: v })}
+                options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].map((m) => ({
+                  value: m,
+                  label: m,
+                }))}
+              />
+            </div>
+            <div>
+              <FieldLabel>Conexión</FieldLabel>
+              <ThemedSelect
+                value={String(node.config.connection_ref ?? '')}
+                onChange={(v) => patchConfig({ connection_ref: v || undefined })}
+                options={[
+                  { value: '', label: 'Sin firma OAuth' },
+                  ...connections.map((c) => ({
+                    value: c.id,
+                    label: c.connected ? c.label : `${c.label} (no conectada)`,
+                  })),
+                ]}
+              />
+              <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                Si eliges una conexión se añade Authorization: Bearer con su token, refrescado si
+                caducó. Gestiona cuentas en la sección Conexiones.
+              </p>
+            </div>
+            <div>
+              <FieldLabel>Cabeceras (JSON)</FieldLabel>
+              <Textarea
+                defaultValue={node.config.headers ? JSON.stringify(node.config.headers, null, 2) : ''}
+                rows={4}
+                spellCheck={false}
+                className="font-mono text-xs"
+                placeholder='{ "Accept": "application/json" }'
+                onBlur={(e) => parseJsonField(e.target.value, (v) => patchConfig({ headers: v }), 'Cabeceras')}
+              />
+            </div>
+            <div>
+              <FieldLabel>Cuerpo (JSON o texto)</FieldLabel>
+              <Textarea
+                defaultValue={node.config.body != null ? JSON.stringify(node.config.body, null, 2) : ''}
+                rows={5}
+                spellCheck={false}
+                className="font-mono text-xs"
+                placeholder='{ "texto": "=nodes.n1.json.title" }'
+                onBlur={(e) => parseJsonField(e.target.value, (v) => patchConfig({ body: v }), 'Cuerpo')}
+              />
+              <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                Objetos/listas se envían como JSON; texto sin envolver va literal. Vacío = sin cuerpo.
+              </p>
+            </div>
+            <div>
+              <FieldLabel>Timeout (segundos)</FieldLabel>
+              <Input
+                type="number"
+                min={1}
+                max={60}
+                value={Number(node.config.timeout_s ?? 20)}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  if (Number.isFinite(value)) patchConfig({ timeout_s: value });
+                }}
+              />
             </div>
           </>
         )}

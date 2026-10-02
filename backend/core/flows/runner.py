@@ -15,9 +15,13 @@ import json
 import logging
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from backend.core.flows import connections
 from backend.core.flows.expr import resolve
 from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore, _utc_now
@@ -27,6 +31,8 @@ from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 logger = logging.getLogger(__name__)
 
 _MAX_STEP_OUTPUT_CHARS = 8000
+_MAX_HTTP_BODY_BYTES = 512 * 1024
+_HTTP_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"})
 
 
 def _utc_ms() -> float:
@@ -259,6 +265,8 @@ class FlowRunner:
             config = node.get("config") or {}
             output = resolve(config.get("output"), memory)
             return {"main": {"json": output}}
+        if kind == "http_request":
+            return {"main": self._run_http_request(node, memory)}
         raise ValueError(f"Tipo de nodo desconocido: {kind}")
 
     def _run_tool_call(self, node: JsonObject, memory: JsonObject) -> JsonObject:
@@ -273,6 +281,73 @@ class FlowRunner:
         resolved = resolve(args, memory) if isinstance(args, dict) else {}
         result = fn(dict(resolved))
         return {"json": result}
+
+    def _run_http_request(self, node: JsonObject, memory: JsonObject) -> JsonObject:
+        config = node.get("config") or {}
+        url = resolve(config.get("url"), memory)
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("http_request requiere config.url")
+        url = url.strip()
+        scheme = urllib.parse.urlparse(url).scheme.lower()
+        if scheme not in ("http", "https"):
+            raise ValueError(f"URL no permitida en http_request (solo http/https): {url[:80]}")
+
+        method = str(resolve(config.get("method"), memory) or "GET").upper()
+        if method not in _HTTP_METHODS:
+            raise ValueError(f"Método HTTP no soportado: {method}")
+
+        headers: dict[str, str] = {"User-Agent": "Antares/flujos", "Accept": "*/*"}
+        extra = resolve(config.get("headers"), memory)
+        if isinstance(extra, dict):
+            for key, value in extra.items():
+                headers[str(key)] = str(value)
+        elif extra not in (None, ""):
+            raise ValueError("headers de http_request debe ser un objeto JSON")
+
+        connection_ref = config.get("connection_ref")
+        if isinstance(connection_ref, str) and connection_ref.strip():
+            token = connections.fresh_access_token(connection_ref.strip())
+            headers.setdefault("Authorization", f"Bearer {token}")
+
+        body = resolve(config.get("body"), memory)
+        data = None
+        if body is not None and method not in ("GET", "HEAD"):
+            if isinstance(body, (dict, list)):
+                data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+                headers.setdefault("Content-Type", "application/json")
+            else:
+                data = str(body).encode("utf-8")
+
+        raw_timeout = config.get("timeout_s")
+        try:
+            timeout = float(raw_timeout) if raw_timeout is not None else 20.0
+        except (TypeError, ValueError):
+            timeout = 20.0
+        timeout = min(max(timeout, 1.0), 60.0)
+
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as res:
+                status = int(res.status)
+                raw_body = res.read(_MAX_HTTP_BODY_BYTES + 1)
+        except urllib.error.HTTPError as err:
+            status = int(err.code)
+            raw_body = err.read(_MAX_HTTP_BODY_BYTES + 1)
+        except urllib.error.URLError as err:
+            raise ValueError(f"http_request no pudo contactar con el host: {err.reason}") from err
+
+        text = raw_body[:_MAX_HTTP_BODY_BYTES].decode("utf-8", errors="replace")
+        out: JsonObject = {
+            "status": status,
+            "ok": 200 <= status < 300,
+            "truncated": len(raw_body) > _MAX_HTTP_BODY_BYTES,
+            "text": text,
+        }
+        try:
+            out["json"] = json.loads(text)
+        except ValueError:
+            out["json"] = text
+        return {"json": out}
 
     @staticmethod
     def _run_condition(node: JsonObject, memory: JsonObject) -> JsonObject:

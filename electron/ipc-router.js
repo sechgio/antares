@@ -42,6 +42,7 @@ function reloadIpcMethods() {
     './autoimg-ipc-methods',
     './ubicaciones-ipc-methods',
     './spotify-ipc-methods',
+    './connections-ipc-methods',
     '../shared/ipc-method-catalog',
     '../shared/ipc-method-catalog.json',
   ];
@@ -731,6 +732,10 @@ const _NATIVE_CALLS = {
   spotify: (method, params) => {
     const { handleSpotifyCall } = require('./spotify-handlers');
     return handleSpotifyCall(method, params);
+  },
+  connections: (method, params) => {
+    const { handleConnectionsCall } = require('./connections-handlers');
+    return handleConnectionsCall(method, params);
   },
 };
 

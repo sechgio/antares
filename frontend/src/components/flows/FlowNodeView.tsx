@@ -19,6 +19,10 @@ function nodeSubtitle(data: FlowNodeData): string {
   if (kind === 'transform') {
     return 'Transformación';
   }
+  if (kind === 'http_request') {
+    const url = typeof config.url === 'string' ? config.url : '';
+    return url ? `${String(config.method ?? 'GET')} ${url.slice(0, 40)}` : 'Sin URL';
+  }
   return '';
 }
 

@@ -17,8 +17,8 @@ from backend.utils.paths import resource_path
 
 logger = logging.getLogger(__name__)
 
-IMPLEMENTED_NODE_KINDS = frozenset({"trigger", "tool_call", "condition", "transform"})
-RESERVED_NODE_KINDS = frozenset({"loop", "http_request", "agent", "code"})
+IMPLEMENTED_NODE_KINDS = frozenset({"trigger", "tool_call", "condition", "transform", "http_request"})
+RESERVED_NODE_KINDS = frozenset({"loop", "agent", "code"})
 TRIGGER_KINDS = frozenset({"manual", "schedule", "app_event", "webhook"})
 
 MAX_FLOW_NODES = 200
@@ -144,6 +144,13 @@ def validate_graph(graph: JsonObject) -> None:
             method = node["config"].get("method")
             if not isinstance(method, str) or not method:
                 raise ValueError(f"El nodo {node_id} (tool_call) requiere config.method")
+        if node["kind"] == "http_request":
+            url = node["config"].get("url")
+            if not isinstance(url, str) or not url.strip():
+                raise ValueError(f"El nodo {node_id} (http_request) requiere config.url")
+            connection_ref = node["config"].get("connection_ref")
+            if connection_ref is not None and (not isinstance(connection_ref, str) or not connection_ref.strip()):
+                raise ValueError(f"connection_ref del nodo {node_id} debe ser un id de proveedor")
 
     if trigger_count == 0:
         raise ValueError("El flujo requiere exactamente un nodo trigger")

@@ -62,9 +62,9 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
   http_request: {
     kind: 'http_request',
     label: 'HTTP',
-    description: 'Próximamente',
+    description: 'Llamada HTTP; puede firmar con una Conexión OAuth',
     accent: '#fb7185',
-    implemented: false,
+    implemented: true,
     inputs: ['main'],
     outputs: [{ port: 'main', label: 'Respuesta' }],
   },

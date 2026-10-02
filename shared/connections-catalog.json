@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Antares Connections catalog",
+  "version": 1,
+  "description": "Catálogo de proveedores externos conectables por OAuth. Cada proveedor declara sus URLs de autorización/token, los scopes pedidos y cómo sondear el estado. Las credenciales de app (client_id/secret) las aporta el usuario y se guardan cifradas; los tokens igual. El backend usa este mismo catálogo para refrescar tokens al ejecutar nodos http_request con connection_ref.",
+  "providers": {
+    "github": {
+      "label": "GitHub",
+      "description": "Repos, issues y API REST de GitHub",
+      "docs": "https://github.com/settings/developers",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://github.com/login/oauth/authorize",
+        "token_url": "https://github.com/login/oauth/access_token",
+        "token_auth": "form",
+        "scopes": ["repo", "read:user", "workflow"],
+        "callback_port": 42831,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "status": {
+        "url": "https://api.github.com/user",
+        "account_field": "login",
+        "headers": { "X-GitHub-Api-Version": "2022-11-28" }
+      }
+    },
+    "slack": {
+      "label": "Slack",
+      "description": "Mensajes y API Web de Slack",
+      "docs": "https://api.slack.com/apps",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://slack.com/oauth/v2/authorize",
+        "token_url": "https://slack.com/api/oauth.v2.access",
+        "token_auth": "form",
+        "scopes": ["chat:write", "channels:read"],
+        "callback_port": 42832,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "status": {
+        "url": "https://slack.com/api/auth.test",
+        "account_field": "team",
+        "headers": {}
+      }
+    }
+  }
+}

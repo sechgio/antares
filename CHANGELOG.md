@@ -9,6 +9,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Added
 - **Flujos**: nueva herramienta de automatización con editor visual de grafos (arrastrar y soltar nodos), ejecución manual sobre los métodos de la app marcados como orquestables y vista de ejecuciones con el resultado de cada nodo. Los flujos admiten disparo programado (intervalo en minutos, mientras la app está abierta) y la vista de ejecuciones muestra el grafo coloreado por el estado de cada nodo, con filtros por flujo y estado.
+- **Conexiones externas en Flujos**: nueva sección Conexiones con catálogo extensible de proveedores (GitHub y Slack de entrada) y OAuth propio del usuario (PKCE o client_secret según el proveedor); los tokens se cifran con DPAPI/safeStorage y se espejan a un vault sellado en el backend. El nuevo nodo «HTTP» ejecuta llamadas externas y puede firmarlas con `Authorization: Bearer` de una conexión, refrescando el token si caducó.
 - **Plugins de la barra de título**: Spotify (con OAuth), Audius, Jamendo y Archive se pueden activar y ordenar desde Ajustes.
 - **Notas adhesivas**: se pueden crear y organizar notas locales desde la barra de título.
 

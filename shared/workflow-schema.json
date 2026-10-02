@@ -73,7 +73,18 @@
       }
     },
     "loop": { "description": "Reservado: iteración sobre colecciones.", "implemented": false },
-    "http_request": { "description": "Reservado: llamada HTTP externa.", "implemented": false },
+    "http_request": {
+      "description": "Llamada HTTP externa; connection_ref firma con el token OAuth de la conexión.",
+      "implemented": true,
+      "config": {
+        "url": { "type": "string", "required": true },
+        "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"], "default": "GET" },
+        "headers": { "type": "object", "description": "Cabeceras extra (JSON)" },
+        "body": { "description": "Cuerpo: objeto/lista se envía JSON, texto plano va literal" },
+        "connection_ref": { "type": "string", "description": "Id de proveedor de shared/connections-catalog.json; inyecta Authorization: Bearer" },
+        "timeout_s": { "type": "number", "minimum": 1, "maximum": 60, "default": 20 }
+      }
+    },
     "agent": { "description": "Reservado: llamada a un modelo IA.", "implemented": false },
     "code": { "description": "Reservado: código del usuario (deshabilitado por defecto).", "implemented": false }
   },

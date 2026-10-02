@@ -62,6 +62,7 @@ _datas = [
     (str(project_dir / 'shared' / 'default-theme.json'), 'shared'),
     (str(project_dir / 'shared' / 'ipc-method-catalog.json'), 'shared'),
     (str(project_dir / 'shared' / 'workflow-schema.json'), 'shared'),
+    (str(project_dir / 'shared' / 'connections-catalog.json'), 'shared'),
 ]
 _datas += collect_data_files('weasyprint')
 

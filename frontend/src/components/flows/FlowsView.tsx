@@ -3,6 +3,7 @@ import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import { SegmentedControl } from '../ui/SegmentedControl';
+import ConnectionsView from './ConnectionsView';
 import FlowEditor from './FlowEditor';
 import FlowList from './FlowList';
 import RunsView from './RunsView';
@@ -91,7 +92,7 @@ export default function FlowsView() {
             />
           ))}
         {section === 'runs' && <RunsView flowId={runsFlowId} />}
-        {section === 'connections' && <ComingSoon title="Conexiones" />}
+        {section === 'connections' && <ConnectionsView />}
         {section === 'providers' && <ComingSoon title="Proveedores IA" />}
       </div>
     </div>
