@@ -66,6 +66,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
 
@@ -77,6 +78,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
         if (!alive) return;
         setFlow(res.flow);
         setBaseGraph(res.flow.graph);
+        setNameDraft(res.flow.name);
         const { nodes: n, edges: e } = graphToReactFlow(res.flow.graph);
         setNodes(n.map((node) => ({ ...node, deletable: node.data.flowNode.kind !== 'trigger' })));
         setEdges(e);
@@ -223,6 +225,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
         });
         setFlow(res.flow);
         setBaseGraph(res.flow.graph);
+        setNameDraft(res.flow.name);
       } catch (err) {
         addToast({ message: errorMessage(err, 'No se pudo renombrar'), type: 'error' });
       }
@@ -255,9 +258,12 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
           <ArrowLeft size={16} />
         </Button>
         <Input
-          value={flow?.name ?? ''}
-          onChange={(e) => setFlow((f) => (f ? { ...f, name: e.target.value } : f))}
-          onBlur={(e) => void rename(e.target.value)}
+          value={nameDraft}
+          onChange={(e) => setNameDraft(e.target.value)}
+          onBlur={(e) => {
+            if (e.target.value.trim()) void rename(e.target.value);
+            else setNameDraft(flow?.name ?? '');
+          }}
           className="w-56 text-sm font-semibold"
           placeholder="Nombre del flujo"
         />

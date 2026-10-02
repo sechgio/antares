@@ -253,3 +253,39 @@ def test_runner_rejects_non_orchestratable(store):
     assert done["status"] == "error"
     steps = {s["node_id"]: s for s in done["steps"]}
     assert "no orquestable" in steps["n"]["error"]
+
+
+def test_runner_condition_exists_missing_field_routes_false(store):
+    def fake_handler(method):
+        return lambda params: {}
+
+    flow = store.create(
+        "Exists",
+        graph={
+            "nodes": [
+                {"id": "trigger", "kind": "trigger", "config": {}},
+                {
+                    "id": "cond",
+                    "kind": "condition",
+                    "config": {"field": "=run.trigger.modo", "op": "exists"},
+                },
+                {"id": "yes", "kind": "transform", "config": {"output": {"rama": "si"}}},
+                {"id": "no", "kind": "transform", "config": {"output": {"rama": "no"}}},
+            ],
+            "edges": [
+                {"from_node": "trigger", "to_node": "cond"},
+                {"from_node": "cond", "to_node": "yes", "from_port": "true"},
+                {"from_node": "cond", "to_node": "no", "from_port": "false"},
+            ],
+        },
+    )
+    runner = FlowRunner(store, fake_handler)
+    run = runner.start(flow["id"])
+    done = _wait(run["id"], store)
+
+    assert done["status"] == "success"
+    steps = {s["node_id"]: s for s in done["steps"]}
+    assert steps["cond"]["status"] == "success"
+    assert steps["cond"]["output"] == {"result": False, "field": None}
+    assert steps["yes"]["status"] == "skipped"
+    assert steps["no"]["status"] == "success"

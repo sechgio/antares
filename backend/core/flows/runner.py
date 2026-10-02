@@ -280,12 +280,11 @@ class FlowRunner:
         field = config.get("field")
         op = config.get("op") or "eq"
         expected = resolve(config.get("value"), memory)
-        actual = resolve(field, memory) if field is not None else memory.get("item")
-
         exists = True
         try:
-            resolve(field, memory) if field is not None else None
+            actual = resolve(field, memory) if field is not None else memory.get("item")
         except ValueError:
+            actual = None
             exists = False
 
         if op == "exists":
