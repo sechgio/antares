@@ -97,7 +97,7 @@ export const TRIGGER_KIND_LABELS: Record<TriggerKind, string> = {
   webhook: 'Webhook',
 };
 
-export const ENABLED_TRIGGER_KINDS: TriggerKind[] = ['manual'];
+export const ENABLED_TRIGGER_KINDS: TriggerKind[] = ['manual', 'schedule'];
 
 export const CONDITION_OPS: { value: string; label: string }[] = [
   { value: 'eq', label: 'es igual a' },

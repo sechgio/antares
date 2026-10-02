@@ -3,6 +3,7 @@ import type { FlowEdge, FlowNode, WorkflowGraph } from './types';
 
 export interface FlowNodeData extends Record<string, unknown> {
   flowNode: FlowNode;
+  stepStatus?: 'running' | 'success' | 'error' | 'skipped' | 'cancelled';
 }
 
 export function graphToReactFlow(graph: WorkflowGraph): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {

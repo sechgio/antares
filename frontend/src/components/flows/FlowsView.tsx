@@ -32,6 +32,7 @@ export default function FlowsView() {
   const { addToast } = useToast();
   const [section, setSection] = useState<Section>('flows');
   const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
+  const [runsFlowId, setRunsFlowId] = useState<string | undefined>(undefined);
   const [listRefresh, setListRefresh] = useState(0);
 
   const openEditor = useCallback((flowId: string) => setEditingFlowId(flowId), []);
@@ -45,6 +46,7 @@ export default function FlowsView() {
       try {
         await flowsApi.flowsRun(flowId);
         addToast({ message: 'Ejecución iniciada', type: 'success' });
+        setRunsFlowId(undefined);
         setSection('runs');
       } catch (err) {
         addToast({ message: errorMessage(err, 'No se pudo ejecutar el flujo'), type: 'error' });
@@ -78,9 +80,17 @@ export default function FlowsView() {
               onRunStarted={() => setSection('runs')}
             />
           ) : (
-            <FlowList onOpen={openEditor} onRun={(id) => void runFlow(id)} refreshKey={listRefresh} />
+            <FlowList
+              onOpen={openEditor}
+              onRun={(id) => void runFlow(id)}
+              onShowRuns={(id) => {
+                setRunsFlowId(id);
+                setSection('runs');
+              }}
+              refreshKey={listRefresh}
+            />
           ))}
-        {section === 'runs' && <RunsView />}
+        {section === 'runs' && <RunsView flowId={runsFlowId} />}
         {section === 'connections' && <ComingSoon title="Conexiones" />}
         {section === 'providers' && <ComingSoon title="Proveedores IA" />}
       </div>

@@ -418,6 +418,15 @@ def main() -> None:
         warm_thread = threading.Thread(target=_post_ready_warm, name="post-ready-warm", daemon=True)
         warm_thread.start()
 
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            from backend.core.flows import get_flow_store
+            from backend.core.flows.scheduler import get_flow_scheduler
+
+            get_flow_scheduler(get_flow_store(), HANDLERS.get).start()
+        except Exception:
+            logger.exception("No se pudo arrancar el planificador de flujos")
+
     try:
         while True:
             if _shutdown_requested:

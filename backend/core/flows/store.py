@@ -53,6 +53,7 @@ def _normalize_flow(raw: JsonObject) -> JsonObject | None:
         "updated_at": str(raw.get("updated_at") or ""),
         "last_run_status": raw.get("last_run_status") if raw.get("last_run_status") in _RUN_STATUSES else None,
         "last_run_at": str(raw.get("last_run_at") or "") or None,
+        "last_scheduled_at": str(raw.get("last_scheduled_at") or "") or None,
     }
 
 
@@ -65,11 +66,13 @@ def _normalize_run(raw: JsonObject) -> JsonObject | None:
     steps = raw.get("steps")
     if not isinstance(steps, list):
         steps = []
+    graph = raw.get("graph")
     return {
         "id": run_id,
         "flow_id": flow_id,
         "flow_name": str(raw.get("flow_name") or ""),
         "status": status,
+        "graph": dict(graph) if isinstance(graph, dict) else {},
         "trigger_payload": raw.get("trigger_payload") if isinstance(raw.get("trigger_payload"), dict) else {},
         "steps": [s for s in steps if isinstance(s, dict)],
         "error": str(raw["error"]) if isinstance(raw.get("error"), str) else None,
@@ -230,6 +233,16 @@ class FlowStore:
             description=source.get("description") or "",
         )
 
+    def touch_scheduled_run(self, flow_id: str, run_at: str) -> None:
+        """Marca la última vez que el planificador disparó el flujo."""
+        with self._lock:
+            flows = self._read_flows()
+            flow = flows.get(flow_id)
+            if flow is None:
+                return
+            flow["last_scheduled_at"] = run_at
+            self._write_flows(flows)
+
     def _touch_last_run(self, flow_id: str, status: str, run_at: str) -> None:
         with self._lock:
             flows = self._read_flows()
@@ -249,6 +262,7 @@ class FlowStore:
             "flow_id": flow_id,
             "flow_name": flow["name"],
             "status": "queued",
+            "graph": deepcopy(flow.get("graph") or {}),
             "trigger_payload": dict(trigger_payload or {}),
             "steps": [],
             "error": None,

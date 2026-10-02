@@ -22,15 +22,28 @@ function nodeSubtitle(data: FlowNodeData): string {
   return '';
 }
 
+const STEP_STATUS_COLORS: Record<string, string> = {
+  running: '#38bdf8',
+  success: '#34d399',
+  error: 'var(--accent-red, #ef4444)',
+  skipped: 'var(--text-secondary)',
+  cancelled: 'var(--text-secondary)',
+};
+
 function FlowNodeView({ data, selected }: NodeProps<FlowNodeType>) {
   const def = NODE_KIND_DEFS[data.flowNode.kind];
   const subtitle = nodeSubtitle(data);
+  const stepColor = data.stepStatus ? STEP_STATUS_COLORS[data.stepStatus] : undefined;
   return (
     <div
       className={`rounded-lg border bg-[var(--bg-elevated)] px-3 py-2 shadow-md transition-shadow ${
         selected ? 'border-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]' : 'border-[var(--border-medium)]'
       }`}
-      style={{ minWidth: 168, maxWidth: 220 }}
+      style={{
+        minWidth: 168,
+        maxWidth: 220,
+        ...(stepColor ? { borderColor: stepColor, boxShadow: `0 0 0 1px ${stepColor}` } : {}),
+      }}
     >
       {def.inputs.length > 0 && (
         <Handle

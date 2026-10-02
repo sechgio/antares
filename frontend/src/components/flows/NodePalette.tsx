@@ -3,21 +3,30 @@ import type { FlowNodeKind } from './types';
 
 export const NODE_DRAG_MIME = 'application/x-antares-flow-node';
 
-export default function NodePalette() {
+interface Props {
+  onAdd: (kind: FlowNodeKind) => void;
+}
+
+export default function NodePalette({ onAdd }: Props) {
   return (
     <aside className="flex w-52 shrink-0 flex-col gap-2 overflow-y-auto border-r border-[var(--border-medium)] bg-[var(--bg-base)] p-3">
       <h3 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
         Nodos
       </h3>
       <p className="text-[11px] leading-snug text-[var(--text-secondary)]">
-        Arrastra un nodo al lienzo para añadirlo.
+        Arrastra un nodo al lienzo o haz clic para añadirlo.
       </p>
       {PALETTE_KINDS.map((kind: FlowNodeKind) => {
         const def = NODE_KIND_DEFS[kind];
         return (
-          <div
+          <button
             key={kind}
+            type="button"
             draggable={def.implemented}
+            disabled={!def.implemented}
+            onClick={() => {
+              if (def.implemented) onAdd(kind);
+            }}
             onDragStart={(e) => {
               e.dataTransfer.setData(NODE_DRAG_MIME, kind);
               e.dataTransfer.effectAllowed = 'move';
@@ -38,7 +47,7 @@ export default function NodePalette() {
             <div className="mt-0.5 pl-4 text-[10px] text-[var(--text-secondary)]">
               {def.implemented ? def.description : 'Próximamente'}
             </div>
-          </div>
+          </button>
         );
       })}
     </aside>

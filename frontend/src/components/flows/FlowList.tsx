@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Copy, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Copy, History, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
@@ -37,10 +37,11 @@ export function FlowStatusBadge({ status }: { status: FlowRunStatus }) {
 interface Props {
   onOpen: (flowId: string) => void;
   onRun: (flowId: string) => void;
+  onShowRuns: (flowId: string) => void;
   refreshKey: number;
 }
 
-export default function FlowList({ onOpen, onRun, refreshKey }: Props) {
+export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Props) {
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const [flows, setFlows] = useState<FlowMeta[]>([]);
@@ -167,6 +168,15 @@ export default function FlowList({ onOpen, onRun, refreshKey }: Props) {
                       title="Ejecutar ahora"
                     >
                       <Play size={14} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onShowRuns(flow.id)}
+                      aria-label="Ver ejecuciones"
+                      title="Ver ejecuciones"
+                    >
+                      <History size={14} />
                     </Button>
                     <Button
                       variant="ghost"

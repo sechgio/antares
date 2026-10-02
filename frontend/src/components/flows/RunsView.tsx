@@ -4,8 +4,10 @@ import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
+import ThemedSelect from '../ui/ThemedSelect';
 import { FlowStatusBadge } from './FlowList';
-import type { FlowRun } from './types';
+import FlowRunGraph from './FlowRunGraph';
+import type { FlowMeta, FlowRun, FlowRunStatus } from './types';
 
 const POLL_MS = 1500;
 
@@ -31,18 +33,47 @@ function StepOutput({ value }: { value: unknown }) {
   );
 }
 
+const STATUS_OPTIONS: { value: '' | FlowRunStatus; label: string }[] = [
+  { value: '', label: 'Todos los estados' },
+  { value: 'running', label: 'Ejecutando' },
+  { value: 'queued', label: 'En cola' },
+  { value: 'success', label: 'Éxito' },
+  { value: 'error', label: 'Error' },
+  { value: 'cancelled', label: 'Cancelado' },
+];
+
 export default function RunsView({ flowId }: { flowId?: string }) {
   const { addToast } = useToast();
   const [runs, setRuns] = useState<FlowRun[]>([]);
+  const [flows, setFlows] = useState<FlowMeta[]>([]);
+  const [filterFlow, setFilterFlow] = useState<string>(flowId ?? '');
+  const [filterStatus, setFilterStatus] = useState<'' | FlowRunStatus>('');
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    flowsApi
+      .flowsList()
+      .then((res) => {
+        if (alive) setFlows(res.flows);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const load = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const res = await flowsApi.flowsRunsList({ ...(flowId ? { flow_id: flowId } : {}), limit: 50 });
+        const effectiveFlow = flowId ?? (filterFlow || undefined);
+        const res = await flowsApi.flowsRunsList({
+          ...(effectiveFlow ? { flow_id: effectiveFlow } : {}),
+          limit: 50,
+        });
         setRuns(res.runs);
       } catch (err) {
         if (!silent) {
@@ -52,7 +83,7 @@ export default function RunsView({ flowId }: { flowId?: string }) {
         if (!silent) setLoading(false);
       }
     },
-    [flowId, addToast],
+    [flowId, filterFlow, addToast],
   );
 
   useEffect(() => {
@@ -78,6 +109,10 @@ export default function RunsView({ flowId }: { flowId?: string }) {
     };
   }, [runs, load]);
 
+  const visibleRuns = filterStatus
+    ? runs.filter((r) => r.status === filterStatus)
+    : runs;
+
   const cancel = async (runId: string) => {
     try {
       await flowsApi.flowsRunCancel(runId);
@@ -96,21 +131,44 @@ export default function RunsView({ flowId }: { flowId?: string }) {
             Historial de runs con el resultado de cada nodo.
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void load()} aria-label="Recargar">
-          <RefreshCw size={15} />
-        </Button>
+        <div className="flex items-center gap-2">
+          {!flowId && (
+            <div className="w-44">
+              <ThemedSelect
+                value={filterFlow}
+                onChange={setFilterFlow}
+                options={[
+                  { value: '', label: 'Todos los flujos' },
+                  ...flows.map((f) => ({ value: f.id, label: f.name })),
+                ]}
+              />
+            </div>
+          )}
+          <div className="w-40">
+            <ThemedSelect
+              value={filterStatus}
+              onChange={(v) => setFilterStatus(v as '' | FlowRunStatus)}
+              options={STATUS_OPTIONS}
+            />
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => void load()} aria-label="Recargar">
+            <RefreshCw size={15} />
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
         {loading ? (
           <p className="text-sm text-[var(--text-secondary)]">Cargando…</p>
-        ) : runs.length === 0 ? (
+        ) : visibleRuns.length === 0 ? (
           <p className="text-sm text-[var(--text-secondary)]">
-            Sin ejecuciones todavía. Ejecuta un flujo desde el editor o desde la lista.
+            {runs.length === 0
+              ? 'Sin ejecuciones todavía. Ejecuta un flujo desde el editor o desde la lista.'
+              : 'Ninguna ejecución coincide con los filtros.'}
           </p>
         ) : (
           <div className="space-y-2">
-            {runs.map((run) => {
+            {visibleRuns.map((run) => {
               const open = expanded === run.id;
               return (
                 <div
@@ -156,6 +214,17 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                         <p className="mb-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] p-2 text-xs text-[var(--accent-red,#ef4444)]">
                           {run.error}
                         </p>
+                      )}
+                      {run.graph && run.graph.nodes.length > 0 && (
+                        <div className="mb-3">
+                          <FlowRunGraph graph={run.graph} steps={run.steps} />
+                        </div>
+                      )}
+                      {run.trigger_payload && Object.keys(run.trigger_payload).length > 0 && (
+                        <div className="mb-2 text-[11px] text-[var(--text-secondary)]">
+                          <span className="font-medium">Origen:</span>{' '}
+                          <code>{JSON.stringify(run.trigger_payload)}</code>
+                        </div>
                       )}
                       {run.steps.length === 0 ? (
                         <p className="text-xs text-[var(--text-secondary)]">Sin pasos registrados.</p>

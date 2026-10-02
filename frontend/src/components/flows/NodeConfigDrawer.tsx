@@ -118,6 +118,25 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
           </div>
         )}
 
+        {node.kind === 'trigger' && node.config.trigger_kind === 'schedule' && (
+          <div>
+            <FieldLabel>Intervalo (minutos)</FieldLabel>
+            <Input
+              type="number"
+              min={1}
+              max={10080}
+              value={Number(node.config.interval_minutes ?? 60)}
+              onChange={(e) => {
+                const value = Math.round(Number(e.target.value));
+                if (Number.isFinite(value)) patchConfig({ interval_minutes: value });
+              }}
+            />
+            <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+              Se ejecuta cada N minutos mientras la app esté abierta y el flujo activo.
+            </p>
+          </div>
+        )}
+
         {node.kind === 'tool_call' && (
           <>
             <div>

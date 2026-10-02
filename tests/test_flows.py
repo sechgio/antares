@@ -7,6 +7,7 @@ import time
 import pytest
 
 from backend.core.flows.runner import FlowRunner
+from backend.core.flows.scheduler import FlowScheduler, _schedule_interval_minutes
 from backend.core.flows.schema import normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore
 
@@ -289,3 +290,116 @@ def test_runner_condition_exists_missing_field_routes_false(store):
     assert steps["cond"]["output"] == {"result": False, "field": None}
     assert steps["yes"]["status"] == "skipped"
     assert steps["no"]["status"] == "success"
+
+
+def test_validate_rejects_bad_schedule_interval():
+    with pytest.raises(ValueError, match="interval_minutes"):
+        validate_graph(
+            normalize_graph(
+                {
+                    "nodes": [
+                        {
+                            "id": "trigger",
+                            "kind": "trigger",
+                            "config": {"trigger_kind": "schedule", "interval_minutes": 0},
+                        }
+                    ]
+                }
+            )
+        )
+
+
+def test_validate_accepts_schedule_trigger():
+    graph = normalize_graph(
+        {
+            "nodes": [
+                {
+                    "id": "trigger",
+                    "kind": "trigger",
+                    "config": {"trigger_kind": "schedule", "interval_minutes": 15},
+                }
+            ]
+        }
+    )
+    validate_graph(graph)
+
+
+def test_run_snapshots_graph(store):
+    flow = store.create(
+        "Snapshot",
+        graph={
+            "nodes": [
+                {"id": "trigger", "kind": "trigger", "config": {}},
+                {"id": "t", "kind": "transform", "config": {"output": {"a": 1}}},
+            ],
+            "edges": [{"from_node": "trigger", "to_node": "t"}],
+        },
+    )
+    runner = FlowRunner(store, lambda m: lambda p: {})
+    run = runner.start(flow["id"])
+    done = _wait(run["id"], store)
+    assert done["graph"]["nodes"][1]["id"] == "t"
+    store.update(flow["id"], name="Otro nombre")
+    assert store.get_run(run["id"])["graph"]["nodes"][1]["id"] == "t"
+
+
+def test_scheduler_fires_due_scheduled_flow(store):
+    calls = []
+
+    def fake_handler(method):
+        def invoke(params):
+            calls.append((method, params))
+            return {"ok": True}
+
+        return invoke
+
+    flow = store.create(
+        "Cada minuto",
+        graph={
+            "nodes": [
+                {
+                    "id": "trigger",
+                    "kind": "trigger",
+                    "config": {"trigger_kind": "schedule", "interval_minutes": 1},
+                },
+                {"id": "n", "kind": "tool_call", "config": {"method": "formats"}},
+            ],
+            "edges": [{"from_node": "trigger", "to_node": "n"}],
+        },
+    )
+    runner = FlowRunner(store, fake_handler)
+    scheduler = FlowScheduler(store, runner)
+
+    assert scheduler.tick() == 1
+    assert store.get(flow["id"])["last_scheduled_at"] is not None
+    # Un flujo deshabilitado no se dispara
+    store.update(flow["id"], enabled=False)
+    assert scheduler.tick() == 0
+    # Nada vuelve a dispararse antes del intervalo
+    store.update(flow["id"], enabled=True)
+    assert scheduler.tick() == 0
+
+    runs = store.list_runs(flow["id"])
+    assert len(runs) == 1
+    assert runs[0]["trigger_payload"]["source"] == "schedule"
+    done = _wait(runs[0]["id"], store)
+    assert done["status"] == "success"
+    assert calls == [("formats", {})]
+
+
+def test_schedule_interval_minutes(store):
+    flow = store.create(
+        "Programado",
+        graph={
+            "nodes": [
+                {
+                    "id": "trigger",
+                    "kind": "trigger",
+                    "config": {"trigger_kind": "schedule", "interval_minutes": 30},
+                }
+            ]
+        },
+    )
+    assert _schedule_interval_minutes(flow) == 30
+    manual = store.create("Manual")
+    assert _schedule_interval_minutes(manual) is None

@@ -45,6 +45,7 @@ export interface Flow {
   updated_at: string;
   last_run_status: FlowRunStatus | null;
   last_run_at: string | null;
+  last_scheduled_at?: string | null;
 }
 
 export type FlowMeta = Omit<Flow, 'graph'>;
@@ -68,6 +69,7 @@ export interface FlowRun {
   flow_id: string;
   flow_name: string;
   status: FlowRunStatus;
+  graph?: WorkflowGraph;
   trigger_payload: Record<string, unknown>;
   steps: FlowRunStep[];
   error: string | null;

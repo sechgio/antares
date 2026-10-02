@@ -15,13 +15,14 @@ import {
   type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Play, Save } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import Toggle from '../ui/Toggle';
 import FlowNodeView from './FlowNodeView';
 import NodeConfigDrawer from './NodeConfigDrawer';
 import NodePalette, { NODE_DRAG_MIME } from './NodePalette';
@@ -69,6 +70,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
   const [nameDraft, setNameDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -136,12 +138,8 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
     [isValidConnection],
   );
 
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      const kind = e.dataTransfer.getData(NODE_DRAG_MIME) as FlowNodeKind | '';
-      if (!kind || !NODE_KIND_DEFS[kind]?.implemented) return;
-      const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+  const addNode = useCallback(
+    (kind: FlowNodeKind, position: { x: number; y: number }) => {
       const id = makeNodeId(kind, nodes.map((n) => n.id));
       const flowNode: FlowNode = {
         id,
@@ -157,7 +155,28 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
       setDirty(true);
       setSelectedId(id);
     },
-    [nodes, screenToFlowPosition],
+    [nodes],
+  );
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const kind = e.dataTransfer.getData(NODE_DRAG_MIME) as FlowNodeKind | '';
+      if (!kind || !NODE_KIND_DEFS[kind]?.implemented) return;
+      addNode(kind, screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+    },
+    [addNode, screenToFlowPosition],
+  );
+
+  const addNodeAtCenter = useCallback(
+    (kind: FlowNodeKind) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      const center = rect
+        ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+        : { x: 0, y: 0 };
+      addNode(kind, screenToFlowPosition(center));
+    },
+    [addNode, screenToFlowPosition],
   );
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -233,10 +252,28 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
     [flow, addToast],
   );
 
+  const toggleEnabled = useCallback(
+    async (enabled: boolean) => {
+      if (!flow) return;
+      try {
+        const res = await flowsApi.flowsUpdate({
+          id: flow.id,
+          enabled,
+          expected_updated_at: flow.updated_at,
+        });
+        setFlow(res.flow);
+        setBaseGraph(res.flow.graph);
+      } catch (err) {
+        addToast({ message: errorMessage(err, 'No se pudo actualizar el estado'), type: 'error' });
+      }
+    },
+    [flow, addToast],
+  );
+
   const run = useCallback(async () => {
     if (!flow) return;
     if (dirty) {
-      addToast({ message: 'Guarda el flujo antes de ejecutarlo', type: 'info' });
+      addToast({ message: 'Guarda el flujo antes de ejecutarlo (Ctrl+S)', type: 'info' });
       return;
     }
     setRunning(true);
@@ -250,6 +287,18 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
       setRunning(false);
     }
   }, [flow, dirty, addToast, onRunStarted]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        void save();
+      }
+      if (e.key === 'Escape') setSelectedId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [save]);
 
   return (
     <div className="flex h-full flex-col">
@@ -268,6 +317,20 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
           placeholder="Nombre del flujo"
         />
         <div className="flex-1" />
+        {flow && (
+          <label
+            className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]"
+            title="Cuando está activo, un disparador Programado puede ejecutarlo solo"
+          >
+            <Toggle
+              checked={flow.enabled}
+              onChange={toggleEnabled}
+              id="flow-enabled"
+              aria-label="Flujo activo"
+            />
+            Activo
+          </label>
+        )}
         {dirty && (
           <span className="text-[11px] text-[var(--text-secondary)]">Cambios sin guardar</span>
         )}
@@ -287,8 +350,8 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <NodePalette />
-        <div className="relative flex-1" onDrop={onDrop} onDragOver={onDragOver}>
+        <NodePalette onAdd={addNodeAtCenter} />
+        <div ref={canvasRef} className="relative flex-1" onDrop={onDrop} onDragOver={onDragOver}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
