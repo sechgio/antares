@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Antares WorkflowGraph",
+  "version": 1,
+  "type": "object",
+  "required": ["nodes", "edges"],
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "config"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+          "kind": {
+            "type": "string",
+            "enum": ["trigger", "tool_call", "condition", "transform", "loop", "http_request", "agent", "code"]
+          },
+          "name": { "type": "string" },
+          "config": { "type": "object" },
+          "position": {
+            "type": "object",
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from_node", "to_node"],
+        "properties": {
+          "from_node": { "type": "string" },
+          "to_node": { "type": "string" },
+          "from_port": { "type": "string", "default": "main" },
+          "to_port": { "type": "string", "default": "main" }
+        }
+      }
+    }
+  },
+  "nodeKinds": {
+    "trigger": {
+      "description": "Punto de entrada del flujo. Exactamente uno por grafo.",
+      "config": {
+        "trigger_kind": { "enum": ["manual", "schedule", "app_event", "webhook"], "default": "manual" },
+        "schedule": { "description": "Expresión cron (solo trigger_kind=schedule)" }
+      }
+    },
+    "tool_call": {
+      "description": "Invoca un método IPC marcado como orquestable en shared/ipc-method-catalog.json.",
+      "config": {
+        "method": { "type": "string", "required": true },
+        "args": { "type": "object" },
+        "connection_ref": { "type": "string", "description": "Reservado para conexiones externas" }
+      }
+    },
+    "condition": {
+      "description": "Ramifica hacia los puertos 'true' o 'false' según una expresión.",
+      "config": {
+        "field": { "type": "string", "description": "Expresión =... a evaluar" },
+        "op": { "enum": ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"], "default": "eq" },
+        "value": { "description": "Valor de comparación" }
+      }
+    },
+    "transform": {
+      "description": "Construye un objeto nuevo; cada valor puede ser literal o expresión =...",
+      "config": {
+        "output": { "type": "object", "required": true }
+      }
+    },
+    "loop": { "description": "Reservado: iteración sobre colecciones.", "implemented": false },
+    "http_request": { "description": "Reservado: llamada HTTP externa.", "implemented": false },
+    "agent": { "description": "Reservado: llamada a un modelo IA.", "implemented": false },
+    "code": { "description": "Reservado: código del usuario (deshabilitado por defecto).", "implemented": false }
+  },
+  "expressions": {
+    "description": "Una cadena que empieza por '=' se evalúa contra la memoria del run.",
+    "bindings": {
+      "item": "salida {json} del predecesor directo",
+      "items": "lista de salidas de todos los predecesores",
+      "run": "metadatos del run (run.flow_id, run.trigger)",
+      "nodes.<id>": "salida {json} de un nodo ya ejecutado"
+    },
+    "examples": ["=item.json.id", "=nodes.n1.json.rows[0].nombre", "=run.trigger.origen"]
+  }
+}

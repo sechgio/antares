@@ -8,6 +8,7 @@ import { catalogApi } from './api/catalogApi';
 import { conversionApi } from './api/conversionApi';
 import { _invoke } from './api/core';
 import { evidenciaVolanteoApi } from './api/evidenciaVolanteoApi';
+import { flowsApi } from './api/flowsApi';
 import { formatosApi } from './api/formatosApi';
 import { historyApi } from './api/historyApi';
 import { panelAvisoCorteApi } from './api/panelAvisoCorteApi';
@@ -78,6 +79,7 @@ export const api = {
   ...catalogApi,
   ...historyApi,
   ...formatosApi,
+  ...flowsApi,
   ...canvasApi,
   ...toolsApi,
   ...reportsApi,

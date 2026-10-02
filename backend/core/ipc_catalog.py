@@ -51,6 +51,12 @@ IDEMPOTENT_METHODS: frozenset[str] = frozenset(
 RAW_OUTPUT_PATH_METHODS: frozenset[str] = frozenset(
     name for name, entry in _METHODS.items() if entry.get("rawOutputPath") is True
 )
+ORCHESTRATABLE_METHODS: frozenset[str] = frozenset(
+    name
+    for name, entry in _METHODS.items()
+    if entry.get("orchestratable") is True
+    and str(entry.get("handler", "")).startswith("backend:")
+)
 
 _TIMEOUTS: dict[str, Any] = _CATALOG.get("timeouts", {})  # allowlist: dict[str, Any]
 _DEFAULT_TIMEOUT_MS = 30_000

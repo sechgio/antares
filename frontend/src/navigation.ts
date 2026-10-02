@@ -11,6 +11,7 @@ export const TAB_DEFINITIONS = [
   { id: 'imageOptimizer', label: 'Optimizador', fullBleed: true },
   { id: 'previewPanel', label: 'Generador Reportes', fullBleed: true },
   { id: 'canvas', label: 'Canvas', fullBleed: true },
+  { id: 'flows', label: 'Flujos', fullBleed: true },
   { id: 'panelAvisoCorte', label: 'Aviso de Corte', fullBleed: true },
   { id: 'ubicaciones', label: 'Ubicaciones', fullBleed: true },
   { id: 'evidenciaVolanteo', label: 'Evidencia Volanteo', fullBleed: true },
