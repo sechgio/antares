@@ -144,6 +144,14 @@ class AgentStore:
             messages = self._read_messages(session_id)
             messages.append({**message, "ts": _now_ms()})
             self._write_messages(session_id, messages)
+            session = self._sessions.get(session_id)
+            if (
+                message.get("role") == "user"
+                and session is not None
+                and session.get("title") == "Conversación"
+                and message.get("content")
+            ):
+                session["title"] = str(message["content"]).strip()[:60] or "Conversación"
             self.touch_session(session_id)
 
     def update_tool_call(self, session_id: str, call_id: str, status: str, result: str) -> None:

@@ -59,7 +59,7 @@ export default function FlowsView() {
             if (v !== 'flows') setEditingFlowId(null);
           }}
           aria-label="Secciones de Flujos"
-          className="flex w-[420px] gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5"
+          className="flex w-[560px] gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5"
         />
       </header>
 

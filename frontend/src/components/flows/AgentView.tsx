@@ -111,10 +111,13 @@ export default function AgentView() {
   const [draft, setDraft] = useState('');
   const [deciding, setDeciding] = useState(false);
   const timerRef = useRef<number | null>(null);
+  const inFlightRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const loadMessages = useCallback(
     async (id: string, silent = true) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
       try {
         const res = await agentApi.agentMessagesList(id);
         setMessages(res.messages);
@@ -124,6 +127,8 @@ export default function AgentView() {
         if (!silent) {
           addToast({ message: errorMessage(err, 'No se pudieron cargar los mensajes'), type: 'error' });
         }
+      } finally {
+        inFlightRef.current = false;
       }
     },
     [addToast],
@@ -220,6 +225,7 @@ export default function AgentView() {
     setRunning(true);
     try {
       await agentApi.agentMessageSend(sessionId, content);
+      void refreshSessions();
       await loadMessages(sessionId);
     } catch (err) {
       setRunning(false);
@@ -307,12 +313,12 @@ export default function AgentView() {
                 </span>
               </button>
               <button
-                className="invisible shrink-0 text-[var(--text-secondary)] hover:text-[var(--accent-red,#ef4444)] group-hover:visible"
+                className="invisible shrink-0 rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red,#ef4444)] group-hover:visible"
                 onClick={() => void removeSession(s.id)}
                 aria-label="Eliminar conversación"
                 title="Eliminar"
               >
-                <Trash2 size={12} />
+                <Trash2 size={13} />
               </button>
             </div>
           ))}
@@ -330,9 +336,13 @@ export default function AgentView() {
                 </p>
               </div>
             ) : messages.length === 0 ? (
-              <p className="text-center text-sm text-[var(--text-secondary)]">
-                Escribe tu primer mensaje — el agente puede consultar el estado de la app.
-              </p>
+              <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+                <Bot size={24} className="text-[var(--text-secondary)]" />
+                <p className="max-w-sm text-sm text-[var(--text-secondary)]">
+                  Escribe tu primer mensaje — el agente puede consultar el estado de la app y te
+                  pedirá aprobación antes de actuar.
+                </p>
+              </div>
             ) : (
               messages.map((m, i) => <MessageBubble key={`${m.ts}-${i}`} msg={m} />)
             )}

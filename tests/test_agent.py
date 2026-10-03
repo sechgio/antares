@@ -206,3 +206,13 @@ def test_get_agent_runner_no_deadlock(tmp_path, monkeypatch):
     thread.start()
     thread.join(timeout=5)
     assert done, "get_agent_runner quedó bloqueado por _store_lock"
+
+
+def test_first_user_message_titles_session(tmp_path):
+    store = _store(tmp_path)
+    s = store.create_session("ollama", "m", "")
+    assert s["title"] == "Conversación"
+    store.append_message(s["id"], {"role": "user", "content": "  lista mis formatos  "})
+    assert store.get_session(s["id"])["title"] == "lista mis formatos"
+    store.append_message(s["id"], {"role": "user", "content": "otro"})
+    assert store.get_session(s["id"])["title"] == "lista mis formatos"  # no renombra
