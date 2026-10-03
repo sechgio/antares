@@ -16,7 +16,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, LayoutGrid, Play, Redo2, Save, Undo2 } from 'lucide-react';
+import { ArrowLeft, Bot, LayoutGrid, Play, Redo2, Save, Undo2 } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
@@ -39,9 +39,10 @@ interface Props {
   flowId: string;
   onBack: () => void;
   onRunStarted: () => void;
+  onAskAgent?: (flowName: string) => void;
 }
 
-function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
+function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
   const { addToast } = useToast();
   const { screenToFlowPosition } = useReactFlow();
   const [flow, setFlow] = useState<Flow | null>(null);
@@ -379,6 +380,17 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
         >
           <LayoutGrid size={15} />
         </Button>
+        {onAskAgent && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onAskAgent(flow?.name ?? '')}
+            aria-label="Preguntar al copilot"
+            title="Copilot: pregunta al agente sobre este flujo"
+          >
+            <Bot size={15} />
+          </Button>
+        )}
         {flow && (
           <label
             className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]"

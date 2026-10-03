@@ -14,7 +14,7 @@
           "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
           "kind": {
             "type": "string",
-            "enum": ["trigger", "tool_call", "condition", "transform", "loop", "http_request", "agent", "switch", "code"]
+            "enum": ["trigger", "tool_call", "condition", "transform", "loop", "http_request", "agent", "switch", "mcp_call", "code"]
           },
           "name": { "type": "string" },
           "config": {
@@ -116,6 +116,15 @@
         "model": { "type": "string", "description": "Modelo; vacío usa el predeterminado del proveedor" },
         "prompt": { "type": "string", "required": true },
         "system": { "type": "string", "description": "Instrucciones opcionales de sistema" }
+      }
+    },
+    "mcp_call": {
+      "description": "Llama a una tool de un servidor MCP registrado en Conexiones. args admite expresiones =...",
+      "implemented": true,
+      "config": {
+        "server": { "type": "string", "required": true, "description": "Id del servidor MCP registrado" },
+        "tool": { "type": "string", "required": true, "description": "Nombre de la tool MCP" },
+        "args": { "type": "object", "description": "Argumentos de la tool (JSON, expresiones permitidas)" }
       }
     },
     "code": { "description": "Reservado: código del usuario (deshabilitado por defecto).", "implemented": false }

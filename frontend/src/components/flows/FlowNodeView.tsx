@@ -32,6 +32,11 @@ function nodeSubtitle(data: FlowNodeData): string {
     const cases = Array.isArray(config.cases) ? config.cases.length : 0;
     return cases ? `${cases} casos` : 'Sin casos';
   }
+  if (kind === 'mcp_call') {
+    const server = typeof config.server === 'string' ? config.server : '';
+    const tool = typeof config.tool === 'string' ? config.tool : '';
+    return server ? `${server}/${tool || '…'}` : 'Sin servidor';
+  }
   return '';
 }
 

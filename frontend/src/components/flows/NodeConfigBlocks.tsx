@@ -1,5 +1,6 @@
 import { Plus, X } from 'lucide-react';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
+import { mcpApi, type McpServer, type McpTool } from '../../api/mcpApi';
 import { useEffect, useState } from 'react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -151,6 +152,97 @@ export function AgentConfigEditor({ node, patchConfig }: { node: FlowNode; patch
           spellCheck={false}
           placeholder="Responde en JSON con…"
           onBlur={(e) => patchConfig({ system: e.target.value || undefined })}
+        />
+      </div>
+    </>
+  );
+}
+
+export function McpCallConfigEditor({ node, patchConfig }: { node: FlowNode; patchConfig: PatchConfig }) {
+  const [servers, setServers] = useState<McpServer[]>([]);
+  const [tools, setTools] = useState<McpTool[]>([]);
+  const serverId = String(node.config.server ?? '');
+  const toolName = String(node.config.tool ?? '');
+  const toolDesc = tools.find((t) => t.name === toolName)?.description;
+  useEffect(() => {
+    let alive = true;
+    mcpApi
+      .mcpServersList()
+      .then((res) => {
+        if (alive) setServers(res.servers);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!serverId) {
+      setTools([]);
+      return;
+    }
+    let alive = true;
+    mcpApi
+      .mcpServerTools(serverId)
+      .then((res) => {
+        if (alive) setTools(res.tools);
+      })
+      .catch(() => {
+        if (alive) setTools([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [serverId]);
+  return (
+    <>
+      <div>
+        <FieldLabel>Servidor MCP</FieldLabel>
+        <ThemedSelect
+          value={serverId}
+          onChange={(v) => patchConfig({ server: v, tool: '' })}
+          options={[
+            { value: '', label: 'Selecciona un servidor…' },
+            ...servers.map((s) => ({ value: s.id, label: `${s.name} (${s.transport})` })),
+          ]}
+        />
+        <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+          Se registran en Conexiones → Servidores MCP.
+        </p>
+      </div>
+      <div>
+        <FieldLabel>Tool</FieldLabel>
+        <ThemedSelect
+          value={toolName}
+          onChange={(v) => patchConfig({ tool: v })}
+          options={[
+            { value: '', label: serverId ? 'Selecciona una tool…' : 'Elige primero un servidor' },
+            ...tools.map((t) => ({ value: t.name, label: t.name })),
+          ]}
+        />
+        {toolDesc && <p className="mt-1 text-[11px] text-[var(--text-secondary)]">{toolDesc}</p>}
+      </div>
+      <div>
+        <FieldLabel>Argumentos (JSON)</FieldLabel>
+        <Textarea
+          defaultValue={
+            node.config.args == null ? '' : JSON.stringify(node.config.args, null, 2)
+          }
+          rows={4}
+          spellCheck={false}
+          placeholder='{"param": "{{ =item.json.valor }}"}'
+          onBlur={(e) => {
+            const raw = e.target.value.trim();
+            if (!raw) {
+              patchConfig({ args: undefined });
+              return;
+            }
+            try {
+              patchConfig({ args: JSON.parse(raw) });
+            } catch {
+              // se conserva el texto; validar al guardar es opcional
+            }
+          }}
         />
       </div>
     </>

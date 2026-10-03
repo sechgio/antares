@@ -7,6 +7,7 @@ export type FlowNodeKind =
   | 'http_request'
   | 'agent'
   | 'switch'
+  | 'mcp_call'
   | 'code';
 
 export type TriggerKind = 'manual' | 'schedule' | 'app_event' | 'webhook';

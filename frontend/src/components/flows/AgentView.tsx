@@ -98,7 +98,7 @@ function ApprovalCard({
   );
 }
 
-export default function AgentView() {
+export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   const { addToast } = useToast();
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -113,6 +113,10 @@ export default function AgentView() {
   const timerRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (initialDraft) setDraft(initialDraft);
+  }, [initialDraft]);
 
   const loadMessages = useCallback(
     async (id: string, silent = true) => {

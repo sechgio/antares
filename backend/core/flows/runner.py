@@ -21,7 +21,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
-from backend.core.flows import agent_chat, connections
+from backend.core.flows import agent_chat, connections, mcp_servers
 from backend.core.flows.expr import interpolate_text, resolve
 from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore, _utc_now
@@ -286,6 +286,8 @@ class FlowRunner:
             return {"main": self._run_agent(node, memory)}
         if kind == "switch":
             return self._run_switch(node, memory)
+        if kind == "mcp_call":
+            return {"main": mcp_servers.run_mcp_call_node(node, memory)}
         raise ValueError(f"Tipo de nodo desconocido: {kind}")
 
     @staticmethod

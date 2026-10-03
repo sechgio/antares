@@ -103,6 +103,15 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     inputs: ['main'],
     outputs: [{ port: 'default', label: 'Defecto' }],
   },
+  mcp_call: {
+    kind: 'mcp_call',
+    label: 'Llamada MCP',
+    description: 'Ejecuta una tool de un servidor MCP',
+    accent: '#2dd4bf',
+    implemented: true,
+    inputs: ['main'],
+    outputs: [{ port: 'main', label: 'Resultado' }],
+  },
   code: {
     kind: 'code',
     label: 'Código',
@@ -122,6 +131,7 @@ export const PALETTE_KINDS: FlowNodeKind[] = [
   'loop',
   'http_request',
   'agent',
+  'mcp_call',
   'code',
 ];
 

@@ -26,6 +26,7 @@ export default function FlowsView() {
   const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
   const [runsFlowId, setRunsFlowId] = useState<string | undefined>(undefined);
   const [listRefresh, setListRefresh] = useState(0);
+  const [agentDraft, setAgentDraft] = useState('');
 
   const openEditor = useCallback((flowId: string) => setEditingFlowId(flowId), []);
   const closeEditor = useCallback(() => {
@@ -70,6 +71,12 @@ export default function FlowsView() {
               flowId={editingFlowId}
               onBack={closeEditor}
               onRunStarted={() => setSection('runs')}
+              onAskAgent={(flowName) => {
+                setAgentDraft(
+                  `Estoy editando el flujo "${flowName}". ¿Puedes ayudarme a revisarlo o mejorarlo?`,
+                );
+                setSection('agent');
+              }}
             />
           ) : (
             <FlowList
@@ -85,7 +92,7 @@ export default function FlowsView() {
         {section === 'runs' && <RunsView flowId={runsFlowId} />}
         {section === 'connections' && <ConnectionsView />}
         {section === 'providers' && <ProvidersView />}
-        {section === 'agent' && <AgentView />}
+        {section === 'agent' && <AgentView initialDraft={agentDraft} />}
       </div>
     </div>
   );

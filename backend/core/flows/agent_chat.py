@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from backend.core.flows import ai_providers
+from backend.core.flows import ai_providers, mcp_servers
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods
 
@@ -62,6 +62,19 @@ def tool_specs() -> list[JsonObject]:
         }
         for m in gated_methods()
     ]
+    for server in mcp_servers.list_servers():
+        try:
+            tools = mcp_servers.list_tools(str(server["id"]))
+        except Exception:
+            continue  # un servidor caído no bloquea el chat
+        for tool in tools:
+            specs.append(
+                {
+                    "name": mcp_servers.agent_tool_name(str(server["id"]), str(tool["name"])),
+                    "description": f"MCP {server['name']} · {tool['name']} — {tool['description'] or 'requiere aprobación del usuario'}",
+                    "gated": True,
+                }
+            )
     return specs
 
 

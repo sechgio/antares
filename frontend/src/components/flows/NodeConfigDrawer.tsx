@@ -11,6 +11,7 @@ import ThemedSelect from '../ui/ThemedSelect';
 import {
   AgentConfigEditor,
   FieldLabel,
+  McpCallConfigEditor,
   RetryConfigEditor,
   SwitchConfigEditor,
 } from './NodeConfigBlocks';
@@ -312,6 +313,8 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
         {node.kind === 'switch' && <SwitchConfigEditor node={node} patchConfig={patchConfig} />}
 
         {node.kind === 'agent' && <AgentConfigEditor node={node} patchConfig={patchConfig} />}
+
+        {node.kind === 'mcp_call' && <McpCallConfigEditor node={node} patchConfig={patchConfig} />}
 
         {node.kind === 'transform' && (
           <div>

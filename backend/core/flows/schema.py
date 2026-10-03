@@ -18,7 +18,7 @@ from backend.utils.paths import resource_path
 logger = logging.getLogger(__name__)
 
 IMPLEMENTED_NODE_KINDS = frozenset(
-    {"trigger", "tool_call", "condition", "transform", "http_request", "agent", "switch"}
+    {"trigger", "tool_call", "condition", "transform", "http_request", "agent", "switch", "mcp_call"}
 )
 RESERVED_NODE_KINDS = frozenset({"loop", "code"})
 TRIGGER_KINDS = frozenset({"manual", "schedule", "app_event", "webhook"})
@@ -160,6 +160,13 @@ def validate_graph(graph: JsonObject) -> None:
             prompt = node["config"].get("prompt")
             if not isinstance(prompt, str) or not prompt.strip():
                 raise ValueError(f"El nodo {node_id} (agent) requiere config.prompt")
+        if node["kind"] == "mcp_call":
+            server = node["config"].get("server")
+            if not isinstance(server, str) or not server.strip():
+                raise ValueError(f"El nodo {node_id} (mcp_call) requiere config.server")
+            tool = node["config"].get("tool")
+            if not isinstance(tool, str) or not tool.strip():
+                raise ValueError(f"El nodo {node_id} (mcp_call) requiere config.tool")
         if node["kind"] == "switch":
             field = node["config"].get("field")
             if not isinstance(field, str) or not field.strip():

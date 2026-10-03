@@ -21,6 +21,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
+from backend.core.flows import mcp_servers
 from backend.core.flows.agent_chat import chat, gated_methods
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
@@ -295,6 +296,14 @@ class AgentRunner:
 
     def _execute(self, call: JsonObject) -> str:
         name = str(call.get("name") or "")
+        mcp_ref = mcp_servers.parse_agent_tool(name)
+        if mcp_ref is not None:
+            params = call.get("params")
+            try:
+                result = mcp_servers.call_tool(mcp_ref[0], mcp_ref[1], params if isinstance(params, dict) else {})
+                return json.dumps(result, ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
+            except Exception as err:
+                return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
         fn = self._handler_getter(name)
         if fn is None:
             return json.dumps({"error": f"Método desconocido: {name}"})
@@ -319,7 +328,8 @@ class AgentRunner:
             if calls:
                 for call in calls:
                     name = str(call.get("name") or "")
-                    call["gated"] = name in gated
+                    is_mcp = mcp_servers.parse_agent_tool(name) is not None
+                    call["gated"] = is_mcp or name in gated
                     call["allowed"] = call["gated"] or name in ORCHESTRATABLE_METHODS
                     call["status"] = "queued"
                     call["result"] = None
