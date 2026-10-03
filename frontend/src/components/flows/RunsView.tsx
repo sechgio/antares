@@ -7,7 +7,8 @@ import Button from '../ui/Button';
 import ThemedSelect from '../ui/ThemedSelect';
 import { FlowStatusBadge } from './FlowList';
 import FlowRunGraph from './FlowRunGraph';
-import type { FlowMeta, FlowRun, FlowRunStatus } from './types';
+import { NODE_KIND_DEFS } from './nodeDefs';
+import type { FlowMeta, FlowNodeKind, FlowRun, FlowRunStatus } from './types';
 
 const POLL_MS = 1500;
 
@@ -251,12 +252,26 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                         <p className="text-xs text-[var(--text-secondary)]">Sin pasos registrados.</p>
                       ) : (
                         <ol className="space-y-1.5">
-                          {run.steps.map((step, i) => (
+                          {run.steps.map((step, i) => {
+                            const stepDef = NODE_KIND_DEFS[step.kind as FlowNodeKind];
+                            const StepIcon = stepDef?.icon;
+                            return (
                             <li
                               key={`${step.node_id}-${i}`}
                               className="rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2"
                             >
                               <div className="flex items-center gap-2 text-xs">
+                                {stepDef && StepIcon && (
+                                  <span
+                                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md"
+                                    style={{
+                                      background: `color-mix(in srgb, ${stepDef.accent} 16%, transparent)`,
+                                      color: stepDef.accent,
+                                    }}
+                                  >
+                                    <StepIcon size={11} />
+                                  </span>
+                                )}
                                 <span className="font-medium text-[var(--text-primary)]">
                                   {step.name}
                                 </span>
@@ -295,7 +310,8 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                               )}
                               <StepOutput value={step.output} />
                             </li>
-                          ))}
+                            );
+                          })}
                         </ol>
                       )}
                     </div>

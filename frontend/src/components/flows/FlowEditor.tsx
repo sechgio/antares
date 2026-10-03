@@ -24,14 +24,14 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Toggle from '../ui/Toggle';
 import FlowNodeView from './FlowNodeView';
+import EmptyCanvasHint from './EmptyCanvasHint';
 import NodeConfigDrawer from './NodeConfigDrawer';
 import NodePalette, { NODE_DRAG_MIME } from './NodePalette';
-import { FLOW_EDGE_STYLE, graphToReactFlow, makeNodeId, reactFlowToGraph } from './graphAdapter';
-import { createsCycle, layoutByDepth } from './flowLayout';
+import { FLOW_EDGE_STYLE, edgeConnectionValid, graphToReactFlow, makeNodeId, reactFlowToGraph, reconnectEdge, type FlowNodeData } from './graphAdapter';
+import { layoutByDepth } from './flowLayout';
 import { useFlowHistory } from './useFlowHistory';
 import { NODE_KIND_DEFS } from './nodeDefs';
 import type { Flow, FlowNode, FlowNodeKind, WorkflowGraph } from './types';
-import type { FlowNodeData } from './graphAdapter';
 
 const nodeTypes = { flowNode: FlowNodeView };
 
@@ -125,15 +125,10 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
     [pushHistory],
   );
 
-  const isValidConnection = useCallback((conn: Connection | Edge) => {
-    if (!conn.source || !conn.target || conn.source === conn.target) return false;
-    const targetNode = nodesRef.current.find((n) => n.id === conn.target);
-    const sourceNode = nodesRef.current.find((n) => n.id === conn.source);
-    if (!targetNode || !sourceNode) return false;
-    if (targetNode.data.flowNode.kind === 'trigger') return false;
-    if (createsCycle(edgesRef.current, conn.source, conn.target)) return false;
-    return true;
-  }, []);
+  const isValidConnection = useCallback(
+    (conn: Connection | Edge) => edgeConnectionValid(conn, edgesRef.current, nodesRef.current),
+    [],
+  );
 
   const onConnect = useCallback(
     (conn: Connection) => {
@@ -152,6 +147,17 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
       setDirty(true);
     },
     [isValidConnection],
+  );
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, conn: Connection) => {
+      const next = reconnectEdge(oldEdge, conn, edgesRef.current, nodesRef.current);
+      if (!next) return;
+      pushHistory();
+      setEdgesTracked(next);
+      setDirty(true);
+    },
+    [pushHistory],
   );
 
   const addNode = useCallback(
@@ -444,6 +450,9 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onReconnect={onReconnect}
+            reconnectRadius={14}
+            connectionLineStyle={{ ...FLOW_EDGE_STYLE }}
             isValidConnection={isValidConnection}
             onNodeClick={(_, node) => setSelectedId(node.id)}
             onPaneClick={() => setSelectedId(null)}
@@ -460,8 +469,11 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
               pannable
               zoomable
               className="!bg-[var(--bg-elevated)]"
+              nodeColor="var(--border-medium)"
+              maskColor="rgba(0, 0, 0, 0.45)"
             />
           </ReactFlow>
+          {flow && nodes.length === 0 && <EmptyCanvasHint />}
         </div>
         <NodeConfigDrawer
           key={selectedId ?? 'none'}

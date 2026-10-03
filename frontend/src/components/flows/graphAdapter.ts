@@ -1,5 +1,6 @@
-import type { Edge, Node } from '@xyflow/react';
+import type { Connection, Edge, Node } from '@xyflow/react';
 import type { FlowEdge, FlowNode, WorkflowGraph } from './types';
+import { createsCycle } from './flowLayout';
 
 export interface FlowNodeData extends Record<string, unknown> {
   flowNode: FlowNode;
@@ -60,6 +61,35 @@ export function reactFlowToGraph(
     to_port: e.targetHandle || 'main',
   }));
   return { nodes: outNodes, edges: outEdges };
+}
+
+// Una conexión es válida si no es auto-lazo, ambos extremos existen, el destino
+// no es un trigger y no cierra un ciclo en `edges`.
+export function edgeConnectionValid(
+  conn: Connection | Edge,
+  edges: Edge[],
+  nodes: Node<FlowNodeData>[],
+): boolean {
+  if (!conn.source || !conn.target || conn.source === conn.target) return false;
+  const targetNode = nodes.find((n) => n.id === conn.target);
+  const sourceNode = nodes.find((n) => n.id === conn.source);
+  if (!targetNode || !sourceNode) return false;
+  if (targetNode.data.flowNode.kind === 'trigger') return false;
+  return !createsCycle(edges, conn.source, conn.target);
+}
+
+// Lista de aristas tras recablear `oldEdge` hacia `conn`, o null si no es válida.
+export function reconnectEdge(
+  oldEdge: Edge,
+  conn: Connection,
+  edges: Edge[],
+  nodes: Node<FlowNodeData>[],
+): Edge[] | null {
+  const remaining = edges.filter((e) => e.id !== oldEdge.id);
+  if (!edgeConnectionValid(conn, remaining, nodes)) return null;
+  const id = `${conn.source}:${conn.sourceHandle ?? 'main'}->${conn.target}:${conn.targetHandle ?? 'main'}`;
+  if (remaining.some((e) => e.id === id)) return null;
+  return [...remaining, { ...oldEdge, ...conn, id, style: { ...FLOW_EDGE_STYLE } }];
 }
 
 export function makeNodeId(kind: string, existing: Iterable<string>): string {
