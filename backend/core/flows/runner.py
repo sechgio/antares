@@ -21,8 +21,8 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
-from backend.core.flows import connections
-from backend.core.flows.expr import resolve
+from backend.core.flows import agent_chat, connections
+from backend.core.flows.expr import interpolate_text, resolve
 from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore, _utc_now
 from backend.core.flows.types import JsonObject
@@ -128,7 +128,7 @@ class FlowRunner:
             self._store.update_run(run_id, status="error", error="El flujo ya no existe", finished_at=_utc_now())
             return
         try:
-            graph = normalize_graph(flow["graph"])
+            graph = normalize_graph(run.get("graph") or flow["graph"])
             validate_graph(graph)
         except ValueError as exc:
             self._store.update_run(run_id, status="error", error=str(exc), finished_at=_utc_now())
@@ -175,18 +175,33 @@ class FlowRunner:
                 steps.append(self._step(node, "skipped"))
                 continue
 
-            memory["item"] = live_items[0]
-            memory["items"] = live_items
+            memory["item"] = {"json": live_items[0]}
+            memory["items"] = [{"json": i} for i in live_items]
 
             started = _utc_ms()
             step = self._step(node, "running", started_at=_utc_now())
+            attempts, delay_ms = _retry_config(node)
+            tried = 0
             try:
-                node_outputs = self._execute_node(node, memory)
+                while True:
+                    tried += 1
+                    try:
+                        node_outputs = self._execute_node(node, memory)
+                        break
+                    except Exception:
+                        if tried >= attempts or token.cancelled:
+                            raise
+                        if delay_ms > 0:
+                            time.sleep(delay_ms / 1000.0)
+                if tried > 1:
+                    step["attempts"] = tried
             except Exception as exc:
                 logger.info("Nodo %s del run %s falló: %s", node_id, run_id, exc)
                 any_error = True
                 step["status"] = "error"
                 step["error"] = str(exc)[:500]
+                if tried > 1:
+                    step["attempts"] = tried
                 step["finished_at"] = _utc_now()
                 step["duration_ms"] = round(_utc_ms() - started)
                 outputs[node_id] = {}
@@ -267,7 +282,56 @@ class FlowRunner:
             return {"main": {"json": output}}
         if kind == "http_request":
             return {"main": self._run_http_request(node, memory)}
+        if kind == "agent":
+            return {"main": self._run_agent(node, memory)}
+        if kind == "switch":
+            return self._run_switch(node, memory)
         raise ValueError(f"Tipo de nodo desconocido: {kind}")
+
+    @staticmethod
+    def _run_agent(node: JsonObject, memory: JsonObject) -> JsonObject:
+        config = node.get("config") or {}
+        provider = str(config.get("provider") or "").strip()
+        prompt = resolve(config.get("prompt"), memory)
+        if isinstance(prompt, str):
+            prompt = interpolate_text(prompt, memory)
+        if not provider:
+            raise ValueError("El nodo agent requiere config.provider")
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("El nodo agent requiere config.prompt")
+        spec = agent_chat.ai_providers.get_provider(provider)
+        default_model = (spec.get("chat") or {}).get("default_model", "")
+        model = str(config.get("model") or default_model or "").strip()
+        if not model:
+            raise ValueError("El nodo agent requiere un modelo (config.model)")
+        system = resolve(config.get("system"), memory)
+        if isinstance(system, str):
+            system = interpolate_text(system, memory)
+        response = agent_chat.chat(
+            provider,
+            model,
+            [{"role": "user", "content": prompt.strip()}],
+            with_tools=False,
+            system=system.strip() if isinstance(system, str) and system.strip() else None,
+        )
+        return {"json": {"text": response.get("text") or "", "provider": provider, "model": model}}
+
+    @staticmethod
+    def _run_switch(node: JsonObject, memory: JsonObject) -> JsonObject:
+        config = node.get("config") or {}
+        field = config.get("field")
+        try:
+            item = memory.get("item") or {}
+            actual = resolve(field, memory) if field is not None else item.get("json")
+        except ValueError:
+            actual = None
+        matched = None
+        for case in config.get("cases") or []:
+            if case.get("value") == actual:
+                matched = str(case.get("port") or "").strip() or None
+                break
+        port = matched or "default"
+        return {port: {"json": {"case": matched, "field": actual}}}
 
     def _run_tool_call(self, node: JsonObject, memory: JsonObject) -> JsonObject:
         config = node.get("config") or {}
@@ -306,7 +370,12 @@ class FlowRunner:
 
         connection_ref = config.get("connection_ref")
         if isinstance(connection_ref, str) and connection_ref.strip():
-            token = connections.fresh_access_token(connection_ref.strip())
+            conn_id = connection_ref.strip()
+            allowed_hosts = connections.get_provider(conn_id).get("token_hosts") or []
+            host = (urllib.parse.urlparse(url).hostname or "").lower()
+            if allowed_hosts and host not in {str(h).lower() for h in allowed_hosts}:
+                raise ValueError(f"La conexión {conn_id} solo firma peticiones a sus hosts autorizados")
+            token = connections.fresh_access_token(conn_id)
             headers.setdefault("Authorization", f"Bearer {token}")
 
         body = resolve(config.get("body"), memory)
@@ -357,7 +426,8 @@ class FlowRunner:
         expected = resolve(config.get("value"), memory)
         exists = True
         try:
-            actual = resolve(field, memory) if field is not None else memory.get("item")
+            item = memory.get("item") or {}
+            actual = resolve(field, memory) if field is not None else item.get("json")
         except ValueError:
             actual = None
             exists = False
@@ -380,6 +450,17 @@ class FlowRunner:
 
         port = "true" if result else "false"
         return {port: {"json": {"result": result, "field": actual}}}
+
+
+def _retry_config(node: JsonObject) -> tuple[int, float]:
+    retry = (node.get("config") or {}).get("retry")
+    if not isinstance(retry, dict):
+        return 1, 0.0
+    attempts = retry.get("attempts", 1)
+    delay = retry.get("delay_ms", 0)
+    attempts_n = int(attempts) if isinstance(attempts, (int, float)) else 1
+    delay_n = float(delay) if isinstance(delay, (int, float)) else 0.0
+    return min(max(attempts_n, 1), 5), min(max(delay_n, 0.0), 60000.0)
 
 
 def _compare(actual: Any, expected: Any, op: str) -> bool:

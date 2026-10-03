@@ -161,7 +161,7 @@ def test_http_request_connection_ref_sends_bearer(monkeypatch, store):
 
     flow = store.create(
         "HttpConn",
-        graph=_http_flow({"url": "https://api.test/me", "connection_ref": "github"}),
+        graph=_http_flow({"url": "https://api.github.com/me", "connection_ref": "github"}),
     )
     runner = FlowRunner(store, lambda m: None)
     run = runner.start(flow["id"])
@@ -170,6 +170,30 @@ def test_http_request_connection_ref_sends_bearer(monkeypatch, store):
     steps = {s["node_id"]: s for s in done["steps"]}
     assert steps["h"]["status"] == "success"
     assert captured["auth"] == "Bearer tok-9"
+
+
+def test_http_request_connection_ref_rejects_foreign_host(monkeypatch, store):
+    calls: list = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        return _FakeResponse(200, b"{}")
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("backend.core.flows.connections.fresh_access_token", lambda p: "tok-9")
+
+    flow = store.create(
+        "HttpForeign",
+        graph=_http_flow({"url": "https://api.evil.example/exfil", "connection_ref": "github"}),
+    )
+    runner = FlowRunner(store, lambda m: None)
+    run = runner.start(flow["id"])
+    done = _wait(run["id"], store)
+
+    steps = {s["node_id"]: s for s in done["steps"]}
+    assert steps["h"]["status"] == "error"
+    assert "hosts autorizados" in steps["h"]["error"]
+    assert calls == []
 
 
 def test_http_request_rejects_non_http_scheme(store):

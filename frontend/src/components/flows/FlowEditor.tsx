@@ -16,7 +16,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Play, Save } from 'lucide-react';
+import { ArrowLeft, LayoutGrid, Play, Redo2, Save, Undo2 } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
@@ -27,6 +27,8 @@ import FlowNodeView from './FlowNodeView';
 import NodeConfigDrawer from './NodeConfigDrawer';
 import NodePalette, { NODE_DRAG_MIME } from './NodePalette';
 import { graphToReactFlow, makeNodeId, reactFlowToGraph } from './graphAdapter';
+import { createsCycle, layoutByDepth } from './flowLayout';
+import { useFlowHistory } from './useFlowHistory';
 import { NODE_KIND_DEFS } from './nodeDefs';
 import type { Flow, FlowNode, FlowNodeKind, WorkflowGraph } from './types';
 import type { FlowNodeData } from './graphAdapter';
@@ -37,25 +39,6 @@ interface Props {
   flowId: string;
   onBack: () => void;
   onRunStarted: () => void;
-}
-
-function createsCycle(edges: Edge[], from: string, to: string): boolean {
-  const adj = new Map<string, string[]>();
-  for (const e of edges) {
-    const list = adj.get(e.source) ?? [];
-    list.push(e.target);
-    adj.set(e.source, list);
-  }
-  const stack = [to];
-  const seen = new Set<string>();
-  while (stack.length) {
-    const cur = stack.pop()!;
-    if (cur === from) return true;
-    if (seen.has(cur)) continue;
-    seen.add(cur);
-    for (const next of adj.get(cur) ?? []) stack.push(next);
-  }
-  return false;
 }
 
 function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
@@ -71,6 +54,15 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const {
+    push: pushHistory,
+    undo,
+    redo,
+    size: historySize,
+  } = useFlowHistory(nodes, edges, setNodes, setEdges, () => {
+    setSelectedId(null);
+    setDirty(true);
+  });
 
   useEffect(() => {
     let alive = true;
@@ -96,16 +88,27 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<FlowNodeData>>[]) => {
+      const structural = changes.some(
+        (c) =>
+          c.type === 'remove' ||
+          c.type === 'add' ||
+          (c.type === 'position' && c.dragging === false),
+      );
+      if (structural) pushHistory();
       setNodes((ns) => applyNodeChanges(changes, ns));
       if (changes.some((c) => c.type !== 'select' && c.type !== 'dimensions')) setDirty(true);
     },
-    [],
+    [pushHistory],
   );
 
-  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges((es) => applyEdgeChanges(changes, es));
-    if (changes.some((c) => c.type !== 'select')) setDirty(true);
-  }, []);
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      if (changes.some((c) => c.type === 'remove' || c.type === 'add')) pushHistory();
+      setEdges((es) => applyEdgeChanges(changes, es));
+      if (changes.some((c) => c.type !== 'select')) setDirty(true);
+    },
+    [pushHistory],
+  );
 
   const isValidConnection = useCallback(
     (conn: Connection | Edge) => {
@@ -123,6 +126,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
   const onConnect = useCallback(
     (conn: Connection) => {
       if (!isValidConnection(conn)) return;
+      pushHistory();
       setEdges((es) =>
         addEdge(
           {
@@ -140,6 +144,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
 
   const addNode = useCallback(
     (kind: FlowNodeKind, position: { x: number; y: number }) => {
+      pushHistory();
       const id = makeNodeId(kind, nodes.map((n) => n.id));
       const flowNode: FlowNode = {
         id,
@@ -155,7 +160,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
       setDirty(true);
       setSelectedId(id);
     },
-    [nodes],
+    [nodes, pushHistory],
   );
 
   const onDrop = useCallback(
@@ -189,26 +194,42 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
     return nodes.find((n) => n.id === selectedId)?.data.flowNode ?? null;
   }, [selectedId, nodes]);
 
-  const updateNode = useCallback((updated: FlowNode) => {
-    setNodes((ns) =>
-      ns.map((n) =>
-        n.id === updated.id ? { ...n, data: { ...n.data, flowNode: updated } } : n,
-      ),
-    );
-    setDirty(true);
-  }, []);
+  const updateNode = useCallback(
+    (updated: FlowNode) => {
+      const prev = nodes.find((n) => n.id === updated.id)?.data.flowNode;
+      if (prev && JSON.stringify(prev.config) !== JSON.stringify(updated.config)) pushHistory();
+      setNodes((ns) =>
+        ns.map((n) =>
+          n.id === updated.id ? { ...n, data: { ...n.data, flowNode: updated } } : n,
+        ),
+      );
+      setDirty(true);
+    },
+    [nodes, pushHistory],
+  );
 
   const deleteNode = useCallback(
     (nodeId: string) => {
       const node = nodes.find((n) => n.id === nodeId);
       if (!node || node.data.flowNode.kind === 'trigger') return;
+      pushHistory();
       setNodes((ns) => ns.filter((n) => n.id !== nodeId));
       setEdges((es) => es.filter((e) => e.source !== nodeId && e.target !== nodeId));
       setSelectedId(null);
       setDirty(true);
     },
-    [nodes],
+    [nodes, pushHistory],
   );
+
+  const autoLayout = useCallback(() => {
+    if (!nodes.length) return;
+    pushHistory();
+    const positions = layoutByDepth(nodes, edges);
+    setNodes((ns) =>
+      ns.map((n) => ({ ...n, position: positions.get(n.id) ?? n.position })),
+    );
+    setDirty(true);
+  }, [nodes, edges, pushHistory]);
 
   const save = useCallback(async () => {
     if (!flow || !baseGraph) return;
@@ -295,10 +316,22 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
         void save();
       }
       if (e.key === 'Escape') setSelectedId(null);
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        const el = e.target as HTMLElement | null;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        const el = e.target as HTMLElement | null;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+        e.preventDefault();
+        redo();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [save]);
+  }, [save, undo, redo]);
 
   return (
     <div className="flex h-full flex-col">
@@ -317,6 +350,35 @@ function FlowEditorInner({ flowId, onBack, onRunStarted }: Props) {
           placeholder="Nombre del flujo"
         />
         <div className="flex-1" />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={undo}
+          disabled={historySize.past === 0}
+          aria-label="Deshacer"
+          title="Deshacer (Ctrl+Z)"
+        >
+          <Undo2 size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={redo}
+          disabled={historySize.future === 0}
+          aria-label="Rehacer"
+          title="Rehacer (Ctrl+Mayús+Z)"
+        >
+          <Redo2 size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={autoLayout}
+          aria-label="Organizar nodos"
+          title="Organizar nodos por niveles"
+        >
+          <LayoutGrid size={15} />
+        </Button>
         {flow && (
           <label
             className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]"

@@ -777,6 +777,10 @@ function registerIpcHandlers() {
       const hint = ' Reinicia Antares por completo (cierra todas las ventanas) para recargar la allowlist IPC.';
       throw new Error(`IPC method not allowed: ${method}.${hint}`);
     }
+    if (_ipcCatalog().INTERNAL_METHODS.has(method)) {
+      _logSecurityRejection('internal_method', method);
+      throw new Error(`IPC method not allowed: ${method} (internal)`);
+    }
 
     const win = getMainWindow();
     const { BrowserWindow, session, nativeImage } = require('electron');

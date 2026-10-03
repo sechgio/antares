@@ -7,6 +7,7 @@ segmentos ``.campo`` o ``[índice]``. Ejemplo: ``=nodes.n1.json.rows[0]``.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -91,3 +92,21 @@ def resolve(value: Any, memory: JsonObject) -> Any:
     if isinstance(value, dict):
         return {key: resolve(item, memory) for key, item in value.items()}
     return value
+
+
+_INTERPOLATE_RE = re.compile(r"\{\{\s*(=.*?)\s*\}\}")
+
+
+def interpolate_text(text: str, memory: JsonObject) -> str:
+    """Sustituye ``{{ =expresión }}`` dentro de textos largos (prompts del nodo agent)."""
+
+    def sub(match: re.Match[str]) -> str:
+        try:
+            out = resolve(match.group(1).strip(), memory)
+        except ValueError:
+            return match.group(0)
+        if isinstance(out, str):
+            return out
+        return json.dumps(out, ensure_ascii=False)
+
+    return _INTERPOLATE_RE.sub(sub, text)

@@ -19,6 +19,7 @@ from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods
 
 MAX_MESSAGE_CHARS = 12_000
 _MAX_TOOL_RESULT_CHARS = 6_000
+_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _CHAT_TIMEOUT_S = 120.0
 
 # Métodos backend que el agente nunca debe invocar (ni siquiera con aprobación):
@@ -92,8 +93,11 @@ def _post_json(url: str, headers: dict[str, str], payload: JsonObject) -> JsonOb
     )
     try:
         with urllib.request.urlopen(req, timeout=_CHAT_TIMEOUT_S) as res:
-            data: JsonObject = json.loads(res.read().decode("utf-8"))
-            return data
+            raw = res.read(_MAX_RESPONSE_BYTES + 1)
+        if len(raw) > _MAX_RESPONSE_BYTES:
+            raise ValueError("La respuesta del proveedor supera el tamaño máximo permitido")
+        data: JsonObject = json.loads(raw.decode("utf-8"))
+        return data
     except urllib.error.HTTPError as err:
         detail = err.read(400).decode("utf-8", errors="replace")
         raise ValueError(f"El proveedor respondió HTTP {err.code}: {detail[:200]}") from err
@@ -101,9 +105,9 @@ def _post_json(url: str, headers: dict[str, str], payload: JsonObject) -> JsonOb
         raise ValueError(f"Sin respuesta del proveedor: {err.reason}") from err
 
 
-def _openai_wire(messages: list[JsonObject]) -> list[JsonObject]:
+def _openai_wire(messages: list[JsonObject], system: str | None) -> list[JsonObject]:
     """Historial persistido → formato OpenAI chat completions."""
-    wire: list[JsonObject] = [{"role": "system", "content": _SYSTEM_PROMPT}]
+    wire: list[JsonObject] = [{"role": "system", "content": system or _SYSTEM_PROMPT}]
     for msg in messages:
         role = msg.get("role")
         if role == "user":
@@ -138,11 +142,20 @@ def _openai_wire(messages: list[JsonObject]) -> list[JsonObject]:
     return wire
 
 
-def _chat_openai(url: str, headers: dict[str, str], model: str, messages: list[JsonObject]) -> JsonObject:
+def _chat_openai(
+    url: str,
+    headers: dict[str, str],
+    model: str,
+    messages: list[JsonObject],
+    with_tools: bool,
+    system: str | None,
+) -> JsonObject:
     payload: JsonObject = {
         "model": model,
-        "messages": _openai_wire(messages),
-        "tools": [
+        "messages": _openai_wire(messages, system),
+    }
+    if with_tools:
+        payload["tools"] = [
             {
                 "type": "function",
                 "function": {
@@ -152,9 +165,8 @@ def _chat_openai(url: str, headers: dict[str, str], model: str, messages: list[J
                 },
             }
             for s in tool_specs()
-        ],
-        "tool_choice": "auto",
-    }
+        ]
+        payload["tool_choice"] = "auto"
     data = _post_json(url, headers, payload)
     choices = data.get("choices") or []
     message = (choices[0].get("message") or {}) if choices else {}
@@ -216,21 +228,29 @@ def _anthropic_wire(messages: list[JsonObject]) -> list[JsonObject]:
     return wire
 
 
-def _chat_anthropic(url: str, headers: dict[str, str], model: str, messages: list[JsonObject]) -> JsonObject:
+def _chat_anthropic(
+    url: str,
+    headers: dict[str, str],
+    model: str,
+    messages: list[JsonObject],
+    with_tools: bool,
+    system: str | None,
+) -> JsonObject:
     payload: JsonObject = {
         "model": model,
         "max_tokens": 2048,
-        "system": _SYSTEM_PROMPT,
+        "system": system or _SYSTEM_PROMPT,
         "messages": _anthropic_wire(messages),
-        "tools": [
+    }
+    if with_tools:
+        payload["tools"] = [
             {
                 "name": s["name"],
                 "description": s["description"],
                 "input_schema": {"type": "object", "additionalProperties": True},
             }
             for s in tool_specs()
-        ],
-    }
+        ]
     data = _post_json(url, headers, payload)
     text_parts: list[str] = []
     calls: list[JsonObject] = []
@@ -249,8 +269,18 @@ def _chat_anthropic(url: str, headers: dict[str, str], model: str, messages: lis
     return {"text": "".join(text_parts), "calls": calls}
 
 
-def chat(provider: str, model: str, messages: list[JsonObject]) -> JsonObject:
-    """Un turno LLM; `messages` es el historial persistido en formato neutro."""
+def chat(
+    provider: str,
+    model: str,
+    messages: list[JsonObject],
+    with_tools: bool = True,
+    system: str | None = None,
+) -> JsonObject:
+    """Un turno LLM; `messages` es el historial persistido en formato neutro.
+
+    ``with_tools=False`` desactiva las herramientas (nodos Agente de flujos:
+    una sola respuesta de texto, sin tool-calling interactivo).
+    """
     spec = ai_providers.get_provider(provider)
     config = ai_providers.get_config(provider) or {}
     chat_spec = spec.get("chat") or {}
@@ -264,7 +294,7 @@ def chat(provider: str, model: str, messages: list[JsonObject]) -> JsonObject:
     url = f"{base.rstrip('/')}{path}"
     headers = _auth_headers(spec, config)
     if style == "openai_chat":
-        return _chat_openai(url, headers, model, messages)
+        return _chat_openai(url, headers, model, messages, with_tools, system)
     if style == "anthropic_messages":
-        return _chat_anthropic(url, headers, model, messages)
+        return _chat_anthropic(url, headers, model, messages, with_tools, system)
     raise ValueError(f"Estilo de chat no soportado: {style}")

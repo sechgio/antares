@@ -156,7 +156,7 @@ def test_openai_wire_and_parse():
         },
         {"role": "tool_result", "tool_use_id": "c1", "content": "{}"},
     ]
-    wire = agent_chat._openai_wire(msgs)
+    wire = agent_chat._openai_wire(msgs, None)
     assert wire[0]["role"] == "system"
     assert wire[1] == {"role": "user", "content": "hola"}
     assert wire[2]["tool_calls"][0]["function"]["name"] == "m1"

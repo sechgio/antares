@@ -8,7 +8,18 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import ThemedSelect from '../ui/ThemedSelect';
-import { CONDITION_OPS, ENABLED_TRIGGER_KINDS, NODE_KIND_DEFS, TRIGGER_KIND_LABELS } from './nodeDefs';
+import {
+  AgentConfigEditor,
+  FieldLabel,
+  RetryConfigEditor,
+  SwitchConfigEditor,
+} from './NodeConfigBlocks';
+import {
+  CONDITION_OPS,
+  ENABLED_TRIGGER_KINDS,
+  NODE_KIND_DEFS,
+  TRIGGER_KIND_LABELS,
+} from './nodeDefs';
 import type { FlowNode, TriggerKind } from './types';
 
 interface Props {
@@ -16,14 +27,6 @@ interface Props {
   onChange: (node: FlowNode) => void;
   onDelete: (nodeId: string) => void;
   onClose: () => void;
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
-      {children}
-    </label>
-  );
 }
 
 export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: Props) {
@@ -306,6 +309,10 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
           </>
         )}
 
+        {node.kind === 'switch' && <SwitchConfigEditor node={node} patchConfig={patchConfig} />}
+
+        {node.kind === 'agent' && <AgentConfigEditor node={node} patchConfig={patchConfig} />}
+
         {node.kind === 'transform' && (
           <div>
             <FieldLabel>Objeto de salida (JSON)</FieldLabel>
@@ -321,6 +328,10 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
               Cada cadena =... se reemplaza por su valor evaluado.
             </p>
           </div>
+        )}
+
+        {def.implemented && node.kind !== 'trigger' && (
+          <RetryConfigEditor node={node} onChange={onChange} />
         )}
 
         {!def.implemented && node.kind !== 'trigger' && (

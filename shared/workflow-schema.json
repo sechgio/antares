@@ -14,10 +14,22 @@
           "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
           "kind": {
             "type": "string",
-            "enum": ["trigger", "tool_call", "condition", "transform", "loop", "http_request", "agent", "code"]
+            "enum": ["trigger", "tool_call", "condition", "transform", "loop", "http_request", "agent", "switch", "code"]
           },
           "name": { "type": "string" },
-          "config": { "type": "object" },
+          "config": {
+            "type": "object",
+            "properties": {
+              "retry": {
+                "type": "object",
+                "description": "Reintentos opcionales del nodo: attempts (1-5), delay_ms (0-60000)",
+                "properties": {
+                  "attempts": { "type": "integer", "minimum": 1, "maximum": 5 },
+                  "delay_ms": { "type": "number", "minimum": 0, "maximum": 60000 }
+                }
+              }
+            }
+          },
           "position": {
             "type": "object",
             "properties": {
@@ -72,6 +84,17 @@
         "output": { "type": "object", "required": true }
       }
     },
+    "switch": {
+      "description": "Enrutado múltiple: evalúa una expresión y sale por el puerto del primer caso que coincida, o por 'default'.",
+      "implemented": true,
+      "config": {
+        "field": { "type": "string", "required": true, "description": "Expresión =... a evaluar" },
+        "cases": {
+          "type": "array",
+          "items": { "value": { "description": "Valor que activa el caso" }, "port": { "type": "string", "description": "Puerto de salida (único, distinto de 'default')" } }
+        }
+      }
+    },
     "loop": { "description": "Reservado: iteración sobre colecciones.", "implemented": false },
     "http_request": {
       "description": "Llamada HTTP externa; connection_ref firma con el token OAuth de la conexión.",
@@ -85,7 +108,16 @@
         "timeout_s": { "type": "number", "minimum": 1, "maximum": 60, "default": 20 }
       }
     },
-    "agent": { "description": "Reservado: llamada a un modelo IA.", "implemented": false },
+    "agent": {
+      "description": "Un turno con un proveedor IA guardado (proveedor, modelo y prompt con expresiones =...). Devuelve {text}.",
+      "implemented": true,
+      "config": {
+        "provider": { "type": "string", "required": true, "description": "Id de proveedor de shared/ai-providers-catalog.json" },
+        "model": { "type": "string", "description": "Modelo; vacío usa el predeterminado del proveedor" },
+        "prompt": { "type": "string", "required": true },
+        "system": { "type": "string", "description": "Instrucciones opcionales de sistema" }
+      }
+    },
     "code": { "description": "Reservado: código del usuario (deshabilitado por defecto).", "implemented": false }
   },
   "expressions": {

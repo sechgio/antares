@@ -17,8 +17,10 @@ from backend.utils.paths import resource_path
 
 logger = logging.getLogger(__name__)
 
-IMPLEMENTED_NODE_KINDS = frozenset({"trigger", "tool_call", "condition", "transform", "http_request"})
-RESERVED_NODE_KINDS = frozenset({"loop", "agent", "code"})
+IMPLEMENTED_NODE_KINDS = frozenset(
+    {"trigger", "tool_call", "condition", "transform", "http_request", "agent", "switch"}
+)
+RESERVED_NODE_KINDS = frozenset({"loop", "code"})
 TRIGGER_KINDS = frozenset({"manual", "schedule", "app_event", "webhook"})
 
 MAX_FLOW_NODES = 200
@@ -151,6 +153,40 @@ def validate_graph(graph: JsonObject) -> None:
             connection_ref = node["config"].get("connection_ref")
             if connection_ref is not None and (not isinstance(connection_ref, str) or not connection_ref.strip()):
                 raise ValueError(f"connection_ref del nodo {node_id} debe ser un id de proveedor")
+        if node["kind"] == "agent":
+            provider = node["config"].get("provider")
+            if not isinstance(provider, str) or not provider.strip():
+                raise ValueError(f"El nodo {node_id} (agent) requiere config.provider")
+            prompt = node["config"].get("prompt")
+            if not isinstance(prompt, str) or not prompt.strip():
+                raise ValueError(f"El nodo {node_id} (agent) requiere config.prompt")
+        if node["kind"] == "switch":
+            field = node["config"].get("field")
+            if not isinstance(field, str) or not field.strip():
+                raise ValueError(f"El nodo {node_id} (switch) requiere config.field")
+            cases = node["config"].get("cases") or []
+            if not isinstance(cases, list):
+                raise ValueError(f"cases del nodo {node_id} debe ser una lista")
+            seen_ports: set[str] = set()
+            for case in cases:
+                if not isinstance(case, dict):
+                    raise ValueError(f"Cada caso del switch {node_id} debe ser un objeto")
+                port = case.get("port")
+                if not isinstance(port, str) or not port.strip():
+                    raise ValueError(f"Cada caso del switch {node_id} requiere un port")
+                if port in seen_ports or port == "default":
+                    raise ValueError(f"Puerto de switch duplicado o reservado: {port}")
+                seen_ports.add(port)
+        retry = node["config"].get("retry")
+        if retry is not None:
+            if not isinstance(retry, dict):
+                raise ValueError(f"retry del nodo {node_id} debe ser un objeto")
+            attempts = retry.get("attempts", 1)
+            delay = retry.get("delay_ms", 0)
+            if not isinstance(attempts, int) or isinstance(attempts, bool) or attempts < 1 or attempts > 5:
+                raise ValueError(f"retry.attempts del nodo {node_id} fuera de rango (1-5)")
+            if not isinstance(delay, (int, float)) or isinstance(delay, bool) or delay < 0 or delay > 60000:
+                raise ValueError(f"retry.delay_ms del nodo {node_id} fuera de rango (0-60000)")
 
     if trigger_count == 0:
         raise ValueError("El flujo requiere exactamente un nodo trigger")

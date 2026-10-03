@@ -1,6 +1,6 @@
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { memo } from 'react';
-import { NODE_KIND_DEFS } from './nodeDefs';
+import { NODE_KIND_DEFS, nodeOutputs } from './nodeDefs';
 import type { FlowNodeData } from './graphAdapter';
 
 type FlowNodeType = Node<FlowNodeData, 'flowNode'>;
@@ -23,6 +23,15 @@ function nodeSubtitle(data: FlowNodeData): string {
     const url = typeof config.url === 'string' ? config.url : '';
     return url ? `${String(config.method ?? 'GET')} ${url.slice(0, 40)}` : 'Sin URL';
   }
+  if (kind === 'agent') {
+    const model = typeof config.model === 'string' && config.model ? config.model : '';
+    const provider = typeof config.provider === 'string' ? config.provider : '';
+    return provider ? `${provider}${model ? ` · ${model}` : ''}` : 'Sin proveedor';
+  }
+  if (kind === 'switch') {
+    const cases = Array.isArray(config.cases) ? config.cases.length : 0;
+    return cases ? `${cases} casos` : 'Sin casos';
+  }
   return '';
 }
 
@@ -36,6 +45,7 @@ const STEP_STATUS_COLORS: Record<string, string> = {
 
 function FlowNodeView({ data, selected }: NodeProps<FlowNodeType>) {
   const def = NODE_KIND_DEFS[data.flowNode.kind];
+  const outputs = nodeOutputs(data.flowNode);
   const subtitle = nodeSubtitle(data);
   const stepColor = data.stepStatus ? STEP_STATUS_COLORS[data.stepStatus] : undefined;
   return (
@@ -72,7 +82,7 @@ function FlowNodeView({ data, selected }: NodeProps<FlowNodeType>) {
           </div>
         </div>
       </div>
-      {def.outputs.map((out, i) => (
+      {outputs.map((out, i) => (
         <Handle
           key={out.port}
           type="source"
@@ -82,13 +92,13 @@ function FlowNodeView({ data, selected }: NodeProps<FlowNodeType>) {
             background: def.accent,
             width: 8,
             height: 8,
-            top: def.outputs.length === 1 ? '50%' : `${30 + i * 24}%`,
+            top: outputs.length === 1 ? '50%' : `${30 + i * 24}%`,
           }}
         />
       ))}
-      {def.outputs.length > 1 && (
+      {outputs.length > 1 && (
         <div className="mt-1 flex flex-col items-end gap-0.5 text-[9px] uppercase tracking-wide text-[var(--text-secondary)]">
-          {def.outputs.map((out) => (
+          {outputs.map((out) => (
             <span key={out.port}>{out.label}</span>
           ))}
         </div>

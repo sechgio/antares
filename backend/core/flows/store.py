@@ -123,6 +123,9 @@ class FlowStore:
         per_flow: dict[str, int] = {}
         kept: list[JsonObject] = []
         for run in ordered:
+            if run.get("status") in ("queued", "running"):
+                kept.append(run)
+                continue
             fid = run["flow_id"]
             count = per_flow.get(fid, 0)
             if count >= MAX_RUNS_PER_FLOW or len(kept) >= MAX_TOTAL_RUNS:

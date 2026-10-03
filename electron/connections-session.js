@@ -236,7 +236,8 @@ async function getValidTokens(provider) {
   let tokens = loadTokens(provider);
   if (!tokens) return null;
   if (!tokens.access_token && !tokens.refresh_token) return null;
-  const expiresSoon = !tokens.expiry_date || tokens.expiry_date < Date.now() + 60_000;
+  // Sin expiry_date (tokens no caducables, p. ej. GitHub) el access_token se usa tal cual.
+  const expiresSoon = Boolean(tokens.expiry_date) && tokens.expiry_date < Date.now() + 60_000;
   if ((!tokens.access_token || expiresSoon) && tokens.refresh_token) {
     try {
       tokens = await refreshTokens(provider, tokens);

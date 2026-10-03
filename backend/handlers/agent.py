@@ -40,7 +40,7 @@ def _session_create(params: JsonObject) -> JsonObject:
     if not isinstance(spec.get("chat"), dict):
         raise ValidationError(f"El proveedor {provider} no soporta chat")
     state = _ai_providers.public_state(provider)
-    if state.get("needs_key"):
+    if state.get("needs_key") and not state.get("has_key"):
         raise ValidationError("Configura la clave del proveedor en Proveedores IA")
     model = params.get("model")
     default_model = (spec.get("chat") or {}).get("default_model")

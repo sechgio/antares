@@ -21,7 +21,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from backend.core.flows.agent_chat import chat
+from backend.core.flows.agent_chat import chat, gated_methods
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 from backend.utils.atomic_write import atomic_write_json
@@ -237,44 +237,50 @@ class AgentRunner:
         with self._lock:
             if self.is_running(session_id):
                 raise ValueError("Ya hay un turno en curso en esta conversación")
+            if self._store.pending_approvals(session_id):
+                raise ValueError("Resuelve primero las aprobaciones pendientes de esta conversación")
             self._store.append_message(session_id, {"role": "user", "content": content})
             self._spawn(session_id, f"agent-turn-{session_id}")
 
     def decide(self, approval_id: str, approved: bool) -> JsonObject:
-        """Aplica la decisión del usuario, ejecuta la tool aprobada y reanuda."""
-        approval = self._store.decide_approval(approval_id, approved)
-        if approval is None:
-            raise ValueError("Aprobación inexistente o ya decidida")
-        session_id = str(approval["session_id"])
-        call_id = str(approval["call_id"])
-        if approved:
-            result = self._execute({"name": approval["method"], "params": approval.get("params") or {}})
-            self._store.update_tool_call(session_id, call_id, "done", result)
-            self._store.append_message(
-                session_id,
-                {
-                    "role": "tool_result",
-                    "tool_use_id": call_id,
-                    "name": approval["method"],
-                    "content": result,
-                },
-            )
-        else:
-            denied = json.dumps({"error": "El usuario rechazó esta acción"}, ensure_ascii=False)
-            self._store.update_tool_call(session_id, call_id, "denied", denied)
-            self._store.append_message(
-                session_id,
-                {
-                    "role": "tool_result",
-                    "tool_use_id": call_id,
-                    "name": approval["method"],
-                    "content": denied,
-                },
-            )
-        if not self._store.pending_approvals(session_id):
-            with self._lock:
+        """Aplica la decisión del usuario, ejecuta la tool aprobada y reanuda.
+
+        Serializada bajo ``self._lock``: decisiones concurrentes aplican y
+        persisten sus tool_result en orden, nunca intercaladas.
+        """
+        with self._lock:
+            approval = self._store.decide_approval(approval_id, approved)
+            if approval is None:
+                raise ValueError("Aprobación inexistente o ya decidida")
+            session_id = str(approval["session_id"])
+            call_id = str(approval["call_id"])
+            if approved:
+                result = self._execute({"name": approval["method"], "params": approval.get("params") or {}})
+                self._store.update_tool_call(session_id, call_id, "done", result)
+                self._store.append_message(
+                    session_id,
+                    {
+                        "role": "tool_result",
+                        "tool_use_id": call_id,
+                        "name": approval["method"],
+                        "content": result,
+                    },
+                )
+            else:
+                denied = json.dumps({"error": "El usuario rechazó esta acción"}, ensure_ascii=False)
+                self._store.update_tool_call(session_id, call_id, "denied", denied)
+                self._store.append_message(
+                    session_id,
+                    {
+                        "role": "tool_result",
+                        "tool_use_id": call_id,
+                        "name": approval["method"],
+                        "content": denied,
+                    },
+                )
+            if not self._store.pending_approvals(session_id):
                 self._spawn(session_id, f"agent-resume-{session_id}")
-        return approval
+            return approval
 
     def _turn_main(self, session_id: str) -> None:
         try:
@@ -303,6 +309,7 @@ class AgentRunner:
         session = self._store.get_session(session_id)
         if session is None:
             raise ValueError("Sesión de agente no encontrada")
+        gated = set(gated_methods())
         for _ in range(_MAX_TOOL_STEPS):
             if self._store.pending_approvals(session_id):
                 return  # pausa hasta decisión del usuario
@@ -311,7 +318,9 @@ class AgentRunner:
             text = str(reply.get("text") or "")
             if calls:
                 for call in calls:
-                    call["gated"] = call["name"] not in ORCHESTRATABLE_METHODS
+                    name = str(call.get("name") or "")
+                    call["gated"] = name in gated
+                    call["allowed"] = call["gated"] or name in ORCHESTRATABLE_METHODS
                     call["status"] = "queued"
                     call["result"] = None
                 self._store.append_message(
@@ -326,6 +335,22 @@ class AgentRunner:
 
             for call in calls:
                 call_id = str(call["id"])
+                if not call.get("allowed"):
+                    result = json.dumps(
+                        {"error": f"Herramienta no disponible para el agente: {call.get('name')}"},
+                        ensure_ascii=False,
+                    )
+                    self._store.update_tool_call(session_id, call_id, "denied", result)
+                    self._store.append_message(
+                        session_id,
+                        {
+                            "role": "tool_result",
+                            "tool_use_id": call_id,
+                            "name": call["name"],
+                            "content": result,
+                        },
+                    )
+                    continue
                 if call.get("gated"):
                     self._store.create_approval(session_id, call)
                     self._store.update_tool_call(session_id, call_id, "pending", "")

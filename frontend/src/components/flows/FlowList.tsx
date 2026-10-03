@@ -1,11 +1,22 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Copy, History, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Copy,
+  Download,
+  History,
+  LayoutTemplate,
+  Play,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
-import type { FlowMeta, FlowRunStatus } from './types';
+import { FLOW_TEMPLATES, type FlowTemplate } from './flowTemplates';
+import type { FlowMeta, FlowRunStatus, WorkflowGraph } from './types';
 
 const STATUS_LABELS: Record<FlowRunStatus, string> = {
   queued: 'En cola',
@@ -46,6 +57,8 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
   const { confirm } = useDialog();
   const [flows, setFlows] = useState<FlowMeta[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -69,6 +82,66 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
       onOpen(res.flow.id);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo crear el flujo'), type: 'error' });
+    }
+  };
+
+  const createFromTemplate = async (template: FlowTemplate) => {
+    try {
+      const res = await flowsApi.flowsCreate({
+        name: template.name,
+        description: template.description,
+        graph: template.graph,
+      });
+      addToast({ message: 'Flujo creado desde plantilla', type: 'success' });
+      setShowTemplates(false);
+      onOpen(res.flow.id);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo crear desde la plantilla'), type: 'error' });
+    }
+  };
+
+  const exportFlow = async (flow: FlowMeta) => {
+    try {
+      const res = await flowsApi.flowsGet(flow.id);
+      const payload = {
+        format: 'antares-flow@1',
+        name: res.flow.name,
+        description: res.flow.description,
+        graph: res.flow.graph,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${res.flow.name.replace(/[^\w\s-]+/g, '').trim() || 'flujo'}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo exportar el flujo'), type: 'error' });
+    }
+  };
+
+  const onImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text()) as {
+        format?: string;
+        name?: string;
+        description?: string;
+        graph?: WorkflowGraph;
+      };
+      if (parsed.format !== 'antares-flow@1' || !parsed.graph || !Array.isArray(parsed.graph.nodes)) {
+        throw new Error('Formato de flujo no reconocido');
+      }
+      const res = await flowsApi.flowsCreate({
+        name: parsed.name || file.name.replace(/\.json$/i, ''),
+        description: parsed.description || '',
+        graph: parsed.graph,
+      });
+      addToast({ message: 'Flujo importado', type: 'success' });
+      onOpen(res.flow.id);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo importar el archivo'), type: 'error' });
     }
   };
 
@@ -109,8 +182,36 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              void onImportFile(e.target.files?.[0]);
+              e.target.value = '';
+            }}
+          />
           <Button variant="ghost" size="sm" onClick={() => void load()} aria-label="Recargar">
             <RefreshCw size={15} />
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+            title="Importar un flujo exportado (.json)"
+          >
+            <Upload size={15} className="mr-1" />
+            Importar
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowTemplates((v) => !v)}
+            title="Crear a partir de una plantilla"
+          >
+            <LayoutTemplate size={15} className="mr-1" />
+            Plantillas
           </Button>
           <Button variant="primary" size="sm" onClick={() => void createFlow()}>
             <Plus size={15} className="mr-1" />
@@ -120,6 +221,20 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
+        {showTemplates && (
+          <div className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {FLOW_TEMPLATES.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => void createFromTemplate(t)}
+                className="rounded-xl border border-dashed border-[var(--border-medium)] bg-[var(--bg-elevated)] p-4 text-left transition-colors hover:border-[var(--accent-primary)]"
+              >
+                <div className="text-sm font-semibold text-[var(--text-primary)]">{t.name}</div>
+                <div className="mt-0.5 text-xs text-[var(--text-secondary)]">{t.description}</div>
+              </button>
+            ))}
+          </div>
+        )}
         {loading ? (
           <p className="text-sm text-[var(--text-secondary)]">Cargando…</p>
         ) : flows.length === 0 ? (
@@ -186,6 +301,15 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
                       title="Duplicar"
                     >
                       <Copy size={14} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void exportFlow(flow)}
+                      aria-label="Exportar"
+                      title="Exportar a JSON"
+                    >
+                      <Download size={14} />
                     </Button>
                     <Button
                       variant="ghost"

@@ -145,7 +145,8 @@ def fresh_access_token(provider: str) -> str:
     if not tokens or not isinstance(tokens.get("access_token"), str) or not tokens["access_token"]:
         raise ValueError(f"Sin conexión activa para {provider}; conéctalo desde Flujos → Conexiones")
     expiry = tokens.get("expiry_date")
-    expired = not isinstance(expiry, (int, float)) or expiry < time.time() * 1000 + _TOKEN_EXPIRY_SKEW_MS
+    # Sin expiry declarada (tokens OAuth no caducables, p. ej. GitHub) el token se usa tal cual.
+    expired = isinstance(expiry, (int, float)) and expiry < time.time() * 1000 + _TOKEN_EXPIRY_SKEW_MS
     if expired:
         try:
             tokens = _refresh(provider, get_provider(provider), tokens)

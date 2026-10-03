@@ -6,6 +6,7 @@ export type FlowNodeKind =
   | 'loop'
   | 'http_request'
   | 'agent'
+  | 'switch'
   | 'code';
 
 export type TriggerKind = 'manual' | 'schedule' | 'app_event' | 'webhook';
@@ -62,6 +63,7 @@ export interface FlowRunStep {
   duration_ms: number | null;
   output: unknown;
   error: string | null;
+  attempts?: number | null;
 }
 
 export interface FlowRun {

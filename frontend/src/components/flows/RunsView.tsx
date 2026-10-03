@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, RefreshCw, Square } from 'lucide-react';
+import { ChevronDown, ChevronRight, Play, RefreshCw, Square } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
@@ -122,6 +122,16 @@ export default function RunsView({ flowId }: { flowId?: string }) {
     }
   };
 
+  const rerun = async (flowId: string) => {
+    try {
+      await flowsApi.flowsRun(flowId);
+      addToast({ message: 'Ejecución iniciada', type: 'success' });
+      void load(true);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo ejecutar'), type: 'error' });
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-[var(--border-medium)] px-5 py-3">
@@ -195,6 +205,17 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                       </span>
                     </button>
                     <FlowStatusBadge status={run.status} />
+                    {run.status !== 'queued' && run.status !== 'running' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void rerun(run.flow_id)}
+                        aria-label="Ejecutar de nuevo"
+                        title="Ejecutar de nuevo"
+                      >
+                        <Play size={13} />
+                      </Button>
+                    )}
                     {(run.status === 'queued' || run.status === 'running') && (
                       <Button
                         variant="ghost"
@@ -256,6 +277,11 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                                   {step.status === 'skipped' ? 'omitido' : step.status}
                                 </span>
                                 <span className="flex-1" />
+                                {step.attempts != null && step.attempts > 1 && (
+                                  <span className="text-[10px] text-[var(--text-secondary)]">
+                                    {step.attempts} intentos
+                                  </span>
+                                )}
                                 {step.duration_ms != null && (
                                   <span className="text-[10px] text-[var(--text-secondary)]">
                                     {step.duration_ms} ms

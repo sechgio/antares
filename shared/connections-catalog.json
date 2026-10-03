@@ -20,6 +20,13 @@
         "extra_authorize": {},
         "extra_token": {}
       },
+      "token_hosts": [
+        "api.github.com",
+        "github.com",
+        "uploads.github.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com"
+      ],
       "status": {
         "url": "https://api.github.com/user",
         "account_field": "login",
@@ -42,6 +49,7 @@
         "extra_authorize": {},
         "extra_token": {}
       },
+      "token_hosts": ["slack.com", "files.slack.com", "edgeapi.slack.com"],
       "status": {
         "url": "https://slack.com/api/auth.test",
         "account_field": "team",

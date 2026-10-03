@@ -3,9 +3,10 @@
 - Windows: DPAPI (``CryptProtectData``) vía ``win32ctypes.pywin32``, la misma
   clase de protección que ``safeStorage`` de Electron.
 - Otros SO (desarrollo): cifrado de flujo HMAC-SHA256 + etiqueta de integridad,
-  con clave derivada del directorio de datos de usuario — comparable al
-  fallback v1 de ``electron/autoimg-secure-storage.js`` (no es DPAPI pero sí
-  cifrado autenticado de verdad).
+  con clave aleatoria persistida en ``<datos>/.vault-key`` (permisos 0600) —
+  comparable al fallback v1 de ``electron/autoimg-secure-storage.js`` (no es
+  DPAPI pero sí cifrado autenticado de verdad). Los payloads sellados con la
+  clave derivada antigua (pre-v4) siguen leyéndose y se resellan al escribir.
 """
 
 from __future__ import annotations
@@ -32,10 +33,35 @@ logger = logging.getLogger(__name__)
 _NS = "antares-connections"
 
 
-def _machine_key(namespace: str) -> bytes:
+_KEY_FILE = ".vault-key"
+
+
+def _legacy_machine_key(namespace: str) -> bytes:
+    """Derivación antigua (determinista) conservada para leer vaults previos."""
     base = user_data_path(".")
     seed = f"antares:{os.path.realpath(base)}:{_NS}:{namespace}".encode()
     return hashlib.sha256(seed).digest()
+
+
+def _machine_key(namespace: str) -> bytes:
+    """Clave por namespace derivada de un material aleatorio persistido a disco."""
+    key_path = user_data_path(_KEY_FILE)
+    material: bytes | None = None
+    try:
+        raw = key_path.read_bytes()
+        if len(raw) == 32:
+            material = raw
+    except OSError:
+        pass
+    if material is None:
+        material = secrets.token_bytes(32)
+        try:
+            key_path.parent.mkdir(parents=True, exist_ok=True)
+            key_path.write_bytes(material)
+            os.chmod(key_path, 0o600)
+        except OSError:
+            logger.warning("No se pudo persistir la clave del vault en %s", key_path)
+    return hmac.new(material, f"antares:{_NS}:{namespace}".encode(), hashlib.sha256).digest()
 
 
 class _Win32Crypt(Protocol):
@@ -106,17 +132,18 @@ def _hmac_seal(namespace: str, payload: JsonObject) -> JsonObject:
 
 
 def _hmac_open(namespace: str, encoded: str) -> JsonObject:
-    enc_key = _machine_key(namespace)
-    mac_key = hashlib.sha256(enc_key + b":mac").digest()
     buf = base64.b64decode(encoded)
     iv, tag, ciphertext = buf[:16], buf[16:48], buf[48:]
-    expected = hmac.new(mac_key, iv + ciphertext, hashlib.sha256).digest()
-    if not hmac.compare_digest(tag, expected):
-        raise ValueError("payload del vault corrupto o clave distinta")
-    stream = _xor_stream(enc_key, iv, len(ciphertext))
-    plain = bytes(a ^ b for a, b in zip(ciphertext, stream, strict=True))
-    result: JsonObject = json.loads(plain.decode("utf-8"))
-    return result
+    for enc_key in (_machine_key(namespace), _legacy_machine_key(namespace)):
+        mac_key = hashlib.sha256(enc_key + b":mac").digest()
+        expected = hmac.new(mac_key, iv + ciphertext, hashlib.sha256).digest()
+        if not hmac.compare_digest(tag, expected):
+            continue
+        stream = _xor_stream(enc_key, iv, len(ciphertext))
+        plain = bytes(a ^ b for a, b in zip(ciphertext, stream, strict=True))
+        result: JsonObject = json.loads(plain.decode("utf-8"))
+        return result
+    raise ValueError("payload del vault corrupto o clave distinta")
 
 
 def seal(namespace: str, path: Path, payload: JsonObject) -> None:
