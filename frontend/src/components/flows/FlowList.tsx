@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Trash2,
   Upload,
+  Workflow,
 } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
 import { aiProvidersApi } from '../../api/aiProvidersApi';
@@ -274,16 +275,27 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
                 className="group flex flex-col rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-4 transition-colors hover:border-[var(--accent-primary)]"
               >
                 <button
-                  className="text-left"
+                  className="flex items-start gap-2.5 text-left"
                   onClick={() => onOpen(flow.id)}
                   title="Abrir editor"
                 >
-                  <div className="truncate text-sm font-semibold text-[var(--text-primary)]">
-                    {flow.name}
-                  </div>
-                  <div className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
-                    {flow.description || 'Sin descripción'}
-                  </div>
+                  <span
+                    className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                    style={{
+                      background: 'color-mix(in srgb, var(--accent-primary) 16%, transparent)',
+                      color: 'var(--accent-primary)',
+                    }}
+                  >
+                    <Workflow size={14} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-[var(--text-primary)]">
+                      {flow.name}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-[var(--text-secondary)]">
+                      {flow.description || 'Sin descripción'}
+                    </span>
+                  </span>
                 </button>
                 <div className="mt-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -292,6 +304,20 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
                     ) : (
                       <span className="text-[11px] text-[var(--text-secondary)]">Sin ejecuciones</span>
                     )}
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full border border-[var(--border-medium)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]`}
+                      title={flow.enabled ? 'El disparador programado puede ejecutarlo' : 'Solo se ejecuta a mano'}
+                    >
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{
+                          background: flow.enabled
+                            ? 'var(--accent-primary)'
+                            : 'var(--text-secondary)',
+                        }}
+                      />
+                      {flow.enabled ? 'Activo' : 'Inactivo'}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                     <Button

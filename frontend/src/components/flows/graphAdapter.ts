@@ -6,6 +6,14 @@ export interface FlowNodeData extends Record<string, unknown> {
   stepStatus?: 'running' | 'success' | 'error' | 'skipped' | 'cancelled';
 }
 
+// Aristas punteadas suaves, estilo agent-builder: puntos redondos sobre curvas bezier.
+export const FLOW_EDGE_STYLE = {
+  stroke: 'color-mix(in srgb, var(--text-secondary) 52%, transparent)',
+  strokeWidth: 1.75,
+  strokeDasharray: '0.1 5.5',
+  strokeLinecap: 'round',
+} as const;
+
 export function graphToReactFlow(graph: WorkflowGraph): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
   const nodes: Node<FlowNodeData>[] = graph.nodes.map((n) => ({
     id: n.id,
@@ -19,7 +27,7 @@ export function graphToReactFlow(graph: WorkflowGraph): { nodes: Node<FlowNodeDa
     sourceHandle: e.from_port,
     target: e.to_node,
     targetHandle: e.to_port,
-    type: 'smoothstep',
+    style: { ...FLOW_EDGE_STYLE },
   }));
   return { nodes, edges };
 }

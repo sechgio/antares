@@ -26,7 +26,7 @@ import Toggle from '../ui/Toggle';
 import FlowNodeView from './FlowNodeView';
 import NodeConfigDrawer from './NodeConfigDrawer';
 import NodePalette, { NODE_DRAG_MIME } from './NodePalette';
-import { graphToReactFlow, makeNodeId, reactFlowToGraph } from './graphAdapter';
+import { FLOW_EDGE_STYLE, graphToReactFlow, makeNodeId, reactFlowToGraph } from './graphAdapter';
 import { createsCycle, layoutByDepth } from './flowLayout';
 import { useFlowHistory } from './useFlowHistory';
 import { NODE_KIND_DEFS } from './nodeDefs';
@@ -144,7 +144,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
           {
             ...conn,
             id: `${conn.source}:${conn.sourceHandle ?? 'main'}->${conn.target}:${conn.targetHandle ?? 'main'}`,
-            type: 'smoothstep',
+            style: { ...FLOW_EDGE_STYLE },
           },
           es,
         ),
@@ -452,7 +452,8 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
             proOptions={{ hideAttribution: true }}
             colorMode="dark"
           >
-            <Background gap={18} size={1} color="var(--border-medium)" />
+            <Background gap={16} size={1} color="var(--border-medium)" />
+            <Background gap={16} size={1} offset={8} color="var(--border-medium)" />
             <Controls position="bottom-left" />
             <MiniMap
               position="bottom-right"

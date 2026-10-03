@@ -79,7 +79,15 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
     <aside className="flex w-80 shrink-0 flex-col border-l border-[var(--border-medium)] bg-[var(--bg-base)]">
       <div className="flex items-center justify-between border-b border-[var(--border-medium)] px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: def.accent }} />
+          <span
+            className="flex h-6 w-6 items-center justify-center rounded-md"
+            style={{
+              background: `color-mix(in srgb, ${def.accent} 16%, transparent)`,
+              color: def.accent,
+            }}
+          >
+            <def.icon size={13} />
+          </span>
           <div>
             <div className="text-sm font-semibold text-[var(--text-primary)]">{def.label}</div>
             <div className="text-[10px] text-[var(--text-secondary)]">{node.id}</div>

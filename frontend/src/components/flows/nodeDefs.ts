@@ -1,3 +1,16 @@
+import type { LucideIcon } from 'lucide-react';
+import {
+  Bot,
+  Code2,
+  GitFork,
+  Globe,
+  Plug,
+  Repeat,
+  Shuffle,
+  Split,
+  Wrench,
+  Zap,
+} from 'lucide-react';
 import type { FlowNode, FlowNodeKind, TriggerKind } from './types';
 
 export interface NodeKindDef {
@@ -5,6 +18,7 @@ export interface NodeKindDef {
   label: string;
   description: string;
   accent: string;
+  icon: LucideIcon;
   implemented: boolean;
   inputs: string[];
   outputs: { port: string; label: string }[];
@@ -33,6 +47,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'Disparador',
     description: 'Punto de entrada del flujo',
     accent: 'var(--accent-primary, #6366f1)',
+    icon: Zap,
     implemented: true,
     inputs: [],
     outputs: [{ port: 'main', label: 'Salida' }],
@@ -42,6 +57,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'Acción',
     description: 'Ejecuta un método de la app',
     accent: '#38bdf8',
+    icon: Wrench,
     implemented: true,
     inputs: ['main'],
     outputs: [{ port: 'main', label: 'Resultado' }],
@@ -51,6 +67,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'Condición',
     description: 'Ramifica verdadero / falso',
     accent: '#f59e0b',
+    icon: GitFork,
     implemented: true,
     inputs: ['main'],
     outputs: [
@@ -63,6 +80,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'Transformar',
     description: 'Construye un objeto con expresiones',
     accent: '#34d399',
+    icon: Shuffle,
     implemented: true,
     inputs: ['main'],
     outputs: [{ port: 'main', label: 'Objeto' }],
@@ -72,6 +90,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'Bucle',
     description: 'Próximamente',
     accent: '#a78bfa',
+    icon: Repeat,
     implemented: false,
     inputs: ['main'],
     outputs: [{ port: 'main', label: 'Cada elemento' }],
@@ -81,6 +100,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'HTTP',
     description: 'Llamada HTTP; puede firmar con una Conexión OAuth',
     accent: '#fb7185',
+    icon: Globe,
     implemented: true,
     inputs: ['main'],
     outputs: [{ port: 'main', label: 'Respuesta' }],
@@ -90,6 +110,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'Agente IA',
     description: 'Un turno con un proveedor IA guardado',
     accent: '#e879f9',
+    icon: Bot,
     implemented: true,
     inputs: ['main'],
     outputs: [{ port: 'main', label: 'Texto' }],
@@ -99,6 +120,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'Distribuir',
     description: 'Enruta por casos según una expresión',
     accent: '#fbbf24',
+    icon: Split,
     implemented: true,
     inputs: ['main'],
     outputs: [{ port: 'default', label: 'Defecto' }],
@@ -108,6 +130,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'Llamada MCP',
     description: 'Ejecuta una tool de un servidor MCP',
     accent: '#2dd4bf',
+    icon: Plug,
     implemented: true,
     inputs: ['main'],
     outputs: [{ port: 'main', label: 'Resultado' }],
@@ -117,6 +140,7 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
     label: 'Código',
     description: 'Próximamente',
     accent: '#94a3b8',
+    icon: Code2,
     implemented: false,
     inputs: ['main'],
     outputs: [{ port: 'main', label: 'Salida' }],

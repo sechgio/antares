@@ -45,7 +45,8 @@ function RunGraph({ graph, steps }: Props) {
         proOptions={{ hideAttribution: true }}
         colorMode="dark"
       >
-        <Background gap={18} size={1} color="var(--border-medium)" />
+        <Background gap={16} size={1} color="var(--border-medium)" />
+        <Background gap={16} size={1} offset={8} color="var(--border-medium)" />
         <Controls position="bottom-left" showInteractive={false} />
       </ReactFlow>
     </div>
