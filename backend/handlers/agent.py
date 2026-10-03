@@ -6,6 +6,7 @@ from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.flows import agent as _agent
 from backend.core.flows import agent_chat as _agent_chat
 from backend.core.flows import ai_providers as _ai_providers
+from backend.core.flows import mcp_servers as _mcp_servers
 from backend.core.flows.types import JsonObject
 from backend.handlers.common import validate_params, with_locale
 
@@ -89,6 +90,21 @@ def _message_send(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+def _tools_list(params: JsonObject) -> JsonObject:
+    tools = []
+    for spec in _agent_chat.tool_specs():
+        name = str(spec.get("name") or "")
+        tools.append(
+            {
+                "name": name,
+                "gated": bool(spec.get("gated")),
+                "kind": "mcp" if _mcp_servers.parse_agent_tool(name) is not None else "backend",
+            }
+        )
+    return {"tools": tools}
+
+
+@with_locale
 @validate_params("session_id")
 def _turn_status(params: JsonObject) -> JsonObject:
     session_id = str(params["session_id"])
@@ -126,6 +142,7 @@ HANDLERS = {
     "agent_session_delete": _session_delete,
     "agent_messages_list": _messages_list,
     "agent_message_send": _message_send,
+    "agent_tools_list": _tools_list,
     "agent_turn_status": _turn_status,
     "agent_approve": _approve,
     "agent_deny": _deny,

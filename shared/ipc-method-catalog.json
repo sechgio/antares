@@ -15,6 +15,7 @@
     "agent_session_delete": { "handler": "backend:agent" },
     "agent_messages_list": { "handler": "backend:agent", "idempotent": true },
     "agent_message_send": { "handler": "backend:agent" },
+    "agent_tools_list": { "handler": "backend:agent", "idempotent": true, "timeout": "long" },
     "agent_turn_status": { "handler": "backend:agent", "idempotent": true },
     "agent_approve": { "handler": "backend:agent", "timeout": "long" },
     "agent_deny": { "handler": "backend:agent" },

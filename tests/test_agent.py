@@ -44,6 +44,25 @@ def test_tool_specs_cover_readonly_and_gated():
     assert by_name[agent_chat.gated_methods()[0]]["gated"] is True
 
 
+def test_tools_list_projection(monkeypatch):
+    from backend.handlers import agent as agent_handler
+
+    monkeypatch.setattr(
+        agent_chat,
+        "tool_specs",
+        lambda: [
+            {"name": "flows_list", "gated": False},
+            {"name": "canvas_save", "gated": True},
+            {"name": "mcp__srv1__search", "gated": True},
+        ],
+    )
+    tools = agent_handler._tools_list({})["tools"]
+    by_name = {t["name"]: t for t in tools}
+    assert by_name["flows_list"] == {"name": "flows_list", "gated": False, "kind": "backend"}
+    assert by_name["canvas_save"]["gated"] is True
+    assert by_name["mcp__srv1__search"]["kind"] == "mcp"
+
+
 def test_approval_flow(tmp_path):
     store = _store(tmp_path)
     s = store.create_session("ollama", "m", "t")

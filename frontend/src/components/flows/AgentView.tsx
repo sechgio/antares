@@ -1,106 +1,72 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, Check, Loader2, Plus, Send, ShieldCheck, Trash2, X, Wrench } from 'lucide-react';
-import { agentApi, type AgentApproval, type AgentMessage, type AgentSession } from '../../api/agentApi';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, ChevronRight, MessageSquare, Plus, Send, Sparkles, Wrench, X } from 'lucide-react';
+import { agentApi, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
-import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
+import { ApprovalCard, MessageRow, ThinkingRow } from './AgentTimeline';
 
 const POLL_MS = 1500;
 
-const CALL_STATUS_LABEL: Record<string, string> = {
-  queued: 'en cola',
-  pending: 'pendiente',
-  done: 'ejecutada',
-  denied: 'rechazada',
-};
+const SUGGESTIONS = [
+  '¿Qué flujos tengo configurados y cuáles están activos?',
+  'Resume el estado de mis conexiones externas.',
+  '¿Qué ejecuciones recientes fallaron y por qué?',
+];
 
-function ToolCallRow({ call }: { call: { id: string; name: string; gated: boolean; status: string; result?: string | null } }) {
-  return (
-    <div className="mt-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] px-2.5 py-1.5">
-      <div className="flex items-center gap-1.5 text-[11px]">
-        <Wrench size={11} className="shrink-0 text-[var(--text-secondary)]" />
-        <code className="truncate font-mono text-[var(--text-primary)]">{call.name}</code>
-        {call.gated && <ShieldCheck size={11} className="shrink-0 text-amber-400" />}
-        <span className="ml-auto shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)]">
-          {CALL_STATUS_LABEL[call.status] ?? call.status}
-        </span>
-      </div>
-      {call.status === 'done' && call.result && (
-        <details className="mt-1">
-          <summary className="cursor-pointer text-[10px] text-[var(--text-secondary)]">
-            resultado
-          </summary>
-          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all text-[10px] text-[var(--text-secondary)]">
-            {call.result}
-          </pre>
-        </details>
-      )}
-    </div>
-  );
-}
-
-function MessageBubble({ msg }: { msg: AgentMessage }) {
-  if (msg.role === 'tool_result') return null; // ya se muestra dentro de la llamada
-  const isUser = msg.role === 'user';
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[80%] rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
-          isUser
-            ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)]'
-            : 'border border-[var(--border-medium)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
-        }`}
-      >
-        {msg.content && <p className="whitespace-pre-wrap">{msg.content}</p>}
-        {(msg.tool_calls ?? []).map((c) => (
-          <ToolCallRow key={c.id} call={c} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ApprovalCard({
-  approval,
-  busy,
-  onDecide,
+function SectionCard({
+  icon,
+  title,
+  badge,
+  children,
 }: {
-  approval: AgentApproval;
-  busy: boolean;
-  onDecide: (id: string, ok: boolean) => void;
+  icon: React.ReactNode;
+  title: string;
+  badge?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-amber-400/40 bg-[var(--bg-elevated)] p-3">
-      <div className="flex items-center gap-2 text-[12px] font-semibold text-[var(--text-primary)]">
-        <ShieldCheck size={14} className="text-amber-400" />
-        El agente quiere ejecutar una acción
-      </div>
-      <code className="mt-1.5 block truncate font-mono text-[11px] text-[var(--text-primary)]">
-        {approval.method}
-      </code>
-      <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded bg-[var(--bg-base)] p-2 text-[10px] text-[var(--text-secondary)]">
-        {JSON.stringify(approval.params, null, 2)}
-      </pre>
-      <div className="mt-2 flex gap-2">
-        <Button size="sm" disabled={busy} onClick={() => onDecide(approval.id, true)}>
-          <Check size={13} className="mr-1" />
-          Aprobar
-        </Button>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDecide(approval.id, false)}>
-          <X size={13} className="mr-1" />
-          Rechazar
-        </Button>
-      </div>
-    </div>
+    <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+      <header className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-3.5 py-2.5 text-[12px] font-medium text-[var(--text-primary)]">
+        <span className="text-[var(--text-secondary)]">{icon}</span>
+        {title}
+        {badge && (
+          <span className="ml-auto rounded-full bg-[var(--accent-primary-glow)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-primary-hover)]">
+            {badge}
+          </span>
+        )}
+      </header>
+      <div className="space-y-2.5 px-3.5 py-3">{children}</div>
+    </section>
+  );
+}
+
+function ToolGroup({ label, names }: { label: string; names: string[] }) {
+  if (names.length === 0) return null;
+  return (
+    <details className="group rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+        <ChevronRight size={11} className="shrink-0 transition-transform group-open:rotate-90" />
+        {label}
+        <span className="ml-auto tabular-nums text-[var(--text-muted)]">{names.length}</span>
+      </summary>
+      <ul className="mt-1.5 max-h-44 space-y-1 overflow-auto">
+        {names.map((n) => (
+          <li key={n} className="truncate font-mono text-[11px] text-[var(--text-muted)]" title={n}>
+            {n}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
 export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   const { addToast } = useToast();
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
+  const [tools, setTools] = useState<AgentToolSpec[]>([]);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionId, setSessionId] = useState('');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
@@ -110,9 +76,12 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   const [model, setModel] = useState('');
   const [draft, setDraft] = useState('');
   const [deciding, setDeciding] = useState(false);
+  const [runningSince, setRunningSince] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const draftRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (initialDraft) setDraft(initialDraft);
@@ -162,6 +131,12 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
       } catch (err) {
         addToast({ message: errorMessage(err, 'No se pudieron cargar los proveedores'), type: 'error' });
       }
+      try {
+        const res = await agentApi.agentToolsList();
+        setTools(res.tools);
+      } catch {
+        setTools([]); // la tarjeta de herramientas es informativa; no bloquea el chat
+      }
       await refreshSessions();
     })();
   }, [addToast, refreshSessions]);
@@ -198,17 +173,59 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages.length, pending.length]);
 
+  useEffect(() => {
+    if (!running) {
+      setRunningSince(null);
+      setElapsed(0);
+      return;
+    }
+    setRunningSince((prev) => prev ?? Date.now());
+  }, [running]);
+
+  useEffect(() => {
+    if (runningSince == null) return;
+    const tick = window.setInterval(() => {
+      setElapsed(Math.max(0, Math.floor((Date.now() - runningSince) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(tick);
+  }, [runningSince]);
+
+  useEffect(() => {
+    const ta = draftRef.current;
+    if (ta) {
+      ta.style.height = '0px';
+      ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
+    }
+  }, [draft]);
+
+  const session = useMemo(() => sessions.find((s) => s.id === sessionId) ?? null, [sessions, sessionId]);
+  const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
+  const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
+  const sessionProviderLabel = session
+    ? (providers.find((p) => p.id === session.provider)?.label ?? session.provider)
+    : '';
+  const toolGroups = useMemo(
+    () => ({
+      direct: tools.filter((t) => !t.gated).map((t) => t.name),
+      gated: tools.filter((t) => t.gated && t.kind !== 'mcp').map((t) => t.name),
+      mcp: tools.filter((t) => t.kind === 'mcp').map((t) => t.name),
+    }),
+    [tools],
+  );
+
   const newSession = async () => {
     if (!provider) {
       addToast({ message: 'Elige un proveedor IA', type: 'error' });
-      return;
+      return null;
     }
     try {
       const res = await agentApi.agentSessionCreate({ provider, model: model || undefined });
       await refreshSessions();
       setSessionId(res.session.id);
+      return res.session.id as string;
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo crear la conversación'), type: 'error' });
+      return null;
     }
   };
 
@@ -222,19 +239,28 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
     }
   };
 
-  const send = async () => {
-    const content = draft.trim();
-    if (!content || !sessionId || running) return;
-    setDraft('');
+  const sendToSession = async (id: string, content: string) => {
     setRunning(true);
     try {
-      await agentApi.agentMessageSend(sessionId, content);
+      await agentApi.agentMessageSend(id, content);
       void refreshSessions();
-      await loadMessages(sessionId);
+      await loadMessages(id);
     } catch (err) {
       setRunning(false);
       addToast({ message: errorMessage(err, 'No se pudo enviar el mensaje'), type: 'error' });
     }
+  };
+
+  const send = async () => {
+    const content = draft.trim();
+    if (!content || !sessionId || running) return;
+    setDraft('');
+    await sendToSession(sessionId, content);
+  };
+
+  const sendSuggestion = async (text: string) => {
+    const id = sessionId || (await newSession());
+    if (id) void sendToSession(id, text);
   };
 
   const decide = async (id: string, ok: boolean) => {
@@ -250,148 +276,217 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
     }
   };
 
-  const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
+  const showHero = !sessionId || messages.length === 0;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--border-medium)] px-5 py-3">
-        <div className="flex items-center gap-2">
-          <Bot size={16} className="text-[var(--text-secondary)]" />
-          <div>
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Agente</h2>
-            <p className="text-[11px] text-[var(--text-secondary)]">
-              Conversa con la app. Las acciones con efectos piden tu aprobación.
-            </p>
-          </div>
+    <div className="flex h-full">
+      <aside className="flex w-56 shrink-0 flex-col border-r border-[var(--border-medium)]">
+        <div className="flex items-center justify-between px-3 pb-1.5 pt-3">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+            Conversaciones
+          </span>
+          <button
+            className="rounded-md p-1 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            onClick={() => void newSession()}
+            aria-label="Nueva conversación"
+            title="Nueva conversación"
+          >
+            <Plus size={14} />
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-44">
-            <ThemedSelect
-              value={provider}
-              onChange={(v) => {
-                setProvider(v);
-                const p = providers.find((x) => x.id === v);
-                if (p?.default_model) setModel(p.default_model);
-              }}
-              options={providers.map((p) => ({ value: p.id, label: p.label }))}
-              aria-label="Proveedor IA"
-              placeholder="Proveedor…"
-            />
-          </div>
-          <div className="w-40">
-            <Input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="modelo"
-              spellCheck={false}
-              aria-label="Modelo"
-            />
-          </div>
-          <Button size="sm" variant="secondary" onClick={() => void newSession()}>
-            <Plus size={13} className="mr-1" />
-            Nueva
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1">
-        <aside className="w-52 shrink-0 overflow-y-auto border-r border-[var(--border-medium)] p-2">
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           {sessions.length === 0 && (
-            <p className="px-2 py-3 text-[11px] text-[var(--text-secondary)]">
-              Sin conversaciones. Crea una con «Nueva».
+            <p className="px-2 py-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+              Sin conversaciones. Pulsa + para empezar.
             </p>
           )}
           {sessions.map((s) => (
             <div
               key={s.id}
-              className={`group mb-1 flex items-center gap-1 rounded-md px-2 py-1.5 text-left text-[12px] ${
+              className={`group mb-0.5 flex items-center gap-2 rounded-lg px-2 py-2 transition-colors ${
                 s.id === sessionId
                   ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)]'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)]'
               }`}
             >
-              <button className="min-w-0 flex-1 truncate text-left" onClick={() => setSessionId(s.id)}>
-                {s.title || s.id}
-                <span className="block truncate text-[10px] opacity-70">
-                  {s.provider} · {s.model}
+              <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setSessionId(s.id)}>
+                <MessageSquare size={13} className="shrink-0 opacity-60" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12px]">{s.title || 'Conversación'}</span>
+                  <span className="block truncate text-[10px] text-[var(--text-muted)]">
+                    {s.provider} · {s.model}
+                  </span>
                 </span>
               </button>
               <button
-                className="invisible shrink-0 rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red,#ef4444)] group-hover:visible"
-                onClick={() => void removeSession(s.id)}
+                className="invisible shrink-0 rounded p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--accent-red)] group-hover:visible"
                 aria-label="Eliminar conversación"
                 title="Eliminar"
+                onClick={() => void removeSession(s.id)}
               >
-                <Trash2 size={13} />
+                <X size={13} />
               </button>
             </div>
           ))}
-        </aside>
+        </div>
+      </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-            {!sessionId ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                <Bot size={28} className="text-[var(--text-secondary)]" />
-                <p className="max-w-sm text-sm text-[var(--text-secondary)]">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {session && (
+          <div className="flex items-center gap-2 border-b border-[var(--border-medium)] px-5 py-2.5">
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--accent-primary-glow)] text-[var(--accent-primary-hover)]">
+              <Bot size={14} />
+            </span>
+            <span className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+              {session.title || 'Conversación'}
+            </span>
+            <span className="shrink-0 rounded-full border border-[var(--border-subtle)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
+              {session.provider} · {session.model}
+            </span>
+          </div>
+        )}
+
+        <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          {showHero ? (
+            <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-primary-glow)] text-[var(--accent-primary-hover)]">
+                <Bot size={28} />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                  {sessionId ? '¿En qué trabajamos hoy?' : 'Agente de Antares'}
+                </h2>
+                <p className="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-[var(--text-secondary)]">
                   {readyProviders.length === 0
                     ? 'Configura un proveedor en «Proveedores IA» para empezar.'
-                    : 'Elige proveedor y modelo, y pulsa «Nueva» para abrir una conversación.'}
+                    : 'Conversa con la app: consulta su estado con herramientas de lectura y aprueba cada acción con efectos antes de que se ejecute.'}
                 </p>
               </div>
-            ) : messages.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                <Bot size={24} className="text-[var(--text-secondary)]" />
-                <p className="max-w-sm text-sm text-[var(--text-secondary)]">
-                  Escribe tu primer mensaje — el agente puede consultar el estado de la app y te
-                  pedirá aprobación antes de actuar.
-                </p>
-              </div>
-            ) : (
-              messages.map((m, i) => <MessageBubble key={`${m.ts}-${i}`} msg={m} />)
-            )}
-            {running && (
-              <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                <Loader2 size={12} className="animate-spin" />
-                El agente está trabajando…
-              </div>
-            )}
-          </div>
+              {readyProviders.length > 0 && (
+                <div className="w-full max-w-sm space-y-1.5">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                    Sugerencias
+                  </p>
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      className="flex w-full items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]"
+                      onClick={() => void sendSuggestion(s)}
+                    >
+                      <Sparkles size={12} className="shrink-0 text-[var(--accent-primary-hover)]" />
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            messages.map((m, i) => <MessageRow key={`${m.ts}-${i}`} msg={m} />)
+          )}
+          {pending.map((a) => (
+            <ApprovalCard key={a.id} approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
+          ))}
+          {running && <ThinkingRow elapsedSeconds={elapsed} />}
+        </div>
 
-          <div className="border-t border-[var(--border-medium)] p-3">
-            {pending.length > 0 && (
-              <div className="mb-3 space-y-2">
-                {pending.map((a) => (
-                  <ApprovalCard key={a.id} approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
-                ))}
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <Input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-                placeholder={sessionId ? 'Escribe un mensaje…' : 'Crea una conversación primero'}
-                disabled={!sessionId || running}
-                aria-label="Mensaje para el agente"
-              />
-              <Button
-                size="sm"
+        <div className="px-5 pb-4 pt-1">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 pb-2 pt-3 transition-colors focus-within:border-[var(--border-medium)]">
+            <textarea
+              ref={draftRef}
+              rows={1}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+              placeholder={sessionId ? 'Escribe un mensaje…' : 'Crea una conversación primero'}
+              disabled={!sessionId || running}
+              aria-label="Mensaje para el agente"
+              className="max-h-36 w-full resize-none bg-transparent text-[13px] leading-relaxed text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
+            />
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="truncate rounded-full bg-[var(--bg-elevated)] px-2.5 py-1 text-[11px] text-[var(--text-muted)]">
+                {session
+                  ? `${sessionProviderLabel}${session.model ? ` · ${session.model}` : ''}`
+                  : `${providerLabel || 'Proveedor IA'}${model ? ` · ${model}` : ''}`}
+              </span>
+              <button
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-all duration-150 hover:bg-[var(--accent-primary-hover)] active:scale-[0.96] disabled:bg-[var(--bg-input)] disabled:text-[var(--text-muted)]"
                 onClick={() => void send()}
                 disabled={!sessionId || running || !draft.trim()}
                 aria-label="Enviar"
               >
                 <Send size={13} />
-              </Button>
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      <aside className="hidden w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-[var(--border-medium)] p-3 xl:flex">
+        <SectionCard icon={<Bot size={14} />} title="Agente" badge={session ? session.provider : undefined}>
+          {session ? (
+            <dl className="space-y-1.5 text-[12px]">
+              <div className="flex justify-between gap-3">
+                <dt className="text-[var(--text-muted)]">Proveedor</dt>
+                <dd className="truncate font-mono text-[var(--text-secondary)]">{session.provider}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-[var(--text-muted)]">Modelo</dt>
+                <dd className="truncate font-mono text-[var(--text-secondary)]">{session.model || 'por defecto'}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-[var(--text-muted)]">Mensajes</dt>
+                <dd className="tabular-nums text-[var(--text-secondary)]">
+                  {messages.filter((m) => m.role !== 'tool_result').length}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <div className="space-y-2">
+              <ThemedSelect
+                value={provider}
+                onChange={(v) => {
+                  setProvider(v);
+                  const p = providers.find((x) => x.id === v);
+                  if (p?.default_model) setModel(p.default_model);
+                }}
+                options={providers.map((p) => ({ value: p.id, label: p.label }))}
+                aria-label="Proveedor IA"
+                placeholder="Proveedor…"
+              />
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="Modelo (opcional)"
+                spellCheck={false}
+                aria-label="Modelo"
+              />
+              <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+                Se aplican a la próxima conversación.
+              </p>
+            </div>
+          )}
+          <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+            Las acciones con efectos se pausan hasta que las apruebes. Las claves salen del vault y
+            nunca llegan a esta ventana.
+          </p>
+        </SectionCard>
+
+        <SectionCard icon={<Wrench size={14} />} title="Herramientas" badge={tools.length ? String(tools.length) : undefined}>
+          <ToolGroup label="Lectura directa" names={toolGroups.direct} />
+          <ToolGroup label="Con aprobación" names={toolGroups.gated} />
+          <ToolGroup label="MCP" names={toolGroups.mcp} />
+          {tools.length === 0 && (
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Las herramientas disponibles aparecen aquí al cargar la vista.
+            </p>
+          )}
+        </SectionCard>
+      </aside>
     </div>
   );
 }

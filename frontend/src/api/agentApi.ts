@@ -28,6 +28,12 @@ export interface AgentMessage {
   ts: number;
 }
 
+export interface AgentToolSpec {
+  name: string;
+  gated: boolean;
+  kind: 'backend' | 'mcp';
+}
+
 export interface AgentApproval {
   id: string;
   session_id: string;
@@ -57,6 +63,8 @@ export const agentApi = {
 
   agentMessageSend: (session_id: string, content: string) =>
     _invoke<{ accepted: boolean }>('agent_message_send', { session_id, content }),
+
+  agentToolsList: () => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list'),
 
   agentTurnStatus: (session_id: string) =>
     _invoke<{
