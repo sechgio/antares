@@ -23,6 +23,7 @@ from typing import Any
 
 from backend.core.flows import agent_chat, connections, mcp_servers
 from backend.core.flows.expr import interpolate_text, resolve
+from backend.core.flows.http_guard import FlowRedirectHandler, assert_allowed_url
 from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore, _utc_now
 from backend.core.flows.types import JsonObject
@@ -354,9 +355,7 @@ class FlowRunner:
         if not isinstance(url, str) or not url.strip():
             raise ValueError("http_request requiere config.url")
         url = url.strip()
-        scheme = urllib.parse.urlparse(url).scheme.lower()
-        if scheme not in ("http", "https"):
-            raise ValueError(f"URL no permitida en http_request (solo http/https): {url[:80]}")
+        assert_allowed_url(url)
 
         method = str(resolve(config.get("method"), memory) or "GET").upper()
         if method not in _HTTP_METHODS:
@@ -370,15 +369,19 @@ class FlowRunner:
         elif extra not in (None, ""):
             raise ValueError("headers de http_request debe ser un objeto JSON")
 
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+        auth_hosts: frozenset[str] = frozenset({host})
         connection_ref = config.get("connection_ref")
         if isinstance(connection_ref, str) and connection_ref.strip():
             conn_id = connection_ref.strip()
-            allowed_hosts = connections.get_provider(conn_id).get("token_hosts") or []
-            host = (urllib.parse.urlparse(url).hostname or "").lower()
-            if allowed_hosts and host not in {str(h).lower() for h in allowed_hosts}:
+            allowed_hosts = frozenset(
+                str(h).lower() for h in connections.get_provider(conn_id).get("token_hosts") or []
+            )
+            if host not in allowed_hosts:
                 raise ValueError(f"La conexión {conn_id} solo firma peticiones a sus hosts autorizados")
             token = connections.fresh_access_token(conn_id)
             headers.setdefault("Authorization", f"Bearer {token}")
+            auth_hosts = allowed_hosts
 
         body = resolve(config.get("body"), memory)
         data = None
@@ -397,8 +400,9 @@ class FlowRunner:
         timeout = min(max(timeout, 1.0), 60.0)
 
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        opener = urllib.request.build_opener(FlowRedirectHandler(auth_hosts))
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as res:
+            with opener.open(req, timeout=timeout) as res:
                 status = int(res.status)
                 raw_body = res.read(_MAX_HTTP_BODY_BYTES + 1)
         except urllib.error.HTTPError as err:

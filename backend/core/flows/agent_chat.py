@@ -25,7 +25,7 @@ _CHAT_TIMEOUT_S = 120.0
 # Métodos backend que el agente nunca debe invocar (ni siquiera con aprobación):
 # vault/claves, el propio canal del agente y borrados destructivos.
 _DENIED_PREFIXES = ("ai_provider_", "flows_connection_", "agent_")
-_DENIED_METHODS = frozenset({"db_clear"})
+_DENIED_METHODS = frozenset({"db_clear", "mcp_server_add", "mcp_server_delete", "mcp_tool_call"})
 
 _SYSTEM_PROMPT = (
     "Eres el agente de Antares, una app de escritorio de documentos e imágenes. "

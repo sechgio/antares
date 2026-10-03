@@ -39,6 +39,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Preview de reportes**: un `{%` literal dentro del texto borraba todo el contenido hasta la etiqueta siguiente.
 - **Staging de archivos**: `file_staged_abort` cancelaba la sesión de otra ventana; el token queda ligado a la ventana que lo creó.
 - **Canvas / PDF**: la importación rechaza documentos con más de 500.000 operadores acumulados, aunque cada página permanezca bajo su límite individual.
+- **Flujos / http_request (seguridad)**: los destinos que resuelven a IPs no públicas (loopback, LAN, link-local, reservadas) quedan bloqueados salvo `ANTARES_FLOWS_ALLOW_PRIVATE_HOSTS=1`; `connection_ref` exige `token_hosts` declarado en el proveedor y los redirects revalidan esquema e IP pública además de retirar `Authorization` fuera de los hosts firmables.
+- **Flujos / agente (seguridad)**: al aprobar una herramienta se revalida que el método siga siendo invocable (orquestable, gated o tool MCP) antes de ejecutarlo; `mcp_server_add`, `mcp_server_delete` y `mcp_tool_call` pasan a la lista de métodos que el agente nunca puede invocar, alineada con el resto de métodos que tocan el vault.
 
 ## [0.11.12] — 2026-09-16
 

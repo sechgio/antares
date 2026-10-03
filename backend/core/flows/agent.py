@@ -256,8 +256,21 @@ class AgentRunner:
             session_id = str(approval["session_id"])
             call_id = str(approval["call_id"])
             if approved:
-                result = self._execute({"name": approval["method"], "params": approval.get("params") or {}})
-                self._store.update_tool_call(session_id, call_id, "done", result)
+                method = str(approval["method"])
+                invocable = (
+                    mcp_servers.parse_agent_tool(method) is not None
+                    or method in gated_methods()
+                    or method in ORCHESTRATABLE_METHODS
+                )
+                if invocable:
+                    result = self._execute({"name": method, "params": approval.get("params") or {}})
+                    self._store.update_tool_call(session_id, call_id, "done", result)
+                else:
+                    result = json.dumps(
+                        {"error": f"Herramienta no disponible para el agente: {method}"},
+                        ensure_ascii=False,
+                    )
+                    self._store.update_tool_call(session_id, call_id, "denied", result)
                 self._store.append_message(
                     session_id,
                     {

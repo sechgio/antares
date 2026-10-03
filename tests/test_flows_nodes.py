@@ -252,3 +252,45 @@ def test_validate_rejects_agent_without_prompt():
                 }
             )
         )
+
+
+def test_agent_decide_never_runs_denied_method(tmp_path, monkeypatch):
+    """Una aprobación manipulada para un método denegado no debe ejecutarse."""
+    from backend.core.flows.agent import AgentRunner, AgentStore
+
+    store = AgentStore(tmp_path)
+    session = store.create_session("provider-x", "model", "t")
+    calls: list = []
+    runner = AgentRunner(store, lambda m: calls.append(m) or (lambda p: {}))
+    monkeypatch.setattr(runner, "_spawn", lambda *a, **k: None)
+
+    approval = store.create_approval(session["id"], {"id": "c1", "name": "db_clear", "params": {}})
+    runner.decide(approval["id"], True)
+
+    assert calls == []
+    msgs = store.messages(session["id"])
+    last = msgs[-1]
+    assert last["role"] == "tool_result"
+    assert "no disponible" in last["content"]
+
+
+def test_agent_decide_runs_approved_mcp_tool(tmp_path, monkeypatch):
+    """Una aprobación de tool MCP (mcp__srv__tool) sí debe ejecutarse al aprobar."""
+    from backend.core.flows import mcp_servers
+    from backend.core.flows.agent import AgentRunner, AgentStore
+
+    store = AgentStore(tmp_path)
+    session = store.create_session("provider-x", "model", "t")
+    runner = AgentRunner(store, lambda m: None)
+    monkeypatch.setattr(runner, "_spawn", lambda *a, **k: None)
+    seen: dict = {}
+    monkeypatch.setattr(
+        mcp_servers,
+        "call_tool",
+        lambda srv, tool, args: seen.update(srv=srv, tool=tool, args=args) or {"ok": True},
+    )
+
+    approval = store.create_approval(session["id"], {"id": "c2", "name": "mcp__srv__do", "params": {"a": 1}})
+    runner.decide(approval["id"], True)
+
+    assert seen == {"srv": "srv", "tool": "do", "args": {"a": 1}}

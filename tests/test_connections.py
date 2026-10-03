@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.request
 
 import pytest
 
@@ -125,15 +126,23 @@ def _http_flow(config: dict) -> dict:
     }
 
 
+def _public_dns(monkeypatch, ip: str = "93.184.216.34"):
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda host, *a, **k: [(2, 1, 6, "", (ip, 443))],
+    )
+
+
 def test_http_request_node_json(monkeypatch, store):
     seen: dict = {}
 
-    def fake_urlopen(req, timeout=None):
+    def fake_open(_opener, req, timeout=None):
         seen["url"] = req.full_url
         seen["method"] = req.get_method()
         return _FakeResponse(200, b'{"ok": true, "n": 3}')
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    _public_dns(monkeypatch)
+    monkeypatch.setattr("urllib.request.OpenerDirector.open", fake_open)
     flow = store.create(
         "Http",
         graph=_http_flow({"url": "=run.trigger.url", "method": "POST", "body": {"x": "=run.trigger.n"}}),
@@ -152,11 +161,12 @@ def test_http_request_node_json(monkeypatch, store):
 def test_http_request_connection_ref_sends_bearer(monkeypatch, store):
     captured: dict = {}
 
-    def fake_urlopen(req, timeout=None):
+    def fake_open(_opener, req, timeout=None):
         captured["auth"] = req.headers.get("Authorization")
         return _FakeResponse(200, b"{}")
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    _public_dns(monkeypatch)
+    monkeypatch.setattr("urllib.request.OpenerDirector.open", fake_open)
     monkeypatch.setattr("backend.core.flows.connections.fresh_access_token", lambda p: "tok-9")
 
     flow = store.create(
@@ -175,11 +185,12 @@ def test_http_request_connection_ref_sends_bearer(monkeypatch, store):
 def test_http_request_connection_ref_rejects_foreign_host(monkeypatch, store):
     calls: list = []
 
-    def fake_urlopen(req, timeout=None):
+    def fake_open(_opener, req, timeout=None):
         calls.append(req.full_url)
         return _FakeResponse(200, b"{}")
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    _public_dns(monkeypatch)
+    monkeypatch.setattr("urllib.request.OpenerDirector.open", fake_open)
     monkeypatch.setattr("backend.core.flows.connections.fresh_access_token", lambda p: "tok-9")
 
     flow = store.create(
@@ -194,6 +205,99 @@ def test_http_request_connection_ref_rejects_foreign_host(monkeypatch, store):
     assert steps["h"]["status"] == "error"
     assert "hosts autorizados" in steps["h"]["error"]
     assert calls == []
+
+
+def test_http_request_connection_ref_denies_empty_token_hosts(monkeypatch, store):
+    calls: list = []
+
+    def fake_open(_opener, req, timeout=None):
+        calls.append(req.full_url)
+        return _FakeResponse(200, b"{}")
+
+    _public_dns(monkeypatch)
+    monkeypatch.setattr("urllib.request.OpenerDirector.open", fake_open)
+    monkeypatch.setattr("backend.core.flows.connections.get_provider", lambda p: {})
+    monkeypatch.setattr("backend.core.flows.connections.fresh_access_token", lambda p: "tok-9")
+
+    flow = store.create(
+        "HttpNoHosts",
+        graph=_http_flow({"url": "https://api.test/x", "connection_ref": "github"}),
+    )
+    runner = FlowRunner(store, lambda m: None)
+    run = runner.start(flow["id"])
+    done = _wait(run["id"], store)
+
+    steps = {s["node_id"]: s for s in done["steps"]}
+    assert steps["h"]["status"] == "error"
+    assert "hosts autorizados" in steps["h"]["error"]
+    assert calls == []
+
+
+def test_http_request_rejects_private_ip_literal(store):
+    flow = store.create("HttpLocal", graph=_http_flow({"url": "http://127.0.0.1:9/internal"}))
+    runner = FlowRunner(store, lambda m: None)
+    run = runner.start(flow["id"])
+    done = _wait(run["id"], store)
+
+    steps = {s["node_id"]: s for s in done["steps"]}
+    assert steps["h"]["status"] == "error"
+    assert "no pública" in steps["h"]["error"]
+
+
+def test_http_request_rejects_private_dns_target(monkeypatch, store):
+    _public_dns(monkeypatch, ip="10.9.9.9")
+    flow = store.create("HttpLan", graph=_http_flow({"url": "http://internal.example/data"}))
+    runner = FlowRunner(store, lambda m: None)
+    run = runner.start(flow["id"])
+    done = _wait(run["id"], store)
+
+    steps = {s["node_id"]: s for s in done["steps"]}
+    assert steps["h"]["status"] == "error"
+    assert "no pública" in steps["h"]["error"]
+
+
+def test_http_request_private_host_with_opt_out(monkeypatch, store):
+    monkeypatch.setenv("ANTARES_FLOWS_ALLOW_PRIVATE_HOSTS", "1")
+    monkeypatch.setattr(
+        "urllib.request.OpenerDirector.open",
+        lambda _opener, req, timeout=None: _FakeResponse(200, b"{}"),
+    )
+
+    flow = store.create("HttpLanOk", graph=_http_flow({"url": "http://127.0.0.1:9/internal"}))
+    runner = FlowRunner(store, lambda m: None)
+    run = runner.start(flow["id"])
+    done = _wait(run["id"], store)
+
+    steps = {s["node_id"]: s for s in done["steps"]}
+    assert steps["h"]["status"] == "success"
+
+
+def test_redirect_strips_authorization_off_allowlist(monkeypatch):
+    from backend.core.flows.http_guard import FlowRedirectHandler
+
+    _public_dns(monkeypatch)
+    req = urllib.request.Request(
+        "https://api.github.com/x",
+        headers={"Authorization": "Bearer tok-9"},
+    )
+    handler = FlowRedirectHandler(frozenset({"api.github.com"}))
+    new_req = handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example/exfil")
+    assert "Authorization" not in new_req.headers
+
+    same_host = handler.redirect_request(req, None, 302, "Found", {}, "https://api.github.com/y")
+    assert same_host.headers["Authorization"] == "Bearer tok-9"
+
+
+def test_redirect_rejects_private_target():
+    from backend.core.flows.http_guard import FlowRedirectHandler
+
+    req = urllib.request.Request("https://api.github.com/x")
+    handler = FlowRedirectHandler(frozenset({"api.github.com"}))
+    with pytest.raises(ValueError, match="no pública"):
+        handler.redirect_request(req, None, 302, "Found", {}, "http://169.254.169.254/meta")
+
+    with pytest.raises(ValueError, match="no permitida"):
+        handler.redirect_request(req, None, 302, "Found", {}, "file:///etc/passwd")
 
 
 def test_http_request_rejects_non_http_scheme(store):
