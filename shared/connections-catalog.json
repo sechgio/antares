@@ -229,6 +229,30 @@
       },
       "token_hosts": ["api.dropboxapi.com", "content.dropboxapi.com"]
     },
+    "google": {
+      "label": "Google",
+      "description": "Drive, Sheets y Calendar de Google",
+      "docs": "https://console.cloud.google.com/apis/credentials",
+      "category": "documentos",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "token_auth": "form",
+        "scopes": ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/spreadsheets.readonly", "https://www.googleapis.com/auth/calendar.readonly"],
+        "callback_port": 42846,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": { "access_type": "offline", "prompt": "consent" },
+        "extra_token": {}
+      },
+      "token_hosts": ["www.googleapis.com", "oauth2.googleapis.com", "openidconnect.googleapis.com"],
+      "status": {
+        "url": "https://openidconnect.googleapis.com/v1/userinfo",
+        "account_field": "email",
+        "headers": {}
+      }
+    },
     "linear": {
       "label": "Linear",
       "description": "Issues, ciclos y proyectos de Linear",
@@ -286,6 +310,44 @@
       },
       "token_hosts": ["app.asana.com"]
     },
+    "jira": {
+      "label": "Jira",
+      "description": "Issues, sprints y tableros de Jira",
+      "docs": "https://developer.atlassian.com/console/myapps/",
+      "category": "planificacion",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://auth.atlassian.com/authorize",
+        "token_url": "https://auth.atlassian.com/oauth/token",
+        "token_auth": "form",
+        "scopes": ["read:jira-user", "read:jira-work", "offline_access"],
+        "callback_port": 42847,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": { "audience": "api.atlassian.com", "prompt": "consent" },
+        "extra_token": {}
+      },
+      "token_hosts": ["api.atlassian.com"]
+    },
+    "clickup": {
+      "label": "ClickUp",
+      "description": "Tareas, listas y espacios de ClickUp",
+      "docs": "https://clickup.com/api/",
+      "category": "planificacion",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://app.clickup.com/api",
+        "token_url": "https://api.clickup.com/api/v2/oauth/token",
+        "token_auth": "form",
+        "scopes": [],
+        "callback_port": 42848,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["api.clickup.com"]
+    },
     "figma": {
       "label": "Figma",
       "description": "Archivos, componentes y tokens de Figma",
@@ -333,6 +395,25 @@
         "account_field": "userPrincipalName",
         "headers": {}
       }
+    },
+    "hubspot": {
+      "label": "HubSpot",
+      "description": "Contactos, empresas y CRM de HubSpot",
+      "docs": "https://developers.hubspot.com/docs/api/working-with-oauth",
+      "category": "productividad",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://app.hubspot.com/oauth/authorize",
+        "token_url": "https://api.hubapi.com/oauth/v1/token",
+        "token_auth": "form",
+        "scopes": ["oauth", "crm.objects.contacts.read"],
+        "callback_port": 42849,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["api.hubapi.com"]
     },
     "linkedin": {
       "label": "LinkedIn",
