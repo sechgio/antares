@@ -2,12 +2,21 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Antares Connections catalog",
   "version": 1,
-  "description": "Catálogo de proveedores externos conectables por OAuth. Cada proveedor declara sus URLs de autorización/token, los scopes pedidos y cómo sondear el estado. Las credenciales de app (client_id/secret) las aporta el usuario y se guardan cifradas; los tokens igual. El backend usa este mismo catálogo para refrescar tokens al ejecutar nodos http_request con connection_ref.",
+  "description": "Catálogo de proveedores externos conectables por OAuth. Cada proveedor declara sus URLs de autorización/token, los scopes pedidos y cómo sondear el estado. Las credenciales de app (client_id/secret) las aporta el usuario y se guardan cifradas; los tokens igual. El backend usa este mismo catálogo para refrescar tokens al ejecutar nodos http_request con connection_ref. `category` agrupa al proveedor en la pestaña Conexiones; `categories` define el orden y las etiquetas de esos grupos.",
+  "categories": [
+    { "id": "desarrollo", "label": "Desarrollo" },
+    { "id": "comunicacion", "label": "Comunicación" },
+    { "id": "documentos", "label": "Documentos" },
+    { "id": "planificacion", "label": "Planificación" },
+    { "id": "diseno", "label": "Diseño" },
+    { "id": "productividad", "label": "Productividad" }
+  ],
   "providers": {
     "github": {
       "label": "GitHub",
       "description": "Repos, issues y API REST de GitHub",
       "docs": "https://github.com/settings/developers",
+      "category": "desarrollo",
       "auth": {
         "type": "oauth_secret",
         "authorize_url": "https://github.com/login/oauth/authorize",
@@ -33,10 +42,59 @@
         "headers": { "X-GitHub-Api-Version": "2022-11-28" }
       }
     },
+    "gitlab": {
+      "label": "GitLab",
+      "description": "Repos, merge requests y API de GitLab",
+      "docs": "https://gitlab.com/-/user_settings/applications",
+      "category": "desarrollo",
+      "auth": {
+        "type": "oauth_pkce",
+        "authorize_url": "https://gitlab.com/oauth/authorize",
+        "token_url": "https://gitlab.com/oauth/token",
+        "token_auth": "form",
+        "scopes": ["api", "read_user"],
+        "callback_port": 42833,
+        "callback_path": "/callback",
+        "requires_client_secret": false,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["gitlab.com"],
+      "status": {
+        "url": "https://gitlab.com/api/v4/user",
+        "account_field": "username",
+        "headers": {}
+      }
+    },
+    "bitbucket": {
+      "label": "Bitbucket",
+      "description": "Repos, pull requests y pipelines de Bitbucket",
+      "docs": "https://support.atlassian.com/bitbucket-cloud/docs/use-oauth-on-bitbucket-cloud/",
+      "category": "desarrollo",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://bitbucket.org/site/oauth2/authorize",
+        "token_url": "https://bitbucket.org/site/oauth2/access_token",
+        "token_auth": "basic",
+        "scopes": ["account", "repository", "pullrequest"],
+        "callback_port": 42834,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["api.bitbucket.org", "bitbucket.org"],
+      "status": {
+        "url": "https://api.bitbucket.org/2.0/user",
+        "account_field": "username",
+        "headers": {}
+      }
+    },
     "slack": {
       "label": "Slack",
       "description": "Mensajes y API Web de Slack",
       "docs": "https://api.slack.com/apps",
+      "category": "comunicacion",
       "auth": {
         "type": "oauth_secret",
         "authorize_url": "https://slack.com/oauth/v2/authorize",
@@ -53,6 +111,250 @@
       "status": {
         "url": "https://slack.com/api/auth.test",
         "account_field": "team",
+        "headers": {}
+      }
+    },
+    "discord": {
+      "label": "Discord",
+      "description": "Canales, mensajes y API de Discord",
+      "docs": "https://discord.com/developers/applications",
+      "category": "comunicacion",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://discord.com/oauth2/authorize",
+        "token_url": "https://discord.com/api/oauth2/token",
+        "token_auth": "form",
+        "scopes": ["identify", "guilds", "guilds.members.read"],
+        "callback_port": 42835,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["discord.com"],
+      "status": {
+        "url": "https://discord.com/api/users/@me",
+        "account_field": "username",
+        "headers": {}
+      }
+    },
+    "zoom": {
+      "label": "Zoom",
+      "description": "Reuniones, grabaciones y API de Zoom",
+      "docs": "https://developers.zoom.us/",
+      "category": "comunicacion",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://zoom.us/oauth/authorize",
+        "token_url": "https://zoom.us/oauth/token",
+        "token_auth": "basic",
+        "scopes": ["user:read:user"],
+        "callback_port": 42836,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["api.zoom.us"],
+      "status": {
+        "url": "https://api.zoom.us/v2/users/me",
+        "account_field": "email",
+        "headers": {}
+      }
+    },
+    "notion": {
+      "label": "Notion",
+      "description": "Páginas y bases de datos de Notion",
+      "docs": "https://www.notion.so/profile/integrations",
+      "category": "documentos",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://api.notion.com/v1/oauth/authorize",
+        "token_url": "https://api.notion.com/v1/oauth/token",
+        "token_auth": "basic",
+        "scopes": [],
+        "callback_port": 42837,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": { "owner": "user" },
+        "extra_token": {}
+      },
+      "token_hosts": ["api.notion.com"],
+      "status": {
+        "url": "https://api.notion.com/v1/users/me",
+        "account_field": "name",
+        "headers": { "Notion-Version": "2022-06-28" }
+      }
+    },
+    "airtable": {
+      "label": "Airtable",
+      "description": "Bases, tablas y registros de Airtable",
+      "docs": "https://airtable.com/create/oauth",
+      "category": "documentos",
+      "auth": {
+        "type": "oauth_pkce",
+        "authorize_url": "https://airtable.com/oauth2/v1/authorize",
+        "token_url": "https://airtable.com/oauth2/v1/token",
+        "token_auth": "form",
+        "scopes": ["data.records:read", "data.records:write", "schema.bases:read"],
+        "callback_port": 42838,
+        "callback_path": "/callback",
+        "requires_client_secret": false,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["api.airtable.com"],
+      "status": {
+        "url": "https://api.airtable.com/v0/meta/whoami",
+        "account_field": "email",
+        "headers": {}
+      }
+    },
+    "dropbox": {
+      "label": "Dropbox",
+      "description": "Archivos y carpetas de Dropbox",
+      "docs": "https://www.dropbox.com/developers/apps",
+      "category": "documentos",
+      "auth": {
+        "type": "oauth_pkce",
+        "authorize_url": "https://www.dropbox.com/oauth2/authorize",
+        "token_url": "https://api.dropboxapi.com/oauth2/token",
+        "token_auth": "form",
+        "scopes": [],
+        "callback_port": 42839,
+        "callback_path": "/callback",
+        "requires_client_secret": false,
+        "extra_authorize": { "token_access_type": "offline" },
+        "extra_token": {}
+      },
+      "token_hosts": ["api.dropboxapi.com", "content.dropboxapi.com"]
+    },
+    "linear": {
+      "label": "Linear",
+      "description": "Issues, ciclos y proyectos de Linear",
+      "docs": "https://linear.app/settings/api",
+      "category": "planificacion",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://linear.app/oauth/authorize",
+        "token_url": "https://api.linear.app/oauth/token",
+        "token_auth": "form",
+        "scopes": ["read", "write"],
+        "callback_port": 42840,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["api.linear.app"]
+    },
+    "todoist": {
+      "label": "Todoist",
+      "description": "Tareas y proyectos de Todoist",
+      "docs": "https://todoist.com/app/settings/integrations/developer",
+      "category": "planificacion",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://todoist.com/oauth/authorize",
+        "token_url": "https://todoist.com/oauth/access_token",
+        "token_auth": "form",
+        "scopes": ["data:read_write"],
+        "callback_port": 42841,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["api.todoist.com"]
+    },
+    "asana": {
+      "label": "Asana",
+      "description": "Tareas, proyectos y portafolios de Asana",
+      "docs": "https://app.asana.com/0/my-apps",
+      "category": "planificacion",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://app.asana.com/-/oauth_authorize",
+        "token_url": "https://app.asana.com/-/oauth_token",
+        "token_auth": "form",
+        "scopes": [],
+        "callback_port": 42842,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["app.asana.com"]
+    },
+    "figma": {
+      "label": "Figma",
+      "description": "Archivos, componentes y tokens de Figma",
+      "docs": "https://www.figma.com/developers/apps",
+      "category": "diseno",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://www.figma.com/oauth",
+        "token_url": "https://api.figma.com/v1/oauth/token",
+        "token_auth": "form",
+        "scopes": ["file_read"],
+        "callback_port": 42843,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["api.figma.com"],
+      "status": {
+        "url": "https://api.figma.com/v1/me",
+        "account_field": "handle",
+        "headers": {}
+      }
+    },
+    "microsoft": {
+      "label": "Microsoft",
+      "description": "Cuenta Microsoft, To Do y Graph API",
+      "docs": "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps",
+      "category": "productividad",
+      "auth": {
+        "type": "oauth_pkce",
+        "authorize_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        "token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "token_auth": "form",
+        "scopes": ["offline_access", "User.Read", "Tasks.ReadWrite"],
+        "callback_port": 42844,
+        "callback_path": "/callback",
+        "requires_client_secret": false,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["graph.microsoft.com"],
+      "status": {
+        "url": "https://graph.microsoft.com/v1.0/me",
+        "account_field": "userPrincipalName",
+        "headers": {}
+      }
+    },
+    "linkedin": {
+      "label": "LinkedIn",
+      "description": "Perfil y API de LinkedIn",
+      "docs": "https://www.linkedin.com/developers/apps",
+      "category": "productividad",
+      "auth": {
+        "type": "oauth_secret",
+        "authorize_url": "https://www.linkedin.com/oauth/v2/authorization",
+        "token_url": "https://www.linkedin.com/oauth/v2/accessToken",
+        "token_auth": "form",
+        "scopes": ["openid", "profile", "email"],
+        "callback_port": 42845,
+        "callback_path": "/callback",
+        "requires_client_secret": true,
+        "extra_authorize": {},
+        "extra_token": {}
+      },
+      "token_hosts": ["api.linkedin.com"],
+      "status": {
+        "url": "https://api.linkedin.com/v2/userinfo",
+        "account_field": "name",
         "headers": {}
       }
     }

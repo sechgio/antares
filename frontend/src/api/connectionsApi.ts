@@ -10,12 +10,18 @@ export interface ConnectionProviderSpec {
   scopes: string[];
   redirect_hint: string;
   provider: string;
+  category?: string;
   configured: boolean;
   client_id_masked?: string;
   connected: boolean;
   account?: string | null;
   expiry_date?: number | null;
   scope?: string | null;
+}
+
+export interface ConnectionCategory {
+  id: string;
+  label: string;
 }
 
 export interface ConnectionStatus {
@@ -32,7 +38,9 @@ export interface ConnectionStatus {
 
 export const connectionsApi = {
   connectionsProviders: () =>
-    _invoke<{ providers: ConnectionProviderSpec[] }>('connections_providers'),
+    _invoke<{ providers: ConnectionProviderSpec[]; categories: ConnectionCategory[] }>(
+      'connections_providers',
+    ),
   connectionsOauthConfigSave: (params: {
     provider: string;
     client_id: string;

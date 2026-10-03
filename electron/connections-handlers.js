@@ -7,7 +7,7 @@
 
 const { nativeMethods } = require('../shared/ipc-method-catalog');
 const session = require('./connections-session');
-const { listProviders } = require('./connections-providers');
+const { listProviders, listCategories } = require('./connections-providers');
 const { emit } = require('./autoimg-notify');
 
 const CONNECTIONS_METHODS = nativeMethods('connections');
@@ -37,10 +37,11 @@ async function handleConnectionsCall(method, params = {}) {
             requires_client_secret: spec.auth.requires_client_secret,
             scopes: spec.auth.scopes,
             redirect_hint: `http://127.0.0.1:${spec.auth.callback_port}${spec.auth.callback_path}`,
+            category: spec.category,
             ...(await session.getStatus(spec.id)),
           })),
         );
-        return { handled: true, result: { providers } };
+        return { handled: true, result: { providers, categories: listCategories() } };
       }
 
       case 'connections_oauth_config_save': {

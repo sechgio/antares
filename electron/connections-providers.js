@@ -21,6 +21,7 @@ function _normalizeSpec(id, raw) {
     label: String(raw.label || id),
     description: String(raw.description || ''),
     docs: typeof raw.docs === 'string' ? raw.docs : '',
+    category: typeof raw.category === 'string' ? raw.category : '',
     auth: {
       type: auth.type,
       authorize_url: auth.authorize_url,
@@ -61,6 +62,14 @@ function listProviders() {
   return Object.values(_cache);
 }
 
+function listCategories() {
+  const raw = catalog && catalog.categories;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((c) => c && typeof c.id === 'string')
+    .map((c) => ({ id: c.id, label: String(c.label || c.id) }));
+}
+
 function getProvider(id) {
   const spec = listProviders().find((p) => p.id === id);
   if (!spec) {
@@ -75,4 +84,4 @@ function hasProvider(id) {
   return listProviders().some((p) => p.id === id);
 }
 
-module.exports = { listProviders, getProvider, hasProvider };
+module.exports = { listProviders, listCategories, getProvider, hasProvider };

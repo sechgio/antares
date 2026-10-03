@@ -1,48 +1,92 @@
-import { useCallback, useEffect, useState } from 'react';
-import { KeyRound, Link2, Plug, Unplug } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  CheckCircle2,
+  Code2,
+  FileText,
+  KanbanSquare,
+  LayoutGrid,
+  MessagesSquare,
+  Palette,
+  Plug,
+  Search,
+  Tag,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react';
 import { onNotify } from '../../api';
-import { connectionsApi, type ConnectionProviderSpec } from '../../api/connectionsApi';
+import {
+  connectionsApi,
+  type ConnectionCategory,
+  type ConnectionProviderSpec,
+} from '../../api/connectionsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
-import Button from '../ui/Button';
-import Input from '../ui/Input';
+import { useDialog } from '../../hooks/useDialog';
+import ConnectionDetail from './ConnectionDetail';
 import McpServersView from './McpServersView';
+import { ProviderIcon } from './connectionIcons';
 
-function StatusDot({ tone }: { tone: 'ok' | 'warn' | 'off' }) {
-  const color =
-    tone === 'ok' ? '#34d399' : tone === 'warn' ? '#f59e0b' : 'var(--text-secondary)';
-  return <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />;
-}
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  desarrollo: Code2,
+  comunicacion: MessagesSquare,
+  documentos: FileText,
+  planificacion: KanbanSquare,
+  diseno: Palette,
+  productividad: Wrench,
+};
 
-function statusText(p: ConnectionProviderSpec): string {
-  if (p.connected) return p.account ? `Conectado · ${p.account}` : 'Conectado';
-  if (p.configured) return 'Listo para conectar';
-  return 'Sin credenciales';
-}
+type Filter = 'all' | 'connected' | `cat:${string}`;
 
-function statusTone(p: ConnectionProviderSpec): 'ok' | 'warn' | 'off' {
-  if (p.connected) return 'ok';
-  if (p.configured) return 'warn';
-  return 'off';
-}
-
-interface CredFormState {
-  clientId: string;
-  clientSecret: string;
-  saving: boolean;
+function Row({
+  p,
+  onOpen,
+}: {
+  p: ConnectionProviderSpec;
+  onOpen: (p: ConnectionProviderSpec) => void;
+}) {
+  return (
+    <button
+      onClick={() => onOpen(p)}
+      className="group flex w-full items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 text-left transition-colors duration-150 hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+    >
+      <ProviderIcon providerId={p.id} label={p.label} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-[var(--text-primary)]">
+          {p.label}
+        </span>
+        <span className="block truncate text-xs text-[var(--text-secondary)]">{p.description}</span>
+      </span>
+      {p.connected ? (
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-green)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-green)_10%,transparent)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent-green)]">
+          <CheckCircle2 size={12} />
+          Conectada
+        </span>
+      ) : (
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors duration-150 group-hover:border-[var(--accent-primary)] group-hover:text-[var(--text-primary)]">
+          <Plug size={11} />
+          Conectar
+        </span>
+      )}
+    </button>
+  );
 }
 
 export default function ConnectionsView() {
   const { addToast } = useToast();
+  const { confirm } = useDialog();
   const [providers, setProviders] = useState<ConnectionProviderSpec[]>([]);
+  const [categories, setCategories] = useState<ConnectionCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState<string | null>(null);
-  const [credForm, setCredForm] = useState<Record<string, CredFormState>>({});
+  const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const res = await connectionsApi.connectionsProviders();
       setProviders(res.providers);
+      setCategories(res.categories ?? []);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudieron cargar las conexiones'), type: 'error' });
     } finally {
@@ -58,27 +102,20 @@ export default function ConnectionsView() {
     return off;
   }, [refresh]);
 
-  const saveCreds = async (p: ConnectionProviderSpec) => {
-    const form = credForm[p.id];
-    if (!form || !form.clientId.trim()) {
-      addToast({ message: 'Introduce el Client ID de tu app', type: 'error' });
-      return;
-    }
-    setCredForm((s) => ({ ...s, [p.id]: { ...form, saving: true } }));
+  const saveCreds = async (
+    p: ConnectionProviderSpec,
+    creds: { clientId: string; clientSecret: string },
+  ) => {
     try {
       await connectionsApi.connectionsOauthConfigSave({
         provider: p.id,
-        client_id: form.clientId.trim(),
-        client_secret: form.clientSecret.trim() || undefined,
+        client_id: creds.clientId.trim(),
+        client_secret: creds.clientSecret.trim() || undefined,
       });
       addToast({ message: `Credenciales de ${p.label} guardadas cifradas`, type: 'success' });
       await refresh();
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudieron guardar las credenciales'), type: 'error' });
-    } finally {
-      setCredForm((s) =>
-        s[p.id] ? { ...s, [p.id]: { ...form, saving: false } } : s,
-      );
     }
   };
 
@@ -98,6 +135,13 @@ export default function ConnectionsView() {
   };
 
   const disconnect = async (p: ConnectionProviderSpec) => {
+    const ok = await confirm({
+      title: `Desconectar ${p.label}`,
+      description: `Se eliminarán los tokens de ${p.label} guardados en este equipo. Los flujos que usan esta conexión dejarán de firmarse.`,
+      confirmLabel: 'Desconectar',
+      type: 'destructive',
+    });
+    if (!ok) return;
     try {
       await connectionsApi.connectionsDisconnect(p.id);
       addToast({ message: `${p.label} desconectado`, type: 'success' });
@@ -107,6 +151,38 @@ export default function ConnectionsView() {
     }
   };
 
+  const connectedCount = providers.filter((p) => p.connected).length;
+
+  const groups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const visible = providers.filter((p) => {
+      if (filter === 'connected' && !p.connected) return false;
+      if (filter.startsWith('cat:') && (p.category || '') !== filter.slice(4)) return false;
+      if (!q) return true;
+      return `${p.label} ${p.description}`.toLowerCase().includes(q);
+    });
+    const byCat = new Map<string, ConnectionProviderSpec[]>();
+    for (const p of visible) {
+      const key = p.category || '';
+      const list = byCat.get(key) ?? [];
+      list.push(p);
+      byCat.set(key, list);
+    }
+    const ordered: { id: string; label: string; items: ConnectionProviderSpec[] }[] = [];
+    for (const c of categories) {
+      const items = byCat.get(c.id);
+      if (items?.length) ordered.push({ id: c.id, label: c.label, items });
+    }
+    const rest = [...byCat.keys()].filter((k) => !categories.some((c) => c.id === k));
+    for (const k of rest) {
+      const items = byCat.get(k);
+      if (items?.length) ordered.push({ id: k || 'otras', label: 'Otras', items });
+    }
+    return ordered;
+  }, [providers, categories, filter, search]);
+
+  const detail = detailId ? providers.find((p) => p.id === detailId) ?? null : null;
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
@@ -115,156 +191,118 @@ export default function ConnectionsView() {
     );
   }
 
-  return (
-    <div className="h-full overflow-y-auto p-5">
-      <div className="mx-auto max-w-3xl">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Conexiones</h2>
-        <p className="mb-5 mt-1 text-xs text-[var(--text-secondary)]">
-          Autoriza apps externas vía OAuth. Los tokens se guardan cifrados y los usa el nodo HTTP de
-          tus flujos con la opción «Conexión». Los Client ID/Secret son de tus propias apps (BYOK).
-        </p>
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {providers.map((p) => {
-            const form = credForm[p.id];
-            const showForm = form !== undefined || !p.configured;
-            return (
-              <section
-                key={p.id}
-                className="rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--bg-input)] text-sm font-bold uppercase text-[var(--text-secondary)]">
-                      {p.label.slice(0, 2)}
-                    </span>
-                    <div>
-                      <div className="text-sm font-semibold text-[var(--text-primary)]">{p.label}</div>
-                      <div className="text-[11px] text-[var(--text-secondary)]">{p.description}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
-                    <StatusDot tone={statusTone(p)} />
-                    {statusText(p)}
-                  </div>
-                </div>
-
-                <div className="mt-3 rounded-md bg-[var(--bg-input)] px-3 py-2 font-mono text-[11px] text-[var(--text-secondary)]">
-                  <div>Redirect URI a registrar en tu app:</div>
-                  <div className="text-[var(--text-primary)]">{p.redirect_hint}</div>
-                  {p.docs && <div className="mt-0.5 truncate">Panel: {p.docs}</div>}
-                </div>
-
-                {showForm ? (
-                  <div className="mt-3 space-y-2">
-                    <Input
-                      value={form?.clientId ?? ''}
-                      onChange={(e) =>
-                        setCredForm((s) => ({
-                          ...s,
-                          [p.id]: {
-                            clientId: e.target.value,
-                            clientSecret: form?.clientSecret ?? '',
-                            saving: false,
-                          },
-                        }))
-                      }
-                      placeholder={p.configured ? `Client ID actual: ${p.client_id_masked ?? ''}` : 'Client ID'}
-                      spellCheck={false}
-                      aria-label={`Client ID de ${p.label}`}
-                    />
-                    {p.requires_client_secret && (
-                      <Input
-                        type="password"
-                        value={form?.clientSecret ?? ''}
-                        onChange={(e) =>
-                          setCredForm((s) => ({
-                            ...s,
-                            [p.id]: {
-                              clientId: form?.clientId ?? '',
-                              clientSecret: e.target.value,
-                              saving: false,
-                            },
-                          }))
-                        }
-                        placeholder="Client Secret"
-                        spellCheck={false}
-                        aria-label={`Client Secret de ${p.label}`}
-                      />
-                    )}
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        disabled={form?.saving}
-                        onClick={() => void saveCreds(p)}
-                      >
-                        <KeyRound size={13} className="mr-1" />
-                        {p.configured ? 'Actualizar credenciales' : 'Guardar credenciales'}
-                      </Button>
-                      {p.configured && !p.connected && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={connecting === p.id}
-                          onClick={() => void connect(p)}
-                        >
-                          <Link2 size={13} className="mr-1" />
-                          Conectar
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-3 flex items-center gap-2">
-                    {p.connected ? (
-                      <Button size="sm" variant="secondary" onClick={() => void disconnect(p)}>
-                        <Unplug size={13} className="mr-1" />
-                        Desconectar
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        disabled={connecting === p.id}
-                        onClick={() => void connect(p)}
-                      >
-                        <Plug size={13} className="mr-1" />
-                        Conectar
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        setCredForm((s) => ({
-                          ...s,
-                          [p.id]: { clientId: '', clientSecret: '', saving: false },
-                        }))
-                      }
-                    >
-                      <KeyRound size={13} className="mr-1" />
-                      Credenciales
-                    </Button>
-                  </div>
-                )}
-
-                {p.connected && p.scope && (
-                  <p className="mt-2 truncate text-[11px] text-[var(--text-secondary)]">
-                    Permisos: {p.scope}
-                  </p>
-                )}
-              </section>
-            );
-          })}
-        </div>
-
-        {!providers.length && (
-          <p className="mt-4 text-center text-sm text-[var(--text-secondary)]">
-            No hay proveedores configurados en el catálogo.
-          </p>
+  const railItem = (
+    id: Filter,
+    label: string,
+    icon: LucideIcon,
+    count?: number,
+  ) => {
+    const Icon = icon;
+    const active = filter === id;
+    return (
+      <button
+        key={id}
+        onClick={() => setFilter(id)}
+        aria-pressed={active}
+        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors duration-150 ${
+          active
+            ? 'bg-[var(--bg-elevated)] font-medium text-[var(--text-primary)]'
+            : 'text-[var(--text-secondary)] hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_60%,transparent)] hover:text-[var(--text-primary)]'
+        }`}
+      >
+        <Icon size={13} />
+        <span className="flex-1 truncate">{label}</span>
+        {count !== undefined && (
+          <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">{count}</span>
         )}
+      </button>
+    );
+  };
 
-        <McpServersView />
+  return (
+    <div className="relative flex h-full">
+      <aside className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-[var(--border-medium)] px-2 py-4">
+        {railItem('all', 'Todas', LayoutGrid, providers.length)}
+        {railItem('connected', 'Conectadas', CheckCircle2, connectedCount)}
+        {categories.length > 0 && (
+          <>
+            <div className="mb-1 mt-4 px-2.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
+              Categorías
+            </div>
+            {categories.map((c) =>
+              railItem(
+                `cat:${c.id}` as Filter,
+                c.label,
+                CATEGORY_ICONS[c.id] ?? Tag,
+                providers.filter((p) => p.category === c.id).length,
+              ),
+            )}
+          </>
+        )}
+      </aside>
+
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-4xl px-6 py-5">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Conexiones</h2>
+              <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                Autoriza apps externas vía OAuth; tus flujos firman sus llamadas con estas cuentas.
+              </p>
+            </div>
+            <div className="relative w-60 shrink-0">
+              <Search
+                size={13}
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por nombre…"
+                aria-label="Buscar conexiones"
+                spellCheck={false}
+                className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] py-1.5 pl-8 pr-3 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:border-[var(--border-active)] focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {groups.map((g) => (
+            <section key={g.id} className="mb-6">
+              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
+                {g.label}
+              </h3>
+              <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+                {g.items.map((p) => (
+                  <Row key={p.id} p={p} onOpen={(prov) => setDetailId(prov.id)} />
+                ))}
+              </div>
+            </section>
+          ))}
+
+          {!groups.length && (
+            <p className="mt-8 text-center text-sm text-[var(--text-secondary)]">
+              {providers.length
+                ? `Sin resultados para «${search.trim()}»${filter !== 'all' ? ' en este filtro' : ''}.`
+                : 'No hay proveedores configurados en el catálogo.'}
+            </p>
+          )}
+
+          <div className="mt-8 border-t border-[var(--border-subtle)] pt-5">
+            <McpServersView />
+          </div>
+        </div>
       </div>
+
+      {detail && (
+        <ConnectionDetail
+          provider={detail}
+          connecting={connecting === detail.id}
+          onConnect={(p) => void connect(p)}
+          onDisconnect={(p) => void disconnect(p)}
+          onSaveCreds={saveCreds}
+          onClose={() => setDetailId(null)}
+        />
+      )}
     </div>
   );
 }
