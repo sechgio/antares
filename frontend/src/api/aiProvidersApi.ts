@@ -7,6 +7,7 @@ export interface AiProviderSpec {
   docs: string;
   editable_base_url: boolean;
   default_base_url: string;
+  default_model: string;
   provider: string;
   configured: boolean;
   has_key: boolean;

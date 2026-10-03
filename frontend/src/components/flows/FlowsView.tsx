@@ -5,17 +5,19 @@ import { useToast } from '../../hooks/useToast';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import ConnectionsView from './ConnectionsView';
 import ProvidersView from './ProvidersView';
+import AgentView from './AgentView';
 import FlowEditor from './FlowEditor';
 import FlowList from './FlowList';
 import RunsView from './RunsView';
 
-type Section = 'flows' | 'runs' | 'connections' | 'providers';
+type Section = 'flows' | 'runs' | 'connections' | 'providers' | 'agent';
 
 const SECTIONS: { value: Section; label: string }[] = [
   { value: 'flows', label: 'Flujos' },
   { value: 'runs', label: 'Ejecuciones' },
   { value: 'connections', label: 'Conexiones' },
   { value: 'providers', label: 'Proveedores IA' },
+  { value: 'agent', label: 'Agente' },
 ];
 
 export default function FlowsView() {
@@ -83,6 +85,7 @@ export default function FlowsView() {
         {section === 'runs' && <RunsView flowId={runsFlowId} />}
         {section === 'connections' && <ConnectionsView />}
         {section === 'providers' && <ProvidersView />}
+        {section === 'agent' && <AgentView />}
       </div>
     </div>
   );

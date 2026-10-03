@@ -31,7 +31,7 @@ export default function ProvidersView() {
       const res = await aiProvidersApi.aiProvidersList();
       setProviders(res.providers);
     } catch (err) {
-      addToast({ message: errorMessage(err, 'Не удалось загрузить провайдеров IA'), type: 'error' });
+      addToast({ message: errorMessage(err, 'No se pudieron cargar los proveedores IA'), type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -46,11 +46,11 @@ export default function ProvidersView() {
     const apiKey = form?.apiKey.trim() ?? '';
     const baseUrl = form?.baseUrl.trim() ?? '';
     if (p.needs_key && !apiKey && !p.has_key) {
-      addToast({ message: `Введите API key для ${p.label}`, type: 'error' });
+      addToast({ message: `Introduce la API key de ${p.label}`, type: 'error' });
       return;
     }
     if (!apiKey && !baseUrl && !(p.needs_key && p.has_key)) {
-      addToast({ message: 'Нечего сохранять — введите ключ или base URL', type: 'error' });
+      addToast({ message: 'Nada que guardar — introduce la clave o la base URL', type: 'error' });
       return;
     }
     setForms((s) => ({ ...s, [p.id]: { apiKey, baseUrl, saving: true } }));
@@ -60,10 +60,10 @@ export default function ProvidersView() {
         api_key: apiKey || undefined,
         base_url: baseUrl || undefined,
       });
-      addToast({ message: `Настройки ${p.label} сохранены в зашифрованном vault`, type: 'success' });
+      addToast({ message: `Ajustes de ${p.label} guardados en el vault cifrado`, type: 'success' });
       await refresh();
     } catch (err) {
-      addToast({ message: errorMessage(err, `Не удалось сохранить ${p.label}`), type: 'error' });
+      addToast({ message: errorMessage(err, `No se pudo guardar ${p.label}`), type: 'error' });
     } finally {
       setForms((s) =>
         s[p.id] ? { ...s, [p.id]: { ...s[p.id], apiKey: '', saving: false } } : s,
@@ -78,14 +78,14 @@ export default function ProvidersView() {
       setStatuses((s) => ({ ...s, [p.id]: res.provider }));
       if (res.provider.reachable) {
         addToast({
-          message: `${p.label} отвечает${res.provider.models_count != null ? ` · моделей: ${res.provider.models_count}` : ''}`,
+          message: `${p.label} responde${res.provider.models_count != null ? ` · modelos: ${res.provider.models_count}` : ''}`,
           type: 'success',
         });
       } else {
-        addToast({ message: `${p.label}: ${res.provider.error ?? 'нет ответа'}`, type: 'error' });
+        addToast({ message: `${p.label}: ${res.provider.error ?? 'sin respuesta'}`, type: 'error' });
       }
     } catch (err) {
-      addToast({ message: errorMessage(err, `Не удалось проверить ${p.label}`), type: 'error' });
+      addToast({ message: errorMessage(err, `No se pudo comprobar ${p.label}`), type: 'error' });
     } finally {
       setProbing(null);
     }
@@ -94,7 +94,7 @@ export default function ProvidersView() {
   const remove = async (p: AiProviderSpec) => {
     try {
       await aiProvidersApi.aiProviderDelete(p.id);
-      addToast({ message: `Ключ и настройки ${p.label} удалены из vault`, type: 'success' });
+      addToast({ message: `Clave y ajustes de ${p.label} eliminados del vault`, type: 'success' });
       setStatuses((s) => {
         const next = { ...s };
         delete next[p.id];
@@ -102,17 +102,17 @@ export default function ProvidersView() {
       });
       await refresh();
     } catch (err) {
-      addToast({ message: errorMessage(err, `Не удалось удалить ${p.label}`), type: 'error' });
+      addToast({ message: errorMessage(err, `No se pudo eliminar ${p.label}`), type: 'error' });
     }
   };
 
   const statusText = (p: AiProviderSpec): string => {
     const st = statuses[p.id];
     if (st?.reachable) {
-      return st.models_count != null ? `Доступен · ${st.models_count} моделей` : 'Доступен';
+      return st.models_count != null ? `Disponible · ${st.models_count} modelos` : 'Disponible';
     }
-    if (p.has_key || (p.configured && !p.needs_key)) return 'Настроен';
-    return p.needs_key ? 'Нужна API key' : 'Не настроен';
+    if (p.has_key || (p.configured && !p.needs_key)) return 'Configurado';
+    return p.needs_key ? 'Necesita API key' : 'No configurado';
   };
 
   const statusTone = (p: AiProviderSpec): 'ok' | 'warn' | 'off' => {
@@ -124,7 +124,7 @@ export default function ProvidersView() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
-        Загрузка провайдеров…
+        Cargando proveedores…
       </div>
     );
   }
@@ -132,10 +132,10 @@ export default function ProvidersView() {
   return (
     <div className="h-full overflow-y-auto p-5">
       <div className="mx-auto max-w-3xl">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Провайдеры IA</h2>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Proveedores IA</h2>
         <p className="mb-5 mt-1 text-xs text-[var(--text-secondary)]">
-          Свои ключи (BYOK): ключ уходит только в зашифрованный vault на этом устройстве и никогда не
-          возвращается в интерфейс — видна лишь маска. «Проверить» дергает endpoint списка моделей.
+          Tus propias claves (BYOK): la clave solo va al vault cifrado de este equipo y nunca
+          vuelve a la interfaz — solo se ve la máscara. «Probar» consulta el endpoint de modelos.
         </p>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -165,8 +165,8 @@ export default function ProvidersView() {
 
                 <div className="mt-3 rounded-md bg-[var(--bg-input)] px-3 py-2 font-mono text-[11px] text-[var(--text-secondary)]">
                   <div className="truncate">Base URL: {p.base_url}</div>
-                  {p.has_key && <div className="truncate">Ключ: {p.key_masked}</div>}
-                  {p.docs && <div className="mt-0.5 truncate">Ключи: {p.docs}</div>}
+                  {p.has_key && <div className="truncate">Clave: {p.key_masked}</div>}
+                  {p.docs && <div className="mt-0.5 truncate">Claves: {p.docs}</div>}
                 </div>
 
                 <div className="mt-3 space-y-2">
@@ -184,7 +184,7 @@ export default function ProvidersView() {
                           },
                         }))
                       }
-                      placeholder={p.has_key ? `Текущий: ${p.key_masked}` : 'API key'}
+                      placeholder={p.has_key ? `Actual: ${p.key_masked}` : 'API key'}
                       spellCheck={false}
                       aria-label={`API key ${p.label}`}
                     />
@@ -202,7 +202,7 @@ export default function ProvidersView() {
                           },
                         }))
                       }
-                      placeholder={`Base URL (пусто = ${p.default_base_url})`}
+                      placeholder={`Base URL (vacío = ${p.default_base_url})`}
                       spellCheck={false}
                       aria-label={`Base URL ${p.label}`}
                     />
@@ -210,7 +210,7 @@ export default function ProvidersView() {
                   <div className="flex items-center gap-2">
                     <Button size="sm" disabled={form?.saving} onClick={() => void save(p)}>
                       <KeyRound size={13} className="mr-1" />
-                      {p.configured ? 'Обновить' : 'Сохранить'}
+                      {p.configured ? 'Actualizar' : 'Guardar'}
                     </Button>
                     <Button
                       size="sm"
@@ -219,12 +219,12 @@ export default function ProvidersView() {
                       onClick={() => void probe(p)}
                     >
                       <PlugZap size={13} className="mr-1" />
-                      Проверить
+                      Probar
                     </Button>
                     {p.configured && (
                       <Button size="sm" variant="ghost" onClick={() => void remove(p)}>
                         <Trash2 size={13} className="mr-1" />
-                        Удалить
+                        Eliminar
                       </Button>
                     )}
                   </div>
@@ -240,7 +240,7 @@ export default function ProvidersView() {
 
         {!providers.length && (
           <p className="mt-4 text-center text-sm text-[var(--text-secondary)]">
-            Нет провайдеров в каталоге.
+            No hay proveedores en el catálogo.
           </p>
         )}
       </div>

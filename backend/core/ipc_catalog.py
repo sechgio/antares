@@ -58,6 +58,14 @@ ORCHESTRATABLE_METHODS: frozenset[str] = frozenset(
     and str(entry.get("handler", "")).startswith("backend:")
 )
 
+
+def backend_methods() -> frozenset[str]:
+    return frozenset(
+        name
+        for name, entry in _METHODS.items()
+        if str(entry.get("handler", "")).startswith("backend:")
+    )
+
 _TIMEOUTS: dict[str, Any] = _CATALOG.get("timeouts", {})  # allowlist: dict[str, Any]
 _DEFAULT_TIMEOUT_MS = 30_000
 

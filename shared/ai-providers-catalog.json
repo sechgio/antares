@@ -11,7 +11,8 @@
       "auth": { "type": "api_key", "header": "Authorization", "prefix": "Bearer ", "extra_headers": {} },
       "base_url": "https://api.openai.com/v1",
       "editable_base_url": true,
-      "status": { "path": "/models", "models_field": "data" }
+      "status": { "path": "/models", "models_field": "data" },
+      "chat": { "path": "/chat/completions", "style": "openai_chat", "default_model": "gpt-4o-mini" }
     },
     "anthropic": {
       "label": "Anthropic",
@@ -25,7 +26,8 @@
       },
       "base_url": "https://api.anthropic.com",
       "editable_base_url": true,
-      "status": { "path": "/v1/models", "models_field": "data" }
+      "status": { "path": "/v1/models", "models_field": "data" },
+      "chat": { "path": "/v1/messages", "style": "anthropic_messages", "default_model": "claude-sonnet-4-5" }
     },
     "ollama": {
       "label": "Ollama (local)",
@@ -34,7 +36,8 @@
       "auth": { "type": "none", "header": "", "prefix": "", "extra_headers": {} },
       "base_url": "http://127.0.0.1:11434",
       "editable_base_url": true,
-      "status": { "path": "/api/tags", "models_field": "models" }
+      "status": { "path": "/api/tags", "models_field": "models" },
+      "chat": { "path": "/v1/chat/completions", "style": "openai_chat", "default_model": "llama3.1" }
     }
   }
 }

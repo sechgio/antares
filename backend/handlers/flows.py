@@ -191,6 +191,7 @@ def _ai_providers_list(params: JsonObject) -> JsonObject:
                 "docs": spec.get("docs", ""),
                 "editable_base_url": bool(spec.get("editable_base_url")),
                 "default_base_url": spec.get("base_url", ""),
+                "default_model": (spec.get("chat") or {}).get("default_model", ""),
                 **_ai_providers.public_state(pid),
             }
         )
