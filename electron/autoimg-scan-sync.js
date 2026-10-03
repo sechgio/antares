@@ -11,6 +11,7 @@ const {
   parseArrastreRows,
   parseFoldersFromValues,
   countActiveFolders,
+  tabStartIndex,
 } = require('./autoimg-sheet-rows');
 const {
   sheetCache,
@@ -51,14 +52,15 @@ function nowStamp() {
 }
 
 async function _loadExistingNisSet() {
+  // Sin catch: si la lectura falla, un set vacío inflaría fuera_padron/sin_sgio
+  // del resumen. Mejor abortar el scan que reportar métricas corruptas.
   const existing = new Set();
-  try {
-    const { values } = await sheets.readRange('BD_IMG!A:A');
-    for (let i = 1; i < values.length; i++) {
-      const nis = String(values[i][0] || '').trim();
-      if (nis) existing.add(nis);
-    }
-  } catch {}
+  const { values } = await sheets.readRange('BD_IMG!A:A');
+  const start = tabStartIndex(values, ['NIS']);
+  for (let i = start; i < values.length; i++) {
+    const nis = String(values[i][0] || '').trim();
+    if (nis) existing.add(nis);
+  }
   return existing;
 }
 
@@ -191,6 +193,7 @@ async function syncFromSheet() {
       };
     }
     const batch = await fetchSheetBatch(['BD_IMG!A:M', 'LOGS!A:E', 'BD_ARRASTRE!A:E']);
+    throwIfCancelled();
     const applied = await applySheetBatch({
       'BD_IMG!A:M': batch['BD_IMG!A:M'],
       'LOGS!A:E': batch['LOGS!A:E'],

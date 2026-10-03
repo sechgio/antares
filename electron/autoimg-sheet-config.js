@@ -6,6 +6,8 @@ const {
   configValueFromRows,
   parseResumenMetrics,
   parseFoldersFromValues,
+  AUTOIMG_SHEET_TABS,
+  tabStartIndex,
 } = require('./autoimg-sheet-rows');
 
 const AUTO_SYNC_CONFIG_KEY = 'AUTO_SYNC';
@@ -29,9 +31,10 @@ async function upsertConfigValues(entries) {
   if (!updates.length) return;
   const { values } = await sheets.readRange('CONFIG!A:B');
   const rows = values && values.length ? [...values] : [['Clave', 'Valor']];
+  const start = tabStartIndex(rows, AUTOIMG_SHEET_TABS.CONFIG);
   for (const [key, value] of updates) {
     let found = false;
-    for (let i = 1; i < rows.length; i++) {
+    for (let i = start; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
         rows[i][1] = value;
         found = true;

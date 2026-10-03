@@ -98,6 +98,14 @@ async function main() {
     `tras borrar PEDRO deben quedar JUAN y ANA sin duplicados (got ${ids.join(',')})`,
   );
 
+  let toggleThrew = false;
+  try {
+    await engine.toggleFolder({ folder_id: 'folder-inexistente', activo: false });
+  } catch {
+    toggleThrew = true;
+  }
+  assert(toggleThrew, 'toggleFolder sobre una carpeta ausente debe rechazar, no reportar éxito falso');
+
   console.log('[PASS] AutoIMG removeFolder limpia el remanente de la hoja.');
 }
 

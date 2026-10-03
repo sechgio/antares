@@ -2,7 +2,7 @@ const sheets = require('./google-sheets-service');
 const drive = require('./google-drive-service');
 const { saveLocalFolders, loadLocalFolders } = require('./autoimg-user-store');
 const { sanitizeErrorMessage } = require('./autoimg-security');
-const { parseFoldersFromValues, AUTOIMG_SHEET_TABS } = require('./autoimg-sheet-rows');
+const { parseFoldersFromValues, AUTOIMG_SHEET_TABS, tabStartIndex } = require('./autoimg-sheet-rows');
 const { ensureSheetId } = require('./autoimg-sheet-config');
 const {
   sheetCache,
@@ -37,6 +37,17 @@ function formatFolderErrorScan(message) {
   return msg.startsWith('ERROR:') ? msg : `ERROR: ${msg}`;
 }
 
+// Las escrituras van con USER_ENTERED: un valor externo (nombre de carpeta de
+// Drive) que empiece por =, +, - o @ se interpretaría como fórmula en el Sheet.
+function _sheetSafeText(value) {
+  const s = String(value ?? '');
+  return /^[=+\-@]/.test(s) ? `'${s}` : s;
+}
+
+function _foldersStart(values) {
+  return tabStartIndex(values, AUTOIMG_SHEET_TABS.FOLDERS);
+}
+
 async function markFolderErrorsInSheet(folderSummary) {
   const errors = folderSummary.filter((s) => s.error);
   if (!errors.length) return;
@@ -44,7 +55,7 @@ async function markFolderErrorsInSheet(folderSummary) {
     const folderRows = await sheets.readRange('FOLDERS!A:E');
     const fValues = folderRows.values || [];
     for (const summary of errors) {
-      for (let j = 1; j < fValues.length; j++) {
+      for (let j = _foldersStart(fValues); j < fValues.length; j++) {
         if (fValues[j][1] === summary.folder_id) {
           fValues[j][3] = formatFolderErrorScan(summary.error);
           fValues[j][4] = '0';
@@ -56,7 +67,7 @@ async function markFolderErrorsInSheet(folderSummary) {
 }
 
 function applyFolderSummaryToSheetRows(fValues, summary, timestamp) {
-  for (let j = 1; j < fValues.length; j++) {
+  for (let j = _foldersStart(fValues); j < fValues.length; j++) {
     if (fValues[j][1] !== summary.folder_id) continue;
     if (summary.error) {
       fValues[j][3] = formatFolderErrorScan(summary.error);
@@ -108,17 +119,18 @@ async function addFolder({ name, folder_id, activo }) {
 
   const { values } = await sheets.readRange('FOLDERS!A:E');
   const rows = values.length ? [...values] : [['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS']];
+  const safeName = _sheetSafeText(folderName);
   let found = false;
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = _foldersStart(rows); i < rows.length; i++) {
     if (String(rows[i][1] || '').trim() === safeFolderId) {
-      rows[i][0] = folderName;
+      rows[i][0] = safeName;
       rows[i][2] = activo ? '✅' : '❌';
       found = true;
       break;
     }
   }
   if (!found) {
-    rows.push([folderName, safeFolderId, activo ? '✅' : '❌', '', 0]);
+    rows.push([safeName, safeFolderId, activo ? '✅' : '❌', '', 0]);
   }
   await sheets.writeRange('FOLDERS!A:E', rows);
   const folders = parseFoldersFromValues(rows);
@@ -131,10 +143,14 @@ async function addFolder({ name, folder_id, activo }) {
 async function removeFolder({ folder_id }) {
   await ensureSheetId();
   const { values } = await sheets.readRange('FOLDERS!A:E');
-  const filtered = [values[0] || ['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS']];
-  for (let i = 1; i < values.length; i++) {
+  const start = _foldersStart(values);
+  const filtered = start === 1
+    ? [values[0]]
+    : [];
+  for (let i = start; i < values.length; i++) {
     if (values[i][1] !== folder_id) filtered.push(values[i]);
   }
+  if (!filtered.length) filtered.push(['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS']);
   await sheets.writeRange('FOLDERS!A:E', filtered);
   // values.update solo reemplaza las filas enviadas: sin limpiar el remanente,
   // la última carpeta queda duplicada en la hoja y reaparece al volver a leer.
@@ -158,12 +174,15 @@ async function removeFolder({ folder_id }) {
 async function toggleFolder({ folder_id, activo }) {
   await ensureSheetId();
   const { values } = await sheets.readRange('FOLDERS!A:E');
-  for (let i = 1; i < values.length; i++) {
+  let found = false;
+  for (let i = _foldersStart(values); i < values.length; i++) {
     if (values[i][1] === folder_id) {
       values[i][2] = activo ? '✅' : '❌';
+      found = true;
       break;
     }
   }
+  if (!found) throw new Error('Carpeta no encontrada en el Sheet');
   await sheets.writeRange('FOLDERS!A:E', values);
   const folders = parseFoldersFromValues(values);
   persistFoldersLocal(folders);
