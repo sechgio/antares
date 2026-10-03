@@ -342,7 +342,7 @@ class AgentRunner:
         )
 
 
-_store_lock = threading.Lock()
+_store_lock = threading.RLock()
 _store_singleton: AgentStore | None = None
 _runner_singleton: AgentRunner | None = None
 

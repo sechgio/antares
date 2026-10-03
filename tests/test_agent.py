@@ -1,4 +1,5 @@
 import json
+import threading
 
 import pytest
 
@@ -192,3 +193,16 @@ def test_chat_requires_configured_provider(tmp_path, monkeypatch):
     out = agent_chat.chat("ollama", "llama3.1", [{"role": "user", "content": "hola"}])
     assert out["text"] == "ok"
     assert seen["url"] == "http://127.0.0.1:11434/v1/chat/completions"
+
+
+def test_get_agent_runner_no_deadlock(tmp_path, monkeypatch):
+    """_store_lock guarda ambos singletons: get_agent_runner llama a get_agent_store
+    bajo el mismo lock; con un Lock() normal se autobloquea en el primer acceso."""
+    monkeypatch.setattr(agent, "user_data_path", lambda rel: tmp_path / rel)
+    monkeypatch.setattr(agent, "_store_singleton", None)
+    monkeypatch.setattr(agent, "_runner_singleton", None)
+    done = []
+    thread = threading.Thread(target=lambda: done.append(agent.get_agent_runner()), daemon=True)
+    thread.start()
+    thread.join(timeout=5)
+    assert done, "get_agent_runner quedó bloqueado por _store_lock"
