@@ -154,9 +154,8 @@ def validate_graph(graph: JsonObject) -> None:
             if connection_ref is not None and (not isinstance(connection_ref, str) or not connection_ref.strip()):
                 raise ValueError(f"connection_ref del nodo {node_id} debe ser un id de proveedor")
         if node["kind"] == "agent":
-            provider = node["config"].get("provider")
-            if not isinstance(provider, str) or not provider.strip():
-                raise ValueError(f"El nodo {node_id} (agent) requiere config.provider")
+            # El proveedor se valida en ejecución (como connection_ref): puede
+            # guardarse pendiente de configurar uno en Proveedores IA.
             prompt = node["config"].get("prompt")
             if not isinstance(prompt, str) or not prompt.strip():
                 raise ValueError(f"El nodo {node_id} (agent) requiere config.prompt")

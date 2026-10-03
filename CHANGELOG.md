@@ -40,6 +40,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Staging de archivos**: `file_staged_abort` cancelaba la sesión de otra ventana; el token queda ligado a la ventana que lo creó.
 - **Canvas / PDF**: la importación rechaza documentos con más de 500.000 operadores acumulados, aunque cada página permanezca bajo su límite individual.
 - **Flujos / http_request (seguridad)**: los destinos que resuelven a IPs no públicas (loopback, LAN, link-local, reservadas) quedan bloqueados salvo `ANTARES_FLOWS_ALLOW_PRIVATE_HOSTS=1`; `connection_ref` exige `token_hosts` declarado en el proveedor y los redirects revalidan esquema e IP pública además de retirar `Authorization` fuera de los hosts firmables.
+- **Flujos / plantillas con IA**: las plantillas «Informe con IA» y «Clasificador con IA» no se podían crear porque el nodo agente exigía `config.provider` al guardar; el proveedor se valida ahora en ejecución y la creación pre-rellena el primer proveedor configurado si existe.
+- **Flujos / guardado**: `Ctrl+S` inmediato tras una edición podía persistir el grafo anterior (el handler veía el estado del último render); nodos y aristas se resuelven ahora contra una referencia siempre fresca.
 - **Flujos / agente (seguridad)**: al aprobar una herramienta se revalida que el método siga siendo invocable (orquestable, gated o tool MCP) antes de ejecutarlo; `mcp_server_add`, `mcp_server_delete` y `mcp_tool_call` pasan a la lista de métodos que el agente nunca puede invocar, alineada con el resto de métodos que tocan el vault.
 
 ## [0.11.12] — 2026-09-16

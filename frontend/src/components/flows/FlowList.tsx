@@ -11,6 +11,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
+import { aiProvidersApi } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -87,10 +88,28 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
 
   const createFromTemplate = async (template: FlowTemplate) => {
     try {
+      let graph = template.graph;
+      const hasEmptyProvider = graph.nodes.some(
+        (n) => n.kind === 'agent' && !String(n.config.provider ?? '').trim(),
+      );
+      if (hasEmptyProvider) {
+        const res = await aiProvidersApi.aiProvidersList();
+        const fallback = res.providers.find((p) => p.configured)?.id;
+        if (fallback) {
+          graph = {
+            ...graph,
+            nodes: graph.nodes.map((n) =>
+              n.kind === 'agent' && !String(n.config.provider ?? '').trim()
+                ? { ...n, config: { ...n.config, provider: fallback } }
+                : n,
+            ),
+          };
+        }
+      }
       const res = await flowsApi.flowsCreate({
         name: template.name,
         description: template.description,
-        graph: template.graph,
+        graph,
       });
       addToast({ message: 'Flujo creado desde plantilla', type: 'success' });
       setShowTemplates(false);

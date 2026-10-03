@@ -15,7 +15,7 @@ import {
   type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { ArrowLeft, Bot, LayoutGrid, Play, Redo2, Save, Undo2 } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
@@ -55,12 +55,26 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  // Guardado imperativo (Ctrl+S) necesita el grafo más reciente aunque React
+  // aún no haya renderizado la edición en curso.
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  const setNodesTracked = useCallback((next: SetStateAction<Node<FlowNodeData>[]>) => {
+    const resolved = typeof next === 'function' ? next(nodesRef.current) : next;
+    nodesRef.current = resolved;
+    setNodes(resolved);
+  }, []);
+  const setEdgesTracked = useCallback((next: SetStateAction<Edge[]>) => {
+    const resolved = typeof next === 'function' ? next(edgesRef.current) : next;
+    edgesRef.current = resolved;
+    setEdges(resolved);
+  }, []);
   const {
     push: pushHistory,
     undo,
     redo,
     size: historySize,
-  } = useFlowHistory(nodes, edges, setNodes, setEdges, () => {
+  } = useFlowHistory(nodes, edges, setNodesTracked, setEdgesTracked, () => {
     setSelectedId(null);
     setDirty(true);
   });
@@ -75,8 +89,8 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
         setBaseGraph(res.flow.graph);
         setNameDraft(res.flow.name);
         const { nodes: n, edges: e } = graphToReactFlow(res.flow.graph);
-        setNodes(n.map((node) => ({ ...node, deletable: node.data.flowNode.kind !== 'trigger' })));
-        setEdges(e);
+        setNodesTracked(n.map((node) => ({ ...node, deletable: node.data.flowNode.kind !== 'trigger' })));
+        setEdgesTracked(e);
         setDirty(false);
       })
       .catch((err) =>
@@ -96,7 +110,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
           (c.type === 'position' && c.dragging === false),
       );
       if (structural) pushHistory();
-      setNodes((ns) => applyNodeChanges(changes, ns));
+      setNodesTracked((ns) => applyNodeChanges(changes, ns));
       if (changes.some((c) => c.type !== 'select' && c.type !== 'dimensions')) setDirty(true);
     },
     [pushHistory],
@@ -105,30 +119,27 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       if (changes.some((c) => c.type === 'remove' || c.type === 'add')) pushHistory();
-      setEdges((es) => applyEdgeChanges(changes, es));
+      setEdgesTracked((es) => applyEdgeChanges(changes, es));
       if (changes.some((c) => c.type !== 'select')) setDirty(true);
     },
     [pushHistory],
   );
 
-  const isValidConnection = useCallback(
-    (conn: Connection | Edge) => {
-      if (!conn.source || !conn.target || conn.source === conn.target) return false;
-      const targetNode = nodes.find((n) => n.id === conn.target);
-      const sourceNode = nodes.find((n) => n.id === conn.source);
-      if (!targetNode || !sourceNode) return false;
-      if (targetNode.data.flowNode.kind === 'trigger') return false;
-      if (createsCycle(edges, conn.source, conn.target)) return false;
-      return true;
-    },
-    [nodes, edges],
-  );
+  const isValidConnection = useCallback((conn: Connection | Edge) => {
+    if (!conn.source || !conn.target || conn.source === conn.target) return false;
+    const targetNode = nodesRef.current.find((n) => n.id === conn.target);
+    const sourceNode = nodesRef.current.find((n) => n.id === conn.source);
+    if (!targetNode || !sourceNode) return false;
+    if (targetNode.data.flowNode.kind === 'trigger') return false;
+    if (createsCycle(edgesRef.current, conn.source, conn.target)) return false;
+    return true;
+  }, []);
 
   const onConnect = useCallback(
     (conn: Connection) => {
       if (!isValidConnection(conn)) return;
       pushHistory();
-      setEdges((es) =>
+      setEdgesTracked((es) =>
         addEdge(
           {
             ...conn,
@@ -146,7 +157,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
   const addNode = useCallback(
     (kind: FlowNodeKind, position: { x: number; y: number }) => {
       pushHistory();
-      const id = makeNodeId(kind, nodes.map((n) => n.id));
+      const id = makeNodeId(kind, nodesRef.current.map((n) => n.id));
       const flowNode: FlowNode = {
         id,
         kind,
@@ -154,14 +165,14 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
         config: {},
         position,
       };
-      setNodes((ns) => [
+      setNodesTracked((ns) => [
         ...ns,
         { id, type: 'flowNode', position, data: { flowNode }, selected: false } as Node<FlowNodeData>,
       ]);
       setDirty(true);
       setSelectedId(id);
     },
-    [nodes, pushHistory],
+    [pushHistory],
   );
 
   const onDrop = useCallback(
@@ -197,46 +208,46 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
 
   const updateNode = useCallback(
     (updated: FlowNode) => {
-      const prev = nodes.find((n) => n.id === updated.id)?.data.flowNode;
+      const prev = nodesRef.current.find((n) => n.id === updated.id)?.data.flowNode;
       if (prev && JSON.stringify(prev.config) !== JSON.stringify(updated.config)) pushHistory();
-      setNodes((ns) =>
+      setNodesTracked((ns) =>
         ns.map((n) =>
           n.id === updated.id ? { ...n, data: { ...n.data, flowNode: updated } } : n,
         ),
       );
       setDirty(true);
     },
-    [nodes, pushHistory],
+    [pushHistory],
   );
 
   const deleteNode = useCallback(
     (nodeId: string) => {
-      const node = nodes.find((n) => n.id === nodeId);
+      const node = nodesRef.current.find((n) => n.id === nodeId);
       if (!node || node.data.flowNode.kind === 'trigger') return;
       pushHistory();
-      setNodes((ns) => ns.filter((n) => n.id !== nodeId));
-      setEdges((es) => es.filter((e) => e.source !== nodeId && e.target !== nodeId));
+      setNodesTracked((ns) => ns.filter((n) => n.id !== nodeId));
+      setEdgesTracked((es) => es.filter((e) => e.source !== nodeId && e.target !== nodeId));
       setSelectedId(null);
       setDirty(true);
     },
-    [nodes, pushHistory],
+    [pushHistory],
   );
 
   const autoLayout = useCallback(() => {
-    if (!nodes.length) return;
+    if (!nodesRef.current.length) return;
     pushHistory();
-    const positions = layoutByDepth(nodes, edges);
-    setNodes((ns) =>
+    const positions = layoutByDepth(nodesRef.current, edgesRef.current);
+    setNodesTracked((ns) =>
       ns.map((n) => ({ ...n, position: positions.get(n.id) ?? n.position })),
     );
     setDirty(true);
-  }, [nodes, edges, pushHistory]);
+  }, [pushHistory]);
 
   const save = useCallback(async () => {
     if (!flow || !baseGraph) return;
     setSaving(true);
     try {
-      const graph = reactFlowToGraph(nodes, edges, baseGraph);
+      const graph = reactFlowToGraph(nodesRef.current, edgesRef.current, baseGraph);
       const res = await flowsApi.flowsUpdate({
         id: flow.id,
         graph,
@@ -251,7 +262,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [flow, baseGraph, nodes, edges, addToast]);
+  }, [flow, baseGraph, addToast]);
 
   const rename = useCallback(
     async (name: string) => {
