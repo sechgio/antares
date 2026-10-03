@@ -1,6 +1,9 @@
-import { AlertTriangle, Check, ChevronRight, Clock3, Loader2, ShieldCheck, Wrench, X } from 'lucide-react';
-import type { AgentApproval, AgentMessage, AgentToolCall } from '../../api/agentApi';
+import { AlertTriangle, Bot, Check, ChevronRight, Clock3, Loader2, ShieldCheck, Wrench, X } from 'lucide-react';
+import type { AgentApproval, AgentMessage, AgentSession, AgentToolCall } from '../../api/agentApi';
+import type { AiProviderSpec } from '../../api/aiProvidersApi';
 import Button from '../ui/Button';
+import Input from '../ui/Input';
+import ThemedSelect from '../ui/ThemedSelect';
 
 const CALL_STATUS_LABEL: Record<string, string> = {
   queued: 'en cola',
@@ -133,5 +136,137 @@ export function ThinkingRow({ elapsedSeconds }: { elapsedSeconds: number }) {
         {elapsed}
       </span>
     </div>
+  );
+}
+
+export interface AgentToolGroups {
+  direct: string[];
+  gated: string[];
+  mcp: string[];
+}
+
+function SectionCard({
+  icon,
+  title,
+  badge,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  badge?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+      <header className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-3.5 py-2.5 text-[12px] font-medium text-[var(--text-primary)]">
+        <span className="text-[var(--text-secondary)]">{icon}</span>
+        {title}
+        {badge && (
+          <span className="ml-auto rounded-full bg-[var(--accent-primary-glow)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-primary-hover)]">
+            {badge}
+          </span>
+        )}
+      </header>
+      <div className="space-y-2.5 px-3.5 py-3">{children}</div>
+    </section>
+  );
+}
+
+function ToolGroup({ label, names }: { label: string; names: string[] }) {
+  if (names.length === 0) return null;
+  return (
+    <details className="group rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+        <ChevronRight size={11} className="shrink-0 transition-transform group-open:rotate-90" />
+        {label}
+        <span className="ml-auto tabular-nums text-[var(--text-muted)]">{names.length}</span>
+      </summary>
+      <ul className="mt-1.5 max-h-44 space-y-1 overflow-auto">
+        {names.map((n) => (
+          <li key={n} className="truncate font-mono text-[11px] text-[var(--text-muted)]" title={n}>
+            {n}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+export function AgentContextPanel({
+  session,
+  providers,
+  provider,
+  model,
+  messageCount,
+  toolGroups,
+  onProviderPick,
+  onModelChange,
+}: {
+  session: AgentSession | null;
+  providers: AiProviderSpec[];
+  provider: string;
+  model: string;
+  messageCount: number;
+  toolGroups: AgentToolGroups;
+  onProviderPick: (id: string) => void;
+  onModelChange: (v: string) => void;
+}) {
+  const toolCount = toolGroups.direct.length + toolGroups.gated.length + toolGroups.mcp.length;
+  return (
+    <aside className="hidden w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-[var(--border-medium)] p-3 xl:flex">
+      <SectionCard icon={<Bot size={14} />} title="Agente" badge={session ? session.provider : undefined}>
+        {session ? (
+          <dl className="space-y-1.5 text-[12px]">
+            <div className="flex justify-between gap-3">
+              <dt className="text-[var(--text-muted)]">Proveedor</dt>
+              <dd className="truncate font-mono text-[var(--text-secondary)]">{session.provider}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-[var(--text-muted)]">Modelo</dt>
+              <dd className="truncate font-mono text-[var(--text-secondary)]">{session.model || 'por defecto'}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-[var(--text-muted)]">Mensajes</dt>
+              <dd className="tabular-nums text-[var(--text-secondary)]">{messageCount}</dd>
+            </div>
+          </dl>
+        ) : (
+          <div className="space-y-2">
+            <ThemedSelect
+              value={provider}
+              onChange={onProviderPick}
+              options={providers.map((p) => ({ value: p.id, label: p.label }))}
+              aria-label="Proveedor IA"
+              placeholder="Proveedor…"
+            />
+            <Input
+              value={model}
+              onChange={(e) => onModelChange(e.target.value)}
+              placeholder="Modelo (opcional)"
+              spellCheck={false}
+              aria-label="Modelo"
+            />
+            <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+              Se aplican a la próxima conversación.
+            </p>
+          </div>
+        )}
+        <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+          Las acciones con efectos se pausan hasta que las apruebes. Las claves salen del vault y
+          nunca llegan a esta ventana.
+        </p>
+      </SectionCard>
+
+      <SectionCard icon={<Wrench size={14} />} title="Herramientas" badge={toolCount ? String(toolCount) : undefined}>
+        <ToolGroup label="Lectura directa" names={toolGroups.direct} />
+        <ToolGroup label="Con aprobación" names={toolGroups.gated} />
+        <ToolGroup label="MCP" names={toolGroups.mcp} />
+        {toolCount === 0 && (
+          <p className="text-[11px] text-[var(--text-muted)]">
+            Las herramientas disponibles aparecen aquí al cargar la vista.
+          </p>
+        )}
+      </SectionCard>
+    </aside>
   );
 }

@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, ChevronRight, MessageSquare, Plus, Send, Sparkles, Wrench, X } from 'lucide-react';
+import { Bot, MessageSquare, Plus, Send, Sparkles, X } from 'lucide-react';
 import { agentApi, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
+import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
-import Input from '../ui/Input';
-import ThemedSelect from '../ui/ThemedSelect';
-import { ApprovalCard, MessageRow, ThinkingRow } from './AgentTimeline';
+import { AgentContextPanel, ApprovalCard, MessageRow, ThinkingRow } from './AgentTimeline';
 
 const POLL_MS = 1500;
 
@@ -16,55 +15,20 @@ const SUGGESTIONS = [
   '¿Qué ejecuciones recientes fallaron y por qué?',
 ];
 
-function SectionCard({
-  icon,
-  title,
-  badge,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  badge?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-      <header className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-3.5 py-2.5 text-[12px] font-medium text-[var(--text-primary)]">
-        <span className="text-[var(--text-secondary)]">{icon}</span>
-        {title}
-        {badge && (
-          <span className="ml-auto rounded-full bg-[var(--accent-primary-glow)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-primary-hover)]">
-            {badge}
-          </span>
-        )}
-      </header>
-      <div className="space-y-2.5 px-3.5 py-3">{children}</div>
-    </section>
-  );
-}
-
-function ToolGroup({ label, names }: { label: string; names: string[] }) {
-  if (names.length === 0) return null;
-  return (
-    <details className="group rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
-        <ChevronRight size={11} className="shrink-0 transition-transform group-open:rotate-90" />
-        {label}
-        <span className="ml-auto tabular-nums text-[var(--text-muted)]">{names.length}</span>
-      </summary>
-      <ul className="mt-1.5 max-h-44 space-y-1 overflow-auto">
-        {names.map((n) => (
-          <li key={n} className="truncate font-mono text-[11px] text-[var(--text-muted)]" title={n}>
-            {n}
-          </li>
-        ))}
-      </ul>
-    </details>
-  );
+function relTime(ms?: number): string {
+  if (!ms) return '';
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 60) return 'ahora';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `hace ${h} h`;
+  return `hace ${Math.floor(h / 24)} d`;
 }
 
 export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   const { addToast } = useToast();
+  const { confirm } = useDialog();
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
   const [tools, setTools] = useState<AgentToolSpec[]>([]);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -76,6 +40,7 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   const [model, setModel] = useState('');
   const [draft, setDraft] = useState('');
   const [deciding, setDeciding] = useState(false);
+  const [queued, setQueued] = useState<{ session: string; text: string }[]>([]);
   const [runningSince, setRunningSince] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<number | null>(null);
@@ -199,6 +164,7 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   }, [draft]);
 
   const session = useMemo(() => sessions.find((s) => s.id === sessionId) ?? null, [sessions, sessionId]);
+  const queuedForSession = useMemo(() => queued.filter((i) => i.session === sessionId), [queued, sessionId]);
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
   const sessionProviderLabel = session
@@ -230,9 +196,19 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   };
 
   const removeSession = async (id: string) => {
+    const target = sessions.find((s) => s.id === id);
+    const ok = await confirm({
+      title: 'Eliminar conversación',
+      description: `Se eliminará "${target?.title || 'Conversación'}" y todo su historial. Esta acción no se puede deshacer.`,
+      confirmLabel: 'Eliminar',
+      type: 'destructive',
+    });
+    if (!ok) return;
     try {
       await agentApi.agentSessionDelete(id);
+      setQueued((q) => q.filter((i) => i.session !== id));
       if (sessionId === id) setSessionId('');
+      addToast({ message: 'Conversación eliminada', type: 'success' });
       await refreshSessions();
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo eliminar la conversación'), type: 'error' });
@@ -253,10 +229,24 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
 
   const send = async () => {
     const content = draft.trim();
-    if (!content || !sessionId || running) return;
+    if (!content || !sessionId) return;
     setDraft('');
+    if (running || pending.length > 0) {
+      setQueued((q) => [...q, { session: sessionId, text: content }]);
+      return;
+    }
     await sendToSession(sessionId, content);
   };
+
+  // Envía el siguiente mensaje en cola cuando el turno termina y no quedan aprobaciones.
+  useEffect(() => {
+    if (!sessionId || running || pending.length > 0) return;
+    const next = queued.find((i) => i.session === sessionId);
+    if (!next) return;
+    setQueued((q) => q.filter((i) => i !== next));
+    void sendToSession(sessionId, next.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, running, pending.length, queued]);
 
   const sendSuggestion = async (text: string) => {
     const id = sessionId || (await newSession());
@@ -312,14 +302,22 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
               <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setSessionId(s.id)}>
                 <MessageSquare size={13} className="shrink-0 opacity-60" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px]">{s.title || 'Conversación'}</span>
+                  <span className="flex items-center gap-1.5">
+                    {s.last_error && (
+                      <span
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-yellow)]"
+                        title={s.last_error}
+                      />
+                    )}
+                    <span className="truncate text-[12px]">{s.title || 'Conversación'}</span>
+                  </span>
                   <span className="block truncate text-[10px] text-[var(--text-muted)]">
-                    {s.provider} · {s.model}
+                    {s.provider} · {s.model} · {relTime(s.updated_at)}
                   </span>
                 </span>
               </button>
               <button
-                className="invisible shrink-0 rounded p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--accent-red)] group-hover:visible"
+                className="invisible shrink-0 rounded-md p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--accent-red)] group-hover:visible"
                 aria-label="Eliminar conversación"
                 title="Eliminar"
                 onClick={() => void removeSession(s.id)}
@@ -341,7 +339,8 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
               {session.title || 'Conversación'}
             </span>
             <span className="shrink-0 rounded-full border border-[var(--border-subtle)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
-              {session.provider} · {session.model}
+              {sessionProviderLabel}
+              {session.model ? ` · ${session.model}` : ''}
             </span>
           </div>
         )}
@@ -390,6 +389,29 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
         </div>
 
         <div className="px-5 pb-4 pt-1">
+          {queuedForSession.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                En cola
+              </span>
+              {queuedForSession.map((item, idx) => (
+                <span
+                  key={`${idx}-${item.text}`}
+                  className="flex max-w-[70%] items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] py-0.5 pl-2.5 pr-1 text-[11px] text-[var(--text-secondary)]"
+                >
+                  <span className="truncate">{item.text}</span>
+                  <button
+                    className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                    aria-label="Quitar de la cola"
+                    title="Quitar de la cola"
+                    onClick={() => setQueued((q) => q.filter((i) => i !== item))}
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 pb-2 pt-3 transition-colors focus-within:border-[var(--border-medium)]">
             <textarea
               ref={draftRef}
@@ -402,8 +424,14 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
                   void send();
                 }
               }}
-              placeholder={sessionId ? 'Escribe un mensaje…' : 'Crea una conversación primero'}
-              disabled={!sessionId || running}
+              placeholder={
+                !sessionId
+                  ? 'Crea una conversación primero'
+                  : running || pending.length > 0
+                    ? 'Escribe para cuando termine…'
+                    : 'Escribe un mensaje…'
+              }
+              disabled={!sessionId}
               aria-label="Mensaje para el agente"
               className="max-h-36 w-full resize-none bg-transparent text-[13px] leading-relaxed text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
             />
@@ -416,7 +444,7 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
               <button
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-all duration-150 hover:bg-[var(--accent-primary-hover)] active:scale-[0.96] disabled:bg-[var(--bg-input)] disabled:text-[var(--text-muted)]"
                 onClick={() => void send()}
-                disabled={!sessionId || running || !draft.trim()}
+                disabled={!sessionId || !draft.trim()}
                 aria-label="Enviar"
               >
                 <Send size={13} />
@@ -426,67 +454,20 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
         </div>
       </div>
 
-      <aside className="hidden w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-[var(--border-medium)] p-3 xl:flex">
-        <SectionCard icon={<Bot size={14} />} title="Agente" badge={session ? session.provider : undefined}>
-          {session ? (
-            <dl className="space-y-1.5 text-[12px]">
-              <div className="flex justify-between gap-3">
-                <dt className="text-[var(--text-muted)]">Proveedor</dt>
-                <dd className="truncate font-mono text-[var(--text-secondary)]">{session.provider}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-[var(--text-muted)]">Modelo</dt>
-                <dd className="truncate font-mono text-[var(--text-secondary)]">{session.model || 'por defecto'}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-[var(--text-muted)]">Mensajes</dt>
-                <dd className="tabular-nums text-[var(--text-secondary)]">
-                  {messages.filter((m) => m.role !== 'tool_result').length}
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <div className="space-y-2">
-              <ThemedSelect
-                value={provider}
-                onChange={(v) => {
-                  setProvider(v);
-                  const p = providers.find((x) => x.id === v);
-                  if (p?.default_model) setModel(p.default_model);
-                }}
-                options={providers.map((p) => ({ value: p.id, label: p.label }))}
-                aria-label="Proveedor IA"
-                placeholder="Proveedor…"
-              />
-              <Input
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="Modelo (opcional)"
-                spellCheck={false}
-                aria-label="Modelo"
-              />
-              <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-                Se aplican a la próxima conversación.
-              </p>
-            </div>
-          )}
-          <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-            Las acciones con efectos se pausan hasta que las apruebes. Las claves salen del vault y
-            nunca llegan a esta ventana.
-          </p>
-        </SectionCard>
-
-        <SectionCard icon={<Wrench size={14} />} title="Herramientas" badge={tools.length ? String(tools.length) : undefined}>
-          <ToolGroup label="Lectura directa" names={toolGroups.direct} />
-          <ToolGroup label="Con aprobación" names={toolGroups.gated} />
-          <ToolGroup label="MCP" names={toolGroups.mcp} />
-          {tools.length === 0 && (
-            <p className="text-[11px] text-[var(--text-muted)]">
-              Las herramientas disponibles aparecen aquí al cargar la vista.
-            </p>
-          )}
-        </SectionCard>
-      </aside>
+      <AgentContextPanel
+        session={session}
+        providers={providers}
+        provider={provider}
+        model={model}
+        messageCount={messages.filter((m) => m.role !== 'tool_result').length}
+        toolGroups={toolGroups}
+        onProviderPick={(v) => {
+          setProvider(v);
+          const p = providers.find((x) => x.id === v);
+          if (p?.default_model) setModel(p.default_model);
+        }}
+        onModelChange={setModel}
+      />
     </div>
   );
 }
