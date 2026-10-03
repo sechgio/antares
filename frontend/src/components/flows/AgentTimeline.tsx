@@ -91,8 +91,8 @@ export function ApprovalCard({
   onDecide: (id: string, ok: boolean) => void;
 }) {
   return (
-    <div className="max-w-[90%] overflow-hidden rounded-xl border border-[var(--accent-yellow)]/40 bg-[var(--bg-surface)]">
-      <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--accent-yellow)]/10 px-3 py-2 text-[12px] font-medium text-[var(--text-primary)]">
+    <div className="max-w-[90%] overflow-hidden rounded-xl border border-[color:color-mix(in_srgb,var(--accent-yellow)_40%,transparent)] bg-[var(--bg-surface)]">
+      <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)]">
         <AlertTriangle size={13} className="text-[var(--accent-yellow)]" />
         El agente quiere ejecutar una acción
       </div>
