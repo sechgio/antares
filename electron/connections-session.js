@@ -23,11 +23,10 @@ const { maskClientId } = require('./autoimg-security');
 const {
   findAvailablePort,
   startCallbackServer,
-  stopCallbackServer,
 } = require('./autoimg-oauth-flow');
 const { getProvider } = require('./connections-providers');
 
-const _pending = new Map(); // provider -> { redirectUri, codeVerifier }
+const _pending = new Map(); // provider -> { redirectUri, codeVerifier, stop }
 const _tokenCache = new Map(); // provider -> tokens | null
 const _refreshPromises = new Map(); // provider -> Promise
 
@@ -258,7 +257,8 @@ function _generateCodeChallenge(verifier) {
 }
 
 function cancelConnect(provider) {
-  stopCallbackServer();
+  const pending = _pending.get(provider);
+  if (pending && pending.stop) pending.stop();
   _pending.delete(provider);
 }
 
@@ -272,7 +272,8 @@ async function beginConnect(provider, onComplete, onError) {
   const usePkce = spec.auth.type === 'oauth_pkce';
   const codeVerifier = usePkce ? _generateCodeVerifier() : null;
   const oauthState = crypto.randomBytes(24).toString('base64url');
-  _pending.set(provider, { redirectUri, codeVerifier });
+  const entry = { redirectUri, codeVerifier, stop: null };
+  _pending.set(provider, entry);
 
   const params = new URLSearchParams({
     client_id: cfg.clientId,
@@ -318,7 +319,19 @@ async function beginConnect(provider, onComplete, onError) {
       onError(err);
       cancelConnect(provider);
     },
-  });
+  })
+    .then(({ stop }) => {
+      if (_pending.get(provider) === entry) {
+        entry.stop = stop;
+      } else {
+        stop();
+      }
+    })
+    .catch((err) => {
+      if (_pending.get(provider) !== entry) return;
+      onError(err);
+      cancelConnect(provider);
+    });
 
   return { url, redirect_uri: redirectUri };
 }
