@@ -129,6 +129,12 @@ def sanitize_html_for_pdf(html: str) -> str:
     stripped = re.sub(r"<object[^>]*>[\s\S]*?</object>", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"<embed[^>]*>", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"<link[^>]*>", "", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(
+        r"<(animate|set)\b[^>]*attributeName\s*=\s*['\"]?\s*(?:xlink:)?href\s*['\"]?[^>]*>",
+        "",
+        stripped,
+        flags=re.IGNORECASE,
+    )
     stripped = re.sub(r"<script[^>]*>", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"</script>", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"<iframe[^>]*>", "", stripped, flags=re.IGNORECASE)

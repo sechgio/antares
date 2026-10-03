@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  buildLocalImageToken,
   buildPdfFilename,
-  imageToPdfSource,
   mergeHtmlDocuments,
   selectRowsForPdfExport,
 } from "./pdfExport";
+import { buildLocalImageToken, imageToPdfSource } from "../../utils/pdfAssets";
 
 const stageFileForIpc = vi.hoisted(() => vi.fn());
 

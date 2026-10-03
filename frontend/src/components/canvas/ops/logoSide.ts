@@ -1,6 +1,6 @@
 import type { CanvasLayer } from '../types';
 
-export type LogoSide = 'left' | 'right';
+type LogoSide = 'left' | 'right';
 
 export function logoSideOf(layer: CanvasLayer): LogoSide {
   return layer.meta?.side === 'right' ? 'right' : 'left';

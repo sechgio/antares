@@ -16,21 +16,31 @@ async function main() {
   let stats = 0;
   let cacheMiss = false;
   let holdScan = null;
+  let fakeStatSize = 4;
+  let fakeFileContent = Buffer.from('jpeg');
   const fakeFs = {
     readFile: async () => {
       if (cacheMiss) {
         cacheMiss = false;
         throw Object.assign(new Error('cache miss'), { code: 'ENOENT' });
       }
-      return Buffer.from('jpeg');
+      return fakeFileContent;
     },
+    open: async () => ({
+      read: async (out, off, len, pos) => {
+        const slice = fakeFileContent.subarray(pos, Math.min(pos + len, fakeFileContent.length));
+        slice.copy(out, off);
+        return { bytesRead: slice.length };
+      },
+      close: async () => {},
+    }),
     utimes: async () => {}, mkdir: async () => {}, writeFile: async () => {}, rename: async () => {},
     readdir: async () => {
       scans += 1;
       if (holdScan) await holdScan;
       return Array.from({ length: 400 }, (_, i) => `${i}.jpg`);
     },
-    stat: async () => { stats += 1; return { mtimeMs: 1, ctimeMs: 1, size: 4 }; },
+    stat: async () => { stats += 1; return { mtimeMs: 1, ctimeMs: 1, size: fakeStatSize, isFile: () => true }; },
   };
   const isolated = { exports: {} };
   class TestDate extends Date { static now() { return now; } }
@@ -90,8 +100,92 @@ async function main() {
   await flushTrim();
   assert(scans === 6, 'writes queued before a sweep coalesce into that sweep');
 
+  fakeStatSize = isolated.exports.MAX_THUMBNAIL_SOURCE_BYTES + 1;
+  let oversizeError = null;
+  try {
+    await isolated.exports.createLocalThumbnail(fakeSource, 64, fakeNativeImage);
+  } catch (err) {
+    oversizeError = err;
+  }
+  fakeStatSize = 4;
+  assert(oversizeError && oversizeError.message === 'image too large', 'oversized thumbnail source is rejected before decode');
+
+  let decodeCalls = 0;
+  const countingImage = {
+    createFromPath() {
+      decodeCalls += 1;
+      return { isEmpty: () => false, toJPEG: () => Buffer.from('jpeg') };
+    },
+  };
+
+  const pngBomb = Buffer.alloc(64);
+  Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]).copy(pngBomb, 0);
+  pngBomb.write('IHDR', 12, 'latin1');
+  pngBomb.writeUInt32BE(100000, 16);
+  pngBomb.writeUInt32BE(100000, 20);
+
+  const probedPng = await isolated.exports._probeImageDimensionsFromBuffer(pngBomb);
+  assert(probedPng && probedPng.width === 100000 && probedPng.height === 100000, 'probe reads PNG IHDR dimensions');
+
+  fakeFileContent = pngBomb;
+  let bombError = null;
+  try {
+    await isolated.exports.createLocalThumbnail(fakeSource, 64, countingImage);
+  } catch (err) {
+    bombError = err;
+  }
+  assert(bombError && bombError.message === 'image too large', 'PNG bomb is rejected before decode');
+  assert(decodeCalls === 0, 'probe intercepts before any decode call');
+
+  const jpegBomb = Buffer.alloc(30);
+  jpegBomb[0] = 0xFF; jpegBomb[1] = 0xD8;
+  jpegBomb[2] = 0xFF; jpegBomb[3] = 0xE0; jpegBomb.writeUInt16BE(16, 4);
+  jpegBomb[20] = 0xFF; jpegBomb[21] = 0xC0; jpegBomb.writeUInt16BE(17, 22);
+  jpegBomb[24] = 8; jpegBomb.writeUInt16BE(60000, 25); jpegBomb.writeUInt16BE(60000, 27);
+
+  const probedJpeg = await isolated.exports._probeImageDimensionsFromBuffer(jpegBomb);
+  assert(probedJpeg && probedJpeg.width === 60000 && probedJpeg.height === 60000, 'probe walks JPEG segments to SOF');
+
+  fakeFileContent = jpegBomb;
+  bombError = null;
+  try {
+    await isolated.exports.createLocalThumbnail(fakeSource, 64, countingImage);
+  } catch (err) {
+    bombError = err;
+  }
+  assert(bombError && bombError.message === 'image too large', 'JPEG bomb is rejected before decode');
+  assert(decodeCalls === 0, 'JPEG probe intercepts before decode');
+
+  const pngOk = Buffer.alloc(64);
+  Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]).copy(pngOk, 0);
+  pngOk.write('IHDR', 12, 'latin1');
+  pngOk.writeUInt32BE(800, 16);
+  pngOk.writeUInt32BE(600, 20);
+  fakeFileContent = pngOk;
+  cacheMiss = true;
+  await isolated.exports.createLocalThumbnail(fakeSource, 70, countingImage);
+  assert(decodeCalls === 1, 'legit dimensions still decode');
+
+  fakeFileContent = Buffer.from('not-an-image');
+  cacheMiss = true;
+  const unknown = await isolated.exports.createLocalThumbnail(fakeSource, 71, countingImage);
+  assert(unknown.dataUrl && decodeCalls === 2, 'unrecognized magic falls through to decode (fail-open)');
+
+  // stat dice 4 bytes pero readFile devuelve 12 MB+: la carrera stat→read debe rechazarse.
+  fakeFileContent = Buffer.alloc(12 * 1024 * 1024 + 1);
+  let raceError = null;
+  try {
+    await isolated.exports.createLocalImageDataUrl(fakeSource);
+  } catch (err) {
+    raceError = err;
+  }
+  assert(raceError && raceError.message === 'image too large', 'post-read size check catches stat-to-read growth');
+
+  fakeFileContent = Buffer.from('jpeg');
+
   const {
     createLocalThumbnail,
+    createLocalImageDataUrl,
     setThumbnailCacheDir,
     _trimDiskCache,
     DISK_CACHE_MAX_FILES,
@@ -165,6 +259,17 @@ async function main() {
   await createLocalThumbnail(src, 64, nativeImage);
   await _trimDiskCache(cacheDir);
   assert(fs.existsSync(cachedPath), 'reading a thumb refreshes its LRU position');
+
+  const bombPath = path.join(sourceDir, 'bomb.jpg');
+  fs.writeFileSync(bombPath, pngBomb);
+  registerAllowedReadPath(bombPath);
+  let dataUrlError = null;
+  try {
+    await createLocalImageDataUrl(bombPath);
+  } catch (err) {
+    dataUrlError = err;
+  }
+  assert(dataUrlError && dataUrlError.message === 'image too large', 'data-url path rejects declared-dimension bomb');
 
   await _trimDiskCache(cacheDir, { maxFiles: DISK_CACHE_MAX_FILES, maxBytes: 10 });
   const remainingBytes = fs.readdirSync(cacheDir)

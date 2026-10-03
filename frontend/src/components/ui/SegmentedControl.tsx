@@ -5,7 +5,7 @@ interface SegmentedControlOption<T extends string = string> {
   label: ReactNode;
 }
 
-export interface SegmentedControlProps<T extends string = string> {
+interface SegmentedControlProps<T extends string = string> {
   options: SegmentedControlOption<T>[];
   value: T;
   onChange: (value: T) => void;

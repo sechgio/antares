@@ -2,7 +2,7 @@
 import type { AutoLayoutAlign, CanvasLayer, LayerAutoLayout } from '../types';
 import { mm, parseMm } from '../types';
 
-export type ChildBox = { x: number; y: number; w: number; h: number };
+type ChildBox = { x: number; y: number; w: number; h: number };
 
 const MIN_SIZE_MM = 1;
 

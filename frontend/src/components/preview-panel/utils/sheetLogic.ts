@@ -6,7 +6,7 @@ import {
   naturalSortFilesByName,
 } from "../../../utils/recordMatching";
 
-export interface SheetRows {
+interface SheetRows {
   name: string;
   rows: unknown[][];
   rowCount?: number;

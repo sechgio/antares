@@ -8,7 +8,6 @@ import { compositionHiddenLayerIds } from './booleanOps';
 import PageLayerPreview from '../editor/PageLayerPreview';
 
 const SELECTION_RING = '0 0 0 1px var(--cv-accent)';
-const ACCENT_RING_TOKEN = 'var(--cv-accent)';
 
 export const PAGE_PNG_SCALE = 2;
 
@@ -149,42 +148,6 @@ export async function exportSelectionPng(
   } finally {
     wrap.remove();
   }
-}
-
-function withoutAccentRing(boxShadow: string): string {
-  if (!boxShadow.includes(ACCENT_RING_TOKEN)) return boxShadow;
-  const segments: string[] = [];
-  let depth = 0;
-  let current = '';
-  for (const char of boxShadow) {
-    if (char === '(') depth += 1;
-    else if (char === ')') depth -= 1;
-    if (char === ',' && depth === 0) {
-      segments.push(current);
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  segments.push(current);
-  const kept = segments.filter((s) => s.trim() && !s.includes(ACCENT_RING_TOKEN));
-  return kept.join(',').trim() || 'none';
-}
-
-export function cloneArtboardForExport(artboard: HTMLElement): HTMLElement {
-  const clone = artboard.cloneNode(false) as HTMLElement;
-  clone.removeAttribute('data-testid');
-  clone.style.transform = 'none';
-  clone.style.boxShadow = 'none';
-  clone.style.setProperty('--cv-camera-zoom', '1');
-  for (const child of Array.from(artboard.children)) {
-    if (!child.hasAttribute('data-layer-id')) continue;
-    const layerEl = child.cloneNode(true) as HTMLElement;
-    if (layerEl.style.outline.includes(ACCENT_RING_TOKEN)) layerEl.style.outline = 'none';
-    layerEl.style.boxShadow = withoutAccentRing(layerEl.style.boxShadow);
-    clone.appendChild(layerEl);
-  }
-  return clone;
 }
 
 export async function exportPagePng(

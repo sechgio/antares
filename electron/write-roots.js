@@ -114,8 +114,9 @@ function _sanitizeFilename(name) {
   if (typeof name !== 'string' || !name.trim()) return 'reporte.pdf';
   const base = path.basename(name);
   const safe = base.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/\s+/g, ' ').trim();
+  if (!safe) return 'reporte.pdf';
   if (!safe.toLowerCase().endsWith('.pdf')) return safe + '.pdf';
-  return safe || 'reporte.pdf';
+  return safe;
 }
 
 function _sanitizePdfOutputPath(outputPath, fallbackFilename) {

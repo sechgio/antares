@@ -28,7 +28,7 @@ export const FULL_BLEED_TABS = new Set<TabId>(
 
 export type ConfigSectionId = 'appearance' | 'history' | 'panel' | 'petdex' | 'plugins';
 
-export interface ConfigSectionDefinition {
+interface ConfigSectionDefinition {
   id: ConfigSectionId;
   label: string;
 }

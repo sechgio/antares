@@ -1,4 +1,4 @@
-export interface ZipEntry {
+interface ZipEntry {
   filename: string;
   blob: Blob;
 }

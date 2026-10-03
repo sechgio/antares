@@ -119,7 +119,7 @@
     "panel_aviso_corte_parse_excel": { "handler": "backend:panel_aviso_corte", "lane": "heavy", "timeout": "long" },
     "panel_aviso_corte_render_pdf": { "handler": "backend:panel_aviso_corte", "lane": "heavy", "timeout": "long", "fileTokens": [["image_paths", "*"]] },
     "panel_aviso_corte_template": { "handler": "backend:panel_aviso_corte", "rawOutputPath": true },
-    "preview": { "handler": "backend:conversion", "idempotent": true, "fileTokens": [["files", "*"], ["mapping_path"]] },
+    "preview": { "handler": "backend:conversion", "idempotent": true, "fileTokens": [["files", "*"], ["mapping_path"]], "writePathKeys": ["destino"] },
     "preview_ubicacion": { "handler": "backend:ubicaciones", "lane": "heavy", "timeout": "long", "fileTokens": [["excelPath"]] },
     "process_cancel": { "handler": "backend:conversion" },
     "process_start": { "handler": "backend:conversion", "lane": "light", "timeout": "heavy", "fileTokens": [["files", "*"], ["mapping_path"]], "writePathKeys": ["destino"] },

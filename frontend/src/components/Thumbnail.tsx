@@ -3,7 +3,7 @@ import { getCachedLocalThumbnail, getLocalThumbnail } from '../utils/localThumb'
 import { stageFileForIpc } from '../utils/stageFile';
 import { getElectronFilePath } from '../utils/pdfAssets';
 
-export type ThumbnailViewState =
+type ThumbnailViewState =
   | { kind: 'out_of_view' }
   | { kind: 'fetching' }
   | { kind: 'ready'; displaySrc: string; imageLoaded: boolean }

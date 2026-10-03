@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { errorMessage } from '../utils/errors';
 import { useToast } from './useToast';
 
-export interface ToastActionOptions {
+interface ToastActionOptions {
   /** Mensaje de éxito; si se omite no se emite toast al resolver. */
   success?: string;
   /** Fallback cuando el error no trae mensaje propio. */

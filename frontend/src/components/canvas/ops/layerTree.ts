@@ -1,12 +1,12 @@
 import type { CanvasLayer } from '../types';
 import { isNestingLayerType } from '../layerKinds';
 
-export interface LayerTreeNode {
+interface LayerTreeNode {
   layer: CanvasLayer;
   children: LayerTreeNode[];
 }
 
-export interface FlatLayerRow {
+interface FlatLayerRow {
   layer: CanvasLayer;
   depth: number;
   hasChildren: boolean;

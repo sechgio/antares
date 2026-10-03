@@ -626,7 +626,7 @@ def test_store_init_removes_orphan_tmp_files(tmp_path: Path) -> None:
     orphan_history_tmp = history_dir / "doc-1_history.json.cafe.tmp"
     orphan_history_tmp.write_bytes(b"partial")
 
-    spill_dir = tmp_path / "spill"
+    spill_dir = docs_dir / "spill"
     spill_dir.mkdir()
     orphan_spill_tmp = spill_dir / "document__x.json.abc.tmp"
     orphan_spill_tmp.write_bytes(b"partial")
@@ -842,7 +842,7 @@ def test_store_delete_cleans_pending_spills(tmp_path: Path) -> None:
     store = CanvasStore(tmp_path)
     created = store.create(name="Spill delete")
     doc_id = str(created["id"])
-    spill_dir = tmp_path.parent / "spill"
+    spill_dir = tmp_path / "spill"
     spill_dir.mkdir(parents=True)
     doc_spill = spill_dir / f"{doc_id}.json"
     history_spill = spill_dir / f"{doc_id}_history.json"

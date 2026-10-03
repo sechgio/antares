@@ -18,7 +18,7 @@ export type PreviewData = {
   formato?: string;
 } | null;
 
-export function isCspSafeImageSrc(src: string | undefined | null): boolean {
+function isCspSafeImageSrc(src: string | undefined | null): boolean {
   if (!src || typeof src !== 'string') return false;
   return src.startsWith('data:') || src.startsWith('blob:');
 }
@@ -42,7 +42,7 @@ export async function resolvePreviewImageSrc(data: {
 
 export type OutputMode = 'individual' | 'consolidado';
 
-export type TextFieldStyle = {
+type TextFieldStyle = {
   fontSize: number;
   bold: boolean;
   color: string;
@@ -94,8 +94,8 @@ export const LS_FORMATO = 'antares:ubicaciones:formato';
 export const LS_OUTPUT_MODE = 'antares:ubicaciones:outputMode';
 export const LS_INPUT_MODE = 'antares:ubicaciones:inputMode';
 export const LS_MANUAL_DATA = 'antares:ubicaciones:manualData';
-export const LS_API_KEYS = 'antares:ubicaciones:apiKeys';
-export const LS_GOOGLE_MAPS_KEY = 'antares:ubicaciones:googleMapsKey';
+const LS_API_KEYS = 'antares:ubicaciones:apiKeys';
+const LS_GOOGLE_MAPS_KEY = 'antares:ubicaciones:googleMapsKey';
 export const LS_ZOOM = 'antares:ubicaciones:zoom';
 export const LS_PROVIDER = 'antares:ubicaciones:provider';
 export const LS_GEOCODE = 'antares:ubicaciones:geocode';

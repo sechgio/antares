@@ -170,7 +170,9 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
 
   const PDF_TIMEOUT_MS = 900_000;
   const timeoutMs =
-    Number.isFinite(params.timeoutMs) && params.timeoutMs > 0 ? params.timeoutMs : PDF_TIMEOUT_MS;
+    Number.isFinite(params.timeoutMs) && params.timeoutMs > 0
+      ? Math.min(params.timeoutMs, PDF_TIMEOUT_MS)
+      : PDF_TIMEOUT_MS;
   let timeoutHandle = null;
   let timedOut = false;
   const timeoutPromise = new Promise((_resolve, reject) => {

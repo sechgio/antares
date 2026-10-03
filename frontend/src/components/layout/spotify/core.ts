@@ -55,7 +55,7 @@ export const T = {
   account: 'Cuenta',
 } as const;
 
-export type SessionState = 'unconfigured' | 'unauthenticated' | 'ready';
+type SessionState = 'unconfigured' | 'unauthenticated' | 'ready';
 
 export interface TrackLite {
   id?: string;

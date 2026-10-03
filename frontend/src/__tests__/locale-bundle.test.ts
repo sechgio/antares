@@ -36,11 +36,6 @@ function toastKeysFromSource(): Array<{ file: string; key: string }> {
 
 describe('locale bundle contracts', () => {
   const es = readLocale('es.json');
-  const en = readLocale('en.json');
-
-  it('keeps Spanish and English keys in sync', () => {
-    expect(Object.keys(en).sort()).toEqual(Object.keys(es).sort());
-  });
 
   it('has no empty values in the Spanish bundle', () => {
     const empty = Object.entries(es)
@@ -49,22 +44,20 @@ describe('locale bundle contracts', () => {
     expect(empty).toEqual([]);
   });
 
-  it('includes the optimizer interaction vocabulary in both bundles', () => {
+  it('includes the optimizer interaction vocabulary', () => {
     const optimizerKeys = Object.keys(es).filter((key) => key.startsWith('optimizer.'));
 
     expect(optimizerKeys.length).toBeGreaterThan(0);
     for (const key of optimizerKeys) {
       expect(es[key]).toBeTruthy();
-      expect(en[key]).toBeTruthy();
     }
   });
 
-  it('keeps every addToast t() key in both locale bundles', () => {
+  it('keeps every addToast t() key in the locale bundle', () => {
     const toastKeys = toastKeysFromSource();
     expect(toastKeys.length).toBeGreaterThan(0);
     for (const { file, key } of toastKeys) {
       expect(es[key], `${file} uses missing es key ${key}`).toBeTruthy();
-      expect(en[key], `${file} uses missing en key ${key}`).toBeTruthy();
     }
   });
 });

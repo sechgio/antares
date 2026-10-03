@@ -14,7 +14,8 @@ async function handleAutoimgCall(method, params = {}) {
   try {
     switch (method) {
       case 'autoimg_oauth_config_status': {
-        const result = sheets.getOAuthConfigStatus();
+        const { isConfidentialStorage } = require('./autoimg-secure-storage');
+        const result = { ...sheets.getOAuthConfigStatus(), storage_confidential: isConfidentialStorage() };
         assertNoSecretInObject(result);
         return { handled: true, result };
       }

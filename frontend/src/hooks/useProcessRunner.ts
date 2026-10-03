@@ -35,7 +35,7 @@ type ProcessRunnerState =
   | { phase: 'running'; status: ProcessStatus; pollError: string | null }
   | { phase: 'completed'; status: ProcessStatus; cancelled: boolean; pollError: string | null };
 
-export interface ProcessRunnerHookResult {
+interface ProcessRunnerHookResult {
   state: ProcessRunnerState;
   status: ProcessStatus | null;
   running: boolean;

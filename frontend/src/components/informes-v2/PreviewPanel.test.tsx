@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import PreviewPanel from './PreviewPanel';
-import { createEmptyClientReport } from './testFixtures';
+import { createEmptyInforme as createEmptyClientReport } from './types';
 
 describe('Informes v2 PreviewPanel', () => {
   it('renders header fields and 3x2 photo grid', () => {

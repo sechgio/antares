@@ -1,6 +1,6 @@
 import { forwardRef, type InputHTMLAttributes } from 'react';
 
-export interface FileImportInputProps
+interface FileImportInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange'> {
   onFiles: (files: FileList | null) => void;
 }

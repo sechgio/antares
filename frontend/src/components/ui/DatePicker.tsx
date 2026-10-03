@@ -6,7 +6,7 @@ import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { isSameDate, monthStart, parseIsoDateLocal, toIsoDateLocal } from '../../utils/dates';
 import { buildMonthCalendar, formatIsoDate } from '../../utils/datePickerCalendar';
 
-export interface DatePickerProps {
+interface DatePickerProps {
   value: string;
   onChange: (value: string) => void;
   label?: string;

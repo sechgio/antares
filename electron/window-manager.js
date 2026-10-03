@@ -1,9 +1,11 @@
 const { BrowserWindow, screen } = require('electron');
 const path = require('path');
+const { randomUUID } = require('crypto');
 const { appendLogEvent } = require('./app-log');
 
 let mainWindow = null;
 let _isDev = false;
+let _fileInputNonce = null;
 
 function _resolvePinnedSupabaseHost() {
   const raw = process.env.ANTARES_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -28,6 +30,8 @@ function createWindow(isDev) {
   const allowedList = [...allowedNow];
   const allowedMethodsArg = `--allowed-ipc-methods=${JSON.stringify(allowedList)}`;
   const isPackagedArg = `--app-is-packaged=${isDev ? '0' : '1'}`;
+  _fileInputNonce = randomUUID();
+  const fileInputNonceArg = `--file-input-nonce=${_fileInputNonce}`;
 
   mainWindow = new BrowserWindow({
     width, height, show: false, frame: false,
@@ -36,7 +40,7 @@ function createWindow(isDev) {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: true,
-      additionalArguments: [allowedMethodsArg, isPackagedArg],
+      additionalArguments: [allowedMethodsArg, isPackagedArg, fileInputNonceArg],
     },
   });
 
@@ -210,5 +214,6 @@ function createWindow(isDev) {
 
 function getMainWindow() { return mainWindow; }
 function getIsDev() { return _isDev; }
+function getFileInputNonce() { return _fileInputNonce; }
 
-module.exports = { createWindow, getMainWindow, getIsDev };
+module.exports = { createWindow, getMainWindow, getIsDev, getFileInputNonce };

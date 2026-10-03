@@ -86,6 +86,32 @@ async function main() {
   const spillResolved = resolveCapability(tokenized.result_file_token, 'read', null);
   assert.strictEqual(spillResolved.path, spillPath);
   assert.strictEqual(spillResolved.name, 'spreadsheet-result.json');
+
+  const otherPath = path.join(tmp, 'other.json');
+  fs.writeFileSync(otherPath, '{}', 'utf8');
+  const { createFileCapability } = require('../electron/file-capabilities');
+  const otherToken = createFileCapability({ filePath: otherPath, mode: 'read', webContentsId: null }).token;
+  let conflict = null;
+  try {
+    _maybeResolveFileTokens(
+      { result_file_token: tokenized.result_file_token, cache_token: otherToken },
+      null,
+      'spreadsheet_get_rows',
+    );
+  } catch (err) {
+    conflict = err;
+  }
+  assert(
+    conflict && /conflicting file tokens/.test(conflict.message),
+    'tokens resolving to different paths must not collapse onto _resolved_file_token_path',
+  );
+  const aliased = _maybeResolveFileTokens(
+    { result_file_token: tokenized.result_file_token, cache_token: tokenized.result_file_token },
+    null,
+    'spreadsheet_get_rows',
+  );
+  assert.strictEqual(aliased._resolved_file_token_path, spillPath, 'tokens resolving to the same path stay allowed');
+  revokeCapability(otherToken);
   revokeCapability(tokenized.result_file_token);
 
   const named = _maybeTokenizeResultPaths(

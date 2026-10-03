@@ -4,7 +4,7 @@ export const DUE_SOON_DAYS = 3;
 
 export type DueUrgency = 'overdue' | 'today' | 'soon';
 
-export interface DueTaskInput {
+interface DueTaskInput {
   id: string;
   title: string;
   due_date: string | null;
@@ -82,7 +82,7 @@ export function collectDueNotifications(
   return items;
 }
 
-export interface DueRealtimePayload {
+interface DueRealtimePayload {
   eventType: string;
   table: string;
   new: Record<string, unknown> | null;

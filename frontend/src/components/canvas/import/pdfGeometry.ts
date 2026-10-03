@@ -4,14 +4,14 @@ const POINTS_PER_INCH = 72;
 const MM_PER_INCH = 25.4;
 const EPSILON = 1e-6;
 
-export interface CanvasBox {
+interface CanvasBox {
   xMm: number;
   yMm: number;
   widthMm: number;
   heightMm: number;
 }
 
-export interface TransformedPdfBounds {
+interface TransformedPdfBounds {
   box: PdfBox;
   rotationDeg: number;
   scaleX: number;

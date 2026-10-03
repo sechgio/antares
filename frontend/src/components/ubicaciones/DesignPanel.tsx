@@ -19,6 +19,7 @@ interface DesignPanelProps {
   apiKeys: Record<string, string>;
   onApiKeyChange: (provider: string, value: string) => void;
   keysConfigured: Record<string, boolean>;
+  storageConfidential?: boolean;
   zoom: number;
   onZoomChange: (zoom: number) => void;
   onResetStyles: () => void;
@@ -32,6 +33,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
   apiKeys,
   onApiKeyChange,
   keysConfigured,
+  storageConfidential = true,
   zoom,
   onZoomChange,
   onResetStyles,
@@ -303,6 +305,11 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
                       }
                       className="w-full bg-[var(--bg-input)] border border-[var(--border-subtle)] rounded px-2 py-1 text-[10px] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]"
                     />
+                    {!storageConfidential && (
+                      <p className="text-[9px] text-[var(--accent-yellow)] leading-snug">
+                        El almacenamiento seguro del sistema no está disponible: la clave se guardará con protección reducida.
+                      </p>
+                    )}
                   </div>
                 )}
 

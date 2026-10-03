@@ -1,29 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { addPage } from '../ops/pages';
-import {
-  buildDemoFillContext,
-  collectDemoFieldKeys,
-  placeholderImageDataUrl,
-  sampleValueForKey,
-} from '../runtime/demoFill';
+import { collectDemoFieldKeys } from '../runtime/demoFill';
 import { renderMultiPageHtml } from '../runtime/planning';
+import type { FillContext } from '../runtime/renderHtml';
 import { createEmptyDocument, mm, newId } from '../types';
 
+const demoContext = (doc: ReturnType<typeof createEmptyDocument>): FillContext => ({
+  data: Object.fromEntries(collectDemoFieldKeys(doc).map((key) => [key, '45871203'])),
+  images: [],
+  logoLeft: null,
+  logoRight: null,
+});
+
 describe('demoFill', () => {
-  it('sampleValueForKey returns known samples for common keys', () => {
-    expect(sampleValueForKey('NIS')).toBe('45871203');
-    expect(sampleValueForKey('direccion')).toBe('Av. Los Olivos 1245');
-    expect(sampleValueForKey('CUSTOM_X')).toBeTruthy();
-  });
-
-  it('placeholderImageDataUrl returns an svg data url', () => {
-    const src = placeholderImageDataUrl(0, 'Foto 1');
-    expect(src.startsWith('data:image/svg+xml')).toBe(true);
-    expect(decodeURIComponent(src)).toContain('Foto 1');
-  });
-
-  it('buildDemoFillContext fills fields, checkboxes, logos and image slots', () => {
+  it('collectDemoFieldKeys collects field, checkbox, logo and image slot keys', () => {
     const doc = createEmptyDocument('Demo');
     doc.layers.push(
       { ...createLayer('field'), id: newId(), meta: { key: 'NIS', fallback: '-' } },
@@ -36,15 +27,6 @@ describe('demoFill', () => {
     );
 
     expect(collectDemoFieldKeys(doc).sort()).toEqual(['DIRECCION', 'NIS', 'OK'].sort());
-
-    const ctx = buildDemoFillContext(doc);
-    expect(ctx.data.NIS).toBe('45871203');
-    expect(ctx.data.DIRECCION).toBe('Av. Los Olivos 1245');
-    expect(ctx.data.OK).toBe('1');
-    expect(ctx.images.length).toBeGreaterThanOrEqual(2);
-    expect(ctx.logoLeft).toMatch(/^data:image\/svg\+xml/);
-    expect(ctx.logoRight).toMatch(/^data:image\/svg\+xml/);
-    expect(ctx.imageMeta?.[0]?.name).toBe('foto-1.jpg');
   });
 
   it('collectDemoFieldKeys includes signature and table keys', () => {
@@ -78,7 +60,7 @@ describe('demoFill', () => {
         '--translate-y': '10mm',
       },
     });
-    const html = renderMultiPageHtml(doc, buildDemoFillContext(doc), { forScreen: true });
+    const html = renderMultiPageHtml(doc, demoContext(doc), { forScreen: true });
     expect(html).toContain('45871203');
   });
 
@@ -114,7 +96,7 @@ describe('demoFill', () => {
       },
     });
 
-    const html = renderMultiPageHtml(doc, buildDemoFillContext(doc), { forScreen: true });
+    const html = renderMultiPageHtml(doc, demoContext(doc), { forScreen: true });
     expect(html.match(/class="page"/g)?.length).toBe(2);
     expect(html).toContain('px');
     expect(html).not.toMatch(/left:\d+(\.\d+)?mm/);

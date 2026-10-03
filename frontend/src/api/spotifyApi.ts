@@ -39,7 +39,7 @@ export interface SpotifyPlaybackParams {
   before?: number;
 }
 
-export interface SpotifyActionResult {
+interface SpotifyActionResult {
   success: boolean;
   action?: string;
   result?: unknown;

@@ -1,4 +1,4 @@
-const { readSecureJson, writeSecureJson } = require('./autoimg-secure-storage');
+const { readSecureJson, writeSecureJson, isConfidentialStorage } = require('./autoimg-secure-storage');
 
 const FILE = 'ubicaciones-api-keys.json';
 const NS = 'ubicaciones_api_keys';
@@ -44,7 +44,7 @@ function getMaskedUbicacionesApiKeys() {
     configured[provider] = value.length > 0;
     keys[provider] = value ? _maskKey(value) : '';
   }
-  return { keys, configured };
+  return { keys, configured, storage_confidential: isConfidentialStorage() };
 }
 
 const _resolveCache = new Map();

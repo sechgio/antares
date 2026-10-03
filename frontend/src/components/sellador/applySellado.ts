@@ -17,7 +17,7 @@ import {
 
 const MAX_IN_MEMORY_BYTES = 8 * 1024 * 1024;
 
-export interface ApplySelladoParams {
+interface ApplySelladoParams {
   pdfFile: File;
   pdfPath: string | null;
   pdfBase64: string | null;

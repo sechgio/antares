@@ -8,7 +8,7 @@ import './components/canvas/canvas.css';
 
 const MM_PX = 96 / 25.4;
 
-export interface PerfConfig {
+interface PerfConfig {
   layers: number;
   selected: number;
   guides: number;

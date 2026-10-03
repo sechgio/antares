@@ -13,7 +13,7 @@ export const MSG_NO_PANELS = 'No hay paneles para exportar';
 
 export type PanelTemplateId = 'aviso-corte-ad';
 
-export interface PanelTemplateOption {
+interface PanelTemplateOption {
   id: PanelTemplateId;
   htmlTemplate: string;
 }

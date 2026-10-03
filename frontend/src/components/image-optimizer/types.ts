@@ -17,7 +17,7 @@ export type PreviewTab = 'original' | 'crop' | 'result' | 'compare';
 
 export type PresetId = 'web' | 'social' | 'rename-only' | 'webp' | 'crop-export';
 
-export interface AspectRatioOption {
+interface AspectRatioOption {
   value: AspectRatio;
   label: string;
   ratio: number | null;

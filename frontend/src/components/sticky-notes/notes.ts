@@ -1,4 +1,6 @@
-import { useSyncExternalStore } from 'react';
+import { atom } from '../layout/radio/core';
+
+export { useValue as useAtomValue } from '../layout/radio/core';
 
 /**
  * sticky-notes — notas adhesivas dentro de la ventana.
@@ -9,7 +11,7 @@ import { useSyncExternalStore } from 'react';
 
 export type Anchor = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type StickyTint = 'classic' | 'soft' | 'ghost';
-export type StickySurface = 'stack' | 'breakout';
+type StickySurface = 'stack' | 'breakout';
 
 export interface StickyNote {
   id: string;
@@ -26,37 +28,9 @@ export interface StickyNote {
   updatedAt: number;
 }
 
-export interface Atom<T> {
-  get(): T;
-  set(value: T): void;
-  subscribe(cb: () => void): () => void;
-}
-
-export function atom<T>(initial: T): Atom<T> {
-  let value = initial;
-  const listeners = new Set<() => void>();
-  return {
-    get: () => value,
-    set: (next: T) => {
-      value = next;
-      listeners.forEach((l) => l());
-    },
-    subscribe: (cb) => {
-      listeners.add(cb);
-      return () => {
-        listeners.delete(cb);
-      };
-    },
-  };
-}
-
-export function useAtomValue<T>(a: Atom<T>): T {
-  return useSyncExternalStore(a.subscribe, a.get);
-}
-
 export const MAX_BREAKOUT = 6;
 export const STACK_ANCHOR: Anchor = 'top-right';
-export const OVERLAP_MERGE = 0.42;
+const OVERLAP_MERGE = 0.42;
 const MERGE_COOLDOWN_MS = 600;
 /** Tras separar/sacar una nota, bloquea el auto-merge para que no vuelva a la pila. */
 const SPLIT_MERGE_GRACE_MS = 2200;
@@ -207,7 +181,7 @@ export function stackedNotes(): StickyNote[] {
 }
 
 /** Todas las notas del escritorio (flotantes libres + miembros de pila). */
-export function breakoutNotes(): StickyNote[] {
+function breakoutNotes(): StickyNote[] {
   return $notes
     .get()
     .filter((n) => n.open && n.surface === 'breakout')
@@ -254,7 +228,7 @@ function nextZRank(scopePileId: string | null): number {
   return max + 1;
 }
 
-export function setActivePileNote(pileId: string, noteId: string): void {
+function setActivePileNote(pileId: string, noteId: string): void {
   $activePileNote.set({ ...$activePileNote.get(), [pileId]: noteId });
 }
 
@@ -302,7 +276,7 @@ function readDeskRects(): DeskRect[] {
   return out;
 }
 
-export function overlapFrac(
+function overlapFrac(
   a: { left: number; top: number; right: number; bottom: number; width: number; height: number },
   b: { left: number; top: number; right: number; bottom: number; width: number; height: number },
 ): number {

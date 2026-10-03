@@ -1,4 +1,4 @@
-export interface StampPlacement {
+interface StampPlacement {
   pageAssignments: number[];
   stampedPages: number[];
   seed: number;

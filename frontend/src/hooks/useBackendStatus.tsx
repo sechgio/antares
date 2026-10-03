@@ -10,7 +10,7 @@ type BackendStatusState =
   | { status: 'degraded'; phase: 'exited' | 'fatal' | 'unknown'; errorMessage: string; isRestarting: boolean }
   | { status: 'idle' };
 
-export interface BackendStatusResult {
+interface BackendStatusResult {
   state: BackendStatusState;
   backendState: BackendState;
   errorMessage: string | null;

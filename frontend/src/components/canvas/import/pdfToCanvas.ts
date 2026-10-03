@@ -18,7 +18,7 @@ import type {
 
 export type { PdfCanvasFragment } from './pdfImportTypes';
 
-export interface PdfToCanvasOptions {
+interface PdfToCanvasOptions {
   limits?: Partial<PdfImportLimits>;
   mixedPagePolicy?: 'reject' | 'scale-to-first';
   assetValues?: ReadonlyMap<string, string>;

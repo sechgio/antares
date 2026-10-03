@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -127,7 +128,7 @@ def test_failed_spill_removes_partial_temp_file(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr(Path, "write_bytes", fail_write)
 
     assert canvas_handlers._spill_payload("doc-temp", {"name": "pending"}) is None
-    spill_dir = tmp_path.parent / "spill"
+    spill_dir = tmp_path / "spill"
     assert list(spill_dir.glob("*.tmp")) == []
 
 
@@ -236,4 +237,22 @@ def test_concurrent_spills_use_distinct_temp_files(tmp_path: Path, monkeypatch: 
 
     assert all(results)
     assert len(set(replaced)) == 2
-    assert not list((tmp_path.parent / "spill").glob("*.tmp"))
+    assert not list((tmp_path / "spill").glob("*.tmp"))
+
+
+def test_pending_assets_marker_is_not_treated_as_document_spill(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    CanvasStore(tmp_path)
+    spill_dir = tmp_path / "spill"
+    spill_dir.mkdir(parents=True, exist_ok=True)
+    marker = spill_dir / "pending-assets.json"
+    marker.write_text('[{"id": "abc123", "at": 1}]', encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="backend.core.canvas.store"):
+        recovered = CanvasStore(tmp_path, migrate_legacy=False)
+
+    assert marker.is_file()
+    assert all(entry["id"] != "pending-assets" for entry in recovered.list_documents())
+    assert not any("pending-assets" in record.getMessage() for record in caplog.records)

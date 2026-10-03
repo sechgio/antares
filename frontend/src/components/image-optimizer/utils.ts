@@ -442,12 +442,12 @@ type OptimizerSaveFilePayload = {
   content_b64?: string;
 };
 
-export type OptimizerSaveFilesFn = (body: {
+type OptimizerSaveFilesFn = (body: {
   files: OptimizerSaveFilePayload[];
   output_folder: string;
 }) => Promise<{ saved_count?: number; skipped_count?: number } | null | undefined>;
 
-export type SaveEntriesInChunksResult = {
+type SaveEntriesInChunksResult = {
   saved_count: number;
   skipped_count: number;
   cancelled: boolean;

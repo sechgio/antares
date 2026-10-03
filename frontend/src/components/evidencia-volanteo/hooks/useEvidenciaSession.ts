@@ -21,7 +21,7 @@ import {
 } from '../utils/cuadranteRanges';
 import { loadSession, saveSession, storedToSession } from '../utils/storage';
 
-export interface EvidenciaSessionHookResult {
+interface EvidenciaSessionHookResult {
   isExporting: boolean;
 
   title: string;

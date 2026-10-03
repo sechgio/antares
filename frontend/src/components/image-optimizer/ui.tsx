@@ -20,7 +20,7 @@ export const previewStageShellClass =
 const pressable =
   'active:scale-[0.96] transition-transform duration-100 ease-out motion-reduce:transition-none motion-reduce:active:scale-100';
 
-export type ThemeSelectOption = { value: string; label: string };
+type ThemeSelectOption = { value: string; label: string };
 
 const MENU_ROW_H = 28;
 const MENU_PAD_Y = 8;

@@ -1,4 +1,4 @@
-export type ParsedCoords = { lat: string; lon: string };
+type ParsedCoords = { lat: string; lon: string };
 
 const COORD_PART = /^-?\d+(\.\d+)?$/;
 

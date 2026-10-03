@@ -13,7 +13,7 @@ export type PlayerStatus = 'paused' | 'connecting' | 'live' | 'error' | 'elsewhe
 export type MeterMode = 'levels' | 'activity';
 
 export const NIGHTRIDE = 'https://stream.nightride.fm/';
-export const SOMAFM = 'https://ice6.somafm.com';
+const SOMAFM = 'https://ice6.somafm.com';
 export const PRESETS: Station[] = [
   { id: 'chillsynth', name: 'Chillsynth', description: 'Enfoque suave · sintes cálidos', provider: 'Nightride FM', url: `${NIGHTRIDE}chillsynth.mp3`, homepage: 'https://nightride.fm/?station=chillsynth' },
   { id: 'nightride', name: 'Nightride', description: 'Synthwave · madrugada', provider: 'Nightride FM', url: `${NIGHTRIDE}nightride.mp3`, homepage: 'https://nightride.fm/' },

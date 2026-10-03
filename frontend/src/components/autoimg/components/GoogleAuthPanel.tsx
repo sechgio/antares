@@ -18,6 +18,7 @@ interface GoogleAuthPanelProps {
 
 export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleAuthPanelProps) {
   const [oauthConfigured, setOauthConfigured] = useState(false);
+  const [storageConfidential, setStorageConfidential] = useState(true);
   const [savedClientIdMasked, setSavedClientIdMasked] = useState('');
   const [editingOAuth, setEditingOAuth] = useState(false);
   const [clientId, setClientId] = useState('');
@@ -36,6 +37,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
     try {
       const status = await api.autoimgOAuthConfigStatus();
       setOauthConfigured(status.configured);
+      setStorageConfidential(status.storage_confidential !== false);
       setSavedClientIdMasked(status.client_id_masked || '');
       if (status.configured) setEditingOAuth(false);
     } catch {
@@ -189,6 +191,11 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
         title="OAuth"
         badge={oauthConfigured && !editingOAuth ? <StatusChip ok label="Listo" /> : undefined}
       >
+        {!storageConfidential && (
+          <InlineMessage tone="info">
+            El almacenamiento seguro del sistema no está disponible: las credenciales se guardarán con protección reducida.
+          </InlineMessage>
+        )}
         {oauthConfigured && !editingOAuth ? (
           <div className="flex items-center gap-2">
             <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--text-muted)]">

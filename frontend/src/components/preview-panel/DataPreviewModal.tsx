@@ -51,7 +51,7 @@ import {
 } from "./dataPreviewFormat";
 import PreviewVirtualRow, { type VirtualRowData } from "./PreviewVirtualRow";
 
-export interface DataPreviewModalProps {
+interface DataPreviewModalProps {
   open: boolean;
   onClose: () => void;
   data: Record<string, unknown>[];

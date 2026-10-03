@@ -4,7 +4,7 @@ import { mmToScreenPx } from './drawHelpers';
 import { buildLayerTransform } from './layerStyle';
 import { ensureLinePath } from './pathGeometry';
 
-export interface LayerGeometry {
+interface LayerGeometry {
   transform: string;
   transformOrigin?: string;
   widthPx: number;

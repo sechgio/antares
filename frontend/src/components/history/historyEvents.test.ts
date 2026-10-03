@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   HISTORY_REEXECUTE_EVENT,
   dispatchHistoryReexecute,
-  peekPendingHistoryReexecute,
   subscribeHistoryReexecute,
   takePendingHistoryReexecute,
 } from './historyEvents';
@@ -41,11 +40,9 @@ describe('history reexecute events', () => {
 
   it('buffers payload so ConversionView can consume it after mounting', () => {
     dispatchHistoryReexecute(sampleRun);
-    expect(peekPendingHistoryReexecute()).toEqual(sampleRun);
 
     const taken = takePendingHistoryReexecute();
     expect(taken).toEqual(sampleRun);
     expect(takePendingHistoryReexecute()).toBeNull();
-    expect(peekPendingHistoryReexecute()).toBeNull();
   });
 });

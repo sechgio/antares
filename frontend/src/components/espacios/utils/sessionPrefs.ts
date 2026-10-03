@@ -2,7 +2,7 @@ import type { VistaType } from '../types';
 
 export const ESPACIOS_PREFS_KEY = 'antares.espacios.prefs';
 
-export interface EspaciosPrefs {
+interface EspaciosPrefs {
   activeEspacioId: string | null;
   activeProyectoId: string | null;
   activeView: VistaType;

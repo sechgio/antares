@@ -197,6 +197,24 @@ function AppContent() {
 
   useEffect(() => bootThemeFromBackend(api.getTheme), []);
 
+  // Las claves de ubicaciones legacy vivían en localStorage en claro; migrarlas
+  // al arranque (en idle) para no depender de que el usuario abra la vista.
+  useEffect(() => {
+    if (import.meta.env.MODE === 'test') return;
+    const run = () => {
+      void import('./components/ubicaciones/useUbicacionesApiKeys')
+        .then((m) => m.migratePlaintextApiKeys())
+        .catch(() => {});
+    };
+    const ric = window.requestIdleCallback?.bind(window);
+    if (ric) {
+      const id = ric(run, { timeout: 5000 });
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(run, 2000);
+    return () => window.clearTimeout(t);
+  }, []);
+
   useEffect(() => {
     const sync = () => setPetEnabled(isPetMascotEnabled());
     window.addEventListener('petdex-config-changed', sync);

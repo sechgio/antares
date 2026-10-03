@@ -30,13 +30,13 @@ export function createObjectIdentity<T extends object>(): (value: T) => number {
   };
 }
 
-export type LruMapOptions<V> = {
+type LruMapOptions<V> = {
   maxEntries?: number;
   maxBytes?: number;
   sizeOf?: (value: V) => number;
 };
 
-export type LruMap<K, V> = {
+type LruMap<K, V> = {
   get(key: K): V | undefined;
   set(key: K, value: V): void;
   delete(key: K): boolean;

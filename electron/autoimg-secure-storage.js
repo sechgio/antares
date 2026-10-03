@@ -68,6 +68,10 @@ function _warnFallbackOnce() {
   }
 }
 
+function isConfidentialStorage() {
+  return _safeStorageAvailable();
+}
+
 function encryptPayload(namespace, payload) {
   const json = JSON.stringify(payload);
   if (_safeStorageAvailable()) {
@@ -171,4 +175,5 @@ module.exports = {
   migratePlaintextJson,
   encryptPayload: encryptPayloadAes,
   decryptPayload: decryptPayloadAes,
+  isConfidentialStorage,
 };

@@ -5,7 +5,7 @@ import { reportFrontendEvent } from '../../../utils/observability';
 import { fileToDataUrl } from '../../../utils/pdfAssets';
 import { errorMessage } from '@/utils/errors';
 
-export interface RegisteredBlob {
+interface RegisteredBlob {
   blobId: string;
   blob: Blob;
   url: string;
@@ -200,7 +200,7 @@ export function getThumbnailUrl(value: string | undefined): string {
   return getBlobUrl(value);
 }
 
-export async function blobToDataUrl(blob: Blob): Promise<string> {
+async function blobToDataUrl(blob: Blob): Promise<string> {
   return fileToDataUrl(blob);
 }
 

@@ -1,4 +1,4 @@
-export interface ConcurrencyLimiter {
+interface ConcurrencyLimiter {
   <T>(fn: () => Promise<T>): Promise<T>;
   /** Descarta la cola y pone el contador a cero (las tareas en vuelo siguen); para tests. */
   reset(): void;

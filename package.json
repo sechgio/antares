@@ -38,6 +38,7 @@
     "audit:node": "npm audit --omit=dev --audit-level=high && npm audit --prefix frontend --omit=dev --audit-level=high",
     "check:budgets": "node scripts/check-budgets.js",
     "check:any": "uv run --project . --locked --extra dev python scripts/check_any_guard.py",
+    "check:protection": "node scripts/branch-protection-check.js",
     "check:ratchet": "node scripts/quality-ratchet.js",
     "ci": "npm run lint:python && npm run typecheck:backend && npm run check:any && npm run check:ratchet && npm run audit:python && npm run audit:node && npm run typecheck:frontend && npm run check:budgets && npm test",
     "bump:patch": "node scripts/bump-version.js patch",
@@ -70,7 +71,7 @@
   },
   "overrides": {
     "tar": "^7.5.21",
-    "dompurify": "^3.4.13",
+    "dompurify": "^3.4.16",
     "js-yaml": "^4.3.2",
     "builder-util-runtime": "^9.7.0",
     "nanoid": "^3.3.18"

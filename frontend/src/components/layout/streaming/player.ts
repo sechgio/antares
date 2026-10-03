@@ -2,7 +2,7 @@ import { atom } from '../radio/core';
 import type { Atom } from '../radio/core';
 import type { StreamTrack } from './core';
 
-export type StreamStatus = 'paused' | 'connecting' | 'live' | 'error';
+type StreamStatus = 'paused' | 'connecting' | 'live' | 'error';
 
 export interface StreamPlayer<T extends { id: string } = StreamTrack> {
   queue: Atom<T[]>;

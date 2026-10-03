@@ -160,6 +160,9 @@ function maybeResolveFileTokens(params, win, method) {
     if (!READ_TOKEN_RE.test(String(value || ''))) continue;
     const cap = resolveReadToken(value, webContentsId);
     if (next === params) next = { ...params };
+    if (next._resolved_file_token_path && next._resolved_file_token_path !== cap.path) {
+      throw new Error(`conflicting file tokens: ${key} resolves to a different path`);
+    }
     next._resolved_file_token_path = cap.path;
     if (cap.name) next._resolved_file_token_name = cap.name;
   }

@@ -36,14 +36,3 @@ export function isNewer(a?: string, b?: string): boolean {
   if (Number.isNaN(right)) return true;
   return left > right;
 }
-
-export function shouldPushCanvasRow(
-  localUpdatedAt: string | undefined,
-  remoteUpdatedAt: string | null | undefined,
-  remoteDeletedAt: string | null | undefined,
-): boolean {
-  if (remoteDeletedAt) return false;
-  if (!remoteUpdatedAt) return true;
-  if (!localUpdatedAt) return false;
-  return !isNewer(remoteUpdatedAt, localUpdatedAt);
-}

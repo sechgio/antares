@@ -9,13 +9,13 @@ type PreparedVariant = {
   parsedMap: Map<string, string>;
 };
 
-export type VariantIndex = {
+type VariantIndex = {
   entries: PreparedVariant[];
   byLiteral: Map<string, PreparedVariant>;
   byCanonical: Map<string, PreparedVariant>;
 };
 
-export interface ResolvedVariant {
+interface ResolvedVariant {
   matchedKey?: string;
   patch: Partial<LayerCssVars>;
   resolvedProps?: Record<string, string>;
