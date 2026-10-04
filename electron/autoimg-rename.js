@@ -1,5 +1,7 @@
+const { assertBdImgLayout, tabStartIndex } = require('./autoimg-sheet-rows');
 
 const SGIO_RE = /^(\d{8})$/;
+const NIS_META_HEADER = ['NIS', 'SGIO', 'DESTINO'];
 const SGIO_IN_TEXT_RE = /(?:^|[^\d])(\d{8})(?=[^\d]|$)/;
 
 function extensionOf(filename) {
@@ -38,12 +40,8 @@ function buildSgioFilename(sgio, slot, originalName) {
 function buildNisMetaMap(rows) {
   const map = new Map();
   if (!rows?.length) return map;
-  const start =
-    String(rows[0]?.[0] || '')
-      .trim()
-      .toUpperCase() === 'NIS'
-      ? 1
-      : 0;
+  assertBdImgLayout(rows, NIS_META_HEADER);
+  const start = tabStartIndex(rows, NIS_META_HEADER);
   for (let i = start; i < rows.length; i++) {
     const nis = String(rows[i]?.[0] || '').trim();
     if (!nis) continue;

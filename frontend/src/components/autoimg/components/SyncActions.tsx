@@ -95,7 +95,7 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
   }, [onStatus]);
 
   const busy = syncing !== null;
-  const canCancel = syncing === 'scan-sync' || syncing === 'to';
+  const canCancel = syncing === 'scan-sync' || syncing === 'to' || syncing === 'from';
 
   const btn =
     'inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]';

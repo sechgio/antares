@@ -56,11 +56,11 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
   const scan = await scanAllCore();
   throwIfCancelled();
 
-  const { jobs, skipped } = buildRenameJobs(scan.results.nis_results, nisMeta, {
+  const { jobs: plannedJobs, skipped } = buildRenameJobs(scan.results.nis_results, nisMeta, {
     onlyCompletos: only_completos !== false,
   });
 
-  const destinoNames = uniqueDestinos(jobs);
+  const destinoNames = uniqueDestinos(plannedJobs);
   const destinoFolderIds = new Map();
   const foldersCreated = [];
   for (const name of destinoNames) {
@@ -73,6 +73,33 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
       folder_id: sub.folder_id,
       created: sub.created,
     });
+  }
+
+  // Drive permite nombres duplicados: sin este chequeo cada re-ejecución
+  // (reintento, cancelación, kill de la app) vuelve a copiar todo.
+  const destinoExisting = new Map();
+  for (const name of destinoNames) {
+    throwIfCancelled();
+    const folderId = destinoFolderIds.get(name);
+    destinoExisting.set(
+      name,
+      foldersCreated.includes(name) ? new Set() : await drive.listFileNames(folderId),
+    );
+  }
+
+  const jobs = [];
+  for (const job of plannedJobs) {
+    if (destinoExisting.get(job.destino)?.has(job.toName)) {
+      skipped.push({
+        nis: job.nis,
+        sgio: job.sgio,
+        destino: job.destino,
+        reason: 'ya_existe',
+        detail: `Ya existe en ${job.destino}: ${job.toName}`,
+      });
+    } else {
+      jobs.push(job);
+    }
   }
 
   emit('autoimg.rename.plan', {

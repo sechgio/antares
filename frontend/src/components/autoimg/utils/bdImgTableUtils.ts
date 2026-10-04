@@ -11,9 +11,14 @@ export function rowEstadoType(estado: string): EstadoFilter | 'other' {
   return 'other';
 }
 
+// La fila 0 es encabezado solo si abre con el nombre canónico de la primera
+// columna (igual que tabStartIndex en electron/autoimg-sheet-rows.js): una
+// hoja sin encabezado no debe perder su primera fila de datos.
 export function getBdImgDataRows(rows: string[][]): string[][] {
-  if (rows.length > 1) return rows.slice(1);
-  if (rows[0]?.[0] === 'NIS') return [];
+  const first = rows[0];
+  if (first && String(first[0] || '').trim().toUpperCase() === 'NIS') {
+    return rows.slice(1);
+  }
   return rows;
 }
 

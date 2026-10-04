@@ -122,7 +122,17 @@ function readSecureJson(filename, namespace) {
       return payload;
     }
     return null;
-  } catch {
+  } catch (err) {
+    // Un archivo corrupto/ilegible se comporta como ausente (re-auth), pero
+    // sin este WARN no hay forma de distinguir "nunca hubo archivo" de
+    // "el archivo estaba corrupto" al diagnosticar.
+    try {
+      require('./app-log').appendLogEvent('WARN', 'secure_storage.read_failed', {
+        outcome: 'failed',
+        message: err && err.message ? err.message : String(err),
+      });
+    } catch {
+    }
     return null;
   }
 }
