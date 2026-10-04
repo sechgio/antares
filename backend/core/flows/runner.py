@@ -23,7 +23,7 @@ from typing import Any
 
 from backend.core.flows import agent_chat, connections, mcp_servers
 from backend.core.flows.expr import interpolate_text, resolve
-from backend.core.flows.http_guard import FlowRedirectHandler, assert_allowed_url
+from backend.core.flows.http_guard import assert_allowed_url, build_flow_opener
 from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore, _utc_now
 from backend.core.flows.types import JsonObject
@@ -375,6 +375,8 @@ class FlowRunner:
         auth_hosts: frozenset[str] = frozenset({host})
         connection_ref = config.get("connection_ref")
         if isinstance(connection_ref, str) and connection_ref.strip():
+            if urllib.parse.urlparse(url).scheme.lower() != "https":
+                raise ValueError("Las conexiones OAuth requieren HTTPS")
             conn_id = connection_ref.strip()
             allowed_hosts = frozenset(
                 str(h).lower() for h in connections.get_provider(conn_id).get("token_hosts") or []
@@ -402,7 +404,7 @@ class FlowRunner:
         timeout = min(max(timeout, 1.0), 60.0)
 
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        opener = urllib.request.build_opener(FlowRedirectHandler(auth_hosts))
+        opener = build_flow_opener(auth_hosts)
         try:
             with opener.open(req, timeout=timeout) as res:
                 status = int(res.status)

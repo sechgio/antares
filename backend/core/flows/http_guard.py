@@ -8,9 +8,11 @@ firmables de la conexión.
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import os
 import socket
+import ssl
 import urllib.parse
 import urllib.request
 
@@ -30,19 +32,20 @@ def _assert_public_host(url: str) -> None:
     except OSError as exc:
         raise ValueError(f"http_request no pudo resolver el host: {host}") from exc
     for info in infos:
-        try:
-            addr = ipaddress.ip_address(info[4][0])
-        except ValueError:
-            continue
-        mapped = getattr(addr, "ipv4_mapped", None)
-        if mapped is not None:
-            addr = mapped
-        if not addr.is_global:
-            raise ValueError(
-                f"http_request no puede apuntar a una dirección no pública ({host}); "
-                "si el destino es tu red local de confianza, reinicia con "
-                "ANTARES_FLOWS_ALLOW_PRIVATE_HOSTS=1"
-            )
+        _assert_public_address(host, str(info[4][0]))
+
+
+def _assert_public_address(host: str, address: str) -> None:
+    addr = ipaddress.ip_address(address)
+    mapped = getattr(addr, "ipv4_mapped", None)
+    if mapped is not None:
+        addr = mapped
+    if not addr.is_global:
+        raise ValueError(
+            f"http_request no puede apuntar a una dirección no pública ({host}); "
+            "si el destino es tu red local de confianza, reinicia con "
+            "ANTARES_FLOWS_ALLOW_PRIVATE_HOSTS=1"
+        )
 
 
 def assert_allowed_url(url: str) -> None:
@@ -51,6 +54,62 @@ def assert_allowed_url(url: str) -> None:
         raise ValueError(f"URL no permitida en http_request (solo http/https): {url[:80]}")
     if not _private_hosts_allowed():
         _assert_public_host(url)
+
+
+def _create_public_connection(
+    address: tuple[str, int], timeout: object = None, source_address: tuple[str, int] | None = None
+) -> socket.socket:
+    host, port = address
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    for info in infos:
+        _assert_public_address(host, str(info[4][0]))
+    error: OSError = OSError("getaddrinfo returns an empty list")
+    for family, socktype, proto, _canonname, sockaddr in infos:
+        sock = None
+        try:
+            sock = socket.socket(family, socktype, proto)
+            if isinstance(timeout, (int, float)) or timeout is None:
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            # sockaddr es la IP ya validada: no volver a resolver el hostname.
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            if sock is not None:
+                sock.close()
+            error = exc
+    raise error
+
+
+class _PublicHTTPConnection(http.client.HTTPConnection):
+    def connect(self) -> None:
+        self._create_connection = _create_public_connection
+        super().connect()
+
+
+class _PublicHTTPSConnection(_PublicHTTPConnection, http.client.HTTPSConnection):
+    pass
+
+
+class _PublicHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+        return self.do_open(_PublicHTTPConnection, req)
+
+
+class _PublicHTTPSHandler(urllib.request.HTTPSHandler):
+    _context: ssl.SSLContext | None
+
+    def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+        return self.do_open(_PublicHTTPSConnection, req, context=self._context)
+
+
+def build_flow_opener(auth_hosts: frozenset[str]) -> urllib.request.OpenerDirector:
+    handlers: list[urllib.request.BaseHandler] = [FlowRedirectHandler(auth_hosts)]
+    if not _private_hosts_allowed():
+        # Un proxy resolvería el destino fuera de la validación del socket local.
+        handlers.extend([urllib.request.ProxyHandler({}), _PublicHTTPHandler(), _PublicHTTPSHandler()])
+    return urllib.request.build_opener(*handlers)
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -75,6 +134,8 @@ class FlowRedirectHandler(urllib.request.HTTPRedirectHandler):
         self._auth_hosts = auth_hosts
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if req.has_header("Authorization") and urllib.parse.urlparse(newurl).scheme.lower() != "https":
+            raise ValueError("Las redirecciones con credenciales requieren HTTPS")
         assert_allowed_url(newurl)
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
         host = (urllib.parse.urlparse(new_req.full_url).hostname or "").lower()

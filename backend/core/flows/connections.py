@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -25,6 +26,9 @@ logger = logging.getLogger(__name__)
 _CATALOG_PATH = resource_path("shared/connections-catalog.json")
 _TOKEN_EXPIRY_SKEW_MS = 60_000
 _HTTP_TIMEOUT_S = 20.0
+_state_lock = threading.RLock()
+_generations: dict[str, int] = {}
+_refresh_locks: dict[str, threading.Lock] = {}
 
 
 def load_provider_specs() -> dict[str, JsonObject]:
@@ -65,16 +69,21 @@ def put_tokens(provider: str, tokens: JsonObject) -> JsonObject:
         "client_id": tokens.get("client_id"),
         "client_secret": tokens.get("client_secret"),
     }
-    vault.seal(provider, _vault_path(provider), payload)
+    with _state_lock:
+        vault.seal(provider, _vault_path(provider), payload)
+        _generations[provider] = _generations.get(provider, 0) + 1
     return {"stored": True, "provider": provider}
 
 
 def get_tokens(provider: str) -> JsonObject | None:
-    return vault.open_sealed(provider, _vault_path(provider))
+    with _state_lock:
+        return vault.open_sealed(provider, _vault_path(provider))
 
 
 def delete_tokens(provider: str) -> JsonObject:
-    vault.clear(_vault_path(provider))
+    with _state_lock:
+        vault.clear(_vault_path(provider))
+        _generations[provider] = _generations.get(provider, 0) + 1
     return {"deleted": True, "provider": provider}
 
 
@@ -104,7 +113,7 @@ def _post_form(url: str, fields: dict[str, str], basic: tuple[str, str] | None) 
         return data
 
 
-def _refresh(provider: str, spec: JsonObject, tokens: JsonObject) -> JsonObject:
+def _refresh(provider: str, spec: JsonObject, tokens: JsonObject, generation: int) -> JsonObject:
     refresh_token = tokens.get("refresh_token")
     client_id = tokens.get("client_id")
     client_secret = tokens.get("client_secret")
@@ -134,27 +143,35 @@ def _refresh(provider: str, spec: JsonObject, tokens: JsonObject) -> JsonObject:
         "expiry_date": int(time.time() * 1000) + int(data.get("expires_in", 3600)) * 1000,
         "scope": data.get("scope") or tokens.get("scope"),
     }
-    vault.seal(provider, _vault_path(provider), updated)
+    with _state_lock:
+        if _generations.get(provider, 0) != generation:
+            raise ValueError("La conexión cambió durante el refresco")
+        vault.seal(provider, _vault_path(provider), updated)
     return updated
 
 
 def fresh_access_token(provider: str) -> str:
     """Access token válido, refrescando si caducó. ValueError si requiere reauth."""
     get_provider(provider)
-    tokens = get_tokens(provider)
-    if not tokens or not isinstance(tokens.get("access_token"), str) or not tokens["access_token"]:
-        raise ValueError(f"Sin conexión activa para {provider}; conéctalo desde Flujos → Conexiones")
-    expiry = tokens.get("expiry_date")
-    # Sin expiry declarada (tokens OAuth no caducables, p. ej. GitHub) el token se usa tal cual.
-    expired = isinstance(expiry, (int, float)) and expiry < time.time() * 1000 + _TOKEN_EXPIRY_SKEW_MS
-    if expired:
-        try:
-            tokens = _refresh(provider, get_provider(provider), tokens)
-        except Exception as err:
-            raise ValueError(
-                f"La conexión con {provider} caducó y no se pudo refrescar; reconéctala en Conexiones"
-            ) from err
-    return str(tokens["access_token"])
+    with _state_lock:
+        refresh_lock = _refresh_locks.setdefault(provider, threading.Lock())
+    with refresh_lock:
+        with _state_lock:
+            tokens = get_tokens(provider)
+            generation = _generations.get(provider, 0)
+        if not tokens or not isinstance(tokens.get("access_token"), str) or not tokens["access_token"]:
+            raise ValueError(f"Sin conexión activa para {provider}; conéctalo desde Flujos → Conexiones")
+        expiry = tokens.get("expiry_date")
+        # Sin expiry declarada (tokens OAuth no caducables, p. ej. GitHub) el token se usa tal cual.
+        expired = isinstance(expiry, (int, float)) and expiry < time.time() * 1000 + _TOKEN_EXPIRY_SKEW_MS
+        if expired:
+            try:
+                tokens = _refresh(provider, get_provider(provider), tokens, generation)
+            except Exception as err:
+                raise ValueError(
+                    f"La conexión con {provider} caducó y no se pudo refrescar; reconéctala en Conexiones"
+                ) from err
+        return str(tokens["access_token"])
 
 
 def list_statuses() -> list[JsonObject]:

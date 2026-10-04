@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import socket
+import threading
 import time
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -84,6 +87,86 @@ def test_fresh_access_token_requires_connection(tmp_path, monkeypatch):
     monkeypatch.setattr(connections, "user_data_path", lambda rel: tmp_path / rel)
     with pytest.raises(ValueError, match="Sin conexión"):
         connections.fresh_access_token("github")
+
+
+@pytest.fixture()
+def expired_connection(tmp_path, monkeypatch):
+    monkeypatch.setattr(connections, "user_data_path", lambda rel: tmp_path / rel)
+    monkeypatch.setattr(vault, "user_data_path", lambda rel: tmp_path / rel)
+    connections.put_tokens("zoom", {
+        "access_token": "old", "refresh_token": "old-refresh", "client_id": "client", "expiry_date": 1,
+    })
+    return "zoom"
+
+
+@pytest.mark.parametrize("change", ["disconnect", "replace"])
+def test_refresh_cannot_restore_changed_connection(expired_connection, monkeypatch, change):
+    provider = expired_connection
+    entered, release = threading.Event(), threading.Event()
+    results = []
+
+    def post(*args):
+        entered.set()
+        assert release.wait(3)
+        return {"access_token": "refreshed", "refresh_token": "new-refresh", "expires_in": 3600}
+
+    def refresh():
+        try:
+            results.append(connections.fresh_access_token(provider))
+        except ValueError as exc:
+            results.append(exc)
+
+    monkeypatch.setattr(connections, "_post_form", post)
+    worker = threading.Thread(target=refresh)
+    worker.start()
+    try:
+        assert entered.wait(3)
+        if change == "disconnect":
+            connections.delete_tokens(provider)
+        else:
+            connections.put_tokens(provider, {"access_token": "replacement"})
+    finally:
+        release.set()
+        worker.join(timeout=3)
+    assert not worker.is_alive()
+    assert len(results) == 1 and isinstance(results[0], ValueError)
+    tokens = connections.get_tokens(provider)
+    assert tokens is None if change == "disconnect" else tokens["access_token"] == "replacement"
+
+
+def test_concurrent_refresh_reuses_rotated_token(expired_connection, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    calls, results = [], []
+
+    def post(url, fields, basic):
+        calls.append(fields["refresh_token"])
+        if len(calls) > 1:
+            raise ValueError("invalid_grant")
+        entered.set()
+        assert release.wait(3)
+        return {"access_token": "refreshed", "refresh_token": "new-refresh", "expires_in": 3600}
+
+    def refresh():
+        try:
+            results.append(connections.fresh_access_token(expired_connection))
+        except ValueError as exc:
+            results.append(exc)
+
+    monkeypatch.setattr(connections, "_post_form", post)
+    first, second = threading.Thread(target=refresh), threading.Thread(target=refresh)
+    first.start()
+    try:
+        assert entered.wait(3)
+        second.start()
+        second.join(timeout=0.1)
+    finally:
+        release.set()
+        first.join(timeout=3)
+        if second.ident is not None:
+            second.join(timeout=3)
+    assert not first.is_alive() and not second.is_alive()
+    assert calls == ["old-refresh"]
+    assert results == ["refreshed", "refreshed"]
 
 
 @pytest.fixture()
@@ -182,6 +265,21 @@ def test_http_request_connection_ref_sends_bearer(monkeypatch, store):
     assert captured["auth"] == "Bearer tok-9"
 
 
+def test_http_request_connection_ref_rejects_http_before_token_lookup(monkeypatch, store):
+    calls = []
+    _public_dns(monkeypatch)
+    monkeypatch.setattr(connections, "fresh_access_token", lambda provider: calls.append("token") or "secret")
+    monkeypatch.setattr(
+        "urllib.request.OpenerDirector.open",
+        lambda *args, **kwargs: calls.append("request") or _FakeResponse(200, b"{}"),
+    )
+    runner = FlowRunner(store, lambda method: None)
+    node = {"config": {"url": "http://api.github.com/user", "connection_ref": "github"}}
+    with pytest.raises(ValueError, match="HTTPS"):
+        runner._run_http_request(node, {})
+    assert calls == []
+
+
 def test_http_request_connection_ref_rejects_foreign_host(monkeypatch, store):
     calls: list = []
 
@@ -256,6 +354,45 @@ def test_http_request_rejects_private_dns_target(monkeypatch, store):
     assert "no pública" in steps["h"]["error"]
 
 
+def test_http_request_rejects_dns_rebinding(monkeypatch, store):
+    hits = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    lookups = []
+    resolve = socket.getaddrinfo
+
+    def rebind(host, port, *args, **kwargs):
+        if host == "rebind.example":
+            lookups.append(port)
+            host = "93.184.216.34" if len(lookups) == 1 else "127.0.0.1"
+        return resolve(host, port, *args, **kwargs)
+
+    monkeypatch.delenv("ANTARES_FLOWS_ALLOW_PRIVATE_HOSTS", raising=False)
+    monkeypatch.setattr("urllib.request.getproxies", lambda: {})
+    monkeypatch.setattr(socket, "getaddrinfo", rebind)
+    runner = FlowRunner(store, lambda method: None)
+    try:
+        with pytest.raises(ValueError, match="no pública"):
+            runner._run_http_request({"config": {"url": f"http://rebind.example:{server.server_port}/private"}}, {})
+        assert hits == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
+
+
 def test_http_request_private_host_with_opt_out(monkeypatch, store):
     monkeypatch.setenv("ANTARES_FLOWS_ALLOW_PRIVATE_HOSTS", "1")
     monkeypatch.setattr(
@@ -286,6 +423,18 @@ def test_redirect_strips_authorization_off_allowlist(monkeypatch):
 
     same_host = handler.redirect_request(req, None, 302, "Found", {}, "https://api.github.com/y")
     assert same_host.headers["Authorization"] == "Bearer tok-9"
+
+
+@pytest.mark.parametrize("target", ["http://api.github.com/user", "http://other.example/user"])
+def test_redirect_rejects_http_with_authorization(monkeypatch, target):
+    from backend.core.flows.http_guard import FlowRedirectHandler
+
+    _public_dns(monkeypatch)
+    req = urllib.request.Request("https://api.github.com/user")
+    req.add_unredirected_header("Authorization", "Bearer secret")
+    handler = FlowRedirectHandler(frozenset({"api.github.com"}))
+    with pytest.raises(ValueError, match="HTTPS"):
+        handler.redirect_request(req, None, 302, "Found", {}, target)
 
 
 def test_redirect_rejects_private_target():
@@ -326,3 +475,21 @@ def test_validate_http_request_requires_url(store):
                 }
             )
         )
+
+
+def test_https_preserves_hostname_for_tls(monkeypatch):
+    from unittest.mock import Mock
+
+    from backend.core.flows.http_guard import _PublicHTTPSConnection
+
+    _public_dns(monkeypatch)
+    sock = Mock()
+    monkeypatch.setattr(socket, "socket", lambda *args: sock)
+    connection = _PublicHTTPSConnection("api.github.com", timeout=7)
+    wrapped = Mock(return_value=sock)
+    monkeypatch.setattr(connection._context, "wrap_socket", wrapped)
+    connection.connect()
+    sock.connect.assert_called_once_with(("93.184.216.34", 443))
+    sock.settimeout.assert_called_once_with(7)
+    wrapped.assert_called_once_with(sock, server_hostname="api.github.com")
+    assert connection._context.check_hostname is True
