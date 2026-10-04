@@ -106,8 +106,10 @@ def _run(params: JsonObject) -> JsonObject:
     flow_id = get_item_id(params)
     _flow_or_raise(flow_id)
     trigger_payload = params.get("trigger_payload")
+    if not isinstance(trigger_payload, dict):
+        trigger_payload = {}
     try:
-        run = _runner.start(flow_id, trigger_payload if isinstance(trigger_payload, dict) else None)
+        run = _runner.start(flow_id, {"source": "manual", **trigger_payload})
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     return {"run": run}

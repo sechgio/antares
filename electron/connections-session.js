@@ -298,6 +298,7 @@ async function beginConnect(provider, onComplete, onError) {
     onCode: async (code) => {
       try {
         const tokens = await _exchangeCode(provider, code);
+        await probeAccount(provider);
         const status = await getStatus(provider);
         onComplete({ ...status, connected: Boolean(tokens) });
       } catch (err) {

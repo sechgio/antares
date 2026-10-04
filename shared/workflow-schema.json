@@ -137,6 +137,6 @@
       "run": "metadatos del run (run.flow_id, run.trigger)",
       "nodes.<id>": "salida {json} de un nodo ya ejecutado"
     },
-    "examples": ["=item.json.id", "=nodes.n1.json.rows[0].nombre", "=run.trigger.origen"]
+    "examples": ["=item.json.id", "=nodes.n1.json.rows[0].nombre", "=run.trigger.source"]
   }
 }
