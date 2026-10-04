@@ -59,11 +59,11 @@ function getPrChecks(prNumber) {
 
 function allChecksPass(checks) {
   if (!checks || checks.length === 0) return false;
-  return checks.every((c) => c.bucket === 'PASS' || c.bucket === 'SKIP');
+  return checks.every((c) => c.bucket === 'pass' || c.bucket === 'skipping');
 }
 
 function anyCheckFails(checks) {
-  return checks.some((c) => c.bucket === 'FAIL' || c.bucket === 'CANCEL');
+  return checks.some((c) => c.bucket === 'fail' || c.bucket === 'cancel');
 }
 
 function captureFailedRunLogs(prNumber) {
@@ -199,7 +199,7 @@ function runLoop(options) {
       resolved = true;
       break;
     }
-    if (!anyCheckFails(checks) && checks.length > 0 && checks.some((c) => c.bucket === 'PENDING')) {
+    if (!anyCheckFails(checks) && checks.length > 0 && checks.some((c) => c.bucket === 'pending')) {
       console.log('    Checks pendientes. Esperando 30s...');
       if (options.isShip) {
         sleepMs(30000);
