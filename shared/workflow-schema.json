@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Antares WorkflowGraph",
+  "version": 1,
+  "type": "object",
+  "required": ["nodes", "edges"],
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "config"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+          "kind": {
+            "type": "string",
+            "enum": ["trigger", "tool_call", "condition", "transform", "loop", "http_request", "agent", "switch", "mcp_call", "code"]
+          },
+          "name": { "type": "string" },
+          "config": {
+            "type": "object",
+            "properties": {
+              "retry": {
+                "type": "object",
+                "description": "Reintentos opcionales del nodo: attempts (1-5), delay_ms (0-60000)",
+                "properties": {
+                  "attempts": { "type": "integer", "minimum": 1, "maximum": 5 },
+                  "delay_ms": { "type": "number", "minimum": 0, "maximum": 60000 }
+                }
+              }
+            }
+          },
+          "position": {
+            "type": "object",
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from_node", "to_node"],
+        "properties": {
+          "from_node": { "type": "string" },
+          "to_node": { "type": "string" },
+          "from_port": { "type": "string", "default": "main" },
+          "to_port": { "type": "string", "default": "main" }
+        }
+      }
+    }
+  },
+  "nodeKinds": {
+    "trigger": {
+      "description": "Punto de entrada del flujo. Exactamente uno por grafo.",
+      "config": {
+        "trigger_kind": { "enum": ["manual", "schedule", "app_event", "webhook"], "default": "manual" },
+        "interval_minutes": { "type": "integer", "minimum": 1, "maximum": 10080, "default": 60, "description": "Solo trigger_kind=schedule; se ejecuta cada N minutos con la app abierta" }
+      }
+    },
+    "tool_call": {
+      "description": "Invoca un método IPC marcado como orquestable en shared/ipc-method-catalog.json.",
+      "config": {
+        "method": { "type": "string", "required": true },
+        "args": { "type": "object" },
+        "connection_ref": { "type": "string", "description": "Reservado para conexiones externas" }
+      }
+    },
+    "condition": {
+      "description": "Ramifica hacia los puertos 'true' o 'false' según una expresión.",
+      "config": {
+        "field": { "type": "string", "description": "Expresión =... a evaluar" },
+        "op": { "enum": ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"], "default": "eq" },
+        "value": { "description": "Valor de comparación" }
+      }
+    },
+    "transform": {
+      "description": "Construye un objeto nuevo; cada valor puede ser literal o expresión =...",
+      "config": {
+        "output": { "type": "object", "required": true }
+      }
+    },
+    "switch": {
+      "description": "Enrutado múltiple: evalúa una expresión y sale por el puerto del primer caso que coincida, o por 'default'.",
+      "implemented": true,
+      "config": {
+        "field": { "type": "string", "required": true, "description": "Expresión =... a evaluar" },
+        "cases": {
+          "type": "array",
+          "items": { "value": { "description": "Valor que activa el caso" }, "port": { "type": "string", "description": "Puerto de salida (único, distinto de 'default')" } }
+        }
+      }
+    },
+    "loop": { "description": "Reservado: iteración sobre colecciones.", "implemented": false },
+    "http_request": {
+      "description": "Llamada HTTP externa; connection_ref firma con el token OAuth de la conexión.",
+      "implemented": true,
+      "config": {
+        "url": { "type": "string", "required": true },
+        "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"], "default": "GET" },
+        "headers": { "type": "object", "description": "Cabeceras extra (JSON)" },
+        "body": { "description": "Cuerpo: objeto/lista se envía JSON, texto plano va literal" },
+        "connection_ref": { "type": "string", "description": "Id de proveedor de shared/connections-catalog.json; inyecta Authorization: Bearer" },
+        "timeout_s": { "type": "number", "minimum": 1, "maximum": 60, "default": 20 }
+      }
+    },
+    "agent": {
+      "description": "Un turno con un proveedor IA guardado (proveedor, modelo y prompt con expresiones =...). Devuelve {text}.",
+      "implemented": true,
+      "config": {
+        "provider": { "type": "string", "required": true, "description": "Id de proveedor de shared/ai-providers-catalog.json" },
+        "model": { "type": "string", "description": "Modelo; vacío usa el predeterminado del proveedor" },
+        "prompt": { "type": "string", "required": true },
+        "system": { "type": "string", "description": "Instrucciones opcionales de sistema" }
+      }
+    },
+    "mcp_call": {
+      "description": "Llama a una tool de un servidor MCP registrado en Conexiones. args admite expresiones =...",
+      "implemented": true,
+      "config": {
+        "server": { "type": "string", "required": true, "description": "Id del servidor MCP registrado" },
+        "tool": { "type": "string", "required": true, "description": "Nombre de la tool MCP" },
+        "args": { "type": "object", "description": "Argumentos de la tool (JSON, expresiones permitidas)" }
+      }
+    },
+    "code": { "description": "Reservado: código del usuario (deshabilitado por defecto).", "implemented": false }
+  },
+  "expressions": {
+    "description": "Una cadena que empieza por '=' se evalúa contra la memoria del run.",
+    "bindings": {
+      "item": "salida {json} del predecesor directo",
+      "items": "lista de salidas de todos los predecesores",
+      "run": "metadatos del run (run.flow_id, run.trigger)",
+      "nodes.<id>": "salida {json} de un nodo ya ejecutado"
+    },
+    "examples": ["=item.json.id", "=nodes.n1.json.rows[0].nombre", "=run.trigger.source"]
+  }
+}

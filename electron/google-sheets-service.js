@@ -19,7 +19,6 @@ const { googleApiFetch } = require('./google-api-fetch');
 const {
   findAvailablePort,
   startCallbackServer,
-  stopCallbackServer,
 } = require('./autoimg-oauth-flow');
 const {
   setActiveUser,
@@ -40,6 +39,7 @@ const SCOPES = [
 let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
 let _pendingOAuthState = null;
+let _callbackFlow = null; // { stop } del listener de este intento
 
 function _generateCodeVerifier() {
   return crypto.randomBytes(32).toString('base64url');
@@ -84,7 +84,10 @@ function getAuthUrl() {
 }
 
 function cancelBrowserOAuthFlow() {
-  stopCallbackServer();
+  if (_callbackFlow) {
+    if (_callbackFlow.stop) _callbackFlow.stop();
+    _callbackFlow = null;
+  }
   _pendingRedirectUri = null;
   _pendingCodeVerifier = null;
   _pendingOAuthState = null;
@@ -103,6 +106,8 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
   _pendingOAuthState = oauthState;
   const url = _buildAuthUrl(redirectUri, codeChallenge, oauthState);
 
+  const flow = { stop: null };
+  _callbackFlow = flow;
   startCallbackServer(port, {
     expectedState: oauthState,
     onCode: async (code) => {
@@ -124,12 +129,19 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
       onError(err);
       cancelBrowserOAuthFlow();
     },
-  }).catch((err) => {
-    // Bind del callback fallido (p.ej. carrera de puerto): sin este catch la
-    // promesa rechazada queda huérfana y la UI espera la autorización para siempre.
-    onError(err instanceof Error ? err : new Error(String(err)));
-    cancelBrowserOAuthFlow();
-  });
+  })
+    .then(({ stop }) => {
+      if (_callbackFlow === flow) {
+        flow.stop = stop;
+      } else {
+        stop();
+      }
+    })
+    .catch((err) => {
+      if (_callbackFlow !== flow) return;
+      onError(err instanceof Error ? err : new Error(String(err)));
+      cancelBrowserOAuthFlow();
+    });
 
   return { url, redirect_uri: redirectUri };
 }

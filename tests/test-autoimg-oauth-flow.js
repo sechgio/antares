@@ -3,10 +3,58 @@
 const { assertOrExit:assert, evictModule } = require('./helpers/harness');
 
 async function main() {
-  const { findAvailablePort } = require('../electron/autoimg-oauth-flow');
+  const http = require('http');
+  const { findAvailablePort, startCallbackServer } = require('../electron/autoimg-oauth-flow');
 
   const port = await findAvailablePort();
   assert(Number.isInteger(port) && port >= 1024, 'findAvailablePort devuelve un puerto válido');
+
+  {
+    // Un segundo startCallbackServer no debe derribar el listener del primero:
+    // cada intento posee su servidor y solo su propio stop() lo cierra.
+    const probe = (p) =>
+      new Promise((resolve, reject) => {
+        http
+          .get(`http://127.0.0.1:${p}/`, { agent: false }, (res) => {
+            res.resume();
+            resolve(res.statusCode);
+          })
+          .on('error', reject);
+      });
+    const portA = await findAvailablePort();
+    const portB = await findAvailablePort(portA + 1);
+    let deniedA = null;
+    let deniedB = null;
+    const flowA = await startCallbackServer(portA, {
+      expectedState: 'state-a',
+      onCode: () => {},
+      onDenied: (reason) => { deniedA = reason; },
+      onTimeout: () => {},
+    });
+    const flowB = await startCallbackServer(portB, {
+      expectedState: 'state-b',
+      onCode: () => {},
+      onDenied: (reason) => { deniedB = reason; },
+      onTimeout: () => {},
+    });
+    assert(
+      (await probe(portA)) === 400 && deniedA === 'invalid_state',
+      'el primer listener sigue vivo tras iniciar un segundo flujo',
+    );
+    assert(
+      (await probe(portB)) === 400 && deniedB === 'invalid_state',
+      'el segundo listener responde en su propio puerto',
+    );
+    flowA.stop();
+    flowB.stop();
+    let refused = false;
+    try {
+      await probe(portB);
+    } catch {
+      refused = true;
+    }
+    assert(refused, 'stop() cierra el listener de su propio intento');
+  }
 
   const env = process.env;
   env.AUTOIMG_GOOGLE_CLIENT_ID = '123456789012-testclientid.apps.googleusercontent.com';

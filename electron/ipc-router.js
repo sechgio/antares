@@ -42,6 +42,7 @@ function reloadIpcMethods() {
     './autoimg-ipc-methods',
     './ubicaciones-ipc-methods',
     './spotify-ipc-methods',
+    './connections-ipc-methods',
     '../shared/ipc-method-catalog',
     '../shared/ipc-method-catalog.json',
   ];
@@ -732,6 +733,10 @@ const _NATIVE_CALLS = {
     const { handleSpotifyCall } = require('./spotify-handlers');
     return handleSpotifyCall(method, params);
   },
+  connections: (method, params) => {
+    const { handleConnectionsCall } = require('./connections-handlers');
+    return handleConnectionsCall(method, params);
+  },
 };
 
 function _resolveCachedApiKey(provider) {
@@ -771,6 +776,10 @@ function registerIpcHandlers() {
       _logSecurityRejection('method_not_allowed', typeof method === 'string' ? method : undefined);
       const hint = ' Reinicia Antares por completo (cierra todas las ventanas) para recargar la allowlist IPC.';
       throw new Error(`IPC method not allowed: ${method}.${hint}`);
+    }
+    if (_ipcCatalog().INTERNAL_METHODS.has(method)) {
+      _logSecurityRejection('internal_method', method);
+      throw new Error(`IPC method not allowed: ${method} (internal)`);
     }
 
     const win = getMainWindow();

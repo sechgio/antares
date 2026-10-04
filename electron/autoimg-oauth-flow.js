@@ -4,9 +4,6 @@ const net = require('net');
 const DEFAULT_PORT = 42813;
 const FLOW_TIMEOUT_MS = 5 * 60_000;
 
-let _server = null;
-let _timeoutId = null;
-
 function findAvailablePort(startPort = DEFAULT_PORT) {
   return new Promise((resolve, reject) => {
     const tryPort = (port) => {
@@ -44,31 +41,34 @@ function _errorHtml(message) {
 <body><div class="card"><h1>No se pudo conectar</h1><p>${safe}</p></div></body></html>`;
 }
 
-function stopCallbackServer() {
-  if (_timeoutId) {
-    clearTimeout(_timeoutId);
-    _timeoutId = null;
-  }
-  if (_server) {
-    _server.close();
-    _server = null;
-  }
-}
-
 function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState, callbackPath = '/callback' }) {
-  stopCallbackServer();
-
   return new Promise((resolve, reject) => {
+    // Estado por intento: cada flujo posee su propio listener para que una
+    // segunda conexión (u otro proveedor) no derribe el callback del primero.
+    let server = null;
+    let timeoutId = null;
     let settled = false;
     let listening = false;
+
+    const stop = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (server) {
+        server.close();
+        server = null;
+      }
+    };
+
     const finish = (fn, value) => {
       if (settled) return;
       settled = true;
-      stopCallbackServer();
+      stop();
       fn(value);
     };
 
-    _server = http.createServer((req, res) => {
+    server = http.createServer((req, res) => {
       const host = req.headers.host || `127.0.0.1:${port}`;
       if (!String(host).startsWith('127.0.0.1:') && !String(host).startsWith('localhost:')) {
         res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -124,7 +124,7 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState,
       finish(onCode, code);
     });
 
-    _server.on('error', (err) => {
+    server.on('error', (err) => {
       if (settled) return;
       const e = err instanceof Error ? err : new Error(String(err));
       if (listening) {
@@ -134,17 +134,17 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState,
         finish(onTimeout, e);
       } else {
         settled = true;
-        stopCallbackServer();
+        stop();
         reject(e);
       }
     });
 
-    _server.listen(port, '127.0.0.1', () => {
+    server.listen(port, '127.0.0.1', () => {
       listening = true;
-      _timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         finish(onTimeout, new Error('Tiempo de espera agotado. Vuelve a intentar la conexión.'));
       }, FLOW_TIMEOUT_MS);
-      resolve({ port });
+      resolve({ port, stop });
     });
   });
 }
@@ -152,5 +152,4 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState,
 module.exports = {
   findAvailablePort,
   startCallbackServer,
-  stopCallbackServer,
 };
