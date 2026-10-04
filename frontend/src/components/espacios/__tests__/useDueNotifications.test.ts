@@ -169,4 +169,42 @@ describe('useDueNotifications', () => {
     unmount();
     expect(unsubscribeEspaciosSync).toHaveBeenCalledWith(channel);
   });
+
+  it('filters personal notifications and discards a response from the previous scope', async () => {
+    let resolveTeam: ((rows: unknown[]) => void) | undefined;
+    fetchDueSoonTareas.mockImplementationOnce(() => new Promise((resolve) => { resolveTeam = resolve; }));
+    const { result, rerender } = renderHook(
+      ({ assigneeId }: { assigneeId: string | undefined }) => useDueNotifications(true, assigneeId, 'u1'),
+      { initialProps: { assigneeId: undefined as string | undefined } },
+    );
+    rerender({ assigneeId: 'u1' });
+    await act(async () => { await Promise.resolve(); });
+    expect(fetchDueSoonTareas).toHaveBeenLastCalledWith(expect.any(String), 'u1');
+    await act(async () => {
+      resolveTeam?.([{ id: 'team', title: 'Otra persona', due_date: '2026-07-09', status: 'todo', proyecto_id: 'p1' }]);
+      await Promise.resolve();
+    });
+    expect(result.current.items.map((item) => item.id)).toEqual(['t1']);
+  });
+
+  it('clears the previous account items while a replacement session loads', async () => {
+    const { result, rerender } = renderHook(
+      ({ userId }) => useDueNotifications(true, undefined, userId),
+      { initialProps: { userId: 'u1' } },
+    );
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.count).toBe(1);
+    let resolvePrevious: ((rows: unknown[]) => void) | undefined;
+    fetchDueSoonTareas.mockImplementationOnce(() => new Promise((resolve) => { resolvePrevious = resolve; }));
+    act(() => { void result.current.refresh(); });
+    fetchDueSoonTareas.mockImplementationOnce(() => new Promise(() => {}));
+    rerender({ userId: 'u2' });
+    expect(result.current.items).toEqual([]);
+    expect(result.current.loading).toBe(true);
+    await act(async () => {
+      resolvePrevious?.([{ id: 'old', title: 'Cuenta anterior', due_date: '2026-07-09', status: 'todo', proyecto_id: 'p1' }]);
+      await Promise.resolve();
+    });
+    expect(result.current.items).toEqual([]);
+  });
 });

@@ -15,7 +15,7 @@ import { errorMessage } from '@/utils/errors';
 const POLL_MS = 5 * 60 * 1000;
 const REALTIME_DEBOUNCE_MS = 350;
 
-export function useDueNotifications(enabled = true) {
+export function useDueNotifications(enabled = true, assigneeId?: string, sessionUserId?: string) {
   const [items, setItems] = useState<DueNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export function useDueNotifications(enabled = true) {
     try {
       const today = localTodayString();
       const horizon = addDaysToIsoDate(today, DUE_SOON_DAYS);
-      const rows = await fetchDueSoonTareas(horizon);
+      const rows = await fetchDueSoonTareas(horizon, assigneeId);
       if (requestId !== inFlightRef.current) return;
       const nextItems = collectDueNotifications(rows, { today, soonDays: DUE_SOON_DAYS });
       notifiedIdsRef.current = new Set(nextItems.map((item) => item.id));
@@ -48,7 +48,7 @@ export function useDueNotifications(enabled = true) {
     } finally {
       if (requestId === inFlightRef.current) setLoading(false);
     }
-  }, [enabled]);
+  }, [enabled, assigneeId, sessionUserId]);
 
   const scheduleRefresh = useCallback(() => {
     if (debounceTimerRef.current != null) {
@@ -61,6 +61,9 @@ export function useDueNotifications(enabled = true) {
   }, [refresh]);
 
   useEffect(() => {
+    setItems([]);
+    setError(null);
+    notifiedIdsRef.current.clear();
     if (!enabled) {
       // Invalida la respuesta que estuviera en vuelo: sin esto, un fetch pedido
       // con la sesión anterior rellena la campana justo después del cierre.
@@ -89,6 +92,7 @@ export function useDueNotifications(enabled = true) {
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
+      inFlightRef.current += 1;
       if (debounceTimerRef.current != null) {
         window.clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;

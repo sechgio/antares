@@ -76,7 +76,7 @@ describe('my tasks routing', () => {
     const listbox = screen.getByRole('listbox', { name: 'Persona asignada' });
     fireEvent.click(within(listbox).getByRole('option', { name: 'María' }));
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-    await waitFor(() => expect(mocks.patchTarea).toHaveBeenCalledWith('global-task', expect.objectContaining({ assignee_id: 'user-2' })));
+    await waitFor(() => expect(mocks.patchTarea).toHaveBeenCalledWith('global-task', { assignee_id: 'user-2' }, myTask.updated_at));
     expect(mocks.reloadMyTasks).toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Abrir Tarea transversal' })).not.toBeInTheDocument());
   });

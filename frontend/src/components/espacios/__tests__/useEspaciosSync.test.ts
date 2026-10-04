@@ -79,6 +79,7 @@ const createProyecto = vi.fn();
 const createBoardColumn = vi.fn();
 const deleteEspacio = vi.fn();
 const deleteProyecto = vi.fn();
+const updateTarea = vi.fn();
 
 vi.mock('../api/espaciosApi', () => ({
   fetchEspacios: (...args: unknown[]) => fetchEspacios(...args),
@@ -92,7 +93,7 @@ vi.mock('../api/espaciosApi', () => ({
   updateBoardColumn: vi.fn(),
   deleteBoardColumn: vi.fn(),
   updateProyecto: vi.fn(),
-  updateTarea: vi.fn(),
+  updateTarea: (...args: unknown[]) => updateTarea(...args),
   deleteEspacio: (...args: unknown[]) => deleteEspacio(...args),
   deleteProyecto: (...args: unknown[]) => deleteProyecto(...args),
   deleteTarea: vi.fn(),
@@ -106,10 +107,12 @@ let realtimeChange:
       old: Record<string, unknown> | null;
     }) => void)
   | undefined;
+let realtimeStatusChange: ((status: 'live' | 'error' | 'offline' | 'connecting') => void) | undefined;
 
 vi.mock('../api/realtime', () => ({
   subscribeEspaciosSync: vi.fn((_e, _p, onChange, onStatus) => {
     realtimeChange = onChange;
+    realtimeStatusChange = onStatus;
     onStatus?.('live');
     return null;
   }),
@@ -122,6 +125,11 @@ describe('useEspaciosSync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    fetchEspacios.mockReset();
+    fetchProyectos.mockReset();
+    fetchTareas.mockReset();
+    fetchBoardColumns.mockReset();
+    updateTarea.mockReset();
     fetchEspacios.mockResolvedValue([espacioA, espacioB]);
     fetchProyectos.mockImplementation(async (espacioId: string) =>
       espacioId === 'esp-a' ? [proyectoA] : [proyectoB],
@@ -130,6 +138,180 @@ describe('useEspaciosSync', () => {
       proyectoId === 'proy-a' ? [tareaA] : [tareaB],
     );
     fetchBoardColumns.mockResolvedValue([]);
+    updateTarea.mockResolvedValue(tareaA);
+  });
+
+  it('keeps project errors after warning dismissal and retries without leaving the context', async () => {
+    fetchProyectos.mockRejectedValueOnce(new Error('proyectos down'));
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.proyectosError).toBe('proyectos down'));
+    act(() => result.current.clearWarning());
+    expect(result.current.proyectosError).toBe('proyectos down');
+    expect(result.current.activeEspacioId).toBe('esp-a');
+    await act(async () => { await result.current.reloadAll(true); });
+    expect(result.current.proyectosError).toBeNull();
+    expect(result.current.tareas).toEqual([tareaA]);
+  });
+
+  it('keeps task and column errors independent when one load succeeds', async () => {
+    fetchTareas.mockRejectedValueOnce(new Error('tareas down'));
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareasError).toBe('tareas down'));
+    expect(result.current.columnsError).toBeNull();
+    fetchBoardColumns.mockRejectedValueOnce(new Error('columnas down'));
+    await act(async () => { await result.current.reloadAll(true); });
+    expect(result.current.tareasError).toBeNull();
+    expect(result.current.columnsError).toBe('columnas down');
+    expect(result.current.tareas).toEqual([tareaA]);
+  });
+
+  it('reconciles on reconnect without full-page loading or reviving pending deletions', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    let resolveEspacios: (items: Espacio[]) => void = () => {};
+    fetchEspacios.mockImplementationOnce(() => new Promise<Espacio[]>((resolve) => { resolveEspacios = resolve; }));
+    act(() => {
+      result.current.softRemoveTarea(tareaA.id);
+      realtimeStatusChange?.('offline');
+      realtimeStatusChange?.('connecting');
+      realtimeStatusChange?.('live');
+    });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.refreshing).toBe(true);
+    await act(async () => { resolveEspacios([espacioA, espacioB]); });
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+    expect(result.current.tareas).toEqual([]);
+  });
+
+  it('discards a background reload after switching the selected space', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    let resolveProyectos: (items: Proyecto[]) => void = () => {};
+    fetchProyectos.mockImplementationOnce(() => new Promise<Proyecto[]>((resolve) => { resolveProyectos = resolve; }));
+    let reload: Promise<void>;
+    act(() => { reload = result.current.reloadAll(true); });
+    await waitFor(() => expect(result.current.proyectosLoading).toBe(true));
+    act(() => result.current.setActiveEspacioId('esp-b'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaB]));
+    await act(async () => { resolveProyectos([proyectoA]); await reload; });
+    expect(result.current.activeEspacioId).toBe('esp-b');
+    expect(result.current.proyectos).toEqual([proyectoB]);
+    expect(result.current.tareas).toEqual([tareaB]);
+  });
+
+  it('keeps existing tasks and selection when a background retry fails', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    fetchTareas.mockRejectedValueOnce(new Error('tareas down'));
+    await act(async () => { await result.current.reloadAll(true); });
+    expect(result.current.tareasError).toBe('tareas down');
+    expect(result.current.activeProyectoId).toBe('proy-a');
+    expect(result.current.tareas).toEqual([tareaA]);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.refreshing).toBe(false);
+  });
+
+  it('does not refetch on repeated live statuses without a disconnection', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    fetchEspacios.mockClear();
+    act(() => { realtimeStatusChange?.('live'); realtimeStatusChange?.('live'); });
+    expect(fetchEspacios).not.toHaveBeenCalled();
+    expect(result.current.refreshing).toBe(false);
+  });
+
+  it('ignores a stale task rejection after switching away and back to the same project', async () => {
+    let rejectOldTasks: (error: Error) => void = () => {};
+    fetchTareas.mockImplementationOnce(() => new Promise<Tarea[]>((_resolve, reject) => { rejectOldTasks = reject; }));
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.activeProyectoId).toBe('proy-a'));
+    act(() => result.current.setActiveEspacioId('esp-b'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaB]));
+    act(() => result.current.setActiveEspacioId('esp-a'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    await act(async () => { rejectOldTasks(new Error('error antiguo')); });
+    expect(result.current.tareas).toEqual([tareaA]);
+    expect(result.current.tareasError).toBeNull();
+    expect(result.current.warning).toBeNull();
+  });
+
+  it('keeps background space failures non-fatal during reconnection', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    fetchEspacios.mockRejectedValueOnce(new Error('espacios down'));
+    await act(async () => { realtimeStatusChange?.('offline'); realtimeStatusChange?.('live'); });
+    await waitFor(() => expect(result.current.espaciosError).toBe('espacios down'));
+    expect(result.current.error).toBeNull();
+    expect(result.current.activeProyectoId).toBe('proy-a');
+    expect(result.current.tareas).toEqual([tareaA]);
+    await act(async () => { await result.current.reloadAll(true); });
+    expect(result.current.espaciosError).toBeNull();
+  });
+
+  it('does not expose the previous project when loading a different space fails', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    fetchProyectos.mockRejectedValueOnce(new Error('proyectos down'));
+    act(() => result.current.setActiveEspacioId('esp-b'));
+    await waitFor(() => expect(result.current.proyectosError).toBe('proyectos down'));
+    expect(result.current.activeProyectoId).toBeNull();
+    expect(result.current.activeProyecto).toBeNull();
+    expect(result.current.proyectos).toEqual([]);
+    expect(result.current.tareas).toEqual([]);
+    await expect(result.current.addTarea({ title: 'Nueva' })).rejects.toThrow('Selecciona un proyecto');
+  });
+
+  it('does not replace a newer saved patch with a late response from an earlier patch', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    let resolveFirst: (tarea: Tarea) => void = () => {};
+    updateTarea.mockImplementationOnce(() => new Promise<Tarea>((resolve) => { resolveFirst = resolve; }));
+    let firstSave: Promise<void>;
+    act(() => { firstSave = result.current.patchTarea(tareaA.id, { title: 'Actualizada' }); });
+    const saved = { ...tareaA, title: 'Actualizada', status: 'in_progress', updated_at: '2026-02-02T00:00:00Z' };
+    updateTarea.mockResolvedValueOnce(saved);
+    await act(async () => { await result.current.patchTarea(tareaA.id, { status: 'in_progress' }); });
+    await act(async () => {
+      resolveFirst({ ...tareaA, title: 'Actualizada', updated_at: '2026-02-01T00:00:00Z' });
+      await firstSave;
+    });
+    expect(result.current.tareas).toEqual([saved]);
+  });
+
+  it('lets pending task loading finish if reconnect fails before fetching nested resources', async () => {
+    let resolveTasks: (items: Tarea[]) => void = () => {};
+    fetchTareas.mockImplementationOnce(() => new Promise<Tarea[]>((resolve) => { resolveTasks = resolve; }));
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareasLoading).toBe(true));
+    fetchEspacios.mockRejectedValueOnce(new Error('espacios down'));
+    await act(async () => { realtimeStatusChange?.('offline'); realtimeStatusChange?.('live'); });
+    await waitFor(() => expect(result.current.espaciosError).toBe('espacios down'));
+    await act(async () => { resolveTasks([tareaA]); });
+    expect(result.current.tareasLoading).toBe(false);
+    expect(result.current.tareas).toEqual([tareaA]);
+  });
+
+  it('passes the expected version and adopts the saved row version', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    const saved = { ...tareaA, title: 'Nueva', updated_at: '2026-02-01T00:00:00Z' };
+    updateTarea.mockResolvedValueOnce(saved);
+    await act(async () => { await result.current.patchTarea(tareaA.id, { title: 'Nueva' }, tareaA.updated_at); });
+    expect(updateTarea).toHaveBeenCalledWith(tareaA.id, { title: 'Nueva' }, tareaA.updated_at);
+    expect(result.current.tareas).toEqual([saved]);
+  });
+
+  it('preserves the original save conflict when reconciliation also fails', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+    const conflict = new Error('conflicto');
+    updateTarea.mockRejectedValueOnce(conflict);
+    fetchTareas.mockRejectedValueOnce(new Error('sin conexión'));
+    await act(async () => {
+      await expect(result.current.patchTarea(tareaA.id, { title: 'Nueva' }, tareaA.updated_at)).rejects.toBe(conflict);
+    });
+    expect(result.current.tareas).toEqual([tareaA]);
+    expect(result.current.tareasError).toBe('sin conexión');
   });
 
   it('reloadAll loads nested data using ids resolved by loadEspacios, not stale closure', async () => {

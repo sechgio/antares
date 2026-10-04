@@ -65,6 +65,14 @@ describe('collectDueNotifications', () => {
     expect(items.map((i) => i.id)).toEqual(['a', 'b']);
   });
 
+  it('uses the project column completion flag even for reopened built-in statuses', () => {
+    const items = collectDueNotifications([
+      { id: 'done', title: 'Reabierta', due_date: today, status: 'done', status_is_done: false, proyecto_id: 'p' },
+      { id: 'custom', title: 'Terminada', due_date: today, status: 'entregada', status_is_done: true, proyecto_id: 'p' },
+    ], { today });
+    expect(items.map((item) => item.id)).toEqual(['done']);
+  });
+
   it('excludes custom is_done statuses when doneKeys provided', () => {
     const items = collectDueNotifications(
       [
