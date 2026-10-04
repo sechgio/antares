@@ -40,11 +40,13 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   const [model, setModel] = useState('');
   const [draft, setDraft] = useState('');
   const [deciding, setDeciding] = useState(false);
-  const [queued, setQueued] = useState<{ session: string; text: string }[]>([]);
+  const [queued, setQueued] = useState<{ session: string; text: string; failed?: boolean }[]>([]);
   const [runningSince, setRunningSince] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
+  const wantedRef = useRef<{ id: string; silent: boolean } | null>(null);
+  const sessionIdRef = useRef('');
   const listRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -54,19 +56,24 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
 
   const loadMessages = useCallback(
     async (id: string, silent = true) => {
+      wantedRef.current = { id, silent };
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       try {
         const res = await agentApi.agentMessagesList(id);
-        setMessages(res.messages);
-        setPending(res.pending_approvals);
-        setRunning(res.running);
+        if (id === sessionIdRef.current) {
+          setMessages(res.messages);
+          setPending(res.pending_approvals);
+          setRunning(res.running);
+        }
       } catch (err) {
         if (!silent) {
           addToast({ message: errorMessage(err, 'No se pudieron cargar los mensajes'), type: 'error' });
         }
       } finally {
         inFlightRef.current = false;
+        const wanted = wantedRef.current;
+        if (wanted && wanted.id !== id) void loadMessages(wanted.id, wanted.silent);
       }
     },
     [addToast],
@@ -107,12 +114,11 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   }, [addToast, refreshSessions]);
 
   useEffect(() => {
+    sessionIdRef.current = sessionId;
+    setMessages([]);
+    setPending([]);
     if (sessionId) void loadMessages(sessionId, false);
-    else {
-      setMessages([]);
-      setPending([]);
-      setRunning(false);
-    }
+    else setRunning(false);
   }, [sessionId, loadMessages]);
 
   useEffect(() => {
@@ -215,15 +221,17 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
     }
   };
 
-  const sendToSession = async (id: string, content: string) => {
-    setRunning(true);
+  const sendToSession = async (id: string, content: string): Promise<boolean> => {
+    if (id === sessionIdRef.current) setRunning(true);
     try {
       await agentApi.agentMessageSend(id, content);
       void refreshSessions();
       await loadMessages(id);
+      return true;
     } catch (err) {
-      setRunning(false);
+      if (id === sessionIdRef.current) setRunning(false);
       addToast({ message: errorMessage(err, 'No se pudo enviar el mensaje'), type: 'error' });
+      return false;
     }
   };
 
@@ -235,16 +243,20 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
       setQueued((q) => [...q, { session: sessionId, text: content }]);
       return;
     }
-    await sendToSession(sessionId, content);
+    const ok = await sendToSession(sessionId, content);
+    if (!ok) setDraft((prev) => (prev.trim() ? prev : content));
   };
 
   // Envía el siguiente mensaje en cola cuando el turno termina y no quedan aprobaciones.
   useEffect(() => {
     if (!sessionId || running || pending.length > 0) return;
-    const next = queued.find((i) => i.session === sessionId);
+    const next = queued.find((i) => i.session === sessionId && !i.failed);
     if (!next) return;
     setQueued((q) => q.filter((i) => i !== next));
-    void sendToSession(sessionId, next.text);
+    void (async () => {
+      const ok = await sendToSession(sessionId, next.text);
+      if (!ok) setQueued((q) => [{ ...next, failed: true }, ...q]);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, running, pending.length, queued]);
 
@@ -399,7 +411,19 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
                   key={`${idx}-${item.text}`}
                   className="flex max-w-[70%] items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] py-0.5 pl-2.5 pr-1 text-[11px] text-[var(--text-secondary)]"
                 >
-                  <span className="truncate">{item.text}</span>
+                  {item.failed ? (
+                    <button
+                      className="truncate text-[var(--accent-yellow)]"
+                      title="Falló el envío — clic para reintentar"
+                      onClick={() =>
+                        setQueued((q) => q.map((i) => (i === item ? { ...i, failed: false } : i)))
+                      }
+                    >
+                      {item.text}
+                    </button>
+                  ) : (
+                    <span className="truncate">{item.text}</span>
+                  )}
                   <button
                     className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
                     aria-label="Quitar de la cola"

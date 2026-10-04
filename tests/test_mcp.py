@@ -201,10 +201,30 @@ def test_http_secret_headers_not_sent_on_redirect(mcp_root):
 
 def test_agent_tool_name_roundtrip(mcp_root):
     name = mcp_servers.agent_tool_name("github", "repos.get")
-    assert name == "mcp__github__repos.get"
-    assert mcp_servers.parse_agent_tool(name) == ("github", "repos.get")
+    # el punto no es válido como function name de OpenAI/Anthropic
+    assert name == "mcp__github__repos-get"
+    assert mcp_servers.parse_agent_tool(name) == ("github", "repos-get")
     assert mcp_servers.parse_agent_tool("flows_list") is None
     assert mcp_servers.parse_agent_tool("mcp__solo") is None
+    # nombres ya válidos quedan intactos; el anunciado nunca supera 64 chars
+    assert mcp_servers.agent_tool_name("s", "ping") == "mcp__s__ping"
+    assert len(mcp_servers.agent_tool_name("s" * 60, "t" * 60)) <= 64
+
+
+def test_call_tool_resolves_advertised_name(mcp_root, monkeypatch):
+    """El agente invoca el nombre saneado (repos-get); call_tool traduce al real."""
+    monkeypatch.setattr(
+        mcp_servers, "list_tools", lambda sid, **kw: [{"name": "repos.get", "description": ""}]
+    )
+    mcp_servers.add_server("Gh", "stdio", command="x")
+    seen = {}
+    monkeypatch.setattr(
+        mcp_servers.mcp_client,
+        "call_tool_stdio",
+        lambda command, args, env, tool, tool_args: seen.update(tool=tool) or {"content": []},
+    )
+    mcp_servers.call_tool("gh", "repos-get", {})
+    assert seen["tool"] == "repos.get"
 
 
 def _wait(run_id: str, store: FlowStore, timeout: float = 10.0):

@@ -30,7 +30,7 @@ import NodePalette, { NODE_DRAG_MIME } from './NodePalette';
 import { FLOW_EDGE_STYLE, edgeConnectionValid, graphToReactFlow, makeNodeId, reactFlowToGraph, reconnectEdge, type FlowNodeData } from './graphAdapter';
 import { layoutByDepth } from './flowLayout';
 import { useFlowHistory } from './useFlowHistory';
-import { NODE_KIND_DEFS } from './nodeDefs';
+import { NODE_KIND_DEFS, nodeOutputs } from './nodeDefs';
 import type { Flow, FlowNode, FlowNodeKind, WorkflowGraph } from './types';
 
 const nodeTypes = { flowNode: FlowNodeView };
@@ -223,6 +223,13 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
           n.id === updated.id ? { ...n, data: { ...n.data, flowNode: updated } } : n,
         ),
       );
+      // Un cambio de config puede retirar puertos (p. ej. casos de switch):
+      // las aristas que salían de esos puertos quedan huérfanas y se podan.
+      const ports = new Set(nodeOutputs(updated).map((o) => o.port));
+      setEdgesTracked((es) => {
+        const kept = es.filter((e) => e.source !== updated.id || ports.has(e.sourceHandle ?? 'main'));
+        return kept.length === es.length ? es : kept;
+      });
       setDirty(true);
     },
     [pushHistory],
@@ -255,7 +262,9 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
     if (!flow || !baseGraph) return;
     setSaving(true);
     try {
-      const graph = reactFlowToGraph(nodesRef.current, edgesRef.current, baseGraph);
+      const sentNodes = nodesRef.current;
+      const sentEdges = edgesRef.current;
+      const graph = reactFlowToGraph(sentNodes, sentEdges, baseGraph);
       const res = await flowsApi.flowsUpdate({
         id: flow.id,
         graph,
@@ -263,7 +272,8 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
       });
       setFlow(res.flow);
       setBaseGraph(res.flow.graph);
-      setDirty(false);
+      // Una edición durante el guardado sustituye los arrays: sigue sin guardar.
+      setDirty(nodesRef.current !== sentNodes || edgesRef.current !== sentEdges);
       addToast({ message: 'Flujo guardado', type: 'success' });
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo guardar el flujo'), type: 'error' });

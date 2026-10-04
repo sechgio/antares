@@ -42,10 +42,10 @@ def _lookup(path: str, memory: JsonObject) -> Any:
     else:
         root, sep, remainder = path.partition(".")
         root = root.strip()
-        if root.startswith("item["):
-            bracket = root.find("[")
+        bracket = root.find("[")
+        if bracket >= 0:
             remainder = root[bracket:] + (sep + remainder if sep else "")
-            root = "item"
+            root = root[:bracket].strip()
         elif sep:
             remainder = sep + remainder
         if root not in ("item", "items", "run"):

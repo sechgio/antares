@@ -157,6 +157,24 @@ def _wait(run_id: str, store: FlowStore, timeout: float = 5.0):
     raise AssertionError("run did not finish")
 
 
+def test_expr_indexes_into_items_item_and_run():
+    from backend.core.flows import expr
+
+    memory = {
+        "item": {"json": {"a": 1}},
+        "items": [{"json": {"a": 1}}, {"json": {"a": 2}}],
+        "run": {"trigger": {"n": 3}},
+        "nodes": {},
+    }
+    # un nodo con varios predecesores selecciona una entrada por índice
+    assert expr.resolve("=items[0].json.a", memory) == 1
+    assert expr.resolve("=items[1].json.a", memory) == 2
+    assert expr.resolve('=item["json"].a', memory) == 1
+    assert expr.resolve('=run["trigger"].n', memory) == 3
+    with pytest.raises(ValueError, match="Raíz"):
+        expr.resolve("=nada[0]", memory)
+
+
 def test_runner_executes_dag(store):
     calls = []
 

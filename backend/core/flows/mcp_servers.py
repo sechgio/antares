@@ -29,6 +29,7 @@ _TOOLS_TTL_S = 300.0
 _tools_cache: dict[str, tuple[float, list[JsonObject]]] = {}
 
 _ID_RE = re.compile(r"[^a-z0-9_-]+")
+_TOOL_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]+")
 MAX_SERVERS = 20
 _MAX_SECRET_CHARS = 4000
 
@@ -215,6 +216,7 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
 def call_tool(server_id: str, tool: str, args: JsonObject) -> JsonObject:
     server = get_server(server_id)
     secrets = _secrets(server_id)
+    tool = _resolve_tool_name(server_id, tool)
     if server["transport"] == "http":
         result = mcp_client.call_tool_http(server["url"], secrets.get("headers") or {}, tool, args)
     else:
@@ -243,7 +245,26 @@ def run_mcp_call_node(node: JsonObject, memory: JsonObject) -> JsonObject:
 
 
 def agent_tool_name(server_id: str, tool: str) -> str:
-    return f"mcp__{server_id}__{tool}"
+    """Nombre anunciado al LLM: un function name válido (<=64, [A-Za-z0-9_-])."""
+    return f"mcp__{server_id}__{_TOOL_NAME_RE.sub('-', tool)}"[:64]
+
+
+def _resolve_tool_name(server_id: str, name: str) -> str:
+    """Traduce el nombre anunciado al agente al real de la tool.
+
+    Devuelve ``name`` intacto si ya es el nombre real o si no se puede listar
+    el servidor (el error real lo da la propia llamada).
+    """
+    try:
+        tools = list_tools(server_id)
+    except Exception:
+        return name
+    advertised = f"mcp__{server_id}__{name}"
+    for t in tools:
+        real = str(t.get("name") or "")
+        if real == name or agent_tool_name(server_id, real) == advertised:
+            return real
+    return name
 
 
 def parse_agent_tool(name: str) -> tuple[str, str] | None:

@@ -197,6 +197,27 @@ def test_anthropic_wire_groups_tool_results():
     assert wire[3] == {"role": "assistant", "content": [{"type": "text", "text": "listo"}]}
 
 
+def test_wire_synthesizes_missing_tool_results():
+    """Calls persistidas sin tool_result (turno interrumpido) no invalidan la request."""
+    msgs = [
+        {"role": "user", "content": "hola"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "name": "m1", "params": {}}]},
+        {"role": "assistant", "content": "⚠ Error del agente: x"},
+        {"role": "user", "content": "siguiente"},
+    ]
+    wire = agent_chat._openai_wire(msgs, None)
+    assert [m.get("role") for m in wire] == ["system", "user", "assistant", "tool", "assistant", "user"]
+    assert wire[3]["tool_call_id"] == "c1" and "interrumpido" in wire[3]["content"]
+    awire = agent_chat._anthropic_wire(msgs)
+    user_results = [
+        block
+        for m in awire
+        if m["role"] == "user" and isinstance(m["content"], list)
+        for block in m["content"]
+    ]
+    assert any(b.get("type") == "tool_result" and b.get("tool_use_id") == "c1" for b in user_results)
+
+
 def test_chat_requires_configured_provider(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_chat.ai_providers, "user_data_path", lambda rel: tmp_path / rel)
     with pytest.raises(ValueError, match="API key"):

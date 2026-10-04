@@ -118,10 +118,38 @@ def _post_json(url: str, headers: dict[str, str], payload: JsonObject) -> JsonOb
         raise ValueError(f"Sin respuesta del proveedor: {err.reason}") from err
 
 
+def _with_synthetic_results(messages: list[JsonObject]) -> list[JsonObject]:
+    """Completa con tool_results sintéticos las calls quedadas sin respuesta.
+
+    Si un turno se interrumpió tras persistir las tool_calls pero antes de sus
+    resultados, el historial queda inválido: las APIs rechazan la request por
+    calls sin result. Sintetizarlos aquí repara también sesiones antiguas sin
+    tocar el historial persistido.
+    """
+    answered = {str(m.get("tool_use_id")) for m in messages if m.get("role") == "tool_result"}
+    out: list[JsonObject] = []
+    for msg in messages:
+        out.append(msg)
+        if msg.get("role") != "assistant":
+            continue
+        for call in msg.get("tool_calls") or []:
+            call_id = str(call.get("id"))
+            if call_id not in answered:
+                out.append(
+                    {
+                        "role": "tool_result",
+                        "tool_use_id": call_id,
+                        "name": call.get("name"),
+                        "content": '{"error": "turno interrumpido: sin resultado"}',
+                    }
+                )
+    return out
+
+
 def _openai_wire(messages: list[JsonObject], system: str | None) -> list[JsonObject]:
     """Historial persistido → formato OpenAI chat completions."""
     wire: list[JsonObject] = [{"role": "system", "content": system or _SYSTEM_PROMPT}]
-    for msg in messages:
+    for msg in _with_synthetic_results(messages):
         role = msg.get("role")
         if role == "user":
             wire.append({"role": "user", "content": str(msg.get("content") or "")[:MAX_MESSAGE_CHARS]})
@@ -205,7 +233,7 @@ def _anthropic_wire(messages: list[JsonObject]) -> list[JsonObject]:
     """Historial persistido → formato Anthropic Messages (bloques)."""
     wire: list[JsonObject] = []
     pending_results: list[JsonObject] = []
-    for msg in messages:
+    for msg in _with_synthetic_results(messages):
         role = msg.get("role")
         if role == "tool_result":
             pending_results.append(

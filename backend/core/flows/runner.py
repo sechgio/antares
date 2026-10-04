@@ -184,12 +184,18 @@ class FlowRunner:
                     tried += 1
                     try:
                         node_outputs = self._execute_node(node, memory)
-                        break
                     except Exception:
                         if tried >= attempts or token.cancelled:
                             raise
-                        if delay_ms > 0:
-                            time.sleep(delay_ms / 1000.0)
+                    else:
+                        if (
+                            tried >= attempts
+                            or token.cancelled
+                            or not _retryable_http_output(node, node_outputs)
+                        ):
+                            break
+                    if delay_ms > 0:
+                        time.sleep(delay_ms / 1000.0)
                 if tried > 1:
                     step["attempts"] = tried
             except Exception as exc:
@@ -452,6 +458,20 @@ class FlowRunner:
 
         port = "true" if result else "false"
         return {port: {"json": {"result": result, "field": actual}}}
+
+
+def _retryable_http_output(node: JsonObject, node_outputs: JsonObject) -> bool:
+    """True si un ``http_request`` devolvió un estado transitorio (5xx, 408, 429).
+
+    Los errores HTTP llegan como ``ok: false`` sin excepción, así que el bucle
+    de reintentos también mira el resultado para repetir esas respuestas.
+    """
+    if node.get("kind") != "http_request":
+        return False
+    main = node_outputs.get("main")
+    out = main.get("json") if isinstance(main, dict) else None
+    status = out.get("status") if isinstance(out, dict) else None
+    return isinstance(status, int) and (status >= 500 or status in (408, 429))
 
 
 def _retry_config(node: JsonObject) -> tuple[int, float]:

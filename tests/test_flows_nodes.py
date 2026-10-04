@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -182,6 +185,57 @@ def test_runner_retry_exhausts(store):
     step = {s["node_id"]: s for s in done["steps"]}["t"]
     assert step["attempts"] == 2
     assert "siempre falla" in step["error"]
+
+
+class _FlakyHttpHandler(BaseHTTPRequestHandler):
+    calls = 0
+
+    def do_GET(self):
+        type(self).calls += 1
+        code = 503 if type(self).calls < 3 else 200
+        body = json.dumps({"intento": type(self).calls}).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def test_runner_retries_transient_http_status(store, monkeypatch):
+    """Un 503 devuelve ok:false sin excepción: el retry debe reintentarlo igual."""
+    monkeypatch.setenv("ANTARES_FLOWS_ALLOW_PRIVATE_HOSTS", "1")
+    _FlakyHttpHandler.calls = 0
+    httpd = HTTPServer(("127.0.0.1", 0), _FlakyHttpHandler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{httpd.server_port}/sonda"
+        flow = store.create(
+            "HTTP",
+            graph={
+                "nodes": [
+                    {"id": "trigger", "kind": "trigger", "config": {}},
+                    {
+                        "id": "h",
+                        "kind": "http_request",
+                        "config": {"url": url, "retry": {"attempts": 3}},
+                    },
+                ],
+                "edges": [{"from_node": "trigger", "to_node": "h"}],
+            },
+        )
+        runner = FlowRunner(store, lambda m: lambda p: {})
+        done = _wait(runner.start(flow["id"])["id"], store)
+
+        step = {s["node_id"]: s for s in done["steps"]}["h"]
+        assert step["status"] == "success"
+        assert step["attempts"] == 3
+        assert step["output"]["ok"] is True
+        assert _FlakyHttpHandler.calls == 3
+    finally:
+        httpd.shutdown()
 
 
 def test_runner_agent_node(store, monkeypatch):
