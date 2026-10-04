@@ -217,10 +217,16 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
             <div>
               <FieldLabel>Valor de comparación</FieldLabel>
               <Input
-                value={node.config.value == null ? '' : String(node.config.value)}
+                defaultValue={node.config.value === undefined ? '' : typeof node.config.value === 'string' ? node.config.value : JSON.stringify(node.config.value)}
                 onChange={(e) => {
                   const raw = e.target.value;
-                  patchConfig({ value: raw === '' ? undefined : raw });
+                  let value: unknown = raw === '' ? undefined : raw;
+                  try {
+                    value = JSON.parse(raw);
+                  } catch {
+                    // Las expresiones y el texto sin comillas se conservan literalmente.
+                  }
+                  patchConfig({ value });
                 }}
                 placeholder="10 o =run.trigger.umbral"
                 spellCheck={false}

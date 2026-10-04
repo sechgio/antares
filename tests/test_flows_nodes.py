@@ -187,6 +187,72 @@ def test_runner_retry_exhausts(store):
     assert "siempre falla" in step["error"]
 
 
+@pytest.mark.parametrize("http_status", [False, True])
+def test_cancel_during_retry_delay_stops_before_next_attempt(store, monkeypatch, http_status):
+    from backend.core.flows import runner as runner_module
+
+    flow = store.create("Cancelar", graph={
+        "nodes": [
+            {"id": "trigger", "kind": "trigger", "config": {}},
+            {"id": "n", "kind": "http_request" if http_status else "tool_call",
+             "config": {"url": "https://example.com", "method": "formats",
+                        "retry": {"attempts": 3, "delay_ms": 2000}}},
+        ],
+        "edges": [{"from_node": "trigger", "to_node": "n"}],
+    })
+    token = runner_module._CancelEvent()
+    waiting = threading.Event()
+    original_event = token._event
+    original_sleep = time.sleep
+
+    class WaitEvent:
+        def is_set(self):
+            return original_event.is_set()
+
+        def wait(self, timeout):
+            waiting.set()
+            return original_event.wait(timeout)
+
+        def set(self):
+            original_event.set()
+
+    token._event = WaitEvent()
+
+    def sleep(seconds):
+        waiting.set()
+        original_sleep(seconds)
+
+    monkeypatch.setattr(runner_module.time, "sleep", sleep)
+    calls = []
+    runner = FlowRunner(store, lambda method: None)
+    execute = runner._execute_node
+
+    def fail(node, memory):
+        if node["id"] == "trigger":
+            return execute(node, memory)
+        calls.append(node["id"])
+        if http_status:
+            return {"main": {"json": {"status": 503, "ok": False}}}
+        raise ValueError("transitorio")
+
+    monkeypatch.setattr(runner, "_execute_node", fail)
+    run = store.create_run(flow["id"])
+    worker = threading.Thread(target=runner._execute, args=(run["id"], token))
+    worker.start()
+    try:
+        assert waiting.wait(3)
+        token.cancel()
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        assert calls == ["n"]
+        done = store.get_run(run["id"])
+        assert done["status"] == "cancelled"
+        assert done["steps"][-1]["status"] == "cancelled"
+    finally:
+        token.cancel()
+        worker.join(timeout=3)
+
+
 class _FlakyHttpHandler(BaseHTTPRequestHandler):
     calls = 0
 
@@ -316,7 +382,8 @@ def test_agent_decide_never_runs_denied_method(tmp_path, monkeypatch):
     session = store.create_session("provider-x", "model", "t")
     calls: list = []
     runner = AgentRunner(store, lambda m: calls.append(m) or (lambda p: {}))
-    monkeypatch.setattr(runner, "_spawn", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_run_loop", lambda sid: None)
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
 
     approval = store.create_approval(session["id"], {"id": "c1", "name": "db_clear", "params": {}})
     runner.decide(approval["id"], True)
@@ -336,7 +403,8 @@ def test_agent_decide_runs_approved_mcp_tool(tmp_path, monkeypatch):
     store = AgentStore(tmp_path)
     session = store.create_session("provider-x", "model", "t")
     runner = AgentRunner(store, lambda m: None)
-    monkeypatch.setattr(runner, "_spawn", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_run_loop", lambda sid: None)
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
     seen: dict = {}
     monkeypatch.setattr(
         mcp_servers,

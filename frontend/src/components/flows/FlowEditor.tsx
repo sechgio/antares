@@ -260,6 +260,10 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
 
   const save = useCallback(async () => {
     if (!flow || !baseGraph) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLTextAreaElement && canvasRef.current?.parentElement?.contains(active)) {
+      active.blur();
+    }
     setSaving(true);
     try {
       const sentNodes = nodesRef.current;

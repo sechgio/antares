@@ -46,6 +46,7 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   const timerRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
   const wantedRef = useRef<{ id: string; silent: boolean } | null>(null);
+  const messagesVersionRef = useRef(new Map<string, { version: number; pending: number }>());
   const sessionIdRef = useRef('');
   const listRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
@@ -56,12 +57,15 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
 
   const loadMessages = useCallback(
     async (id: string, silent = true) => {
-      wantedRef.current = { id, silent };
+      const request = { id, silent };
+      wantedRef.current = request;
       if (inFlightRef.current) return;
       inFlightRef.current = true;
+      const version = messagesVersionRef.current.get(id)?.version ?? 0;
       try {
         const res = await agentApi.agentMessagesList(id);
-        if (id === sessionIdRef.current) {
+        const current = messagesVersionRef.current.get(id);
+        if (id === sessionIdRef.current && version === (current?.version ?? 0) && !current?.pending) {
           setMessages(res.messages);
           setPending(res.pending_approvals);
           setRunning(res.running);
@@ -73,7 +77,7 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
       } finally {
         inFlightRef.current = false;
         const wanted = wantedRef.current;
-        if (wanted && wanted.id !== id) void loadMessages(wanted.id, wanted.silent);
+        if (wanted && wanted !== request) void loadMessages(wanted.id, wanted.silent);
       }
     },
     [addToast],
@@ -222,9 +226,14 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
   };
 
   const sendToSession = async (id: string, content: string): Promise<boolean> => {
+    const state = messagesVersionRef.current.get(id) ?? { version: 0, pending: 0 };
+    messagesVersionRef.current.set(id, state);
+    state.version += 1;
+    state.pending += 1;
     if (id === sessionIdRef.current) setRunning(true);
     try {
-      await agentApi.agentMessageSend(id, content);
+      await agentApi.agentMessageSend(id, content).finally(() => { state.pending -= 1; });
+      state.version += 1;
       void refreshSessions();
       await loadMessages(id);
       return true;

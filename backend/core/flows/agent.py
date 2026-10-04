@@ -220,6 +220,7 @@ class AgentRunner:
         self._store = store
         self._handler_getter = handler_getter
         self._running: dict[str, threading.Thread] = {}
+        self._decisions: dict[str, list[JsonObject]] = {}
         self._lock = threading.RLock()
 
     def is_running(self, session_id: str) -> bool:
@@ -244,61 +245,64 @@ class AgentRunner:
             self._spawn(session_id, f"agent-turn-{session_id}")
 
     def decide(self, approval_id: str, approved: bool) -> JsonObject:
-        """Aplica la decisión del usuario, ejecuta la tool aprobada y reanuda.
-
-        Serializada bajo ``self._lock``: decisiones concurrentes aplican y
-        persisten sus tool_result en orden, nunca intercaladas.
-        """
+        """Acepta la decisión y encola su ejecución, en orden por conversación."""
         with self._lock:
             approval = self._store.decide_approval(approval_id, approved)
             if approval is None:
                 raise ValueError("Aprobación inexistente o ya decidida")
             session_id = str(approval["session_id"])
-            call_id = str(approval["call_id"])
-            if approved:
-                method = str(approval["method"])
-                invocable = (
-                    mcp_servers.parse_agent_tool(method) is not None
-                    or method in gated_methods()
-                    or method in ORCHESTRATABLE_METHODS
-                )
-                if invocable:
-                    result = self._execute({"name": method, "params": approval.get("params") or {}})
-                    self._store.update_tool_call(session_id, call_id, "done", result)
-                else:
-                    result = json.dumps(
-                        {"error": f"Herramienta no disponible para el agente: {method}"},
-                        ensure_ascii=False,
-                    )
-                    self._store.update_tool_call(session_id, call_id, "denied", result)
-                self._store.append_message(
-                    session_id,
-                    {
-                        "role": "tool_result",
-                        "tool_use_id": call_id,
-                        "name": approval["method"],
-                        "content": result,
-                    },
-                )
-            else:
-                denied = json.dumps({"error": "El usuario rechazó esta acción"}, ensure_ascii=False)
-                self._store.update_tool_call(session_id, call_id, "denied", denied)
-                self._store.append_message(
-                    session_id,
-                    {
-                        "role": "tool_result",
-                        "tool_use_id": call_id,
-                        "name": approval["method"],
-                        "content": denied,
-                    },
-                )
-            if not self._store.pending_approvals(session_id):
-                self._spawn(session_id, f"agent-resume-{session_id}")
+            self._decisions.setdefault(session_id, []).append(approval)
+            self._spawn(session_id, f"agent-resume-{session_id}")
             return approval
+
+    def _apply_decision(self, approval: JsonObject) -> None:
+        session_id = str(approval["session_id"])
+        call_id = str(approval["call_id"])
+        if approval["status"] == "approved":
+            method = str(approval["method"])
+            invocable = (
+                mcp_servers.parse_agent_tool(method) is not None
+                or method in gated_methods()
+                or method in ORCHESTRATABLE_METHODS
+            )
+            if invocable:
+                result = self._execute({"name": method, "params": approval.get("params") or {}})
+                self._store.update_tool_call(session_id, call_id, "done", result)
+            else:
+                result = json.dumps(
+                    {"error": f"Herramienta no disponible para el agente: {method}"},
+                    ensure_ascii=False,
+                )
+                self._store.update_tool_call(session_id, call_id, "denied", result)
+        else:
+            result = json.dumps({"error": "El usuario rechazó esta acción"}, ensure_ascii=False)
+            self._store.update_tool_call(session_id, call_id, "denied", result)
+        self._store.append_message(
+            session_id,
+            {
+                "role": "tool_result",
+                "tool_use_id": call_id,
+                "name": approval["method"],
+                "content": result,
+            },
+        )
 
     def _turn_main(self, session_id: str) -> None:
         try:
-            self._run_loop(session_id)
+            while True:
+                with self._lock:
+                    decisions = self._decisions.get(session_id)
+                    approval = decisions.pop(0) if decisions else None
+                    if not decisions:
+                        self._decisions.pop(session_id, None)
+                if approval is not None:
+                    self._apply_decision(approval)
+                    continue
+                self._run_loop(session_id)
+                with self._lock:
+                    if not self._decisions.get(session_id):
+                        self._running.pop(session_id, None)
+                        return
         except Exception as err:
             logger.exception("agent turn failed")
             self._store.touch_session(session_id, error=str(err)[:300])
@@ -306,6 +310,12 @@ class AgentRunner:
                 session_id,
                 {"role": "assistant", "content": f"⚠ Error del agente: {str(err)[:300]}"},
             )
+        finally:
+            with self._lock:
+                if self._running.get(session_id) is threading.current_thread():
+                    self._running.pop(session_id, None)
+                if self._decisions.get(session_id):
+                    self._spawn(session_id, f"agent-resume-{session_id}")
 
     def _execute(self, call: JsonObject) -> str:
         name = str(call.get("name") or "")
@@ -333,8 +343,9 @@ class AgentRunner:
             raise ValueError("Sesión de agente no encontrada")
         gated = set(gated_methods())
         for _ in range(_MAX_TOOL_STEPS):
-            if self._store.pending_approvals(session_id):
-                return  # pausa hasta decisión del usuario
+            with self._lock:
+                if self._store.pending_approvals(session_id) or self._decisions.get(session_id):
+                    return  # pausa hasta aplicar las decisiones del usuario
             reply = chat(str(session["provider"]), str(session["model"]), self._store.messages(session_id))
             calls = reply.get("calls") or []
             text = str(reply.get("text") or "")

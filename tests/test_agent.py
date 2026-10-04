@@ -133,8 +133,8 @@ def test_turn_pauses_on_gated_tool_and_decide_resumes(tmp_path, monkeypatch):
     pending = store.pending_approvals(s["id"])
     assert len(pending) == 1 and pending[0]["method"] == gated
 
-    # no reanuda por hilo: llamamos decide() que ejecuta la tool aprobada
-    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._run_loop(sid))
+    # Procesa la cola sin hilo para comprobar el resultado de la decisión.
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
     runner.decide(pending[0]["id"], True)
     assert executed == [(gated, {"k": 1})]
     msgs = store.messages(s["id"])
@@ -156,7 +156,7 @@ def test_deny_appends_denied_result_and_resumes(tmp_path, monkeypatch):
     s = store.create_session("ollama", "m", "t")
     runner._run_loop(s["id"])
     pending = store.pending_approvals(s["id"])
-    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._run_loop(sid))
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
     runner.decide(pending[0]["id"], False)
     assert executed == []
     msgs = store.messages(s["id"])
@@ -256,3 +256,73 @@ def test_first_user_message_titles_session(tmp_path):
     assert store.get_session(s["id"])["title"] == "lista mis formatos"
     store.append_message(s["id"], {"role": "user", "content": "otro"})
     assert store.get_session(s["id"])["title"] == "lista mis formatos"  # no renombra
+
+
+def test_approval_accepts_without_waiting_and_serializes_session_tools(tmp_path, monkeypatch):
+    from backend.handlers import agent as handlers
+
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Principal")
+    other = store.create_session("ollama", "other", "Otra")
+    method = sorted(ORCHESTRATABLE_METHODS)[0]
+    calls = [{"id": f"c{i}", "name": method, "params": {"index": i}, "status": "pending"} for i in (1, 2)]
+    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": calls})
+    approvals = [store.create_approval(session["id"], call) for call in calls]
+    entered, release, accepted, probed = (threading.Event() for _ in range(4))
+    executed, replies, responses, states = [], {}, [], []
+
+    def execute(params):
+        executed.append(params["index"])
+        if params["index"] == 1:
+            entered.set()
+            assert release.wait(5)
+        return {"ok": True}
+
+    def chat(provider, model, messages):
+        replies.setdefault(model, []).append(messages)
+        return {"text": "fin", "calls": []}
+
+    monkeypatch.setattr(agent, "chat", chat)
+    runner = agent.AgentRunner(store, lambda name: execute)
+    monkeypatch.setattr(handlers, "_runner", lambda: runner)
+
+    def approve():
+        responses.append(handlers._approve({"approval_id": approvals[0]["id"]}))
+        accepted.set()
+
+    def probe():
+        states.append((runner.is_running(session["id"]), runner.is_running(other["id"])))
+        probed.set()
+
+    caller, reader = threading.Thread(target=approve), threading.Thread(target=probe)
+    caller.start()
+    try:
+        assert entered.wait(3)
+        assert accepted.wait(1), "agent_approve esperó a que terminara la herramienta"
+        reader.start()
+        assert probed.wait(1), "Las consultas de otra conversación quedaron bloqueadas"
+        assert states == [(True, False)]
+        assert responses[0]["approval"]["status"] == "approved"
+        runner.start_turn(other["id"], "otra conversación")
+        other_worker = runner._running.get(other["id"])
+        if other_worker:
+            other_worker.join(timeout=3)
+        assert replies["other"][-1][-1]["content"] == "otra conversación"
+        runner.decide(approvals[1]["id"], True)
+        with pytest.raises(ValueError, match="Ya hay un turno"):
+            runner.start_turn(session["id"], "duplicado")
+        with pytest.raises(ValueError, match="ya decidida"):
+            runner.decide(approvals[0]["id"], True)
+        assert replies.get("m") is None
+    finally:
+        release.set()
+        caller.join(timeout=3)
+        if reader.ident is not None:
+            reader.join(timeout=3)
+        worker = runner._running.get(session["id"])
+        if worker:
+            worker.join(timeout=3)
+    assert not runner.is_running(session["id"])
+    assert executed == [1, 2]
+    results = [message for message in replies["m"][0] if message["role"] == "tool_result"]
+    assert [message["tool_use_id"] for message in results] == ["c1", "c2"]

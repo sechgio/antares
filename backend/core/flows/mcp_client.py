@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import queue
+import shutil
 import subprocess
 import threading
 import urllib.error
@@ -109,6 +110,7 @@ def _http_post(url: str, headers: dict[str, str], payload: JsonObject) -> tuple[
         with http_guard.no_redirect_opener.open(req, timeout=_HTTP_TIMEOUT_S) as res:
             raw = res.read(_MAX_RESPONSE_BYTES + 1)
             session_id = res.headers.get("Mcp-Session-Id") or res.headers.get("mcp-session-id")
+            status = res.status
     except urllib.error.HTTPError as err:
         if 300 <= err.code < 400:
             raise McpError(
@@ -120,6 +122,8 @@ def _http_post(url: str, headers: dict[str, str], payload: JsonObject) -> tuple[
         raise McpError(f"Sin respuesta del servidor MCP: {err.reason}") from err
     if len(raw) > _MAX_RESPONSE_BYTES:
         raise McpError("La respuesta del servidor MCP supera el tamaño máximo")
+    if status == 202 and "id" not in payload and not raw:
+        return {}, session_id
     return _parse_sse_response(raw), session_id
 
 
@@ -128,9 +132,11 @@ def _http_session_call(
 ) -> list[JsonObject]:
     """Handshake initialize + una lista de llamadas JSON-RPC en la misma sesión."""
     init_res, session_id = _http_post(url, headers, _init_message())
-    _result_of(init_res)  # valida el handshake
+    init_result = _result_of(init_res)  # valida el handshake
+    headers = {**headers, "MCP-Protocol-Version": str(init_result.get("protocolVersion") or _PROTOCOL_VERSION)}
     if session_id:
         headers = {**headers, "Mcp-Session-Id": session_id}
+    _http_post(url, headers, _initialized_notification())
     results = []
     for i, (method, params) in enumerate(calls, start=1):
         res, _ = _http_post(url, headers, _rpc(method, params, rpc_id=i))
@@ -162,12 +168,13 @@ def _stdio_session(
     command: str, args: list[str], env: dict[str, str], calls: list[tuple[str, JsonObject | None]]
 ) -> list[JsonObject]:
     proc = subprocess.Popen(
-        [command, *args],
+        [shutil.which(command, path=env.get("PATH")) or command, *args],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         env=env,
         text=True,
+        encoding="utf-8",
         bufsize=1,
     )
     out_queue: queue.Queue[JsonObject | Exception] = queue.Queue()

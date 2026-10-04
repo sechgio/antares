@@ -57,6 +57,9 @@ class _CancelEvent:
     def cancel(self) -> None:
         self._event.set()
 
+    def wait(self, timeout: float) -> bool:
+        return self._event.wait(timeout)
+
     @property
     def cancelled(self) -> bool:
         return self._event.is_set()
@@ -181,6 +184,8 @@ class FlowRunner:
             tried = 0
             try:
                 while True:
+                    if token.cancelled:
+                        break
                     tried += 1
                     try:
                         node_outputs = self._execute_node(node, memory)
@@ -195,7 +200,13 @@ class FlowRunner:
                         ):
                             break
                     if delay_ms > 0:
-                        time.sleep(delay_ms / 1000.0)
+                        token.wait(delay_ms / 1000.0)
+                if token.cancelled:
+                    step["status"] = "cancelled"
+                    step["finished_at"] = _utc_now()
+                    step["duration_ms"] = round(_utc_ms() - started)
+                    steps.append(step)
+                    break
                 if tried > 1:
                     step["attempts"] = tried
             except Exception as exc:

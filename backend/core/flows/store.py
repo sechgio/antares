@@ -87,6 +87,25 @@ class FlowStore:
         self._flows_path = flows_path or user_data_path("flows/flows.json")
         self._runs_path = runs_path or user_data_path("flows/flow_runs.json")
         self._lock = threading.RLock()
+        runs = self._read_runs()
+        interrupted = [run for run in runs.values() if run["status"] in ("queued", "running")]
+        if interrupted:
+            finished_at = _utc_now()
+            for run in interrupted:
+                run.update(
+                    status="error",
+                    error="Ejecución interrumpida al reiniciar el backend",
+                    finished_at=finished_at,
+                )
+            self._write_runs(runs)
+            interrupted_ids = {run["id"] for run in interrupted}
+            for flow_id in {run["flow_id"] for run in interrupted}:
+                latest = max(
+                    (run for run in runs.values() if run["flow_id"] == flow_id),
+                    key=lambda run: run["created_at"],
+                )
+                if latest["id"] in interrupted_ids:
+                    self._touch_last_run(flow_id, "error", finished_at)
 
     def _read(self, path: Path, normalizer: Any) -> dict[str, JsonObject]:
         if not path.exists():

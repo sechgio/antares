@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import time
@@ -122,6 +123,31 @@ def test_stdio_tools_list_and_call(mcp_root):
     assert err["isError"] is True
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="La resolución PATHEXT es específica de Windows")
+def test_stdio_resolves_cmd_from_path(mcp_root):
+    command, args = _fake_stdio(mcp_root)
+    shim = mcp_root / "fake-mcp.cmd"
+    shim.write_text(f'@"{command}" "{args[0]}" %*\n', encoding="utf-8")
+    env = {**os.environ, "PATH": str(mcp_root) + os.pathsep + os.environ.get("PATH", "")}
+    tools = mcp_client.list_tools_stdio("fake-mcp", ["argumento con espacios"], env)
+    assert [tool["name"] for tool in tools] == ["echo", "boom"]
+
+
+def test_stdio_roundtrips_utf8_with_non_utf8_locale(mcp_root, monkeypatch):
+    monkeypatch.setattr(mcp_client.subprocess, "_text_encoding", lambda: "cp1252")
+    script = mcp_root / "utf8_mcp.py"
+    server = _FAKE_SERVER.replace(
+        "import json, sys",
+        'import json, sys\nsys.stdin.reconfigure(encoding="utf-8")\nsys.stdout.reconfigure(encoding="utf-8")',
+    ).replace("json.dumps(out)", "json.dumps(out, ensure_ascii=False)")
+    script.write_text(server, encoding="utf-8")
+    value = {"texto": "niño 😀"}
+    result = mcp_client.call_tool_stdio(sys.executable, [str(script)], dict(os.environ), "echo", value)
+    assert json.loads(mcp_client.normalize_result(result)["text"]) == value
+    error = mcp_client.call_tool_stdio(sys.executable, [str(script)], dict(os.environ), "boom", {})
+    assert mcp_client.normalize_result(error)["text"] == "falló"
+
+
 class _FakeHttpHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -156,6 +182,55 @@ def test_http_tools_list_and_call(mcp_root):
         assert mcp_servers.call_tool(server["id"], "ping", {})["text"] == "pong"
     finally:
         httpd.shutdown()
+
+
+@pytest.mark.parametrize("method", ["tools/list", "tools/call"])
+def test_http_initializes_session_before_tool_requests(method):
+    seen = []
+
+    class SessionServer(BaseHTTPRequestHandler):
+        def do_POST(self):
+            msg = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            seen.append(msg)
+            current = msg["method"]
+            if current == "initialize":
+                result = {"protocolVersion": "2025-06-18", "serverInfo": {"name": "session"}}
+            else:
+                valid_headers = (
+                    self.headers.get("Mcp-Session-Id") == "test-session"
+                    and self.headers.get("MCP-Protocol-Version") == "2025-06-18"
+                    and self.headers.get("Authorization") == "Bearer test"
+                )
+                if not valid_headers or seen[1]["method"] != "notifications/initialized":
+                    self.send_error(400, "La sesión debe inicializarse antes de usar herramientas")
+                    return
+                if current == "notifications/initialized":
+                    self.send_response(202)
+                    self.end_headers()
+                    return
+                result = {"tools": [{"name": "ping"}]} if current == "tools/list" else {"content": []}
+            body = json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}).encode()
+            self.send_response(200)
+            self.send_header("Mcp-Session-Id", "test-session")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    httpd = HTTPServer(("127.0.0.1", 0), SessionServer)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        result = mcp_client._http_session_call(
+            f"http://127.0.0.1:{httpd.server_port}/mcp", {"Authorization": "Bearer test"}, [(method, {})]
+        )
+        assert len(result) == 1
+        assert [msg["method"] for msg in seen] == ["initialize", "notifications/initialized", method]
+        assert "id" not in seen[1]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
 
 
 def test_http_secret_headers_not_sent_on_redirect(mcp_root):
