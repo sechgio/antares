@@ -53,6 +53,19 @@ def assert_allowed_url(url: str) -> None:
         _assert_public_host(url)
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Rechaza todo redirect para clientes que envían secretos (API keys,
+    Authorization): urllib los seguiría reenviando esas cabeceras al host
+    destino — CWE-200 — y en POST los convierte en GET, así que tampoco
+    funcionaban. El error indica registrar la URL final directamente."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+no_redirect_opener = urllib.request.build_opener(NoRedirectHandler())
+
+
 class FlowRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Revalida cada destino de redirect (esquema y host público) y retira
     Authorization cuando el destino no está entre los hosts firmables."""

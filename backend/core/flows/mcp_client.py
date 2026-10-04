@@ -19,6 +19,7 @@ import threading
 import urllib.error
 import urllib.request
 
+from backend.core.flows import http_guard
 from backend.core.flows.types import JsonObject
 
 _PROTOCOL_VERSION = "2024-11-05"
@@ -105,10 +106,14 @@ def _http_post(url: str, headers: dict[str, str], payload: JsonObject) -> tuple[
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_S) as res:
+        with http_guard.no_redirect_opener.open(req, timeout=_HTTP_TIMEOUT_S) as res:
             raw = res.read(_MAX_RESPONSE_BYTES + 1)
             session_id = res.headers.get("Mcp-Session-Id") or res.headers.get("mcp-session-id")
     except urllib.error.HTTPError as err:
+        if 300 <= err.code < 400:
+            raise McpError(
+                f"El servidor MCP respondió HTTP {err.code} (redirección bloqueada); registra la URL final"
+            ) from err
         detail = err.read(400).decode("utf-8", errors="replace")
         raise McpError(f"El servidor MCP respondió HTTP {err.code}: {detail[:200]}") from err
     except urllib.error.URLError as err:

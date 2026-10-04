@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from backend.core.flows import mcp_servers, vault
+from backend.core.flows import mcp_client, mcp_servers, vault
 from backend.core.flows.runner import FlowRunner
 from backend.core.flows.schema import normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore
@@ -89,6 +89,18 @@ def test_add_server_validates(mcp_root):
         mcp_servers.add_server("X", "stdio")
 
 
+def test_add_server_http_requires_tls_or_loopback(mcp_root):
+    """CWE-319: http:// a hosts remotos enviaría las credenciales sin cifrar."""
+    with pytest.raises(ValueError, match="https"):
+        mcp_servers.add_server("Remoto", "http", url="http://mcp.ejemplo.com/mcp")
+    with pytest.raises(ValueError, match="https"):
+        mcp_servers.add_server("LAN", "http", url="http://192.168.1.10:8000/mcp")
+    for url in ("http://127.0.0.1:8000/mcp", "http://localhost:8000/mcp", "http://[::1]:8000/mcp"):
+        server = mcp_servers.add_server("Local", "http", url=url)
+        assert server["id"]
+    assert mcp_servers.add_server("TLS", "http", url="https://mcp.ejemplo.com/mcp")["id"]
+
+
 def test_remove_server_deletes_secrets(mcp_root):
     server = mcp_servers.add_server("S", "stdio", command="x", secrets={"env": {"K": "v"}})
     secrets_path = mcp_root / "mcp" / f"{server['id']}-secrets.json"
@@ -144,6 +156,47 @@ def test_http_tools_list_and_call(mcp_root):
         assert mcp_servers.call_tool(server["id"], "ping", {})["text"] == "pong"
     finally:
         httpd.shutdown()
+
+
+def test_http_secret_headers_not_sent_on_redirect(mcp_root):
+    """CWE-200: un redirect no debe reenviar las cabeceras secretas a otro host."""
+    seen: list[dict] = []
+
+    class Sink(BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen.append(dict(self.headers))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    sink = HTTPServer(("127.0.0.1", 0), Sink)
+    threading.Thread(target=sink.serve_forever, daemon=True).start()
+
+    class Redirect(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(length)
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{sink.server_port}/mcp")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    redir = HTTPServer(("127.0.0.1", 0), Redirect)
+    threading.Thread(target=redir.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(mcp_client.McpError, match="redire"):
+            mcp_client.list_tools_http(
+                f"http://127.0.0.1:{redir.server_port}/mcp",
+                {"Authorization": "Bearer secreto"},
+            )
+        assert seen == []
+    finally:
+        redir.shutdown()
+        sink.shutdown()
 
 
 def test_agent_tool_name_roundtrip(mcp_root):

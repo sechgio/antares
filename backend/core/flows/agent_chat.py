@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from backend.core.flows import ai_providers, mcp_servers
+from backend.core.flows import ai_providers, http_guard, mcp_servers
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods
 
@@ -105,7 +105,7 @@ def _post_json(url: str, headers: dict[str, str], payload: JsonObject) -> JsonOb
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=_CHAT_TIMEOUT_S) as res:
+        with http_guard.no_redirect_opener.open(req, timeout=_CHAT_TIMEOUT_S) as res:
             raw = res.read(_MAX_RESPONSE_BYTES + 1)
         if len(raw) > _MAX_RESPONSE_BYTES:
             raise ValueError("La respuesta del proveedor supera el tamaño máximo permitido")

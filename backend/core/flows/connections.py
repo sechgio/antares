@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from backend.core.flows import vault
+from backend.core.flows import http_guard, vault
 from backend.core.flows.types import JsonObject
 from backend.utils.paths import resource_path, user_data_path
 
@@ -99,7 +99,7 @@ def _post_form(url: str, fields: dict[str, str], basic: tuple[str, str] | None) 
         headers["Authorization"] = "Basic " + base64.b64encode(raw).decode("ascii")
     body = urllib.parse.urlencode(fields).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_S) as res:
+    with http_guard.no_redirect_opener.open(req, timeout=_HTTP_TIMEOUT_S) as res:
         data: JsonObject = json.loads(res.read().decode("utf-8"))
         return data
 

@@ -9,14 +9,16 @@ expone los nombres de las claves.
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import json
 import os
 import re
 import threading
 import time
+import urllib.parse
 from pathlib import Path
 
-from backend.core.flows import mcp_client, vault
+from backend.core.flows import http_guard, mcp_client, vault
 from backend.core.flows.expr import resolve
 from backend.core.flows.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
@@ -42,6 +44,17 @@ def _secrets_path(server_id: str) -> Path:
 def _slug(name: str) -> str:
     slug = _ID_RE.sub("-", name.lower()).strip("-")
     return slug[:48] or "servidor"
+
+
+def _is_loopback_url(url: str) -> bool:
+    """``http://`` solo se tolera hacia loopback: el tráfico no sale de la máquina."""
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _load() -> list[JsonObject]:
@@ -104,6 +117,11 @@ def add_server(
         url = url.strip()
         if not url.startswith(("http://", "https://")):
             raise ValueError("La URL del servidor debe empezar por http(s)://")
+        if url.startswith("http://") and not (_is_loopback_url(url) or http_guard._private_hosts_allowed()):
+            raise ValueError(
+                "Las URLs http:// envían las credenciales sin cifrar; usa https:// "
+                "(http:// solo se admite en localhost)"
+            )
     else:
         command = command.strip()
         if not command:
