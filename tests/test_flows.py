@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from backend.core.flows.runner import FlowRunner
+from backend.core.flows.runner import FlowRunner, _CancelEvent
 from backend.core.flows.scheduler import FlowScheduler, _schedule_interval_minutes
 from backend.core.flows.schema import normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore
@@ -341,6 +341,37 @@ def test_run_snapshots_graph(store):
     assert done["graph"]["nodes"][1]["id"] == "t"
     store.update(flow["id"], name="Otro nombre")
     assert store.get_run(run["id"])["graph"]["nodes"][1]["id"] == "t"
+
+
+def test_runner_executes_snapshot_despite_later_edit(store):
+    flow = store.create(
+        "Editado",
+        graph={
+            "nodes": [
+                {"id": "trigger", "kind": "trigger", "config": {}},
+                {"id": "t", "kind": "transform", "config": {"output": {"v": 1}}},
+            ],
+            "edges": [{"from_node": "trigger", "to_node": "t"}],
+        },
+    )
+    run = store.create_run(flow["id"])
+    store.update(
+        flow["id"],
+        graph={
+            "nodes": [
+                {"id": "trigger", "kind": "trigger", "config": {}},
+                {"id": "t", "kind": "transform", "config": {"output": {"v": 2}}},
+            ],
+            "edges": [{"from_node": "trigger", "to_node": "t"}],
+        },
+    )
+    runner = FlowRunner(store, lambda m: lambda p: {})
+    runner._execute(run["id"], _CancelEvent())
+    done = store.get_run(run["id"])
+
+    assert done["status"] == "success"
+    steps = {s["node_id"]: s for s in done["steps"]}
+    assert steps["t"]["output"] == {"v": 1}
 
 
 def test_scheduler_fires_due_scheduled_flow(store):

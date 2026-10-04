@@ -59,6 +59,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
   // aún no haya renderizado la edición en curso.
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
+  const nodeDragRef = useRef(false);
   const setNodesTracked = useCallback((next: SetStateAction<Node<FlowNodeData>[]>) => {
     const resolved = typeof next === 'function' ? next(nodesRef.current) : next;
     nodesRef.current = resolved;
@@ -103,13 +104,14 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<FlowNodeData>>[]) => {
-      const structural = changes.some(
-        (c) =>
-          c.type === 'remove' ||
-          c.type === 'add' ||
-          (c.type === 'position' && c.dragging === false),
-      );
-      if (structural) pushHistory();
+      const startsDrag = changes.some((c) => c.type === 'position' && c.dragging === true);
+      const endsDrag = changes.some((c) => c.type === 'position' && c.dragging === false);
+      const structural = changes.some((c) => c.type === 'remove' || c.type === 'add');
+      // Una entrada por arrastre: la instantánea se toma antes del primer
+      // cambio de posición del gesto, no al soltar el nodo.
+      if (structural || (!nodeDragRef.current && (startsDrag || endsDrag))) pushHistory();
+      if (startsDrag) nodeDragRef.current = true;
+      if (endsDrag) nodeDragRef.current = false;
       setNodesTracked((ns) => applyNodeChanges(changes, ns));
       if (changes.some((c) => c.type !== 'select' && c.type !== 'dimensions')) setDirty(true);
     },

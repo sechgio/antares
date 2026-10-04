@@ -124,12 +124,8 @@ class FlowRunner:
         run = self._store.get_run(run_id)
         if run is None:
             return
-        flow = self._store.get(run["flow_id"])
-        if flow is None:
-            self._store.update_run(run_id, status="error", error="El flujo ya no existe", finished_at=_utc_now())
-            return
         try:
-            graph = normalize_graph(run.get("graph") or flow["graph"])
+            graph = normalize_graph(run.get("graph") or {})
             validate_graph(graph)
         except ValueError as exc:
             self._store.update_run(run_id, status="error", error=str(exc), finished_at=_utc_now())
