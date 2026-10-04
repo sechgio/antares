@@ -27,7 +27,11 @@ function createAutoSync({ tick }) {
     timer = setInterval(() => {
       if (operationState.active) return;
       tick().catch((err) => {
-        emitError('AUTO_SYNC', err.message);
+        const msg = err instanceof Error ? err.message : String(err);
+        // Contienda del lock (una op manual ganó entre el check y el runLocked):
+        // no es un fallo de autosync, no merece banner global.
+        if (/operación en curso/i.test(msg)) return;
+        emitError('AUTO_SYNC', msg);
       });
     }, AUTO_SYNC_INTERVAL_MS);
   }

@@ -24,6 +24,8 @@ const {
   setActiveUser,
   clearActiveUser,
   getActiveUserPublic,
+  getActiveEmail,
+  normalizeEmail,
   maskEmail,
   onActiveUserChange,
 } = require('./autoimg-user-scope');
@@ -137,7 +139,7 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
     })
     .catch((err) => {
       if (_callbackFlow !== flow) return;
-      onError(err);
+      onError(err instanceof Error ? err : new Error(String(err)));
       cancelBrowserOAuthFlow();
     });
 
@@ -223,12 +225,21 @@ async function getAuthStatus() {
     const info = await res.json();
     const email = info.email || undefined;
     if (email) {
-      setActiveUser(email);
-      store.saveTokens({
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expiry_date: tokens.expiry_date,
-      });
+      // Solo escribir cuando algo cambió: este método se llama en cada poll de
+      // status y saveTokens/setActiveUser golpean el disco cifrado cada vez.
+      const stored = store.loadTokens();
+      const tokensUnchanged = stored
+        && stored.access_token === tokens.access_token
+        && stored.refresh_token === tokens.refresh_token
+        && stored.expiry_date === tokens.expiry_date;
+      if (!(tokensUnchanged && getActiveEmail() === normalizeEmail(email))) {
+        setActiveUser(email);
+        store.saveTokens({
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          expiry_date: tokens.expiry_date,
+        });
+      }
     }
     return {
       authenticated: true,
@@ -236,6 +247,18 @@ async function getAuthStatus() {
       email_masked: email ? maskEmail(email) : undefined,
     };
   } catch {
+    // userinfo inalcanzable (red cortada, timeout, 5xx) con tokens válidos en
+    // disco != sesión cerrada: reportar autenticado pero degradado en vez de
+    // tumbar toda la UI.
+    if (tokens.access_token) {
+      const email = getActiveEmail() || undefined;
+      return {
+        authenticated: true,
+        unreachable: true,
+        email,
+        email_masked: email ? maskEmail(email) : undefined,
+      };
+    }
     return { authenticated: false };
   }
 }
@@ -334,15 +357,24 @@ async function openSpreadsheet(rawId) {
   const name = data.properties?.title || '';
   _sheetId = sheetId;
   _sheetMeta = data;
-  store.saveSheetConfig(sheetId, name);
-  const { created_tabs } = await ensureAutoImgTabs();
-  return {
-    success: true,
-    sheet_id: sheetId,
-    name,
-    sheets: _getTabNames(),
-    created_tabs,
-  };
+  try {
+    const { created_tabs } = await ensureAutoImgTabs();
+    store.saveSheetConfig(sheetId, name);
+    return {
+      success: true,
+      sheet_id: sheetId,
+      name,
+      sheets: _getTabNames(),
+      created_tabs,
+    };
+  } catch (err) {
+    // Sin tabs provisionadas la hoja no está vinculada: desmarcar para que
+    // linked sea false y el próximo intento vuelva a abrir (ver
+    // restorePersistedSheet).
+    _sheetId = null;
+    _sheetMeta = null;
+    throw err;
+  }
 }
 
 function getStoredSheetConfig() {
@@ -379,18 +411,14 @@ function getSheetId() {
   return _sheetId;
 }
 
-function _tabNameFromRange(range) {
-  const tab = String(range || '').split('!')[0] || '';
-  return tab.replace(/^'+|'+$/g, '');
-}
-
 function _mapBatchGetResult(ranges, valueRanges) {
+  // batchGet devuelve valueRanges en el mismo orden del request: emparejar
+  // posicionalmente (mapear por nombre de tab rompe dos rangos del mismo tab).
   const byRange = Object.fromEntries(ranges.map((range) => [range, []]));
-  for (const entry of valueRanges || []) {
-    const tab = _tabNameFromRange(entry.range);
-    const key = ranges.find((range) => _tabNameFromRange(range) === tab);
+  (valueRanges || []).forEach((entry, i) => {
+    const key = ranges[i];
     if (key) byRange[key] = entry.values || [];
-  }
+  });
   return byRange;
 }
 

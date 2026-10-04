@@ -36,7 +36,9 @@ export default function LogsViewer({ rows: externalRows, onRefresh }: LogsViewer
     if (!externalRows) load(false);
   }, [externalRows, load]);
 
-  const data = [...rows.slice(1)].reverse();
+  const first = rows[0];
+  const hasHeader = !!first && String(first[0] || '').trim().toUpperCase() === 'FECHA';
+  const data = [...rows.slice(hasHeader ? 1 : 0)].reverse();
 
   return (
     <PanelShell>

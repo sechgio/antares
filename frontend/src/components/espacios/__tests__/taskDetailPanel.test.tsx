@@ -63,17 +63,13 @@ describe('task detail panel', () => {
     })));
   });
 
-  it('saves through the existing callback without dropping other fields', async () => {
+  it('sends only changed fields and the opened version when editing', async () => {
     const p = props();
     render(<TaskForm {...p} />);
     fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Informe revisado' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(p.onClose).toHaveBeenCalledTimes(1));
-    expect(p.onSubmit).toHaveBeenCalledWith({
-      title: 'Informe revisado', description: task.description, status: task.status,
-      priority: task.priority, assignee_id: task.assignee_id,
-      start_date: task.start_date, due_date: task.due_date,
-    });
+    expect(p.onSubmit).toHaveBeenCalledWith({ title: 'Informe revisado' }, task.updated_at);
   });
 
   it('uses the custom picker to change the assignee', async () => {
@@ -86,7 +82,7 @@ describe('task detail panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(p.onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       assignee_id: null,
-    })));
+    }), task.updated_at));
   });
 
   it('retains the draft and shows a recoverable error when saving fails', async () => {
@@ -98,6 +94,36 @@ describe('task detail panel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Sin conexión');
     expect(screen.getByLabelText('Descripción')).toHaveValue('Mi borrador');
     expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
+    expect(p.onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps a conflicting draft until the user explicitly loads the current version', async () => {
+    const p = props();
+    const conflict = Object.assign(new Error('La tarea cambió. Tu borrador se conserva.'), { name: 'TareaConflictError' });
+    p.onSubmit.mockRejectedValueOnce(conflict);
+    const onReload = vi.fn().mockResolvedValue({ ...task, description: 'Versión del equipo', updated_at: 'next-version' });
+    render(<TaskForm {...p} onReload={onReload} />);
+    fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Mi borrador' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Tu borrador se conserva');
+    expect(screen.getByLabelText('Descripción')).toHaveValue('Mi borrador');
+    expect(onReload).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cargar versión actual y descartar borrador' }));
+    await waitFor(() => expect(screen.getByLabelText('Descripción')).toHaveValue('Versión del equipo'));
+    fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Cambios revisados' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(p.onSubmit).toHaveBeenLastCalledWith({ description: 'Cambios revisados' }, 'next-version'));
+  });
+
+  it('preserves the conflicting draft if loading the current version fails', async () => {
+    const p = props();
+    p.onSubmit.mockRejectedValue(Object.assign(new Error('Conflicto'), { name: 'TareaConflictError' }));
+    render(<TaskForm {...p} onReload={vi.fn().mockRejectedValue(new Error('Sin conexión'))} />);
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Mi borrador' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cargar versión actual y descartar borrador' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Sin conexión'));
+    expect(screen.getByLabelText('Título')).toHaveValue('Mi borrador');
     expect(p.onClose).not.toHaveBeenCalled();
   });
 
@@ -128,11 +154,20 @@ describe('task detail panel', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('closes an unchanged save without issuing an empty update', async () => {
+    const p = props();
+    render(<TaskForm {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(p.onClose).toHaveBeenCalledTimes(1));
+    expect(p.onSubmit).not.toHaveBeenCalled();
+  });
+
   it('blocks all close routes and duplicate submissions while saving', async () => {
     const p = props();
     let finish!: () => void;
     p.onSubmit.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
     render(<TaskForm {...p} />);
+    fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Editado' } });
     const form = screen.getByRole('dialog').querySelector('form')!;
     fireEvent.submit(form);
     expect(closeButton()).toBeDisabled();
@@ -151,6 +186,7 @@ describe('task detail panel', () => {
     let finish!: () => void;
     p.onSubmit.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
     const { rerender } = render(<TaskForm {...p} />);
+    fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Editado' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     rerender(<TaskForm {...p} initial={{ ...task, id: 'task-2', title: 'Otra tarea' }} />);
     await act(async () => { finish(); });

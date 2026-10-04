@@ -5,7 +5,7 @@ import type { TareaPriority } from '../types';
 const { query, from } = vi.hoisted(() => {
   const query = {
     select: vi.fn(), eq: vi.fn(), order: vi.fn(), insert: vi.fn(),
-    update: vi.fn(), single: vi.fn(),
+    update: vi.fn(), single: vi.fn(), maybeSingle: vi.fn(),
   };
   return { query, from: vi.fn() };
 });
@@ -23,9 +23,28 @@ beforeEach(() => {
   query.single.mockResolvedValue({
     data: { id: 'task-1', status: 'in_progress', priority: 'urgent' }, error: null,
   });
+  query.maybeSingle.mockResolvedValue({ data: { id: 'task-1', updated_at: 'new-version' }, error: null });
 });
 
 describe('priority persistence', () => {
+  it('guards an edited task with the version that was opened', async () => {
+    await updateTarea('task-1', { description: 'Revisado' }, 'old-version');
+    expect(query.eq).toHaveBeenCalledWith('updated_at', 'old-version');
+    expect(query.update).toHaveBeenCalledWith({ description: 'Revisado' });
+  });
+
+  it('reports a conflict when the opened version no longer matches', async () => {
+    query.maybeSingle.mockResolvedValue({ data: null, error: null });
+    await expect(updateTarea('task-1', { description: 'Mi borrador' }, 'old-version'))
+      .rejects.toMatchObject({ name: 'TareaConflictError' });
+    expect(query.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates permissions failures from guarded updates', async () => {
+    query.maybeSingle.mockResolvedValue({ data: null, error: { code: '42501', message: 'permission denied' } });
+    await expect(updateTarea('task-1', { title: 'Informe' }, 'old-version')).rejects.toThrow('permission denied');
+  });
+
   it('creates an urgent task without moving it out of its custom status', async () => {
     await createTarea('project-1', {
       title: 'Informe', status: 'review', priority: 'urgent',

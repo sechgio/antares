@@ -60,7 +60,7 @@ describe('task form priority', () => {
     expect(screen.getByText(/El estado «Urgente» se conserva por compatibilidad/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Prioridad de la tarea'), { target: { value: 'low' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ status: 'urgent', priority: 'low' })));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith({ priority: 'low' }, task.updated_at));
   });
 
   it('does not change explicit priority when status changes', () => {
@@ -80,6 +80,7 @@ describe('task form priority', () => {
     const onSubmit = vi.fn().mockRejectedValue(new Error('Sin conexión'));
     const onClose = vi.fn();
     render(<TaskForm open members={[]} initial={{ ...task, priority: 'high' }} onSubmit={onSubmit} onClose={onClose} />);
+    fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Editado' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await screen.findByText('Sin conexión');
     expect(screen.getByLabelText('Prioridad de la tarea')).toHaveValue('high');

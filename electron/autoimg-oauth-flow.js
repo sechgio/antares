@@ -48,6 +48,7 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState,
     let server = null;
     let timeoutId = null;
     let settled = false;
+    let listening = false;
 
     const stop = () => {
       if (timeoutId) {
@@ -124,11 +125,22 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState,
     });
 
     server.on('error', (err) => {
-      stop();
-      if (!settled) reject(err);
+      if (settled) return;
+      const e = err instanceof Error ? err : new Error(String(err));
+      if (listening) {
+        // El caller ya recibió la URL: un reject no llega a nadie y la UI
+        // quedaría esperando la autorización para siempre. Reportar como
+        // fallo del flujo vía onTimeout.
+        finish(onTimeout, e);
+      } else {
+        settled = true;
+        stop();
+        reject(e);
+      }
     });
 
     server.listen(port, '127.0.0.1', () => {
+      listening = true;
       timeoutId = setTimeout(() => {
         finish(onTimeout, new Error('Tiempo de espera agotado. Vuelve a intentar la conexión.'));
       }, FLOW_TIMEOUT_MS);

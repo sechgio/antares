@@ -138,75 +138,28 @@ export interface DueSoonTareaRow {
   proyecto_name: string;
   espacio_id: string | null;
   espacio_name: string | null;
+  status_is_done: boolean;
 }
 
-type ProyectoJoin = {
-  name?: string | null;
-  espacio_id?: string | null;
-  espacios?: { name?: string | null } | { name?: string | null }[] | null;
-} | null;
-
-function unwrapJoin<T>(value: T | T[] | null | undefined): T | null {
-  if (value == null) return null;
-  return Array.isArray(value) ? (value[0] ?? null) : value;
-}
-
-export async function fetchDueSoonTareas(horizonIso: string): Promise<DueSoonTareaRow[]> {
+export async function fetchDueSoonTareas(horizonIso: string, assigneeId?: string): Promise<DueSoonTareaRow[]> {
   const client = requireClient();
-  const { data, error } = await client
-    .from('tareas')
-    .select('id, title, due_date, status, proyecto_id, proyectos(name, espacio_id, espacios(name))')
-    .not('due_date', 'is', null)
-    .lte('due_date', horizonIso)
-    .order('due_date', { ascending: true })
-    .limit(80);
-  throwOnError(error);
-
-  const rows = (data ?? [])
-    .filter((row): row is typeof row & { due_date: string } => typeof row.due_date === 'string')
-    .map((row) => {
-      const proyecto = unwrapJoin(row.proyectos as ProyectoJoin);
-      const espacio = unwrapJoin(proyecto?.espacios ?? null);
-      return {
-        id: row.id as string,
-        title: (row.title as string) ?? '',
-        due_date: row.due_date,
-        status: (row.status as string) ?? 'todo',
-        proyecto_id: row.proyecto_id as string,
-        proyecto_name: proyecto?.name?.trim() || 'Proyecto',
-        espacio_id: proyecto?.espacio_id ?? null,
-        espacio_name: espacio?.name ?? null,
-      };
-    });
-
-  const proyectoIds = [...new Set(rows.map((r) => r.proyecto_id))];
-  if (proyectoIds.length === 0) return rows;
-
-  const { data: doneCols, error: doneColsError } = await client
-    .from('board_columns')
-    .select('proyecto_id, key')
-    .in('proyecto_id', proyectoIds)
-    .eq('is_done', true);
-
-  if (doneColsError || !doneCols) {
-    return rows.filter((r) => r.status !== 'done' && r.status !== 'closed');
+  const rows: DueSoonTareaRow[] = [];
+  const pageSize = 200;
+  for (let offset = 0; ; offset += pageSize) {
+    let query = client.from('tareas_vencimientos')
+      .select('id, title, due_date, status, proyecto_id, proyecto_name, espacio_id, espacio_name, status_is_done')
+      .eq('status_is_done', false)
+      .lte('due_date', horizonIso);
+    if (assigneeId) query = query.eq('assignee_id', assigneeId);
+    const { data, error } = await query
+      .order('due_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    throwOnError(error);
+    const page = (data ?? []) as DueSoonTareaRow[];
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
   }
-
-  const doneKeysByProyecto = new Map<string, Set<string>>();
-  for (const col of doneCols as Array<{ proyecto_id: string; key: string }>) {
-    let set = doneKeysByProyecto.get(col.proyecto_id);
-    if (!set) {
-      set = new Set<string>();
-      doneKeysByProyecto.set(col.proyecto_id, set);
-    }
-    set.add(col.key);
-  }
-
-  return rows.filter((row) => {
-    const keys = doneKeysByProyecto.get(row.proyecto_id);
-    if (keys && keys.size > 0) return !keys.has(row.status);
-    return row.status !== 'done' && row.status !== 'closed';
-  });
 }
 
 export async function createTarea(proyectoId: string, input: TareaInput, userId: string): Promise<Tarea> {
@@ -234,14 +187,32 @@ export async function createTarea(proyectoId: string, input: TareaInput, userId:
   return requireData(data, 'Crear tarea');
 }
 
-export async function updateTarea(id: string, patch: Partial<TareaInput & Pick<Tarea, 'status'>>): Promise<Tarea> {
+export async function updateTarea(
+  id: string,
+  patch: Partial<TareaInput & Pick<Tarea, 'status'>>,
+  expectedUpdatedAt?: string,
+): Promise<Tarea> {
   if (patch.priority !== undefined && !isTareaPriority(patch.priority)) {
     throw new Error('Prioridad de tarea no válida');
   }
   const client = requireClient();
-  const { data, error } = await client.from('tareas').update(patch).eq('id', id).select('*').single();
+  const query = client.from('tareas').update(patch).eq('id', id);
+  const { data, error } = expectedUpdatedAt === undefined
+    ? await query.select('*').single()
+    : await query.eq('updated_at', expectedUpdatedAt).select('*').maybeSingle();
   throwOnError(error);
+  if (expectedUpdatedAt !== undefined && data == null) {
+    const conflict = new Error('La tarea cambió o ya no está disponible. No se guardaron los cambios; tu borrador se conserva.');
+    conflict.name = 'TareaConflictError';
+    throw conflict;
+  }
   return requireData(data, 'Actualizar tarea');
+}
+
+export async function fetchTarea(id: string): Promise<Tarea> {
+  const { data, error } = await requireClient().from('tareas').select('*').eq('id', id).single();
+  throwOnError(error);
+  return requireData(data, 'Cargar tarea');
 }
 
 export async function deleteTarea(id: string): Promise<void> {

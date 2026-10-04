@@ -25,7 +25,8 @@ interface TaskFormProps {
   defaultStatus?: TareaStatus | null;
   currentUserId?: string;
   onClose: () => void;
-  onSubmit: (input: TareaInput) => Promise<void>;
+  onSubmit: (input: Partial<TareaInput>, expectedUpdatedAt?: string) => Promise<void>;
+  onReload?: () => Promise<Tarea>;
 }
 
 function emptyForm(defaultStatus: TareaStatus = 'todo') {
@@ -67,14 +68,17 @@ function TaskEditor({
   currentUserId,
   onClose,
   onSubmit,
+  onReload,
 }: Omit<TaskFormProps, 'open'>) {
   const isEdit = Boolean(initial);
-  const [baseline] = useState(() => initial ? formFromTarea(initial) : {
+  const [baseline, setBaseline] = useState(() => initial ? formFromTarea(initial) : {
     ...emptyForm(defaultStatus ?? 'todo'),
     startDate: defaultStartDate ?? '',
     dueDate: defaultDueDate ?? '',
   });
   const [draft, setDraft] = useState(baseline);
+  const [revision, setRevision] = useState(initial?.updated_at);
+  const [conflict, setConflict] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [discardRequested, setDiscardRequested] = useState(false);
@@ -124,14 +128,51 @@ function TaskEditor({
     setSaving(true);
     setError(null);
     try {
-      await onSubmit({
+      const input: TareaInput = {
         title: title.trim(), description: description.trim() || null,
         status, priority, assignee_id: assigneeId || null,
         start_date: start, due_date: due,
-      });
+      };
+      if (isEdit) {
+        const original: TareaInput = {
+          title: baseline.title.trim(), description: baseline.description.trim() || null,
+          status: baseline.status, priority: baseline.priority, assignee_id: baseline.assigneeId || null,
+          start_date: baseline.startDate || null, due_date: baseline.dueDate || null,
+        };
+        const patch = Object.fromEntries(Object.entries(input).filter(([key, value]) =>
+          value !== original[key as keyof TareaInput],
+        ));
+        if (Object.keys(patch).length > 0) await onSubmit(patch, revision);
+      } else {
+        await onSubmit(input);
+      }
       if (mountedRef.current) onClose();
     } catch (err) {
-      if (mountedRef.current) setError(errorMessage(err, 'Error al guardar'));
+      if (mountedRef.current) {
+        setError(errorMessage(err, 'Error al guardar'));
+        setConflict(err instanceof Error && err.name === 'TareaConflictError');
+      }
+    } finally {
+      submittingRef.current = false;
+      if (mountedRef.current) setSaving(false);
+    }
+  };
+
+  const reloadCurrent = async () => {
+    if (!onReload || submittingRef.current) return;
+    submittingRef.current = true;
+    setSaving(true);
+    try {
+      const current = await onReload();
+      if (!mountedRef.current) return;
+      const form = formFromTarea(current);
+      setBaseline(form);
+      setDraft(form);
+      setRevision(current.updated_at);
+      setConflict(false);
+      setError(null);
+    } catch (err) {
+      if (mountedRef.current) setError(errorMessage(err, 'No se pudo cargar la versión actual'));
     } finally {
       submittingRef.current = false;
       if (mountedRef.current) setSaving(false);
@@ -177,6 +218,11 @@ function TaskEditor({
     >
       <form id={formId} onSubmit={handleSubmit} noValidate aria-busy={saving} className="space-y-3.5">
         {error && <p role="alert" className="text-xs text-[var(--accent-red)]">{error}</p>}
+        {conflict && onReload && (
+          <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void reloadCurrent()}>
+            Cargar versión actual y descartar borrador
+          </Button>
+        )}
         <div>
           <label htmlFor={`${formId}-title`} className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Título</label>
           <Input

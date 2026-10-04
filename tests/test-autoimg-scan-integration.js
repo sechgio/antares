@@ -114,6 +114,26 @@ async function main() {
   assert(applied.rows[2][0] === '4210888' && applied.rows[2][8] === '0', 'NIS del padrón sin imágenes queda en 0');
   assert(!applied.rows.some((r) => r[0] === '4210801'), 'no inserta NIS que no están en el padrón');
 
+  const reordered = [BD_IMG_HEADER.slice(), ...rows.slice(1)];
+  [reordered[0][0], reordered[0][1]] = [reordered[0][1], reordered[0][0]];
+  let layoutThrew = false;
+  try {
+    applyScanResultsToRows(reordered, [{ nis: '4210999', count: 1, folders: [] }], '2026-07-06');
+  } catch {
+    layoutThrew = true;
+  }
+  assert(layoutThrew, 'applyScanResultsToRows rechaza un encabezado reordenado');
+
+  const headerless = applyScanResultsToRows(
+    [['4210999', '11111111', 'DVD', 'X', '', '', '', '', '', '', '', '', '']],
+    [{ nis: '4210999', count: 2, folders: [] }],
+    '2026-07-06',
+  );
+  assert(
+    headerless.rows.length === 1 && headerless.rows[0][8] === '2',
+    'una hoja sin encabezado trata la primera fila como dato',
+  );
+
   const engine = require('../electron/autoimg-sync-engine');
   assert(engine.cancelOperation().success === false, 'cancelOperation sin operación activa devuelve false');
   const status = engine.getOperationStatus();

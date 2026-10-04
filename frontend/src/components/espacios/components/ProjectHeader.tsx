@@ -15,14 +15,16 @@ interface ProjectHeaderProps {
 }
 
 function RealtimeBadge({ status }: { status: RealtimeStatus }) {
-  if (status === 'idle' || status === 'offline') return null;
+  if (status === 'idle') return null;
 
   const config =
     status === 'live'
       ? { label: 'En vivo', dot: 'bg-emerald-500', title: 'Sincronización en tiempo real activa' }
       : status === 'connecting'
         ? { label: 'Conectando…', dot: 'bg-amber-400 animate-pulse', title: 'Conectando a sincronización en vivo' }
-        : { label: 'Sin sync', dot: 'bg-[var(--accent-red)]', title: 'No se pudo conectar al tiempo real' };
+        : status === 'offline'
+          ? { label: 'Sin conexión', dot: 'bg-[var(--accent-red)]', title: 'Sin conexión a sincronización en vivo' }
+          : { label: 'Sin sync', dot: 'bg-[var(--accent-red)]', title: 'No se pudo conectar al tiempo real' };
 
   return (
     <span
