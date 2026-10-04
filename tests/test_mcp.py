@@ -134,7 +134,10 @@ def test_stdio_resolves_cmd_from_path(mcp_root):
 
 
 def test_stdio_roundtrips_utf8_with_non_utf8_locale(mcp_root, monkeypatch):
-    monkeypatch.setattr(mcp_client.subprocess, "_text_encoding", lambda: "cp1252")
+    popen = mcp_client.subprocess.Popen
+    monkeypatch.setattr(
+        mcp_client.subprocess, "Popen", lambda *args, **kwargs: popen(*args, **({"encoding": "cp1252"} | kwargs))
+    )
     script = mcp_root / "utf8_mcp.py"
     server = _FAKE_SERVER.replace(
         "import json, sys",
