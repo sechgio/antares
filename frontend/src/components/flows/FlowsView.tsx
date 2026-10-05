@@ -55,9 +55,7 @@ export default function FlowsView({ registerLeaveGuard }: { active?: boolean; re
         <SegmentedControl
           options={SECTIONS}
           value={section}
-          onChange={(v) => {
-            setSection(v);
-          }}
+          onChange={setSection}
           aria-label="Secciones de Flujos"
           className="flex w-[560px] gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5"
         />
@@ -65,7 +63,7 @@ export default function FlowsView({ registerLeaveGuard }: { active?: boolean; re
 
       <div className="min-h-0 flex-1">
         {editingFlowId ? (
-          <div className={`h-full ${section === 'flows' ? '' : 'hidden'}`} inert={section !== 'flows' ? true : undefined}>
+          <div className={`h-full ${section === 'flows' ? '' : 'hidden'}`} inert={section !== 'flows'}>
             <FlowEditor
               active={section === 'flows'}
               registerLeaveGuard={registerLeaveGuard}

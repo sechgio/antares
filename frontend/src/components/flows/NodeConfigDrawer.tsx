@@ -440,7 +440,7 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
                     {batchPreview.preview && <details className="space-y-3 border-t border-[var(--border-subtle)] pt-4">
                       <summary className="cursor-pointer text-sm font-medium text-[var(--text-primary)]">Revisión de filas · {batchPreview.preview.length}</summary>
                       <p className="text-xs leading-5 text-[var(--text-secondary)]">{args.report_template === 'report.html' ? `${batchPreview.preview.length} filas = ${batchPreview.preview.length} páginas.` : `${batchPreview.preview.length} registros en un único PDF consolidado.`} {batchPreview.ready && !previewStale && 'Todas las filas están completas.'}</p>
-                    {batchPreview.preview?.map((row) => <details key={row.row_index} className="rounded border border-[var(--border-medium)] p-2">
+                    {batchPreview.preview.map((row) => <details key={row.row_index} className="rounded border border-[var(--border-medium)] p-2">
                       <summary className="cursor-pointer text-xs text-[var(--text-primary)]">Fila {row.row_index + 1} · OT {row.ot || 'sin asignar'} · {row.date || 'sin fecha'}</summary>
                       <dl className="my-2 text-xs text-[var(--text-secondary)]">{Object.entries(row.data).map(([field, value]) => <div key={field}><dt className="inline font-medium">{field}: </dt><dd className="inline break-words">{value || '—'}</dd></div>)}</dl>
                       {row.errors.map((error) => <p key={error} className="text-xs text-[var(--accent-red)]">{error}</p>)}

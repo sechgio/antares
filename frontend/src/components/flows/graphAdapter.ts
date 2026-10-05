@@ -1,10 +1,10 @@
 import type { Connection, Edge, Node } from '@xyflow/react';
-import type { FlowEdge, FlowNode, WorkflowGraph } from './types';
+import type { FlowEdge, FlowNode, FlowRunStep, WorkflowGraph } from './types';
 import { createsCycle } from './flowLayout';
 
 export interface FlowNodeData extends Record<string, unknown> {
   flowNode: FlowNode;
-  stepStatus?: 'running' | 'success' | 'error' | 'skipped' | 'cancelled';
+  stepStatus?: FlowRunStep['status'];
 }
 
 // Aristas punteadas suaves, estilo agent-builder: puntos redondos sobre curvas bezier.
@@ -45,7 +45,7 @@ export function reactFlowToGraph(
   const prevById = new Map(prev.nodes.map((n) => [n.id, n]));
   const outNodes: FlowNode[] = nodes.map((n) => {
     const prevNode = prevById.get(n.id);
-    const flowNode = (n.data?.flowNode as FlowNode | undefined) ?? prevNode;
+    const flowNode = n.data.flowNode ?? prevNode;
     return {
       id: n.id,
       kind: flowNode?.kind ?? 'transform',

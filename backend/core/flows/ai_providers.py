@@ -33,10 +33,6 @@ def load_provider_specs() -> dict[str, JsonObject]:
     return dict(providers) if isinstance(providers, dict) else {}
 
 
-def provider_ids() -> list[str]:
-    return sorted(load_provider_specs())
-
-
 def get_provider(provider: str) -> JsonObject:
     spec = load_provider_specs().get(provider)
     if not isinstance(spec, dict):
@@ -85,9 +81,10 @@ def put_config(provider: str, config: JsonObject) -> JsonObject:
     if api_key is not None:
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("api_key debe ser un texto no vacío")
-        if "\n" in api_key.strip() or "\r" in api_key.strip():
+        stripped = api_key.strip()
+        if "\n" in stripped or "\r" in stripped:
             raise ValueError("La clave no puede contener saltos de línea")
-        payload["api_key"] = api_key.strip()
+        payload["api_key"] = stripped
     base_url = config.get("base_url")
     if base_url is not None:
         if not isinstance(base_url, str) or not base_url.strip():
@@ -98,8 +95,9 @@ def put_config(provider: str, config: JsonObject) -> JsonObject:
     if model is not None:
         if not isinstance(model, str) or len(model.strip()) > 120:
             raise ValueError("El modelo debe ser un texto de hasta 120 caracteres")
-        if model.strip():
-            payload["model"] = model.strip()
+        model = model.strip()
+        if model:
+            payload["model"] = model
         else:
             payload.pop("model", None)
     vault.seal(provider, _vault_path(provider), payload)
@@ -131,15 +129,15 @@ def _base_url(provider: str, spec: JsonObject, config: JsonObject | None) -> str
 def public_state(provider: str) -> JsonObject:
     """Estado visible para el renderer: nunca incluye la clave."""
     spec = get_provider(provider)
-    config = get_config(provider)
-    key = (config or {}).get("api_key")
+    config = get_config(provider) or {}
+    key = config.get("api_key")
     return {
         "provider": provider,
         "configured": bool(config),
         "has_key": bool(isinstance(key, str) and key),
         "key_masked": _mask_key(key) if isinstance(key, str) and key else None,
         "base_url": _base_url(provider, spec, config),
-        "default_model": (config or {}).get("model") or (spec.get("chat") or {}).get("default_model", ""),
+        "default_model": config.get("model") or (spec.get("chat") or {}).get("default_model", ""),
         "needs_key": (spec.get("auth") or {}).get("type") == "api_key",
     }
 
@@ -175,9 +173,9 @@ def status(provider: str) -> JsonObject:
         out["error"] = "Falta base_url"
         return out
 
-    headers: dict[str, str] = {}
-    for key, value in (auth.get("extra_headers") or {}).items():
-        headers[str(key)] = str(value)
+    headers: dict[str, str] = {
+        str(key): str(value) for key, value in (auth.get("extra_headers") or {}).items()
+    }
     if auth.get("type") == "api_key":
         config = get_config(provider) or {}
         api_key = config.get("api_key")
@@ -209,7 +207,3 @@ def status(provider: str) -> JsonObject:
     out["reachable"] = True
     out["models_count"] = len(models)
     return out
-
-
-def list_states() -> list[JsonObject]:
-    return [public_state(pid) for pid in provider_ids()]

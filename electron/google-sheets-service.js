@@ -84,10 +84,8 @@ function getAuthUrl() {
 }
 
 function cancelBrowserOAuthFlow() {
-  if (_callbackFlow) {
-    if (_callbackFlow.stop) _callbackFlow.stop();
-    _callbackFlow = null;
-  }
+  _callbackFlow?.stop?.();
+  _callbackFlow = null;
   _pendingRedirectUri = null;
   _pendingCodeVerifier = null;
   _pendingOAuthState = null;
@@ -139,7 +137,7 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
     })
     .catch((err) => {
       if (_callbackFlow !== flow) return;
-      onError(err instanceof Error ? err : new Error(String(err)));
+      onError(err);
       cancelBrowserOAuthFlow();
     });
 

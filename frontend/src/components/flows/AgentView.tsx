@@ -199,7 +199,7 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
       const res = await agentApi.agentSessionCreate({ provider, model: model || undefined });
       await refreshSessions();
       setSessionId(res.session.id);
-      return res.session.id as string;
+      return res.session.id;
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo crear la conversación'), type: 'error' });
       return null;

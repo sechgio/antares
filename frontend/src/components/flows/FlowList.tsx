@@ -310,7 +310,7 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
                       <span className="text-[11px] text-[var(--text-secondary)]">Sin ejecuciones</span>
                     )}
                     <span
-                      className={`inline-flex items-center gap-1 rounded-full border border-[var(--border-medium)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]`}
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--border-medium)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]"
                       title={flow.enabled ? 'El disparador programado puede ejecutarlo' : 'Solo se ejecuta a mano'}
                     >
                       <span

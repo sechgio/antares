@@ -133,14 +133,12 @@ class FlowRunner:
                 _active_flow_ids.add(flow_id)
         try:
             run = self._store.create_run(flow_id, trigger_payload, acknowledge_uncertain=acknowledge_uncertain)
+            if run is None:
+                raise ValueError(f"Flujo no encontrado: {flow_id}")
         except Exception:
             with _active_lock:
                 _active_flow_ids.discard(flow_id)
             raise
-        if run is None:
-            with _active_lock:
-                _active_flow_ids.discard(flow_id)
-            raise ValueError(f"Flujo no encontrado: {flow_id}")
         token = _register(run["id"])
         thread = threading.Thread(
             target=self._execute_safe,
@@ -154,13 +152,8 @@ class FlowRunner:
     def _execute_safe(self, run_id: str, token: _CancelEvent, flow_id: str) -> None:
         try:
             # Límite global de runs simultáneos: el run espera en 'queued'.
-            acquired = _RUN_SLOTS.acquire(timeout=None)
-            try:
-                if acquired:
-                    self._execute(run_id, token)
-            finally:
-                if acquired:
-                    _RUN_SLOTS.release()
+            with _RUN_SLOTS:
+                self._execute(run_id, token)
         except Exception:
             logger.exception("Fallo no controlado en run de flujo %s", run_id)
             self._store.update_run(
@@ -187,9 +180,8 @@ class FlowRunner:
                 continue
             if any(args.get(key) in (None, "", []) for key in config.get("required_args") or []):
                 return False
-            if node.get("config", {}).get("method") != "flows_read_images":
+            if config.get("method") != "flows_read_images":
                 continue
-            args = node["config"].get("args") or {}
             if any(isinstance(v, str) and v.startswith("=") for v in args.values()):
                 return True
             fn = self._handler_getter("flows_read_images")
@@ -840,9 +832,9 @@ class FlowRunner:
                 iteration_outputs = {}
                 body_settled = {}
             else:
-                for _nid, _ports in iteration_outputs.items():
-                    if _ports:
-                        memory["nodes"][_nid] = _ports[next(iter(_ports))]
+                for done_nid, done_ports in iteration_outputs.items():
+                    if done_ports:
+                        memory["nodes"][done_nid] = done_ports[next(iter(done_ports))]
             resume_node = state.get("body_node") if index == start_index else None
             for nid in body_order:
                 if nid in body_settled:
@@ -1004,9 +996,9 @@ class FlowRunner:
                 if layer.get("type") in ("field", "text"):
                     fields.update(re.findall(r"\{\{\s*([\w]+)\s*\}\}", str(layer.get("value") or "")))
             contexts = resolved.get("contexts") or [{}]
-            if any(len(ctx.get("images") or []) < required_images or any(
-                (ctx.get("data") or {}).get(key) in (None, "") for key in fields
-            ) for ctx in contexts):
+            if any(len(entry.get("images") or []) < required_images or any(
+                (entry.get("data") or {}).get(key) in (None, "") for key in fields
+            ) for entry in contexts):
                 return {"json": {"ready": False, "reason": "Faltan imágenes o campos requeridos por la plantilla de Canvas"}}
         if method == "flows_print_pdf":
             token = ctx.get("token")
@@ -1046,15 +1038,13 @@ class FlowRunner:
                     if result.get("err_count") or result.get("cancel_requested"):
                         raise ValueError("La conversión terminó con errores o fue cancelada")
                     break
-                if token and token.wait(0.2):
+                cancelled = token is not None and token.wait(0.2)
+                if cancelled or time.monotonic() >= deadline:
                     cancel = self._handler_getter("process_cancel")
                     if cancel:
                         cancel({"job_id": result.get("id")})
-                    break
-                if time.monotonic() >= deadline:
-                    cancel = self._handler_getter("process_cancel")
-                    if cancel:
-                        cancel({"job_id": result.get("id")})
+                    if cancelled:
+                        break
                     raise ValueError("La conversión excedió el tiempo de espera del flujo")
                 if token is None:
                     time.sleep(0.2)
@@ -1180,19 +1170,18 @@ class FlowRunner:
 
         if op == "exists":
             result = exists
+        elif not exists:
+            result = False
+        elif op == "eq":
+            result = actual == expected
+        elif op == "neq":
+            result = actual != expected
+        elif op in ("gt", "gte", "lt", "lte"):
+            result = _compare(actual, expected, op)
+        elif op == "contains":
+            result = _contains(actual, expected)
         else:
-            if not exists:
-                result = False
-            elif op == "eq":
-                result = actual == expected
-            elif op == "neq":
-                result = actual != expected
-            elif op in ("gt", "gte", "lt", "lte"):
-                result = _compare(actual, expected, op)
-            elif op == "contains":
-                result = _contains(actual, expected)
-            else:
-                raise ValueError(f"Operador de condición desconocido: {op}")
+            raise ValueError(f"Operador de condición desconocido: {op}")
 
         port = "true" if result else "false"
         return {port: {"json": {"result": result, "field": actual}}}

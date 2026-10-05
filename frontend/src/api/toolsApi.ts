@@ -57,5 +57,5 @@ export const toolsApi = {
     navigationType?: string;
     url?: string;
     timestamp?: number;
-  }) => _invoke<{ ok: boolean }>('telemetry', body as unknown as Record<string, unknown>),
+  }) => _invoke<{ ok: boolean }>('telemetry', body),
 };

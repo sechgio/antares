@@ -128,8 +128,6 @@ class FlowStore:
     def _read(self, path: Path, normalizer: Any) -> dict[str, JsonObject]:
         if not path.exists():
             return {}
-        import json
-
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):

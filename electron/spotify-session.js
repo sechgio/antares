@@ -222,10 +222,8 @@ function _buildAuthUrl(redirectUri, codeChallenge, state) {
 }
 
 function cancelBrowserOAuthFlow() {
-  if (_callbackFlow) {
-    if (_callbackFlow.stop) _callbackFlow.stop();
-    _callbackFlow = null;
-  }
+  _callbackFlow?.stop?.();
+  _callbackFlow = null;
   _pendingRedirectUri = null;
   _pendingCodeVerifier = null;
 }

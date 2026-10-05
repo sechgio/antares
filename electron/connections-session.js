@@ -47,45 +47,39 @@ function _tokensNs(providerId) {
 
 function _mirrorToBackend(provider, tokens, cfg) {
   if (!tokens || !tokens.access_token) return;
-  try {
-    const pending = (_mirrorPromises.get(provider) || Promise.resolve())
-      .then(() => require('./ipc-router')._callBackend('flows_connection_token_put', {
+  const pending = (_mirrorPromises.get(provider) || Promise.resolve())
+    .then(() => require('./ipc-router')._callBackend('flows_connection_token_put', {
+      provider,
+      tokens: {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expiry_date: tokens.expiry_date,
+        scope: tokens.scope,
+        account: tokens.account,
+        client_id: cfg ? cfg.clientId : undefined,
+        client_secret: cfg ? cfg.clientSecret : undefined,
+      },
+    }))
+    .catch((err) => {
+      require('./app-log').appendLogEvent('WARN', 'connections.mirror_failed', {
         provider,
-        tokens: {
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
-          expiry_date: tokens.expiry_date,
-          scope: tokens.scope,
-          account: tokens.account,
-          client_id: cfg ? cfg.clientId : undefined,
-          client_secret: cfg ? cfg.clientSecret : undefined,
-        },
-      }))
-      .catch((err) => {
-        require('./app-log').appendLogEvent('WARN', 'connections.mirror_failed', {
-          provider,
-          reason: String((err && err.message) || err).slice(0, 200),
-        });
+        reason: String((err && err.message) || err).slice(0, 200),
       });
-    _mirrorPromises.set(provider, pending);
-    pending.finally(() => {
-      if (_mirrorPromises.get(provider) === pending) _mirrorPromises.delete(provider);
     });
-  } catch (err) {
-    console.warn(`[connections] espejo de token no disponible: ${err.message}`);
-  }
+  _mirrorPromises.set(provider, pending);
+  pending.finally(() => {
+    if (_mirrorPromises.get(provider) === pending) _mirrorPromises.delete(provider);
+  });
 }
 
 function _mirrorDelete(provider) {
-  try {
-    const pending = (_mirrorPromises.get(provider) || Promise.resolve())
-      .then(() => require('./ipc-router')._callBackend('flows_connection_token_delete', { provider }))
-      .catch(() => {});
-    _mirrorPromises.set(provider, pending);
-    pending.finally(() => {
-      if (_mirrorPromises.get(provider) === pending) _mirrorPromises.delete(provider);
-    });
-  } catch {}
+  const pending = (_mirrorPromises.get(provider) || Promise.resolve())
+    .then(() => require('./ipc-router')._callBackend('flows_connection_token_delete', { provider }))
+    .catch(() => {});
+  _mirrorPromises.set(provider, pending);
+  pending.finally(() => {
+    if (_mirrorPromises.get(provider) === pending) _mirrorPromises.delete(provider);
+  });
 }
 
 function loadOAuthConfig(provider) {
@@ -176,7 +170,7 @@ function _isInvalidGrant(body) {
   return /invalid_grant|invalid_client/i.test(String(body || ''));
 }
 
-async function _postToken(provider, fields, cfg, basic) {
+async function _postToken(provider, fields, basic) {
   const spec = getProvider(provider);
   const headers = { Accept: 'application/json' };
   if (basic) {
@@ -248,7 +242,7 @@ function _generateCodeChallenge(verifier) {
 
 function cancelConnect(provider) {
   const pending = _pending.get(provider);
-  if (pending && pending.stop) pending.stop();
+  pending?.stop?.();
   _pending.delete(provider);
 }
 
@@ -341,11 +335,11 @@ async function _exchangeCode(provider, code) {
     client_id: cfg.clientId,
     redirect_uri: uri,
     grant_type: 'authorization_code',
-    ...(basic ? {} : cfg.clientSecret ? { client_secret: cfg.clientSecret } : {}),
+    ...(!basic && cfg.clientSecret ? { client_secret: cfg.clientSecret } : {}),
     ...(pending.codeVerifier ? { code_verifier: pending.codeVerifier } : {}),
     ...spec.auth.extra_token,
   };
-  const data = await _postToken(provider, fields, cfg, basic);
+  const data = await _postToken(provider, fields, basic);
   return _saveTokens(provider, {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
@@ -359,7 +353,7 @@ async function probeAccount(provider) {
   if (!spec.status) return null;
   const tokens = await getValidTokens(provider);
   if (!tokens || !tokens.access_token) return null;
-  const headers = { Accept: 'application/json', ...(spec.status.headers || {}) };
+  const headers = { Accept: 'application/json', ...spec.status.headers };
   headers.Authorization = `Bearer ${tokens.access_token}`;
   try {
     const res = await fetchWithRetry(

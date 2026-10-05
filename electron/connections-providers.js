@@ -80,8 +80,4 @@ function getProvider(id) {
   return spec;
 }
 
-function hasProvider(id) {
-  return listProviders().some((p) => p.id === id);
-}
-
-module.exports = { listProviders, listCategories, getProvider, hasProvider };
+module.exports = { listProviders, listCategories, getProvider };

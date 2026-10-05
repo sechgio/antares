@@ -175,8 +175,6 @@ def _stdio_session(
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         env=env,
-        text=False,
-        encoding=None,
     )
     out_queue: queue.Queue[JsonObject | Exception] = queue.Queue(maxsize=32)
     reader_errors: list[Exception] = []

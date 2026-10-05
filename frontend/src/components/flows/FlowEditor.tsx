@@ -195,7 +195,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
       };
       setNodesTracked((ns) => [
         ...ns,
-        { id, type: 'flowNode', position, data: { flowNode }, selected: false } as Node<FlowNodeData>,
+        { id, type: 'flowNode', position, data: { flowNode }, selected: false },
       ]);
       setDirty(true);
     },
@@ -205,7 +205,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      const kind = e.dataTransfer.getData(NODE_DRAG_MIME) as FlowNodeKind | '';
+      const kind = e.dataTransfer.getData(NODE_DRAG_MIME) as FlowNodeKind;
       if (!kind || !NODE_KIND_DEFS[kind]?.implemented) return;
       addNode(kind, screenToFlowPosition({ x: e.clientX, y: e.clientY }));
     },

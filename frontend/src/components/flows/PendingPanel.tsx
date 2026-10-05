@@ -9,8 +9,8 @@ import type { PendingApproval, PendingEffect } from './types';
 const POLL_MS = 2000;
 
 function describeCall(approval: PendingApproval): string {
-  const name = approval.method ?? '';
-  const text = JSON.stringify(approval.params ?? {});
+  const name = approval.method;
+  const text = JSON.stringify(approval.params);
   return text.length > 160 ? `${name} (${text.slice(0, 160)}…)` : text !== '{}' ? `${name} (${text})` : name;
 }
 

@@ -42,6 +42,19 @@ export default function ProvidersView() {
     void refresh();
   }, [refresh]);
 
+  const updateForm = (p: AiProviderSpec, patch: { apiKey?: string; baseUrl?: string; model?: string }) => {
+    setStatuses((s) => ({ ...s, [p.id]: undefined }));
+    setForms((s) => ({
+      ...s,
+      [p.id]: {
+        apiKey: patch.apiKey ?? s[p.id]?.apiKey ?? '',
+        baseUrl: patch.baseUrl ?? s[p.id]?.baseUrl ?? p.base_url,
+        model: patch.model ?? s[p.id]?.model ?? p.default_model,
+        saving: false,
+      },
+    }));
+  };
+
   const save = async (p: AiProviderSpec) => {
     const form = forms[p.id];
     const apiKey = form?.apiKey.trim() ?? '';
@@ -195,18 +208,7 @@ export default function ProvidersView() {
                       type="password"
                       disabled={form?.saving || probing === p.id}
                       value={form?.apiKey ?? ''}
-                      onChange={(e) => {
-                        setStatuses((s) => ({ ...s, [p.id]: undefined }));
-                        setForms((s) => ({
-                          ...s,
-                          [p.id]: {
-                            apiKey: e.target.value,
-                            baseUrl: form?.baseUrl ?? p.base_url,
-                            model: form?.model ?? p.default_model,
-                            saving: false,
-                          },
-                        }));
-                      }}
+                      onChange={(e) => updateForm(p, { apiKey: e.target.value })}
                       placeholder={p.has_key ? `Actual: ${p.key_masked}` : 'Clave de acceso (API key)'}
                       spellCheck={false}
                       aria-label={`API key ${p.label}`}
@@ -218,18 +220,7 @@ export default function ProvidersView() {
                     <Input
                       value={form?.baseUrl ?? p.base_url}
                       disabled={form?.saving || probing === p.id}
-                      onChange={(e) => {
-                        setStatuses((s) => ({ ...s, [p.id]: undefined }));
-                        setForms((s) => ({
-                          ...s,
-                          [p.id]: {
-                            apiKey: form?.apiKey ?? '',
-                            baseUrl: e.target.value,
-                            model: form?.model ?? p.default_model,
-                            saving: false,
-                          },
-                        }));
-                      }}
+                      onChange={(e) => updateForm(p, { baseUrl: e.target.value })}
                       placeholder={`Base URL (vacío = ${p.default_base_url})`}
                       spellCheck={false}
                       aria-label={`Base URL ${p.label}`}
@@ -243,13 +234,7 @@ export default function ProvidersView() {
                     className="mt-1 w-full"
                     value={form?.model ?? p.default_model}
                     disabled={form?.saving || probing === p.id}
-                    onChange={(e) => {
-                      setStatuses((s) => ({ ...s, [p.id]: undefined }));
-                      setForms((s) => ({ ...s, [p.id]: {
-                        apiKey: form?.apiKey ?? '', baseUrl: form?.baseUrl ?? p.base_url,
-                        model: e.target.value, saving: false,
-                      } }));
-                    }}
+                    onChange={(e) => updateForm(p, { model: e.target.value })}
                     maxLength={120}
                     spellCheck={false}
                     aria-label={`Modelo ${p.label}`}

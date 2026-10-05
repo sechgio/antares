@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import ntpath
 from collections.abc import Callable
 from typing import Any
@@ -23,15 +22,7 @@ from backend.core.flows.expr import interpolate_text, resolve
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, lane_for
 
-logger = logging.getLogger(__name__)
-
 _MAX_TOOL_RESULT_CHARS = 4000
-
-
-def approval_call_of(state: JsonObject) -> JsonObject:
-    """La llamada pendiente de aprobación dentro del estado pausado."""
-    call = state.get("pending_call") or state.get("approval_call") or {}
-    return call if isinstance(call, dict) else {}
 
 
 class AwaitingApproval(Exception):

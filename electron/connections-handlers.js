@@ -5,12 +5,10 @@
  * compartido + sesión OAuth genérica por proveedor.
  */
 
-const { nativeMethods } = require('../shared/ipc-method-catalog');
+const { CONNECTIONS_METHODS } = require('./connections-ipc-methods');
 const session = require('./connections-session');
 const { listProviders, listCategories } = require('./connections-providers');
 const { emit } = require('./autoimg-notify');
-
-const CONNECTIONS_METHODS = nativeMethods('connections');
 
 function _sanitizeError(err) {
   if (err instanceof Error) {

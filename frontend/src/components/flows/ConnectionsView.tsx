@@ -86,7 +86,7 @@ export default function ConnectionsView() {
     try {
       const res = await connectionsApi.connectionsProviders();
       setProviders(res.providers);
-      setCategories(res.categories ?? []);
+      setCategories(res.categories);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudieron cargar las conexiones'), type: 'error' });
     } finally {

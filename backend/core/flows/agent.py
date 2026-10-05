@@ -458,7 +458,7 @@ def get_agent_runner() -> AgentRunner:
     global _runner_singleton
     with _store_lock:
         if _runner_singleton is None:
-            from backend.handlers import HANDLERS as _REGISTRY
+            from backend.handlers import HANDLERS
 
-            _runner_singleton = AgentRunner(get_agent_store(), _REGISTRY.get)
+            _runner_singleton = AgentRunner(get_agent_store(), HANDLERS.get)
         return _runner_singleton

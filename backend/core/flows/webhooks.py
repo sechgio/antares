@@ -15,7 +15,7 @@ import os
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, cast
+from typing import Any
 
 from backend.core.flows.types import JsonObject
 
@@ -37,7 +37,7 @@ def _find_flow(store: Any, flow_id: str, suffix: str) -> JsonObject | None:
     expected = str(config.get("path") or "").strip("/")
     if expected and expected != suffix:
         return None
-    return cast(JsonObject, flow)
+    return flow
 
 
 def _check_secret(flow: JsonObject, headers: Any, query: dict[str, list[str]]) -> bool:
