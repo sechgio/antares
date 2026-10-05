@@ -40,6 +40,11 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Staging de archivos**: `file_staged_abort` cancelaba la sesión de otra ventana; el token queda ligado a la ventana que lo creó.
 - **Canvas / PDF**: la importación rechaza documentos con más de 500.000 operadores acumulados, aunque cada página permanezca bajo su límite individual.
 
+### Security
+- **Flujos / webhook**: un webhook sin `secret` configurado aceptaba cualquier llamada local; ahora el secreto es obligatorio y toda llamada sin clave válida recibe 403.
+- **Flujos / nodo «Código»**: el código Python se ejecutaba con los privilegios del backend sin confirmación; cada ejecución pausa ahora en una aprobación (una por código y run, también dentro de bucles) salvo que el nodo active `auto_approve` para correr desatendido.
+- **Flujos / webhook**: la clave recibida por `?key=` quedaba persistida en el historial del run; se excluye del payload guardado.
+
 ## [0.11.12] — 2026-09-16
 
 ### Added

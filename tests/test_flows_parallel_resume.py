@@ -32,7 +32,7 @@ def _fan_out_graph(node_ids):
         "nodes": [
             {"id": "trigger", "kind": "trigger", "config": {}},
             *[{"id": nid, "kind": "code",
-               "config": {"code": "import time\ntime.sleep(0.2)\nresult = 'ok'"}}
+               "config": {"code": "import time\ntime.sleep(0.2)\nresult = 'ok'", "auto_approve": True}}
               for nid in node_ids],
             {"id": "fin", "kind": "transform", "config": {"output": {"ok": True}}},
         ],
@@ -89,7 +89,8 @@ def test_cancel_kills_running_code_node(store):
             "nodes": [
                 {"id": "trigger", "kind": "trigger", "config": {}},
                 {"id": "slow", "kind": "code",
-                 "config": {"code": "import time\ntime.sleep(30)\nresult = 1", "timeout_s": 60}},
+                 "config": {"code": "import time\ntime.sleep(30)\nresult = 1", "timeout_s": 60,
+                            "auto_approve": True}},
             ],
             "edges": [{"from_node": "trigger", "to_node": "slow"}],
         },
@@ -165,7 +166,8 @@ def test_resume_loop_keeps_completed_iterations(store, tmp_path):
                 {"id": "trigger", "kind": "trigger", "config": {}},
                 {"id": "src", "kind": "transform", "config": {"output": {"lista": [1, 2, 3]}}},
                 {"id": "l1", "kind": "loop", "config": {"over": "=nodes.src.json.lista"}},
-                {"id": "dup", "kind": "code", "config": {"code": "result = item * 2"}},
+                {"id": "dup", "kind": "code",
+                 "config": {"code": "result = item * 2", "auto_approve": True}},
             ],
             "edges": [
                 {"from_node": "trigger", "to_node": "src"},

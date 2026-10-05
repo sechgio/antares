@@ -12,7 +12,7 @@ import pytest
 from backend.core.flows import events
 from backend.core.flows.runner import FlowRunner
 from backend.core.flows.store import FlowStore
-from backend.core.flows.webhooks import WebhookServer
+from backend.core.flows.webhooks import WebhookServer, _check_secret
 
 
 @pytest.fixture()
@@ -167,3 +167,18 @@ def test_webhook_query_key_also_works(store, monkeypatch):
     assert done["status"] == "success"
     # La clave autentica pero no queda guardada en el payload del run.
     assert "key" not in (done["trigger_payload"].get("query") or {})
+
+
+def test_webhook_without_secret_never_dispatches():
+    flow = {
+        "id": "f1",
+        "enabled": True,
+        "graph": {
+            "nodes": [{"id": "t", "kind": "trigger",
+                       "config": {"trigger_kind": "webhook"}}],
+            "edges": [],
+        },
+    }
+    assert _check_secret(flow, {}, {}) is False
+    assert _check_secret(flow, {"X-Antares-Flow-Key": "x"}, {}) is False
+    assert _check_secret(flow, {}, {"key": ["x"]}) is False

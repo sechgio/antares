@@ -205,6 +205,8 @@ def validate_graph(graph: JsonObject) -> None:
             timeout_s = node["config"].get("timeout_s", 30)
             if not isinstance(timeout_s, (int, float)) or isinstance(timeout_s, bool) or not 1 <= timeout_s <= 120:
                 raise ValueError(f"timeout_s del nodo {node_id} fuera de rango (1-120)")
+            if not isinstance(node["config"].get("auto_approve", False), bool):
+                raise ValueError(f"auto_approve del nodo {node_id} debe ser true o false")
         if node["kind"] == "mcp_call":
             server = node["config"].get("server")
             if not isinstance(server, str) or not server.strip():

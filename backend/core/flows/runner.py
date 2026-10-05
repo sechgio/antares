@@ -697,9 +697,31 @@ class FlowRunner:
             return self._run_loop(node, memory, ctx)
         if kind == "code":
             config = node.get("config") or {}
+            code = str(config.get("code") or "")
+            # El código corre con los privilegios del backend: exige aprobación
+            # (una por texto de código y run) salvo config.auto_approve.
+            if config.get("auto_approve") is not True:
+                state = ctx.get("pending_state") or {}
+                approval = ctx["approvals"].get(str(state.get("approval_id") or ""))
+                if approval is None:
+                    approval = next(
+                        (
+                            a
+                            for a in ctx["approvals"].values()
+                            if a.get("method") == "code" and (a.get("params") or {}).get("code") == code
+                        ),
+                        None,
+                    )
+                decision = (approval or {}).get("decision")
+                if decision is None:
+                    raise agent_node.AwaitingApproval(
+                        {"pending_call": {"name": "code", "params": {"code": code}, "gated": True}}
+                    )
+                if decision != "approved":
+                    raise ValueError("El usuario rechazó la ejecución del código")
             try:
                 result = code_exec.run_python(
-                    str(config.get("code") or ""),
+                    code,
                     {
                         "item": (memory.get("item") or {}).get("json"),
                         "items": [i.get("json") for i in memory.get("items") or []],

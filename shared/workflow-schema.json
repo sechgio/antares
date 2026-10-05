@@ -62,7 +62,7 @@
         "interval_minutes": { "type": "integer", "minimum": 1, "maximum": 10080, "default": 60, "description": "Solo trigger_kind=schedule; se ejecuta cada N minutos, también con la app cerrada (tarea programada)" },
         "event": { "type": "string", "description": "Solo trigger_kind=app_event; nombre del evento (vacío = cualquiera)" },
         "path": { "type": "string", "description": "Solo trigger_kind=webhook; sufijo opcional de /hooks/<flow_id>" },
-        "secret": { "type": "string", "description": "Solo trigger_kind=webhook; clave requerida en ?key= o X-Antares-Flow-Key" }
+        "secret": { "type": "string", "description": "Obligatorio para trigger_kind=webhook; clave exigida en ?key= o X-Antares-Flow-Key" }
       }
     },
     "tool_call": {
@@ -144,11 +144,12 @@
       }
     },
     "code": {
-      "description": "Ejecuta código Python del usuario en un proceso aislado con item/items/nodes/run y devuelve la variable 'result'.",
+      "description": "Ejecuta código Python del usuario en un proceso aislado con item/items/nodes/run y devuelve la variable 'result'. Cada run pausa en aprobación salvo auto_approve.",
       "implemented": true,
       "config": {
         "code": { "type": "string", "required": true },
-        "timeout_s": { "type": "number", "minimum": 1, "maximum": 120, "default": 30 }
+        "timeout_s": { "type": "number", "minimum": 1, "maximum": 120, "default": 30 },
+        "auto_approve": { "type": "boolean", "default": false, "description": "Ejecuta el código sin pausar el run para aprobación" }
       }
     }
   },
