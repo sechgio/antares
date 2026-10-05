@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 MAX_RUNS_PER_FLOW = 25
 MAX_TOTAL_RUNS = 200
 
-_RUN_STATUSES = frozenset({"queued", "running", "success", "error", "cancelled", "skipped"})
+_RUN_STATUSES = frozenset({"queued", "running", "waiting", "success", "error", "cancelled", "skipped"})
+_RESUMABLE_STATUSES = frozenset({"queued", "running", "waiting"})
 
 
 def _utc_now() -> str:
@@ -90,6 +91,8 @@ def _normalize_run(raw: JsonObject) -> JsonObject | None:
         "created_at": str(raw.get("created_at") or ""),
         "started_at": str(raw.get("started_at") or "") or None,
         "finished_at": str(raw.get("finished_at") or "") or None,
+        "interrupted": raw.get("interrupted") is True,
+        "checkpoint": dict(raw["checkpoint"]) if isinstance(raw.get("checkpoint"), dict) else None,
         **({"acknowledge_uncertain": True} if raw.get("acknowledge_uncertain") is True else {}),
     }
 
@@ -101,24 +104,24 @@ class FlowStore:
         self._effects_path = self._flows_path.with_suffix(".effects.json")
         self._lock = threading.RLock()
         runs = self._read_runs()
-        interrupted = [run for run in runs.values() if run["status"] in ("queued", "running")]
+        interrupted = [run for run in runs.values() if run["status"] in _RESUMABLE_STATUSES]
         if interrupted:
-            finished_at = _utc_now()
             for run in interrupted:
-                run.update(
-                    status="error",
-                    error="Ejecución interrumpida al reiniciar el backend",
-                    finished_at=finished_at,
-                )
+                if run["status"] == "waiting":
+                    continue  # esperando una aprobación; se reanuda al decidirla
+                run["status"] = "queued"
+                run["interrupted"] = True
+                run["error"] = None
+                run["finished_at"] = None
             self._write_runs(runs)
-            interrupted_ids = {run["id"] for run in interrupted}
+            interrupted_ids = {run["id"] for run in interrupted if run["interrupted"]}
             for flow_id in {run["flow_id"] for run in interrupted}:
                 latest = max(
                     (run for run in runs.values() if run["flow_id"] == flow_id),
                     key=lambda run: run["created_at"],
                 )
                 if latest["id"] in interrupted_ids:
-                    self._touch_last_run(flow_id, "error", finished_at)
+                    self._touch_last_run(flow_id, "queued", run.get("created_at") or "")
 
     def _read(self, path: Path, normalizer: Any) -> dict[str, JsonObject]:
         if not path.exists():
@@ -176,7 +179,7 @@ class FlowStore:
         per_flow: dict[str, int] = {}
         kept: list[JsonObject] = []
         for run in ordered:
-            if run.get("status") in ("queued", "running"):
+            if run.get("status") in _RESUMABLE_STATUSES:
                 kept.append(run)
                 continue
             fid = run["flow_id"]
@@ -318,7 +321,8 @@ class FlowStore:
                     flow["source_artifacts"] = produced
                 self._write_flows(flows)
 
-    def begin_action(self, flow_id: str, fingerprint: str, *, allow_pending: bool = False) -> JsonObject | None:
+    def begin_action(self, flow_id: str, fingerprint: str, *, allow_pending: bool = False,
+                     context: JsonObject | None = None) -> JsonObject | None:
         """Reserva el efecto antes de ejecutarlo; un resultado incierto solo se repite
         cuando el usuario lo reconoce explícitamente (``allow_pending``)."""
         with self._lock:
@@ -331,19 +335,90 @@ class FlowStore:
                 if isinstance(previous, dict) and previous.get("status") == "done" and isinstance(previous.get("output"), dict):
                     return deepcopy(previous)
                 if allow_pending and isinstance(previous, dict) and previous.get("status") == "pending":
-                    receipts[key] = {"status": "pending", "attempt": int(previous.get("attempt") or 1) + 1}
+                    receipts[key] = {
+                        "status": "pending",
+                        "attempt": int(previous.get("attempt") or 1) + 1,
+                        **{k: previous[k] for k in ("method", "node_id", "created_at") if previous.get(k)},
+                    }
                     atomic_write_json(self._effects_path, receipts)
                     return None
                 raise ValueError("Acción con resultado incierto; comprueba su resultado antes de usar una entrada distinta")
-            receipts[key] = {"status": "pending"}
+            receipts[key] = {
+                "status": "pending",
+                "created_at": _utc_now(),
+                "method": str((context or {}).get("method") or ""),
+                "node_id": str((context or {}).get("node_id") or ""),
+            }
             atomic_write_json(self._effects_path, receipts)
             return None
 
     def complete_action(self, flow_id: str, fingerprint: str, output: JsonObject) -> None:
         with self._lock:
             receipts = json.loads(self._effects_path.read_text(encoding="utf-8"))
-            receipts[f"{flow_id}:{fingerprint}"] = {"status": "done", "output": output}
+            previous = receipts.get(f"{flow_id}:{fingerprint}")
+            meta = previous if isinstance(previous, dict) else {}
+            receipts[f"{flow_id}:{fingerprint}"] = {
+                "status": "done",
+                "output": output,
+                **{k: meta[k] for k in ("method", "node_id", "created_at") if meta.get(k)},
+            }
             atomic_write_json(self._effects_path, receipts)
+
+    def list_pending_effects(self, flow_id: str | None = None) -> list[JsonObject]:
+        """Acciones reservadas cuyo resultado quedó incierto al interrumpirse el run."""
+        with self._lock:
+            if not self._effects_path.exists():
+                return []
+            try:
+                receipts = json.loads(self._effects_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return []
+            if not isinstance(receipts, dict):
+                return []
+            pending = []
+            for key, receipt in receipts.items():
+                if not isinstance(receipt, dict) or receipt.get("status") != "pending":
+                    continue
+                fid, _, fingerprint = key.partition(":")
+                if flow_id is not None and fid != flow_id:
+                    continue
+                flow = self._read_flows().get(fid)
+                pending.append({
+                    "flow_id": fid,
+                    "flow_name": (flow or {}).get("name") or fid,
+                    "fingerprint": fingerprint,
+                    "method": str(receipt.get("method") or ""),
+                    "node_id": str(receipt.get("node_id") or ""),
+                    "created_at": str(receipt.get("created_at") or ""),
+                })
+            pending.sort(key=lambda item: item["created_at"])
+            return pending
+
+    def resolve_effect(self, flow_id: str, fingerprint: str, resolution: str) -> bool:
+        """Resuelve un efecto incierto: ``retry`` lo borra (se re-ejecuta) y ``done`` lo confirma."""
+        if resolution not in ("retry", "done"):
+            raise ValueError("Resolución inválida: usa 'retry' o 'done'")
+        key = f"{flow_id}:{fingerprint}"
+        with self._lock:
+            if not self._effects_path.exists():
+                return False
+            try:
+                receipts = json.loads(self._effects_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return False
+            receipt = receipts.get(key)
+            if not isinstance(receipt, dict) or receipt.get("status") != "pending":
+                return False
+            if resolution == "retry":
+                del receipts[key]
+            else:
+                receipts[key] = {
+                    "status": "done",
+                    "output": {"confirmed": True, "resolved_by": "user"},
+                    **{k: receipt[k] for k in ("method", "node_id", "created_at") if receipt.get(k)},
+                }
+            atomic_write_json(self._effects_path, receipts)
+            return True
 
     def _touch_last_run(self, flow_id: str, status: str, run_at: str) -> None:
         with self._lock:
@@ -372,6 +447,8 @@ class FlowStore:
             "created_at": _utc_now(),
             "started_at": None,
             "finished_at": None,
+            "interrupted": False,
+            "checkpoint": None,
         }
         if acknowledge_uncertain:
             run["acknowledge_uncertain"] = True
@@ -396,6 +473,11 @@ class FlowStore:
                 run["steps"] = [s for s in fields["steps"] if isinstance(s, dict)]
             if "trigger_payload" in fields and isinstance(fields["trigger_payload"], dict):
                 run["trigger_payload"] = dict(fields["trigger_payload"])
+            if "interrupted" in fields:
+                run["interrupted"] = fields["interrupted"] is True
+            if "checkpoint" in fields:
+                checkpoint = fields["checkpoint"]
+                run["checkpoint"] = dict(checkpoint) if isinstance(checkpoint, dict) else None
             self._write_runs(runs)
             if "status" in fields:
                 self._touch_last_run(run["flow_id"], str(fields["status"]), run.get("finished_at") or _utc_now())

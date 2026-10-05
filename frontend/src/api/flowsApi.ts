@@ -1,5 +1,5 @@
 import { _invoke } from './core';
-import type { Flow, FlowMeta, FlowRun, WorkflowGraph } from '../components/flows/types';
+import type { Flow, FlowMeta, FlowRun, PendingApproval, PendingEffect, WorkflowGraph } from '../components/flows/types';
 
 export interface ReportBatchPreview {
   ready?: boolean;
@@ -42,6 +42,20 @@ export const flowsApi = {
     _invoke<{ runs: FlowRun[] }>('flows_runs_list', params ?? {}),
   flowsRunCancel: (runId: string) =>
     _invoke<{ run: FlowRun | null; cancelled: boolean }>('flows_run_cancel', { run_id: runId }),
+  flowsRunResume: (runId: string) =>
+    _invoke<{ run: FlowRun }>('flows_run_resume', { run_id: runId }),
+  flowsApprovalsList: () =>
+    _invoke<{ approvals: PendingApproval[] }>('flows_approvals_list'),
+  flowsApprovalDecide: (params: { run_id: string; approval_id: string; decision: 'approved' | 'denied' }) =>
+    _invoke<{ approval: PendingApproval }>('flows_approval_decide', params),
+  flowsEffectsPending: (flowId?: string) =>
+    _invoke<{ effects: PendingEffect[] }>('flows_effects_pending', flowId ? { flow_id: flowId } : {}),
+  flowsEffectResolve: (params: { flow_id: string; fingerprint: string; resolution: 'retry' | 'done' }) =>
+    _invoke<{ resolved: boolean; resolution: string }>('flows_effect_resolve', params),
+  flowsEventsList: () =>
+    _invoke<{ events: { id: string; label: string }[] }>('flows_events_list'),
+  flowsWebhookInfo: () =>
+    _invoke<{ running: boolean; port: number; url_template: string }>('flows_webhook_info'),
   flowsOrchestratableMethods: () =>
     _invoke<{ methods: string[]; actions?: string[] }>('flows_orchestratable_methods'),
   flowsReadImages: (params: { source_folder: string; output_folder: string; expected_images?: number; images_per_panel?: number; spreadsheet_path?: string; report_template?: string; field_mappings?: Record<string, string>; photo_selections?: Record<string, string[]> }) =>
@@ -49,6 +63,6 @@ export const flowsApi = {
   flowsRenderPdf: (params: { html?: string; template_name?: string; context?: Record<string, unknown>; contexts?: Record<string, unknown>[]; localImagePaths?: Record<string, string>; photo_digests?: Record<string, string>; expected_pages?: number; output_path: string }) =>
     _invoke<{ ready?: boolean; reason?: string; saved_path?: string; filename?: string }>('flows_render_pdf', params),
   flowsPrintersList: () => _invoke<{ printers: { name: string; default: boolean }[] }>('flows_printers_list'),
-  flowsPrintPdf: (params: { pdf_path: string; printer_name: string; copies?: number }) =>
+  flowsPrintPdf: (params: { pdf_path: string; printer_name: string; copies?: number; pages?: string; duplex?: 'none' | 'long_edge' | 'short_edge'; quality?: 'draft' | 'normal' | 'high' }) =>
     _invoke<{ ready?: boolean; reason?: string; queued?: boolean; job_id?: number; printer_name?: string }>('flows_print_pdf', params),
 };

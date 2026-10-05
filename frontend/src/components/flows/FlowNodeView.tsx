@@ -57,10 +57,10 @@ function summaryRows(flowNode: FlowNode): SummaryRow[] {
         ];
       }
       if (triggerKind === 'app_event') {
-        return [{ icon: Bell, text: 'Evento de la app · próximamente' }];
+        return [{ icon: Bell, text: `Evento: ${str(config.event) || 'sin elegir'}` }];
       }
       if (triggerKind === 'webhook') {
-        return [{ icon: Webhook, text: 'Webhook · próximamente' }];
+        return [{ icon: Webhook, text: `Webhook${str(config.path) ? ` /${str(config.path)}` : ''}` }];
       }
       return [{ icon: MousePointerClick, text: 'Disparo manual' }];
     }
@@ -130,10 +130,17 @@ function summaryRows(flowNode: FlowNode): SummaryRow[] {
       const tool = str(config.tool);
       return [{ icon: Plug, text: server ? `${server}/${tool || '…'}` : 'Sin servidor' }];
     }
-    case 'loop':
-      return [{ icon: Repeat, text: 'Bucle' }];
-    case 'code':
-      return [{ icon: Code2, text: 'Código' }];
+    case 'loop': {
+      const over = str(config.over);
+      const rows: SummaryRow[] = [{ icon: Repeat, text: over || 'Cada elemento entrante' }];
+      const maxItems = Number(config.max_items ?? 0);
+      if (maxItems > 0) rows.push({ icon: Info, text: `Máx. ${maxItems}` });
+      return rows;
+    }
+    case 'code': {
+      const firstLine = str(config.code).split('\n')[0];
+      return [{ icon: Code2, text: firstLine || 'Script vacío' }];
+    }
     default:
       return [];
   }

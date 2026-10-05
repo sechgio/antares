@@ -227,9 +227,9 @@ def test_cancel_during_retry_delay_stops_before_next_attempt(store, monkeypatch,
     runner = FlowRunner(store, lambda method: None)
     execute = runner._execute_node
 
-    def fail(node, memory):
+    def fail(node, memory, ctx):
         if node["id"] == "trigger":
-            return execute(node, memory)
+            return execute(node, memory, ctx)
         calls.append(node["id"])
         if http_status:
             return {"main": {"json": {"status": 503, "ok": False}}}
@@ -456,7 +456,7 @@ def test_agent_decide_runs_approved_mcp_tool(tmp_path, monkeypatch):
 def test_exhausted_http_error_blocks_downstream_unless_explicitly_continued(store, monkeypatch, fail_on_error):
     calls = []
     runner = FlowRunner(store, lambda m: None)
-    monkeypatch.setattr(runner, "_run_http_request", lambda node, memory: calls.append(node["id"]) or {
+    monkeypatch.setattr(runner, "_run_http_request", lambda node, memory, token: calls.append(node["id"]) or {
         "json": {"ok": False, "status": 503, "body": {"reason": "busy"}},
     })
     flow = store.create("HTTP", graph={

@@ -14,27 +14,34 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
+from collections import deque
 from collections.abc import Callable
+from concurrent import futures
 from pathlib import Path
 from typing import Any
 
-from backend.core.flows import agent_chat, connections, mcp_servers
+from backend.core.flows import agent_chat, agent_node, code_exec, connections, events, mcp_servers
+from backend.core.flows.cancel import RunCancelled as _RunCancelled
+from backend.core.flows.cancel import await_or_cancel as _await_or_cancel
 from backend.core.flows.expr import interpolate_text, resolve
 from backend.core.flows.http_guard import assert_allowed_url, build_flow_opener
-from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, normalize_graph, validate_graph
-from backend.core.flows.store import FlowStore, _utc_now
+from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, loop_body_regions, normalize_graph, validate_graph
+from backend.core.flows.store import MAX_TOTAL_RUNS, FlowStore, _utc_now
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import (
     FLOW_ACTION_METHODS,
     ORCHESTRATABLE_METHODS,
     allows_raw_output_path,
     file_tokens_for,
+    lane_for,
     timeout_ms_for,
     write_path_keys_for,
 )
@@ -44,6 +51,13 @@ logger = logging.getLogger(__name__)
 _MAX_STEP_OUTPUT_CHARS = 8000
 _MAX_HTTP_BODY_BYTES = 512 * 1024
 _HTTP_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"})
+
+# Límite global de concurrencia: nodos en vuelo entre todos los runs y runs
+# simultáneos (el resto queda en cola con estado ``queued``).
+_MAX_PARALLEL_NODES = max(1, int(os.environ.get("ANTARES_FLOWS_MAX_PARALLEL") or 4))
+_MAX_CONCURRENT_RUNS = max(1, int(os.environ.get("ANTARES_FLOWS_MAX_RUNS") or 3))
+_NODE_SLOTS = threading.BoundedSemaphore(_MAX_PARALLEL_NODES)
+_RUN_SLOTS = threading.BoundedSemaphore(_MAX_CONCURRENT_RUNS)
 
 
 def _utc_ms() -> float:
@@ -139,7 +153,14 @@ class FlowRunner:
 
     def _execute_safe(self, run_id: str, token: _CancelEvent, flow_id: str) -> None:
         try:
-            self._execute(run_id, token)
+            # Límite global de runs simultáneos: el run espera en 'queued'.
+            acquired = _RUN_SLOTS.acquire(timeout=None)
+            try:
+                if acquired:
+                    self._execute(run_id, token)
+            finally:
+                if acquired:
+                    _RUN_SLOTS.release()
         except Exception:
             logger.exception("Fallo no controlado en run de flujo %s", run_id)
             self._store.update_run(
@@ -228,16 +249,29 @@ class FlowRunner:
         except ValueError as exc:
             self._store.update_run(run_id, status="error", error=str(exc), finished_at=_utc_now())
             return
+        if token.cancelled:
+            self._store.update_run(run_id, status="cancelled", finished_at=_utc_now())
+            return
 
-        self._store.update_run(run_id, status="running", started_at=_utc_now())
-
+        # Una reanudación restaura salidas/nodos terminados desde el checkpoint.
+        checkpoint = run.get("checkpoint") or {}
         nodes = {n["id"]: n for n in graph["nodes"]}
         inbound: dict[str, list[JsonObject]] = {n["id"]: [] for n in graph["nodes"]}
+        outgoing: dict[str, list[JsonObject]] = {n["id"]: [] for n in graph["nodes"]}
         for edge in graph["edges"]:
             inbound[edge["to_node"]].append(edge)
-        order = self._topological_order(graph)
+            outgoing[edge["from_node"]].append(edge)
+        bodies = loop_body_regions(graph)
+        body_members = {nid for region in bodies.values() for nid in region}
 
-        outputs: dict[str, JsonObject] = {}
+        outputs: dict[str, JsonObject] = dict(checkpoint.get("outputs") or {})
+        settled: dict[str, str] = dict(checkpoint.get("settled") or {})
+        pending: dict[str, JsonObject] = dict(checkpoint.get("pending") or {})
+        approvals: dict[str, JsonObject] = dict(checkpoint.get("approvals") or {})
+        steps: list[JsonObject] = [
+            s for s in run.get("steps") or [] if s.get("status") not in ("running", "waiting")
+        ]
+        saved_mem = checkpoint.get("memory") or {}
         memory: JsonObject = {
             "run": {
                 "run_id": run_id,
@@ -248,116 +282,171 @@ class FlowRunner:
             "item": None,
             "items": [],
             "graph": graph,
-            "sources": [],
-            "templates": self._template_fingerprints(graph),
-            "read_paths": set(),
-            "write_roots": set(),
-            "produced_paths": set(),
+            "loop": {},
+            "sources": list(saved_mem.get("sources") or []),
+            "templates": list(saved_mem.get("templates") or self._template_fingerprints(graph)),
+            "read_paths": set(saved_mem.get("read_paths") or []),
+            "write_roots": set(saved_mem.get("write_roots") or []),
+            "produced_paths": set(saved_mem.get("produced_paths") or []),
             "acknowledge_uncertain": bool(run.get("acknowledge_uncertain")),
         }
-        steps: list[JsonObject] = []
-        any_error = False
+        for key in ("report_batch", "report_template"):
+            if saved_mem.get(key):
+                memory[key] = saved_mem[key]
+        for nid, ports in outputs.items():
+            first = next(iter(ports), None)
+            if first is not None:
+                memory["nodes"][nid] = ports[first]
 
-        for node_id in order:
-            node = nodes[node_id]
-            if token.cancelled:
-                steps.append(self._step(node, "cancelled"))
-                break
+        self._store.update_run(
+            run_id, status="running", started_at=run.get("started_at") or _utc_now(), interrupted=False
+        )
+        lock = threading.RLock()
 
-            live_items: list[Any] = []
-            if node["kind"] == "trigger":
-                live_items = [run.get("trigger_payload") or {}]
-            else:
-                for edge in inbound[node_id]:
-                    src_outputs = outputs.get(edge["from_node"]) or {}
-                    if edge["from_port"] in src_outputs:
-                        live_items.append(src_outputs[edge["from_port"]].get("json"))
-
-            if not live_items:
-                steps.append(self._step(node, "skipped"))
-                self._store.update_run(run_id, steps=steps)
-                continue
-
-            method = (node.get("config") or {}).get("method")
-            if (method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS
-                    and node["config"].get("input_mode", "all") == "all" and len(live_items) < len(inbound[node_id])):
-                steps.append(self._step(node, "skipped"))
-                self._store.update_run(run_id, steps=steps)
-                continue
-
-            memory["item"] = {"json": live_items[0]}
-            memory["items"] = [{"json": i} for i in live_items]
-
-            started = _utc_ms()
-            step = self._step(node, "running", started_at=_utc_now())
-            self._store.update_run(run_id, steps=[*steps, step])
-            attempts, delay_ms = _retry_config(node)
-            tried = 0
+        def persist() -> None:
+            cp = {
+                "outputs": outputs,
+                "settled": settled,
+                "pending": pending,
+                "approvals": approvals,
+                "memory": {
+                    "sources": memory["sources"],
+                    "templates": memory["templates"],
+                    "read_paths": sorted(memory["read_paths"]),
+                    "write_roots": sorted(memory["write_roots"]),
+                    "produced_paths": sorted(memory["produced_paths"]),
+                    "report_batch": memory.get("report_batch"),
+                    "report_template": memory.get("report_template"),
+                },
+            }
             try:
-                while True:
-                    if token.cancelled:
-                        break
-                    tried += 1
-                    try:
-                        node_outputs = self._execute_node(node, memory)
-                    except Exception:
-                        if tried >= attempts or token.cancelled:
-                            raise
-                    else:
-                        if (
-                            tried >= attempts
-                            or token.cancelled
-                            or not _retryable_http_output(node, node_outputs)
-                        ):
-                            break
-                    if delay_ms > 0:
-                        token.wait(delay_ms / 1000.0)
-                if not token.cancelled and node["kind"] == "http_request" and node["config"].get("fail_on_http_error", True):
-                    response = node_outputs["main"]["json"]
-                    if not response["ok"]:
-                        step["output"] = _summarize(response)
-                        raise ValueError(f"La solicitud HTTP devolvió {response['status']}")
-                if token.cancelled:
-                    step["status"] = "cancelled"
-                    step["finished_at"] = _utc_now()
-                    step["duration_ms"] = round(_utc_ms() - started)
-                    steps.append(step)
-                    break
-                if tried > 1:
-                    step["attempts"] = tried
-            except Exception as exc:
-                logger.info("Nodo %s del run %s falló: %s", node_id, run_id, exc)
-                any_error = True
-                step["status"] = "error"
-                step["error"] = str(exc)[:500]
-                if tried > 1:
-                    step["attempts"] = tried
-                step["finished_at"] = _utc_now()
-                step["duration_ms"] = round(_utc_ms() - started)
-                outputs[node_id] = {}
-                steps.append(step)
-                self._store.update_run(run_id, steps=steps)
-                continue
+                cp = json.loads(json.dumps(cp, default=str))
+            except (TypeError, ValueError):
+                cp = {"pending": pending, "approvals": approvals}
+            self._store.update_run(run_id, steps=list(steps), checkpoint=cp)
 
-            step["status"] = "success"
-            if "waiting" in node_outputs:
-                step["status"] = "skipped"
-            step["finished_at"] = _utc_now()
-            step["duration_ms"] = round(_utc_ms() - started)
-            first_port = next(iter(node_outputs), "main")
-            step["output"] = _summarize(node_outputs[first_port].get("json"))
-            outputs[node_id] = node_outputs
-            memory["nodes"][node_id] = node_outputs[first_port]
-            steps.append(step)
-            self._store.update_run(run_id, steps=steps)
+        schedulable = [nid for nid in nodes if nid not in body_members]
+        pending_in = {nid: len(inbound[nid]) for nid in schedulable}
+        ready: deque[str] = deque()
+        for nid in settled:
+            for edge in outgoing[nid]:
+                if edge["to_node"] in pending_in:
+                    pending_in[edge["to_node"]] -= 1
+        for nid in schedulable:
+            if pending_in[nid] == 0 and nid not in settled:
+                ready.append(nid)
+
+        in_flight: dict[futures.Future, str] = {}
+        waiting_now: set[str] = set()
+        any_error = any(s == "error" for s in settled.values())
+
+        def live_items(node_id: str) -> list[Any]:
+            if nodes[node_id]["kind"] == "trigger":
+                return [run.get("trigger_payload") or {}]
+            items = []
+            for edge in inbound[node_id]:
+                src = outputs.get(edge["from_node"]) or {}
+                if edge["from_port"] in src:
+                    items.append(src[edge["from_port"]].get("json"))
+            return items
+
+        def settle(
+            node_id: str,
+            status: str,
+            node_outputs: JsonObject | None,
+            step: JsonObject | None = None,
+        ) -> None:
+            nonlocal any_error
+            with lock:
+                if status == "error":
+                    any_error = True
+                if node_outputs:
+                    outputs[node_id] = node_outputs
+                    memory["nodes"][node_id] = node_outputs[next(iter(node_outputs))]
+                settled[node_id] = status
+                if step is not None:
+                    steps.append(step)
+                for edge in outgoing[node_id]:
+                    target = edge["to_node"]
+                    if target in pending_in:
+                        pending_in[target] -= 1
+                        if pending_in[target] == 0 and target not in settled:
+                            ready.append(target)
+                persist()
+
+        ctx = {
+            "run": run,
+            "token": token,
+            "graph": graph,
+            "nodes": nodes,
+            "inbound": inbound,
+            "outputs": outputs,
+            "bodies": bodies,
+            "steps": steps,
+            "lock": lock,
+            "persist": persist,
+            "pending": pending,
+            "approvals": approvals,
+            "memory": memory,
+        }
+        pool = futures.ThreadPoolExecutor(max_workers=_MAX_PARALLEL_NODES, thread_name_prefix="flow-node")
+        try:
+            while not token.cancelled:
+                while ready and not token.cancelled:
+                    nid = ready.popleft()
+                    if nid in settled or nid in waiting_now:
+                        continue
+                    node = nodes[nid]
+                    items = live_items(nid)
+                    if not items:
+                        settle(nid, "skipped", None, self._step(node, "skipped"))
+                        continue
+                    method = (node.get("config") or {}).get("method")
+                    if (method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS
+                            and node["config"].get("input_mode", "all") == "all"
+                            and len(items) < len(inbound[nid])):
+                        settle(nid, "skipped", None, self._step(node, "skipped"))
+                        continue
+                    step = self._step(node, "running", started_at=_utc_now())
+                    with lock:
+                        steps.append(step)
+                        persist()
+                    in_flight[pool.submit(self._run_one, node, items, step, ctx)] = nid
+                if not in_flight:
+                    break
+                done, _ = futures.wait(tuple(in_flight), timeout=0.2, return_when=futures.FIRST_COMPLETED)
+                for fut in done:
+                    nid = in_flight.pop(fut)
+                    status, node_outputs, pending_state = fut.result()
+                    if pending_state is not None:
+                        aid = str(pending_state.get("approval_id") or uuid.uuid4().hex[:12])
+                        pending_state["approval_id"] = aid
+                        if isinstance(pending_state.get("agent_state"), dict):
+                            pending_state["agent_state"]["approval_id"] = aid
+                        call = pending_state.get("approval_call") or pending_state.get("pending_call") or {}
+                        approvals.setdefault(aid, {
+                            "id": aid,
+                            "node_id": nid,
+                            "node_name": nodes[nid].get("name") or nid,
+                            "method": call.get("name"),
+                            "params": call.get("params"),
+                            "decision": None,
+                            "created_at": _utc_now(),
+                        })
+                        pending[nid] = pending_state
+                        waiting_now.add(nid)
+                        with lock:
+                            persist()
+                    else:
+                        settle(nid, status, node_outputs)
+        finally:
+            pool.shutdown(wait=False)
 
         if token.cancelled:
-            self._store.update_run(
-                run_id,
-                status="cancelled",
-                steps=steps,
-                finished_at=_utc_now(),
-            )
+            self._store.update_run(run_id, status="cancelled", steps=list(steps), finished_at=_utc_now())
+            return
+        if pending:
+            self._store.update_run(run_id, status="waiting")
             return
         actions = [s for s in steps if (nodes[s["node_id"]].get("config") or {}).get("method")
                    in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS]
@@ -372,10 +461,161 @@ class FlowRunner:
         self._store.update_run(
             run_id,
             status=status,
-            steps=steps,
+            steps=list(steps),
             finished_at=_utc_now(),
             error="Uno o más nodos fallaron" if any_error else None,
+            checkpoint=None,
         )
+        events.emit("flow_finished", {"flow_id": run["flow_id"], "run_id": run_id, "status": status})
+
+    def _run_one(
+        self,
+        node: JsonObject,
+        live_items: list[Any],
+        step: JsonObject,
+        ctx: JsonObject,
+    ) -> tuple[str, JsonObject, JsonObject | None]:
+        """Ejecuta un nodo bajo el límite global de concurrencia.
+
+        Devuelve (status, outputs, pending_state): ``pending_state`` no es None
+        cuando un nodo agente pidió una herramienta con efectos y el run pasa a
+        ``waiting`` sin que el nodo quede ``settled``.
+        """
+        token: _CancelEvent = ctx["token"]
+        memory = ctx["memory"]
+        started = _utc_ms()
+        node_memory = {
+            **memory,
+            "item": {"json": live_items[0]},
+            "items": [{"json": i} for i in live_items],
+        }
+        resumed = ctx.get("pending_state") or ctx["pending"].pop(node["id"], None)
+        sub_ctx = {**ctx, "pending_state": resumed}
+        attempts, delay_ms = _retry_config(node)
+        tried = 0
+        node_outputs: JsonObject = {}
+        # El bucle no retiene un slot: cada nodo del cuerpo adquiere el suyo.
+        holds_slot = node["kind"] != "loop"
+        try:
+            if holds_slot:
+                _NODE_SLOTS.acquire()
+            try:
+                while True:
+                    if token.cancelled:
+                        raise _RunCancelled()
+                    tried += 1
+                    try:
+                        node_outputs = self._execute_node(node, node_memory, sub_ctx)
+                    except (agent_node.AwaitingApproval, _RunCancelled):
+                        raise
+                    except Exception:
+                        if tried >= attempts or token.cancelled:
+                            raise
+                    else:
+                        if (
+                            tried >= attempts
+                            or token.cancelled
+                            or not _retryable_http_output(node, node_outputs)
+                        ):
+                            break
+                    if delay_ms > 0:
+                        token.wait(delay_ms / 1000.0)
+                if node["kind"] == "http_request" and node["config"].get("fail_on_http_error", True):
+                    response = node_outputs["main"]["json"]
+                    if not response["ok"]:
+                        step["output"] = _summarize(response)
+                        raise ValueError(f"La solicitud HTTP devolvió {response['status']}")
+                if tried > 1:
+                    step["attempts"] = tried
+            except agent_node.AwaitingApproval as exc:
+                step["status"] = "waiting"
+                step["finished_at"] = _utc_now()
+                step["duration_ms"] = round(_utc_ms() - started)
+                with ctx["lock"]:
+                    ctx["persist"]()
+                return "waiting", {}, exc.state
+            except _RunCancelled:
+                step["status"] = "cancelled"
+                step["finished_at"] = _utc_now()
+                step["duration_ms"] = round(_utc_ms() - started)
+                return "cancelled", {}, None
+            except Exception as exc:
+                logger.info("Nodo %s del run %s falló: %s", node["id"], ctx["run"]["id"], exc)
+                step["status"] = "error"
+                step["error"] = str(exc)[:500]
+                if tried > 1:
+                    step["attempts"] = tried
+                step["finished_at"] = _utc_now()
+                step["duration_ms"] = round(_utc_ms() - started)
+                return "error", {}, None
+            finally:
+                if holds_slot:
+                    _NODE_SLOTS.release()
+
+            step["status"] = "success"
+            if "waiting" in node_outputs:
+                step["status"] = "skipped"
+            step["finished_at"] = _utc_now()
+            step["duration_ms"] = round(_utc_ms() - started)
+            first_port = next(iter(node_outputs), "main")
+            step["output"] = _summarize(node_outputs[first_port].get("json"))
+            return step["status"], node_outputs, None
+        except BaseException as exc:
+            logger.exception("Fallo inesperado en el nodo %s", node["id"])
+            step["status"] = "error"
+            step["error"] = str(exc)[:500]
+            step["finished_at"] = _utc_now()
+            step["duration_ms"] = round(_utc_ms() - started)
+            return "error", {}, None
+
+    def resume(self, run_id: str) -> JsonObject:
+        """Reanuda un run en espera (aprobaciones) o interrumpido (app cerrada)."""
+        run = self._store.get_run(run_id)
+        if run is None:
+            raise ValueError(f"Run no encontrado: {run_id}")
+        if run["status"] not in ("queued", "waiting", "running"):
+            raise ValueError(f"El run {run_id} ya terminó ({run['status']})")
+        with _active_lock:
+            if run_id in _active_runs:
+                return run
+        token = _register(run_id)
+        thread = threading.Thread(
+            target=self._execute_safe,
+            args=(run_id, token, run["flow_id"]),
+            name=f"flow-resume-{run_id}",
+            daemon=True,
+        )
+        thread.start()
+        return run
+
+    def resume_interrupted(self) -> int:
+        """Reanuda los runs marcados ``interrupted`` al arrancar el backend."""
+        resumed = 0
+        for run in self._store.list_runs(limit=MAX_TOTAL_RUNS):
+            if not run.get("interrupted"):
+                continue
+            try:
+                self.resume(run["id"])
+                resumed += 1
+            except ValueError:
+                continue
+        return resumed
+
+    def decide_approval(self, run_id: str, approval_id: str, approved: bool) -> JsonObject:
+        run = self._store.get_run(run_id)
+        if run is None:
+            raise ValueError(f"Run no encontrado: {run_id}")
+        if run["status"] != "waiting":
+            raise ValueError("El run no está esperando una aprobación")
+        checkpoint = dict(run.get("checkpoint") or {})
+        approval = (checkpoint.get("approvals") or {}).get(approval_id)
+        if approval is None or approval.get("decision") is not None:
+            raise ValueError("Aprobación inexistente o ya decidida")
+        approval["decision"] = "approved" if approved else "denied"
+        approval["decided_at"] = _utc_now()
+        self._store.update_run(run_id, checkpoint=checkpoint)
+        self.resume(run_id)
+        return dict(approval)
 
     @staticmethod
     def _topological_order(graph: JsonObject) -> list[str]:
@@ -409,14 +649,14 @@ class FlowRunner:
             "error": None,
         }
 
-    def _execute_node(self, node: JsonObject, memory: JsonObject) -> JsonObject:
+    def _execute_node(self, node: JsonObject, memory: JsonObject, ctx: JsonObject) -> JsonObject:
         kind = node["kind"]
         if kind not in IMPLEMENTED_NODE_KINDS:
             raise ValueError(f"Tipo de nodo aún no implementado: {kind}")
         if kind == "trigger":
             return {"main": {"json": memory["run"]["trigger"]}}
         if kind == "tool_call":
-            result = self._run_tool_call(node, memory)
+            result = self._run_tool_call(node, memory, ctx)
             config = node.get("config") or {}
             waits = config.get("method") in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS or config.get("required_args")
             port = "waiting" if waits and isinstance(result.get("json"), dict) and result["json"].get("ready") is False else "main"
@@ -428,14 +668,155 @@ class FlowRunner:
             output = resolve(config.get("output"), memory)
             return {"main": {"json": output}}
         if kind == "http_request":
-            return {"main": self._run_http_request(node, memory)}
+            return {"main": self._run_http_request(node, memory, ctx["token"])}
         if kind == "agent":
-            return {"main": self._run_agent(node, memory)}
+            config = node.get("config") or {}
+            if not config.get("tools"):
+                return {"main": self._run_agent(node, memory)}
+            return {"main": agent_node.run_agent_node(
+                node,
+                memory,
+                handler_getter=self._handler_getter,
+                token=ctx["token"],
+                lane_submit=self._lane_submit,
+                validate_paths=lambda m, a: _validate_action_paths(m, a, memory, self._store),
+                is_cancelled=lambda: ctx["token"].cancelled,
+                state=ctx.get("pending_state"),
+                approvals=ctx["approvals"],
+            )}
         if kind == "switch":
             return self._run_switch(node, memory)
+        if kind == "loop":
+            return self._run_loop(node, memory, ctx)
+        if kind == "code":
+            config = node.get("config") or {}
+            try:
+                result = code_exec.run_python(
+                    str(config.get("code") or ""),
+                    {
+                        "item": (memory.get("item") or {}).get("json"),
+                        "items": [i.get("json") for i in memory.get("items") or []],
+                        "nodes": {nid: (out or {}).get("json") for nid, out in memory["nodes"].items()},
+                        "run": memory["run"],
+                        "loop": memory.get("loop") or {},
+                        "code": str(config.get("code") or ""),
+                    },
+                    float(config.get("timeout_s") or 30),
+                    ctx["token"],
+                )
+            except code_exec.CodeCancelled as exc:
+                raise _RunCancelled() from exc
+            return {"main": result}
         if kind == "mcp_call":
             return {"main": mcp_servers.run_mcp_call_node(node, memory)}
         raise ValueError(f"Tipo de nodo desconocido: {kind}")
+
+    def _lane_submit(self, name: str, fn: Callable[[JsonObject], Any], args: JsonObject) -> Any:
+        from backend.core.scheduler import get_scheduler
+
+        scheduler = get_scheduler()
+        lane = lane_for(name)
+        timeout_ms = timeout_ms_for(name)
+        future = scheduler.submit_heavy(fn, args) if lane == "heavy" else scheduler.submit_light(fn, args)
+        if future is None:
+            raise ValueError(f"El planificador rechazó {name}")
+        return future.result(timeout=max(1, timeout_ms / 1000))
+
+    def _run_loop(self, node: JsonObject, memory: JsonObject, ctx: JsonObject) -> JsonObject:
+        """Itera los nodos del cuerpo (puerto ``each``) por cada elemento.
+
+        Cada iteración recibe ``item``/``items`` del cuerpo y ``loop`` (index,
+        count, item) para las expresiones; los sumideros del cuerpo alimentan
+        ``items`` de la salida ``done``.
+        """
+        config = node.get("config") or {}
+        loop_id = node["id"]
+        state = ctx.get("pending_state") or {}
+        over = config.get("over")
+        raw = resolve(over, memory) if over else [entry.get("json") for entry in memory.get("items") or []]
+        if not isinstance(raw, list):
+            raise ValueError(f"'over' del bucle {loop_id} debe resolver a una lista")
+        items = [entry.get("json") if isinstance(entry, dict) and set(entry) == {"json"} else entry
+                 for entry in raw]
+        max_items = int(config.get("max_items") or 100)
+        items = items[:max_items]
+
+        body_order = [nid for nid in self._topological_order(ctx["graph"]) if nid in ctx["bodies"].get(loop_id, set())]
+        body_set = set(body_order)
+        body_inbound = {nid: [e for e in ctx["inbound"][nid]] for nid in body_order}
+        sinks = [nid for nid in body_order
+                 if not any(e["to_node"] in body_set for e in ctx["graph"]["edges"] if e["from_node"] == nid)]
+
+        collected = list(state.get("collected") or [])
+        start_index = int(state.get("index") or 0)
+        token: _CancelEvent = ctx["token"]
+        for index in range(start_index, len(items)):
+            if token.cancelled:
+                raise _RunCancelled()
+            element = items[index]
+            iteration_outputs: dict[str, JsonObject] = dict(state.get("iteration_outputs") or {})
+            body_settled: dict[str, str] = dict(state.get("body_settled") or {})
+            if index > start_index or not state:
+                iteration_outputs = {}
+                body_settled = {}
+            resume_node = state.get("body_node") if index == start_index else None
+            for nid in body_order:
+                if nid in body_settled:
+                    continue
+                body_node = ctx["nodes"][nid]
+                live: list[Any] = []
+                for edge in body_inbound[nid]:
+                    if edge["from_node"] == loop_id:
+                        live.append(element)
+                        continue
+                    src = iteration_outputs.get(edge["from_node"]) or ctx["outputs"].get(edge["from_node"]) or {}
+                    if edge["from_port"] in src:
+                        live.append(src[edge["from_port"]].get("json"))
+                if not live:
+                    body_settled[nid] = "skipped"
+                    continue
+                body_memory = {
+                    **memory,
+                    "loop": {"index": index, "count": len(items), "item": element, "id": loop_id},
+                    "nodes": {**memory["nodes"], **{b: o[next(iter(o))] for b, o in iteration_outputs.items() if o}},
+                }
+                step = self._step(body_node, "running", started_at=_utc_now())
+                step["iteration"] = index
+                with ctx["lock"]:
+                    ctx["steps"].append(step)
+                    ctx["persist"]()
+                sub_ctx = {
+                    **ctx,
+                    "memory": body_memory,
+                    "pending": {},
+                    "pending_state": state.get("agent_state") if nid == resume_node else None,
+                }
+                status, node_outputs, pending_state = self._run_one(body_node, live, step, sub_ctx)
+                if pending_state is not None:
+                    raise agent_node.AwaitingApproval({
+                        "loop_node": loop_id,
+                        "index": index,
+                        "collected": collected,
+                        "iteration_outputs": iteration_outputs,
+                        "body_settled": body_settled,
+                        "body_node": nid,
+                        "agent_state": pending_state,
+                        "approval_call": pending_state.get("pending_call") or {},
+                    })
+                body_settled[nid] = status
+                if node_outputs:
+                    iteration_outputs[nid] = node_outputs
+                    memory["nodes"][nid] = node_outputs[next(iter(node_outputs))]
+            entry: JsonObject = {"item": element}
+            for nid in sinks:
+                ports = iteration_outputs.get(nid)
+                if ports:
+                    entry[nid] = ports[next(iter(ports))].get("json")
+            collected.append(entry)
+            with ctx["lock"]:
+                ctx["persist"]()
+        return {"done": {"json": {"count": len(collected), "items": collected}},
+                "each": {"json": {"count": len(collected)}}}
 
     @staticmethod
     def _run_agent(node: JsonObject, memory: JsonObject) -> JsonObject:
@@ -481,7 +862,7 @@ class FlowRunner:
         port = matched or "default"
         return {port: {"json": {"case": matched, "field": actual}}}
 
-    def _run_tool_call(self, node: JsonObject, memory: JsonObject) -> JsonObject:
+    def _run_tool_call(self, node: JsonObject, memory: JsonObject, ctx: JsonObject) -> JsonObject:
         config = node.get("config") or {}
         method = config.get("method")
         if method not in FLOW_ACTION_METHODS:
@@ -522,8 +903,7 @@ class FlowRunner:
             ) for ctx in contexts):
                 return {"json": {"ready": False, "reason": "Faltan imágenes o campos requeridos por la plantilla de Canvas"}}
         if method == "flows_print_pdf":
-            with _active_lock:
-                token = _active_runs.get(memory["run"]["run_id"])
+            token = ctx.get("token")
             resolved["_cancelled"] = (lambda: token.cancelled) if token else None
         effect_key = None
         if memory.get("sources") and method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS - {"flows_read_images"}:
@@ -531,8 +911,10 @@ class FlowRunner:
                         {key: value for key, value in resolved.items() if key != "_cancelled"}]
             effect_key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
             receipt = self._store.begin_action(
-                memory["run"]["flow_id"], effect_key,
+                memory["run"]["flow_id"],
+                effect_key,
                 allow_pending=bool(memory.get("acknowledge_uncertain")),
+                context={"method": method, "node_id": node["id"], "run_id": memory["run"]["run_id"]},
             )
             if receipt is not None:
                 result = receipt["output"]
@@ -550,8 +932,7 @@ class FlowRunner:
             status_handler = self._handler_getter("process_status")
             if status_handler is None:
                 raise ValueError("No se puede consultar la conversión iniciada")
-            with _active_lock:
-                token = _active_runs.get(memory["run"]["run_id"])
+            token = ctx.get("token")
             deadline = time.monotonic() + timeout_ms_for(method) / 1000
             while True:
                 result = status_handler({"job_id": result.get("job_id") or result.get("id")})
@@ -582,9 +963,12 @@ class FlowRunner:
                 return {"json": {"ready": False, "reason": "Este lote ya fue generado"}}
             memory.setdefault("read_paths", set()).update(result["files"])
             memory.setdefault("write_roots", set()).add(result["output_folder"])
-            memory["report_batch"] = result.get("report_batch", False)
-            if result.get("report_batch"):
-                memory["report_template"] = result["template_name"]
+            # Los escalares del run viajan en la memoria compartida (node_memory es una copia).
+            shared = ctx["memory"]
+            with ctx["lock"]:
+                shared["report_batch"] = result.get("report_batch", False)
+                if result.get("report_batch"):
+                    shared["report_template"] = result["template_name"]
             result["output_path"] = expected[0]
             result["stamped_output_path"] = str(Path(result["output_folder"]) / f"paneles-{fingerprint[:16]}-sellado.pdf")
         if method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS and isinstance(result.get("saved_path"), str):
@@ -594,7 +978,7 @@ class FlowRunner:
                 memory.setdefault("produced_paths", set()).add(str(saved))
         return {"json": result}
 
-    def _run_http_request(self, node: JsonObject, memory: JsonObject) -> JsonObject:
+    def _run_http_request(self, node: JsonObject, memory: JsonObject, token: _CancelEvent | None = None) -> JsonObject:
         config = node.get("config") or {}
         url = resolve(config.get("url"), memory)
         if not isinstance(url, str) or not url.strip():
@@ -626,8 +1010,8 @@ class FlowRunner:
             )
             if host not in allowed_hosts:
                 raise ValueError(f"La conexión {conn_id} solo firma peticiones a sus hosts autorizados")
-            token = connections.fresh_access_token(conn_id)
-            headers.setdefault("Authorization", f"Bearer {token}")
+            oauth_token = connections.fresh_access_token(conn_id)
+            headers.setdefault("Authorization", f"Bearer {oauth_token}")
             auth_hosts = allowed_hosts
 
         body = resolve(config.get("body"), memory)
@@ -648,13 +1032,16 @@ class FlowRunner:
 
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         opener = build_flow_opener(auth_hosts)
+
+        def _open() -> tuple[int, bytes]:
+            try:
+                with opener.open(req, timeout=timeout) as res:
+                    return int(res.status), res.read(_MAX_HTTP_BODY_BYTES + 1)
+            except urllib.error.HTTPError as err:
+                return int(err.code), err.read(_MAX_HTTP_BODY_BYTES + 1)
+
         try:
-            with opener.open(req, timeout=timeout) as res:
-                status = int(res.status)
-                raw_body = res.read(_MAX_HTTP_BODY_BYTES + 1)
-        except urllib.error.HTTPError as err:
-            status = int(err.code)
-            raw_body = err.read(_MAX_HTTP_BODY_BYTES + 1)
+            status, raw_body = _await_or_cancel(_open, token)
         except urllib.error.URLError as err:
             raise ValueError(f"http_request no pudo contactar con el host: {err.reason}") from err
 

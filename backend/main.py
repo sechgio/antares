@@ -427,6 +427,26 @@ def main() -> None:
         except Exception:
             logger.exception("No se pudo arrancar el planificador de flujos")
 
+        def _flows_startup() -> None:
+            try:
+                from backend.core.flows import events, get_flow_store
+                from backend.core.flows import webhooks as flow_webhooks
+                from backend.handlers.flows import _runner as flow_runner
+
+                store = get_flow_store()
+                events.set_dispatcher(events.make_dispatcher(store, flow_runner))
+                resumed = flow_runner.resume_interrupted()
+                if resumed:
+                    logger.info("Se reanudaron %s ejecuciones de flujos interrumpidas", resumed)
+                flow_webhooks.get_webhook_server(
+                    get_flow_store, lambda: flow_runner
+                ).start()
+                events.emit("app_started", {})
+            except Exception:
+                logger.exception("No se pudo iniciar eventos/webhooks/reanudación de flujos")
+
+        threading.Thread(target=_flows_startup, name="flows-startup", daemon=True).start()
+
     try:
         while True:
             if _shutdown_requested:
@@ -503,5 +523,34 @@ def main() -> None:
         logger.info(t("info.backend_shutdown"))
 
 
+def _headless_flow_run(flow_id: str) -> int:
+    """Modo ``--flow-run <id>``: ejecuta el flujo una vez y sale (programación
+    con la aplicación cerrada, vía Programador de tareas de Windows)."""
+    init_db()
+    HANDLERS.warm_core()
+    from backend.core.flows import get_flow_store
+    from backend.core.flows.runner import FlowRunner
+
+    store = get_flow_store()
+    runner = FlowRunner(store, HANDLERS.get)
+    try:
+        run = runner.start(flow_id, {"source": "scheduled_task"})
+    except ValueError as exc:
+        logger.error("--flow-run %s no pudo iniciarse: %s", flow_id, exc)
+        return 2
+    deadline = time.monotonic() + 15 * 60
+    while time.monotonic() < deadline:
+        current = store.get_run(run["id"])
+        if current is None or current["status"] not in ("queued", "running", "waiting"):
+            break
+        time.sleep(1.0)
+    current = store.get_run(run["id"])
+    status = (current or {}).get("status") or "error"
+    logger.info("--flow-run %s terminó con estado %s", flow_id, status)
+    return 0 if status in ("success", "skipped") else 1
+
+
 if __name__ == "__main__":
+    if len(sys.argv) >= 3 and sys.argv[1] == "--flow-run":
+        sys.exit(_headless_flow_run(str(sys.argv[2])))
     main()

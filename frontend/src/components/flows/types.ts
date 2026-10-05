@@ -52,13 +52,36 @@ export interface Flow {
 
 export type FlowMeta = Omit<Flow, 'graph'>;
 
-export type FlowRunStatus = 'queued' | 'running' | 'success' | 'error' | 'cancelled' | 'skipped';
+export type FlowRunStatus = 'queued' | 'running' | 'waiting' | 'success' | 'error' | 'cancelled' | 'skipped';
+
+export interface PendingApproval {
+  id: string;
+  run_id: string;
+  flow_id: string;
+  flow_name: string;
+  node_id: string;
+  node_name: string;
+  method: string;
+  params: Record<string, unknown>;
+  inside_loop?: boolean;
+  created_at: string;
+}
+
+export interface PendingEffect {
+  flow_id: string;
+  flow_name: string;
+  fingerprint: string;
+  method: string;
+  node_id: string;
+  created_at: string;
+}
 
 export interface FlowRunStep {
   node_id: string;
   kind: string;
   name: string;
-  status: 'running' | 'success' | 'error' | 'skipped' | 'cancelled';
+  status: 'running' | 'waiting' | 'success' | 'error' | 'skipped' | 'cancelled';
+  iteration?: number;
   started_at: string | null;
   finished_at: string | null;
   duration_ms: number | null;
@@ -76,6 +99,7 @@ export interface FlowRun {
   trigger_payload: Record<string, unknown>;
   steps: FlowRunStep[];
   error: string | null;
+  interrupted?: boolean;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;

@@ -105,7 +105,7 @@ export const METHOD_LABELS: Record<string, string> = {
 export const METHOD_FIELDS: Record<string, string[]> = {
   flows_read_images: ['source_folder', 'output_folder', 'expected_images', 'images_per_panel', 'spreadsheet_path'],
   flows_render_pdf: ['template_name', 'contexts', 'localImagePaths', 'context', 'html', 'output_path'],
-  flows_print_pdf: ['pdf_path', 'printer_name', 'copies'],
+  flows_print_pdf: ['pdf_path', 'printer_name', 'copies', 'pages', 'duplex', 'quality'],
   canvas_export_cmyk_pdf: ['document', 'contexts', 'localImagePaths', 'outputPath'],
   formatos_generate: ['format_id', 'desde', 'hasta', 'output_path'],
   panel_aviso_corte_compute_match: ['rows', 'key_column', 'image_names'],
@@ -179,12 +179,15 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
   loop: {
     kind: 'loop',
     label: 'Bucle',
-    description: 'Próximamente',
+    description: 'Repite pasos por cada elemento',
     accent: '#a78bfa',
     icon: Repeat,
-    implemented: false,
+    implemented: true,
     inputs: ['main'],
-    outputs: [{ port: 'main', label: 'Cada elemento' }],
+    outputs: [
+      { port: 'each', label: 'Cada elemento' },
+      { port: 'done', label: 'Al terminar' },
+    ],
   },
   http_request: {
     kind: 'http_request',
@@ -229,10 +232,10 @@ export const NODE_KIND_DEFS: Record<FlowNodeKind, NodeKindDef> = {
   code: {
     kind: 'code',
     label: 'Código',
-    description: 'Próximamente',
+    description: 'Ejecuta un pequeño script en Python',
     accent: '#94a3b8',
     icon: Code2,
-    implemented: false,
+    implemented: true,
     inputs: ['main'],
     outputs: [{ port: 'main', label: 'Salida' }],
   },
@@ -257,7 +260,7 @@ export const TRIGGER_KIND_LABELS: Record<TriggerKind, string> = {
   webhook: 'Webhook',
 };
 
-export const ENABLED_TRIGGER_KINDS: TriggerKind[] = ['manual', 'schedule'];
+export const ENABLED_TRIGGER_KINDS: TriggerKind[] = ['manual', 'schedule', 'app_event', 'webhook'];
 
 export const CONDITION_OPS: { value: string; label: string }[] = [
   { value: 'eq', label: 'es igual a' },

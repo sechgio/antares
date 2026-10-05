@@ -138,7 +138,8 @@ def test_running_step_and_completed_steps_survive_restart(setup):
         saved = setup[0].get_run(run["id"])
         assert [step["status"] for step in saved["steps"]] == ["success", "running"]
         restarted = FlowStore(setup[0]._flows_path, setup[0]._runs_path).get_run(run["id"])
-        assert restarted["status"] == "error"
+        assert restarted["status"] == "queued"
+        assert restarted["interrupted"] is True
         assert restarted["steps"] == saved["steps"]
     finally:
         release.set()
@@ -473,7 +474,7 @@ def test_conversion_step_waits_until_job_finishes(setup):
 def test_legacy_scalar_arguments_keep_empty_object_behavior(setup):
     calls = []
     runner = FlowRunner(setup[0], lambda method: lambda params: calls.append(params) or {"formats": []})
-    assert runner._run_tool_call({"config": {"method": "formats", "args": "legacy"}}, {}) == {"json": {"formats": []}}
+    assert runner._run_tool_call({"config": {"method": "formats", "args": "legacy"}}, {}, {}) == {"json": {"formats": []}}
     assert calls == [{}]
 
 
@@ -552,7 +553,7 @@ def test_pdf_stamp_print_chain_uses_stamped_file_and_deduplicates(setup, monkeyp
     ])
     graph["edges"].extend([{"from_node": "pdf", "to_node": "stamp"}, {"from_node": "stamp", "to_node": "print"}])
     queued = []
-    monkeypatch.setattr(printing, "print_pdf", lambda path, printer, copies, cancelled: queued.append((path, copies)) or {"queued": True, "job_id": 1})
+    monkeypatch.setattr(printing, "print_pdf", lambda path, printer, copies, cancelled, **kw: queued.append((path, copies)) or {"queued": True, "job_id": 1})
     runner = _runner(setup)
     handlers = {"canvas_get": runner._handler_getter("canvas_get"), "canvas_export_cmyk_pdf": canvas_export_cmyk_pdf,
                 "flows_read_images": flows._read_images, "sellador_apply": sellador_apply, "flows_print_pdf": flows._print_pdf}
@@ -580,7 +581,7 @@ def test_print_rejects_pdf_without_file_grant(setup):
     node = {"config": {"method": "flows_print_pdf", "args": {"pdf_path": str(setup[1].parent / "secret.pdf"), "printer_name": "Prueba"}}}
     runner = FlowRunner(setup[0], lambda method: flows._print_pdf)
     with pytest.raises(ValueError, match="no está autorizado"):
-        runner._run_tool_call(node, {"graph": {"nodes": []}})
+        runner._run_tool_call(node, {"graph": {"nodes": []}}, {})
 
 
 def test_html_template_changes_invalidate_completed_batch(setup, monkeypatch):

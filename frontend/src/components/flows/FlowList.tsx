@@ -23,6 +23,7 @@ import type { FlowMeta, FlowRunStatus, WorkflowGraph } from './types';
 const STATUS_LABELS: Record<FlowRunStatus, string> = {
   queued: 'En cola',
   running: 'Ejecutando',
+  waiting: 'Esperando aprobación',
   success: 'Éxito',
   error: 'Error',
   cancelled: 'Cancelado',
@@ -32,6 +33,7 @@ const STATUS_LABELS: Record<FlowRunStatus, string> = {
 const STATUS_COLORS: Record<FlowRunStatus, string> = {
   queued: 'var(--text-secondary)',
   running: '#38bdf8',
+  waiting: '#f59e0b',
   success: '#34d399',
   error: 'var(--accent-red, #ef4444)',
   cancelled: 'var(--text-secondary)',

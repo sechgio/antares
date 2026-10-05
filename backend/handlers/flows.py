@@ -12,8 +12,11 @@ from backend.core import flows as _flows_core
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.flows import ai_providers as _ai_providers
 from backend.core.flows import connections as _connections
+from backend.core.flows import os_tasks as _os_tasks
+from backend.core.flows import webhooks as _webhooks
+from backend.core.flows.events import APP_EVENTS
 from backend.core.flows.runner import FlowRunner, cancel_run
-from backend.core.flows.store import FlowStore
+from backend.core.flows.store import FlowStore, _utc_now
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import FLOW_ACTION_METHODS, ORCHESTRATABLE_METHODS
 from backend.handlers import HANDLERS as _REGISTRY
@@ -83,6 +86,7 @@ def _update(params: JsonObject) -> JsonObject:
         raise ValidationError(str(exc)) from exc
     if flow is None:
         raise NotFoundError(f"Flujo no encontrado: {flow_id}")
+    _os_tasks.sync_flow_task(flow)
     return {"flow": flow}
 
 
@@ -92,6 +96,7 @@ def _delete(params: JsonObject) -> JsonObject:
     flow_id = get_item_id(params)
     if not _store().delete(flow_id):
         raise NotFoundError(f"Flujo no encontrado: {flow_id}")
+    _os_tasks.delete_flow_task(flow_id)
     return {"deleted": True, "id": flow_id}
 
 
@@ -151,9 +156,96 @@ def _run_cancel(params: JsonObject) -> JsonObject:
         raise NotFoundError(f"Run no encontrado: {run_id}")
     if run["status"] in ("success", "error", "cancelled", "skipped"):
         return {"run": run, "cancelled": False}
+    if run["status"] == "waiting":
+        _store().update_run(run_id, status="cancelled", finished_at=_utc_now())
+        return {"run": _store().get_run(run_id), "cancelled": True}
     if not cancel_run(run_id):
         return {"run": run, "cancelled": False}
+    # Marcado inmediato: el hilo aún libera operaciones en curso en segundo plano.
+    _store().update_run(run_id, status="cancelled", finished_at=_utc_now())
     return {"run": _store().get_run(run_id), "cancelled": True}
+
+
+@with_locale
+@validate_params("run_id")
+def _run_resume(params: JsonObject) -> JsonObject:
+    run_id = str(params["run_id"])
+    try:
+        run = _runner.resume(run_id)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    return {"run": run}
+
+
+@with_locale
+def _approvals_list(params: JsonObject) -> JsonObject:
+    approvals: list[JsonObject] = []
+    for run in _store().list_runs(limit=200):
+        if run["status"] != "waiting":
+            continue
+        checkpoint = run.get("checkpoint") or {}
+        pending = checkpoint.get("pending") or {}
+        for approval_id, approval in (checkpoint.get("approvals") or {}).items():
+            if approval.get("decision") is not None:
+                continue
+            approvals.append({
+                "id": approval_id,
+                "run_id": run["id"],
+                "flow_id": run["flow_id"],
+                "flow_name": (_store().get(run["flow_id"]) or {}).get("name") or run["flow_id"],
+                "node_id": approval.get("node_id"),
+                "node_name": approval.get("node_name"),
+                "method": approval.get("method"),
+                "params": approval.get("params"),
+                "inside_loop": bool((pending.get(approval.get("node_id")) or {}).get("loop_node")),
+                "created_at": approval.get("created_at"),
+            })
+    return {"approvals": approvals}
+
+
+@with_locale
+@validate_params("run_id", "approval_id", "decision")
+def _approval_decide(params: JsonObject) -> JsonObject:
+    decision = str(params["decision"])
+    if decision not in ("approved", "denied"):
+        raise ValidationError("decision debe ser 'approved' o 'denied'")
+    try:
+        approval = _runner.decide_approval(
+            str(params["run_id"]), str(params["approval_id"]), decision == "approved"
+        )
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    return {"approval": approval, "run": _store().get_run(str(params["run_id"]))}
+
+
+@with_locale
+def _effects_pending(params: JsonObject) -> JsonObject:
+    flow_id = params.get("flow_id")
+    return {"effects": _store().list_pending_effects(str(flow_id) if isinstance(flow_id, str) and flow_id else None)}
+
+
+@with_locale
+@validate_params("flow_id", "fingerprint", "resolution")
+def _effect_resolve(params: JsonObject) -> JsonObject:
+    resolution = str(params["resolution"])
+    try:
+        resolved = _store().resolve_effect(str(params["flow_id"]), str(params["fingerprint"]), resolution)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    if not resolved:
+        raise NotFoundError("Efecto pendiente no encontrado")
+    return {"resolved": True}
+
+
+@with_locale
+def _events_list(params: JsonObject) -> JsonObject:
+    return {"events": APP_EVENTS}
+
+
+@with_locale
+def _webhook_info(params: JsonObject) -> JsonObject:
+    server = _webhooks.get_webhook_server(_flows_core.get_flow_store, lambda: _runner)
+    return server.info()
 
 
 @with_locale
@@ -620,7 +712,15 @@ def _print_pdf(params: JsonObject) -> JsonObject:
 
     if not params.get("pdf_path") or not params.get("printer_name"):
         return {"ready": False, "reason": "Selecciona el PDF y la impresora"}
-    return print_pdf(params["pdf_path"], params["printer_name"], params.get("copies", 1), params.get("_cancelled"))
+    return print_pdf(
+        params["pdf_path"],
+        params["printer_name"],
+        params.get("copies", 1),
+        params.get("_cancelled"),
+        pages=params.get("pages"),
+        duplex=params.get("duplex"),
+        quality=params.get("quality"),
+    )
 
 
 def _authorize_paths(params: JsonObject) -> JsonObject:
@@ -720,6 +820,13 @@ HANDLERS = {
     "flows_run_status": _run_status,
     "flows_runs_list": _runs_list,
     "flows_run_cancel": _run_cancel,
+    "flows_run_resume": _run_resume,
+    "flows_approvals_list": _approvals_list,
+    "flows_approval_decide": _approval_decide,
+    "flows_effects_pending": _effects_pending,
+    "flows_effect_resolve": _effect_resolve,
+    "flows_events_list": _events_list,
+    "flows_webhook_info": _webhook_info,
     "flows_orchestratable_methods": _orchestratable_methods,
     "flows_read_images": _read_images,
     "flows_render_pdf": _render_pdf,

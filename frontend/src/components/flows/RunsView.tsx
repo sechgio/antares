@@ -8,6 +8,7 @@ import Button from '../ui/Button';
 import ThemedSelect from '../ui/ThemedSelect';
 import { FlowStatusBadge } from './FlowList';
 import FlowRunGraph from './FlowRunGraph';
+import PendingPanel from './PendingPanel';
 import { NODE_KIND_DEFS } from './nodeDefs';
 import type { FlowMeta, FlowNodeKind, FlowRun, FlowRunStatus } from './types';
 
@@ -50,6 +51,7 @@ const STATUS_OPTIONS: { value: '' | FlowRunStatus; label: string }[] = [
   { value: '', label: 'Todos los estados' },
   { value: 'running', label: 'Ejecutando' },
   { value: 'queued', label: 'En cola' },
+  { value: 'waiting', label: 'Esperando aprobación' },
   { value: 'success', label: 'Éxito' },
   { value: 'error', label: 'Error' },
   { value: 'cancelled', label: 'Cancelado' },
@@ -196,6 +198,7 @@ export default function RunsView({ flowId }: { flowId?: string }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
+        <PendingPanel />
         {loading ? (
           <p className="text-sm text-[var(--text-secondary)]">Cargando…</p>
         ) : visibleRuns.length === 0 ? (
@@ -244,7 +247,7 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                         <Play size={13} />
                       </Button>
                     )}
-                    {(run.status === 'queued' || run.status === 'running') && (
+                    {(run.status === 'queued' || run.status === 'running' || run.status === 'waiting') && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -318,9 +321,14 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                                           : 'var(--text-secondary)',
                                   }}
                                 >
-                                  {({ success: 'Completado', error: 'Falló', running: 'En curso', skipped: 'No se ejecutó', cancelled: 'Cancelado', queued: 'En cola' } as Record<string, string>)[step.status] ?? step.status}
+                                  {({ success: 'Completado', error: 'Falló', running: 'En curso', waiting: 'Esperando', skipped: 'No se ejecutó', cancelled: 'Cancelado', queued: 'En cola' } as Record<string, string>)[step.status] ?? step.status}
                                 </span>
                                 <span className="flex-1" />
+                                {step.iteration != null && (
+                                  <span className="text-[10px] text-[var(--text-secondary)]">
+                                    iteración {step.iteration + 1}
+                                  </span>
+                                )}
                                 {step.attempts != null && step.attempts > 1 && (
                                   <span className="text-[10px] text-[var(--text-secondary)]">
                                     {step.attempts} intentos

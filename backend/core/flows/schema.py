@@ -19,9 +19,9 @@ from backend.utils.paths import resource_path
 logger = logging.getLogger(__name__)
 
 IMPLEMENTED_NODE_KINDS = frozenset(
-    {"trigger", "tool_call", "condition", "transform", "http_request", "agent", "switch", "mcp_call"}
+    {"trigger", "tool_call", "condition", "transform", "http_request", "agent", "switch", "mcp_call", "loop", "code"}
 )
-RESERVED_NODE_KINDS = frozenset({"loop", "code"})
+RESERVED_NODE_KINDS: frozenset[str] = frozenset()
 TRIGGER_KINDS = frozenset({"manual", "schedule", "app_event", "webhook"})
 
 MAX_FLOW_NODES = 200
@@ -145,6 +145,17 @@ def validate_graph(graph: JsonObject) -> None:
                     raise ValueError(f"interval_minutes del trigger {node_id} debe ser un entero de minutos")
                 if interval < 1 or interval > 10080:
                     raise ValueError(f"interval_minutes del trigger {node_id} fuera de rango (1-10080)")
+            if trigger_kind == "app_event":
+                event = node["config"].get("event")
+                if event is not None and (not isinstance(event, str) or not re.fullmatch(r"[a-z0-9_.-]{1,64}", event)):
+                    raise ValueError(f"event del trigger {node_id} debe ser un nombre como 'job_finished' (o vacío para todos)")
+            if trigger_kind == "webhook":
+                suffix = node["config"].get("path")
+                if suffix is not None and (not isinstance(suffix, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{0,64}", suffix)):
+                    raise ValueError(f"path del webhook {node_id} solo admite letras, dígitos, '_' y '-'")
+                secret = node["config"].get("secret")
+                if secret is not None and (not isinstance(secret, str) or len(secret) > 128):
+                    raise ValueError(f"secret del webhook {node_id} debe ser una cadena de hasta 128 caracteres")
         if node["kind"] == "tool_call":
             if node["config"].get("input_mode", "all") not in ("all", "any"):
                 raise ValueError(f"input_mode inválido en {node_id}")
@@ -169,6 +180,31 @@ def validate_graph(graph: JsonObject) -> None:
             prompt = node["config"].get("prompt")
             if not isinstance(prompt, str) or not prompt.strip():
                 raise ValueError(f"El nodo {node_id} (agent) requiere config.prompt")
+            tools = node["config"].get("tools", False)
+            tools_ok = isinstance(tools, bool) or (
+                isinstance(tools, list) and all(isinstance(name, str) and name for name in tools)
+            )
+            if not tools_ok:
+                raise ValueError(f"tools del nodo {node_id} debe ser true/false o una lista de métodos")
+            max_steps = node["config"].get("max_steps", 8)
+            if not isinstance(max_steps, int) or isinstance(max_steps, bool) or not 1 <= max_steps <= 12:
+                raise ValueError(f"max_steps del nodo {node_id} fuera de rango (1-12)")
+            if not isinstance(node["config"].get("auto_approve", False), bool):
+                raise ValueError(f"auto_approve del nodo {node_id} debe ser true o false")
+        if node["kind"] == "loop":
+            over = node["config"].get("over")
+            if over is not None and not isinstance(over, str):
+                raise ValueError(f"over del nodo {node_id} debe ser una expresión como '=item.json.filas'")
+            max_items = node["config"].get("max_items", 100)
+            if not isinstance(max_items, int) or isinstance(max_items, bool) or not 1 <= max_items <= 1000:
+                raise ValueError(f"max_items del nodo {node_id} fuera de rango (1-1000)")
+        if node["kind"] == "code":
+            code = node["config"].get("code")
+            if not isinstance(code, str) or not code.strip():
+                raise ValueError(f"El nodo {node_id} (code) requiere config.code")
+            timeout_s = node["config"].get("timeout_s", 30)
+            if not isinstance(timeout_s, (int, float)) or isinstance(timeout_s, bool) or not 1 <= timeout_s <= 120:
+                raise ValueError(f"timeout_s del nodo {node_id} fuera de rango (1-120)")
         if node["kind"] == "mcp_call":
             server = node["config"].get("server")
             if not isinstance(server, str) or not server.strip():
@@ -220,13 +256,82 @@ def validate_graph(graph: JsonObject) -> None:
         target = next(node for node in nodes if node["id"] == edge["to_node"])
         ports = ({"true", "false"} if source["kind"] == "condition" else
                  {"default", *(case["port"] for case in source["config"].get("cases") or [])} if source["kind"] == "switch" else
-                 {"main", "waiting"} if source["kind"] == "tool_call" else {"main"})
+                 {"main", "waiting"} if source["kind"] == "tool_call" else
+                 {"each", "done"} if source["kind"] == "loop" else {"main"})
         if edge["from_port"] not in ports:
             raise ValueError(f"Puerto de salida inexistente: {edge['from_node']}.{edge['from_port']}")
         if target["kind"] == "trigger" or edge["to_port"] != "main":
             raise ValueError(f"Puerto de entrada inexistente: {edge['to_node']}.{edge['to_port']}")
 
     _assert_acyclic(nodes, edges)
+    _assert_loop_regions(nodes, edges)
+
+
+def _descendants(edges: list[JsonObject], roots: set[str]) -> set[str]:
+    outgoing: dict[str, list[str]] = {}
+    for edge in edges:
+        outgoing.setdefault(edge["from_node"], []).append(edge["to_node"])
+    seen: set[str] = set()
+    queue = list(roots)
+    while queue:
+        nid = queue.pop()
+        if nid in seen:
+            continue
+        seen.add(nid)
+        queue.extend(outgoing.get(nid) or [])
+    return seen
+
+
+def _ancestors(edges: list[JsonObject], node_id: str) -> set[str]:
+    incoming: dict[str, list[str]] = {}
+    for edge in edges:
+        incoming.setdefault(edge["to_node"], []).append(edge["from_node"])
+    seen: set[str] = set()
+    queue = [node_id]
+    while queue:
+        nid = queue.pop()
+        for source in incoming.get(nid) or []:
+            if source not in seen:
+                seen.add(source)
+                queue.append(source)
+    return seen
+
+
+def loop_body_regions(graph: JsonObject) -> dict[str, set[str]]:
+    """Nodos del cuerpo de cada bucle: descendientes del puerto ``each`` que no
+    son descendientes del puerto ``done`` (estos últimos reciben el resumen)."""
+    edges = graph["edges"]
+    regions: dict[str, set[str]] = {}
+    for node in graph["nodes"]:
+        if node["kind"] != "loop":
+            continue
+        each_targets = {e["to_node"] for e in edges if e["from_node"] == node["id"] and e["from_port"] == "each"}
+        done_targets = {e["to_node"] for e in edges if e["from_node"] == node["id"] and e["from_port"] == "done"}
+        regions[node["id"]] = _descendants(edges, each_targets) - _descendants(edges, done_targets) - {node["id"]}
+    return regions
+
+
+def _assert_loop_regions(nodes: list[JsonObject], edges: list[JsonObject]) -> None:
+    kinds = {node["id"]: node["kind"] for node in nodes}
+    for loop_id, body in loop_body_regions({"nodes": nodes, "edges": edges}).items():
+        if not body:
+            continue
+        if any(kinds[nid] == "loop" for nid in body):
+            raise ValueError(f"El bucle {loop_id} no puede contener otro bucle")
+        ancestors = _ancestors(edges, loop_id)
+        for edge in edges:
+            in_body = edge["to_node"] in body
+            from_body = edge["from_node"] in body
+            if in_body and not from_body and edge["from_node"] != loop_id and edge["from_node"] not in ancestors:
+                raise ValueError(
+                    f"El nodo del bucle {edge['to_node']} depende de {edge['from_node']}, que no antecede al bucle"
+                )
+            if in_body and edge["from_node"] == loop_id and edge["from_port"] != "each":
+                raise ValueError(f"Los nodos del bucle {loop_id} solo reciben datos del puerto 'each'")
+            if from_body and not in_body and edge["to_node"] != loop_id:
+                raise ValueError(
+                    f"El nodo {edge['from_node']} está dentro del bucle {loop_id}; usa el puerto 'done' para recoger resultados"
+                )
 
 
 def _assert_acyclic(nodes: list[JsonObject], edges: list[JsonObject]) -> None:

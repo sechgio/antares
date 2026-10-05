@@ -248,6 +248,47 @@ export function AgentConfigEditor({ node, patchConfig, sources = [] }: { node: F
           onBlur={(e) => patchConfig({ system: e.target.value || undefined })}
         />
       </div>
+      <div className="rounded-md border border-[var(--border-medium)] p-3">
+        <label className="flex items-center gap-2 text-xs text-[var(--text-primary)]">
+          <input
+            type="checkbox"
+            checked={node.config.tools === true || Array.isArray(node.config.tools)}
+            onChange={(e) => patchConfig({ tools: e.target.checked ? true : false })}
+            className="accent-[var(--accent-primary)]"
+          />
+          Permitir herramientas de Antares
+        </label>
+        {(node.config.tools === true || Array.isArray(node.config.tools)) && (
+          <div className="mt-2 space-y-2">
+            <p className="text-[11px] text-[var(--text-secondary)]">
+              El agente puede consultar datos y ejecutar acciones. Las acciones con
+              efectos pausan la ejecución hasta que las apruebes en Ejecuciones.
+            </p>
+            <div>
+              <FieldLabel>Pasos máximos del agente</FieldLabel>
+              <Input
+                type="number"
+                min={1}
+                max={12}
+                value={Number(node.config.max_steps ?? 8)}
+                onChange={(e) => {
+                  const v = Math.round(Number(e.target.value));
+                  if (Number.isFinite(v)) patchConfig({ max_steps: Math.min(Math.max(v, 1), 12) });
+                }}
+              />
+            </div>
+            <label className="flex items-center gap-2 text-xs text-[var(--text-primary)]">
+              <input
+                type="checkbox"
+                checked={node.config.auto_approve === true}
+                onChange={(e) => patchConfig({ auto_approve: e.target.checked ? true : undefined })}
+                className="accent-[var(--accent-primary)]"
+              />
+              Aprobar acciones automáticamente (sin pausar)
+            </label>
+          </div>
+        )}
+      </div>
     </>
   );
 }

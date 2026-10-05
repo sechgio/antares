@@ -52,6 +52,8 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
   const [batchPreview, setBatchPreview] = useState<ReportBatchPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewArgs, setPreviewArgs] = useState('');
+  const [appEvents, setAppEvents] = useState<{ id: string; label: string }[]>([]);
+  const [webhookInfo, setWebhookInfo] = useState<{ running: boolean; port: number; url_template: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -96,6 +98,18 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
     }).catch((err) => { if (alive) addToast({ message: errorMessage(err, 'No se pudieron cargar las impresoras'), type: 'error' }); });
     return () => { alive = false; };
   }, [method, addToast]);
+
+  const triggerKind = node?.kind === 'trigger' ? String(node.config.trigger_kind ?? 'manual') : '';
+  useEffect(() => {
+    let alive = true;
+    if (triggerKind === 'app_event') flowsApi.flowsEventsList().then((res) => {
+      if (alive) setAppEvents(res.events);
+    }).catch(() => {});
+    if (triggerKind === 'webhook') flowsApi.flowsWebhookInfo().then((res) => {
+      if (alive) setWebhookInfo(res);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [triggerKind]);
 
   if (!node) return null;
   const def = NODE_KIND_DEFS[node.kind];
@@ -251,8 +265,63 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
               }}
             />
             <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
-              Se ejecuta cada N minutos mientras la app esté abierta y el flujo activo.
+              Se ejecuta cada N minutos mientras la app esté abierta. Los flujos activos
+              también se registran en el Programador de tareas de Windows y corren con
+              la aplicación cerrada.
             </p>
+          </div>
+        )}
+
+        {node.kind === 'trigger' && node.config.trigger_kind === 'app_event' && (
+          <div>
+            <FieldLabel>Evento de la app</FieldLabel>
+            <ThemedSelect
+              value={String(node.config.event ?? '')}
+              options={[
+                { value: '', label: 'Selecciona un evento…' },
+                ...appEvents.map((e) => ({ value: e.id, label: e.label ? `${e.id} — ${e.label}` : e.id })),
+                ...(node.config.event && !appEvents.some((e) => e.id === node.config.event)
+                  ? [{ value: String(node.config.event), label: String(node.config.event) }]
+                  : []),
+              ]}
+              onChange={(event) => patchConfig({ event })}
+            />
+            <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+              El flujo se ejecuta cuando ocurre el evento dentro de Antares.
+            </p>
+          </div>
+        )}
+
+        {node.kind === 'trigger' && node.config.trigger_kind === 'webhook' && (
+          <div className="space-y-3">
+            <div>
+              <FieldLabel>Sufijo del webhook (opcional)</FieldLabel>
+              <Input
+                value={String(node.config.path ?? '')}
+                onChange={(e) => patchConfig({ path: e.target.value.replace(/^\/+/, '') || undefined })}
+                placeholder="pago"
+                spellCheck={false}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div>
+              <FieldLabel>Secreto (opcional)</FieldLabel>
+              <Input
+                value={String(node.config.secret ?? '')}
+                onChange={(e) => patchConfig({ secret: e.target.value || undefined })}
+                placeholder="Clave compartida"
+                spellCheck={false}
+                className="font-mono text-xs"
+              />
+              <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                Se valida en la cabecera <code>X-Antares-Flow-Key</code> o el parámetro <code>?key=</code>.
+              </p>
+            </div>
+            {webhookInfo?.running && (
+              <p className="break-all font-mono text-[11px] text-[var(--text-secondary)]">
+                Escuchando en {webhookInfo.url_template} (solo esta máquina)
+              </p>
+            )}
           </div>
         )}
 
@@ -389,11 +458,21 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
                   options={[{ value: '', label: 'Selecciona una impresora…' }, ...printers.map((p) => ({ value: p.name, label: `${p.name}${p.default ? ' (predeterminada)' : ''}` }))]}
                   onChange={(printer_name) => patchArgs({ printer_name })} />
                 <FieldLabel>Copias</FieldLabel><Input aria-label="Copias" type="number" min={1} max={99} value={Number(args.copies ?? 1)} onChange={(e) => patchArgs({ copies: Math.max(1, Math.min(99, Math.round(Number(e.target.value)))) })} />
+                <FieldLabel>Páginas</FieldLabel><Input aria-label="Páginas" value={String(args.pages ?? '')} placeholder="Todas — p. ej. 1-3,5" spellCheck={false}
+                  onChange={(e) => patchArgs({ pages: e.target.value || undefined })} />
+                <FieldLabel>Dúplex</FieldLabel>
+                <ThemedSelect aria-label="Dúplex" value={String(args.duplex ?? 'none')}
+                  options={[{ value: 'none', label: 'Una cara' }, { value: 'long_edge', label: 'Ambas caras (borde largo)' }, { value: 'short_edge', label: 'Ambas caras (borde corto)' }]}
+                  onChange={(duplex) => patchArgs({ duplex: duplex === 'none' ? undefined : duplex })} />
+                <FieldLabel>Calidad</FieldLabel>
+                <ThemedSelect aria-label="Calidad" value={String(args.quality ?? 'normal')}
+                  options={[{ value: 'draft', label: 'Borrador (rápida)' }, { value: 'normal', label: 'Normal' }, { value: 'high', label: 'Alta' }]}
+                  onChange={(quality) => patchArgs({ quality: quality === 'normal' ? undefined : quality })} />
                 <p className="text-xs text-[var(--text-secondary)]">Al completar el flujo, envía el PDF a la cola de Windows. La impresora elegida debe estar disponible.</p>
               </div>}
               {METHOD_FIELDS[method]?.filter((key) => ['destino', 'output_folder', 'outputDir', 'output_path', 'outputPath', 'pdf_path', 'stamp_path', 'spreadsheet_path', 'excelPath'].includes(key)).map((key) => <Button key={key} variant="secondary" size="sm" className="mb-2" onClick={() => void choosePath(key, /folder|destino|outputDir/.test(key), /output.*[Pp]ath/.test(key))}>Elegir {({ destino: 'carpeta de salida', output_folder: 'carpeta de salida', outputDir: 'carpeta de salida', output_path: 'archivo de salida', outputPath: 'archivo de salida', pdf_path: 'PDF', stamp_path: 'sello', spreadsheet_path: 'Excel', excelPath: 'Excel' } as Record<string, string>)[key] ?? 'archivo'}</Button>)}
               <fieldset disabled={!!fieldError}>
-                <ObjectFieldsEditor value={method === 'flows_print_pdf' ? Object.fromEntries(Object.entries(args).filter(([key]) => key !== 'printer_name' && key !== 'copies')) : node.config.args} fields={METHOD_FIELDS[String(node.config.method ?? '')]?.filter((key) => method !== 'flows_print_pdf' || (key !== 'printer_name' && key !== 'copies'))} sources={sources} onChange={(data) => patchConfig({ args: method === 'flows_print_pdf' ? { printer_name: args.printer_name, copies: args.copies ?? 1, ...data } : data })} />
+                <ObjectFieldsEditor value={method === 'flows_print_pdf' ? Object.fromEntries(Object.entries(args).filter(([key]) => !['printer_name', 'copies', 'pages', 'duplex', 'quality'].includes(key))) : node.config.args} fields={METHOD_FIELDS[String(node.config.method ?? '')]?.filter((key) => method !== 'flows_print_pdf' || !['printer_name', 'copies', 'pages', 'duplex', 'quality'].includes(key))} sources={sources} onChange={(data) => patchConfig({ args: method === 'flows_print_pdf' ? { printer_name: args.printer_name, copies: args.copies ?? 1, pages: args.pages, duplex: args.duplex, quality: args.quality, ...data } : data })} />
               </fieldset>
               </>}
             </div>
@@ -577,6 +656,76 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
         {node.kind === 'agent' && <AgentConfigEditor node={node} patchConfig={patchConfig} sources={sources} />}
 
         {node.kind === 'mcp_call' && <McpCallConfigEditor node={node} patchConfig={patchConfig} sources={sources} invalid={!!fieldError} />}
+
+        {node.kind === 'loop' && (
+          <>
+            <div>
+              <FieldLabel>Repetir sobre</FieldLabel>
+              <ThemedSelect aria-label="Lista a recorrer" value={String(node.config.over ?? '')}
+                options={[{ value: '', label: 'La lista recibida del paso anterior' }, ...sources,
+                  ...(node.config.over && !sources.some((s) => s.value === node.config.over) ? [{ value: String(node.config.over), label: 'Expresión personalizada' }] : [])]}
+                onChange={(over) => patchConfig({ over: over || undefined })} />
+              <details>
+              <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Expresión avanzada</summary>
+              <Input
+                value={String(node.config.over ?? '')}
+                onChange={(e) => patchConfig({ over: e.target.value || undefined })}
+                placeholder="=nodes.n1.json.filas"
+                spellCheck={false}
+                className="font-mono text-xs"
+              />
+              </details>
+              <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                Cada elemento recorre los pasos conectados a «Cada elemento»; al terminar la lista, la ejecución continúa por «Al terminar». Dentro del cuerpo puedes usar =loop.item, =loop.index y =loop.count.
+              </p>
+            </div>
+            <div>
+              <FieldLabel>Máximo de elementos</FieldLabel>
+              <Input
+                type="number"
+                min={1}
+                max={1000}
+                value={Number(node.config.max_items ?? 100)}
+                onChange={(e) => {
+                  const value = Math.round(Number(e.target.value));
+                  if (Number.isFinite(value)) patchConfig({ max_items: Math.min(Math.max(value, 1), 1000) });
+                }}
+              />
+            </div>
+          </>
+        )}
+
+        {node.kind === 'code' && (
+          <>
+            <div>
+              <FieldLabel>Código Python</FieldLabel>
+              <Textarea
+                value={String(node.config.code ?? '')}
+                rows={10}
+                spellCheck={false}
+                className="font-mono text-xs"
+                placeholder={'result = item * 2'}
+                onChange={(e) => patchConfig({ code: e.target.value })}
+              />
+              <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                Variables: <code>item</code>, <code>items</code>, <code>nodes</code>, <code>run</code> y <code>loop</code>. Deja el resultado en la variable <code>result</code>. Se ejecuta en un proceso aparte con tu usuario.
+              </p>
+            </div>
+            <div>
+              <FieldLabel>Tiempo máximo (segundos)</FieldLabel>
+              <Input
+                type="number"
+                min={1}
+                max={300}
+                value={Number(node.config.timeout_s ?? 30)}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  if (Number.isFinite(value)) patchConfig({ timeout_s: Math.min(Math.max(value, 1), 300) });
+                }}
+              />
+            </div>
+          </>
+        )}
 
         {node.kind === 'transform' && (
           <div className="space-y-3">
