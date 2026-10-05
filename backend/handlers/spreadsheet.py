@@ -478,10 +478,7 @@ def spreadsheet_export_volantes_template(params: dict[str, Any]) -> dict[str, An
 
     if resolved:
         with atomic_output_file(
-            resolved,
-            extension=".xlsx",
-            overwrite=bool(params.get("overwrite")),
-            write_token=params.get("_write_token"),
+            resolved, extension=".xlsx", overwrite=bool(params.get("overwrite")), write_token=params.get("_write_token")
         ) as target:
             df.to_excel(target.tmp_path, index=False, engine="openpyxl")
         dest = target.destination
