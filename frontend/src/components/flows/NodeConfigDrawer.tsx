@@ -237,8 +237,12 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
               value={String(node.config.trigger_kind ?? 'manual')}
               onChange={(v) => patchConfig({
                 trigger_kind: v as TriggerKind,
+                // Campos del disparo anterior que no aplican al nuevo tipo.
+                event: undefined,
+                path: undefined,
+                interval_minutes: undefined,
                 // El webhook exige clave: se autogenera al elegir el disparo.
-                ...(v === 'webhook' && !node.config.secret ? { secret: crypto.randomUUID().replaceAll('-', '') } : {}),
+                secret: v === 'webhook' ? crypto.randomUUID().replaceAll('-', '') : undefined,
               })}
               options={Object.entries(TRIGGER_KIND_LABELS).map(([value, label]) => ({
                 value,
