@@ -397,6 +397,63 @@ function testEvaluatePolicy() {
     'aviso cuando el diff no toca tests',
   );
 
+  const bigUndeclared = policy.evaluatePolicy({
+    number: 30,
+    body: goodPrBody(),
+    additions: 600,
+    deletions: 20,
+    files: [
+      { path: 'backend/core/formatos.py', additions: 550, deletions: 10 },
+      { path: 'tests/test_formatos.py', additions: 50, deletions: 10 },
+    ],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  assert(
+    bigUndeclared.checks.some((c) => c.id === 'alcance' && c.status === 'warn'),
+    'avisa cuando un PR supera 400 líneas sin declarar el cambio amplio',
+  );
+
+  const bigDeclared = policy.evaluatePolicy({
+    number: 31,
+    body: `${goodPrBody()}\n\ncambio amplio: backend/core/formatos.py — el refactor no admite vía mínima — bajo — npm test`,
+    additions: 600,
+    deletions: 20,
+    files: [
+      { path: 'backend/core/formatos.py', additions: 550, deletions: 10 },
+      { path: 'tests/test_formatos.py', additions: 50, deletions: 10 },
+    ],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  assert(
+    bigDeclared.checks.some((c) => c.id === 'alcance' && c.status === 'pass'),
+    'el marcador cambio amplio: en el cuerpo declara el alcance',
+  );
+
+  const bigExempt = policy.evaluatePolicy({
+    number: 32,
+    body: goodPrBody(),
+    additions: 600,
+    deletions: 20,
+    files: [{ path: 'backend/core/formatos.py', additions: 600, deletions: 20 }],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    labels: [{ name: 'size/exempt' }],
+    author: { login: 'sechgio' },
+  });
+  assert(
+    bigExempt.checks.some((c) => c.id === 'alcance' && c.status === 'pass'),
+    'la etiqueta size/exempt también declara el alcance',
+  );
+
+  assert(
+    good.checks.some((c) => c.id === 'alcance' && c.status === 'pass'),
+    'un diff acotado no necesita declaración de alcance',
+  );
+
   const report = policy.renderReport({ number: 7 }, good);
   assert(report.includes('Veredicto'), 'el informe incluye el veredicto');
   assert(report.includes('antares-review-policy'), 'el informe lleva marca para idempotencia');
@@ -576,6 +633,10 @@ function testAdvisoryChecks() {
   assert(
     partial.checks.some((c) => c.id === 'tamano' && c.status === 'skip'),
     'con el listado de archivos incompleto no se bloquea por tamaño',
+  );
+  assert(
+    partial.checks.some((c) => c.id === 'alcance' && c.status === 'skip'),
+    'con datos parciales el check de alcance se omite',
   );
   eq(partial.verdict, 'warning', 'un dato incompleto no convierte el aviso en bloqueo');
 

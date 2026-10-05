@@ -11,6 +11,10 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Plugins de la barra de título**: Spotify (con OAuth), Audius, Jamendo y Archive se pueden activar y ordenar desde Ajustes.
 - **Notas adhesivas**: se pueden crear y organizar notas locales desde la barra de título.
 
+### Changed
+- **CI**: `review-policy` avisa cuando un PR supera 400 líneas efectivas sin marcador `cambio amplio:` en el cuerpo ni etiqueta `size/exempt`.
+- **Política de diffs**: `AGENTS.md` endurece la regla de cambios mínimos — subordina cualquier skill instalada, permite enmendar la lista de archivos declarada, exige persistir la declaración `cambio amplio:` en el commit o PR, documenta que `push:ship`/`pr-fix:ship` stagean todo el worktree y precisa las acompañantes permitidas.
+
 ### Fixed
 - **Mensajes de error de herramientas**: `EvidenciaVolanteoError` y `PanelAvisoCorteError` derivan ahora de `ValueError`, así que la UI vuelve a mostrar el texto propio de la herramienta en lugar de "Error interno del servidor".
 - **Canvas / pegar**: pegar una capa que todavía estaba en el documento duplicaba el id y terminaba borrando la capa original; el portapapeles se re-keyea antes de clonar.
