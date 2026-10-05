@@ -42,6 +42,7 @@ function reloadIpcMethods() {
     './autoimg-ipc-methods',
     './ubicaciones-ipc-methods',
     './spotify-ipc-methods',
+    './connections-ipc-methods',
     '../shared/ipc-method-catalog',
     '../shared/ipc-method-catalog.json',
   ];
@@ -732,6 +733,10 @@ const _NATIVE_CALLS = {
     const { handleSpotifyCall } = require('./spotify-handlers');
     return handleSpotifyCall(method, params);
   },
+  connections: (method, params) => {
+    const { handleConnectionsCall } = require('./connections-handlers');
+    return handleConnectionsCall(method, params);
+  },
 };
 
 function _resolveCachedApiKey(provider) {
@@ -771,6 +776,10 @@ function registerIpcHandlers() {
       _logSecurityRejection('method_not_allowed', typeof method === 'string' ? method : undefined);
       const hint = ' Reinicia Antares por completo (cierra todas las ventanas) para recargar la allowlist IPC.';
       throw new Error(`IPC method not allowed: ${method}.${hint}`);
+    }
+    if (_ipcCatalog().INTERNAL_METHODS.has(method)) {
+      _logSecurityRejection('internal_method', method);
+      throw new Error(`IPC method not allowed: ${method} (internal)`);
     }
 
     const win = getMainWindow();
@@ -835,7 +844,16 @@ function registerIpcHandlers() {
     }
     let backendParams;
     try {
-      backendParams = _maybeResolveFileTokens(params, win, method);
+      const verifiedFlowGrants = Object.create(null);
+      if ((method === 'flows_create' || method === 'flows_update') && params.graph?.nodes) {
+        for (const node of params.graph.nodes) {
+          const grants = node.config?._file_grants;
+          if (!grants?.signature) continue;
+          const verification = await _callBackend('flows_path_authorize', { ...grants, _verify: true });
+          if (verification?.valid === true) verifiedFlowGrants[node.id] = grants;
+        }
+      }
+      backendParams = _maybeResolveFileTokens(params, win, method, { verifiedFlowGrants });
       backendParams = _validateAndResolveWriteParams(backendParams, win, method);
     } catch (err) {
       _tagValidationError(err, method);
@@ -850,6 +868,17 @@ function registerIpcHandlers() {
     }
 
     try {
+      if ((method === 'flows_create' || method === 'flows_update') && backendParams.graph?.nodes) {
+        for (const node of backendParams.graph.nodes) {
+          if (node.config?._file_grants) {
+            const authorization = await _callBackend('flows_path_authorize', node.config._file_grants);
+            node.config._file_grants = authorization.grants;
+          }
+        }
+      } else if (method === 'flows_read_images') {
+        const authorization = await _callBackend('flows_path_authorize', backendParams._flow_file_grants);
+        backendParams._flow_file_grants = authorization.grants;
+      }
       const result = await _callBackend(method, backendParams);
       return _maybeTokenizeResultPaths(method, result, win);
     } catch (err) {

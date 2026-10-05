@@ -51,6 +51,30 @@ IDEMPOTENT_METHODS: frozenset[str] = frozenset(
 RAW_OUTPUT_PATH_METHODS: frozenset[str] = frozenset(
     name for name, entry in _METHODS.items() if entry.get("rawOutputPath") is True
 )
+ORCHESTRATABLE_METHODS: frozenset[str] = frozenset(
+    name
+    for name, entry in _METHODS.items()
+    if entry.get("orchestratable") is True
+    and str(entry.get("handler", "")).startswith("backend:")
+)
+FLOW_ACTION_METHODS: frozenset[str] = ORCHESTRATABLE_METHODS | frozenset(
+    name for name, entry in _METHODS.items()
+    if entry.get("flowCallable") is True and str(entry.get("handler", "")).startswith("backend:")
+)
+
+
+def backend_methods() -> frozenset[str]:
+    return frozenset(
+        name
+        for name, entry in _METHODS.items()
+        if str(entry.get("handler", "")).startswith("backend:")
+    )
+
+
+def input_schema_for(method: str) -> dict[str, object]:
+    entry = _entry(method)
+    schema = entry.get("inputSchema") if entry else None
+    return schema if isinstance(schema, dict) else {"type": "object", "properties": {}}
 
 _TIMEOUTS: dict[str, Any] = _CATALOG.get("timeouts", {})  # allowlist: dict[str, Any]
 _DEFAULT_TIMEOUT_MS = 30_000

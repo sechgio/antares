@@ -19,6 +19,7 @@ import {
   RefreshCw,
   ScrollText,
   Stamp,
+  Workflow,
   Zap,
 } from 'lucide-react';
 import BrandMark from '../brand/BrandMark';
@@ -55,6 +56,7 @@ const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
   imageOptimizer: Image,
   previewPanel: LayoutDashboard,
   canvas: Paintbrush,
+  flows: Workflow,
   panelAvisoCorte: FileStack,
   ubicaciones: MapPin,
   evidenciaVolanteo: Grid2X2,
@@ -83,7 +85,7 @@ const NAV_GROUPS: { id: string; tabs: TabId[] }[] = [
   },
   {
     id: 'herramientas',
-    tabs: ['imageOptimizer', 'ubicaciones', 'autoimg'],
+    tabs: ['imageOptimizer', 'ubicaciones', 'autoimg', 'flows'],
   },
 ];
 
