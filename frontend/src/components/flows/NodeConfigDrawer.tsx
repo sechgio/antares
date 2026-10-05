@@ -621,6 +621,7 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
             <div>
               <FieldLabel>Cabeceras (JSON)</FieldLabel>
               <Textarea
+                key={node.id}
                 data-json
                 defaultValue={node.config.headers ? JSON.stringify(node.config.headers, null, 2) : ''}
                 rows={4}
@@ -633,6 +634,7 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
             <div>
               <FieldLabel>Datos a enviar (JSON)</FieldLabel>
               <Textarea
+                key={node.id}
                 data-json
                 defaultValue={node.config.body != null ? JSON.stringify(node.config.body, null, 2) : ''}
                 rows={5}

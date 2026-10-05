@@ -42,6 +42,32 @@ it('permite tratar un error HTTP como datos manteniendo el timeout', async () =>
   expect(changed.mock.lastCall?.[0].config).toEqual({ url: 'https://example.com', timeout_s: 12, fail_on_http_error: false });
 });
 
+it('recarga cabeceras y cuerpo HTTP al cambiar de nodo', async () => {
+  const changed = vi.fn();
+  const first: FlowNode = {
+    id: 'http-a', name: 'A', kind: 'http_request', position: { x: 0, y: 0 },
+    config: { url: 'https://example.com', headers: { Authorization: 'Bearer A' }, body: { id: 'A' } },
+  };
+  const second: FlowNode = {
+    id: 'http-b', name: 'B', kind: 'http_request', position: { x: 0, y: 0 },
+    config: { url: 'https://example.com', headers: { Authorization: 'Bearer B' }, body: { id: 'B' } },
+  };
+  const { rerender } = render(<NodeConfigDrawer node={first} onChange={changed} onDelete={vi.fn()} onClose={vi.fn()} />);
+  fireEvent.click(await screen.findByText('Opciones avanzadas de la solicitud'));
+  const headers = screen.getByPlaceholderText('{ "Accept": "application/json" }');
+  const body = screen.getByPlaceholderText('{ "texto": "=nodes.n1.json.title" }');
+  expect(headers).toHaveValue(JSON.stringify(first.config.headers, null, 2));
+  expect(body).toHaveValue(JSON.stringify(first.config.body, null, 2));
+
+  rerender(<NodeConfigDrawer node={second} onChange={changed} onDelete={vi.fn()} onClose={vi.fn()} />);
+  const updatedHeaders = screen.getByPlaceholderText('{ "Accept": "application/json" }');
+  expect(updatedHeaders).toHaveValue(JSON.stringify(second.config.headers, null, 2));
+  expect(screen.getByPlaceholderText('{ "texto": "=nodes.n1.json.title" }'))
+    .toHaveValue(JSON.stringify(second.config.body, null, 2));
+  fireEvent.blur(updatedHeaders);
+  expect(changed.mock.lastCall?.[0].config.headers).toEqual(second.config.headers);
+});
+
 it('configura la entrada de imágenes con carpetas elegidas y cantidades numéricas', async () => {
   vi.spyOn(flowsApi, 'flowsOrchestratableMethods').mockResolvedValue({ methods: ['flows_read_images'], actions: ['flows_read_images'] });
   const folder = vi.spyOn(systemApi, 'dialogFolder').mockResolvedValue({ paths: [], file_tokens: [], folder: 'C:\\imagenes' });

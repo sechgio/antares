@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const { _maybeResolveFileTokens } = require('../electron/ipc-file-policy');
 const { _registerWriteRootFromPath, _clearAllowedWriteRoots } = require('../electron/write-roots');
+const { clearAllowedReadPaths } = require('../electron/path-allowlist');
 const { createFileCapability } = require('../electron/file-capabilities');
 const catalog = require('../shared/ipc-method-catalog');
 require('../electron/dialog-handlers');
@@ -52,6 +53,30 @@ try {
   }, win, 'flows_read_images');
   assert.strictEqual(direct.spreadsheet_path, externalSheet);
   assert.deepStrictEqual(direct._flow_file_grants, { folders: [source, output], read: [externalSheet], write: [output] });
+  const savedGrants = {
+    folders: [source, output], read: [sheet], write: [output], signature: 'backend-verified',
+  };
+  clearAllowedReadPaths();
+  _clearAllowedWriteRoots();
+  const restored = _maybeResolveFileTokens(
+    graph('flows_read_images', {
+      source_folder: source, output_folder: output, spreadsheet_path: sheet,
+    }, savedGrants),
+    win,
+    'flows_update',
+    { verifiedFlowGrants: { action: savedGrants } },
+  );
+  assert.strictEqual(restored.graph.nodes[0].config.args.spreadsheet_path, sheet);
+  assert.deepStrictEqual(restored.graph.nodes[0].config._file_grants.read, [sheet]);
+  assert.deepStrictEqual(restored.graph.nodes[0].config._file_grants.folders, [source, output]);
+  assert.throws(() => _maybeResolveFileTokens(
+    graph('flows_read_images', {
+      source_folder: source, output_folder: output, spreadsheet_path: sheet,
+    }, { ...savedGrants, signature: 'forged' }),
+    win,
+    'flows_update',
+  ), /token|autorizad|permitid|carpeta/);
+
   const printable = path.join(output, 'sellado.pdf');
   fs.writeFileSync(printable, '%PDF-test');
   const pdfToken = createFileCapability({ filePath: printable, mode: 'read', webContentsId: 99 });

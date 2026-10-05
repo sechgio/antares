@@ -104,12 +104,13 @@ function resolveReadToken(token, webContentsId) {
   return require('./file-capabilities').resolveCapability(token, 'read', webContentsId);
 }
 
-function maybeResolveFileTokens(params, win, method) {
+function maybeResolveFileTokens(params, win, method, options = {}) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
   if ((method === 'flows_create' || method === 'flows_update') && params.graph && Array.isArray(params.graph.nodes)) {
-    const outer = maybeResolveFileTokens({ ...params, graph: undefined }, win, method);
+    const outer = maybeResolveFileTokens({ ...params, graph: undefined }, win, method, options);
     return { ...outer, graph: { ...params.graph, nodes: params.graph.nodes.map((node) => {
       const config = { ...node.config };
+      const verifiedGrants = options.verifiedFlowGrants?.[node.id];
       delete config._file_grants;
       if (node.kind !== 'tool_call') return { ...node, config };
       if (!config.args || typeof config.args !== 'object' || Array.isArray(config.args)) return { ...node, config };
@@ -119,9 +120,21 @@ function maybeResolveFileTokens(params, win, method) {
         if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, stripExpressions(v)]));
         return value;
       };
-      const literal = stripExpressions(config.args || {});
-      const resolved = maybeResolveFileTokens(literal, win, config.method);
-      const written = validateAndResolveWriteParams(resolved, win, config.method);
+      let literal = stripExpressions(config.args || {});
+      if (verifiedGrants && Array.isArray(verifiedGrants.read)) {
+        const webContentsId = win?.webContents?.id ?? null;
+        for (const schema of READ_FILE_TOKEN_SCHEMAS.get(config.method) || []) {
+          literal = schemaTransform(literal, schema, (value) => (
+            typeof value === 'string' && verifiedGrants.read.includes(value)
+              ? require('./file-capabilities').createFileCapability({
+                filePath: value, mode: 'read', webContentsId,
+              }).token
+              : value
+          ));
+        }
+      }
+      const resolved = maybeResolveFileTokens(literal, win, config.method, { verifiedGrants });
+      const written = validateAndResolveWriteParams(resolved, win, config.method, { verifiedWriteRoots: verifiedGrants?.write });
       const merge = (original, checked) => {
         if (typeof original === 'string' && original.startsWith('=')) return original;
         if (Array.isArray(original)) return original.map((v, i) => merge(v, checked?.[i]));
@@ -151,7 +164,10 @@ function maybeResolveFileTokens(params, win, method) {
     for (const key of ['source_folder', 'output_folder']) {
       const value = params[key];
       if (!value) continue;
-      if (typeof value !== 'string' || !path.isAbsolute(value) || !_isUnderRegisteredWriteRoot(value)
+      const verifiedFolder = Array.isArray(options.verifiedGrants?.folders)
+        && options.verifiedGrants.folders.includes(value);
+      if (typeof value !== 'string' || !path.isAbsolute(value)
+          || (!_isUnderRegisteredWriteRoot(value) && !verifiedFolder)
           || hasSymlinkAncestor(value) || (fs.existsSync(value) && fs.lstatSync(value).isSymbolicLink())) {
         throw new Error('Selecciona la carpeta con el diálogo de Antares');
       }
@@ -356,7 +372,7 @@ function _assertAllowedRawOutputPath(outRaw) {
   }
 }
 
-function validateAndResolveWriteParams(params, win, method) {
+function validateAndResolveWriteParams(params, win, method, options = {}) {
   if (!params || typeof params !== 'object') return params;
   if ('_resolved_output_path' in params || '_write_token' in params) {
     params = { ...params };
@@ -385,7 +401,19 @@ function validateAndResolveWriteParams(params, win, method) {
       throw new Error(`invalid output path for ${key}`);
     }
     if (!value.startsWith('antares-write_')) {
-      _assertAllowedRawOutputPath(value);
+      const verifiedWrite = path.isAbsolute(value) && Array.isArray(options.verifiedWriteRoots)
+        && options.verifiedWriteRoots.some((root) => (
+          typeof root === 'string' && path.isAbsolute(root)
+          && require('./path-allowlist').isPathInside(root, value)
+        ));
+      if (verifiedWrite) {
+        const { hasSymlinkAncestor } = require('./path-allowlist');
+        if ((fs.existsSync(value) && fs.lstatSync(value).isSymbolicLink()) || hasSymlinkAncestor(value)) {
+          throw new Error('symlink no permitido en ruta de salida');
+        }
+      } else {
+        _assertAllowedRawOutputPath(value);
+      }
       continue;
     }
     const { resolveCapability } = require('./file-capabilities');

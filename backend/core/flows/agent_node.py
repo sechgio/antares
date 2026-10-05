@@ -9,6 +9,7 @@ el run se reanuda donde quedó.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import ntpath
@@ -45,12 +46,19 @@ class AwaitingApproval(Exception):
         self.state = state
 
 
+def _effect_id(node_id: str, step: int, index: int, call: JsonObject) -> str:
+    identity = [node_id, step, index, call.get("id"), call.get("name"), call.get("params")]
+    encoded = json.dumps(identity, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _serialize_call(call: JsonObject) -> JsonObject:
     return {
         "id": str(call.get("id") or ""),
         "name": str(call.get("name") or ""),
         "params": call.get("params") if isinstance(call.get("params"), dict) else {},
         "gated": bool(call.get("gated")),
+        "effect_id": str(call.get("effect_id") or ""),
     }
 
 
@@ -139,6 +147,7 @@ def run_agent_node(
     is_cancelled: Callable[[], bool],
     state: JsonObject | None,
     approvals: dict[str, JsonObject],
+    execute_with_effect: Callable[[JsonObject, Callable[[JsonObject], str]], str] | None = None,
 ) -> JsonObject:
     """Ejecuta el nodo agente; reanuda desde ``state`` cuando existe."""
     config = node.get("config") or {}
@@ -173,10 +182,15 @@ def run_agent_node(
     messages: list[JsonObject] = state["messages"]
 
     def execute(call: JsonObject) -> str:
-        return _execute_call(call, handler_getter, lane_submit, validate_paths)
+        def run(item: JsonObject) -> str:
+            return _execute_call(item, handler_getter, lane_submit, validate_paths)
+
+        return execute_with_effect(call, run) if execute_with_effect else run(call)
 
     pending_call = state.get("pending_call")
     if pending_call is not None:
+        if not pending_call.get("effect_id"):
+            pending_call["effect_id"] = _effect_id(node["id"], int(state.get("step") or 0), 0, pending_call)
         approval_id = str(state.get("approval_id") or "")
         decision = (approvals.get(approval_id) or {}).get("decision")
         if decision is None:
@@ -192,6 +206,7 @@ def run_agent_node(
             "content": content,
         })
         state.pop("pending_call", None)
+        state.pop("approval_id", None)
         _apply_calls(list(state.pop("queued_calls", [])), allowed, auto_approve, execute, state)
 
     for _ in range(max_steps - int(state.get("step") or 0)):
@@ -202,8 +217,14 @@ def run_agent_node(
         )
         state["step"] = int(state.get("step") or 0) + 1
         text = str(reply.get("text") or "")
-        calls = [dict(c, gated=bool(mcp_servers.parse_agent_tool(str(c.get("name") or "")) or str(c.get("name") or "") in gated))
-                 for c in (reply.get("calls") or [])]
+        calls = [
+            dict(
+                call,
+                gated=bool(mcp_servers.parse_agent_tool(str(call.get("name") or "")) or str(call.get("name") or "") in gated),
+                effect_id=_effect_id(node["id"], state["step"], index, call),
+            )
+            for index, call in enumerate(reply.get("calls") or [])
+        ]
         if calls:
             messages.append({"role": "assistant", "content": text, "tool_calls": calls})
             _apply_calls(calls, allowed, auto_approve, execute, state)

@@ -844,7 +844,16 @@ function registerIpcHandlers() {
     }
     let backendParams;
     try {
-      backendParams = _maybeResolveFileTokens(params, win, method);
+      const verifiedFlowGrants = Object.create(null);
+      if ((method === 'flows_create' || method === 'flows_update') && params.graph?.nodes) {
+        for (const node of params.graph.nodes) {
+          const grants = node.config?._file_grants;
+          if (!grants?.signature) continue;
+          const verification = await _callBackend('flows_path_authorize', { ...grants, _verify: true });
+          if (verification?.valid === true) verifiedFlowGrants[node.id] = grants;
+        }
+      }
+      backendParams = _maybeResolveFileTokens(params, win, method, { verifiedFlowGrants });
       backendParams = _validateAndResolveWriteParams(backendParams, win, method);
     } catch (err) {
       _tagValidationError(err, method);

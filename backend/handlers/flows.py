@@ -724,7 +724,10 @@ def _print_pdf(params: JsonObject) -> JsonObject:
 
 
 def _authorize_paths(params: JsonObject) -> JsonObject:
-    return {"grants": _store().authorize_paths(params)}
+    store = _store()
+    if params.get("_verify") is True:
+        return {"valid": store.verify_paths(params)}
+    return {"grants": store.authorize_paths(params)}
 
 
 @with_locale

@@ -374,21 +374,41 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
 _GUI_MUTEX = os_tasks.GUI_MUTEX
 _HEADLESS_MUTEX = os_tasks.HEADLESS_MUTEX
 _mutex_held = os_tasks.mutex_held
-_held_mutex: Any = None
+_MUTEX_WAIT_INFINITE = 0xFFFFFFFF
+_held_mutex: dict[str, int] = {}
 
 
 def _hold_mutex(name: str, timeout_ms: int) -> bool:
-    """Adquiere y retiene el mutex nombrado hasta que el proceso muera."""
-    global _held_mutex
-    handle = os_tasks.hold_mutex(name, timeout_ms)
-    if sys.platform != "win32" or handle is not None:
-        _held_mutex = handle
+    """Adquiere y retiene el mutex nombrado hasta liberarlo o salir."""
+    if name in _held_mutex:
         return True
-    return False
+    handle = os_tasks.hold_mutex(name, timeout_ms)
+    if sys.platform != "win32":
+        return True
+    if handle is None:
+        return False
+    _held_mutex[name] = int(handle)
+    return True
+
+
+def _release_mutex(name: str) -> None:
+    handle = _held_mutex.pop(name, None)
+    os_tasks.release_mutex(handle)
+
+
+def _claim_gui_mutex() -> None:
+    # Mantener el GUI mutex evita que arranque un headless mientras el backend
+    # espera a que termine el que ya estaba escribiendo los stores.
+    if not _hold_mutex(_GUI_MUTEX, 0):
+        return
+    if not _hold_mutex(_HEADLESS_MUTEX, _MUTEX_WAIT_INFINITE):
+        _release_mutex(_GUI_MUTEX)
+        raise RuntimeError("No se pudo sincronizar el inicio del backend con los flujos programados")
+    _release_mutex(_HEADLESS_MUTEX)
 
 
 def main() -> None:
-    _hold_mutex(_GUI_MUTEX, 0)  # best-effort: la app sigue aunque otro la tenga
+    _claim_gui_mutex()
 
     try:
         init_db()
@@ -541,6 +561,7 @@ def main() -> None:
             warm_thread.join(timeout=5.0)
         scheduler.shutdown(wait=True)
         close_connection()
+        _release_mutex(_GUI_MUTEX)
         logger.info(t("info.backend_shutdown"))
 
 
@@ -557,31 +578,43 @@ def _headless_flow_run(flow_id: str) -> int:
     if not _hold_mutex(_HEADLESS_MUTEX, 120_000):
         logger.warning("--flow-run %s omitido: otro proceso headless sigue activo", flow_id)
         return 1
-    init_db()
-    HANDLERS.warm_core()
-    from backend.core.flows import get_flow_store
-    from backend.core.flows.runner import FlowRunner
-
-    store = get_flow_store()
-    runner = FlowRunner(store, HANDLERS.get)
     try:
-        run = runner.start(flow_id, {"source": "scheduled_task"})
-    except ValueError as exc:
-        logger.error("--flow-run %s no pudo iniciarse: %s", flow_id, exc)
-        return 2
-    deadline = time.monotonic() + 15 * 60
-    while time.monotonic() < deadline:
+        # La app puede haber tomado el GUI mutex entre la primera comprobación
+        # y la adquisición de HEADLESS. En ese caso su planificador interno manda.
+        if _mutex_held(_GUI_MUTEX):
+            logger.info("--flow-run %s omitido: la aplicación inició durante el arranque", flow_id)
+            return 0
+        init_db()
+        HANDLERS.warm_core()
+        from backend.core.flows import get_flow_store
+        from backend.core.flows.runner import FlowRunner
+
+        store = get_flow_store()
+        runner = FlowRunner(store, HANDLERS.get)
+        try:
+            run = runner.start(flow_id, {"source": "scheduled_task"})
+        except ValueError as exc:
+            logger.error("--flow-run %s no pudo iniciarse: %s", flow_id, exc)
+            return 2
+        deadline = time.monotonic() + 15 * 60
+        while time.monotonic() < deadline:
+            current = store.get_run(run["id"])
+            if current is None or current["status"] not in ("queued", "running", "waiting"):
+                break
+            time.sleep(1.0)
         current = store.get_run(run["id"])
-        if current is None or current["status"] not in ("queued", "running", "waiting"):
-            break
-        time.sleep(1.0)
-    current = store.get_run(run["id"])
-    status = (current or {}).get("status") or "error"
-    logger.info("--flow-run %s terminó con estado %s", flow_id, status)
-    return 0 if status in ("success", "skipped") else 1
+        status = (current or {}).get("status") or "error"
+        logger.info("--flow-run %s terminó con estado %s", flow_id, status)
+        return 0 if status in ("success", "skipped") else 1
+    finally:
+        _release_mutex(_HEADLESS_MUTEX)
 
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 2 and sys.argv[1] == "--flow-code-run":
+        from backend.core.flows.code_exec import run_code_child
+
+        sys.exit(run_code_child())
     if len(sys.argv) >= 3 and sys.argv[1] == "--flow-run":
         sys.exit(_headless_flow_run(str(sys.argv[2])))
     main()

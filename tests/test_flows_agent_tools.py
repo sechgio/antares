@@ -132,6 +132,84 @@ def test_agent_tools_gated_call_waits_for_approval(store, monkeypatch):
     assert steps["ia"]["output"]["text"] == "aprobado"
 
 
+def test_agent_requests_a_fresh_approval_for_each_gated_call(store, monkeypatch):
+    _provider_stub(monkeypatch)
+    executed: list[str] = []
+    replies = iter([
+        {"text": "", "calls": [
+            {"id": "c1", "name": "flows_run", "params": {"flow_id": "first"}},
+            {"id": "c2", "name": "flows_run", "params": {"flow_id": "second"}},
+        ]},
+        {"text": "ambas aprobadas", "calls": []},
+    ])
+    monkeypatch.setattr(agent_chat, "chat", lambda *a, **k: next(replies))
+
+    def handler_getter(method):
+        if method == "flows_run":
+            return lambda params: executed.append(params["flow_id"]) or {"ok": True}
+        return None
+
+    flow = store.create("Agente dos aprobaciones", graph=_agent_flow(
+        {"provider": "ollama", "prompt": "ejecuta dos", "tools": True}))
+    runner = FlowRunner(store, handler_getter)
+    run = runner.start(flow["id"])
+    first_wait = _wait(run["id"], store)
+    first_approval = next(iter(first_wait["checkpoint"]["approvals"].values()))
+    assert first_approval["params"] == {"flow_id": "first"}
+
+    runner.decide_approval(run["id"], first_approval["id"], True)
+    deadline = time.time() + 15
+    second_wait = None
+    while time.time() < deadline:
+        current = store.get_run(run["id"])
+        approvals = ((current or {}).get("checkpoint") or {}).get("approvals") or {}
+        if current and current["status"] == "waiting" and any(
+            a.get("decision") is None and a.get("params") == {"flow_id": "second"}
+            for a in approvals.values()
+        ):
+            second_wait = current
+            break
+        time.sleep(0.05)
+    assert second_wait is not None, "the second call must request its own approval"
+    second_approvals = second_wait["checkpoint"]["approvals"]
+    second_approval = next(a for a in second_approvals.values() if a["decision"] is None)
+    assert second_approval["id"] != first_approval["id"]
+    assert second_approval["params"] == {"flow_id": "second"}
+    assert executed == ["first"]
+
+    runner.decide_approval(run["id"], second_approval["id"], True)
+    done = _wait_done(run["id"], store)
+    assert done["status"] == "success"
+    assert executed == ["first", "second"]
+
+
+def test_approved_agent_effect_is_not_repeated_after_checkpoint_replay(store, monkeypatch):
+    _provider_stub(monkeypatch)
+    monkeypatch.setattr(agent_chat, "chat", lambda *a, **k: {
+        "text": "", "calls": [{"id": "c1", "name": "flows_run", "params": {"flow_id": "target"}}],
+    })
+    flow = store.create("Agente recuperación", graph=_agent_flow(
+        {"provider": "ollama", "prompt": "ejecuta", "tools": True}))
+    runner = FlowRunner(store, lambda _method: lambda _params: {"ok": True})
+    waiting = _wait(runner.start(flow["id"])["id"], store)
+    pending_call = waiting["checkpoint"]["pending"]["ia"]["pending_call"]
+    node = next(n for n in flow["graph"]["nodes"] if n["id"] == "ia")
+    memory = {
+        "run": {"run_id": waiting["id"], "flow_id": flow["id"]},
+        "acknowledge_uncertain": False,
+    }
+    executions: list[str] = []
+
+    def perform(_call):
+        executions.append("effect")
+        return '{"ok": true}'
+
+    assert runner._execute_agent_effect(node, memory, pending_call, perform) == '{"ok": true}'
+    # Simula la relectura del checkpoint aprobado tras cerrar el proceso.
+    assert runner._execute_agent_effect(node, memory, pending_call, perform) == '{"ok": true}'
+    assert executions == ["effect"]
+
+
 def test_agent_tools_denied_call_reports_error_to_model(store, monkeypatch):
     _provider_stub(monkeypatch)
     executed: list[str] = []

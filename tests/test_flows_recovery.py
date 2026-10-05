@@ -5,6 +5,7 @@ import json
 import pytest
 
 from backend.core.flows.store import MAX_TOTAL_RUNS, FlowStore
+from backend.handlers import flows as flow_handlers
 
 
 @pytest.mark.parametrize("status", ["queued", "running"])
@@ -59,3 +60,19 @@ def test_recovery_prunes_orphans_without_changing_terminal_runs(tmp_path):
     assert restored.get_run("terminal") == terminal
     assert restored.get_run(fresh["id"])["status"] == "queued"
     assert restored.get(flow["id"])["last_run_status"] == "queued"
+
+
+
+def test_path_authorization_can_verify_saved_grants_without_resigning(tmp_path, monkeypatch):
+    store = FlowStore(tmp_path / "flows.json", tmp_path / "flow_runs.json")
+    monkeypatch.setattr(flow_handlers, "_store", lambda: store)
+    grants = store.authorize_paths({
+        "read": ["C:/reports/input.xlsx"],
+        "write": ["C:/reports/output"],
+        "folders": ["C:/reports"],
+    })
+
+    assert flow_handlers._authorize_paths({**grants, "_verify": True}) == {"valid": True}
+    tampered = {**grants, "read": ["C:/private.xlsx"], "_verify": True}
+    assert flow_handlers._authorize_paths(tampered) == {"valid": False}
+    assert store.verify_paths(grants)

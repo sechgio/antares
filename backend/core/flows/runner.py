@@ -690,6 +690,7 @@ class FlowRunner:
                 is_cancelled=lambda: ctx["token"].cancelled,
                 state=ctx.get("pending_state"),
                 approvals=ctx["approvals"],
+                execute_with_effect=lambda call, execute: self._execute_agent_effect(node, memory, call, execute),
             )}
         if kind == "switch":
             return self._run_switch(node, memory)
@@ -740,6 +741,48 @@ class FlowRunner:
         if kind == "mcp_call":
             return {"main": mcp_servers.run_mcp_call_node(node, memory)}
         raise ValueError(f"Tipo de nodo desconocido: {kind}")
+
+    def _execute_agent_effect(
+        self,
+        node: JsonObject,
+        memory: JsonObject,
+        call: JsonObject,
+        execute: Callable[[JsonObject], str],
+    ) -> str:
+        if not call.get("gated"):
+            return execute(call)
+        effect_id = str(call.get("effect_id") or "")
+        if not effect_id:
+            raise ValueError("La acción aprobada no tiene una identidad estable")
+        identity = json.dumps(
+            [memory["run"]["run_id"], node["id"], effect_id],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        fingerprint = hashlib.sha256(identity).hexdigest()
+        receipt = self._store.begin_action(
+            memory["run"]["flow_id"],
+            fingerprint,
+            allow_pending=bool(memory.get("acknowledge_uncertain")),
+            context={
+                "method": str(call.get("name") or ""),
+                "node_id": node["id"],
+                "run_id": memory["run"]["run_id"],
+            },
+        )
+        if receipt is not None:
+            output = receipt.get("output")
+            content = output.get("content") if isinstance(output, dict) else None
+            if not isinstance(content, str):
+                raise ValueError("El registro de la acción aprobada está dañado")
+            return content
+        result = execute(call)
+        self._store.complete_action(
+            memory["run"]["flow_id"],
+            fingerprint,
+            {"content": result},
+        )
+        return result
 
     def _lane_submit(self, name: str, fn: Callable[[JsonObject], Any], args: JsonObject) -> Any:
         from backend.core.scheduler import get_scheduler
@@ -844,6 +887,9 @@ class FlowRunner:
                         "agent_state": pending_state,
                         "approval_call": pending_state.get("pending_call") or {},
                     })
+                if status == "error":
+                    detail = step.get("error") or "error desconocido"
+                    raise ValueError(f"El nodo {nid} del bucle falló: {detail}")
                 body_settled[nid] = status
                 if node_outputs:
                     iteration_outputs[nid] = node_outputs

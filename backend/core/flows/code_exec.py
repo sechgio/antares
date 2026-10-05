@@ -47,8 +47,13 @@ class CodeCancelled(Exception):
 
 def run_python(code: str, payload: JsonObject, timeout_s: float, token: object | None) -> JsonObject:
     """Ejecuta ``code`` con ``payload`` de entrada; devuelve ``{"json": result}``."""
+    command = (
+        [sys.executable, "--flow-code-run"]
+        if getattr(sys, "frozen", False)
+        else [sys.executable, "-I", "-c", _HARNESS]
+    )
     proc = subprocess.Popen(
-        [sys.executable, "-I", "-c", _HARNESS],
+        command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -91,3 +96,9 @@ def run_python(code: str, payload: JsonObject, timeout_s: float, token: object |
     if isinstance(value, str) and len(value) > _MAX_OUTPUT_CHARS:
         value = value[:_MAX_OUTPUT_CHARS]
     return {"json": value}
+
+
+def run_code_child() -> int:
+    """Ejecuta el harness cuando PyInstaller relanza el backend empaquetado."""
+    exec(compile(_HARNESS, "<flow-code-runner>", "exec"), {})
+    return 0

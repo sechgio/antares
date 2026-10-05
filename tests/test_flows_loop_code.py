@@ -151,6 +151,24 @@ def test_code_node_error_marks_step_error(store):
     assert "ZeroDivisionError" in (steps["c"]["error"] or "")
 
 
+def test_loop_body_error_does_not_emit_done_outputs(store):
+    flow = store.create(
+        "Bucle con error",
+        graph=_loop_flow(body_nodes=[
+            {"id": "dup", "kind": "code", "config": {"code": "result = 1 / 0", "auto_approve": True}},
+        ]),
+    )
+    runner = FlowRunner(store, lambda _method: lambda _params: {})
+    done = _wait(runner.start(flow["id"])["id"], store)
+
+    assert done["status"] == "error"
+    steps = {step["node_id"]: step for step in done["steps"]}
+    assert steps["dup"]["status"] == "error"
+    assert steps["l1"]["status"] == "error"
+    assert steps["fin"]["status"] == "skipped"
+    assert steps["l1"]["output"] is None
+
+
 def test_loop_and_code_validate(store):
     graph = normalize_graph(_loop_flow())
     validate_graph(graph)
