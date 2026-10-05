@@ -30,6 +30,8 @@ class _BitmapInfo(ctypes.Structure):
 
 
 def _spool() -> Any:
+    if sys.platform != "win32":
+        return None
     spool = ctypes.WinDLL("winspool.drv", use_last_error=True)
     spool.EnumPrintersW.argtypes = [wintypes.DWORD, wintypes.LPWSTR, wintypes.DWORD, ctypes.c_void_p,
                                    wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(wintypes.DWORD)]
@@ -64,6 +66,8 @@ def list_printers() -> list[dict[str, str | bool]]:
 
 
 def _gdi() -> Any:
+    if sys.platform != "win32":
+        return None
     gdi = ctypes.WinDLL("gdi32", use_last_error=True)
     gdi.CreateDCW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.LPCWSTR, ctypes.c_void_p]
     gdi.CreateDCW.restype = wintypes.HDC
