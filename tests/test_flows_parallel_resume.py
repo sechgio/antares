@@ -154,3 +154,58 @@ def test_resume_interrupted_rerun_from_checkpoint(store, tmp_path):
     steps = {s["node_id"]: s for s in done["steps"]}
     assert steps["b"]["status"] == "success"
     assert steps["b"]["output"] == {"v": 2}
+
+
+def test_resume_loop_keeps_completed_iterations(store, tmp_path):
+    """Un bucle interrumpido reanuda sin repetir los nodos ya completados."""
+    flow = store.create(
+        "Bucle reanudable",
+        graph={
+            "nodes": [
+                {"id": "trigger", "kind": "trigger", "config": {}},
+                {"id": "src", "kind": "transform", "config": {"output": {"lista": [1, 2, 3]}}},
+                {"id": "l1", "kind": "loop", "config": {"over": "=nodes.src.json.lista"}},
+                {"id": "dup", "kind": "code", "config": {"code": "result = item * 2"}},
+            ],
+            "edges": [
+                {"from_node": "trigger", "to_node": "src"},
+                {"from_node": "src", "to_node": "l1"},
+                {"from_node": "l1", "to_node": "dup", "from_port": "each"},
+            ],
+        },
+    )
+    run = store.create_run(flow["id"], None)
+    store.update_run(
+        run["id"],
+        status="running",
+        started_at="2026-10-05T00:00:00Z",
+        checkpoint={
+            "outputs": {"trigger": {"main": {"json": {}}},
+                        "src": {"main": {"json": {"lista": [1, 2, 3]}}}},
+            "settled": {"trigger": "success", "src": "success"},
+            "pending": {},
+            "approvals": {},
+            # Estado real tras interrumpir la iteración 1: la 0 ya produjo su
+            # entrada y el cuerpo de la 1 ya corrió (efecto no repetible).
+            "loops": {"l1": {
+                "index": 1,
+                "collected": [{"item": 1, "dup": 2}],
+                "iteration_outputs": {"dup": {"main": {"json": 4}}},
+                "body_settled": {"dup": "success"},
+            }},
+        },
+    )
+
+    restored = FlowStore(tmp_path / "flows.json", tmp_path / "flow_runs.json")
+    runner = FlowRunner(restored, lambda m: lambda p: {})
+    assert runner.resume_interrupted() == 1
+    done = _wait(run["id"], restored)
+
+    assert done["status"] == "success"
+    steps = {s["node_id"]: s for s in done["steps"]}
+    loop_out = steps["l1"]["output"]
+    assert loop_out["count"] == 3
+    assert [entry["dup"] for entry in loop_out["items"]] == [2, 4, 6]
+    # El cuerpo ya ejecutado no se repite; solo corre la última iteración.
+    dup_steps = [s for s in done["steps"] if s["node_id"] == "dup"]
+    assert sorted(s["iteration"] for s in dup_steps) == [2]

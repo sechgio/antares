@@ -37,6 +37,11 @@ def make_dispatcher(store: Any, runner: Any) -> Callable[[str, JsonObject], None
     """Construye el dispatcher: evento → arranque de flujos coincidentes."""
 
     def dispatch(event: str, data: JsonObject) -> None:
+        # Cada ejecución hereda el linaje del evento; un flujo ya presente en la
+        # cadena no se vuelve a disparar (p. ej. un trigger flow_finished sobre
+        # el propio flujo, o ciclos A→B→A repartidos en hilos distintos).
+        chain = [str(f) for f in (data.get("__event_chain") or [])]
+        clean = {k: v for k, v in data.items() if k != "__event_chain"}
         for meta in store.list_flows():
             if not meta.get("enabled"):
                 continue
@@ -52,8 +57,13 @@ def make_dispatcher(store: Any, runner: Any) -> Callable[[str, JsonObject], None
             wanted = str(config.get("event") or "").strip()
             if wanted and wanted != event:
                 continue
+            if str(flow["id"]) in chain:
+                continue
+            payload: JsonObject = {"source": "app_event", "event": event, "data": clean}
+            if chain:
+                payload["__event_chain"] = chain
             try:
-                runner.start(flow["id"], {"source": "app_event", "event": event, "data": data})
+                runner.start(flow["id"], payload)
             except Exception:
                 logger.exception("No se pudo disparar el flujo %s por el evento %s", flow["id"], event)
 

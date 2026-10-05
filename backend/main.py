@@ -367,7 +367,53 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
         future.add_done_callback(_log_future_exception)
     return future
 
+# Mutexes de Windows: ``_GUI`` lo retiene el backend de la app abierta y
+# ``_HEADLESS`` serializa las ejecuciones ``--flow-run`` del Programador de
+# tareas. Fuera de Windows no aplican (las tareas externas solo existen allí).
+_GUI_MUTEX = "Local\\AntaresFlowsGui"
+_HEADLESS_MUTEX = "Local\\AntaresFlowsHeadless"
+_held_mutex: Any = None
+
+
+def _mutex_held(name: str) -> bool:
+    """True si otro proceso ya retiene el mutex nombrado (solo Windows)."""
+    if sys.platform != "win32":
+        return False
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        return False
+    try:
+        if kernel32.WaitForSingleObject(handle, 0) in (0, 0x80):  # libre o abandonado
+            kernel32.ReleaseMutex(handle)
+            return False
+        return True  # WAIT_TIMEOUT: lo retiene otro proceso
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _hold_mutex(name: str, timeout_ms: int) -> bool:
+    """Adquiere y retiene el mutex nombrado hasta que el proceso muera."""
+    global _held_mutex
+    if sys.platform != "win32":
+        return True
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        return False
+    if kernel32.WaitForSingleObject(handle, timeout_ms) in (0, 0x80):
+        _held_mutex = handle
+        return True
+    kernel32.CloseHandle(handle)
+    return False
+
+
 def main() -> None:
+    _hold_mutex(_GUI_MUTEX, 0)  # best-effort: la app sigue aunque otro la tenga
 
     try:
         init_db()
@@ -526,6 +572,16 @@ def main() -> None:
 def _headless_flow_run(flow_id: str) -> int:
     """Modo ``--flow-run <id>``: ejecuta el flujo una vez y sale (programación
     con la aplicación cerrada, vía Programador de tareas de Windows)."""
+    # Con la app abierta manda el planificador interno: salir evita correr dos
+    # veces y que dos procesos escriban a la vez los stores del usuario.
+    if _mutex_held(_GUI_MUTEX):
+        logger.info("--flow-run %s omitido: la aplicación está abierta", flow_id)
+        return 0
+    # Otro headless puede estar corriendo otro flujo: se serializa con espera
+    # acotada en vez de perder la ejecución programada.
+    if not _hold_mutex(_HEADLESS_MUTEX, 120_000):
+        logger.warning("--flow-run %s omitido: otro proceso headless sigue activo", flow_id)
+        return 0
     init_db()
     HANDLERS.warm_core()
     from backend.core.flows import get_flow_store

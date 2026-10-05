@@ -86,6 +86,31 @@ def test_app_event_disabled_flow_does_not_run(store):
     assert store.list_runs(limit=50) == []
 
 
+def test_flow_finished_chain_terminates(store):
+    """Un flujo escuchando flow_finished no se autodispara en cadena."""
+    a = store.create("A", graph=_event_flow(
+        {"trigger_kind": "app_event", "event": "flow_finished"}))
+    b = store.create("B", graph=_event_flow(
+        {"trigger_kind": "app_event", "event": "flow_finished"}))
+    runner = FlowRunner(store, lambda m: lambda p: {})
+
+    events.set_dispatcher(events.make_dispatcher(store, runner))
+    try:
+        runner.start(a["id"])
+        time.sleep(1.5)
+    finally:
+        events.set_dispatcher(None)
+    runs = store.list_runs(limit=50)
+    # A corre manual; al terminar dispara B (no está en la cadena). El fin de B
+    # emite con cadena [A, B] y ambos quedan excluidos: la cadena termina.
+    assert sorted(r["flow_id"] for r in runs) == sorted([a["id"], b["id"]])
+
+
+def test_webhook_requires_secret(store):
+    with pytest.raises(ValueError, match="clave secreta"):
+        store.create("Hook sin clave", graph=_event_flow({"trigger_kind": "webhook"}))
+
+
 def _post(url: str, body: dict | None = None, headers: dict | None = None) -> tuple[int, dict]:
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method="POST",
@@ -140,3 +165,5 @@ def test_webhook_query_key_also_works(store, monkeypatch):
         if server._server is not None:
             server._server.shutdown()
     assert done["status"] == "success"
+    # La clave autentica pero no queda guardada en el payload del run.
+    assert "key" not in (done["trigger_payload"].get("query") or {})

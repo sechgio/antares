@@ -268,6 +268,7 @@ class FlowRunner:
         settled: dict[str, str] = dict(checkpoint.get("settled") or {})
         pending: dict[str, JsonObject] = dict(checkpoint.get("pending") or {})
         approvals: dict[str, JsonObject] = dict(checkpoint.get("approvals") or {})
+        loop_progress: dict[str, JsonObject] = dict(checkpoint.get("loops") or {})
         steps: list[JsonObject] = [
             s for s in run.get("steps") or [] if s.get("status") not in ("running", "waiting")
         ]
@@ -309,6 +310,7 @@ class FlowRunner:
                 "settled": settled,
                 "pending": pending,
                 "approvals": approvals,
+                "loops": loop_progress,
                 "memory": {
                     "sources": memory["sources"],
                     "templates": memory["templates"],
@@ -388,6 +390,7 @@ class FlowRunner:
             "pending": pending,
             "approvals": approvals,
             "memory": memory,
+            "loop_progress": loop_progress,
         }
         pool = futures.ThreadPoolExecutor(max_workers=_MAX_PARALLEL_NODES, thread_name_prefix="flow-node")
         try:
@@ -466,7 +469,11 @@ class FlowRunner:
             error="Uno o más nodos fallaron" if any_error else None,
             checkpoint=None,
         )
-        events.emit("flow_finished", {"flow_id": run["flow_id"], "run_id": run_id, "status": status})
+        # El linaje evita cadenas infinitas: un flujo no se autodispara por flow_finished.
+        chain = [*((run.get("trigger_payload") or {}).get("__event_chain") or []), run["flow_id"]]
+        events.emit("flow_finished", {
+            "flow_id": run["flow_id"], "run_id": run_id, "status": status, "__event_chain": chain,
+        })
 
     def _run_one(
         self,
@@ -731,7 +738,9 @@ class FlowRunner:
         """
         config = node.get("config") or {}
         loop_id = node["id"]
-        state = ctx.get("pending_state") or {}
+        # La pausa por aprobación trae su estado completo; la reanudación tras un
+        # cierre recupera el progreso persistido del checkpoint (``loops``).
+        state = ctx.get("pending_state") or ctx["loop_progress"].get(loop_id) or {}
         over = config.get("over")
         raw = resolve(over, memory) if over else [entry.get("json") for entry in memory.get("items") or []]
         if not isinstance(raw, list):
@@ -759,6 +768,10 @@ class FlowRunner:
             if index > start_index or not state:
                 iteration_outputs = {}
                 body_settled = {}
+            else:
+                for _nid, _ports in iteration_outputs.items():
+                    if _ports:
+                        memory["nodes"][_nid] = _ports[next(iter(_ports))]
             resume_node = state.get("body_node") if index == start_index else None
             for nid in body_order:
                 if nid in body_settled:
@@ -807,6 +820,14 @@ class FlowRunner:
                 if node_outputs:
                     iteration_outputs[nid] = node_outputs
                     memory["nodes"][nid] = node_outputs[next(iter(node_outputs))]
+                with ctx["lock"]:
+                    ctx["loop_progress"][loop_id] = {
+                        "index": index,
+                        "collected": collected,
+                        "iteration_outputs": iteration_outputs,
+                        "body_settled": body_settled,
+                    }
+                    ctx["persist"]()
             entry: JsonObject = {"item": element}
             for nid in sinks:
                 ports = iteration_outputs.get(nid)
@@ -815,6 +836,9 @@ class FlowRunner:
             collected.append(entry)
             with ctx["lock"]:
                 ctx["persist"]()
+        with ctx["lock"]:
+            ctx["loop_progress"].pop(loop_id, None)
+            ctx["persist"]()
         return {"done": {"json": {"count": len(collected), "items": collected}},
                 "each": {"json": {"count": len(collected)}}}
 

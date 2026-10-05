@@ -235,7 +235,11 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
             <FieldLabel>Tipo de disparo</FieldLabel>
             <ThemedSelect
               value={String(node.config.trigger_kind ?? 'manual')}
-              onChange={(v) => patchConfig({ trigger_kind: v as TriggerKind })}
+              onChange={(v) => patchConfig({
+                trigger_kind: v as TriggerKind,
+                // El webhook exige clave: se autogenera al elegir el disparo.
+                ...(v === 'webhook' && !node.config.secret ? { secret: crypto.randomUUID().replaceAll('-', '') } : {}),
+              })}
               options={Object.entries(TRIGGER_KIND_LABELS).map(([value, label]) => ({
                 value,
                 label: ENABLED_TRIGGER_KINDS.includes(value as TriggerKind)
@@ -305,16 +309,26 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
               />
             </div>
             <div>
-              <FieldLabel>Secreto (opcional)</FieldLabel>
-              <Input
-                value={String(node.config.secret ?? '')}
-                onChange={(e) => patchConfig({ secret: e.target.value || undefined })}
-                placeholder="Clave compartida"
-                spellCheck={false}
-                className="font-mono text-xs"
-              />
+              <FieldLabel>Secreto (obligatorio)</FieldLabel>
+              <div className="flex gap-2">
+                <Input
+                  value={String(node.config.secret ?? '')}
+                  onChange={(e) => patchConfig({ secret: e.target.value || undefined })}
+                  placeholder="Clave compartida"
+                  spellCheck={false}
+                  className="font-mono text-xs"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => patchConfig({ secret: crypto.randomUUID().replaceAll('-', '') })}
+                >
+                  Generar
+                </Button>
+              </div>
               <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
-                Se valida en la cabecera <code>X-Antares-Flow-Key</code> o el parámetro <code>?key=</code>.
+                Obligatoria: se valida en la cabecera <code>X-Antares-Flow-Key</code> o el parámetro <code>?key=</code>.
               </p>
             </div>
             {webhookInfo?.running && (

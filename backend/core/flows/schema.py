@@ -154,8 +154,8 @@ def validate_graph(graph: JsonObject) -> None:
                 if suffix is not None and (not isinstance(suffix, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{0,64}", suffix)):
                     raise ValueError(f"path del webhook {node_id} solo admite letras, dígitos, '_' y '-'")
                 secret = node["config"].get("secret")
-                if secret is not None and (not isinstance(secret, str) or len(secret) > 128):
-                    raise ValueError(f"secret del webhook {node_id} debe ser una cadena de hasta 128 caracteres")
+                if not isinstance(secret, str) or not secret.strip() or len(secret) > 128:
+                    raise ValueError(f"El webhook {node_id} requiere una clave secreta de hasta 128 caracteres")
         if node["kind"] == "tool_call":
             if node["config"].get("input_mode", "all") not in ("all", "any"):
                 raise ValueError(f"input_mode inválido en {node_id}")

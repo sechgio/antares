@@ -1,12 +1,14 @@
 """Disparadores ``webhook``: listener HTTP local para iniciar flujos.
 
 Escucha solo en ``127.0.0.1`` (nunca expone la red). Cada flujo con trigger
-``webhook`` atiende ``<método> /hooks/<flow_id>[/<path>]``; el ``path`` y el
-``secret`` opcionales de la config acotan qué llamadas disparan el flujo.
+``webhook`` atiende ``<método> /hooks/<flow_id>[/<path>]``; el ``path`` acota
+las llamadas y el ``secret`` (obligatorio) las autentica por cabecera
+``X-Antares-Flow-Key`` o parámetro ``?key=``.
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -42,9 +44,9 @@ def _check_secret(flow: JsonObject, headers: Any, query: dict[str, list[str]]) -
     trigger = next((n for n in flow["graph"]["nodes"] if n.get("kind") == "trigger"), None)
     secret = str(((trigger or {}).get("config") or {}).get("secret") or "")
     if not secret:
-        return True
+        return False
     given = headers.get("X-Antares-Flow-Key") or (query.get("key") or [""])[0]
-    return given == secret
+    return hmac.compare_digest(str(given), secret)
 
 
 def _make_handler(store: Any, runner: Any) -> type[BaseHTTPRequestHandler]:
@@ -82,7 +84,8 @@ def _make_handler(store: Any, runner: Any) -> type[BaseHTTPRequestHandler]:
                 "source": "webhook",
                 "method": self.command,
                 "path": parsed.path,
-                "query": {k: v[0] if len(v) == 1 else v for k, v in query.items()},
+                # La clave autentica pero no se guarda en el historial del run.
+                "query": {k: v[0] if len(v) == 1 else v for k, v in query.items() if k != "key"},
                 "body": body,
             }
             try:
