@@ -126,8 +126,7 @@ no_redirect_opener = urllib.request.build_opener(NoRedirectHandler())
 
 
 class FlowRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Revalida cada destino de redirect (esquema y host público) y retira
-    Authorization cuando el destino no está entre los hosts firmables."""
+    """Revalida cada destino y retira credenciales al cambiar de origen."""
 
     def __init__(self, auth_hosts: frozenset[str]) -> None:
         super().__init__()
@@ -138,7 +137,19 @@ class FlowRedirectHandler(urllib.request.HTTPRedirectHandler):
             raise ValueError("Las redirecciones con credenciales requieren HTTPS")
         assert_allowed_url(newurl)
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is None:
+            return None
         host = (urllib.parse.urlparse(new_req.full_url).hostname or "").lower()
+        source = urllib.parse.urlparse(req.full_url)
+        target = urllib.parse.urlparse(new_req.full_url)
+        source_origin = (source.scheme.lower(), source.hostname, source.port or (443 if source.scheme == "https" else 80))
+        target_origin = (target.scheme.lower(), target.hostname, target.port or (443 if target.scheme == "https" else 80))
+        if source_origin != target_origin:
+            # Cualquier cabecera personalizada puede contener una credencial.
+            for bucket in (new_req.headers, new_req.unredirected_hdrs):
+                for key in list(bucket):
+                    if key.lower() not in {"accept", "accept-encoding", "accept-language", "user-agent"}:
+                        bucket.pop(key)
         if host not in self._auth_hosts:
             new_req.headers.pop("Authorization", None)
             new_req.unredirected_hdrs.pop("Authorization", None)

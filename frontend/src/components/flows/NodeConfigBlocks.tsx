@@ -19,7 +19,91 @@ export function FieldLabel({ children }: { children: React.ReactNode }) {
 
 type PatchConfig = (patch: Record<string, unknown>) => void;
 
-export function SwitchConfigEditor({ node, patchConfig }: { node: FlowNode; patchConfig: PatchConfig }) {
+export type DataSource = { value: string; label: string };
+
+export function ObjectFieldsEditor({ value, onChange, fields = [], sources = [], allowAdd = true }: {
+  value: unknown;
+  onChange: (value: Record<string, unknown>) => void;
+  fields?: string[];
+  sources?: DataSource[];
+  allowAdd?: boolean;
+}) {
+  const [newField, setNewField] = useState('');
+  if (value != null && (typeof value !== 'object' || Array.isArray(value))) {
+    return <p className="text-xs text-[var(--text-secondary)]">Este valor usa una expresión o lista. Puedes editarlo en las opciones avanzadas.</p>;
+  }
+  const data = (value ?? {}) as Record<string, unknown>;
+  const keys = [...new Set([...fields, ...Object.keys(data)])];
+  return (
+    <div className="space-y-3">
+    {keys.map((key) => {
+      const current = data[key];
+      const kind = typeof current === 'string' && current.startsWith('=') ? 'source' : typeof current;
+      return (
+        <div key={key} className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <FieldLabel>{({ id: 'Identificador del elemento', run_id: 'Identificador de ejecución', format_id: 'Identificador del formato', name: 'Nombre', value: 'Valor a comparar',
+            document: 'Plantilla de Canvas', contexts: 'Datos e imágenes de los paneles', localImagePaths: 'Archivos de las imágenes', outputPath: 'Archivo de salida', output_path: 'Archivo de salida',
+            template_name: 'Plantilla HTML', context: 'Datos de la plantilla', html: 'Contenido del documento', desde: 'Número inicial', hasta: 'Número final',
+            rows: 'Filas de datos', key_column: 'Columna ID', image_names: 'Nombres de las imágenes', image_paths: 'Archivos de las imágenes', panels: 'Paneles preparados', template_id: 'Plantilla',
+            files: 'Archivos de entrada', destino: 'Carpeta de salida', formato: 'Formato de imagen', pdf_path: 'PDF de entrada', stamp_path: 'Imagen del sello', stamp_count: 'Cantidad de sellos',
+            excelPath: 'Excel de entrada', outputDir: 'Carpeta de salida',
+            printer_name: 'Impresora', copies: 'Copias',
+          } as Record<string, string>)[key] ?? key}</FieldLabel>
+          {!fields.includes(key) && (
+            <Button variant="ghost" size="sm" aria-label={`Quitar ${key}`} onClick={() => {
+              const next = { ...data };
+              delete next[key];
+              onChange(next);
+            }}><X size={12} /></Button>
+          )}
+        </div>
+        {current != null && typeof current === 'object' ? <p className="text-xs text-[var(--text-secondary)]">Valor compuesto: editar en opciones avanzadas.</p> : <>
+          <ThemedSelect
+            aria-label={`Tipo de ${key}`}
+            value={current == null ? 'string' : kind}
+            options={[
+              { value: 'string', label: 'Texto' },
+              { value: 'number', label: 'Número' },
+              { value: 'boolean', label: 'Sí / No' },
+              ...(sources.length || kind === 'source' ? [{ value: 'source', label: 'Datos de otro paso' }] : []),
+            ]}
+            onChange={(type) => onChange({ ...data, [key]: type === 'number' ? 0 : type === 'boolean' ? true : type === 'source' ? sources[0]?.value ?? current : '' })}
+          />
+          {kind === 'source' ? (
+            <ThemedSelect
+              aria-label={`Dato para ${key}`} value={String(current)}
+              options={sources.some((s) => s.value === current) ? sources : [...sources, { value: String(current), label: 'Expresión personalizada' }]}
+              onChange={(v) => onChange({ ...data, [key]: v })}
+            />
+          ) : kind === 'boolean' ? (
+            <ThemedSelect
+              aria-label={`Valor de ${key}`} value={String(current)}
+              options={[{ value: 'true', label: 'Sí' }, { value: 'false', label: 'No' }]}
+              onChange={(v) => onChange({ ...data, [key]: v === 'true' })}
+            />
+          ) : <Input aria-label={`Valor de ${key}`} className="w-full" type={kind === 'number' ? 'number' : 'text'} value={current == null ? '' : String(current)}
+            onChange={(e) => {
+              if (kind === 'number' && (e.target.value === '' || !Number.isFinite(Number(e.target.value)))) return;
+              onChange({ ...data, [key]: kind === 'number' ? Number(e.target.value) : e.target.value });
+            }} />}
+        </>}
+        </div>
+      );
+    })}
+    {keys.length === 0 && <p className="text-xs text-[var(--text-secondary)]">No necesitas completar campos para las consultas generales. Añade uno si quieres enviar datos.</p>}
+    {allowAdd && <div className="flex items-center gap-1">
+      <Input aria-label="Nombre del nuevo campo" placeholder="Nombre del campo" className="min-w-0 flex-1" value={newField} onChange={(e) => setNewField(e.target.value)} />
+      <Button size="sm" variant="secondary" disabled={!newField.trim() || keys.includes(newField.trim())} onClick={() => {
+        onChange({ ...data, [newField.trim()]: '' });
+        setNewField('');
+      }}>Añadir</Button>
+    </div>}
+    </div>
+  );
+}
+
+export function SwitchConfigEditor({ node, patchConfig, sources = [] }: { node: FlowNode; patchConfig: PatchConfig; sources?: DataSource[] }) {
   const cases = (Array.isArray(node.config.cases) ? node.config.cases : []) as SwitchCase[];
   const setCases = (next: SwitchCase[]) => patchConfig({ cases: next });
   const nextCasePort = () => {
@@ -31,6 +115,12 @@ export function SwitchConfigEditor({ node, patchConfig }: { node: FlowNode; patc
     <>
       <div>
         <FieldLabel>Campo a evaluar</FieldLabel>
+        <ThemedSelect aria-label="Dato a distribuir" value={String(node.config.field ?? '')}
+          options={[{ value: '', label: 'Elige datos de un paso conectado…' }, ...sources,
+            ...(node.config.field && !sources.some((s) => s.value === node.config.field) ? [{ value: String(node.config.field), label: 'Expresión personalizada' }] : [])]}
+          onChange={(field) => patchConfig({ field })} />
+        <details>
+        <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Expresión avanzada</summary>
         <Input
           value={String(node.config.field ?? '')}
           onChange={(e) => patchConfig({ field: e.target.value })}
@@ -38,6 +128,7 @@ export function SwitchConfigEditor({ node, patchConfig }: { node: FlowNode; patc
           spellCheck={false}
           className="font-mono text-xs"
         />
+        </details>
       </div>
       <div>
         <div className="mb-1.5 flex items-center justify-between">
@@ -87,7 +178,7 @@ export function SwitchConfigEditor({ node, patchConfig }: { node: FlowNode; patc
   );
 }
 
-export function AgentConfigEditor({ node, patchConfig }: { node: FlowNode; patchConfig: PatchConfig }) {
+export function AgentConfigEditor({ node, patchConfig, sources = [] }: { node: FlowNode; patchConfig: PatchConfig; sources?: DataSource[] }) {
   const [aiProviders, setAiProviders] = useState<AiProviderSpec[]>([]);
   useEffect(() => {
     let alive = true;
@@ -131,14 +222,17 @@ export function AgentConfigEditor({ node, patchConfig }: { node: FlowNode; patch
         />
       </div>
       <div>
-        <FieldLabel>Prompt</FieldLabel>
+        <FieldLabel>¿Qué debe hacer la IA?</FieldLabel>
         <Textarea
-          defaultValue={String(node.config.prompt ?? '')}
+          value={String(node.config.prompt ?? '')}
           rows={6}
           spellCheck={false}
           placeholder="Resume: {{ =nodes.n1.json.text }}"
-          onBlur={(e) => patchConfig({ prompt: e.target.value })}
+          onChange={(e) => patchConfig({ prompt: e.target.value })}
         />
+        {sources.length > 0 && <ThemedSelect aria-label="Insertar datos en las instrucciones" value=""
+          options={[{ value: '', label: 'Insertar datos de otro paso…' }, ...sources]}
+          onChange={(v) => { if (v) patchConfig({ prompt: `${String(node.config.prompt ?? '')} {{ ${v} }}` }); }} />}
         <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
           Inserta valores con {'{{ =expresión }}'} — p. ej. {'{{ =item.json }}'} o{' '}
           {'{{ =run.trigger.tema }}'}.
@@ -158,7 +252,7 @@ export function AgentConfigEditor({ node, patchConfig }: { node: FlowNode; patch
   );
 }
 
-export function McpCallConfigEditor({ node, patchConfig }: { node: FlowNode; patchConfig: PatchConfig }) {
+export function McpCallConfigEditor({ node, patchConfig, sources = [], invalid = false }: { node: FlowNode; patchConfig: PatchConfig; sources?: DataSource[]; invalid?: boolean }) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [tools, setTools] = useState<McpTool[]>([]);
   const serverId = String(node.config.server ?? '');
@@ -211,20 +305,28 @@ export function McpCallConfigEditor({ node, patchConfig }: { node: FlowNode; pat
         </p>
       </div>
       <div>
-        <FieldLabel>Tool</FieldLabel>
+        <FieldLabel>Herramienta</FieldLabel>
         <ThemedSelect
           value={toolName}
           onChange={(v) => patchConfig({ tool: v })}
           options={[
-            { value: '', label: serverId ? 'Selecciona una tool…' : 'Elige primero un servidor' },
+            { value: '', label: serverId ? 'Selecciona una herramienta…' : 'Elige primero un servidor' },
             ...tools.map((t) => ({ value: t.name, label: t.name })),
           ]}
         />
         {toolDesc && <p className="mt-1 text-[11px] text-[var(--text-secondary)]">{toolDesc}</p>}
       </div>
       <div>
+        <FieldLabel>Datos para la herramienta</FieldLabel>
+        <fieldset disabled={invalid}>
+          <ObjectFieldsEditor value={node.config.args} sources={sources} onChange={(args) => patchConfig({ args })} />
+        </fieldset>
+        <details>
+        <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Argumentos avanzados (JSON)</summary>
         <FieldLabel>Argumentos (JSON)</FieldLabel>
         <Textarea
+          key={JSON.stringify(node.config.args)}
+          data-json
           defaultValue={
             node.config.args == null ? '' : JSON.stringify(node.config.args, null, 2)
           }
@@ -240,10 +342,11 @@ export function McpCallConfigEditor({ node, patchConfig }: { node: FlowNode; pat
             try {
               patchConfig({ args: JSON.parse(raw) });
             } catch {
-              // se conserva el texto; validar al guardar es opcional
+              // El borrador inválido permanece visible y bloquea el guardado.
             }
           }}
         />
+        </details>
       </div>
     </>
   );

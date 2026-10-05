@@ -20,6 +20,7 @@ import { ArrowLeft, Bot, LayoutGrid, Play, Redo2, Save, Undo2 } from 'lucide-rea
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
+import { useDialog } from '../../hooks/useDialog';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Toggle from '../ui/Toggle';
@@ -40,10 +41,13 @@ interface Props {
   onBack: () => void;
   onRunStarted: () => void;
   onAskAgent?: (flowName: string) => void;
+  active?: boolean;
+  registerLeaveGuard?: (guard: (() => Promise<boolean>) | null) => void;
 }
 
-function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
+function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = true, registerLeaveGuard }: Props) {
   const { addToast } = useToast();
+  const { confirm } = useDialog();
   const { screenToFlowPosition } = useReactFlow();
   const [flow, setFlow] = useState<Flow | null>(null);
   const [baseGraph, setBaseGraph] = useState<WorkflowGraph | null>(null);
@@ -55,6 +59,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   // Guardado imperativo (Ctrl+S) necesita el grafo más reciente aunque React
   // aún no haya renderizado la edición en curso.
   const nodesRef = useRef(nodes);
@@ -162,10 +167,25 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
     [pushHistory],
   );
 
+  const changeSelection = useCallback((id: string | null) => {
+    const invalid = editorRef.current?.querySelector<HTMLTextAreaElement>('textarea:invalid');
+    if (invalid) {
+      addToast({ message: 'Corrige el campo marcado antes de cerrar su configuración.', type: 'error' });
+      invalid.closest('details')?.setAttribute('open', '');
+      invalid.focus();
+      return false;
+    }
+    const field = document.activeElement;
+    if (field instanceof HTMLTextAreaElement && editorRef.current?.contains(field)) field.blur();
+    setSelectedId(id);
+    return true;
+  }, [addToast]);
+
   const addNode = useCallback(
     (kind: FlowNodeKind, position: { x: number; y: number }) => {
-      pushHistory();
       const id = makeNodeId(kind, nodesRef.current.map((n) => n.id));
+      if (!changeSelection(id)) return;
+      pushHistory();
       const flowNode: FlowNode = {
         id,
         kind,
@@ -178,9 +198,8 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
         { id, type: 'flowNode', position, data: { flowNode }, selected: false } as Node<FlowNodeData>,
       ]);
       setDirty(true);
-      setSelectedId(id);
     },
-    [pushHistory],
+    [pushHistory, changeSelection],
   );
 
   const onDrop = useCallback(
@@ -213,6 +232,36 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
     if (!selectedId) return null;
     return nodes.find((n) => n.id === selectedId)?.data.flowNode ?? null;
   }, [selectedId, nodes]);
+
+  const dataSources = useMemo(() => {
+    if (!selectedId) return [];
+    const upstream = new Set<string>();
+    const visit = (id: string) => {
+      for (const edge of edges.filter((e) => e.target === id)) {
+        if (upstream.has(edge.source)) continue;
+        upstream.add(edge.source);
+        visit(edge.source);
+      }
+    };
+    visit(selectedId);
+    return nodes.filter((n) => upstream.has(n.id)).flatMap(({ id, data }) => {
+      const n = data.flowNode;
+      const fields = n.kind === 'agent' ? ['text'] : n.kind === 'http_request' ? ['ok', 'status', 'text', 'json']
+        : n.kind === 'transform' && n.config.output && typeof n.config.output === 'object' ? Object.keys(n.config.output)
+        : n.kind === 'tool_call' ? ({ formats: ['formats'], canvas_get: ['document'],
+          flows_read_images: ['contexts', 'files', 'image_names', 'image_paths', 'localImagePaths', 'rows', 'key_column', 'output_path', 'stamped_output_path', 'output_folder'],
+          panel_aviso_corte_compute_match: ['panels', 'summary'],
+          technical_reports_render_html: ['html', 'filename'], informes_v2_render_html: ['html', 'filename'], fichas_tecnicas_render_html: ['html', 'filename'],
+          flows_render_pdf: ['saved_path', 'filename'], canvas_export_cmyk_pdf: ['saved_path', 'filename'],
+          sellador_apply: ['saved_path', 'filename'], formatos_generate: ['saved_path', 'filename'],
+          flows_print_pdf: ['queued', 'job_id', 'printer_name'],
+        } as Record<string, string[]>)[String(n.config.method)] ?? [] : [];
+      return [{ value: `=nodes.${id}.json`, label: `Todos los datos de ${n.name}` },
+        ...fields.filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)).map((key) => ({
+          value: `=nodes.${id}.json.${key}`, label: `${n.name}: ${({ text: 'Texto', formats: 'Formatos', document: 'Plantilla', contexts: 'Datos e imágenes de los paneles', files: 'Archivos', image_names: 'Nombres de las imágenes', image_paths: 'Archivos de las imágenes', localImagePaths: 'Archivos de las imágenes para Canvas', rows: 'Filas del Excel', key_column: 'Columna ID', output_path: 'Archivo de salida', stamped_output_path: 'Archivo sellado de salida', output_folder: 'Carpeta de salida', panels: 'Paneles preparados', saved_path: 'Archivo guardado', html: 'Contenido del documento', filename: 'Nombre del archivo', queued: 'Enviado a impresión', job_id: 'Trabajo de impresión', printer_name: 'Impresora' } as Record<string, string>)[key] ?? key}`,
+        }))];
+    });
+  }, [selectedId, nodes, edges]);
 
   const updateNode = useCallback(
     (updated: FlowNode) => {
@@ -264,6 +313,13 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
     if (active instanceof HTMLTextAreaElement && canvasRef.current?.parentElement?.contains(active)) {
       active.blur();
     }
+    const invalid = editorRef.current?.querySelector<HTMLTextAreaElement>('textarea:invalid');
+    if (invalid) {
+      addToast({ message: 'No se guardó el flujo. Corrige el campo marcado antes de continuar.', type: 'error' });
+      invalid.closest('details')?.setAttribute('open', '');
+      invalid.focus();
+      return false;
+    }
     setSaving(true);
     try {
       const sentNodes = nodesRef.current;
@@ -279,12 +335,36 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
       // Una edición durante el guardado sustituye los arrays: sigue sin guardar.
       setDirty(nodesRef.current !== sentNodes || edgesRef.current !== sentEdges);
       addToast({ message: 'Flujo guardado', type: 'success' });
+      return nodesRef.current === sentNodes && edgesRef.current === sentEdges;
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo guardar el flujo'), type: 'error' });
+      return false;
     } finally {
       setSaving(false);
     }
   }, [flow, baseGraph, addToast]);
+
+  const prepareLeave = useCallback(async () => {
+    const field = document.activeElement;
+    if (field instanceof HTMLTextAreaElement && editorRef.current?.contains(field)) field.blur();
+    if (editorRef.current?.querySelector('textarea:invalid')) {
+      await save();
+      return false;
+    }
+    if (!dirty) return true;
+    const accepted = await confirm({
+      title: 'Guardar cambios antes de salir',
+      description: 'Tu flujo tiene cambios pendientes. Puedes guardarlos y continuar o seguir editando.',
+      confirmLabel: 'Guardar y continuar',
+      cancelLabel: 'Seguir editando',
+    });
+    return accepted && await save() === true;
+  }, [dirty, confirm, save]);
+
+  useEffect(() => {
+    registerLeaveGuard?.(prepareLeave);
+    return () => registerLeaveGuard?.(null);
+  }, [registerLeaveGuard, prepareLeave]);
 
   const rename = useCallback(
     async (name: string) => {
@@ -344,12 +424,13 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
   }, [flow, dirty, addToast, onRunStarted]);
 
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         void save();
       }
-      if (e.key === 'Escape') setSelectedId(null);
+      if (e.key === 'Escape') changeSelection(null);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         const el = e.target as HTMLElement | null;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
@@ -365,12 +446,12 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [save, undo, redo]);
+  }, [save, undo, redo, active, changeSelection]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={editorRef} className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-[var(--border-medium)] px-4 py-2.5">
-        <Button variant="ghost" size="sm" onClick={onBack} aria-label="Volver">
+        <Button variant="ghost" size="sm" onClick={() => void prepareLeave().then((ok) => { if (ok) onBack(); })} aria-label="Volver">
           <ArrowLeft size={16} />
         </Button>
         <Input
@@ -417,9 +498,9 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onAskAgent(flow?.name ?? '')}
-            aria-label="Preguntar al copilot"
-            title="Copilot: pregunta al agente sobre este flujo"
+            onClick={() => void prepareLeave().then((ok) => { if (ok) onAskAgent(flow?.name ?? ''); })}
+            aria-label="Pedir ayuda a IA"
+            title="Pide al agente que revise este flujo"
           >
             <Bot size={15} />
           </Button>
@@ -470,8 +551,8 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
             reconnectRadius={14}
             connectionLineStyle={{ ...FLOW_EDGE_STYLE }}
             isValidConnection={isValidConnection}
-            onNodeClick={(_, node) => setSelectedId(node.id)}
-            onPaneClick={() => setSelectedId(null)}
+            onNodeClick={(_, node) => changeSelection(node.id)}
+            onPaneClick={() => changeSelection(null)}
             deleteKeyCode={['Backspace', 'Delete']}
             fitView
             proOptions={{ hideAttribution: true }}
@@ -496,7 +577,9 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent }: Props) {
           node={selectedNode}
           onChange={updateNode}
           onDelete={deleteNode}
-          onClose={() => setSelectedId(null)}
+          onClose={() => changeSelection(null)}
+          onDraftChange={() => setDirty(true)}
+          sources={dataSources}
         />
       </div>
     </div>

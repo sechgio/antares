@@ -9,6 +9,7 @@ expone los nombres de las claves.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import ipaddress
 import json
 import os
@@ -199,6 +200,7 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
         {
             "name": str(t.get("name") or ""),
             "description": str(t.get("description") or "")[:300],
+            "inputSchema": t.get("inputSchema") if isinstance(t.get("inputSchema"), dict) else {"type": "object", "properties": {}},
         }
         for t in tools
         if isinstance(t, dict) and t.get("name")
@@ -213,10 +215,10 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
     return clean
 
 
-def call_tool(server_id: str, tool: str, args: JsonObject) -> JsonObject:
+def call_tool(server_id: str, tool: str, args: JsonObject, *, advertised: bool = False) -> JsonObject:
     server = get_server(server_id)
     secrets = _secrets(server_id)
-    tool = _resolve_tool_name(server_id, tool)
+    tool = _resolve_tool_name(server_id, tool, advertised=advertised)
     if server["transport"] == "http":
         result = mcp_client.call_tool_http(server["url"], secrets.get("headers") or {}, tool, args)
     else:
@@ -246,10 +248,15 @@ def run_mcp_call_node(node: JsonObject, memory: JsonObject) -> JsonObject:
 
 def agent_tool_name(server_id: str, tool: str) -> str:
     """Nombre anunciado al LLM: un function name válido (<=64, [A-Za-z0-9_-])."""
-    return f"mcp__{server_id}__{_TOOL_NAME_RE.sub('-', tool)}"[:64]
+    alias = f"{server_id[:19]}-{hashlib.sha256(server_id.encode()).hexdigest()[:12]}"
+    prefix = f"mcp2__{alias}__"
+    clean = _TOOL_NAME_RE.sub('-', tool)
+    if tool:
+        clean = f"{clean[:64 - len(prefix) - 13]}-{hashlib.sha256(tool.encode()).hexdigest()[:12]}"
+    return prefix + clean
 
 
-def _resolve_tool_name(server_id: str, name: str) -> str:
+def _resolve_tool_name(server_id: str, name: str, *, advertised: bool = False) -> str:
     """Traduce el nombre anunciado al agente al real de la tool.
 
     Devuelve ``name`` intacto si ya es el nombre real o si no se puede listar
@@ -258,19 +265,47 @@ def _resolve_tool_name(server_id: str, name: str) -> str:
     try:
         tools = list_tools(server_id)
     except Exception:
+        if advertised:
+            raise ValueError("No se pudo verificar la herramienta MCP aprobada") from None
         return name
-    advertised = f"mcp__{server_id}__{name}"
+    if not advertised and any(str(tool.get("name") or "") == name for tool in tools):
+        return name
+    full_name = name if advertised else f"mcp__{server_id}__{name}"
+    matches = []
     for t in tools:
         real = str(t.get("name") or "")
-        if real == name or agent_tool_name(server_id, real) == advertised:
-            return real
+        legacy = f"mcp__{server_id}__{_TOOL_NAME_RE.sub('-', real)}"[:64]
+        if agent_tool_name(server_id, real) == full_name or legacy == full_name:
+            matches.append(real)
+    if len(matches) > 1:
+        raise ValueError("Nombre MCP ambiguo; vuelve a solicitar la herramienta antes de aprobar")
+    if matches:
+        return matches[0]
+    if advertised:
+        raise ValueError("La herramienta MCP aprobada ya no está disponible")
     return name
 
 
 def parse_agent_tool(name: str) -> tuple[str, str] | None:
-    """'mcp__<server>__<tool>' → (server_id, tool); None si no es MCP."""
+    """Resuelve nombres MCP actuales y antiguos; rechaza identidades ambiguas."""
+    if name.startswith("mcp2__"):
+        for server in list_servers():
+            server_id = str(server["id"])
+            prefix = agent_tool_name(server_id, "")
+            if name.startswith(prefix) and name[len(prefix):]:
+                return server_id, name[len(prefix):]
+        return None
     if not name.startswith("mcp__"):
         return None
+    matches = []
+    for server in list_servers():
+        prefix = f"mcp__{server['id']}__"
+        if name.startswith(prefix) and name[len(prefix):]:
+            matches.append((str(server["id"]), name[len(prefix):]))
+    if len(matches) > 1:
+        raise ValueError("Nombre MCP ambiguo; vuelve a solicitar la herramienta antes de aprobar")
+    if matches:
+        return matches[0]
     rest = name[5:]
     if "__" not in rest:
         return None

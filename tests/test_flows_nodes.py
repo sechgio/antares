@@ -409,10 +409,33 @@ def test_agent_decide_runs_approved_mcp_tool(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mcp_servers,
         "call_tool",
-        lambda srv, tool, args: seen.update(srv=srv, tool=tool, args=args) or {"ok": True},
+        lambda srv, tool, args, **kw: seen.update(srv=srv, tool=tool, args=args, **kw) or {"ok": True},
     )
 
     approval = store.create_approval(session["id"], {"id": "c2", "name": "mcp__srv__do", "params": {"a": 1}})
     runner.decide(approval["id"], True)
 
-    assert seen == {"srv": "srv", "tool": "do", "args": {"a": 1}}
+    assert seen == {"srv": "srv", "tool": "mcp__srv__do", "args": {"a": 1}, "advertised": True}
+
+
+@pytest.mark.parametrize("fail_on_error", [True, False])
+def test_exhausted_http_error_blocks_downstream_unless_explicitly_continued(store, monkeypatch, fail_on_error):
+    calls = []
+    runner = FlowRunner(store, lambda m: None)
+    monkeypatch.setattr(runner, "_run_http_request", lambda node, memory: calls.append(node["id"]) or {
+        "json": {"ok": False, "status": 503, "body": {"reason": "busy"}},
+    })
+    flow = store.create("HTTP", graph={
+        "nodes": [{"id": "trigger", "kind": "trigger", "config": {}},
+                  {"id": "http", "kind": "http_request", "config": {
+                      "url": "https://example.com", "retry": {"attempts": 3}, "fail_on_http_error": fail_on_error}},
+                  {"id": "next", "kind": "transform", "config": {"output": "=nodes.http.json.status"}}],
+        "edges": [{"from_node": "trigger", "to_node": "http"}, {"from_node": "http", "to_node": "next"}],
+    })
+    done = _wait(runner.start(flow["id"])["id"], store)
+    steps = {step["node_id"]: step for step in done["steps"]}
+    assert calls == ["http"] * 3
+    assert steps["http"]["attempts"] == 3
+    assert steps["http"]["output"]["status"] == 503
+    assert done["status"] == ("error" if fail_on_error else "success")
+    assert steps["next"]["status"] == ("skipped" if fail_on_error else "success")

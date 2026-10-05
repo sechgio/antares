@@ -859,6 +859,17 @@ function registerIpcHandlers() {
     }
 
     try {
+      if ((method === 'flows_create' || method === 'flows_update') && backendParams.graph?.nodes) {
+        for (const node of backendParams.graph.nodes) {
+          if (node.config?._file_grants) {
+            const authorization = await _callBackend('flows_path_authorize', node.config._file_grants);
+            node.config._file_grants = authorization.grants;
+          }
+        }
+      } else if (method === 'flows_read_images') {
+        const authorization = await _callBackend('flows_path_authorize', backendParams._flow_file_grants);
+        backendParams._flow_file_grants = authorization.grants;
+      }
       const result = await _callBackend(method, backendParams);
       return _maybeTokenizeResultPaths(method, result, win);
     } catch (err) {

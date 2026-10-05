@@ -106,6 +106,62 @@ function resolveReadToken(token, webContentsId) {
 
 function maybeResolveFileTokens(params, win, method) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
+  if ((method === 'flows_create' || method === 'flows_update') && params.graph && Array.isArray(params.graph.nodes)) {
+    const outer = maybeResolveFileTokens({ ...params, graph: undefined }, win, method);
+    return { ...outer, graph: { ...params.graph, nodes: params.graph.nodes.map((node) => {
+      const config = { ...node.config };
+      delete config._file_grants;
+      if (node.kind !== 'tool_call') return { ...node, config };
+      if (!config.args || typeof config.args !== 'object' || Array.isArray(config.args)) return { ...node, config };
+      const stripExpressions = (value) => {
+        if (typeof value === 'string' && value.startsWith('=')) return undefined;
+        if (Array.isArray(value)) return value.map(stripExpressions);
+        if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, stripExpressions(v)]));
+        return value;
+      };
+      const literal = stripExpressions(config.args || {});
+      const resolved = maybeResolveFileTokens(literal, win, config.method);
+      const written = validateAndResolveWriteParams(resolved, win, config.method);
+      const merge = (original, checked) => {
+        if (typeof original === 'string' && original.startsWith('=')) return original;
+        if (Array.isArray(original)) return original.map((v, i) => merge(v, checked?.[i]));
+        if (original && typeof original === 'object') return Object.fromEntries(Object.entries({ ...original, ...checked }).map(([k]) => [k, merge(original[k], checked?.[k])]));
+        return checked === undefined ? original : checked;
+      };
+      const read = [];
+      for (const schema of READ_FILE_TOKEN_SCHEMAS.get(config.method) || []) collectSchemaValues(written, schema, read);
+      const write = [];
+      for (const key of new Set([...GENERIC_OUTPUT_PATH_KEYS, ...(ipcCatalog.METHOD_OUTPUT_PATH_KEYS.get(config.method) || []), ...(RAW_OUTPUT_PATH_METHODS.has(config.method) ? ['path'] : [])])) {
+        if (typeof written[key] === 'string' && written[key]) {
+          write.push(fs.existsSync(written[key]) && fs.statSync(written[key]).isDirectory() ? written[key] : path.dirname(written[key]));
+        }
+      }
+      config.args = merge(config.args || {}, written);
+      if (read.length || write.length || written._flow_file_grants?.folders?.length) {
+        config._file_grants = { ...written._flow_file_grants, read, write: [...new Set([...write, ...(written._flow_file_grants?.write || [])])] };
+      }
+      delete config.args._flow_file_grants;
+      return { ...node, config };
+    }) } };
+  }
+  if (method === 'flows_read_images') {
+    const { _isUnderRegisteredWriteRoot } = require('./write-roots');
+    const { hasSymlinkAncestor } = require('./path-allowlist');
+    const folders = [];
+    for (const key of ['source_folder', 'output_folder']) {
+      const value = params[key];
+      if (!value) continue;
+      if (typeof value !== 'string' || !path.isAbsolute(value) || !_isUnderRegisteredWriteRoot(value)
+          || hasSymlinkAncestor(value) || (fs.existsSync(value) && fs.lstatSync(value).isSymbolicLink())) {
+        throw new Error('Selecciona la carpeta con el diálogo de Antares');
+      }
+      folders.push(value);
+    }
+    const next = maybeResolveFileTokens({ ...params, source_folder: undefined, output_folder: undefined, _flow_file_grants: undefined }, win, '_flows_read_images_files');
+    if (params.spreadsheet_path) next.spreadsheet_path = resolveReadPathValue(params.spreadsheet_path, 'spreadsheet_path', win?.webContents?.id ?? null, { allowRegistered: true });
+    return { ...next, source_folder: params.source_folder, output_folder: params.output_folder,
+      _flow_file_grants: { folders, read: next.spreadsheet_path ? [next.spreadsheet_path] : [], write: params.output_folder ? [params.output_folder] : [] } };
+  }
   if ('_resolved_file_token_path' in params || '_resolved_file_token_name' in params) {
     params = { ...params };
     delete params._resolved_file_token_path;

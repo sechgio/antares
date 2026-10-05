@@ -80,6 +80,11 @@ function main() {
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'autoimg_scan_all']);
   const allowed = catalog.METHOD_NAMES;
 
+  const refreshMethod = 'flows_connection_token_refresh';
+  if (!catalog.INTERNAL_METHODS.has(refreshMethod) || knownUsedMethods.has(refreshMethod)) {
+    throw new Error('El refresco de conexiones debe ser interno, sin acceso del renderer.');
+  }
+
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
   const unexpectedInAllowlist = [...allowed].filter((m) => !knownUsedMethods.has(m));
 
@@ -92,6 +97,9 @@ function main() {
     }
     if (entry.timeout !== undefined && !VALID_TIMEOUTS.has(entry.timeout)) {
       invalidEntries.push(`${name}: timeout inválido (${entry.timeout})`);
+    }
+    if (entry.flowCallable !== undefined && (typeof entry.flowCallable !== 'boolean' || !entry.handler.startsWith('backend:'))) {
+      invalidEntries.push(`${name}: flowCallable debe ser booleano y pertenecer al backend`);
     }
     if (entry.lane !== undefined) {
       if (!entry.handler.startsWith('backend:')) {
@@ -120,6 +128,7 @@ function main() {
     ['db_import', 300_000],
     ['process_start', 900_000],
     ['canvas_export_cmyk_pdf', 900_000],
+    ['flows_print_pdf', 900_000],
     ['html_to_pdf', 900_000],
   ].filter(([m, ms]) => catalog.timeoutMsFor(m) !== ms);
 

@@ -23,7 +23,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { CONDITION_OPS, NODE_KIND_DEFS, nodeOutputs } from './nodeDefs';
+import { CONDITION_OPS, METHOD_LABELS, NODE_KIND_DEFS, nodeOutputs } from './nodeDefs';
 import type { FlowNodeData } from './graphAdapter';
 import type { FlowNode } from './types';
 
@@ -66,10 +66,11 @@ function summaryRows(flowNode: FlowNode): SummaryRow[] {
     }
     case 'tool_call': {
       const rows: SummaryRow[] = [
-        { icon: Wrench, text: str(config.method) || 'Sin método' },
+        { icon: Wrench, text: METHOD_LABELS[str(config.method)] ?? (str(config.method) || 'Elige una acción') },
       ];
       const args = entryCount(config.args);
       if (args) rows.push({ icon: Braces, text: `${args} argumento${args === 1 ? '' : 's'}` });
+      if (config.method === 'flows_read_images') rows.push({ icon: Clock, text: 'Espera imágenes completas · evita repetir el lote' });
       return rows;
     }
     case 'condition': {

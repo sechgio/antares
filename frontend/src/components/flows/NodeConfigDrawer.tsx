@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Trash2, X } from 'lucide-react';
-import { flowsApi } from '../../api/flowsApi';
+import { AlertCircle, CheckCircle2, FileSpreadsheet, FolderOpen, Trash2, X } from 'lucide-react';
+import { flowsApi, type ReportBatchPreview } from '../../api/flowsApi';
 import { connectionsApi } from '../../api/connectionsApi';
+import { systemApi } from '../../api/systemApi';
+import { canvasApi } from '../../api/canvasApi';
+import { formatosApi } from '../../api/formatosApi';
+import { toolsApi } from '../../api/toolsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
@@ -14,12 +18,16 @@ import {
   McpCallConfigEditor,
   RetryConfigEditor,
   SwitchConfigEditor,
+  ObjectFieldsEditor,
+  type DataSource,
 } from './NodeConfigBlocks';
 import {
   CONDITION_OPS,
   ENABLED_TRIGGER_KINDS,
   NODE_KIND_DEFS,
   TRIGGER_KIND_LABELS,
+  METHOD_LABELS,
+  METHOD_FIELDS,
 } from './nodeDefs';
 import type { FlowNode, TriggerKind } from './types';
 
@@ -28,19 +36,29 @@ interface Props {
   onChange: (node: FlowNode) => void;
   onDelete: (nodeId: string) => void;
   onClose: () => void;
+  onDraftChange?: () => void;
+  sources?: DataSource[];
 }
 
-export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: Props) {
+export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, onDraftChange, sources = [] }: Props) {
   const { addToast } = useToast();
   const [methods, setMethods] = useState<string[]>([]);
+  const [actions, setActions] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<{ value: string; label: string }[]>([]);
+  const [printers, setPrinters] = useState<{ name: string; default: boolean }[]>([]);
   const [connections, setConnections] = useState<{ id: string; label: string; connected: boolean }[]>([]);
+  const [fieldError, setFieldError] = useState('');
+  const [comparisonRevision, setComparisonRevision] = useState(0);
+  const [batchPreview, setBatchPreview] = useState<ReportBatchPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewArgs, setPreviewArgs] = useState('');
 
   useEffect(() => {
     let alive = true;
     flowsApi
       .flowsOrchestratableMethods()
       .then((res) => {
-        if (alive) setMethods(res.methods);
+        if (alive) { setMethods(res.methods); setActions(res.actions ?? []); }
       })
       .catch((err) => addToast({ message: errorMessage(err, 'No se pudieron cargar los métodos'), type: 'error' }));
     connectionsApi
@@ -57,11 +75,71 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
     };
   }, [addToast]);
 
+  const method = String(node?.config.method ?? '');
+  const templateBatch = Boolean((node?.config.args as Record<string, unknown> | undefined)?.report_template);
+  useEffect(() => {
+    let alive = true;
+    setTemplates([]);
+    const request = method === 'canvas_get' ? canvasApi.canvasList().then((res) => res.documents.map((d) => ({ value: d.id, label: d.name || 'Sin título' })))
+      : method === 'formatos_generate' ? formatosApi.formatosList().then((res) => res.formats.map((f) => ({ value: f.id, label: f.nombre })))
+      : method === 'flows_render_pdf' || method === 'template_get' || (method === 'flows_read_images' && templateBatch) ? toolsApi.templatesList({ recursive: true }).then((res) => res.templates.map((t) => ({ value: t.name, label: t.name }))) : null;
+    request?.then((options) => { if (alive) setTemplates(options); }).catch((err) => {
+      if (alive) addToast({ message: errorMessage(err, 'No se pudieron cargar las plantillas'), type: 'error' });
+    });
+    return () => { alive = false; };
+  }, [method, templateBatch, addToast]);
+  useEffect(() => {
+    let alive = true;
+    setPrinters([]);
+    if (method === 'flows_print_pdf') flowsApi.flowsPrintersList().then((res) => {
+      if (alive) setPrinters(res.printers);
+    }).catch((err) => { if (alive) addToast({ message: errorMessage(err, 'No se pudieron cargar las impresoras'), type: 'error' }); });
+    return () => { alive = false; };
+  }, [method, addToast]);
+
   if (!node) return null;
   const def = NODE_KIND_DEFS[node.kind];
 
   const patchConfig = (patch: Record<string, unknown>) =>
     onChange({ ...node, config: { ...node.config, ...patch } });
+
+  const args = (node.config.args && typeof node.config.args === 'object' && !Array.isArray(node.config.args)
+    ? node.config.args : {}) as Record<string, unknown>;
+  const patchArgs = (patch: Record<string, unknown>) => patchConfig({ args: { ...args, ...patch } });
+  const reportBatch = Boolean(args.report_template);
+  const batchPanel = method === 'flows_read_images' && reportBatch;
+  const imageLimit = batchPreview?.template_name === args.report_template ? batchPreview?.image_limit ?? 6 : 6;
+  const mappings = (args.field_mappings ?? {}) as Record<string, string>;
+  const selections = (args.photo_selections ?? {}) as Record<string, string[]>;
+  const previewStale = previewArgs !== JSON.stringify(args);
+  const previewBatch = async () => {
+    setPreviewing(true);
+    setBatchPreview(null);
+    try {
+      const result = await flowsApi.flowsReadImages({
+        source_folder: String(args.source_folder ?? ''), output_folder: String(args.output_folder ?? ''),
+        spreadsheet_path: String(args.spreadsheet_path ?? ''), report_template: String(args.report_template),
+        images_per_panel: Number(args.images_per_panel ?? 6), field_mappings: mappings, photo_selections: selections,
+      });
+      setBatchPreview(result);
+      setPreviewArgs(JSON.stringify(args));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo preparar la vista previa'), type: 'error' });
+    } finally {
+      setPreviewing(false);
+    }
+  };
+  const choosePath = async (key: string, folder: boolean, save = false) => {
+    try {
+      const result = folder ? await systemApi.dialogFolder({ pickOnly: true, title: key === 'source_folder' ? 'Carpeta de imágenes' : 'Carpeta de salida' })
+        : save ? await systemApi.dialogSave({ title: 'Archivo de salida', filters: [{ name: 'PDF', extensions: ['pdf'] }] })
+          : await systemApi.dialogFiles();
+      const value = 'folder' in result ? result.folder : result.paths[0];
+      if (value) patchArgs({ [key]: value });
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo seleccionar la ruta'), type: 'error' });
+    }
+  };
 
   const parseJsonField = (raw: string, apply: (value: unknown) => void, label: string) => {
     if (!raw.trim()) {
@@ -76,9 +154,24 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
   };
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-[var(--border-medium)] bg-[var(--bg-base)]">
+    <aside className={`flex shrink-0 flex-col border-l border-[var(--border-medium)] bg-[var(--bg-base)] [&_[data-json]:invalid]:border-[var(--accent-red)] ${batchPanel ? 'w-96 max-w-full [&_label]:normal-case [&_label]:text-xs' : 'w-80'}`}
+      onChangeCapture={(e) => {
+        const field = e.target;
+        if (!(field instanceof HTMLTextAreaElement)) return;
+        onDraftChange?.();
+        if (!field.hasAttribute('data-json')) return;
+        let message = '';
+        try {
+          if (field.value.trim()) JSON.parse(field.value);
+        } catch {
+          message = 'Revisa las comillas y las llaves: este campo contiene JSON inválido.';
+        }
+        field.setCustomValidity(message);
+        field.setAttribute('aria-invalid', String(!!message));
+        setFieldError(e.currentTarget.querySelector<HTMLTextAreaElement>('textarea:invalid')?.validationMessage ?? '');
+      }}>
       <div className="flex items-center justify-between border-b border-[var(--border-medium)] px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span
             className="flex h-6 w-6 items-center justify-center rounded-md"
             style={{
@@ -88,9 +181,11 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
           >
             <def.icon size={13} />
           </span>
-          <div>
-            <div className="text-sm font-semibold text-[var(--text-primary)]">{def.label}</div>
-            <div className="text-[10px] text-[var(--text-secondary)]">{node.id}</div>
+          <div className="min-w-0">
+            {batchPanel ? <Input aria-label="Nombre" value={node.name} onChange={(e) => onChange({ ...node, name: e.target.value })}
+              className="w-full truncate !border-transparent !bg-transparent !p-0 text-sm font-semibold" placeholder="Lote de reportes" />
+              : <div className="text-sm font-semibold text-[var(--text-primary)]">{def.label}</div>}
+            <div className="text-[10px] text-[var(--text-secondary)]">{batchPanel ? 'Configuración del lote' : node.id}</div>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -111,14 +206,15 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
-        <div>
+        {fieldError && <p role="alert" className="text-xs text-[var(--accent-red)]">{fieldError}</p>}
+        {!batchPanel && <div>
           <FieldLabel>Nombre</FieldLabel>
           <Input
             value={node.name}
             onChange={(e) => onChange({ ...node, name: e.target.value })}
             placeholder={node.id}
           />
-        </div>
+        </div>}
 
         {node.kind === 'trigger' && (
           <div>
@@ -162,24 +258,151 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
 
         {node.kind === 'tool_call' && (
           <>
-            <div>
-              <FieldLabel>Método</FieldLabel>
+            <details open={!batchPanel}>
+              <summary className={batchPanel ? 'cursor-pointer text-xs text-[var(--text-secondary)]' : 'hidden'}>Opciones del paso</summary>
+              <div className={batchPanel ? 'mt-3 space-y-3' : ''}>
+              <FieldLabel>¿Qué quieres hacer?</FieldLabel>
               <ThemedSelect
                 value={String(node.config.method ?? '')}
-                onChange={(v) => patchConfig({ method: v })}
+                onChange={(v) => patchConfig({ method: v, required_args: v === 'flows_read_images' ? ['source_folder', 'output_folder'] : v === 'canvas_get' ? ['id'] : v === 'formatos_generate' ? ['format_id'] : v === 'flows_print_pdf' ? ['pdf_path', 'printer_name'] : [],
+                  ...(actions.includes(v) ? { args: v === 'flows_read_images' ? { expected_images: 1, images_per_panel: 1 } : v === 'formatos_generate' ? { desde: 1, hasta: 1 } : v === 'sellador_apply' ? { stamp_count: 1 } : v === 'flows_print_pdf' ? { printer_name: '', copies: 1 } : {} } : {}) })}
                 options={[
-                  { value: '', label: 'Selecciona un método…' },
-                  ...methods.map((m) => ({ value: m, label: m })),
+                  { value: '', label: 'Selecciona una acción…' },
+                  ...[...methods].sort((a, b) => Number(actions.includes(b)) - Number(actions.includes(a))).map((m) => ({ value: m, label: METHOD_LABELS[m] ?? m })),
                 ]}
                 placeholder="Selecciona un método…"
               />
               <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
-                Solo métodos marcados como orquestables y de solo lectura.
+                {actions.includes(method) ? 'Esta acción trabaja con tus archivos. Al activar un flujo programado se ejecutará automáticamente con los datos completos.' : 'Esta consulta lee información que puedes usar en los siguientes pasos.'}
               </p>
-            </div>
+              {batchPanel && actions.includes(method) && <div>
+                <FieldLabel>Entradas conectadas</FieldLabel>
+                <ThemedSelect aria-label="Entradas conectadas" value={String(node.config.input_mode ?? 'all')}
+                  options={[{ value: 'all', label: 'Esperar todas las entradas' }, { value: 'any', label: 'Aceptar cualquier rama activa' }]}
+                  onChange={(value) => patchConfig({ input_mode: value })} />
+              </div>}
+              </div>
+            </details>
             <div>
+              {!batchPanel && <FieldLabel>Datos para la acción</FieldLabel>}
+              {!batchPanel && actions.includes(method) && <div className="mb-3">
+                <FieldLabel>Entradas conectadas</FieldLabel>
+                <ThemedSelect aria-label="Entradas conectadas" value={String(node.config.input_mode ?? 'all')}
+                  options={[{ value: 'all', label: 'Esperar todas las entradas' }, { value: 'any', label: 'Aceptar cualquier rama activa' }]}
+                  onChange={(value) => patchConfig({ input_mode: value })} />
+              </div>}
+              {method === 'flows_read_images' && <div className={batchPanel ? 'space-y-4' : 'space-y-3'}>
+                {reportBatch && <div>
+                  <FieldLabel>Plantilla del lote</FieldLabel>
+                  <ThemedSelect aria-label="Plantilla del lote" value={String(args.report_template)} options={templates}
+                    onChange={(value) => patchArgs({ report_template: value })} />
+                </div>}
+                {batchPanel && <h3 className="border-t border-[var(--border-subtle)] pt-4 text-sm font-medium text-[var(--text-primary)]">Archivos del lote</h3>}
+                {(['source_folder', 'output_folder', 'spreadsheet_path'] as const).map((key) => <div key={key}>
+                  <FieldLabel>{key === 'source_folder' ? 'Carpeta de imágenes' : key === 'output_folder' ? 'Carpeta de salida' : reportBatch ? 'Excel común del lote' : 'Excel de datos (opcional)'}</FieldLabel>
+                  <div className={batchPanel ? 'flex items-center gap-1.5' : ''}>
+                    <Input readOnly aria-label={key} value={String(args[key] ?? '')} title={batchPanel ? String(args[key] ?? '') : undefined} placeholder="Selecciona con el botón…"
+                      className={batchPanel ? 'min-w-0 flex-1 text-xs' : ''} />
+                    <Button variant={batchPanel ? 'ghost' : 'secondary'} size="sm" className={batchPanel ? 'shrink-0 !rounded-lg !px-2' : ''}
+                      aria-label={`Seleccionar ${key === 'spreadsheet_path' ? 'Excel' : key === 'source_folder' ? 'origen' : 'destino'}`}
+                      title={batchPanel ? `Seleccionar ${key === 'spreadsheet_path' ? 'Excel' : key === 'source_folder' ? 'origen' : 'destino'}` : undefined}
+                      onClick={() => void choosePath(key, key !== 'spreadsheet_path')}>
+                      {batchPanel ? key === 'spreadsheet_path' ? <FileSpreadsheet size={16} /> : <FolderOpen size={16} /> : `Seleccionar ${key === 'spreadsheet_path' ? 'Excel' : key === 'source_folder' ? 'origen' : 'destino'}`}
+                    </Button>
+                    {key === 'spreadsheet_path' && args[key] ? <Button variant="ghost" size="sm" aria-label="Quitar Excel" title={batchPanel ? 'Quitar Excel' : undefined}
+                      className={batchPanel ? 'shrink-0 !rounded-lg !px-2' : ''} onClick={() => patchArgs({ [key]: '' })}>{batchPanel ? <X size={14} /> : 'Quitar Excel'}</Button> : null}
+                  </div>
+                </div>)}
+                {(reportBatch ? imageLimit ? ['images_per_panel'] as const : [] : ['expected_images', 'images_per_panel'] as const).map((key) => <div key={key}>
+                  <FieldLabel>{reportBatch ? `Fotos esperadas por fila (1 a ${imageLimit})` : key === 'expected_images' ? 'Imágenes mínimas para iniciar' : 'Imágenes por panel'}</FieldLabel>
+                  <Input aria-label={key} className={batchPanel ? 'w-full text-xs' : ''} type="number" min={1} max={reportBatch ? imageLimit : 1000} value={reportBatch ? Math.min(imageLimit, Number(args[key] ?? 6)) : Number(args[key] ?? 1)} onChange={(e) => patchArgs({ [key]: Math.max(1, reportBatch ? Math.min(imageLimit, Math.round(Number(e.target.value))) : Math.round(Number(e.target.value))) })} />
+                </div>)}
+                {reportBatch ? <>
+                  <p className="text-pretty text-xs leading-5 text-[var(--text-secondary)]">Un PDF con las páginas propias de la plantilla.{imageLimit ? ' Fotos por OT y fecha, incluidas las subcarpetas.' : ' Esta plantilla no requiere fotos.'}</p>
+                  <Button variant="primary" size="sm" className="w-full !rounded-lg" disabled={previewing || !args.source_folder || !args.output_folder || !args.spreadsheet_path} onClick={() => void previewBatch()}>
+                    {previewing ? 'Preparando…' : 'Revisar lote'}
+                  </Button>
+                  {batchPreview && <div className="space-y-4">
+                    <div className="flex items-start gap-2 text-xs leading-5" role="status">
+                      {batchPreview.ready && !previewStale ? <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[var(--accent-green)]" /> : <AlertCircle size={15} className="mt-0.5 shrink-0 text-[var(--accent-yellow)]" />}
+                      <p className="text-[var(--text-secondary)]">{previewStale ? 'Hay cambios: vuelve a revisar el lote antes de ejecutarlo.' : batchPreview.reason}</p>
+                    </div>
+                    {batchPreview.headers && <div className="space-y-3 border-t border-[var(--border-subtle)] pt-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-medium text-[var(--text-primary)]">Mapeo de columnas</h3>
+                        <Button variant="ghost" size="sm" aria-label="Aplicar mapeo sugerido" onClick={() => patchArgs({ field_mappings: { ...batchPreview.suggested_mappings, ...Object.fromEntries(Object.entries(mappings).filter(([, column]) => batchPreview.headers?.includes(column))) } })}>Autocompletar</Button>
+                      </div>
+                      {[true, false].map((requiredGroup) => {
+                        const fields = Object.keys(batchPreview.suggested_mappings ?? {}).filter((field) =>
+                          (field === 'OT' || field === 'FECHA_TRABAJO' || !!batchPreview.required_fields?.includes(field)) === requiredGroup);
+                        if (!fields.length) return null;
+                        const controls = <div className="space-y-3">{fields.map((field) => <div key={field} className="grid grid-cols-2 items-center gap-3">
+                          <FieldLabel><span className="block truncate" title={batchPreview.field_labels?.[field] ?? field}>{field === 'FECHA_TRABAJO' ? 'Fecha del trabajo' : batchPreview.field_labels?.[field] ?? field}{requiredGroup && <span className="ml-1 text-[var(--text-muted)]" title="Obligatorio">*</span>}</span></FieldLabel>
+                          <ThemedSelect aria-label={`Columna para ${field}`} value={mappings[field] ?? ''}
+                            options={[{ value: '', label: 'Sin asignar' }, ...new Set([...(batchPreview.headers ?? []), ...(mappings[field] ? [mappings[field]] : [])])].map((value) => typeof value === 'string' ? { value, label: `${value}${batchPreview.headers?.includes(value) ? '' : ' (columna ausente)'}` } : value)}
+                            onChange={(column) => patchArgs({ field_mappings: { ...mappings, [field]: column } })} />
+                        </div>)}</div>;
+                        return requiredGroup ? <div key="required">{controls}</div> : <details key="optional" className="space-y-3">
+                          <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Campos de la plantilla ({fields.length})</summary>{controls}
+                        </details>;
+                      })}
+                    </div>}
+                    {!!batchPreview.missing_mappings?.length && <p role="alert" className="text-xs text-[var(--accent-red)]">Revisa el mapeo: {batchPreview.missing_mappings.join(', ')}</p>}
+                    {(!batchPreview.ready || previewStale) && <p className="text-xs leading-5 text-[var(--text-secondary)]">Exportación bloqueada hasta resolver los pendientes y volver a revisar.</p>}
+                    {args.report_template === 'fichas_tecnicas/ficha_tecnica.html' && <p className="text-xs text-[var(--text-secondary)]">Las columnas de productos y personal técnico admiten listas en formato JSON.</p>}
+                    {batchPreview.preview && <details className="space-y-3 border-t border-[var(--border-subtle)] pt-4">
+                      <summary className="cursor-pointer text-sm font-medium text-[var(--text-primary)]">Revisión de filas · {batchPreview.preview.length}</summary>
+                      <p className="text-xs leading-5 text-[var(--text-secondary)]">{args.report_template === 'report.html' ? `${batchPreview.preview.length} filas = ${batchPreview.preview.length} páginas.` : `${batchPreview.preview.length} registros en un único PDF consolidado.`} {batchPreview.ready && !previewStale && 'Todas las filas están completas.'}</p>
+                    {batchPreview.preview?.map((row) => <details key={row.row_index} className="rounded border border-[var(--border-medium)] p-2">
+                      <summary className="cursor-pointer text-xs text-[var(--text-primary)]">Fila {row.row_index + 1} · OT {row.ot || 'sin asignar'} · {row.date || 'sin fecha'}</summary>
+                      <dl className="my-2 text-xs text-[var(--text-secondary)]">{Object.entries(row.data).map(([field, value]) => <div key={field}><dt className="inline font-medium">{field}: </dt><dd className="inline break-words">{value || '—'}</dd></div>)}</dl>
+                      {row.errors.map((error) => <p key={error} className="text-xs text-[var(--accent-red)]">{error}</p>)}
+                      {imageLimit > 0 && <p className="my-2 text-xs text-[var(--text-secondary)]">{row.images.length} fotos seleccionadas. Abre las opciones para sustituirlas o resolver coincidencias.</p>}
+                      {row.candidates.map((name) => {
+                        const selected = selections[String(row.row_index)] ?? row.images;
+                        return <label key={name} className="flex items-start gap-2 py-1 text-xs text-[var(--text-secondary)]">
+                          <Input type="checkbox" className="h-4 w-4 shrink-0 p-0" aria-label={`Fila ${row.row_index + 1}: ${name}`} checked={selected.includes(name)} disabled={!selected.includes(name) && selected.length >= imageLimit}
+                            onChange={(e) => patchArgs({ photo_selections: { ...selections, [String(row.row_index)]: e.target.checked ? [...selected, name] : selected.filter((photo) => photo !== name) } })} />
+                          <span className="min-w-0 break-all">{name}</span>
+                        </label>;
+                      })}
+                      {imageLimit > 0 && <Button variant="ghost" size="sm" onClick={() => patchArgs({ photo_selections: { ...selections, [String(row.row_index)]: selections[String(row.row_index)] ?? row.images } })}>Confirmar fotos de esta fila</Button>}
+                    </details>)}
+                    </details>}
+                  </div>}
+                </> : <>
+                <FieldLabel>Columna que identifica cada panel (opcional)</FieldLabel>
+                <Input aria-label="key_column" value={String(args.key_column ?? '')} placeholder="ID" onChange={(e) => patchArgs({ key_column: e.target.value })} />
+                <p className="text-xs text-[var(--text-secondary)]">Espera el lote completo y 15 segundos sin cambios. Con Excel, usa la columna ID para asociar cada fila con los nombres de sus imágenes; sin ella se usa el orden de las filas.</p>
+                </>}
+              </div>}
+              {templates.length > 0 && method !== 'flows_read_images' && <div className="mb-3">
+                <FieldLabel>Plantilla guardada</FieldLabel>
+                <ThemedSelect aria-label="Plantilla guardada" value={String(args[method === 'canvas_get' ? 'id' : method === 'formatos_generate' ? 'format_id' : method === 'template_get' ? 'name' : 'template_name'] ?? '')}
+                  options={[{ value: '', label: 'Selecciona una plantilla…' }, ...templates]}
+                  onChange={(value) => patchArgs({ [method === 'canvas_get' ? 'id' : method === 'formatos_generate' ? 'format_id' : method === 'template_get' ? 'name' : 'template_name']: value })} />
+              </div>}
+              {method !== 'flows_read_images' && <>
+              {method === 'flows_print_pdf' && <div className="mb-3 space-y-2">
+                <FieldLabel>Impresora</FieldLabel>
+                <ThemedSelect aria-label="Impresora" value={String(args.printer_name ?? '')}
+                  options={[{ value: '', label: 'Selecciona una impresora…' }, ...printers.map((p) => ({ value: p.name, label: `${p.name}${p.default ? ' (predeterminada)' : ''}` }))]}
+                  onChange={(printer_name) => patchArgs({ printer_name })} />
+                <FieldLabel>Copias</FieldLabel><Input aria-label="Copias" type="number" min={1} max={99} value={Number(args.copies ?? 1)} onChange={(e) => patchArgs({ copies: Math.max(1, Math.min(99, Math.round(Number(e.target.value)))) })} />
+                <p className="text-xs text-[var(--text-secondary)]">Al completar el flujo, envía el PDF a la cola de Windows. La impresora elegida debe estar disponible.</p>
+              </div>}
+              {METHOD_FIELDS[method]?.filter((key) => ['destino', 'output_folder', 'outputDir', 'output_path', 'outputPath', 'pdf_path', 'stamp_path', 'spreadsheet_path', 'excelPath'].includes(key)).map((key) => <Button key={key} variant="secondary" size="sm" className="mb-2" onClick={() => void choosePath(key, /folder|destino|outputDir/.test(key), /output.*[Pp]ath/.test(key))}>Elegir {({ destino: 'carpeta de salida', output_folder: 'carpeta de salida', outputDir: 'carpeta de salida', output_path: 'archivo de salida', outputPath: 'archivo de salida', pdf_path: 'PDF', stamp_path: 'sello', spreadsheet_path: 'Excel', excelPath: 'Excel' } as Record<string, string>)[key] ?? 'archivo'}</Button>)}
+              <fieldset disabled={!!fieldError}>
+                <ObjectFieldsEditor value={method === 'flows_print_pdf' ? Object.fromEntries(Object.entries(args).filter(([key]) => key !== 'printer_name' && key !== 'copies')) : node.config.args} fields={METHOD_FIELDS[String(node.config.method ?? '')]?.filter((key) => method !== 'flows_print_pdf' || (key !== 'printer_name' && key !== 'copies'))} sources={sources} onChange={(data) => patchConfig({ args: method === 'flows_print_pdf' ? { printer_name: args.printer_name, copies: args.copies ?? 1, ...data } : data })} />
+              </fieldset>
+              </>}
+            </div>
+            <details>
+              <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Argumentos avanzados (JSON)</summary>
               <FieldLabel>Argumentos (JSON)</FieldLabel>
               <Textarea
+                key={JSON.stringify(node.config.args)}
+                data-json
                 defaultValue={node.config.args ? JSON.stringify(node.config.args, null, 2) : ''}
                 rows={6}
                 spellCheck={false}
@@ -190,7 +413,7 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
               <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
                 Las cadenas que empiezan por = se evalúan: =item, =items, =nodes.&lt;id&gt;.json, =run.trigger.
               </p>
-            </div>
+            </details>
           </>
         )}
 
@@ -198,6 +421,12 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
           <>
             <div>
               <FieldLabel>Campo a evaluar</FieldLabel>
+              <ThemedSelect aria-label="Dato a evaluar" value={String(node.config.field ?? '')}
+                options={[{ value: '', label: 'Elige datos de un paso conectado…' }, ...sources,
+                  ...(node.config.field && !sources.some((s) => s.value === node.config.field) ? [{ value: String(node.config.field), label: 'Expresión personalizada' }] : [])]}
+                onChange={(field) => patchConfig({ field })} />
+              <details>
+              <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Expresión avanzada</summary>
               <Input
                 value={String(node.config.field ?? '')}
                 onChange={(e) => patchConfig({ field: e.target.value })}
@@ -205,6 +434,7 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
                 spellCheck={false}
                 className="font-mono text-xs"
               />
+              </details>
             </div>
             <div>
               <FieldLabel>Operador</FieldLabel>
@@ -216,7 +446,12 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
             </div>
             <div>
               <FieldLabel>Valor de comparación</FieldLabel>
+              <ObjectFieldsEditor value={{ value: node.config.value }} fields={['value']} sources={sources} allowAdd={false}
+                onChange={(data) => { patchConfig({ value: data.value }); setComparisonRevision((revision) => revision + 1); }} />
+              <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Valor avanzado</summary>
               <Input
+                key={comparisonRevision}
                 defaultValue={node.config.value === undefined ? '' : typeof node.config.value === 'string' ? node.config.value : JSON.stringify(node.config.value)}
                 onChange={(e) => {
                   const raw = e.target.value;
@@ -235,6 +470,7 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
               <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
                 Usa = para comparar contra otra expresión.
               </p>
+              </details>
             </div>
           </>
         )}
@@ -271,7 +507,7 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
                 value={String(node.config.connection_ref ?? '')}
                 onChange={(v) => patchConfig({ connection_ref: v || undefined })}
                 options={[
-                  { value: '', label: 'Sin firma OAuth' },
+                  { value: '', label: 'Sin cuenta conectada' },
                   ...connections.map((c) => ({
                     value: c.id,
                     label: c.connected ? c.label : `${c.label} (no conectada)`,
@@ -279,13 +515,16 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
                 ]}
               />
               <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
-                Si eliges una conexión se añade Authorization: Bearer con su token, refrescado si
-                caducó. Gestiona cuentas en la sección Conexiones.
+                Usa una cuenta guardada para acceder al servicio. Puedes añadirla en la sección Conexiones.
               </p>
             </div>
+            <details>
+              <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Opciones avanzadas de la solicitud</summary>
+              <div className="mt-3 space-y-4">
             <div>
               <FieldLabel>Cabeceras (JSON)</FieldLabel>
               <Textarea
+                data-json
                 defaultValue={node.config.headers ? JSON.stringify(node.config.headers, null, 2) : ''}
                 rows={4}
                 spellCheck={false}
@@ -295,8 +534,9 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
               />
             </div>
             <div>
-              <FieldLabel>Cuerpo (JSON o texto)</FieldLabel>
+              <FieldLabel>Datos a enviar (JSON)</FieldLabel>
               <Textarea
+                data-json
                 defaultValue={node.config.body != null ? JSON.stringify(node.config.body, null, 2) : ''}
                 rows={5}
                 spellCheck={false}
@@ -305,8 +545,14 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
                 onBlur={(e) => parseJsonField(e.target.value, (v) => patchConfig({ body: v }), 'Cuerpo')}
               />
               <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
-                Objetos/listas se envían como JSON; texto sin envolver va literal. Vacío = sin cuerpo.
+                Para enviar texto, escríbelo entre comillas. Deja vacío si no quieres enviar datos.
               </p>
+            </div>
+            <div>
+              <FieldLabel>Ante un error HTTP</FieldLabel>
+              <ThemedSelect aria-label="Ante un error HTTP" value={node.config.fail_on_http_error === false ? 'continue' : 'fail'}
+                options={[{ value: 'fail', label: 'Marcar el paso como fallido' }, { value: 'continue', label: 'Continuar y consultar la respuesta' }]}
+                onChange={(value) => patchConfig({ fail_on_http_error: value === 'fail' })} />
             </div>
             <div>
               <FieldLabel>Timeout (segundos)</FieldLabel>
@@ -321,19 +567,29 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
                 }}
               />
             </div>
+              </div>
+            </details>
           </>
         )}
 
-        {node.kind === 'switch' && <SwitchConfigEditor node={node} patchConfig={patchConfig} />}
+        {node.kind === 'switch' && <SwitchConfigEditor node={node} patchConfig={patchConfig} sources={sources} />}
 
-        {node.kind === 'agent' && <AgentConfigEditor node={node} patchConfig={patchConfig} />}
+        {node.kind === 'agent' && <AgentConfigEditor node={node} patchConfig={patchConfig} sources={sources} />}
 
-        {node.kind === 'mcp_call' && <McpCallConfigEditor node={node} patchConfig={patchConfig} />}
+        {node.kind === 'mcp_call' && <McpCallConfigEditor node={node} patchConfig={patchConfig} sources={sources} invalid={!!fieldError} />}
 
         {node.kind === 'transform' && (
-          <div>
+          <div className="space-y-3">
+            <FieldLabel>Campos del resultado</FieldLabel>
+            <fieldset disabled={!!fieldError}>
+              <ObjectFieldsEditor value={node.config.output} sources={sources} onChange={(output) => patchConfig({ output })} />
+            </fieldset>
+            <details>
+            <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Resultado avanzado (JSON)</summary>
             <FieldLabel>Objeto de salida (JSON)</FieldLabel>
             <Textarea
+              key={JSON.stringify(node.config.output)}
+              data-json
               defaultValue={node.config.output ? JSON.stringify(node.config.output, null, 2) : ''}
               rows={8}
               spellCheck={false}
@@ -344,16 +600,17 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose }: 
             <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
               Cada cadena =... se reemplaza por su valor evaluado.
             </p>
+            </details>
           </div>
         )}
 
-        {def.implemented && node.kind !== 'trigger' && (
+        {def.implemented && node.kind !== 'trigger' && (!actions.includes(method) || method === 'flows_read_images') && (
           <RetryConfigEditor node={node} onChange={onChange} />
         )}
 
         {!def.implemented && node.kind !== 'trigger' && (
           <p className="rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
-            Este tipo de nodo aún no se puede ejecutar. Quedará omitido en las ejecuciones.
+            Este tipo de nodo aún no se puede ejecutar. Producirá un error si recibe datos de entrada.
           </p>
         )}
       </div>

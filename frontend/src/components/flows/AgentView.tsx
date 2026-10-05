@@ -5,6 +5,7 @@ import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
+import Button from '../ui/Button';
 import { AgentContextPanel, ApprovalCard, MessageRow, ThinkingRow } from './AgentTimeline';
 
 const POLL_MS = 1500;
@@ -26,7 +27,7 @@ function relTime(ms?: number): string {
   return `hace ${Math.floor(h / 24)} d`;
 }
 
-export default function AgentView({ initialDraft }: { initialDraft?: string }) {
+export default function AgentView({ initialDraft, onConfigureProvider }: { initialDraft?: string; onConfigureProvider?: () => void }) {
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
@@ -382,6 +383,7 @@ export default function AgentView({ initialDraft }: { initialDraft?: string }) {
                     : 'Conversa con la app: consulta su estado con herramientas de lectura y aprueba cada acción con efectos antes de que se ejecute.'}
                 </p>
               </div>
+              {readyProviders.length === 0 && onConfigureProvider && <Button size="sm" onClick={onConfigureProvider}>Configurar IA</Button>}
               {readyProviders.length > 0 && (
                 <div className="w-full max-w-sm space-y-1.5">
                   <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">

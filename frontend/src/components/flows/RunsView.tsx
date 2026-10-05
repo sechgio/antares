@@ -18,7 +18,7 @@ function fmtDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('es');
 }
 
-function StepOutput({ value }: { value: unknown }) {
+export function StepOutput({ value }: { value: unknown }) {
   if (value == null) return null;
   let text: string;
   try {
@@ -27,10 +27,21 @@ function StepOutput({ value }: { value: unknown }) {
     text = String(value);
   }
   if (text.length > 4000) text = `${text.slice(0, 4000)}…`;
+  const data = typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  const readable = typeof value === 'string' ? value : typeof data?.text === 'string' ? data.text : null;
+  const formats = Array.isArray(data?.formats) ? data.formats.filter((item): item is string => typeof item === 'string') : null;
   return (
-    <pre className="mt-2 max-h-48 overflow-auto rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] p-2 text-[11px] leading-snug text-[var(--text-secondary)]">
-      {text}
-    </pre>
+    <div className="mt-2 space-y-2 text-xs text-[var(--text-secondary)]">
+      {readable != null ? <p className="max-h-48 overflow-auto whitespace-pre-wrap">{readable}</p>
+        : formats ? <p>Formatos disponibles: {formats.join(', ') || 'ninguno'}.</p>
+        : <p>{Array.isArray(value) ? `${value.length} elementos recibidos.` : 'Paso completado. Puedes consultar los datos recibidos.'}</p>}
+      <details>
+        <summary className="cursor-pointer">Ver datos técnicos</summary>
+        <pre className="mt-2 max-h-48 overflow-auto rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] p-2 text-[11px] leading-snug text-[var(--text-secondary)]">
+          {text}
+        </pre>
+      </details>
+    </div>
   );
 }
 
@@ -52,6 +63,8 @@ export default function RunsView({ flowId }: { flowId?: string }) {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
+  const requestRevision = useRef(0);
+  const appliedRevision = useRef(0);
 
   useEffect(() => {
     let alive = true;
@@ -68,6 +81,7 @@ export default function RunsView({ flowId }: { flowId?: string }) {
 
   const load = useCallback(
     async (silent = false) => {
+      const revision = ++requestRevision.current;
       if (!silent) setLoading(true);
       try {
         const effectiveFlow = flowId ?? (filterFlow || undefined);
@@ -75,13 +89,17 @@ export default function RunsView({ flowId }: { flowId?: string }) {
           ...(effectiveFlow ? { flow_id: effectiveFlow } : {}),
           limit: 50,
         });
-        setRuns(res.runs);
-      } catch (err) {
-        if (!silent) {
-          addToast({ message: errorMessage(err, 'No se pudieron cargar las ejecuciones'), type: 'error' });
+        if (revision > appliedRevision.current) {
+          appliedRevision.current = revision;
+          setRuns(res.runs);
+          setLoading(false);
         }
-      } finally {
-        if (!silent) setLoading(false);
+      } catch (err) {
+        if (revision > appliedRevision.current) {
+          appliedRevision.current = revision;
+          setLoading(false);
+          if (!silent) addToast({ message: errorMessage(err, 'No se pudieron cargar las ejecuciones'), type: 'error' });
+        }
       }
     },
     [flowId, filterFlow, addToast],
@@ -92,23 +110,19 @@ export default function RunsView({ flowId }: { flowId?: string }) {
   }, [load]);
 
   useEffect(() => {
-    const active = runs.some((r) => r.status === 'queued' || r.status === 'running');
-    if (active && timerRef.current == null) {
+    if (timerRef.current == null) {
       timerRef.current = window.setInterval(() => {
         void load(true);
       }, POLL_MS);
-    }
-    if (!active && timerRef.current != null) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
     }
     return () => {
       if (timerRef.current != null) {
         window.clearInterval(timerRef.current);
         timerRef.current = null;
       }
+      appliedRevision.current = ++requestRevision.current;
     };
-  }, [runs, load]);
+  }, [load]);
 
   const visibleRuns = filterStatus
     ? runs.filter((r) => r.status === filterStatus)
@@ -139,7 +153,7 @@ export default function RunsView({ flowId }: { flowId?: string }) {
         <div>
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Ejecuciones</h2>
           <p className="text-xs text-[var(--text-secondary)]">
-            Historial de runs con el resultado de cada nodo.
+            Historial de ejecuciones con el resultado de cada paso.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -233,9 +247,10 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                   {open && (
                     <div className="border-t border-[var(--border-medium)] px-4 py-3">
                       {run.error && (
-                        <p className="mb-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] p-2 text-xs text-[var(--accent-red,#ef4444)]">
-                          {run.error}
-                        </p>
+                        <details className="mb-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] p-2 text-xs text-[var(--accent-red,#ef4444)]">
+                          <summary className="cursor-pointer">La ejecución no se completó. Revisa el paso que falló. Ver detalle.</summary>
+                          <p className="mt-1">{run.error}</p>
+                        </details>
                       )}
                       {run.graph && run.graph.nodes.length > 0 && (
                         <div className="mb-3">
@@ -243,10 +258,11 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                         </div>
                       )}
                       {run.trigger_payload && Object.keys(run.trigger_payload).length > 0 && (
-                        <div className="mb-2 text-[11px] text-[var(--text-secondary)]">
+                        <details className="mb-2 text-[11px] text-[var(--text-secondary)]">
+                          <summary className="cursor-pointer">Ver datos de inicio</summary>
                           <span className="font-medium">Origen:</span>{' '}
                           <code>{JSON.stringify(run.trigger_payload)}</code>
-                        </div>
+                        </details>
                       )}
                       {run.steps.length === 0 ? (
                         <p className="text-xs text-[var(--text-secondary)]">Sin pasos registrados.</p>
@@ -276,7 +292,7 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                                   {step.name}
                                 </span>
                                 <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)]">
-                                  {step.kind}
+                                  {stepDef?.label ?? step.kind}
                                 </span>
                                 <span
                                   className="text-[10px] uppercase tracking-wide"
@@ -289,7 +305,7 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                                           : 'var(--text-secondary)',
                                   }}
                                 >
-                                  {step.status === 'skipped' ? 'omitido' : step.status}
+                                  {({ success: 'Completado', error: 'Falló', running: 'En curso', skipped: 'No se ejecutó', cancelled: 'Cancelado', queued: 'En cola' } as Record<string, string>)[step.status] ?? step.status}
                                 </span>
                                 <span className="flex-1" />
                                 {step.attempts != null && step.attempts > 1 && (
@@ -304,9 +320,10 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                                 )}
                               </div>
                               {step.error && (
-                                <p className="mt-1 text-[11px] text-[var(--accent-red,#ef4444)]">
-                                  {step.error}
-                                </p>
+                                <details className="mt-1 text-[11px] text-[var(--accent-red,#ef4444)]">
+                                  <summary className="cursor-pointer">No se pudo completar este paso. Revisa su configuración. Ver detalle.</summary>
+                                  <p className="mt-1">{step.error}</p>
+                                </details>
                               )}
                               <StepOutput value={step.output} />
                             </li>

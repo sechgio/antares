@@ -260,7 +260,7 @@ def test_runner_rejects_non_orchestratable(store):
         graph={
             "nodes": [
                 {"id": "trigger", "kind": "trigger", "config": {}},
-                {"id": "n", "kind": "tool_call", "config": {"method": "process_start"}},
+                {"id": "n", "kind": "tool_call", "config": {"method": "db_clear"}},
             ],
             "edges": [{"from_node": "trigger", "to_node": "n"}],
         },
@@ -452,3 +452,26 @@ def test_schedule_interval_minutes(store):
     assert _schedule_interval_minutes(flow) == 30
     manual = store.create("Manual")
     assert _schedule_interval_minutes(manual) is None
+
+
+@pytest.mark.parametrize("change", [
+    {"from_port": "missing"}, {"to_port": "missing"}, {"to_node": "trigger"},
+])
+def test_graph_rejects_connections_to_nonexistent_ports(change):
+    graph = normalize_graph({
+        "nodes": [{"id": "trigger", "kind": "trigger", "config": {}},
+                  {"id": "out", "kind": "transform", "config": {}}],
+        "edges": [{"from_node": "trigger", "to_node": "out", **change}],
+    })
+    with pytest.raises(ValueError):
+        validate_graph(graph)
+
+
+@pytest.mark.parametrize("node", [
+    {"id": "bad.id", "kind": "transform", "config": {}},
+    {"id": "act", "kind": "tool_call", "config": {"method": "formats", "input_mode": "maybe"}},
+    {"id": "http", "kind": "http_request", "config": {"url": "https://example.com", "fail_on_http_error": "false"}},
+])
+def test_graph_rejects_unaddressable_ids_and_invalid_execution_options(node):
+    with pytest.raises(ValueError):
+        validate_graph(normalize_graph({"nodes": [{"id": "trigger", "kind": "trigger", "config": {}}, node]}))

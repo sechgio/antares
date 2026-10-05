@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from backend.core.flows.types import JsonObject
@@ -126,6 +127,8 @@ def validate_graph(graph: JsonObject) -> None:
     trigger_count = 0
     for node in nodes:
         node_id = node["id"]
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", node_id):
+            raise ValueError(f"Id de nodo inválido: {node_id}")
         if node_id in seen:
             raise ValueError(f"Id de nodo duplicado: {node_id}")
         seen.add(node_id)
@@ -143,10 +146,17 @@ def validate_graph(graph: JsonObject) -> None:
                 if interval < 1 or interval > 10080:
                     raise ValueError(f"interval_minutes del trigger {node_id} fuera de rango (1-10080)")
         if node["kind"] == "tool_call":
+            if node["config"].get("input_mode", "all") not in ("all", "any"):
+                raise ValueError(f"input_mode inválido en {node_id}")
             method = node["config"].get("method")
             if not isinstance(method, str) or not method:
                 raise ValueError(f"El nodo {node_id} (tool_call) requiere config.method")
+            required = node["config"].get("required_args", [])
+            if not isinstance(required, list) or any(not isinstance(key, str) or not key for key in required):
+                raise ValueError(f"required_args del nodo {node_id} debe ser una lista de campos")
         if node["kind"] == "http_request":
+            if not isinstance(node["config"].get("fail_on_http_error", True), bool):
+                raise ValueError(f"fail_on_http_error debe ser booleano en {node_id}")
             url = node["config"].get("url")
             if not isinstance(url, str) or not url.strip():
                 raise ValueError(f"El nodo {node_id} (http_request) requiere config.url")
@@ -206,6 +216,15 @@ def validate_graph(graph: JsonObject) -> None:
             raise ValueError(f"Arista con destino inexistente: {edge['to_node']}")
         if edge["from_node"] == edge["to_node"]:
             raise ValueError(f"Arista de un nodo a sí mismo: {edge['from_node']}")
+        source = next(node for node in nodes if node["id"] == edge["from_node"])
+        target = next(node for node in nodes if node["id"] == edge["to_node"])
+        ports = ({"true", "false"} if source["kind"] == "condition" else
+                 {"default", *(case["port"] for case in source["config"].get("cases") or [])} if source["kind"] == "switch" else
+                 {"main", "waiting"} if source["kind"] == "tool_call" else {"main"})
+        if edge["from_port"] not in ports:
+            raise ValueError(f"Puerto de salida inexistente: {edge['from_node']}.{edge['from_port']}")
+        if target["kind"] == "trigger" or edge["to_port"] != "main":
+            raise ValueError(f"Puerto de entrada inexistente: {edge['to_node']}.{edge['to_port']}")
 
     _assert_acyclic(nodes, edges)
 

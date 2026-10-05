@@ -100,6 +100,12 @@ class FlowScheduler:
         now = self._clock()
         started = 0
         for flow in self.due_flows(now):
+            try:
+                if hasattr(self._runner, "ready_to_start") and not self._runner.ready_to_start(flow):
+                    continue
+            except (OSError, ValueError):
+                logger.warning("Entrada del flujo %s aún no disponible", flow["id"], exc_info=True)
+                continue
             # Marca antes de arrancar para no duplicar el disparo en el tick siguiente.
             self._store.touch_scheduled_run(flow["id"], now)
             try:

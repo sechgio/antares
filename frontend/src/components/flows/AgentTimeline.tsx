@@ -4,6 +4,9 @@ import type { AiProviderSpec } from '../../api/aiProvidersApi';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
+import { METHOD_LABELS } from './nodeDefs';
+import { useEffect, useState } from 'react';
+import { flowsApi } from '../../api/flowsApi';
 
 const CALL_STATUS_LABEL: Record<string, string> = {
   queued: 'en cola',
@@ -28,7 +31,7 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-secondary)]">
           <Wrench size={11} />
         </span>
-        <code className="truncate font-mono text-[var(--text-primary)]">{call.name}</code>
+        <span className="truncate text-[var(--text-primary)]">{METHOD_LABELS[call.name] ?? call.name}</span>
         {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--accent-yellow)]" aria-label="Requiere aprobación" />}
         <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-[var(--text-muted)]">
           <CallStatusIcon status={call.status} />
@@ -93,6 +96,17 @@ export function ApprovalCard({
   busy: boolean;
   onDecide: (id: string, ok: boolean) => void;
 }) {
+  const [flowName, setFlowName] = useState('');
+  useEffect(() => {
+    let alive = true;
+    setFlowName('');
+    if (typeof approval.params.id === 'string' && ['flows_update', 'flows_delete', 'flows_duplicate', 'flows_run'].includes(approval.method)) {
+      flowsApi.flowsGet(approval.params.id)
+        .then((res) => { if (alive) setFlowName(res.flow.name); })
+        .catch(() => undefined);
+    }
+    return () => { alive = false; };
+  }, [approval.method, approval.params.id]);
   return (
     <div className="max-w-[90%] overflow-hidden rounded-xl border border-[color:color-mix(in_srgb,var(--accent-yellow)_40%,transparent)] bg-[var(--bg-surface)]">
       <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)]">
@@ -100,14 +114,21 @@ export function ApprovalCard({
         El agente quiere ejecutar una acción
       </div>
       <div className="px-3 py-2.5">
-        <code className="block truncate font-mono text-[12px] text-[var(--text-primary)]">
-          {approval.method}
-        </code>
-        {approval.params && Object.keys(approval.params).length > 0 && (
-          <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-md bg-[var(--bg-base)] p-2 text-[11px] text-[var(--text-secondary)]">
-            {JSON.stringify(approval.params, null, 2)}
-          </pre>
-        )}
+        <p className="text-[12px] font-medium text-[var(--text-primary)]">
+          {METHOD_LABELS[approval.method] ?? 'Acción avanzada: revisa sus detalles antes de aprobar'}
+        </p>
+        {typeof approval.params.id === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Elemento: <span>{flowName || approval.params.id}</span></p>}
+        {typeof approval.params.name === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Nombre: {approval.params.name}</p>}
+        {approval.method === 'flows_delete' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Se borrarán el flujo y su historial de ejecuciones. No se puede deshacer.</p>}
+        <details className="mt-2 text-xs text-[var(--text-secondary)]">
+          <summary className="cursor-pointer">Ver detalles de la acción</summary>
+          <code>{approval.method}</code>
+          {approval.params && Object.keys(approval.params).length > 0 && (
+            <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-md bg-[var(--bg-base)] p-2 text-[11px] text-[var(--text-secondary)]">
+              {JSON.stringify(approval.params, null, 2)}
+            </pre>
+          )}
+        </details>
         <div className="mt-2.5 flex gap-2">
           <Button size="sm" disabled={busy} onClick={() => onDecide(approval.id, true)}>
             <Check size={13} className="mr-1" />
@@ -184,7 +205,7 @@ function ToolGroup({ label, names }: { label: string; names: string[] }) {
       <ul className="mt-1.5 max-h-44 space-y-1 overflow-auto">
         {names.map((n) => (
           <li key={n} className="truncate font-mono text-[11px] text-[var(--text-muted)]" title={n}>
-            {n}
+            {METHOD_LABELS[n] ?? n}
           </li>
         ))}
       </ul>
@@ -252,8 +273,7 @@ export function AgentContextPanel({
           </div>
         )}
         <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-          Las acciones con efectos se pausan hasta que las apruebes. Las claves salen del vault y
-          nunca llegan a esta ventana.
+          Las acciones que modifican datos se pausan hasta que las apruebes. Las claves se guardan cifradas en este equipo.
         </p>
       </SectionCard>
 

@@ -12,11 +12,13 @@ Límites: 1 MiB por respuesta, timeout acotado por transporte.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import queue
 import shutil
 import subprocess
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -173,35 +175,55 @@ def _stdio_session(
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         env=env,
-        text=True,
-        encoding="utf-8",
-        bufsize=1,
+        text=False,
+        encoding=None,
     )
-    out_queue: queue.Queue[JsonObject | Exception] = queue.Queue()
+    out_queue: queue.Queue[JsonObject | Exception] = queue.Queue(maxsize=32)
+    reader_errors: list[Exception] = []
 
     def reader() -> None:
         assert proc.stdout is not None
         try:
-            for line in proc.stdout:
+            while True:
+                line = proc.stdout.readline(_MAX_RESPONSE_BYTES + 1)
+                if not line:
+                    out_queue.put_nowait(McpError("El servidor MCP cerró su salida"))
+                    return
+                if len(line) > _MAX_RESPONSE_BYTES:
+                    raise McpError("La respuesta del servidor MCP supera el tamaño máximo")
                 line = line.strip()
-                if not line or not line.startswith("{"):
+                if not line or not line.startswith(b"{"):
                     continue  # logs del servidor por stdout no conformes
-                out_queue.put(json.loads(line))
+                message = json.loads(line)
+                if not isinstance(message, dict):
+                    raise McpError("Respuesta MCP no es un objeto JSON")
+                try:
+                    out_queue.put_nowait(message)
+                except queue.Full:
+                    raise McpError("El servidor MCP excedió el límite de mensajes pendientes") from None
         except Exception as err:  # va a la cola para el llamador
-            out_queue.put(err)
+            reader_errors.append(err)
+            with contextlib.suppress(queue.Full):
+                out_queue.put_nowait(err)
 
     thread = threading.Thread(target=reader, name="mcp-stdio-reader", daemon=True)
     thread.start()
 
     def send(payload: JsonObject) -> None:
         assert proc.stdin is not None
-        proc.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        proc.stdin.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
         proc.stdin.flush()
 
     def recv(rpc_id: int) -> JsonObject:
+        deadline = time.monotonic() + _STDIO_TIMEOUT_S
         try:
             while True:
-                msg = out_queue.get(timeout=_STDIO_TIMEOUT_S)
+                if reader_errors:
+                    raise McpError(f"Lector stdio MCP falló: {reader_errors[0]}")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise queue.Empty
+                msg = out_queue.get(timeout=remaining)
                 if isinstance(msg, Exception):
                     raise McpError(f"Lector stdio MCP falló: {msg}")
                 if msg.get("id") == rpc_id:
@@ -224,6 +246,8 @@ def _stdio_session(
             proc.wait(timeout=3)
         except Exception:
             proc.kill()
+            proc.wait(timeout=3)
+        thread.join(timeout=1)
 
 
 def list_tools_stdio(command: str, args: list[str], env: dict[str, str]) -> list[JsonObject]:
@@ -250,6 +274,7 @@ def normalize_result(result: JsonObject) -> JsonObject:
         "content": content if isinstance(content, list) else [],
         "text": "\n".join(t for t in texts if t),
         "isError": bool(result.get("isError")),
+        **({"structuredContent": result["structuredContent"]} if "structuredContent" in result else {}),
     }
 
 

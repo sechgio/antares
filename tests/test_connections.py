@@ -415,14 +415,16 @@ def test_redirect_strips_authorization_off_allowlist(monkeypatch):
     _public_dns(monkeypatch)
     req = urllib.request.Request(
         "https://api.github.com/x",
-        headers={"Authorization": "Bearer tok-9"},
+        headers={"Authorization": "Bearer tok-9", "X-Api-Key": "secret", "Cookie": "session=secret"},
     )
     handler = FlowRedirectHandler(frozenset({"api.github.com"}))
     new_req = handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example/exfil")
     assert "Authorization" not in new_req.headers
+    assert "X-api-key" not in new_req.headers and "Cookie" not in new_req.headers
 
     same_host = handler.redirect_request(req, None, 302, "Found", {}, "https://api.github.com/y")
     assert same_host.headers["Authorization"] == "Bearer tok-9"
+    assert same_host.headers["X-api-key"] == "secret"
 
 
 @pytest.mark.parametrize("target", ["http://api.github.com/user", "http://other.example/user"])

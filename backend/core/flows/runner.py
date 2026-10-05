@@ -11,14 +11,17 @@ pero el resto del grafo continúa.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import re
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from backend.core.flows import agent_chat, connections, mcp_servers
@@ -27,7 +30,14 @@ from backend.core.flows.http_guard import assert_allowed_url, build_flow_opener
 from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore, _utc_now
 from backend.core.flows.types import JsonObject
-from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
+from backend.core.ipc_catalog import (
+    FLOW_ACTION_METHODS,
+    ORCHESTRATABLE_METHODS,
+    allows_raw_output_path,
+    file_tokens_for,
+    timeout_ms_for,
+    write_path_keys_for,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +77,7 @@ class _CancelEvent:
 
 _active_runs: dict[str, _CancelEvent] = {}
 _active_lock = threading.Lock()
+_active_flow_ids: set[str] = set()
 
 
 def _register(run_id: str) -> _CancelEvent:
@@ -96,20 +107,36 @@ class FlowRunner:
         self._handler_getter = handler_getter
 
     def start(self, flow_id: str, trigger_payload: JsonObject | None = None) -> JsonObject:
-        run = self._store.create_run(flow_id, trigger_payload)
+        flow = self._store.get(flow_id)
+        guarded = bool(flow and any(
+            n.get("config", {}).get("method") in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS for n in flow["graph"]["nodes"]
+        ))
+        if guarded:
+            with _active_lock:
+                if flow_id in _active_flow_ids:
+                    raise ValueError("Este flujo ya tiene una ejecución en curso")
+                _active_flow_ids.add(flow_id)
+        try:
+            run = self._store.create_run(flow_id, trigger_payload)
+        except Exception:
+            with _active_lock:
+                _active_flow_ids.discard(flow_id)
+            raise
         if run is None:
+            with _active_lock:
+                _active_flow_ids.discard(flow_id)
             raise ValueError(f"Flujo no encontrado: {flow_id}")
         token = _register(run["id"])
         thread = threading.Thread(
             target=self._execute_safe,
-            args=(run["id"], token),
+            args=(run["id"], token, flow_id),
             name=f"flow-run-{run['id']}",
             daemon=True,
         )
         thread.start()
         return run
 
-    def _execute_safe(self, run_id: str, token: _CancelEvent) -> None:
+    def _execute_safe(self, run_id: str, token: _CancelEvent, flow_id: str) -> None:
         try:
             self._execute(run_id, token)
         except Exception:
@@ -121,7 +148,70 @@ class FlowRunner:
                 finished_at=_utc_now(),
             )
         finally:
+            with _active_lock:
+                _active_flow_ids.discard(flow_id)
             _unregister(run_id)
+
+    def ready_to_start(self, flow: JsonObject) -> bool:
+        with _active_lock:
+            if flow["id"] in _active_flow_ids:
+                return False
+        sources = []
+        for node in flow["graph"]["nodes"]:
+            config = node.get("config") or {}
+            args = config.get("args") or {}
+            if not isinstance(args, dict):
+                continue
+            if any(args.get(key) in (None, "", []) for key in config.get("required_args") or []):
+                return False
+            if node.get("config", {}).get("method") != "flows_read_images":
+                continue
+            args = node["config"].get("args") or {}
+            if any(isinstance(v, str) and v.startswith("=") for v in args.values()):
+                return True
+            fn = self._handler_getter("flows_read_images")
+            if fn is None:
+                return False
+            source = fn({**args, "_flow_file_grants": node["config"].get("_file_grants") or {}})
+            if not source.get("ready"):
+                return False
+            sources.append(source["fingerprint"])
+        fingerprint = _source_fingerprint(flow["graph"], sources + self._template_fingerprints(flow["graph"]))
+        return not sources or (fingerprint != flow.get("source_checkpoint") and fingerprint not in flow.get("source_checkpoints", []))
+
+    def _template_fingerprints(self, graph: JsonObject) -> list[str]:
+        if not any(n.get("config", {}).get("method") == "flows_read_images" for n in graph["nodes"]):
+            return []
+        versions = []
+        for node in graph["nodes"]:
+            config = node.get("config") or {}
+            args = config.get("args") or {}
+            if not isinstance(args, dict):
+                continue
+            if config.get("method") == "flows_render_pdf":
+                name = args.get("template_name")
+                if args.get("expected_pages") is not None:
+                    name = next((n.get("config", {}).get("args", {}).get("report_template") for n in graph["nodes"]
+                                 if n.get("config", {}).get("method") == "flows_read_images"
+                                 and isinstance(n.get("config", {}).get("args"), dict)
+                                 and n["config"]["args"].get("report_template")), name)
+                handler = self._handler_getter("template_get")
+                listing = self._handler_getter("templates_list")
+                if handler and listing and isinstance(name, str) and name and not name.startswith("="):
+                    if name not in {t["name"] for t in listing({"recursive": True})["templates"]}:
+                        raise ValueError("Selecciona una plantilla HTML de Antares")
+                    versions.append(hashlib.sha256(handler({"name": name})["content"].encode()).hexdigest())
+                continue
+            if config.get("method") != "canvas_get":
+                continue
+            item_id = args.get("id")
+            if not isinstance(item_id, str) or not item_id or item_id.startswith("="):
+                continue
+            handler = self._handler_getter("canvas_get")
+            if handler:
+                document = handler({"id": item_id}).get("document")
+                versions.append(hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest())
+        return versions
 
     def _execute(self, run_id: str, token: _CancelEvent) -> None:
         run = self._store.get_run(run_id)
@@ -152,6 +242,11 @@ class FlowRunner:
             "nodes": {},
             "item": None,
             "items": [],
+            "graph": graph,
+            "sources": [],
+            "templates": self._template_fingerprints(graph),
+            "read_paths": set(),
+            "write_roots": set(),
         }
         steps: list[JsonObject] = []
         any_error = False
@@ -173,6 +268,14 @@ class FlowRunner:
 
             if not live_items:
                 steps.append(self._step(node, "skipped"))
+                self._store.update_run(run_id, steps=steps)
+                continue
+
+            method = (node.get("config") or {}).get("method")
+            if (method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS
+                    and node["config"].get("input_mode", "all") == "all" and len(live_items) < len(inbound[node_id])):
+                steps.append(self._step(node, "skipped"))
+                self._store.update_run(run_id, steps=steps)
                 continue
 
             memory["item"] = {"json": live_items[0]}
@@ -180,6 +283,7 @@ class FlowRunner:
 
             started = _utc_ms()
             step = self._step(node, "running", started_at=_utc_now())
+            self._store.update_run(run_id, steps=[*steps, step])
             attempts, delay_ms = _retry_config(node)
             tried = 0
             try:
@@ -201,6 +305,11 @@ class FlowRunner:
                             break
                     if delay_ms > 0:
                         token.wait(delay_ms / 1000.0)
+                if not token.cancelled and node["kind"] == "http_request" and node["config"].get("fail_on_http_error", True):
+                    response = node_outputs["main"]["json"]
+                    if not response["ok"]:
+                        step["output"] = _summarize(response)
+                        raise ValueError(f"La solicitud HTTP devolvió {response['status']}")
                 if token.cancelled:
                     step["status"] = "cancelled"
                     step["finished_at"] = _utc_now()
@@ -220,9 +329,12 @@ class FlowRunner:
                 step["duration_ms"] = round(_utc_ms() - started)
                 outputs[node_id] = {}
                 steps.append(step)
+                self._store.update_run(run_id, steps=steps)
                 continue
 
             step["status"] = "success"
+            if "waiting" in node_outputs:
+                step["status"] = "skipped"
             step["finished_at"] = _utc_now()
             step["duration_ms"] = round(_utc_ms() - started)
             first_port = next(iter(node_outputs), "main")
@@ -230,6 +342,7 @@ class FlowRunner:
             outputs[node_id] = node_outputs
             memory["nodes"][node_id] = node_outputs[first_port]
             steps.append(step)
+            self._store.update_run(run_id, steps=steps)
 
         if token.cancelled:
             self._store.update_run(
@@ -240,6 +353,11 @@ class FlowRunner:
             )
             return
         status = "error" if any_error else "success"
+        action_steps = [s for s in steps if (nodes[s["node_id"]].get("config") or {}).get("method")
+                        in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS - {"flows_read_images"}]
+        if memory["sources"] and action_steps and all(s["status"] == "success" for s in action_steps) and not any_error:
+            self._store.acknowledge_source(run["flow_id"], _source_fingerprint(graph, memory["sources"] + memory["templates"]),
+                                           remember=bool(memory.get("report_batch")))
         self._store.update_run(
             run_id,
             status=status,
@@ -287,7 +405,11 @@ class FlowRunner:
         if kind == "trigger":
             return {"main": {"json": memory["run"]["trigger"]}}
         if kind == "tool_call":
-            return {"main": self._run_tool_call(node, memory)}
+            result = self._run_tool_call(node, memory)
+            config = node.get("config") or {}
+            waits = config.get("method") in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS or config.get("required_args")
+            port = "waiting" if waits and isinstance(result.get("json"), dict) and result["json"].get("ready") is False else "main"
+            return {port: result}
         if kind == "condition":
             return self._run_condition(node, memory)
         if kind == "transform":
@@ -315,8 +437,7 @@ class FlowRunner:
             raise ValueError("El nodo agent requiere config.provider")
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("El nodo agent requiere config.prompt")
-        spec = agent_chat.ai_providers.get_provider(provider)
-        default_model = (spec.get("chat") or {}).get("default_model", "")
+        default_model = agent_chat.ai_providers.public_state(provider).get("default_model", "")
         model = str(config.get("model") or default_model or "").strip()
         if not model:
             raise ValueError("El nodo agent requiere un modelo (config.model)")
@@ -352,14 +473,107 @@ class FlowRunner:
     def _run_tool_call(self, node: JsonObject, memory: JsonObject) -> JsonObject:
         config = node.get("config") or {}
         method = config.get("method")
-        if method not in ORCHESTRATABLE_METHODS:
+        if method not in FLOW_ACTION_METHODS:
             raise ValueError(f"Método no orquestable: {method}")
         fn = self._handler_getter(method)
         if fn is None:
             raise ValueError(f"Handler no disponible: {method}")
         args = config.get("args")
-        resolved = resolve(args, memory) if isinstance(args, dict) else {}
+        resolved = resolve(args, memory) if isinstance(args, dict) or (isinstance(args, str) and args.startswith("=")) else {}
+        if not isinstance(resolved, dict):
+            raise ValueError("Los datos de la acción deben resolver a un objeto")
+        if any(resolved.get(key) in (None, "", []) for key in config.get("required_args") or []):
+            return {"json": {"ready": False, "reason": "Completa los datos requeridos por la acción"}}
+        if method == "flows_read_images":
+            resolved["_flow_file_grants"] = config.get("_file_grants") or {}
+        if method == "flows_render_pdf" and resolved.get("expected_pages") is not None and memory.get("report_template"):
+            resolved["template_name"] = memory["report_template"]
+        if method != "flows_read_images":
+            _validate_action_paths(method, resolved, memory, self._store)
+        if method == "canvas_export_cmyk_pdf":
+            document = resolved.get("document") or {}
+            layers = document.get("layers") or []
+            if not layers:
+                return {"json": {"ready": False, "reason": "La plantilla de Canvas no contiene elementos"}}
+            required_images = 0
+            fields: set[str] = set()
+            for layer in layers:
+                meta = layer.get("meta") or {}
+                if layer.get("type") in ("image", "imageSlot") and "index" in meta:
+                    required_images = max(required_images, int(meta["index"]) + 1)
+                if layer.get("type") == "field" and meta.get("key"):
+                    fields.add(str(meta["key"]))
+                if layer.get("type") in ("field", "text"):
+                    fields.update(re.findall(r"\{\{\s*([\w]+)\s*\}\}", str(layer.get("value") or "")))
+            contexts = resolved.get("contexts") or [{}]
+            if any(len(ctx.get("images") or []) < required_images or any(
+                (ctx.get("data") or {}).get(key) in (None, "") for key in fields
+            ) for ctx in contexts):
+                return {"json": {"ready": False, "reason": "Faltan imágenes o campos requeridos por la plantilla de Canvas"}}
+        if method == "flows_print_pdf":
+            with _active_lock:
+                token = _active_runs.get(memory["run"]["run_id"])
+            resolved["_cancelled"] = (lambda: token.cancelled) if token else None
+        effect_key = None
+        if memory.get("sources") and method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS - {"flows_read_images"}:
+            identity = [node["id"], method, memory["sources"], memory.get("templates", []),
+                        {key: value for key, value in resolved.items() if key != "_cancelled"}]
+            effect_key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+            receipt = self._store.begin_action(memory["run"]["flow_id"], effect_key)
+            if receipt is not None:
+                result = receipt["output"]
+                saved_path = result.get("saved_path")
+                if isinstance(saved_path, str):
+                    memory.setdefault("read_paths", set()).add(saved_path)
+                return {"json": result}
         result = fn(dict(resolved))
+        if method == "process_start":
+            if not result.get("started"):
+                raise ValueError(f"La conversión no pudo iniciarse: {result.get('reason')}")
+            status_handler = self._handler_getter("process_status")
+            if status_handler is None:
+                raise ValueError("No se puede consultar la conversión iniciada")
+            with _active_lock:
+                token = _active_runs.get(memory["run"]["run_id"])
+            deadline = time.monotonic() + timeout_ms_for(method) / 1000
+            while True:
+                result = status_handler({"job_id": result.get("job_id") or result.get("id")})
+                if not result.get("running"):
+                    if result.get("err_count") or result.get("cancel_requested"):
+                        raise ValueError("La conversión terminó con errores o fue cancelada")
+                    break
+                if token and token.wait(0.2):
+                    cancel = self._handler_getter("process_cancel")
+                    if cancel:
+                        cancel({"job_id": result.get("id")})
+                    break
+                if time.monotonic() >= deadline:
+                    cancel = self._handler_getter("process_cancel")
+                    if cancel:
+                        cancel({"job_id": result.get("id")})
+                    raise ValueError("La conversión excedió el tiempo de espera del flujo")
+                if token is None:
+                    time.sleep(0.2)
+        if effect_key is not None:
+            self._store.complete_action(memory["run"]["flow_id"], effect_key, result)
+        if method == "flows_read_images" and result.get("ready"):
+            memory.setdefault("sources", []).append(result["fingerprint"])
+            fingerprint = _source_fingerprint(memory["graph"], memory["sources"] + memory.get("templates", []))
+            flow = self._store.get(memory["run"]["flow_id"])
+            if flow and (fingerprint == flow.get("source_checkpoint") or fingerprint in flow.get("source_checkpoints", [])):
+                return {"json": {"ready": False, "reason": "Este lote ya fue generado"}}
+            memory.setdefault("read_paths", set()).update(result["files"])
+            memory.setdefault("write_roots", set()).add(result["output_folder"])
+            prefix = "reportes" if result.get("report_batch") else "paneles"
+            memory["report_batch"] = result.get("report_batch", False)
+            if result.get("report_batch"):
+                memory["report_template"] = result["template_name"]
+            result["output_path"] = str(Path(result["output_folder"]) / f"{prefix}-{fingerprint[:16]}.pdf")
+            result["stamped_output_path"] = str(Path(result["output_folder"]) / f"paneles-{fingerprint[:16]}-sellado.pdf")
+        if method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS and isinstance(result.get("saved_path"), str):
+            saved = Path(result["saved_path"])
+            if saved.is_file() and not saved.is_symlink() and not any(p.is_symlink() for p in saved.parents):
+                memory.setdefault("read_paths", set()).add(str(saved))
         return {"json": result}
 
     def _run_http_request(self, node: JsonObject, memory: JsonObject) -> JsonObject:
@@ -488,6 +702,8 @@ def _retryable_http_output(node: JsonObject, node_outputs: JsonObject) -> bool:
 
 
 def _retry_config(node: JsonObject) -> tuple[int, float]:
+    if (node.get("config") or {}).get("method") in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS - {"flows_read_images"}:
+        return 1, 0.0
     retry = (node.get("config") or {}).get("retry")
     if not isinstance(retry, dict):
         return 1, 0.0
@@ -496,6 +712,61 @@ def _retry_config(node: JsonObject) -> tuple[int, float]:
     attempts_n = int(attempts) if isinstance(attempts, (int, float)) else 1
     delay_n = float(delay) if isinstance(delay, (int, float)) else 0.0
     return min(max(attempts_n, 1), 5), min(max(delay_n, 0.0), 60000.0)
+
+
+def _source_fingerprint(graph: JsonObject, sources: list[str]) -> str:
+    if any(n.get("config", {}).get("args", {}).get("report_template")
+           for n in graph["nodes"] if isinstance(n.get("config", {}).get("args"), dict)):
+        operations = [{"id": n["id"], "kind": n["kind"], "config": n["config"]}
+                      for n in graph["nodes"] if n["kind"] != "trigger" and n["config"].get("method") != "flows_read_images"]
+        destinations = [{"id": n["id"], "source_folder": n["config"]["args"].get("source_folder"),
+                         "output_folder": n["config"]["args"].get("output_folder")}
+                        for n in graph["nodes"] if n["config"].get("method") == "flows_read_images"]
+        return hashlib.sha256(json.dumps([operations, destinations, graph["edges"], sorted(sources)], sort_keys=True).encode()).hexdigest()
+    operations = [{"id": n["id"], "kind": n["kind"], "config": n["config"]} for n in graph["nodes"]]
+    return hashlib.sha256(json.dumps([operations, graph["edges"], sorted(sources)], sort_keys=True).encode()).hexdigest()
+
+
+def _validate_action_paths(method: str, args: JsonObject, memory: JsonObject, store: FlowStore | None = None) -> None:
+    def values(value: Any, segments: tuple[str, ...]) -> list[Any]:
+        if not segments:
+            return [value]
+        if segments[0] == "*":
+            children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
+            return [item for child in children for item in values(child, segments[1:])]
+        return values(value[segments[0]], segments[1:]) if isinstance(value, dict) and segments[0] in value else []
+
+    grants: JsonObject = {"read": [], "write": []}
+    for node in memory.get("graph", {}).get("nodes", []):
+        node_grants = node.get("config", {}).get("_file_grants") or {}
+        if node_grants and (store is None or not store.verify_paths(node_grants)):
+            raise ValueError("Permiso de archivos inválido; vuelve a seleccionar las rutas")
+        for mode in ("read", "write"):
+            grants[mode].extend(node_grants.get(mode) or [])
+    read_paths = set(memory.get("read_paths") or []) | set(grants.get("read") or [])
+    write_roots = set(memory.get("write_roots") or []) | set(grants.get("write") or [])
+    for schema in (*file_tokens_for(method), ("_resolved_file_token_path",)):
+        for value in values(args, schema):
+            if not value or (isinstance(value, str) and value.startswith(("data:", "canvas-asset:"))):
+                continue
+            if not isinstance(value, str) or value not in read_paths:
+                raise ValueError("El archivo del paso no está autorizado; elígelo o usa la entrada de imágenes")
+            p = Path(value)
+            if p.is_symlink() or any(parent.is_symlink() for parent in p.parents):
+                raise ValueError("Enlaces simbólicos no permitidos")
+    keys = write_path_keys_for(method) | {"outputPath", "output_path", "output_dir", "outputDir", "output_folder", "destino", "_resolved_output_path"}
+    if allows_raw_output_path(method):
+        keys |= {"path"}
+    for key in keys:
+        value = args.get(key)
+        if not value:
+            continue
+        p = Path(value)
+        if not p.is_absolute() or p.is_symlink() or any(parent.is_symlink() for parent in p.parents):
+            raise ValueError("Ruta de salida inválida")
+        destination = p.resolve()
+        if not any(destination == Path(root).resolve() or Path(root).resolve() in destination.parents for root in write_roots):
+            raise ValueError("El destino del paso no está autorizado; elige una carpeta de salida")
 
 
 def _compare(actual: Any, expected: Any, op: str) -> bool:

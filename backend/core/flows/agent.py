@@ -15,16 +15,20 @@ from __future__ import annotations
 
 import json
 import logging
+import ntpath
 import threading
 import time
 import uuid
 from collections.abc import Callable
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 from backend.core.flows import mcp_servers
 from backend.core.flows.agent_chat import chat, gated_methods
+from backend.core.flows.runner import _validate_action_paths
 from backend.core.flows.types import JsonObject
-from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
+from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, lane_for, timeout_ms_for
+from backend.core.scheduler import get_scheduler
 from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import user_data_path
 
@@ -323,7 +327,7 @@ class AgentRunner:
         if mcp_ref is not None:
             params = call.get("params")
             try:
-                result = mcp_servers.call_tool(mcp_ref[0], mcp_ref[1], params if isinstance(params, dict) else {})
+                result = mcp_servers.call_tool(mcp_ref[0], name, params if isinstance(params, dict) else {}, advertised=True)
                 return json.dumps(result, ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
             except Exception as err:
                 return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
@@ -332,7 +336,35 @@ class AgentRunner:
             return json.dumps({"error": f"Método desconocido: {name}"})
         params = call.get("params")
         try:
-            result = fn(dict(params) if isinstance(params, dict) else {})
+            args = dict(params) if isinstance(params, dict) else {}
+
+            def check_paths(value: object) -> None:
+                if isinstance(value, dict):
+                    for key, child in value.items():
+                        if key in ("_file_grants", "_flow_file_grants") or key.startswith("_resolved_"):
+                            raise ValueError("El agente no puede concederse permisos de archivos")
+                        check_paths(child)
+                elif isinstance(value, list):
+                    for child in value:
+                        check_paths(child)
+                elif isinstance(value, str) and ntpath.isabs(value):
+                    raise ValueError("Usa los diálogos de Antares para autorizar archivos; la aprobación no autoriza rutas")
+
+            check_paths(args)
+            _validate_action_paths(name, args, {})
+            lane = lane_for(name)
+            if lane == "sync":
+                result = fn(args)
+            else:
+                scheduler = get_scheduler()
+                future = scheduler.submit_heavy(fn, args) if lane == "heavy" else scheduler.submit_light(fn, args)
+                if future is None:
+                    raise ValueError("No se pudo programar la herramienta")
+                try:
+                    result = future.result(timeout=timeout_ms_for(name) / 1000)
+                except FutureTimeoutError:
+                    future.cancel()
+                    raise ValueError("La herramienta excedió su tiempo; puede seguir ejecutándose, comprueba el resultado antes de repetirla") from None
             return json.dumps(result, ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
         except Exception as err:  # el error vuelve al modelo como resultado de la tool
             return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)

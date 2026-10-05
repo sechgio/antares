@@ -29,6 +29,8 @@ const { getProvider } = require('./connections-providers');
 const _pending = new Map(); // provider -> { redirectUri, codeVerifier, stop }
 const _tokenCache = new Map(); // provider -> tokens | null
 const _refreshPromises = new Map(); // provider -> Promise
+const _mirrorPromises = new Map(); // provider -> Promise
+const _tokenGenerations = new Map(); // provider -> number
 
 function _oauthConfigFile(providerId) {
   return `connections/${providerId}-oauth-config.json`;
@@ -46,8 +48,8 @@ function _tokensNs(providerId) {
 function _mirrorToBackend(provider, tokens, cfg) {
   if (!tokens || !tokens.access_token) return;
   try {
-    require('./ipc-router')
-      ._callBackend('flows_connection_token_put', {
+    const pending = (_mirrorPromises.get(provider) || Promise.resolve())
+      .then(() => require('./ipc-router')._callBackend('flows_connection_token_put', {
         provider,
         tokens: {
           access_token: tokens.access_token,
@@ -58,13 +60,17 @@ function _mirrorToBackend(provider, tokens, cfg) {
           client_id: cfg ? cfg.clientId : undefined,
           client_secret: cfg ? cfg.clientSecret : undefined,
         },
-      })
+      }))
       .catch((err) => {
         require('./app-log').appendLogEvent('WARN', 'connections.mirror_failed', {
           provider,
           reason: String((err && err.message) || err).slice(0, 200),
         });
       });
+    _mirrorPromises.set(provider, pending);
+    pending.finally(() => {
+      if (_mirrorPromises.get(provider) === pending) _mirrorPromises.delete(provider);
+    });
   } catch (err) {
     console.warn(`[connections] espejo de token no disponible: ${err.message}`);
   }
@@ -72,9 +78,13 @@ function _mirrorToBackend(provider, tokens, cfg) {
 
 function _mirrorDelete(provider) {
   try {
-    require('./ipc-router')
-      ._callBackend('flows_connection_token_delete', { provider })
+    const pending = (_mirrorPromises.get(provider) || Promise.resolve())
+      .then(() => require('./ipc-router')._callBackend('flows_connection_token_delete', { provider }))
       .catch(() => {});
+    _mirrorPromises.set(provider, pending);
+    pending.finally(() => {
+      if (_mirrorPromises.get(provider) === pending) _mirrorPromises.delete(provider);
+    });
   } catch {}
 }
 
@@ -145,15 +155,19 @@ function loadTokens(provider) {
   return cached ? { ...cached } : cached;
 }
 
-function _saveTokens(provider, tokens) {
+function _saveTokens(provider, tokens, mirror = true) {
   const safe = _safeTokens(tokens);
   writeSecureJson(_tokensFile(provider), _tokensNs(provider), safe);
   _tokenCache.set(provider, { ...safe });
-  _mirrorToBackend(provider, safe, loadOAuthConfig(provider));
+  if (mirror) {
+    _tokenGenerations.set(provider, (_tokenGenerations.get(provider) || 0) + 1);
+    _mirrorToBackend(provider, safe, loadOAuthConfig(provider));
+  }
   return safe;
 }
 
 function _clearTokens(provider) {
+  _tokenGenerations.set(provider, (_tokenGenerations.get(provider) || 0) + 1);
   clearSecureJson(_tokensFile(provider));
   _tokenCache.set(provider, null);
 }
@@ -195,31 +209,13 @@ async function _postToken(provider, fields, cfg, basic) {
 }
 
 async function _refreshTokens(provider, tokens) {
-  const spec = getProvider(provider);
-  const cfg = requireOAuthConfig(provider);
-  if (!tokens || !tokens.refresh_token) {
-    _clearTokens(provider);
-    _mirrorDelete(provider);
-    throw new Error(`La conexión con ${spec.label} requiere reautenticación.`);
-  }
-  const basic = spec.auth.token_auth === 'basic' && cfg.clientSecret
-    ? { clientId: cfg.clientId, clientSecret: cfg.clientSecret }
-    : null;
-  const fields = {
-    grant_type: 'refresh_token',
-    refresh_token: tokens.refresh_token,
-    client_id: cfg.clientId,
-    ...(basic ? {} : cfg.clientSecret ? { client_secret: cfg.clientSecret } : {}),
-    ...spec.auth.extra_token,
-  };
-  const data = await _postToken(provider, fields, cfg, basic);
-  return _saveTokens(provider, {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token || tokens.refresh_token,
-    expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
-    scope: data.scope || tokens.scope,
-    account: tokens.account,
-  });
+  if (!tokens) return null;
+  const generation = _tokenGenerations.get(provider) || 0;
+  await _mirrorPromises.get(provider);
+  const result = await require('./ipc-router')._callBackend('flows_connection_token_refresh', { provider });
+  if ((_tokenGenerations.get(provider) || 0) !== generation) return null;
+  if (!result || !result.tokens || !result.tokens.access_token) return null;
+  return _saveTokens(provider, { ...result.tokens, account: tokens.account || result.tokens.account }, false);
 }
 
 function refreshTokens(provider, tokens) {
@@ -233,21 +229,14 @@ function refreshTokens(provider, tokens) {
 }
 
 async function getValidTokens(provider) {
-  let tokens = loadTokens(provider);
+  const tokens = loadTokens(provider);
   if (!tokens) return null;
   if (!tokens.access_token && !tokens.refresh_token) return null;
-  // Sin expiry_date (tokens no caducables, p. ej. GitHub) el access_token se usa tal cual.
-  const expiresSoon = Boolean(tokens.expiry_date) && tokens.expiry_date < Date.now() + 60_000;
-  if ((!tokens.access_token || expiresSoon) && tokens.refresh_token) {
-    try {
-      tokens = await refreshTokens(provider, tokens);
-    } catch {
-      return null;
-    }
-  } else if (!tokens.access_token) {
+  try {
+    return await refreshTokens(provider, tokens);
+  } catch {
     return null;
   }
-  return tokens;
 }
 
 function _generateCodeVerifier() {
@@ -384,7 +373,7 @@ async function probeAccount(provider) {
     if (account) {
       const tokensNow = loadTokens(provider);
       if (tokensNow && tokensNow.account !== String(account)) {
-        _saveTokens(provider, { ...tokensNow, account: String(account) });
+        _saveTokens(provider, { ...tokensNow, account: String(account) }, false);
       }
     }
     return String(account || 'Cuenta conectada');

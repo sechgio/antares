@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -52,10 +53,28 @@ def _vault_path(provider: str) -> Path:
 
 def _validate_base_url(url: str) -> str:
     url = url.strip().rstrip("/")
-    scheme = url.split(":", 1)[0].lower()
-    if scheme not in ("http", "https") or "://" not in url:
-        raise ValueError("base_url debe ser una URL http(s) válida")
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        port = parsed.port
+        valid = (
+            parsed.scheme in ("http", "https") and bool(parsed.hostname)
+            and parsed.username is None and parsed.password is None
+            and not parsed.query and not parsed.fragment
+            and not any(ch.isspace() for ch in url)
+            and (port is None or port > 0)
+        )
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError("base_url debe ser una URL http(s) válida, sin credenciales, parámetros ni fragmentos")
     return url
+
+
+def endpoint_url(base: str, path: str) -> str:
+    base = base.rstrip("/")
+    if base.endswith("/v1") and path.startswith("/v1/"):
+        path = path[3:]
+    return f"{base}{path}"
 
 
 def put_config(provider: str, config: JsonObject) -> JsonObject:
@@ -66,6 +85,8 @@ def put_config(provider: str, config: JsonObject) -> JsonObject:
     if api_key is not None:
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("api_key debe ser un texto no vacío")
+        if "\n" in api_key.strip() or "\r" in api_key.strip():
+            raise ValueError("La clave no puede contener saltos de línea")
         payload["api_key"] = api_key.strip()
     base_url = config.get("base_url")
     if base_url is not None:
@@ -73,6 +94,14 @@ def put_config(provider: str, config: JsonObject) -> JsonObject:
             payload.pop("base_url", None)
         else:
             payload["base_url"] = _validate_base_url(base_url)
+    model = config.get("model")
+    if model is not None:
+        if not isinstance(model, str) or len(model.strip()) > 120:
+            raise ValueError("El modelo debe ser un texto de hasta 120 caracteres")
+        if model.strip():
+            payload["model"] = model.strip()
+        else:
+            payload.pop("model", None)
     vault.seal(provider, _vault_path(provider), payload)
     return {"stored": True, "provider": provider}
 
@@ -110,6 +139,7 @@ def public_state(provider: str) -> JsonObject:
         "has_key": bool(isinstance(key, str) and key),
         "key_masked": _mask_key(key) if isinstance(key, str) and key else None,
         "base_url": _base_url(provider, spec, config),
+        "default_model": (config or {}).get("model") or (spec.get("chat") or {}).get("default_model", ""),
         "needs_key": (spec.get("auth") or {}).get("type") == "api_key",
     }
 
@@ -158,20 +188,26 @@ def status(provider: str) -> JsonObject:
         prefix = auth.get("prefix") if isinstance(auth.get("prefix"), str) else ""
         headers[str(header)] = f"{prefix}{api_key}"
 
-    url = f"{state['base_url']}{path}"
+    url = endpoint_url(str(state["base_url"]), path)
     try:
         data = _get_json(url, headers)
     except urllib.error.HTTPError as err:
-        out["error"] = f"HTTP {err.code} al consultar el proveedor"
+        out["error"] = (
+            "El proveedor no ofrece un listado de modelos. Puedes usarlo con el nombre de modelo indicado por el servicio."
+            if err.code in (404, 405) else f"HTTP {err.code} al consultar el proveedor"
+        )
         return out
     except (urllib.error.URLError, OSError, json.JSONDecodeError) as err:
         detail = getattr(err, "reason", err)
         out["error"] = f"Sin respuesta del proveedor: {detail}"
         return out
 
-    models = data.get(str(status_spec.get("models_field") or ""))
+    models = data.get(str(status_spec.get("models_field") or "")) if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        out["error"] = "El proveedor no devolvió un listado de modelos válido"
+        return out
     out["reachable"] = True
-    out["models_count"] = len(models) if isinstance(models, list) else None
+    out["models_count"] = len(models)
     return out
 
 

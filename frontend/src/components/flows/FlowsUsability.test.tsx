@@ -1,0 +1,127 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { flowsApi } from '../../api/flowsApi';
+import { aiProvidersApi } from '../../api/aiProvidersApi';
+import FlowList from './FlowList';
+import { ApprovalCard } from './AgentTimeline';
+import RunsView, { StepOutput } from './RunsView';
+import ConnectionDetail from './ConnectionDetail';
+import ProvidersView from './ProvidersView';
+import { useState } from 'react';
+import NodeConfigDrawer from './NodeConfigDrawer';
+import type { FlowNode, FlowRun } from './types';
+
+const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
+vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
+vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm: vi.fn() }) }));
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.spyOn(flowsApi, 'flowsList').mockResolvedValue({ flows: [] });
+});
+
+it('descubre ejecuciones nuevas y descarta respuestas anteriores que llegan tarde', async () => {
+  vi.useFakeTimers();
+  const run: FlowRun = { id: 'new', flow_id: 'flow', flow_name: 'Prueba', status: 'running', created_at: '2026-10-04T12:00:00Z', started_at: null, finished_at: null, steps: [], error: null, trigger_payload: {} };
+  let resolveOld: (value: { runs: FlowRun[] }) => void = () => {};
+  const list = vi.spyOn(flowsApi, 'flowsRunsList').mockResolvedValueOnce({ runs: [] })
+    .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
+    .mockResolvedValue({ runs: [run] });
+  const view = render(<RunsView />);
+  try {
+    await act(async () => {});
+    expect(screen.getByText(/Sin ejecuciones todavía/)).toBeVisible();
+    await act(async () => { vi.advanceTimersByTime(1500); });
+    await act(async () => { vi.advanceTimersByTime(1500); });
+    expect(list).toHaveBeenCalledTimes(3);
+    expect(screen.getByText('Ejecutando')).toBeVisible();
+    await act(async () => { resolveOld({ runs: [] }); });
+    expect(screen.getByText('Ejecutando')).toBeVisible();
+    view.unmount();
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    expect(list).toHaveBeenCalledTimes(3);
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it('crea un ejemplo manual que funciona sin configurar IA ni servicios externos', async () => {
+  const create = vi.spyOn(flowsApi, 'flowsCreate').mockResolvedValue({ flow: { id: 'example' } } as Awaited<ReturnType<typeof flowsApi.flowsCreate>>);
+  const providers = vi.spyOn(aiProvidersApi, 'aiProvidersList');
+  const open = vi.fn();
+  render(<FlowList onOpen={open} onRun={vi.fn()} onShowRuns={vi.fn()} refreshKey={0} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Probar un ejemplo local' }));
+  await waitFor(() => expect(open).toHaveBeenCalledWith('example'));
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ graph: expect.objectContaining({ nodes: expect.arrayContaining([
+    expect.objectContaining({ kind: 'trigger', config: { trigger_kind: 'manual' } }),
+    expect.objectContaining({ kind: 'tool_call', config: { method: 'formats' } }),
+  ]) }) }));
+  expect(providers).not.toHaveBeenCalled();
+  expect(open).toHaveBeenCalledWith('example');
+});
+
+it('explica los requisitos de las plantillas antes de crearlas', async () => {
+  render(<FlowList onOpen={vi.fn()} onRun={vi.fn()} onShowRuns={vi.fn()} refreshKey={0} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Plantillas' }));
+  expect(await screen.findAllByText('Requiere configurar un proveedor IA.')).toHaveLength(2);
+  expect(screen.getByText('Requiere sustituir la dirección de ejemplo. Se ejecuta con Antares abierto.')).toBeVisible();
+});
+
+it('presenta texto sin JSON y mantiene los detalles técnicos disponibles', () => {
+  render(<StepOutput value={{ text: 'Informe listo para revisar', usage: { total: 10 } }} />);
+  expect(screen.getByText('Informe listo para revisar', { exact: true })).toBeVisible();
+  expect(screen.getByText('Ver datos técnicos')).toBeVisible();
+  expect(screen.getByText(/"usage"/)).not.toBeVisible();
+});
+
+it('identifica el flujo que se eliminará y conserva la decisión original', async () => {
+  vi.spyOn(flowsApi, 'flowsGet').mockResolvedValue({ flow: { id: 'flow-123', name: 'Informe semanal' } } as Awaited<ReturnType<typeof flowsApi.flowsGet>>);
+  const decide = vi.fn();
+  render(<ApprovalCard approval={{ id: 'approval', session_id: 'session', call_id: 'call', method: 'flows_delete', params: { id: 'flow-123' }, status: 'pending', created_at: 0, decided_at: null }} busy={false} onDecide={decide} />);
+  expect(screen.getByText('Eliminar un flujo y sus ejecuciones')).toBeVisible();
+  expect(await screen.findByText('Informe semanal')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Aprobar' }));
+  expect(decide).toHaveBeenCalledWith('approval', true);
+});
+
+it('guía la conexión de una cuenta y conserva el guardado de credenciales', async () => {
+  const save = vi.fn().mockResolvedValue(undefined);
+  const provider = { id: 'demo', provider: 'demo', label: 'Servicio', description: 'Cuenta de prueba', docs: 'https://example.com', auth_type: 'oauth_secret' as const, requires_client_secret: true, scopes: [], redirect_hint: 'http://localhost:8765/callback', configured: false, connected: false };
+  render(<ConnectionDetail provider={provider} connecting={false} onConnect={vi.fn()} onDisconnect={vi.fn()} onSaveCreds={save} onClose={vi.fn()} />);
+  expect(screen.getByText('1. Prepara la conexión')).toBeVisible();
+  expect(screen.getByText('2. Registra la dirección de retorno')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Client ID de Servicio'), { target: { value: 'client' } });
+  fireEvent.change(screen.getByLabelText('Client Secret de Servicio'), { target: { value: 'secret' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar credenciales' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith(provider, { clientId: 'client', clientSecret: 'secret' }));
+});
+
+it('abre la página para obtener la clave IA sin exponerla en el enlace', async () => {
+  vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [{ id: 'demo', provider: 'demo', label: 'IA de prueba', description: 'Servicio IA', docs: 'https://example.com/keys', editable_base_url: false, default_base_url: 'https://example.com/api', base_url: 'https://example.com/api', default_model: 'demo', configured: false, has_key: false, key_masked: null, needs_key: true }] });
+  const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Obtener clave de IA de prueba' }));
+  expect(open).toHaveBeenCalledWith('https://example.com/keys', '_blank');
+});
+
+it('permite comparar con Sí o No sin escribir booleanos en inglés', () => {
+  const changed = vi.fn();
+  function Condition() {
+    const [node, setNode] = useState<FlowNode>({ id: 'condition', name: 'Comparar', kind: 'condition', config: { value: true }, position: { x: 0, y: 0 } });
+    return <NodeConfigDrawer node={node} onChange={(next) => { changed(next); setNode(next); }} onDelete={vi.fn()} onClose={vi.fn()} />;
+  }
+  render(<Condition />);
+  fireEvent.click(screen.getByLabelText('Valor de value'));
+  fireEvent.click(screen.getByRole('option', { name: 'No' }));
+  expect(changed.mock.lastCall?.[0].config.value).toBe(false);
+});
+
+it('permite guardar el servicio local con su dirección predeterminada', async () => {
+  const provider = { id: 'local', provider: 'local', label: 'IA local', description: 'Servicio local', docs: '', editable_base_url: true, default_base_url: 'http://localhost:11434', base_url: 'http://localhost:11434', default_model: 'demo', configured: false, has_key: false, key_masked: null, needs_key: false };
+  vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [provider] });
+  const save = vi.spyOn(aiProvidersApi, 'aiProviderSave').mockResolvedValue({ provider });
+  render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith({ provider: 'local', api_key: undefined, base_url: 'http://localhost:11434', model: 'demo' }));
+});

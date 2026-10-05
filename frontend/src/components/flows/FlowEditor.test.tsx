@@ -9,8 +9,9 @@ import type { FlowNodeData } from './graphAdapter';
 import type { Flow, FlowNodeKind } from './types';
 import FlowEditor from './FlowEditor';
 
-const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
+const { addToast, confirm } = vi.hoisted(() => ({ addToast: vi.fn(), confirm: vi.fn() }));
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
+vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm }) }));
 vi.mock('@xyflow/react', async (original) => ({
   ...await original<typeof import('@xyflow/react')>(),
   ReactFlowProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -35,10 +36,45 @@ function flow(kind: FlowNodeKind, config: Record<string, unknown> = {}): Flow {
 beforeEach(() => {
   vi.restoreAllMocks();
   addToast.mockClear();
+  confirm.mockReset();
   vi.spyOn(flowsApi, 'flowsOrchestratableMethods').mockResolvedValue({ methods: [] });
   vi.spyOn(connectionsApi, 'connectionsProviders').mockResolvedValue({ providers: [] });
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [] });
   vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({ servers: [] });
+});
+
+it('permite seguir editando al cancelar la salida y guarda antes de volver', async () => {
+  const initial = flow('transform', { output: { total: 1 } });
+  vi.spyOn(flowsApi, 'flowsGet').mockResolvedValue({ flow: initial });
+  const update = vi.spyOn(flowsApi, 'flowsUpdate').mockImplementation(async (p) => ({ flow: { ...initial, graph: p.graph! } }));
+  const back = vi.fn();
+  confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  render(<FlowEditor flowId="f1" onBack={back} onRunStarted={vi.fn()} />);
+  fireEvent.click(await screen.findByText('Seleccionar n1'));
+  const draft = screen.getByDisplayValue('{\n  "total": 1\n}', { normalizer: (v) => v });
+  draft.focus();
+  fireEvent.change(draft, { target: { value: '{"total":2}' } });
+  fireEvent.click(screen.getByLabelText('Volver'));
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+  expect(back).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByLabelText('Volver'));
+  await waitFor(() => expect(back).toHaveBeenCalledOnce());
+  expect(update.mock.calls[0][0].graph?.nodes[0].config.output).toEqual({ total: 2 });
+});
+
+it('permite elegir un dato anterior para una condición sin escribir una expresión', async () => {
+  const initial = flow('condition', { op: 'gt', value: 5 });
+  initial.graph.nodes.unshift({ id: 'datos', name: 'Datos', kind: 'transform', config: { output: { total: 10 } }, position: { x: 0, y: 0 } });
+  initial.graph.edges.push({ from_node: 'datos', to_node: 'n1', from_port: 'main', to_port: 'main' });
+  vi.spyOn(flowsApi, 'flowsGet').mockResolvedValue({ flow: initial });
+  const update = vi.spyOn(flowsApi, 'flowsUpdate').mockImplementation(async (p) => ({ flow: { ...initial, graph: p.graph! } }));
+  render(<FlowEditor flowId="f1" onBack={vi.fn()} onRunStarted={vi.fn()} />);
+  fireEvent.click(await screen.findByText('Seleccionar n1'));
+  fireEvent.click(screen.getByLabelText('Dato a evaluar'));
+  fireEvent.click(screen.getByRole('option', { name: 'Datos: total' }));
+  fireEvent.click(screen.getByText('Guardar'));
+  await waitFor(() => expect(update).toHaveBeenCalled());
+  expect(update.mock.calls[0][0].graph?.nodes.find((n) => n.id === 'n1')?.config.field).toBe('=nodes.datos.json.total');
 });
 
 describe('guardado del borrador activo', () => {
@@ -47,6 +83,7 @@ describe('guardado del borrador activo', () => {
     ['tool_call', '{ "id": "=nodes.trigger.json" }', 'args', '{"id":10}', { id: 10 }],
     ['http_request', '{ "Accept": "application/json" }', 'headers', '{"Accept":"text/plain"}', { Accept: 'text/plain' }],
     ['http_request', '{ "texto": "=nodes.n1.json.title" }', 'body', '{"texto":"nuevo"}', { texto: 'nuevo' }],
+    ['http_request', '{ "texto": "=nodes.n1.json.title" }', 'body', '"Texto sin JSON"', 'Texto sin JSON'],
     ['agent', 'Resume: {{ =nodes.n1.json.text }}', 'prompt', 'Prompt nuevo', 'Prompt nuevo'],
     ['agent', 'Responde en JSON con…', 'system', 'Sistema nuevo', 'Sistema nuevo'],
     ['mcp_call', '{"param": "{{ =item.json.valor }}"}', 'args', '{"param":10}', { param: 10 }],
@@ -66,7 +103,7 @@ describe('guardado del borrador activo', () => {
     expect(update.mock.calls[0][0].graph?.nodes[0].config[key]).toEqual(expected);
   });
 
-  it('Ctrl+S conserva el último JSON válido y muestra el error del borrador inválido', async () => {
+  it('Ctrl+S bloquea el guardado cuando el borrador contiene JSON inválido', async () => {
     const initial = flow('transform', { output: { total: 1 } });
     vi.spyOn(flowsApi, 'flowsGet').mockResolvedValue({ flow: initial });
     const update = vi.spyOn(flowsApi, 'flowsUpdate').mockResolvedValue({ flow: initial });
@@ -76,8 +113,16 @@ describe('guardado del borrador activo', () => {
     draft.focus();
     fireEvent.change(draft, { target: { value: '{invalid' } });
     fireEvent.keyDown(draft, { key: 's', ctrlKey: true });
-    await waitFor(() => expect(update).toHaveBeenCalled());
-    expect(update.mock.calls[0][0].graph?.nodes[0].config.output).toEqual({ total: 1 });
-    expect(addToast).toHaveBeenCalledWith({ message: 'Salida: JSON inválido, no se aplicó el cambio', type: 'error' });
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' })));
+    expect(update).not.toHaveBeenCalled();
+    expect(addToast).not.toHaveBeenCalledWith({ message: 'Flujo guardado', type: 'success' });
+    expect(draft).toBeInvalid();
+    fireEvent.click(screen.getByRole('button', { name: /Acción.*Genera documentos/ }));
+    expect(screen.queryByText(/Seleccionar tool_call/)).not.toBeInTheDocument();
+    expect(draft).toHaveValue('{invalid');
+    fireEvent.change(draft, { target: { value: '{"total":2}' } });
+    fireEvent.keyDown(draft, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(update).toHaveBeenCalledOnce());
+    expect(update.mock.calls[0][0].graph?.nodes[0].config.output).toEqual({ total: 2 });
   });
 });

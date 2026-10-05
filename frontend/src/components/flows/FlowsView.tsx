@@ -20,7 +20,7 @@ const SECTIONS: { value: Section; label: string }[] = [
   { value: 'agent', label: 'Agente' },
 ];
 
-export default function FlowsView() {
+export default function FlowsView({ registerLeaveGuard }: { active?: boolean; registerLeaveGuard?: (guard: (() => Promise<boolean>) | null) => void }) {
   const { addToast } = useToast();
   const [section, setSection] = useState<Section>('flows');
   const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
@@ -57,7 +57,6 @@ export default function FlowsView() {
           value={section}
           onChange={(v) => {
             setSection(v);
-            if (v !== 'flows') setEditingFlowId(null);
           }}
           aria-label="Secciones de Flujos"
           className="flex w-[560px] gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5"
@@ -65,9 +64,11 @@ export default function FlowsView() {
       </header>
 
       <div className="min-h-0 flex-1">
-        {section === 'flows' &&
-          (editingFlowId ? (
+        {editingFlowId ? (
+          <div className={`h-full ${section === 'flows' ? '' : 'hidden'}`} inert={section !== 'flows' ? true : undefined}>
             <FlowEditor
+              active={section === 'flows'}
+              registerLeaveGuard={registerLeaveGuard}
               flowId={editingFlowId}
               onBack={closeEditor}
               onRunStarted={() => setSection('runs')}
@@ -78,7 +79,8 @@ export default function FlowsView() {
                 setSection('agent');
               }}
             />
-          ) : (
+          </div>
+          ) : section === 'flows' && (
             <FlowList
               onOpen={openEditor}
               onRun={(id) => void runFlow(id)}
@@ -88,11 +90,11 @@ export default function FlowsView() {
               }}
               refreshKey={listRefresh}
             />
-          ))}
+          )}
         {section === 'runs' && <RunsView flowId={runsFlowId} />}
         {section === 'connections' && <ConnectionsView />}
         {section === 'providers' && <ProvidersView />}
-        {section === 'agent' && <AgentView initialDraft={agentDraft} />}
+        {section === 'agent' && <AgentView initialDraft={agentDraft} onConfigureProvider={() => setSection('providers')} />}
       </div>
     </div>
   );

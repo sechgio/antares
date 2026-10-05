@@ -44,7 +44,7 @@ def _session_create(params: JsonObject) -> JsonObject:
     if state.get("needs_key") and not state.get("has_key"):
         raise ValidationError("Configura la clave del proveedor en Proveedores IA")
     model = params.get("model")
-    default_model = (spec.get("chat") or {}).get("default_model")
+    default_model = state.get("default_model")
     session = _store().create_session(
         provider,
         str(model)[:120] if isinstance(model, str) and model else str(default_model or ""),

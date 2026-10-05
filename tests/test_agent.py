@@ -44,6 +44,32 @@ def test_tool_specs_cover_readonly_and_gated():
     assert by_name[agent_chat.gated_methods()[0]]["gated"] is True
 
 
+@pytest.mark.parametrize("style", ["openai", "anthropic"])
+def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style):
+    from backend.core.flows import mcp_servers
+
+    schema = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+    monkeypatch.setattr(mcp_servers, "list_servers", lambda: [{"id": "demo", "name": "Demo"}])
+    monkeypatch.setattr(mcp_servers, "list_tools", lambda server: [{
+        "name": "search", "description": "Busca", "inputSchema": schema,
+    }])
+    seen = {}
+    response = {"choices": [{"message": {"content": "ok"}}]} if style == "openai" else {"content": []}
+    monkeypatch.setattr(agent_chat, "_post_json", lambda url, headers, payload: seen.update(payload) or response)
+    chat = agent_chat._chat_openai if style == "openai" else agent_chat._chat_anthropic
+    chat("https://example.com", {}, "model", [], True, None)
+    wire = {s["function"]["name"]: s["function"]["parameters"] for s in seen["tools"]} if style == "openai" else {
+        s["name"]: s["input_schema"] for s in seen["tools"]}
+    assert wire[mcp_servers.agent_tool_name("demo", "search")] == schema
+    assert wire["canvas_get"]["required"] == ["id"]
+    assert "document" in wire["canvas_save"]["properties"]
+    assert wire["informes_v2_update"]["required"] == ["id", "report"]
+    assert {"files", "destino"} <= wire["process_start"]["properties"].keys()
+    assert {"formato", "calidad", "conversion_enabled", "mapping_path", "sequence_mode"} <= wire["process_start"]["properties"].keys()
+    assert all(not k.startswith("_") for s in wire.values() for k in s.get("properties", {}))
+    assert "flows_connection_token_refresh" not in wire
+
+
 def test_tools_list_projection(monkeypatch):
     from backend.handlers import agent as agent_handler
 
@@ -73,6 +99,78 @@ def test_approval_flow(tmp_path):
     assert decided["status"] == "approved" and decided["decided_at"]
     assert store.decide_approval(ap["id"], True) is None  # no doble decisión
     assert store.pending_approvals(s["id"]) == []
+
+
+@pytest.mark.parametrize("name,params", [
+    ("db_export", {"path": "C:/unauthorized/export.xlsx"}),
+    ("flows_print_pdf", {"pdf_path": "C:/unauthorized/document.pdf"}),
+    ("sellador_apply", {"pdf_path": "document.pdf"}),
+    ("flows_update", {"graph": {"nodes": [{"config": {"args": {"output_path": "C:/unauthorized/out.pdf"}}}]}}),
+    ("flows_update", {"graph": {"nodes": [{"config": {"_file_grants": {"write": ["C:/unauthorized"]}}}]}}),
+    ("canvas_save", {"_resolved_output_path": "relative.pdf"}),
+])
+def test_agent_rejects_ungranted_paths_and_forged_grants_before_dispatch(tmp_path, name, params):
+    calls = []
+    runner = agent.AgentRunner(_store(tmp_path), lambda method: lambda args: calls.append(args) or {"ok": True})
+    result = json.loads(runner._execute({"name": name, "params": params}))
+    assert result.get("error")
+    assert calls == []
+
+
+def test_approval_does_not_grant_disk_access(tmp_path, monkeypatch):
+    store, runner, executed = _fake_runner(tmp_path, monkeypatch, [{"calls": [{
+        "id": "export", "name": "db_export", "params": {"path": "C:/unauthorized/export.xlsx"},
+    }]}])
+    session = store.create_session("ollama", "m", "Prueba")
+    runner._run_loop(session["id"])
+    approval = store.pending_approvals(session["id"])[0]
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
+    runner.decide(approval["id"], True)
+    assert executed == []
+    result = next(m for m in store.messages(session["id"]) if m["role"] == "tool_result")
+    assert json.loads(result["content"]).get("error")
+
+
+@pytest.mark.parametrize("method,lane", [("formats", "light"), ("canvas_export_cmyk_pdf", "heavy")])
+def test_agent_dispatch_uses_catalog_lane_and_timeout(tmp_path, monkeypatch, method, lane):
+    from concurrent.futures import Future
+    from unittest.mock import Mock
+
+    scheduler = Mock()
+    submitted = []
+    futures = []
+
+    def submit(fn, params):
+        submitted.append(params)
+        future = Future()
+        future.set_result(fn(params))
+        wrapped = Mock(wraps=future)
+        futures.append(wrapped)
+        return wrapped
+
+    getattr(scheduler, f"submit_{lane}").side_effect = submit
+    monkeypatch.setattr(agent, "get_scheduler", lambda: scheduler)
+    runner = agent.AgentRunner(_store(tmp_path), lambda method: lambda params: {"ok": True})
+    assert json.loads(runner._execute({"name": method, "params": {}})) == {"ok": True}
+    assert submitted == [{}]
+    submit_mock = getattr(scheduler, f"submit_{lane}")
+    submit_mock.assert_called_once()
+    futures[0].result.assert_called_once_with(timeout=agent.timeout_ms_for(method) / 1000)
+
+
+def test_agent_reports_timeout_without_retrying_the_action(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    future = Mock()
+    future.result.side_effect = agent.FutureTimeoutError
+    scheduler = Mock()
+    scheduler.submit_light.return_value = future
+    monkeypatch.setattr(agent, "get_scheduler", lambda: scheduler)
+    runner = agent.AgentRunner(_store(tmp_path), lambda method: lambda params: {"ok": True})
+    result = json.loads(runner._execute({"name": "formats", "params": {}}))
+    assert "puede seguir ejecutándose" in result["error"]
+    scheduler.submit_light.assert_called_once()
+    future.cancel.assert_called_once()
 
 
 def test_update_tool_call(tmp_path):

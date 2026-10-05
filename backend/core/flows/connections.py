@@ -133,6 +133,7 @@ def _refresh(provider: str, spec: JsonObject, tokens: JsonObject, generation: in
         basic = (str(client_id), str(client_secret))
     elif client_secret:
         fields["client_secret"] = str(client_secret)
+    fields.update({str(key): str(value) for key, value in (auth.get("extra_token") or {}).items()})
     data = _post_form(token_url, fields, basic)
     if not isinstance(data, dict) or not data.get("access_token"):
         raise ValueError(f"El proveedor no devolvió access_token al refrescar ({provider})")
@@ -150,8 +151,8 @@ def _refresh(provider: str, spec: JsonObject, tokens: JsonObject, generation: in
     return updated
 
 
-def fresh_access_token(provider: str) -> str:
-    """Access token válido, refrescando si caducó. ValueError si requiere reauth."""
+def fresh_tokens(provider: str) -> JsonObject:
+    """Copia de tokens vigentes, renovados únicamente por el backend."""
     get_provider(provider)
     with _state_lock:
         refresh_lock = _refresh_locks.setdefault(provider, threading.Lock())
@@ -171,7 +172,11 @@ def fresh_access_token(provider: str) -> str:
                 raise ValueError(
                     f"La conexión con {provider} caducó y no se pudo refrescar; reconéctala en Conexiones"
                 ) from err
-        return str(tokens["access_token"])
+        return dict(tokens)
+
+
+def fresh_access_token(provider: str) -> str:
+    return str(fresh_tokens(provider)["access_token"])
 
 
 def list_statuses() -> list[JsonObject]:

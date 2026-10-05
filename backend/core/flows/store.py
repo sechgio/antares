@@ -8,7 +8,11 @@ normalización en carga.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
+import secrets
 import threading
 import uuid
 from copy import deepcopy
@@ -54,6 +58,9 @@ def _normalize_flow(raw: JsonObject) -> JsonObject | None:
         "last_run_status": raw.get("last_run_status") if raw.get("last_run_status") in _RUN_STATUSES else None,
         "last_run_at": str(raw.get("last_run_at") or "") or None,
         "last_scheduled_at": str(raw.get("last_scheduled_at") or "") or None,
+        **({"source_checkpoint": str(raw.get("source_checkpoint") or "")} if "source_checkpoint" in raw else {}),
+        **({"source_checkpoints": [s for s in raw["source_checkpoints"] if isinstance(s, str)]}
+           if isinstance(raw.get("source_checkpoints"), list) else {}),
     }
 
 
@@ -86,6 +93,7 @@ class FlowStore:
     def __init__(self, flows_path: Path | None = None, runs_path: Path | None = None) -> None:
         self._flows_path = flows_path or user_data_path("flows/flows.json")
         self._runs_path = runs_path or user_data_path("flows/flow_runs.json")
+        self._effects_path = self._flows_path.with_suffix(".effects.json")
         self._lock = threading.RLock()
         runs = self._read_runs()
         interrupted = [run for run in runs.values() if run["status"] in ("queued", "running")]
@@ -130,6 +138,27 @@ class FlowStore:
 
     def _read_flows(self) -> dict[str, JsonObject]:
         return self._read(self._flows_path, _normalize_flow)
+
+    def _path_grant_key(self) -> bytes:
+        key_path = self._flows_path.with_suffix(".paths-key")
+        with self._lock:
+            if not key_path.exists():
+                key_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    with key_path.open("x", encoding="ascii") as handle:
+                        handle.write(secrets.token_hex(32))
+                except FileExistsError:
+                    pass
+            return bytes.fromhex(key_path.read_text(encoding="ascii"))
+
+    def authorize_paths(self, paths: JsonObject) -> JsonObject:
+        grants = {mode: paths.get(mode) or [] for mode in ("read", "write", "folders")}
+        digest = hmac.new(self._path_grant_key(), json.dumps(grants, sort_keys=True).encode(), hashlib.sha256).hexdigest()
+        return {**grants, "signature": digest}
+
+    def verify_paths(self, grants: JsonObject) -> bool:
+        signature = grants.get("signature")
+        return isinstance(signature, str) and hmac.compare_digest(signature, self.authorize_paths(grants)["signature"])
 
     def _read_runs(self) -> dict[str, JsonObject]:
         return self._read(self._runs_path, _normalize_run)
@@ -264,6 +293,39 @@ class FlowStore:
                 return
             flow["last_scheduled_at"] = run_at
             self._write_flows(flows)
+
+    def acknowledge_source(self, flow_id: str, fingerprint: str, *, remember: bool = False) -> None:
+        with self._lock:
+            flows = self._read_flows()
+            if flow_id in flows:
+                flows[flow_id]["source_checkpoint"] = fingerprint
+                if remember:
+                    history = flows[flow_id].setdefault("source_checkpoints", [])
+                    if fingerprint not in history:
+                        history.append(fingerprint)
+                self._write_flows(flows)
+
+    def begin_action(self, flow_id: str, fingerprint: str) -> JsonObject | None:
+        """Reserva el efecto antes de ejecutarlo; un resultado incierto nunca se repite."""
+        with self._lock:
+            receipts = json.loads(self._effects_path.read_text(encoding="utf-8")) if self._effects_path.exists() else {}
+            if not isinstance(receipts, dict):
+                raise ValueError("El registro de acciones está dañado; no se ejecutará la acción")
+            key = f"{flow_id}:{fingerprint}"
+            previous = receipts.get(key)
+            if key in receipts:
+                if not isinstance(previous, dict) or previous.get("status") != "done" or not isinstance(previous.get("output"), dict):
+                    raise ValueError("Acción con resultado incierto; comprueba su resultado antes de usar una entrada distinta")
+                return deepcopy(previous)
+            receipts[key] = {"status": "pending"}
+            atomic_write_json(self._effects_path, receipts)
+            return None
+
+    def complete_action(self, flow_id: str, fingerprint: str, output: JsonObject) -> None:
+        with self._lock:
+            receipts = json.loads(self._effects_path.read_text(encoding="utf-8"))
+            receipts[f"{flow_id}:{fingerprint}"] = {"status": "done", "output": output}
+            atomic_write_json(self._effects_path, receipts)
 
     def _touch_last_run(self, flow_id: str, status: str, run_at: str) -> None:
         with self._lock:

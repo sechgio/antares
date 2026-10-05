@@ -15,13 +15,14 @@ function StatusDot({ tone }: { tone: 'ok' | 'warn' | 'off' }) {
 interface FormState {
   apiKey: string;
   baseUrl: string;
+  model: string;
   saving: boolean;
 }
 
 export default function ProvidersView() {
   const { addToast } = useToast();
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
-  const [statuses, setStatuses] = useState<Record<string, AiProviderStatus>>({});
+  const [statuses, setStatuses] = useState<Record<string, AiProviderStatus | undefined>>({});
   const [loading, setLoading] = useState(true);
   const [probing, setProbing] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<string, FormState>>({});
@@ -44,24 +45,32 @@ export default function ProvidersView() {
   const save = async (p: AiProviderSpec) => {
     const form = forms[p.id];
     const apiKey = form?.apiKey.trim() ?? '';
-    const baseUrl = form?.baseUrl.trim() ?? '';
+    const baseUrl = form?.baseUrl.trim() ?? p.base_url;
+    const model = form?.model.trim() ?? p.default_model;
     if (p.needs_key && !apiKey && !p.has_key) {
-      addToast({ message: `Introduce la API key de ${p.label}`, type: 'error' });
+      addToast({ message: `Introduce la clave de acceso de ${p.label}`, type: 'error' });
       return;
     }
     if (!apiKey && !baseUrl && !(p.needs_key && p.has_key)) {
-      addToast({ message: 'Nada que guardar — introduce la clave o la base URL', type: 'error' });
+      addToast({ message: 'Introduce la clave de acceso o la dirección del servicio antes de guardar.', type: 'error' });
       return;
     }
-    setForms((s) => ({ ...s, [p.id]: { apiKey, baseUrl, saving: true } }));
+    setForms((s) => ({ ...s, [p.id]: { apiKey, baseUrl, model, saving: true } }));
     try {
       await aiProvidersApi.aiProviderSave({
         provider: p.id,
         api_key: apiKey || undefined,
-        base_url: baseUrl || undefined,
+        base_url: baseUrl,
+        model,
       });
-      addToast({ message: `Ajustes de ${p.label} guardados en el vault cifrado`, type: 'success' });
+      setStatuses((s) => ({ ...s, [p.id]: undefined }));
+      addToast({ message: `Ajustes de ${p.label} guardados y cifrados en este equipo`, type: 'success' });
       await refresh();
+      setForms((s) => {
+        const next = { ...s };
+        delete next[p.id];
+        return next;
+      });
     } catch (err) {
       addToast({ message: errorMessage(err, `No se pudo guardar ${p.label}`), type: 'error' });
     } finally {
@@ -72,6 +81,11 @@ export default function ProvidersView() {
   };
 
   const probe = async (p: AiProviderSpec) => {
+    const form = forms[p.id];
+    if (form && (form.apiKey.trim() || form.baseUrl.trim() !== p.base_url || form.model.trim() !== p.default_model)) {
+      addToast({ message: 'Guarda los cambios antes de probar la conexión.', type: 'error' });
+      return;
+    }
     setProbing(p.id);
     try {
       const res = await aiProvidersApi.aiProviderStatus(p.id);
@@ -94,7 +108,12 @@ export default function ProvidersView() {
   const remove = async (p: AiProviderSpec) => {
     try {
       await aiProvidersApi.aiProviderDelete(p.id);
-      addToast({ message: `Clave y ajustes de ${p.label} eliminados del vault`, type: 'success' });
+      setForms((s) => {
+        const next = { ...s };
+        delete next[p.id];
+        return next;
+      });
+      addToast({ message: `Clave y ajustes de ${p.label} eliminados de este equipo`, type: 'success' });
       setStatuses((s) => {
         const next = { ...s };
         delete next[p.id];
@@ -112,7 +131,7 @@ export default function ProvidersView() {
       return st.models_count != null ? `Disponible · ${st.models_count} modelos` : 'Disponible';
     }
     if (p.has_key || (p.configured && !p.needs_key)) return 'Configurado';
-    return p.needs_key ? 'Necesita API key' : 'No configurado';
+    return p.needs_key ? 'Necesita clave de acceso' : 'No configurado';
   };
 
   const statusTone = (p: AiProviderSpec): 'ok' | 'warn' | 'off' => {
@@ -134,8 +153,9 @@ export default function ProvidersView() {
       <div className="mx-auto max-w-3xl">
         <h2 className="text-sm font-semibold text-[var(--text-primary)]">Proveedores IA</h2>
         <p className="mb-5 mt-1 text-xs text-[var(--text-secondary)]">
-          Tus propias claves (BYOK): la clave solo va al vault cifrado de este equipo y nunca
-          vuelve a la interfaz — solo se ve la máscara. «Probar» consulta el endpoint de modelos.
+          1. Elige un servicio. 2. Obtén su clave y guárdala aquí. 3. Pulsa «Probar» para comprobar la conexión.
+          Después podrás usarlo en el Agente o en un paso de IA. Las claves se guardan cifradas en este equipo.
+          Para otro proveedor compatible, usa la tarjeta del protocolo que indique su documentación y cambia la dirección y el modelo.
         </p>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -164,65 +184,95 @@ export default function ProvidersView() {
                 </div>
 
                 <div className="mt-3 rounded-md bg-[var(--bg-input)] px-3 py-2 font-mono text-[11px] text-[var(--text-secondary)]">
-                  <div className="truncate">Base URL: {p.base_url}</div>
                   {p.has_key && <div className="truncate">Clave: {p.key_masked}</div>}
-                  {p.docs && <div className="mt-0.5 truncate">Claves: {p.docs}</div>}
+                  <p className="font-sans">{p.needs_key ? 'Usa una clave de tu cuenta en este servicio. El uso puede tener un coste según tu plan.' : 'Este servicio funciona en tu equipo. Instálalo y descarga un modelo antes de probar la conexión.'}</p>
+                  {p.docs && <Button className="mt-2" size="sm" variant="secondary" aria-label={`${p.needs_key ? 'Obtener clave de' : 'Instalar'} ${p.label}`} onClick={() => window.open(p.docs, '_blank')}>{p.needs_key ? 'Obtener clave de acceso' : 'Ver cómo instalar'}</Button>}
                 </div>
 
                 <div className="mt-3 space-y-2">
                   {p.needs_key && (
                     <Input
                       type="password"
+                      disabled={form?.saving || probing === p.id}
                       value={form?.apiKey ?? ''}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        setStatuses((s) => ({ ...s, [p.id]: undefined }));
                         setForms((s) => ({
                           ...s,
                           [p.id]: {
                             apiKey: e.target.value,
-                            baseUrl: form?.baseUrl ?? '',
+                            baseUrl: form?.baseUrl ?? p.base_url,
+                            model: form?.model ?? p.default_model,
                             saving: false,
                           },
-                        }))
-                      }
-                      placeholder={p.has_key ? `Actual: ${p.key_masked}` : 'API key'}
+                        }));
+                      }}
+                      placeholder={p.has_key ? `Actual: ${p.key_masked}` : 'Clave de acceso (API key)'}
                       spellCheck={false}
                       aria-label={`API key ${p.label}`}
                     />
                   )}
                   {p.editable_base_url && (
+                    <details open={!p.needs_key}>
+                    <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">{p.needs_key ? 'Dirección del servicio (avanzado)' : 'Dirección del servicio local'}</summary>
                     <Input
-                      value={form?.baseUrl ?? ''}
-                      onChange={(e) =>
+                      value={form?.baseUrl ?? p.base_url}
+                      disabled={form?.saving || probing === p.id}
+                      onChange={(e) => {
+                        setStatuses((s) => ({ ...s, [p.id]: undefined }));
                         setForms((s) => ({
                           ...s,
                           [p.id]: {
                             apiKey: form?.apiKey ?? '',
                             baseUrl: e.target.value,
+                            model: form?.model ?? p.default_model,
                             saving: false,
                           },
-                        }))
-                      }
+                        }));
+                      }}
                       placeholder={`Base URL (vacío = ${p.default_base_url})`}
                       spellCheck={false}
                       aria-label={`Base URL ${p.label}`}
                     />
+                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">Dirección base de la API, sin /chat/completions ni /messages. Conserva /v1 si el servicio lo indica. Vacío restaura la dirección original.</p>
+                    </details>
                   )}
+                  <label className="block text-xs text-[var(--text-secondary)]">
+                  Modelo predeterminado
+                  <Input
+                    className="mt-1 w-full"
+                    value={form?.model ?? p.default_model}
+                    disabled={form?.saving || probing === p.id}
+                    onChange={(e) => {
+                      setStatuses((s) => ({ ...s, [p.id]: undefined }));
+                      setForms((s) => ({ ...s, [p.id]: {
+                        apiKey: form?.apiKey ?? '', baseUrl: form?.baseUrl ?? p.base_url,
+                        model: e.target.value, saving: false,
+                      } }));
+                    }}
+                    maxLength={120}
+                    spellCheck={false}
+                    aria-label={`Modelo ${p.label}`}
+                    placeholder="Nombre exacto del modelo según el servicio"
+                  />
+                  </label>
+                  <p className="text-[11px] text-[var(--text-muted)]">Se usará en conversaciones nuevas y pasos de IA sin modelo propio. «Probar» consulta el listado de modelos; no genera texto.</p>
                   <div className="flex items-center gap-2">
-                    <Button size="sm" disabled={form?.saving} onClick={() => void save(p)}>
+                    <Button size="sm" disabled={form?.saving || probing === p.id} onClick={() => void save(p)}>
                       <KeyRound size={13} className="mr-1" />
                       {p.configured ? 'Actualizar' : 'Guardar'}
                     </Button>
                     <Button
                       size="sm"
                       variant="secondary"
-                      disabled={probing === p.id || (p.needs_key && !p.has_key)}
+                      disabled={form?.saving || probing === p.id || (p.needs_key && !p.has_key)}
                       onClick={() => void probe(p)}
                     >
                       <PlugZap size={13} className="mr-1" />
                       Probar
                     </Button>
                     {p.configured && (
-                      <Button size="sm" variant="ghost" onClick={() => void remove(p)}>
+                      <Button size="sm" variant="ghost" disabled={form?.saving || probing === p.id} onClick={() => void remove(p)}>
                         <Trash2 size={13} className="mr-1" />
                         Eliminar
                       </Button>

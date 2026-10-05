@@ -15,7 +15,7 @@ import uuid
 
 from backend.core.flows import ai_providers, http_guard, mcp_servers
 from backend.core.flows.types import JsonObject
-from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods
+from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods, input_schema_for
 
 MAX_MESSAGE_CHARS = 12_000
 _MAX_TOOL_RESULT_CHARS = 6_000
@@ -24,7 +24,7 @@ _CHAT_TIMEOUT_S = 120.0
 
 # Métodos backend que el agente nunca debe invocar (ni siquiera con aprobación):
 # vault/claves, el propio canal del agente y borrados destructivos.
-_DENIED_PREFIXES = ("ai_provider_", "flows_connection_", "agent_")
+_DENIED_PREFIXES = ("ai_provider_", "flows_connection_", "flows_path_", "agent_")
 _DENIED_METHODS = frozenset({"db_clear", "mcp_server_add", "mcp_server_delete", "mcp_tool_call"})
 
 _SYSTEM_PROMPT = (
@@ -51,6 +51,7 @@ def tool_specs() -> list[JsonObject]:
             "name": m,
             "description": f"Antares · {m} (solo lectura)",
             "gated": False,
+            "inputSchema": input_schema_for(m),
         }
         for m in sorted(ORCHESTRATABLE_METHODS)
     ]
@@ -59,6 +60,7 @@ def tool_specs() -> list[JsonObject]:
             "name": m,
             "description": f"Antares · {m} (efecto: requiere aprobación del usuario)",
             "gated": True,
+            "inputSchema": input_schema_for(m),
         }
         for m in gated_methods()
     ]
@@ -73,6 +75,7 @@ def tool_specs() -> list[JsonObject]:
                     "name": mcp_servers.agent_tool_name(str(server["id"]), str(tool["name"])),
                     "description": f"MCP {server['name']} · {tool['name']} — {tool['description'] or 'requiere aprobación del usuario'}",
                     "gated": True,
+                    "inputSchema": tool["inputSchema"],
                 }
             )
     return specs
@@ -112,8 +115,9 @@ def _post_json(url: str, headers: dict[str, str], payload: JsonObject) -> JsonOb
         data: JsonObject = json.loads(raw.decode("utf-8"))
         return data
     except urllib.error.HTTPError as err:
-        detail = err.read(400).decode("utf-8", errors="replace")
-        raise ValueError(f"El proveedor respondió HTTP {err.code}: {detail[:200]}") from err
+        raise ValueError(
+            f"El proveedor respondió HTTP {err.code}. Revisa la dirección, la clave y el modelo configurados."
+        ) from err
     except urllib.error.URLError as err:
         raise ValueError(f"Sin respuesta del proveedor: {err.reason}") from err
 
@@ -202,15 +206,19 @@ def _chat_openai(
                 "function": {
                     "name": s["name"],
                     "description": s["description"],
-                    "parameters": {"type": "object", "additionalProperties": True},
+                    "parameters": s["inputSchema"],
                 },
             }
             for s in tool_specs()
         ]
         payload["tool_choice"] = "auto"
     data = _post_json(url, headers, payload)
-    choices = data.get("choices") or []
-    message = (choices[0].get("message") or {}) if choices else {}
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise ValueError("El proveedor no devolvió una respuesta válida de OpenAI Chat Completions")
+    message = choices[0].get("message")
+    if not isinstance(message, dict):
+        raise ValueError("El proveedor no devolvió una respuesta válida de OpenAI Chat Completions")
     calls = []
     for call in message.get("tool_calls") or []:
         fn = call.get("function") or {}
@@ -288,11 +296,13 @@ def _chat_anthropic(
             {
                 "name": s["name"],
                 "description": s["description"],
-                "input_schema": {"type": "object", "additionalProperties": True},
+                "input_schema": s["inputSchema"],
             }
             for s in tool_specs()
         ]
     data = _post_json(url, headers, payload)
+    if not isinstance(data, dict) or not isinstance(data.get("content"), list):
+        raise ValueError("El proveedor no devolvió una respuesta válida de Anthropic Messages")
     text_parts: list[str] = []
     calls: list[JsonObject] = []
     for block in data.get("content") or []:
@@ -332,7 +342,7 @@ def chat(
     base = config.get("base_url") or spec.get("base_url")
     if not isinstance(base, str) or not base:
         raise ValueError(f"El proveedor {provider} no tiene base_url")
-    url = f"{base.rstrip('/')}{path}"
+    url = ai_providers.endpoint_url(base, path)
     headers = _auth_headers(spec, config)
     if style == "openai_chat":
         return _chat_openai(url, headers, model, messages, with_tools, system)

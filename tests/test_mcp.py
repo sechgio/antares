@@ -151,6 +151,13 @@ def test_stdio_roundtrips_utf8_with_non_utf8_locale(mcp_root, monkeypatch):
     assert mcp_client.normalize_result(error)["text"] == "falló"
 
 
+def test_stdio_accepts_final_response_before_server_closes(mcp_root):
+    script = mcp_root / "closing.py"
+    script.write_text(_FAKE_SERVER.replace("sys.stdout.flush()", 'sys.stdout.flush()\n    if method == "tools/list": break'),
+                      encoding="utf-8")
+    assert [tool["name"] for tool in mcp_client.list_tools_stdio(sys.executable, [str(script)], dict(os.environ))] == ["echo", "boom"]
+
+
 class _FakeHttpHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -278,14 +285,15 @@ def test_http_secret_headers_not_sent_on_redirect(mcp_root):
 
 
 def test_agent_tool_name_roundtrip(mcp_root):
+    mcp_servers.add_server("github", "stdio", command="x")
     name = mcp_servers.agent_tool_name("github", "repos.get")
     # el punto no es válido como function name de OpenAI/Anthropic
-    assert name == "mcp__github__repos-get"
-    assert mcp_servers.parse_agent_tool(name) == ("github", "repos-get")
+    assert name.startswith(mcp_servers.agent_tool_name("github", "") + "repos-get-")
+    assert mcp_servers.parse_agent_tool(name) == ("github", name[len(mcp_servers.agent_tool_name("github", "")):])
     assert mcp_servers.parse_agent_tool("flows_list") is None
     assert mcp_servers.parse_agent_tool("mcp__solo") is None
-    # nombres ya válidos quedan intactos; el anunciado nunca supera 64 chars
-    assert mcp_servers.agent_tool_name("s", "ping") == "mcp__s__ping"
+    # Todos llevan identidad estable, incluso si comparten un alias antiguo.
+    assert mcp_servers.agent_tool_name("s", "ping").startswith(mcp_servers.agent_tool_name("s", "") + "ping-")
     assert len(mcp_servers.agent_tool_name("s" * 60, "t" * 60)) <= 64
 
 
@@ -303,6 +311,61 @@ def test_call_tool_resolves_advertised_name(mcp_root, monkeypatch):
     )
     mcp_servers.call_tool("gh", "repos-get", {})
     assert seen["tool"] == "repos.get"
+
+
+def test_advertised_names_do_not_collide_and_old_ambiguous_approvals_fail_closed(mcp_root, monkeypatch):
+    tools = [{"name": name} for name in ("repos.get", "repos-get", "x" * 80 + ".a", "x" * 80 + ".b")]
+    monkeypatch.setattr(mcp_servers, "list_tools", lambda sid: tools)
+    names = [mcp_servers.agent_tool_name("gh", tool["name"]) for tool in tools]
+    assert len(set(names)) == 4 and all(len(name) <= 64 for name in names)
+    for tool, name in zip(tools, names, strict=True):
+        assert mcp_servers._resolve_tool_name("gh", name, advertised=True) == tool["name"]
+    assert mcp_servers._resolve_tool_name("gh", "repos-get") == "repos-get"
+    with pytest.raises(ValueError, match="ambiguo"):
+        mcp_servers._resolve_tool_name("gh", "mcp__gh__repos-get", advertised=True)
+    with pytest.raises(ValueError, match="disponible"):
+        mcp_servers._resolve_tool_name("gh", "mcp__gh__removed", advertised=True)
+
+
+def test_long_server_ids_and_embedded_separator_roundtrip(mcp_root):
+    for server_id in ("a" * 64, "a__b"):
+        server = mcp_servers.add_server(server_id, "stdio", command="x")
+        name = mcp_servers.agent_tool_name(server["id"], "tool")
+        assert len(name) <= 64
+        assert mcp_servers.parse_agent_tool(name)[0] == server["id"]
+    assert mcp_servers.agent_tool_name("a" * 63 + "b", "tool") != mcp_servers.agent_tool_name("a" * 63 + "c", "tool")
+    long_id = "s" * 48
+    old_alias = long_id[:19] + "-" + mcp_servers.hashlib.sha256(long_id.encode()).hexdigest()[:12]
+    assert mcp_servers.agent_tool_name(long_id, "tool") != mcp_servers.agent_tool_name(old_alias, "tool")
+    mcp_servers.add_server("a", "stdio", command="x")
+    with pytest.raises(ValueError, match="ambiguo"):
+        mcp_servers.parse_agent_tool("mcp__a__b__tool")
+
+
+def test_mcp_retains_argument_schema_and_structured_results(mcp_root, monkeypatch):
+    schema = {"type": "object", "properties": {"filter": {"type": "object"}}, "required": ["filter"]}
+    server = mcp_servers.add_server("Structured", "stdio", command="x")
+    monkeypatch.setattr(mcp_client, "list_tools_stdio", lambda *args: [{"name": "find", "inputSchema": schema}])
+    assert mcp_servers.list_tools(server["id"])[0]["inputSchema"] == schema
+    monkeypatch.setattr(mcp_client, "call_tool_stdio", lambda *args: {"structuredContent": {"rows": [{"id": 1}]}})
+    result = mcp_servers.run_mcp_call_node({"config": {"server": server["id"], "tool": "find", "args": {}}}, {})
+    assert result["json"]["structuredContent"] == {"rows": [{"id": 1}]}
+
+
+@pytest.mark.parametrize("mode", ["oversize", "flood", "notifications"])
+def test_stdio_bounds_frames_pending_messages_and_notification_timeout(mcp_root, monkeypatch, mode):
+    monkeypatch.setattr(mcp_client, "_STDIO_TIMEOUT_S", 0.5)
+    script = mcp_root / "noisy.py"
+    action = {
+        "oversize": "sys.stdout.write('{'+('x'*1048576)+'\\n'); sys.stdout.flush(); time.sleep(5)",
+        "flood": "sys.stdout.write((json.dumps({'method':'notification'})+'\\n')*50000); sys.stdout.flush(); time.sleep(5)",
+        "notifications": "while True:\n sys.stdout.write(json.dumps({'method':'notification'})+'\\n'); sys.stdout.flush(); time.sleep(.01)",
+    }[mode]
+    script.write_text("import sys,time,json\nsys.stdin.readline()\n" + action, encoding="utf-8")
+    started = time.monotonic()
+    with pytest.raises(mcp_client.McpError, match=r"tamaño máximo|mensajes pendientes|no respondió"):
+        mcp_client.list_tools_stdio(sys.executable, [str(script)], dict(os.environ))
+    assert time.monotonic() - started < 3
 
 
 def _wait(run_id: str, store: FlowStore, timeout: float = 10.0):

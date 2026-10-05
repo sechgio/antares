@@ -251,6 +251,7 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
               >
                 <div className="text-sm font-semibold text-[var(--text-primary)]">{t.name}</div>
                 <div className="mt-0.5 text-xs text-[var(--text-secondary)]">{t.description}</div>
+                <div className="mt-2 text-xs text-[var(--text-primary)]">{t.requirements}</div>
               </button>
             ))}
           </div>
@@ -260,11 +261,11 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
         ) : flows.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <p className="text-sm text-[var(--text-secondary)]">
-              Todavía no hay flujos. Crea el primero para encadenar acciones de la app.
+              Empieza con un ejemplo que funciona en este equipo. Después podrás conectar pasos para crear tu propio flujo.
             </p>
-            <Button variant="primary" size="sm" onClick={() => void createFlow()}>
+            <Button variant="primary" size="sm" onClick={() => void createFromTemplate(FLOW_TEMPLATES[0])}>
               <Plus size={15} className="mr-1" />
-              Crear flujo
+              Probar un ejemplo local
             </Button>
           </div>
         ) : (

@@ -73,7 +73,7 @@ export default function ConnectionDetail({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      addToast({ message: 'No se pudo copiar la redirect URI', type: 'error' });
+      addToast({ message: 'No se pudo copiar la dirección de retorno', type: 'error' });
     }
   };
 
@@ -118,6 +118,13 @@ export default function ConnectionDetail({
       </header>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
+        {!p.connected && (
+          <div className="space-y-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+            <p className="font-medium text-[var(--text-primary)]">1. Prepara la conexión</p>
+            <p>La primera conexión necesita una aplicación registrada en {p.label}. Si no administras esta cuenta, pide al responsable los datos indicados abajo.</p>
+            {p.docs && <Button variant="secondary" size="sm" onClick={() => window.open(p.docs, '_blank')}><ExternalLink size={12} /> Abrir panel de {p.label}</Button>}
+          </div>
+        )}
         <div>
           {p.connected ? (
             <Button size="sm" variant="secondary" className="w-full" onClick={() => onDisconnect(p)}>
@@ -143,7 +150,7 @@ export default function ConnectionDetail({
 
         <div>
           <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
-            Redirect URI
+            2. Registra la dirección de retorno
           </div>
           <div className="flex items-center gap-1.5 rounded-lg bg-[var(--bg-input)] px-2.5 py-2">
             <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-primary)]">
@@ -151,22 +158,20 @@ export default function ConnectionDetail({
             </code>
             <button
               onClick={() => void copyRedirect()}
-              aria-label="Copiar redirect URI"
+              aria-label="Copiar dirección de retorno"
               className="rounded p-1 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
             >
               {copied ? <Check size={13} className="text-[var(--accent-green)]" /> : <Copy size={13} />}
             </button>
           </div>
           <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
-            Regístrala en tu app del proveedor.
+            Copia esta dirección en el campo «Redirect URI» de la aplicación que registraste en {p.label}.
           </p>
         </div>
 
         {p.scopes.length > 0 && (
-          <div>
-            <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
-              Permisos solicitados
-            </div>
+          <details>
+            <summary className="mb-1.5 cursor-pointer text-[11px] font-medium text-[var(--text-secondary)]">Ver permisos solicitados</summary>
             <div className="flex flex-wrap gap-1.5">
               {p.scopes.map((s) => (
                 <code
@@ -182,13 +187,13 @@ export default function ConnectionDetail({
                 Concedidos: {p.scope}
               </p>
             )}
-          </div>
+          </details>
         )}
 
         <div className="border-t border-[var(--border-subtle)] pt-4">
           <div className="mb-1 flex items-center justify-between">
             <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
-              Credenciales de tu app
+              3. Guarda los datos de la aplicación
             </div>
             {p.docs && (
               <button
@@ -203,13 +208,13 @@ export default function ConnectionDetail({
           <p className="mb-2 text-[11px] leading-relaxed text-[var(--text-secondary)]">
             {p.configured
               ? `Client ID actual: ${p.client_id_masked ?? 'guardado'}`
-              : 'Crea una app OAuth en el panel del proveedor y pega aquí sus credenciales; se guardan cifradas (BYOK).'}
+              : 'Pega el identificador (Client ID) y, si se solicita, la clave secreta (Client Secret). Se guardan cifrados en este equipo.'}
           </p>
           <div className="space-y-2">
             <Input
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              placeholder={p.configured ? 'Nuevo Client ID (opcional)' : 'Client ID'}
+              placeholder={p.configured ? 'Nuevo identificador (Client ID)' : 'Identificador de aplicación (Client ID)'}
               spellCheck={false}
               aria-label={`Client ID de ${p.label}`}
             />
@@ -218,7 +223,7 @@ export default function ConnectionDetail({
                 type="password"
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
-                placeholder="Client Secret"
+                placeholder="Clave secreta (Client Secret)"
                 spellCheck={false}
                 aria-label={`Client Secret de ${p.label}`}
               />
@@ -227,6 +232,7 @@ export default function ConnectionDetail({
               <KeyRound size={13} />
               {p.configured ? 'Actualizar credenciales' : 'Guardar credenciales'}
             </Button>
+            <p className="text-[11px] leading-relaxed text-[var(--text-secondary)]">4. Pulsa «Conectar con {p.label}» arriba. Se abrirá el navegador para que inicies sesión y revises los permisos.</p>
           </div>
         </div>
       </div>

@@ -25,7 +25,7 @@ export interface AiProviderStatus extends AiProviderSpec {
 export const aiProvidersApi = {
   aiProvidersList: () => _invoke<{ providers: AiProviderSpec[] }>('ai_providers_list'),
 
-  aiProviderSave: (p: { provider: string; api_key?: string; base_url?: string }) =>
+  aiProviderSave: (p: { provider: string; api_key?: string; base_url?: string; model?: string }) =>
     _invoke<{ provider: AiProviderSpec }>('ai_provider_save', p),
 
   aiProviderDelete: (provider: string) =>
