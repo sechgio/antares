@@ -19,6 +19,10 @@ function run() {
   assert(content.includes('runQualityCommand'), 'quality gate tracks command exit codes');
   const loopUtils = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'loop-utils.js'), 'utf8');
   assert(loopUtils.includes('function runQualityCommand'), 'shared quality helper inspects command exit codes');
+  assert(
+    loopUtils.includes("git diff --cached --name-only"),
+    'commitAll respeta el índice: solo recurre a git add -A cuando está vacío',
+  );
   assert(!content.includes('const tcBackend = trySh'), 'backend typecheck does not use output-only validation');
 
   const hookPath = path.join(ROOT, '.githooks', 'pre-push');

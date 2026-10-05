@@ -13,6 +13,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - **CI**: `review-policy` avisa cuando un PR supera 400 líneas efectivas sin marcador `cambio amplio:` en el cuerpo ni etiqueta `size/exempt`.
+- **Loops de push y pr-fix**: `commitAll` commitea el índice cuando hay archivos stageados en lugar de barrer todo el worktree con `git add -A`, y `pr-fix:ship` aborta si el worktree trae cambios anteriores a sus heurísticas.
 - **Política de diffs**: `AGENTS.md` endurece la regla de cambios mínimos — subordina cualquier skill instalada, permite enmendar la lista de archivos declarada, exige persistir la declaración `cambio amplio:` en el commit o PR, documenta que `push:ship`/`pr-fix:ship` stagean todo el worktree y precisa las acompañantes permitidas.
 
 ### Fixed

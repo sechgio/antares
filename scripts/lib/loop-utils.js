@@ -179,7 +179,16 @@ function workingTreeDirty() {
 }
 
 function commitAll(message) {
-  git(['add', '-A']);
+  const staged = sh('git diff --cached --name-only')
+    .split('\n')
+    .map((f) => f.trim())
+    .filter(Boolean);
+  if (staged.length > 0) {
+    console.log(`    Commiteando ${staged.length} archivo(s) ya stageados; el resto del worktree queda intacto.`);
+  } else {
+    git(['add', '-A']);
+    console.log('    Stageado todo el worktree (git add -A): revisa que no arrastre cambios ajenos.');
+  }
   git(['commit', '-m', message]);
   console.log(`    Commit creado: ${message}`);
 }

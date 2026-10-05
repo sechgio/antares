@@ -216,6 +216,12 @@ function runLoop(options) {
     }
 
     console.log('    Aplicando heuristicas deterministas...');
+    if (workingTreeDirty()) {
+      throw new Error(
+        'El worktree tiene cambios anteriores a las heuristicas: pr-fix solo commitea lo que sus fixers generan. ' +
+          'Commitea o guarda en stash los cambios ajenos antes de usar --ship.'
+      );
+    }
     const pythonFix = applyPythonLintFix();
     if (pythonFix) console.log(`      python: ${pythonFix.slice(0, 80)}`);
 
