@@ -702,16 +702,17 @@ class FlowRunner:
             # (una por texto de código y run) salvo config.auto_approve.
             if config.get("auto_approve") is not True:
                 state = ctx.get("pending_state") or {}
-                approval = ctx["approvals"].get(str(state.get("approval_id") or ""))
-                if approval is None:
-                    approval = next(
-                        (
-                            a
-                            for a in ctx["approvals"].values()
-                            if a.get("method") == "code" and (a.get("params") or {}).get("code") == code
-                        ),
-                        None,
-                    )
+                with ctx["lock"]:  # approvals lo mutan otros nodos en paralelo
+                    approval = ctx["approvals"].get(str(state.get("approval_id") or ""))
+                    if approval is None:
+                        approval = next(
+                            (
+                                a
+                                for a in ctx["approvals"].values()
+                                if a.get("method") == "code" and (a.get("params") or {}).get("code") == code
+                            ),
+                            None,
+                        )
                 decision = (approval or {}).get("decision")
                 if decision is None:
                     raise agent_node.AwaitingApproval(
