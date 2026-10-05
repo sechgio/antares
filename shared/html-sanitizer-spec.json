@@ -246,6 +246,12 @@
       "note": "SMIL: <set attributeName=xlink:href to=javascript:...> es el mismo vector; el tag se elimina.",
       "html": "<head></head><svg><a><set attributeName=\"xlink:href\" to=\"javascript:alert(1)\" /><text>click</text></a></svg>",
       "absent": ["<set", "javascript:"]
+    },
+    {
+      "id": "protocol-relative-url-collapse",
+      "note": "//host/path hereda el esquema del documento (http/https): es una URL externa y debe neutralizarse en todos los adaptadores.",
+      "html": "<head></head><img src=\"//evil.example/x.png\"><a href=\"//evil.example/y\">l</a><img srcset=\"//evil.example/a.png 1x\">",
+      "absent": ["evil.example"]
     }
   ]
 }

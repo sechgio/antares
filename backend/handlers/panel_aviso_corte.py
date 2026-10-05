@@ -148,7 +148,9 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
         mime_type = "application/pdf"
     if output_path:
         resolved = params.get("_resolved_output_path") or output_path
-        with atomic_output_file(resolved, extension=f".{fmt}") as target:
+        with atomic_output_file(
+            resolved, extension=f".{fmt}", write_token=params.get("_write_token")
+        ) as target:
             target.tmp_path.write_bytes(content)
         out = target.destination
         return {
@@ -182,6 +184,7 @@ def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
         resolved_path,
         extension=".xlsx",
         overwrite=overwrite,
+        write_token=params.get("_write_token"),
         exists_message="El archivo de destino ya existe: {path}",
     ) as target:
         try:

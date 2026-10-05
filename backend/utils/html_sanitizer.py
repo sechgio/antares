@@ -78,6 +78,9 @@ def _neutralize_url_attr(match: re.Match[str]) -> str:
         return match.group(0)
     if scheme in ("javascript", "vbscript") or cleaned.startswith(("javascript:", "vbscript:")):
         return f"{attr}={quote}{quote}"
+    # Protocol-relative (//host/path) hereda http(s) del documento: neutralizar.
+    if cleaned.startswith("//"):
+        return f"{attr}={quote}{quote}"
     if scheme in ("http", "https", "file"):
         return f"{attr}={quote}{quote}"
     if any(cleaned.startswith(p) for p in ("javascript:", "vbscript:", "http:", "https:", "file:")):
@@ -100,6 +103,8 @@ def _neutralize_srcset_attr(match: re.Match[str]) -> str:
         scheme_match = re.match(r"^([a-z][a-z0-9+.-]*):", cleaned)
         scheme = scheme_match.group(1) if scheme_match else ""
         if scheme in ("javascript", "vbscript", "http", "https", "file"):
+            return f"{attr}={quote}{quote}"
+        if cleaned.startswith("//"):
             return f"{attr}={quote}{quote}"
     return match.group(0)
 

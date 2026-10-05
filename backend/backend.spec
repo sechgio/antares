@@ -61,6 +61,7 @@ _datas = [
     (str(project_dir / 'assets' / 'ubicaciones'), 'assets/ubicaciones'),
     (str(project_dir / 'shared' / 'default-theme.json'), 'shared'),
     (str(project_dir / 'shared' / 'ipc-method-catalog.json'), 'shared'),
+    (str(project_dir / 'shared' / 'canvas-schema.json'), 'shared'),
 ]
 _datas += collect_data_files('weasyprint')
 
