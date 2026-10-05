@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Check, ShieldQuestion, Undo2, X } from 'lucide-react';
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
@@ -19,7 +19,6 @@ export default function PendingPanel() {
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [effects, setEffects] = useState<PendingEffect[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
-  const timerRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -36,35 +35,27 @@ export default function PendingPanel() {
 
   useEffect(() => {
     void load();
-    timerRef.current = window.setInterval(() => void load(), POLL_MS);
-    return () => {
-      if (timerRef.current != null) window.clearInterval(timerRef.current);
-    };
+    const timer = window.setInterval(() => void load(), POLL_MS);
+    return () => window.clearInterval(timer);
   }, [load]);
 
-  const decide = async (approval: PendingApproval, decision: 'approved' | 'denied') => {
-    setBusy(approval.id);
+  const act = async (key: string, op: () => Promise<unknown>, failMessage: string) => {
+    setBusy(key);
     try {
-      await flowsApi.flowsApprovalDecide({ run_id: approval.run_id, approval_id: approval.id, decision });
+      await op();
       void load();
     } catch (err) {
-      addToast({ message: errorMessage(err, 'No se pudo registrar la decisión'), type: 'error' });
+      addToast({ message: errorMessage(err, failMessage), type: 'error' });
     } finally {
       setBusy(null);
     }
   };
 
-  const resolve = async (effect: PendingEffect, resolution: 'retry' | 'done') => {
-    setBusy(effect.fingerprint);
-    try {
-      await flowsApi.flowsEffectResolve({ flow_id: effect.flow_id, fingerprint: effect.fingerprint, resolution });
-      void load();
-    } catch (err) {
-      addToast({ message: errorMessage(err, 'No se pudo resolver el efecto'), type: 'error' });
-    } finally {
-      setBusy(null);
-    }
-  };
+  const decide = (approval: PendingApproval, decision: 'approved' | 'denied') =>
+    act(approval.id, () => flowsApi.flowsApprovalDecide({ run_id: approval.run_id, approval_id: approval.id, decision }), 'No se pudo registrar la decisión');
+
+  const resolve = (effect: PendingEffect, resolution: 'retry' | 'done') =>
+    act(effect.fingerprint, () => flowsApi.flowsEffectResolve({ flow_id: effect.flow_id, fingerprint: effect.fingerprint, resolution }), 'No se pudo resolver el efecto');
 
   if (approvals.length === 0 && effects.length === 0) return null;
 

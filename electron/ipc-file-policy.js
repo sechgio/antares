@@ -104,6 +104,20 @@ function resolveReadToken(token, webContentsId) {
   return require('./file-capabilities').resolveCapability(token, 'read', webContentsId);
 }
 
+function stripFlowExpressions(value) {
+  if (typeof value === 'string' && value.startsWith('=')) return undefined;
+  if (Array.isArray(value)) return value.map(stripFlowExpressions);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, stripFlowExpressions(v)]));
+  return value;
+}
+
+function mergeFlowArgs(original, checked) {
+  if (typeof original === 'string' && original.startsWith('=')) return original;
+  if (Array.isArray(original)) return original.map((v, i) => mergeFlowArgs(v, checked?.[i]));
+  if (original && typeof original === 'object') return Object.fromEntries(Object.entries({ ...original, ...checked }).map(([k]) => [k, mergeFlowArgs(original[k], checked?.[k])]));
+  return checked === undefined ? original : checked;
+}
+
 function maybeResolveFileTokens(params, win, method, options = {}) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
   if ((method === 'flows_create' || method === 'flows_update') && params.graph && Array.isArray(params.graph.nodes)) {
@@ -114,19 +128,15 @@ function maybeResolveFileTokens(params, win, method, options = {}) {
       delete config._file_grants;
       if (node.kind !== 'tool_call') return { ...node, config };
       if (!config.args || typeof config.args !== 'object' || Array.isArray(config.args)) return { ...node, config };
-      const stripExpressions = (value) => {
-        if (typeof value === 'string' && value.startsWith('=')) return undefined;
-        if (Array.isArray(value)) return value.map(stripExpressions);
-        if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, stripExpressions(v)]));
-        return value;
-      };
-      let literal = stripExpressions(config.args || {});
+      const readSchemas = READ_FILE_TOKEN_SCHEMAS.get(config.method) || [];
+      let literal = stripFlowExpressions(config.args);
       if (verifiedGrants && Array.isArray(verifiedGrants.read)) {
         const webContentsId = win?.webContents?.id ?? null;
-        for (const schema of READ_FILE_TOKEN_SCHEMAS.get(config.method) || []) {
+        const { createFileCapability } = require('./file-capabilities');
+        for (const schema of readSchemas) {
           literal = schemaTransform(literal, schema, (value) => (
             typeof value === 'string' && verifiedGrants.read.includes(value)
-              ? require('./file-capabilities').createFileCapability({
+              ? createFileCapability({
                 filePath: value, mode: 'read', webContentsId,
               }).token
               : value
@@ -135,21 +145,15 @@ function maybeResolveFileTokens(params, win, method, options = {}) {
       }
       const resolved = maybeResolveFileTokens(literal, win, config.method, { verifiedGrants });
       const written = validateAndResolveWriteParams(resolved, win, config.method, { verifiedWriteRoots: verifiedGrants?.write });
-      const merge = (original, checked) => {
-        if (typeof original === 'string' && original.startsWith('=')) return original;
-        if (Array.isArray(original)) return original.map((v, i) => merge(v, checked?.[i]));
-        if (original && typeof original === 'object') return Object.fromEntries(Object.entries({ ...original, ...checked }).map(([k]) => [k, merge(original[k], checked?.[k])]));
-        return checked === undefined ? original : checked;
-      };
       const read = [];
-      for (const schema of READ_FILE_TOKEN_SCHEMAS.get(config.method) || []) collectSchemaValues(written, schema, read);
+      for (const schema of readSchemas) collectSchemaValues(written, schema, read);
       const write = [];
       for (const key of new Set([...GENERIC_OUTPUT_PATH_KEYS, ...(ipcCatalog.METHOD_OUTPUT_PATH_KEYS.get(config.method) || []), ...(RAW_OUTPUT_PATH_METHODS.has(config.method) ? ['path'] : [])])) {
         if (typeof written[key] === 'string' && written[key]) {
           write.push(fs.existsSync(written[key]) && fs.statSync(written[key]).isDirectory() ? written[key] : path.dirname(written[key]));
         }
       }
-      config.args = merge(config.args || {}, written);
+      config.args = mergeFlowArgs(config.args, written);
       if (read.length || write.length || written._flow_file_grants?.folders?.length) {
         config._file_grants = { ...written._flow_file_grants, read, write: [...new Set([...write, ...(written._flow_file_grants?.write || [])])] };
       }
@@ -401,13 +405,13 @@ function validateAndResolveWriteParams(params, win, method, options = {}) {
       throw new Error(`invalid output path for ${key}`);
     }
     if (!value.startsWith('antares-write_')) {
+      const { isPathInside, hasSymlinkAncestor } = require('./path-allowlist');
       const verifiedWrite = path.isAbsolute(value) && Array.isArray(options.verifiedWriteRoots)
         && options.verifiedWriteRoots.some((root) => (
           typeof root === 'string' && path.isAbsolute(root)
-          && require('./path-allowlist').isPathInside(root, value)
+          && isPathInside(root, value)
         ));
       if (verifiedWrite) {
-        const { hasSymlinkAncestor } = require('./path-allowlist');
         if ((fs.existsSync(value) && fs.lstatSync(value).isSymbolicLink()) || hasSymlinkAncestor(value)) {
           throw new Error('symlink no permitido en ruta de salida');
         }

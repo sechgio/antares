@@ -123,7 +123,7 @@ class FlowStore:
                     key=lambda run: run["created_at"],
                 )
                 if latest["id"] in interrupted_ids:
-                    self._touch_last_run(flow_id, "queued", run.get("created_at") or "")
+                    self._touch_last_run(flow_id, "queued", latest["created_at"])
 
     def _read(self, path: Path, normalizer: Any) -> dict[str, JsonObject]:
         if not path.exists():

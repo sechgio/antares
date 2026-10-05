@@ -45,41 +45,39 @@ function _tokensNs(providerId) {
   return `connections:${providerId}:tokens`;
 }
 
-function _mirrorToBackend(provider, tokens, cfg) {
-  if (!tokens || !tokens.access_token) return;
+function _enqueueMirror(provider, task, onError) {
   const pending = (_mirrorPromises.get(provider) || Promise.resolve())
-    .then(() => require('./ipc-router')._callBackend('flows_connection_token_put', {
-      provider,
-      tokens: {
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expiry_date: tokens.expiry_date,
-        scope: tokens.scope,
-        account: tokens.account,
-        client_id: cfg ? cfg.clientId : undefined,
-        client_secret: cfg ? cfg.clientSecret : undefined,
-      },
-    }))
-    .catch((err) => {
-      require('./app-log').appendLogEvent('WARN', 'connections.mirror_failed', {
-        provider,
-        reason: String((err && err.message) || err).slice(0, 200),
-      });
-    });
+    .then(task)
+    .catch(onError);
   _mirrorPromises.set(provider, pending);
   pending.finally(() => {
     if (_mirrorPromises.get(provider) === pending) _mirrorPromises.delete(provider);
   });
 }
 
-function _mirrorDelete(provider) {
-  const pending = (_mirrorPromises.get(provider) || Promise.resolve())
-    .then(() => require('./ipc-router')._callBackend('flows_connection_token_delete', { provider }))
-    .catch(() => {});
-  _mirrorPromises.set(provider, pending);
-  pending.finally(() => {
-    if (_mirrorPromises.get(provider) === pending) _mirrorPromises.delete(provider);
+function _mirrorToBackend(provider, tokens, cfg) {
+  if (!tokens || !tokens.access_token) return;
+  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('flows_connection_token_put', {
+    provider,
+    tokens: {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expiry_date: tokens.expiry_date,
+      scope: tokens.scope,
+      account: tokens.account,
+      client_id: cfg ? cfg.clientId : undefined,
+      client_secret: cfg ? cfg.clientSecret : undefined,
+    },
+  }), (err) => {
+    require('./app-log').appendLogEvent('WARN', 'connections.mirror_failed', {
+      provider,
+      reason: String((err && err.message) || err).slice(0, 200),
+    });
   });
+}
+
+function _mirrorDelete(provider) {
+  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('flows_connection_token_delete', { provider }), () => {});
 }
 
 function loadOAuthConfig(provider) {
@@ -224,8 +222,7 @@ function refreshTokens(provider, tokens) {
 
 async function getValidTokens(provider) {
   const tokens = loadTokens(provider);
-  if (!tokens) return null;
-  if (!tokens.access_token && !tokens.refresh_token) return null;
+  if (!tokens || (!tokens.access_token && !tokens.refresh_token)) return null;
   try {
     return await refreshTokens(provider, tokens);
   } catch {

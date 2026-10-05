@@ -178,7 +178,7 @@ def _secrets(server_id: str) -> JsonObject:
     return vault.open_sealed(f"mcp:{server_id}", _secrets_path(server_id)) or {}
 
 
-def _stdio_env(server: JsonObject, secrets: JsonObject) -> dict[str, str]:
+def _stdio_env(secrets: JsonObject) -> dict[str, str]:
     env = dict(os.environ)
     for k, v in (secrets.get("env") or {}).items():
         env[str(k)] = str(v)
@@ -195,7 +195,7 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
     if server["transport"] == "http":
         tools = mcp_client.list_tools_http(server["url"], secrets.get("headers") or {})
     else:
-        tools = mcp_client.list_tools_stdio(server["command"], server.get("args") or [], _stdio_env(server, secrets))
+        tools = mcp_client.list_tools_stdio(server["command"], server.get("args") or [], _stdio_env(secrets))
     clean = [
         {
             "name": str(t.get("name") or ""),
@@ -225,7 +225,7 @@ def call_tool(server_id: str, tool: str, args: JsonObject, *, advertised: bool =
         result = mcp_client.call_tool_stdio(
             server["command"],
             server.get("args") or [],
-            _stdio_env(server, secrets),
+            _stdio_env(secrets),
             tool,
             args,
         )

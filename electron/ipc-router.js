@@ -843,9 +843,10 @@ function registerIpcHandlers() {
       throw _toRendererIpcError(err);
     }
     let backendParams;
+    const flowGraphSave = method === 'flows_create' || method === 'flows_update';
     try {
       const verifiedFlowGrants = Object.create(null);
-      if ((method === 'flows_create' || method === 'flows_update') && params.graph?.nodes) {
+      if (flowGraphSave && params.graph?.nodes) {
         for (const node of params.graph.nodes) {
           const grants = node.config?._file_grants;
           if (!grants?.signature) continue;
@@ -868,7 +869,7 @@ function registerIpcHandlers() {
     }
 
     try {
-      if ((method === 'flows_create' || method === 'flows_update') && backendParams.graph?.nodes) {
+      if (flowGraphSave && backendParams.graph?.nodes) {
         for (const node of backendParams.graph.nodes) {
           if (node.config?._file_grants) {
             const authorization = await _callBackend('flows_path_authorize', node.config._file_grants);

@@ -51,6 +51,9 @@ logger = logging.getLogger(__name__)
 _MAX_STEP_OUTPUT_CHARS = 8000
 _MAX_HTTP_BODY_BYTES = 512 * 1024
 _HTTP_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"})
+# Acciones con efectos (fuera del catálogo orquestable): llevan recibo,
+# checkpoint de lote y quedan fuera de los reintentos automáticos.
+_EFFECT_METHODS = FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS
 
 # Límite global de concurrencia: nodos en vuelo entre todos los runs y runs
 # simultáneos (el resto queda en cola con estado ``queued``).
@@ -124,7 +127,7 @@ class FlowRunner:
               acknowledge_uncertain: bool = False) -> JsonObject:
         flow = self._store.get(flow_id)
         guarded = bool(flow and any(
-            n.get("config", {}).get("method") in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS for n in flow["graph"]["nodes"]
+            n["config"].get("method") in _EFFECT_METHODS for n in flow["graph"]["nodes"]
         ))
         if guarded:
             with _active_lock:
@@ -174,7 +177,7 @@ class FlowRunner:
         sources = []
         last_source: JsonObject = {}
         for node in flow["graph"]["nodes"]:
-            config = node.get("config") or {}
+            config = node["config"]
             args = config.get("args") or {}
             if not isinstance(args, dict):
                 continue
@@ -187,7 +190,7 @@ class FlowRunner:
             fn = self._handler_getter("flows_read_images")
             if fn is None:
                 return False
-            source = fn({**args, "_flow_file_grants": node["config"].get("_file_grants") or {}})
+            source = fn({**args, "_flow_file_grants": config.get("_file_grants") or {}})
             if not source.get("ready"):
                 return False
             sources.append(source["fingerprint"])
@@ -198,21 +201,21 @@ class FlowRunner:
         return not _checkpoint_blocks(flow, fingerprint, _expected_output_paths(last_source, fingerprint))
 
     def _template_fingerprints(self, graph: JsonObject) -> list[str]:
-        if not any(n.get("config", {}).get("method") == "flows_read_images" for n in graph["nodes"]):
+        if not any(n["config"].get("method") == "flows_read_images" for n in graph["nodes"]):
             return []
         versions = []
         for node in graph["nodes"]:
-            config = node.get("config") or {}
+            config = node["config"]
             args = config.get("args") or {}
             if not isinstance(args, dict):
                 continue
             if config.get("method") == "flows_render_pdf":
                 name = args.get("template_name")
                 if args.get("expected_pages") is not None:
-                    name = next((n.get("config", {}).get("args", {}).get("report_template") for n in graph["nodes"]
-                                 if n.get("config", {}).get("method") == "flows_read_images"
-                                 and isinstance(n.get("config", {}).get("args"), dict)
-                                 and n["config"]["args"].get("report_template")), name)
+                    name = next((src_args["report_template"] for n in graph["nodes"]
+                                 if (src_cfg := n["config"]).get("method") == "flows_read_images"
+                                 and isinstance(src_args := src_cfg.get("args"), dict)
+                                 and src_args.get("report_template")), name)
                 handler = self._handler_getter("template_get")
                 listing = self._handler_getter("templates_list")
                 if handler and listing and isinstance(name, str) and name and not name.startswith("="):
@@ -396,9 +399,9 @@ class FlowRunner:
                     if not items:
                         settle(nid, "skipped", None, self._step(node, "skipped"))
                         continue
-                    method = (node.get("config") or {}).get("method")
-                    if (method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS
-                            and node["config"].get("input_mode", "all") == "all"
+                    config = node["config"]
+                    if (config.get("method") in _EFFECT_METHODS
+                            and config.get("input_mode", "all") == "all"
                             and len(items) < len(inbound[nid])):
                         settle(nid, "skipped", None, self._step(node, "skipped"))
                         continue
@@ -443,12 +446,12 @@ class FlowRunner:
         if pending:
             self._store.update_run(run_id, status="waiting")
             return
-        actions = [s for s in steps if (nodes[s["node_id"]].get("config") or {}).get("method")
-                   in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS]
+        methods = {s["node_id"]: (nodes[s["node_id"]].get("config") or {}).get("method") for s in steps}
+        actions = [s for s in steps if methods[s["node_id"]] in _EFFECT_METHODS]
         ran = any(s["status"] == "success" for s in actions) if actions else any(
             s["status"] == "success" and nodes[s["node_id"]]["kind"] != "trigger" for s in steps)
         status = "error" if any_error else "success" if ran else "skipped"
-        action_steps = [s for s in actions if (nodes[s["node_id"]].get("config") or {}).get("method") != "flows_read_images"]
+        action_steps = [s for s in actions if methods[s["node_id"]] != "flows_read_images"]
         if memory["sources"] and action_steps and all(s["status"] == "success" for s in action_steps) and not any_error:
             self._store.acknowledge_source(run["flow_id"], _source_fingerprint(graph, memory["sources"] + memory["templates"]),
                                            remember=bool(memory.get("report_batch")),
@@ -656,20 +659,19 @@ class FlowRunner:
             return {"main": {"json": memory["run"]["trigger"]}}
         if kind == "tool_call":
             result = self._run_tool_call(node, memory, ctx)
-            config = node.get("config") or {}
-            waits = config.get("method") in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS or config.get("required_args")
+            config = node["config"]
+            waits = config.get("method") in _EFFECT_METHODS or config.get("required_args")
             port = "waiting" if waits and isinstance(result.get("json"), dict) and result["json"].get("ready") is False else "main"
             return {port: result}
         if kind == "condition":
             return self._run_condition(node, memory)
         if kind == "transform":
-            config = node.get("config") or {}
-            output = resolve(config.get("output"), memory)
+            output = resolve(node["config"].get("output"), memory)
             return {"main": {"json": output}}
         if kind == "http_request":
             return {"main": self._run_http_request(node, memory, ctx["token"])}
         if kind == "agent":
-            config = node.get("config") or {}
+            config = node["config"]
             if not config.get("tools"):
                 return {"main": self._run_agent(node, memory)}
             return {"main": agent_node.run_agent_node(
@@ -689,7 +691,7 @@ class FlowRunner:
         if kind == "loop":
             return self._run_loop(node, memory, ctx)
         if kind == "code":
-            config = node.get("config") or {}
+            config = node["config"]
             code = str(config.get("code") or "")
             # El código corre con los privilegios del backend: exige aprobación
             # (una por texto de código y run) salvo config.auto_approve.
@@ -722,7 +724,7 @@ class FlowRunner:
                         "nodes": {nid: (out or {}).get("json") for nid, out in memory["nodes"].items()},
                         "run": memory["run"],
                         "loop": memory.get("loop") or {},
-                        "code": str(config.get("code") or ""),
+                        "code": code,
                     },
                     float(config.get("timeout_s") or 30),
                     ctx["token"],
@@ -794,7 +796,7 @@ class FlowRunner:
         count, item) para las expresiones; los sumideros del cuerpo alimentan
         ``items`` de la salida ``done``.
         """
-        config = node.get("config") or {}
+        config = node["config"]
         loop_id = node["id"]
         # La pausa por aprobación trae su estado completo; la reanudación tras un
         # cierre recupera el progreso persistido del checkpoint (``loops``).
@@ -810,7 +812,7 @@ class FlowRunner:
 
         body_order = [nid for nid in self._topological_order(ctx["graph"]) if nid in ctx["bodies"].get(loop_id, set())]
         body_set = set(body_order)
-        body_inbound = {nid: [e for e in ctx["inbound"][nid]] for nid in body_order}
+        body_inbound = {nid: list(ctx["inbound"][nid]) for nid in body_order}
         sinks = [nid for nid in body_order
                  if not any(e["to_node"] in body_set for e in ctx["graph"]["edges"] if e["from_node"] == nid)]
 
@@ -918,7 +920,7 @@ class FlowRunner:
 
     @staticmethod
     def _run_agent(node: JsonObject, memory: JsonObject) -> JsonObject:
-        config = node.get("config") or {}
+        config = node["config"]
         provider = str(config.get("provider") or "").strip()
         prompt = resolve(config.get("prompt"), memory)
         if isinstance(prompt, str):
@@ -945,7 +947,7 @@ class FlowRunner:
 
     @staticmethod
     def _run_switch(node: JsonObject, memory: JsonObject) -> JsonObject:
-        config = node.get("config") or {}
+        config = node["config"]
         field = config.get("field")
         try:
             item = memory.get("item") or {}
@@ -961,7 +963,7 @@ class FlowRunner:
         return {port: {"json": {"case": matched, "field": actual}}}
 
     def _run_tool_call(self, node: JsonObject, memory: JsonObject, ctx: JsonObject) -> JsonObject:
-        config = node.get("config") or {}
+        config = node["config"]
         method = config.get("method")
         if method not in FLOW_ACTION_METHODS:
             raise ValueError(f"Método no orquestable: {method}")
@@ -1004,7 +1006,7 @@ class FlowRunner:
             token = ctx.get("token")
             resolved["_cancelled"] = (lambda: token.cancelled) if token else None
         effect_key = None
-        if memory.get("sources") and method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS - {"flows_read_images"}:
+        if memory.get("sources") and method in _EFFECT_METHODS - {"flows_read_images"}:
             identity = [node["id"], method, memory["sources"], memory.get("templates", []),
                         {key: value for key, value in resolved.items() if key != "_cancelled"}]
             effect_key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -1067,7 +1069,7 @@ class FlowRunner:
                     shared["report_template"] = result["template_name"]
             result["output_path"] = expected[0]
             result["stamped_output_path"] = str(Path(result["output_folder"]) / f"paneles-{fingerprint[:16]}-sellado.pdf")
-        if method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS and isinstance(result.get("saved_path"), str):
+        if method in _EFFECT_METHODS and isinstance(result.get("saved_path"), str):
             saved = Path(result["saved_path"])
             if saved.is_file() and not saved.is_symlink() and not any(p.is_symlink() for p in saved.parents):
                 memory.setdefault("read_paths", set()).add(str(saved))
@@ -1075,7 +1077,7 @@ class FlowRunner:
         return {"json": result}
 
     def _run_http_request(self, node: JsonObject, memory: JsonObject, token: _CancelEvent | None = None) -> JsonObject:
-        config = node.get("config") or {}
+        config = node["config"]
         url = resolve(config.get("url"), memory)
         if not isinstance(url, str) or not url.strip():
             raise ValueError("http_request requiere config.url")
@@ -1156,7 +1158,7 @@ class FlowRunner:
 
     @staticmethod
     def _run_condition(node: JsonObject, memory: JsonObject) -> JsonObject:
-        config = node.get("config") or {}
+        config = node["config"]
         field = config.get("field")
         op = config.get("op") or "eq"
         expected = resolve(config.get("value"), memory)
@@ -1202,9 +1204,10 @@ def _retryable_http_output(node: JsonObject, node_outputs: JsonObject) -> bool:
 
 
 def _retry_config(node: JsonObject) -> tuple[int, float]:
-    if (node.get("config") or {}).get("method") in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS - {"flows_read_images"}:
+    config = node["config"]
+    if config.get("method") in _EFFECT_METHODS - {"flows_read_images"}:
         return 1, 0.0
-    retry = (node.get("config") or {}).get("retry")
+    retry = config.get("retry")
     if not isinstance(retry, dict):
         return 1, 0.0
     attempts = retry.get("attempts", 1)
@@ -1215,8 +1218,8 @@ def _retry_config(node: JsonObject) -> tuple[int, float]:
 
 
 def _source_fingerprint(graph: JsonObject, sources: list[str]) -> str:
-    if any(n.get("config", {}).get("args", {}).get("report_template")
-           for n in graph["nodes"] if isinstance(n.get("config", {}).get("args"), dict)):
+    if any(isinstance(args := n["config"].get("args"), dict) and args.get("report_template")
+           for n in graph["nodes"]):
         operations = [{"id": n["id"], "kind": n["kind"], "config": n["config"]}
                       for n in graph["nodes"] if n["kind"] != "trigger" and n["config"].get("method") != "flows_read_images"]
         destinations = [{"id": n["id"], "source_folder": n["config"]["args"].get("source_folder"),
@@ -1261,7 +1264,7 @@ def _validate_action_paths(method: str, args: JsonObject, memory: JsonObject, st
 
     grants: JsonObject = {"read": [], "write": []}
     for node in memory.get("graph", {}).get("nodes", []):
-        node_grants = node.get("config", {}).get("_file_grants") or {}
+        node_grants = node["config"].get("_file_grants") or {}
         if node_grants and (store is None or not store.verify_paths(node_grants)):
             raise ValueError("Permiso de archivos inválido; vuelve a seleccionar las rutas")
         for mode in ("read", "write"):

@@ -19,6 +19,8 @@ from backend.handlers import flows
 from backend.handlers.canvas import canvas_export_cmyk_pdf
 from backend.handlers.sellador import sellador_apply
 
+TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "backend/templates"
+
 
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
@@ -486,8 +488,7 @@ def test_generated_pdf_can_feed_another_action(setup):
         "stamp_count": 1, "output_path": str(setup[2] / "sellado.pdf"),
     }}})
     graph["edges"].append({"from_node": "pdf", "to_node": "stamp"})
-    runner = _runner(setup)
-    handlers = {"canvas_get": runner._handler_getter("canvas_get"), "canvas_export_cmyk_pdf": canvas_export_cmyk_pdf,
+    handlers = {"canvas_get": _runner(setup)._handler_getter("canvas_get"), "canvas_export_cmyk_pdf": canvas_export_cmyk_pdf,
                 "flows_read_images": flows._read_images, "sellador_apply": sellador_apply}
     flow = setup[0].create("Generar y sellar", graph=graph)
     done = _execute(setup[0], FlowRunner(setup[0], handlers.get), flow)
@@ -496,8 +497,8 @@ def test_generated_pdf_can_feed_another_action(setup):
         assert pdf[0].get_images()
 
 
-@pytest.mark.parametrize("template", sorted(p.relative_to(Path("backend/templates")).as_posix()
-                                          for p in Path("backend/templates").rglob("*.html")))
+@pytest.mark.parametrize("template", sorted(p.relative_to(TEMPLATES_DIR).as_posix()
+                                          for p in TEMPLATES_DIR.rglob("*.html")))
 @pytest.mark.parametrize("image_count", [1, 7])
 def test_every_bundled_template_renders_in_a_flow(setup, monkeypatch, template, image_count):
     from backend.utils import pdf_html
@@ -554,8 +555,7 @@ def test_pdf_stamp_print_chain_uses_stamped_file_and_deduplicates(setup, monkeyp
     graph["edges"].extend([{"from_node": "pdf", "to_node": "stamp"}, {"from_node": "stamp", "to_node": "print"}])
     queued = []
     monkeypatch.setattr(printing, "print_pdf", lambda path, printer, copies, cancelled, **kw: queued.append((path, copies)) or {"queued": True, "job_id": 1})
-    runner = _runner(setup)
-    handlers = {"canvas_get": runner._handler_getter("canvas_get"), "canvas_export_cmyk_pdf": canvas_export_cmyk_pdf,
+    handlers = {"canvas_get": _runner(setup)._handler_getter("canvas_get"), "canvas_export_cmyk_pdf": canvas_export_cmyk_pdf,
                 "flows_read_images": flows._read_images, "sellador_apply": sellador_apply, "flows_print_pdf": flows._print_pdf}
     runner = FlowRunner(setup[0], handlers.get)
     flow = setup[0].create("Generar, sellar e imprimir", graph=graph)
@@ -824,8 +824,8 @@ def test_redirect_preserves_custom_headers_on_same_origin(monkeypatch):
     assert redirected.headers["X-api-key"] == "secret"
 
 
-@pytest.mark.parametrize("template", sorted(p.relative_to(Path(__file__).resolve().parents[1] / "backend/templates").as_posix()
-                                          for p in (Path(__file__).resolve().parents[1] / "backend/templates").rglob("*.html")))
+@pytest.mark.parametrize("template", sorted(p.relative_to(TEMPLATES_DIR).as_posix()
+                                          for p in TEMPLATES_DIR.rglob("*.html")))
 def test_consolidated_batch_supports_every_bundled_template_with_real_pdf(setup, template):
     profile = flows._batch_template_profile(template)
     field = next((key for key in ("NOMBRE", "cliente", "header.cs", "header.estacion", "cuadrante", "CENTRO", "ZONAL")

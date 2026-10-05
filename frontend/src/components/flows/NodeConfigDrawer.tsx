@@ -78,18 +78,21 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
   }, [addToast]);
 
   const method = String(node?.config.method ?? '');
-  const templateBatch = Boolean((node?.config.args as Record<string, unknown> | undefined)?.report_template);
+  const rawArgs = node?.config.args;
+  const args = (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)
+    ? rawArgs : {}) as Record<string, unknown>;
+  const reportBatch = Boolean(args.report_template);
   useEffect(() => {
     let alive = true;
     setTemplates([]);
     const request = method === 'canvas_get' ? canvasApi.canvasList().then((res) => res.documents.map((d) => ({ value: d.id, label: d.name || 'Sin título' })))
       : method === 'formatos_generate' ? formatosApi.formatosList().then((res) => res.formats.map((f) => ({ value: f.id, label: f.nombre })))
-      : method === 'flows_render_pdf' || method === 'template_get' || (method === 'flows_read_images' && templateBatch) ? toolsApi.templatesList({ recursive: true }).then((res) => res.templates.map((t) => ({ value: t.name, label: t.name }))) : null;
+      : method === 'flows_render_pdf' || method === 'template_get' || (method === 'flows_read_images' && reportBatch) ? toolsApi.templatesList({ recursive: true }).then((res) => res.templates.map((t) => ({ value: t.name, label: t.name }))) : null;
     request?.then((options) => { if (alive) setTemplates(options); }).catch((err) => {
       if (alive) addToast({ message: errorMessage(err, 'No se pudieron cargar las plantillas'), type: 'error' });
     });
     return () => { alive = false; };
-  }, [method, templateBatch, addToast]);
+  }, [method, reportBatch, addToast]);
   useEffect(() => {
     let alive = true;
     setPrinters([]);
@@ -117,10 +120,7 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
   const patchConfig = (patch: Record<string, unknown>) =>
     onChange({ ...node, config: { ...node.config, ...patch } });
 
-  const args = (node.config.args && typeof node.config.args === 'object' && !Array.isArray(node.config.args)
-    ? node.config.args : {}) as Record<string, unknown>;
   const patchArgs = (patch: Record<string, unknown>) => patchConfig({ args: { ...args, ...patch } });
-  const reportBatch = Boolean(args.report_template);
   const batchPanel = method === 'flows_read_images' && reportBatch;
   const imageLimit = batchPreview?.template_name === args.report_template ? batchPreview?.image_limit ?? 6 : 6;
   const mappings = (args.field_mappings ?? {}) as Record<string, string>;
@@ -166,6 +166,20 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
       addToast({ message: `${label}: JSON inválido, no se aplicó el cambio`, type: 'error' });
     }
   };
+
+  const templateArgKey = method === 'canvas_get' ? 'id' : method === 'formatos_generate' ? 'format_id' : method === 'template_get' ? 'name' : 'template_name';
+  const jsonEditor = (resetKey: string, defaultValue: string, rows: number, placeholder: string, label: string, apply: (value: unknown) => void) => (
+    <Textarea
+      key={resetKey}
+      data-json
+      defaultValue={defaultValue}
+      rows={rows}
+      spellCheck={false}
+      className="font-mono text-xs"
+      placeholder={placeholder}
+      onBlur={(e) => parseJsonField(e.target.value, apply, label)}
+    />
+  );
 
   return (
     <aside className={`flex shrink-0 flex-col border-l border-[var(--border-medium)] bg-[var(--bg-base)] [&_[data-json]:invalid]:border-[var(--accent-red)] ${batchPanel ? 'w-96 max-w-full [&_label]:normal-case [&_label]:text-xs' : 'w-80'}`}
@@ -465,9 +479,9 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
               </div>}
               {templates.length > 0 && method !== 'flows_read_images' && <div className="mb-3">
                 <FieldLabel>Plantilla guardada</FieldLabel>
-                <ThemedSelect aria-label="Plantilla guardada" value={String(args[method === 'canvas_get' ? 'id' : method === 'formatos_generate' ? 'format_id' : method === 'template_get' ? 'name' : 'template_name'] ?? '')}
+                <ThemedSelect aria-label="Plantilla guardada" value={String(args[templateArgKey] ?? '')}
                   options={[{ value: '', label: 'Selecciona una plantilla…' }, ...templates]}
-                  onChange={(value) => patchArgs({ [method === 'canvas_get' ? 'id' : method === 'formatos_generate' ? 'format_id' : method === 'template_get' ? 'name' : 'template_name']: value })} />
+                  onChange={(value) => patchArgs({ [templateArgKey]: value })} />
               </div>}
               {method !== 'flows_read_images' && <>
               {method === 'flows_print_pdf' && <div className="mb-3 space-y-2">
@@ -497,16 +511,8 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
             <details>
               <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Argumentos avanzados (JSON)</summary>
               <FieldLabel>Argumentos (JSON)</FieldLabel>
-              <Textarea
-                key={JSON.stringify(node.config.args)}
-                data-json
-                defaultValue={node.config.args ? JSON.stringify(node.config.args, null, 2) : ''}
-                rows={6}
-                spellCheck={false}
-                className="font-mono text-xs"
-                placeholder='{ "id": "=nodes.trigger.json" }'
-                onBlur={(e) => parseJsonField(e.target.value, (v) => patchConfig({ args: v }), 'Argumentos')}
-              />
+              {jsonEditor(JSON.stringify(node.config.args), node.config.args ? JSON.stringify(node.config.args, null, 2) : '', 6,
+                '{ "id": "=nodes.trigger.json" }', 'Argumentos', (v) => patchConfig({ args: v }))}
               <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
                 Las cadenas que empiezan por = se evalúan: =item, =items, =nodes.&lt;id&gt;.json, =run.trigger.
               </p>
@@ -538,7 +544,7 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
               <ThemedSelect
                 value={String(node.config.op ?? 'eq')}
                 onChange={(v) => patchConfig({ op: v })}
-                options={CONDITION_OPS.map((o) => ({ value: o.value, label: o.label }))}
+                options={CONDITION_OPS}
               />
             </div>
             <div>
@@ -620,29 +626,13 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
               <div className="mt-3 space-y-4">
             <div>
               <FieldLabel>Cabeceras (JSON)</FieldLabel>
-              <Textarea
-                key={node.id}
-                data-json
-                defaultValue={node.config.headers ? JSON.stringify(node.config.headers, null, 2) : ''}
-                rows={4}
-                spellCheck={false}
-                className="font-mono text-xs"
-                placeholder='{ "Accept": "application/json" }'
-                onBlur={(e) => parseJsonField(e.target.value, (v) => patchConfig({ headers: v }), 'Cabeceras')}
-              />
+              {jsonEditor(node.id, node.config.headers ? JSON.stringify(node.config.headers, null, 2) : '', 4,
+                '{ "Accept": "application/json" }', 'Cabeceras', (v) => patchConfig({ headers: v }))}
             </div>
             <div>
               <FieldLabel>Datos a enviar (JSON)</FieldLabel>
-              <Textarea
-                key={node.id}
-                data-json
-                defaultValue={node.config.body != null ? JSON.stringify(node.config.body, null, 2) : ''}
-                rows={5}
-                spellCheck={false}
-                className="font-mono text-xs"
-                placeholder='{ "texto": "=nodes.n1.json.title" }'
-                onBlur={(e) => parseJsonField(e.target.value, (v) => patchConfig({ body: v }), 'Cuerpo')}
-              />
+              {jsonEditor(node.id, node.config.body != null ? JSON.stringify(node.config.body, null, 2) : '', 5,
+                '{ "texto": "=nodes.n1.json.title" }', 'Cuerpo', (v) => patchConfig({ body: v }))}
               <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
                 Para enviar texto, escríbelo entre comillas. Deja vacío si no quieres enviar datos.
               </p>
@@ -768,16 +758,8 @@ export default function NodeConfigDrawer({ node, onChange, onDelete, onClose, on
             <details>
             <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">Resultado avanzado (JSON)</summary>
             <FieldLabel>Objeto de salida (JSON)</FieldLabel>
-            <Textarea
-              key={JSON.stringify(node.config.output)}
-              data-json
-              defaultValue={node.config.output ? JSON.stringify(node.config.output, null, 2) : ''}
-              rows={8}
-              spellCheck={false}
-              className="font-mono text-xs"
-              placeholder={'{\n  "nombre": "=item.json.name",\n  "total": 0\n}'}
-              onBlur={(e) => parseJsonField(e.target.value, (v) => patchConfig({ output: v }), 'Salida')}
-            />
+            {jsonEditor(JSON.stringify(node.config.output), node.config.output ? JSON.stringify(node.config.output, null, 2) : '', 8,
+              '{\n  "nombre": "=item.json.name",\n  "total": 0\n}', 'Salida', (v) => patchConfig({ output: v }))}
             <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
               Cada cadena =... se reemplaza por su valor evaluado.
             </p>

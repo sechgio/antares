@@ -218,9 +218,11 @@ def _chat_openai(
         payload["tool_choice"] = "auto"
     data = _post_json(url, headers, payload)
     choices = data.get("choices") if isinstance(data, dict) else None
-    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        raise ValueError("El proveedor no devolvió una respuesta válida de OpenAI Chat Completions")
-    message = choices[0].get("message")
+    message = (
+        choices[0].get("message")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict)
+        else None
+    )
     if not isinstance(message, dict):
         raise ValueError("El proveedor no devolvió una respuesta válida de OpenAI Chat Completions")
     calls = []

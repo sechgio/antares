@@ -228,10 +228,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
     e.dataTransfer.dropEffect = 'move';
   }, []);
 
-  const selectedNode = useMemo(() => {
-    if (!selectedId) return null;
-    return nodes.find((n) => n.id === selectedId)?.data.flowNode ?? null;
-  }, [selectedId, nodes]);
+  const selectedNode = selectedId ? nodes.find((n) => n.id === selectedId)?.data.flowNode ?? null : null;
 
   const dataSources = useMemo(() => {
     if (!selectedId) return [];

@@ -181,7 +181,7 @@ export default function ConnectionsView() {
     return ordered;
   }, [providers, categories, filter, search]);
 
-  const detail = detailId ? providers.find((p) => p.id === detailId) ?? null : null;
+  const detail = providers.find((p) => p.id === detailId) ?? null;
 
   if (loading) {
     return (

@@ -53,6 +53,15 @@ def _serialize_call(call: JsonObject) -> JsonObject:
     }
 
 
+def _tool_result(call: JsonObject, content: str) -> JsonObject:
+    return {
+        "role": "tool_result",
+        "tool_use_id": call["id"],
+        "name": call["name"],
+        "content": content,
+    }
+
+
 def _check_tool_params(args: Any) -> None:
     """El modelo no puede concederse rutas ni file grants (misma regla del chat)."""
     if isinstance(args, dict):
@@ -102,28 +111,18 @@ def _apply_calls(
     """Encadena resultados; lanza AwaitingApproval en la primera call gated."""
     messages: list[JsonObject] = state["messages"]
     for index, call in enumerate(calls):
-        name = str(call.get("name") or "")
         serialized = _serialize_call(call)
+        name = serialized["name"]
         if name not in allowed:
-            messages.append({
-                "role": "tool_result",
-                "tool_use_id": serialized["id"],
-                "name": name,
-                "content": json.dumps(
-                    {"error": f"Herramienta no disponible para este nodo: {name}"}, ensure_ascii=False
-                ),
-            })
-            continue
-        if serialized["gated"] and not auto_approve:
+            content = json.dumps(
+                {"error": f"Herramienta no disponible para este nodo: {name}"}, ensure_ascii=False
+            )
+        elif serialized["gated"] and not auto_approve:
             state["queued_calls"] = [_serialize_call(c) for c in calls[index + 1 :]]
             raise AwaitingApproval(state | {"pending_call": serialized})
-        result = execute(serialized)
-        messages.append({
-            "role": "tool_result",
-            "tool_use_id": serialized["id"],
-            "name": name,
-            "content": result,
-        })
+        else:
+            content = execute(serialized)
+        messages.append(_tool_result(serialized, content))
     state["queued_calls"] = []
 
 
@@ -141,7 +140,7 @@ def run_agent_node(
     execute_with_effect: Callable[[JsonObject, Callable[[JsonObject], str]], str] | None = None,
 ) -> JsonObject:
     """Ejecuta el nodo agente; reanuda desde ``state`` cuando existe."""
-    config = node.get("config") or {}
+    config = node["config"]
     provider = str(config.get("provider") or "").strip()
     prompt = resolve(config.get("prompt"), memory)
     if isinstance(prompt, str):
@@ -190,12 +189,7 @@ def run_agent_node(
             content = execute(pending_call)
         else:
             content = json.dumps({"error": "El usuario rechazó esta acción"}, ensure_ascii=False)
-        messages.append({
-            "role": "tool_result",
-            "tool_use_id": pending_call["id"],
-            "name": pending_call["name"],
-            "content": content,
-        })
+        messages.append(_tool_result(pending_call, content))
         state.pop("pending_call", None)
         state.pop("approval_id", None)
         _apply_calls(list(state.pop("queued_calls", [])), allowed, auto_approve, execute, state)
@@ -211,7 +205,7 @@ def run_agent_node(
         calls = [
             dict(
                 call,
-                gated=bool(mcp_servers.parse_agent_tool(str(call.get("name") or "")) or str(call.get("name") or "") in gated),
+                gated=bool(mcp_servers.parse_agent_tool(name := str(call.get("name") or "")) or name in gated),
                 effect_id=_effect_id(node["id"], state["step"], index, call),
             )
             for index, call in enumerate(reply.get("calls") or [])
