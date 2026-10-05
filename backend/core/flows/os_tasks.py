@@ -39,7 +39,8 @@ def _kernel32() -> Any:
     import ctypes
     from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    win_dll_name = "WinDLL"
+    kernel32 = getattr(ctypes, win_dll_name)("kernel32", use_last_error=True)
     kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
     kernel32.CreateMutexW.restype = wintypes.HANDLE
     kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
