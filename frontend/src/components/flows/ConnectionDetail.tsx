@@ -141,11 +141,11 @@ export default function ConnectionDetail({
               {connecting ? 'Abriendo navegador…' : `Conectar con ${p.label}`}
             </Button>
           )}
-          {p.connected && p.expiry_date ? (
+          {p.connected && p.expiry_date && (
             <p className="mt-2 text-[11px] text-[var(--text-secondary)]">
               El token caduca el {new Date(p.expiry_date).toLocaleString('es')}
             </p>
-          ) : null}
+          )}
         </div>
 
         <div>

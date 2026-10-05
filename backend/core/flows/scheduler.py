@@ -101,7 +101,7 @@ class FlowScheduler:
         started = 0
         for flow in self.due_flows(now):
             try:
-                if hasattr(self._runner, "ready_to_start") and not self._runner.ready_to_start(flow):
+                if not self._runner.ready_to_start(flow):
                     continue
             except (OSError, ValueError):
                 logger.warning("Entrada del flujo %s aún no disponible", flow["id"], exc_info=True)

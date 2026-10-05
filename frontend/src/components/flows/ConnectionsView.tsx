@@ -86,7 +86,7 @@ export default function ConnectionsView() {
     try {
       const res = await connectionsApi.connectionsProviders();
       setProviders(res.providers);
-      setCategories(res.categories ?? []);
+      setCategories(res.categories);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudieron cargar las conexiones'), type: 'error' });
     } finally {
@@ -181,7 +181,7 @@ export default function ConnectionsView() {
     return ordered;
   }, [providers, categories, filter, search]);
 
-  const detail = detailId ? providers.find((p) => p.id === detailId) ?? null : null;
+  const detail = providers.find((p) => p.id === detailId) ?? null;
 
   if (loading) {
     return (

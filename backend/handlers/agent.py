@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.flows import agent as _agent
 from backend.core.flows import agent_chat as _agent_chat
@@ -9,8 +7,6 @@ from backend.core.flows import ai_providers as _ai_providers
 from backend.core.flows import mcp_servers as _mcp_servers
 from backend.core.flows.types import JsonObject
 from backend.handlers.common import validate_params, with_locale
-
-logger = logging.getLogger(__name__)
 
 
 def _store() -> _agent.AgentStore:
@@ -47,7 +43,7 @@ def _session_create(params: JsonObject) -> JsonObject:
     default_model = state.get("default_model")
     session = _store().create_session(
         provider,
-        str(model)[:120] if isinstance(model, str) and model else str(default_model or ""),
+        model[:120] if isinstance(model, str) and model else str(default_model or ""),
         str(params.get("title") or "")[:120],
     )
     return {"session": session}

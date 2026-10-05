@@ -71,16 +71,17 @@ def _update(params: JsonObject) -> JsonObject:
     flow_id = get_item_id(params)
     graph = params.get("graph")
     enabled = params.get("enabled")
+    name = params.get("name")
+    description = params.get("description")
+    expected = params.get("expected_updated_at")
     try:
         flow = _store().update(
             flow_id,
-            name=params.get("name") if isinstance(params.get("name"), str) else None,
-            description=params.get("description") if isinstance(params.get("description"), str) else None,
+            name=name if isinstance(name, str) else None,
+            description=description if isinstance(description, str) else None,
             enabled=bool(enabled) if enabled is not None else None,
             graph=graph if isinstance(graph, dict) else None,
-            expected_updated_at=params.get("expected_updated_at")
-            if isinstance(params.get("expected_updated_at"), str)
-            else None,
+            expected_updated_at=expected if isinstance(expected, str) else None,
         )
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
@@ -180,7 +181,8 @@ def _run_resume(params: JsonObject) -> JsonObject:
 @with_locale
 def _approvals_list(params: JsonObject) -> JsonObject:
     approvals: list[JsonObject] = []
-    for run in _store().list_runs(limit=200):
+    store = _store()
+    for run in store.list_runs(limit=200):
         if run["status"] != "waiting":
             continue
         checkpoint = run.get("checkpoint") or {}
@@ -192,7 +194,7 @@ def _approvals_list(params: JsonObject) -> JsonObject:
                 "id": approval_id,
                 "run_id": run["id"],
                 "flow_id": run["flow_id"],
-                "flow_name": (_store().get(run["flow_id"]) or {}).get("name") or run["flow_id"],
+                "flow_name": (store.get(run["flow_id"]) or {}).get("name") or run["flow_id"],
                 "node_id": approval.get("node_id"),
                 "node_name": approval.get("node_name"),
                 "method": approval.get("method"),
@@ -307,13 +309,14 @@ def _read_images(params: JsonObject) -> JsonObject:
             raise ValueError("La hoja de datos debe ser un archivo autorizado sin enlaces simbólicos")
         if not sheet.is_file() or time.time() - sheet.stat().st_mtime < 15:
             return {"ready": False, "reason": "Esperando la hoja de datos"}
-        if sheet.stat().st_size > 100 * 1024 * 1024:
+        sheet_stat = sheet.stat()
+        if sheet_stat.st_size > 100 * 1024 * 1024:
             raise ValueError("La hoja de datos excede el máximo de 100 MiB")
         from backend.core.panel_aviso_corte import parse_excel_bytes
 
         parsed = parse_excel_bytes(sheet.read_bytes(), sheet.name)
         rows = [dict(row) for row in parsed.rows]
-        stamp.append((spreadsheet, sheet.stat().st_size, sheet.stat().st_mtime_ns))
+        stamp.append((spreadsheet, sheet_stat.st_size, sheet_stat.st_mtime_ns))
     if report_batch:
         assert profile is not None
         if not spreadsheet:

@@ -108,7 +108,7 @@ export function SwitchConfigEditor({ node, patchConfig, sources = [] }: { node: 
   const setCases = (next: SwitchCase[]) => patchConfig({ cases: next });
   const nextCasePort = () => {
     let i = 1;
-    while (cases.some((c) => c.port === `caso_${i}`) || `caso_${i}` === 'default') i += 1;
+    while (cases.some((c) => c.port === `caso_${i}`)) i += 1;
     return `caso_${i}`;
   };
   return (

@@ -112,7 +112,7 @@ def test_agent_tools_gated_call_waits_for_approval(store, monkeypatch):
         {"provider": "ollama", "prompt": "ejecuta", "tools": True}))
     runner = FlowRunner(store, handler_getter)
     run = runner.start(flow["id"])
-    waiting = _wait(run["id"], store, timeout=15)
+    waiting = _wait(run["id"], store)
 
     assert waiting["status"] == "waiting"
     approvals = (waiting.get("checkpoint") or {}).get("approvals") or {}

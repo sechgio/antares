@@ -20,33 +20,24 @@ import Button from '../ui/Button';
 import { FLOW_TEMPLATES, type FlowTemplate } from './flowTemplates';
 import type { FlowMeta, FlowRunStatus, WorkflowGraph } from './types';
 
-const STATUS_LABELS: Record<FlowRunStatus, string> = {
-  queued: 'En cola',
-  running: 'Ejecutando',
-  waiting: 'Esperando aprobación',
-  success: 'Éxito',
-  error: 'Error',
-  cancelled: 'Cancelado',
-  skipped: 'Omitida',
-};
-
-const STATUS_COLORS: Record<FlowRunStatus, string> = {
-  queued: 'var(--text-secondary)',
-  running: '#38bdf8',
-  waiting: '#f59e0b',
-  success: '#34d399',
-  error: 'var(--accent-red, #ef4444)',
-  cancelled: 'var(--text-secondary)',
-  skipped: 'var(--text-secondary)',
+const STATUS_META: Record<FlowRunStatus, { label: string; color: string }> = {
+  queued: { label: 'En cola', color: 'var(--text-secondary)' },
+  running: { label: 'Ejecutando', color: '#38bdf8' },
+  waiting: { label: 'Esperando aprobación', color: '#f59e0b' },
+  success: { label: 'Éxito', color: '#34d399' },
+  error: { label: 'Error', color: 'var(--accent-red, #ef4444)' },
+  cancelled: { label: 'Cancelado', color: 'var(--text-secondary)' },
+  skipped: { label: 'Omitida', color: 'var(--text-secondary)' },
 };
 
 export function FlowStatusBadge({ status }: { status: FlowRunStatus }) {
+  const meta = STATUS_META[status];
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-medium)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]"
     >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLORS[status] }} />
-      {STATUS_LABELS[status]}
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
+      {meta.label}
     </span>
   );
 }
@@ -310,7 +301,7 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
                       <span className="text-[11px] text-[var(--text-secondary)]">Sin ejecuciones</span>
                     )}
                     <span
-                      className={`inline-flex items-center gap-1 rounded-full border border-[var(--border-medium)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]`}
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--border-medium)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]"
                       title={flow.enabled ? 'El disparador programado puede ejecutarlo' : 'Solo se ejecuta a mano'}
                     >
                       <span
@@ -325,51 +316,24 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
                     </span>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onRun(flow.id)}
-                      aria-label="Ejecutar"
-                      title="Ejecutar ahora"
-                    >
-                      <Play size={14} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onShowRuns(flow.id)}
-                      aria-label="Ver ejecuciones"
-                      title="Ver ejecuciones"
-                    >
-                      <History size={14} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void duplicateFlow(flow.id)}
-                      aria-label="Duplicar"
-                      title="Duplicar"
-                    >
-                      <Copy size={14} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void exportFlow(flow)}
-                      aria-label="Exportar"
-                      title="Exportar a JSON"
-                    >
-                      <Download size={14} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void deleteFlow(flow)}
-                      aria-label="Eliminar"
-                      title="Eliminar"
-                    >
-                      <Trash2 size={14} />
-                    </Button>
+                    {[
+                      { icon: <Play size={14} />, label: 'Ejecutar', title: 'Ejecutar ahora', run: () => onRun(flow.id) },
+                      { icon: <History size={14} />, label: 'Ver ejecuciones', title: 'Ver ejecuciones', run: () => onShowRuns(flow.id) },
+                      { icon: <Copy size={14} />, label: 'Duplicar', title: 'Duplicar', run: () => void duplicateFlow(flow.id) },
+                      { icon: <Download size={14} />, label: 'Exportar', title: 'Exportar a JSON', run: () => void exportFlow(flow) },
+                      { icon: <Trash2 size={14} />, label: 'Eliminar', title: 'Eliminar', run: () => void deleteFlow(flow) },
+                    ].map((action) => (
+                      <Button
+                        key={action.label}
+                        variant="ghost"
+                        size="sm"
+                        onClick={action.run}
+                        aria-label={action.label}
+                        title={action.title}
+                      >
+                        {action.icon}
+                      </Button>
+                    ))}
                   </div>
                 </div>
                 <div className="mt-2 text-[10px] text-[var(--text-secondary)]">

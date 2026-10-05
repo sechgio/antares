@@ -12,15 +12,6 @@ from backend.core.flows.schema import normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore
 
 
-def _graph(**overrides):
-    graph = {
-        "nodes": [{"id": "trigger", "kind": "trigger", "config": {"trigger_kind": "manual"}}],
-        "edges": [],
-    }
-    graph.update(overrides)
-    return graph
-
-
 def test_normalize_fills_defaults():
     graph = normalize_graph(
         {

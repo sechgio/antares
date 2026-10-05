@@ -2,7 +2,7 @@ import { Background, Controls, ReactFlow, ReactFlowProvider } from '@xyflow/reac
 import { useMemo } from 'react';
 import '@xyflow/react/dist/style.css';
 import FlowNodeView from './FlowNodeView';
-import { graphToReactFlow, type FlowNodeData } from './graphAdapter';
+import { graphToReactFlow } from './graphAdapter';
 import type { FlowRunStep, WorkflowGraph } from './types';
 
 const nodeTypes = { flowNode: FlowNodeView };
@@ -23,7 +23,7 @@ function RunGraph({ graph, steps }: Props) {
         selectable: false,
         data: {
           ...n.data,
-          stepStatus: statusByNode.get(n.id) as FlowNodeData['stepStatus'],
+          stepStatus: statusByNode.get(n.id),
         },
       })),
       edges: rf.edges,

@@ -22,7 +22,7 @@ function run() {
   assert(content.includes('reviewDecision'), 'script checks PR approval before merge');
   assert(content.includes('mergeable'), 'script checks mergeable state before merge');
   assert(content.includes('APPROVED'), 'script enforces APPROVED review');
-  assert(content.includes('lint:fix') || content.includes('lint:fix'), 'script applies deterministic heuristics (ruff --fix)');
+  assert(content.includes('lint:fix'), 'script applies deterministic heuristics (ruff --fix)');
   assert(content.includes('uv run --project . --locked --extra dev ruff format'), 'script formats Python with locked ruff');
   assert(!content.includes('prettier'), 'script does not invoke prettier (not a project dependency)');
   assert(!/HIDROAA|C:\\\\Users\\\\/.test(content), 'script does not hardcode a developer machine path');

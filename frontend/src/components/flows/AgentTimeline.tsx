@@ -24,7 +24,7 @@ function CallStatusIcon({ status }: { status: string }) {
 
 function ToolCallStep({ call }: { call: AgentToolCall }) {
   const detail = call.status === 'done' && call.result ? call.result : null;
-  const params = call.params && Object.keys(call.params).length > 0 ? JSON.stringify(call.params) : null;
+  const params = Object.keys(call.params).length > 0 ? JSON.stringify(call.params) : null;
   return (
     <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2">
       <div className="flex items-center gap-2 text-[12px]">
@@ -123,7 +123,7 @@ export function ApprovalCard({
         <details className="mt-2 text-xs text-[var(--text-secondary)]">
           <summary className="cursor-pointer">Ver detalles de la acción</summary>
           <code>{approval.method}</code>
-          {approval.params && Object.keys(approval.params).length > 0 && (
+          {Object.keys(approval.params).length > 0 && (
             <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-md bg-[var(--bg-base)] p-2 text-[11px] text-[var(--text-secondary)]">
               {JSON.stringify(approval.params, null, 2)}
             </pre>

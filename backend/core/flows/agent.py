@@ -259,6 +259,12 @@ class AgentRunner:
             self._spawn(session_id, f"agent-resume-{session_id}")
             return approval
 
+    def _append_tool_result(self, session_id: str, call_id: str, name: str, result: str) -> None:
+        self._store.append_message(
+            session_id,
+            {"role": "tool_result", "tool_use_id": call_id, "name": name, "content": result},
+        )
+
     def _apply_decision(self, approval: JsonObject) -> None:
         session_id = str(approval["session_id"])
         call_id = str(approval["call_id"])
@@ -281,15 +287,7 @@ class AgentRunner:
         else:
             result = json.dumps({"error": "El usuario rechazó esta acción"}, ensure_ascii=False)
             self._store.update_tool_call(session_id, call_id, "denied", result)
-        self._store.append_message(
-            session_id,
-            {
-                "role": "tool_result",
-                "tool_use_id": call_id,
-                "name": approval["method"],
-                "content": result,
-            },
-        )
+        self._append_tool_result(session_id, call_id, approval["method"], result)
 
     def _turn_main(self, session_id: str) -> None:
         try:
@@ -407,15 +405,7 @@ class AgentRunner:
                         ensure_ascii=False,
                     )
                     self._store.update_tool_call(session_id, call_id, "denied", result)
-                    self._store.append_message(
-                        session_id,
-                        {
-                            "role": "tool_result",
-                            "tool_use_id": call_id,
-                            "name": call["name"],
-                            "content": result,
-                        },
-                    )
+                    self._append_tool_result(session_id, call_id, call["name"], result)
                     continue
                 if call.get("gated"):
                     self._store.create_approval(session_id, call)
@@ -423,15 +413,7 @@ class AgentRunner:
                     continue  # se reanuda desde decide()
                 result = self._execute(call)
                 self._store.update_tool_call(session_id, call_id, "done", result)
-                self._store.append_message(
-                    session_id,
-                    {
-                        "role": "tool_result",
-                        "tool_use_id": call_id,
-                        "name": call["name"],
-                        "content": result,
-                    },
-                )
+                self._append_tool_result(session_id, call_id, call["name"], result)
         self._store.append_message(
             session_id,
             {
@@ -458,7 +440,7 @@ def get_agent_runner() -> AgentRunner:
     global _runner_singleton
     with _store_lock:
         if _runner_singleton is None:
-            from backend.handlers import HANDLERS as _REGISTRY
+            from backend.handlers import HANDLERS
 
-            _runner_singleton = AgentRunner(get_agent_store(), _REGISTRY.get)
+            _runner_singleton = AgentRunner(get_agent_store(), HANDLERS.get)
         return _runner_singleton

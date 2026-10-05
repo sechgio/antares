@@ -180,7 +180,4 @@ def fresh_access_token(provider: str) -> str:
 
 
 def list_statuses() -> list[JsonObject]:
-    out = []
-    for pid in provider_ids():
-        out.append(status(pid))
-    return out
+    return [status(pid) for pid in provider_ids()]

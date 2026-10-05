@@ -47,6 +47,16 @@ export function StepOutput({ value }: { value: unknown }) {
   );
 }
 
+const STEP_STATUS_LABELS: Record<string, string> = {
+  success: 'Completado',
+  error: 'Falló',
+  running: 'En curso',
+  waiting: 'Esperando',
+  skipped: 'No se ejecutó',
+  cancelled: 'Cancelado',
+  queued: 'En cola',
+};
+
 const STATUS_OPTIONS: { value: '' | FlowRunStatus; label: string }[] = [
   { value: '', label: 'Todos los estados' },
   { value: 'running', label: 'Ejecutando' },
@@ -321,7 +331,7 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                                           : 'var(--text-secondary)',
                                   }}
                                 >
-                                  {({ success: 'Completado', error: 'Falló', running: 'En curso', waiting: 'Esperando', skipped: 'No se ejecutó', cancelled: 'Cancelado', queued: 'En cola' } as Record<string, string>)[step.status] ?? step.status}
+                                  {STEP_STATUS_LABELS[step.status] ?? step.status}
                                 </span>
                                 <span className="flex-1" />
                                 {step.iteration != null && (

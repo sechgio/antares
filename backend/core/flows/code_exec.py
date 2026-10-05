@@ -90,6 +90,8 @@ def run_python(code: str, payload: JsonObject, timeout_s: float, token: object |
         result = json.loads(raw.splitlines()[-1])
     except json.JSONDecodeError:
         raise ValueError(f"El código produjo salida no JSON: {raw[:200]}") from None
+    if not isinstance(result, dict):
+        raise ValueError(f"El código produjo salida no JSON: {raw[:200]}")
     if not result.get("ok"):
         raise ValueError(str(result.get("error") or "El código falló")[:500])
     value = result.get("result")

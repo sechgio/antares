@@ -39,7 +39,7 @@ def _kernel32() -> Any:
     import ctypes
     from ctypes import wintypes
 
-    win_dll_name = "WinDLL"
+    win_dll_name = "WinDLL"  # getattr sortea B009 y el stub de mypy fuera de Windows
     kernel32 = getattr(ctypes, win_dll_name)("kernel32", use_last_error=True)
     kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
     kernel32.CreateMutexW.restype = wintypes.HANDLE
@@ -245,26 +245,3 @@ def delete_flow_task(flow_id: str) -> None:
         _schtasks("/Delete", "/F", "/TN", _task_name(flow_id))
     except Exception:
         logger.exception("No se pudo borrar la tarea programada del flujo %s", flow_id)
-
-
-def sync_all(store: Any) -> None:
-    """Alinea las tareas con los flujos guardados y poda huérfanas."""
-    if not enabled():
-        return
-    flows = store.list_flows()
-    wanted: set[str] = set()
-    for meta in flows:
-        flow = store.get(str(meta["id"]))
-        if flow is None:
-            continue
-        wanted.add(str(flow["id"]))
-        sync_flow_task(flow)
-    try:
-        out = _schtasks("/Query", "/FO", "CSV", "/NH").stdout.decode("utf-8", errors="replace")
-        for line in out.splitlines():
-            fields = [field.strip('"') for field in line.split('","')]
-            task = fields[0].rsplit("\\", 1)[-1] if fields else ""
-            if task.startswith(_TASK_PREFIX) and task[len(_TASK_PREFIX):] not in wanted:
-                _schtasks("/Delete", "/F", "/TN", task)
-    except Exception:
-        logger.exception("No se pudieron podar las tareas programadas de flujos")

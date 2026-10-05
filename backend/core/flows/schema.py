@@ -9,19 +9,15 @@ existentes y ausencia de ciclos.
 from __future__ import annotations
 
 import json
-import logging
 import re
 from typing import Any
 
 from backend.core.flows.types import JsonObject
 from backend.utils.paths import resource_path
 
-logger = logging.getLogger(__name__)
-
 IMPLEMENTED_NODE_KINDS = frozenset(
     {"trigger", "tool_call", "condition", "transform", "http_request", "agent", "switch", "mcp_call", "loop", "code"}
 )
-RESERVED_NODE_KINDS: frozenset[str] = frozenset()
 TRIGGER_KINDS = frozenset({"manual", "schedule", "app_event", "webhook"})
 
 MAX_FLOW_NODES = 200
@@ -41,12 +37,8 @@ def _load_schema() -> JsonObject:
 _SCHEMA = _load_schema()
 _schema_kinds = _SCHEMA.get("nodeKinds", {}) if isinstance(_SCHEMA, dict) else {}
 NODE_KINDS: frozenset[str] = (
-    frozenset(str(k) for k in _schema_kinds) if _schema_kinds else IMPLEMENTED_NODE_KINDS | RESERVED_NODE_KINDS
+    frozenset(str(k) for k in _schema_kinds) if _schema_kinds else IMPLEMENTED_NODE_KINDS
 )
-
-
-def _node_kind_names() -> frozenset[str]:
-    return NODE_KINDS
 
 
 def normalize_graph(graph: Any) -> JsonObject:
@@ -123,7 +115,6 @@ def validate_graph(graph: JsonObject) -> None:
     edges = graph["edges"]
 
     seen: set[str] = set()
-    kinds = _node_kind_names()
     trigger_count = 0
     for node in nodes:
         node_id = node["id"]
@@ -132,7 +123,7 @@ def validate_graph(graph: JsonObject) -> None:
         if node_id in seen:
             raise ValueError(f"Id de nodo duplicado: {node_id}")
         seen.add(node_id)
-        if node["kind"] not in kinds:
+        if node["kind"] not in NODE_KINDS:
             raise ValueError(f"Tipo de nodo desconocido: {node['kind']} ({node_id})")
         if node["kind"] == "trigger":
             trigger_count += 1

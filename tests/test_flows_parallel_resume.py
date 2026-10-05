@@ -112,8 +112,7 @@ def test_cancel_kills_running_code_node(store):
     assert steps["slow"]["status"] == "cancelled"
 
 
-def test_resume_interrupted_rerun_from_checkpoint(store, tmp_path):
-    paths = (tmp_path / "flows.json", tmp_path / "flow_runs.json")
+def test_resume_interrupted_rerun_from_checkpoint(store):
     flow = store.create(
         "Reanudable",
         graph={
@@ -142,7 +141,7 @@ def test_resume_interrupted_rerun_from_checkpoint(store, tmp_path):
     )
 
     # Simula el cierre de la app: un nuevo store marca el run como interrumpido.
-    restored = FlowStore(*paths)
+    restored = FlowStore(store._flows_path, store._runs_path)
     resumed_run = restored.get_run(run["id"])
     assert resumed_run["status"] == "queued"
     assert resumed_run["interrupted"] is True
@@ -157,7 +156,7 @@ def test_resume_interrupted_rerun_from_checkpoint(store, tmp_path):
     assert steps["b"]["output"] == {"v": 2}
 
 
-def test_resume_loop_keeps_completed_iterations(store, tmp_path):
+def test_resume_loop_keeps_completed_iterations(store):
     """Un bucle interrumpido reanuda sin repetir los nodos ya completados."""
     flow = store.create(
         "Bucle reanudable",
@@ -198,7 +197,7 @@ def test_resume_loop_keeps_completed_iterations(store, tmp_path):
         },
     )
 
-    restored = FlowStore(tmp_path / "flows.json", tmp_path / "flow_runs.json")
+    restored = FlowStore(store._flows_path, store._runs_path)
     runner = FlowRunner(restored, lambda m: lambda p: {})
     assert runner.resume_interrupted() == 1
     done = _wait(run["id"], restored)
@@ -213,7 +212,7 @@ def test_resume_loop_keeps_completed_iterations(store, tmp_path):
     assert sorted(s["iteration"] for s in dup_steps) == [2]
 
 
-def test_resume_loop_completed_iteration_not_duplicated(store, tmp_path):
+def test_resume_loop_completed_iteration_not_duplicated(store):
     """El checkpoint tras completar una iteración apunta a la siguiente: no se
     re-añade la entrada ya recolectada ni se repite el cuerpo."""
     flow = store.create(
@@ -255,7 +254,7 @@ def test_resume_loop_completed_iteration_not_duplicated(store, tmp_path):
         },
     )
 
-    restored = FlowStore(tmp_path / "flows.json", tmp_path / "flow_runs.json")
+    restored = FlowStore(store._flows_path, store._runs_path)
     runner = FlowRunner(restored, lambda m: lambda p: {})
     assert runner.resume_interrupted() == 1
     done = _wait(run["id"], restored)

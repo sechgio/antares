@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import ntpath
 from collections.abc import Callable
 from typing import Any
@@ -23,15 +22,7 @@ from backend.core.flows.expr import interpolate_text, resolve
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, lane_for
 
-logger = logging.getLogger(__name__)
-
 _MAX_TOOL_RESULT_CHARS = 4000
-
-
-def approval_call_of(state: JsonObject) -> JsonObject:
-    """La llamada pendiente de aprobación dentro del estado pausado."""
-    call = state.get("pending_call") or state.get("approval_call") or {}
-    return call if isinstance(call, dict) else {}
 
 
 class AwaitingApproval(Exception):
@@ -59,6 +50,15 @@ def _serialize_call(call: JsonObject) -> JsonObject:
         "params": call.get("params") if isinstance(call.get("params"), dict) else {},
         "gated": bool(call.get("gated")),
         "effect_id": str(call.get("effect_id") or ""),
+    }
+
+
+def _tool_result(call: JsonObject, content: str) -> JsonObject:
+    return {
+        "role": "tool_result",
+        "tool_use_id": call["id"],
+        "name": call["name"],
+        "content": content,
     }
 
 
@@ -111,28 +111,18 @@ def _apply_calls(
     """Encadena resultados; lanza AwaitingApproval en la primera call gated."""
     messages: list[JsonObject] = state["messages"]
     for index, call in enumerate(calls):
-        name = str(call.get("name") or "")
         serialized = _serialize_call(call)
+        name = serialized["name"]
         if name not in allowed:
-            messages.append({
-                "role": "tool_result",
-                "tool_use_id": serialized["id"],
-                "name": name,
-                "content": json.dumps(
-                    {"error": f"Herramienta no disponible para este nodo: {name}"}, ensure_ascii=False
-                ),
-            })
-            continue
-        if serialized["gated"] and not auto_approve:
+            content = json.dumps(
+                {"error": f"Herramienta no disponible para este nodo: {name}"}, ensure_ascii=False
+            )
+        elif serialized["gated"] and not auto_approve:
             state["queued_calls"] = [_serialize_call(c) for c in calls[index + 1 :]]
             raise AwaitingApproval(state | {"pending_call": serialized})
-        result = execute(serialized)
-        messages.append({
-            "role": "tool_result",
-            "tool_use_id": serialized["id"],
-            "name": name,
-            "content": result,
-        })
+        else:
+            content = execute(serialized)
+        messages.append(_tool_result(serialized, content))
     state["queued_calls"] = []
 
 
@@ -150,7 +140,7 @@ def run_agent_node(
     execute_with_effect: Callable[[JsonObject, Callable[[JsonObject], str]], str] | None = None,
 ) -> JsonObject:
     """Ejecuta el nodo agente; reanuda desde ``state`` cuando existe."""
-    config = node.get("config") or {}
+    config = node["config"]
     provider = str(config.get("provider") or "").strip()
     prompt = resolve(config.get("prompt"), memory)
     if isinstance(prompt, str):
@@ -199,12 +189,7 @@ def run_agent_node(
             content = execute(pending_call)
         else:
             content = json.dumps({"error": "El usuario rechazó esta acción"}, ensure_ascii=False)
-        messages.append({
-            "role": "tool_result",
-            "tool_use_id": pending_call["id"],
-            "name": pending_call["name"],
-            "content": content,
-        })
+        messages.append(_tool_result(pending_call, content))
         state.pop("pending_call", None)
         state.pop("approval_id", None)
         _apply_calls(list(state.pop("queued_calls", [])), allowed, auto_approve, execute, state)
@@ -220,7 +205,7 @@ def run_agent_node(
         calls = [
             dict(
                 call,
-                gated=bool(mcp_servers.parse_agent_tool(str(call.get("name") or "")) or str(call.get("name") or "") in gated),
+                gated=bool(mcp_servers.parse_agent_tool(name := str(call.get("name") or "")) or name in gated),
                 effect_id=_effect_id(node["id"], state["step"], index, call),
             )
             for index, call in enumerate(reply.get("calls") or [])

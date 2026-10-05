@@ -38,12 +38,13 @@ def _preview_template_dirs() -> list[Path]:
 @with_locale
 def templates_list(params: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
     dirs = _preview_template_dirs()
+    recursive = params.get("recursive") is True
     seen_names: set[str] = set()
     templates: list[dict[str, str]] = []
     for templates_dir in dirs:
-        for f in sorted(templates_dir.rglob("*.html") if params.get("recursive") is True else templates_dir.glob("*.html")):
-            name = f.relative_to(templates_dir).as_posix() if params.get("recursive") is True else f.name
-            if name not in seen_names and f.is_file() and (params.get("recursive") is not True or (
+        for f in sorted(templates_dir.rglob("*.html") if recursive else templates_dir.glob("*.html")):
+            name = f.relative_to(templates_dir).as_posix() if recursive else f.name
+            if name not in seen_names and f.is_file() and (not recursive or (
                 not f.is_symlink() and templates_dir in f.resolve().parents
                 and not any(p.is_symlink() for p in f.parents)
             )):

@@ -174,8 +174,8 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
     }
   }, [draft]);
 
-  const session = useMemo(() => sessions.find((s) => s.id === sessionId) ?? null, [sessions, sessionId]);
-  const queuedForSession = useMemo(() => queued.filter((i) => i.session === sessionId), [queued, sessionId]);
+  const session = sessions.find((s) => s.id === sessionId) ?? null;
+  const queuedForSession = queued.filter((i) => i.session === sessionId);
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
   const sessionProviderLabel = session
@@ -199,7 +199,7 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
       const res = await agentApi.agentSessionCreate({ provider, model: model || undefined });
       await refreshSessions();
       setSessionId(res.session.id);
-      return res.session.id as string;
+      return res.session.id;
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo crear la conversación'), type: 'error' });
       return null;
