@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const vm = require('vm');
 
 const { assert, assertActionsPinned, finish } = require('./helpers/harness');
 
@@ -21,7 +22,7 @@ function run() {
   assert(content.includes('reviewDecision'), 'script checks PR approval before merge');
   assert(content.includes('mergeable'), 'script checks mergeable state before merge');
   assert(content.includes('APPROVED'), 'script enforces APPROVED review');
-  assert(content.includes('lint:fix') || content.includes('lint:fix'), 'script applies deterministic heuristics (ruff --fix)');
+  assert(content.includes('lint:fix'), 'script applies deterministic heuristics (ruff --fix)');
   assert(content.includes('uv run --project . --locked --extra dev ruff format'), 'script formats Python with locked ruff');
   assert(!content.includes('prettier'), 'script does not invoke prettier (not a project dependency)');
   assert(!/HIDROAA|C:\\\\Users\\\\/.test(content), 'script does not hardcode a developer machine path');
@@ -54,6 +55,66 @@ function run() {
   } catch {
     assert(false, 'pr-fix-loop.js parses without syntax errors');
   }
+
+  const commands = [];
+  const messages = [];
+  const waits = [];
+  let snapshots = [];
+  const loop = vm.runInNewContext(
+    content.replace(/\bmain\(\);\s*$/, '') + '\n({ allChecksPass, anyCheckFails, canAutoMerge, runLoop })',
+    {
+      require: () => ({
+        ROOT,
+        trySh: (command) => {
+          commands.push(command);
+          if (command.startsWith('gh pr view')) return JSON.stringify({ state: 'OPEN', headRefName: 'feature' });
+          if (command.startsWith('gh pr checks')) return JSON.stringify(snapshots.shift() || []);
+          if (command.startsWith('gh run list')) return '[]';
+          throw new Error(`Unexpected command: ${command}`);
+        },
+        sleepMs: (ms) => waits.push(ms),
+        skip: () => {},
+      }),
+      console: { log: (message) => messages.push(message) },
+    },
+  );
+  const green = [{ bucket: 'pass' }, { bucket: 'skipping' }];
+  assert(loop.allChecksPass(green), 'gh pass/skipping buckets are successful');
+  assert(!loop.allChecksPass([]), 'an empty check list cannot pass');
+  assert(!loop.allChecksPass([{ bucket: 'unknown' }]), 'an unknown bucket cannot pass');
+  assert(!loop.anyCheckFails(green), 'successful or skipped checks are not failures');
+  const approved = { state: 'OPEN', reviewDecision: 'APPROVED', mergeable: 'MERGEABLE' };
+  assert(loop.canAutoMerge(approved, green).ok, 'merge guard accepts successful gh buckets with approval');
+  for (const bucket of ['fail', 'cancel']) {
+    const checks = [{ bucket }];
+    assert(loop.anyCheckFails(checks), `gh ${bucket} bucket is a failure`);
+    assert(!loop.allChecksPass(checks), `${bucket} checks cannot pass`);
+    assert(!loop.canAutoMerge(approved, checks).ok, `${bucket} checks block merge`);
+  }
+
+  const pending = [{ bucket: 'pending' }];
+  assert(!loop.allChecksPass(pending), 'pending checks cannot pass');
+  assert(!loop.anyCheckFails(pending), 'pending checks are not failures');
+  assert(!loop.canAutoMerge(approved, pending).ok, 'pending checks block merge');
+  snapshots = [green];
+  assert(loop.runLoop({ prNumber: 187, maxIter: 1, isShip: false, doMerge: false }), 'green checks resolve the loop');
+  assert(!commands.some((command) => command.startsWith('gh run list')), 'green checks do not inspect failed runs');
+
+  commands.length = 0;
+  messages.length = 0;
+  snapshots = [pending];
+  assert(!loop.runLoop({ prNumber: 187, maxIter: 1, isShip: false, doMerge: false }), 'pending dry-run stays unresolved');
+  assert(messages.some((message) => message.includes('Checks pendientes')), 'pending dry-run reports pending checks');
+  assert(!commands.some((command) => command.startsWith('gh run list')), 'pending checks do not inspect failed runs');
+
+  commands.length = 0;
+  snapshots = [pending, green];
+  try {
+    assert(loop.runLoop({ prNumber: 187, maxIter: 2, isShip: true, doMerge: false }), 'pending then green resolves without invoking fixers');
+  } catch (error) {
+    assert(false, `pending then green resolves without invoking fixers: ${error.message}`);
+  }
+  assert(waits.length === 1 && waits[0] === 30000, 'ship waits once before rechecking pending checks');
 
   finish();
 }

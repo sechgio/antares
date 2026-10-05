@@ -156,6 +156,15 @@ export default function AutoIMGApp() {
         if (cached && status?.connected && status.sheetLinked && !bootstrapError) return;
         loadBootstrap(true);
       }
+      // Un éxito posterior limpia el banner: sin esto un error transitorio
+      // (p.ej. de autosync) queda fijado en pantalla para siempre.
+      if (
+        method === 'autoimg.sync.complete'
+        || method === 'autoimg.sync.from_complete'
+        || method === 'autoimg.rename.complete'
+      ) {
+        setGlobalError('');
+      }
     });
   }, [loadBootstrap, status, bootstrapError]);
 

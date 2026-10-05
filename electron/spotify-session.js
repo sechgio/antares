@@ -9,7 +9,6 @@ const { maskClientId } = require('./autoimg-security');
 const {
   findAvailablePort,
   startCallbackServer,
-  stopCallbackServer,
 } = require('./autoimg-oauth-flow');
 
 const OAUTH_CONFIG_FILE = 'spotify-oauth-config.json';
@@ -46,6 +45,7 @@ const REAUTH_REQUIRED_MESSAGE =
 
 let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
+let _callbackFlow = null; // { stop } del listener de este intento
 let _refreshPromise = null;
 let _cachedTokens;
 
@@ -222,7 +222,8 @@ function _buildAuthUrl(redirectUri, codeChallenge, state) {
 }
 
 function cancelBrowserOAuthFlow() {
-  stopCallbackServer();
+  _callbackFlow?.stop?.();
+  _callbackFlow = null;
   _pendingRedirectUri = null;
   _pendingCodeVerifier = null;
 }
@@ -253,6 +254,8 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
   const url = _buildAuthUrl(redirectUri, codeChallenge, oauthState);
   const callbackPath = new URL(redirectUri).pathname;
 
+  const flow = { stop: null };
+  _callbackFlow = flow;
   startCallbackServer(port, {
     expectedState: oauthState,
     callbackPath,
@@ -279,7 +282,19 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
       onError(err);
       cancelBrowserOAuthFlow();
     },
-  });
+  })
+    .then(({ stop }) => {
+      if (_callbackFlow === flow) {
+        flow.stop = stop;
+      } else {
+        stop();
+      }
+    })
+    .catch((err) => {
+      if (_callbackFlow !== flow) return;
+      onError(err);
+      cancelBrowserOAuthFlow();
+    });
 
   return { url, redirect_uri: redirectUri };
 }

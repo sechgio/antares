@@ -12,6 +12,37 @@ def _catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
+def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_secrets(monkeypatch):
+    from backend.core.flows import agent_chat, connections
+    from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, input_schema_for
+    from backend.handlers import flows
+
+    methods = _catalog()["methods"]
+    for method in ORCHESTRATABLE_METHODS | set(agent_chat.gated_methods()):
+        schema = input_schema_for(method)
+        assert schema == methods[method]["inputSchema"]
+        assert schema["type"] == "object"
+        assert set(schema.get("required", [])) <= schema["properties"].keys()
+    assert methods["flows_connection_token_refresh"]["internal"] is True
+    monkeypatch.setattr(connections, "fresh_tokens", lambda provider: {
+        "access_token": "new", "refresh_token": "rotated", "client_id": "private", "client_secret": "secret",
+    })
+    result = flows.HANDLERS["flows_connection_token_refresh"]({"provider": "demo"})
+    assert result["tokens"]["refresh_token"] == "rotated"
+    assert "client_secret" not in result["tokens"] and "client_id" not in result["tokens"]
+
+
+def test_flow_actions_projection_keeps_effects_separate_from_reads() -> None:
+    from backend.core.ipc_catalog import FLOW_ACTION_METHODS, ORCHESTRATABLE_METHODS
+
+    expected = ORCHESTRATABLE_METHODS | {
+        name for name, entry in _catalog()["methods"].items()
+        if entry.get("flowCallable") is True and entry["handler"].startswith("backend:")
+    }
+    assert expected == FLOW_ACTION_METHODS
+    assert "flows_path_authorize" not in FLOW_ACTION_METHODS
+
+
 def test_catalog_backend_methods_match_handler_registry() -> None:
     from backend.core.ipc_catalog import handler_module_for
     from backend.handlers import _HANDLER_MODULES, HANDLERS
@@ -71,6 +102,7 @@ def test_catalog_declares_only_known_timeout_tiers() -> None:
         ("db_import", 300_000),
         ("process_start", 900_000),
         ("canvas_export_cmyk_pdf", 900_000),
+        ("flows_print_pdf", 900_000),
         ("html_to_pdf", 900_000),
         ("dialog_folder", 300_000),
     ],
@@ -83,9 +115,19 @@ def test_catalog_timeout_tiers(method: str, expected_ms: int) -> None:
 
 
 def test_catalog_full_projection_matches_json() -> None:
-    from backend.core.ipc_catalog import IDEMPOTENT_METHODS, RAW_OUTPUT_PATH_METHODS
+    from backend.core.ipc_catalog import (
+        IDEMPOTENT_METHODS,
+        RAW_OUTPUT_PATH_METHODS,
+        allows_raw_output_path,
+        file_tokens_for,
+        is_idempotent,
+        is_native,
+        timeout_ms_for,
+        write_path_keys_for,
+    )
 
-    methods = _catalog()["methods"]
+    catalog = _catalog()
+    methods = catalog["methods"]
 
     for name, entry in methods.items():
         if "fileTokens" in entry:
@@ -98,6 +140,20 @@ def test_catalog_full_projection_matches_json() -> None:
                 isinstance(k, str) for k in entry["writePathKeys"]
             ), f"{name}: writePathKeys mal formado"
 
+        tier = entry.get("timeout", "normal")
+        assert timeout_ms_for(name) == catalog["timeouts"][tier]
+        assert is_idempotent(name) == (entry.get("idempotent") is True)
+        assert is_native(name) == str(entry.get("handler", "")).startswith("native:")
+        assert allows_raw_output_path(name) == (entry.get("rawOutputPath") is True)
+
+        expected_tokens = tuple(
+            tuple(str(s) for s in segments) for segments in entry.get("fileTokens", [])
+        )
+        assert file_tokens_for(name) == expected_tokens
+
+        expected_write_keys = frozenset(entry.get("writePathKeys", []))
+        assert write_path_keys_for(name) == expected_write_keys
+
     assert frozenset(
         name for name, entry in methods.items() if entry.get("idempotent") is True
     ) == IDEMPOTENT_METHODS
@@ -105,5 +161,11 @@ def test_catalog_full_projection_matches_json() -> None:
         name for name, entry in methods.items() if entry.get("rawOutputPath") is True
     ) == RAW_OUTPUT_PATH_METHODS
 
-    assert methods["process_start"]["writePathKeys"] == ["destino"]
-    assert methods["canvas_export_cmyk_pdf"]["fileTokens"] == [["localImagePaths", "*"]]
+    assert timeout_ms_for("metodo_inexistente") == catalog["timeouts"]["normal"]
+    assert file_tokens_for("version") == ()
+    assert write_path_keys_for("process_start") == frozenset({"destino"})
+    assert file_tokens_for("canvas_export_cmyk_pdf") == (("localImagePaths", "*"),)
+    assert file_tokens_for("flows_render_pdf") == (("localImagePaths", "*"),)
+    assert file_tokens_for("flows_print_pdf") == (("pdf_path",),)
+    assert not is_idempotent("flows_print_pdf")
+    assert is_idempotent("flows_printers_list")

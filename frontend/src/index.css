@@ -794,3 +794,10 @@
     max-height: 32rem;
   }
 }
+
+@layer components {
+  .react-flow__edge:hover .react-flow__edge-path,
+  .react-flow__edge.selected .react-flow__edge-path {
+    stroke: var(--accent-primary) !important;
+  }
+}

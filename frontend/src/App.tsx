@@ -1,4 +1,4 @@
-import React, { useState, Suspense, useCallback, useEffect } from 'react';
+import React, { useState, Suspense, useCallback, useEffect, useRef } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import TitleBar from './components/layout/TitleBar';
 import { ToastProvider } from './hooks/useToast';
@@ -38,6 +38,7 @@ const AutoIMGView = React.lazy(() => import('./components/autoimg'));
 const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas'));
 const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
+const FlowsView = React.lazy(() => import('./components/flows'));
 
 const CANVAS_KEEPALIVE_MS = 60 * 1000;
 function prefetchSettingsModal() {
@@ -69,6 +70,7 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   imageOptimizer: ImageOptimizerView,
   previewPanel: PreviewPanelView,
   canvas: CanvasView,
+  flows: FlowsView,
   panelAvisoCorte: PanelAvisoCorteView,
   ubicaciones: UbicacionesView,
   evidenciaVolanteo: EvidenciaVolanteoView,
@@ -148,14 +150,19 @@ function AppContent() {
   const [settingsSection, setSettingsSection] = useState<ConfigSectionId>('appearance');
   const [petEnabled, setPetEnabled] = useState(isPetMascotEnabled);
   const stickyNotesEnabled = usePluginEnabled('sticky-notes');
+  const flowsLeaveGuard = useRef<(() => Promise<boolean>) | null>(null);
+  const registerFlowsLeaveGuard = useCallback((guard: (() => Promise<boolean>) | null) => {
+    flowsLeaveGuard.current = guard;
+  }, []);
 
-  const handleTabChange = useCallback((tab: TabId) => {
+  const handleTabChange = useCallback(async (tab: TabId) => {
+    if (activeTab === 'flows' && tab !== 'flows' && flowsLeaveGuard.current && !await flowsLeaveGuard.current()) return;
     if (tab === 'canvas') {
       prefetchCanvasView();
       setCanvasMounted(true);
     }
     setActiveTab(tab);
-  }, []);
+  }, [activeTab]);
   const openSettings = useCallback((section: ConfigSectionId = 'appearance') => {
     prefetchSettingsModal();
     setSettingsSection(section);
@@ -298,7 +305,7 @@ function AppContent() {
                 {ActiveView && (
                   <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
                     <ErrorBoundary key={activeTab} view={activeTab}>
-                      <ActiveView />
+                      {activeTab === 'flows' ? <FlowsView registerLeaveGuard={registerFlowsLeaveGuard} /> : <ActiveView />}
                     </ErrorBoundary>
                   </div>
                 )}

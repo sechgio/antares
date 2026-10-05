@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-30",
+  "updatedAt": "2026-10-04",
   "metrics": {
     "typeIgnore": {
       "value": 15,
@@ -10,11 +10,11 @@
       "direction": "max"
     },
     "dictAnyBackend": {
-      "value": 466,
+      "value": 465,
       "direction": "max"
     },
     "largeFiles": {
-      "value": 69,
+      "value": 76,
       "direction": "max"
     }
   }

@@ -229,6 +229,18 @@ class JobManager:
                         )
                         self.release_out_paths(j.id)
                         self._slim_completed_job(j)
+                        try:
+                            from backend.core.flows import events as flow_events
+
+                            flow_events.emit("job_finished", {
+                                "job_id": j.id,
+                                "method": j.job_type,
+                                "outcome": outcome,
+                                "ok_count": ok_count,
+                                "err_count": err_count,
+                            })
+                        except Exception:
+                            logger.debug("No se pudo emitir job_finished", exc_info=True)
 
             job.thread = threading.Thread(
                 target=_wrapped_target,

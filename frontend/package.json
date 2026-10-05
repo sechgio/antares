@@ -29,6 +29,7 @@
     "@fullcalendar/react": "^6.1.21",
     "@fullcalendar/timegrid": "^6.1.21",
     "@supabase/supabase-js": "2.112.4",
+    "@xyflow/react": "^12.12.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",
     "html-to-image": "^1.11.13",

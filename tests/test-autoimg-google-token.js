@@ -26,6 +26,10 @@ async function main() {
 
   const fakeStore = {
     loadTokens: () => ({ ...currentTokens }),
+    loadTokensForUserKey: (userKey) => {
+      const saved = persistedByScope.get(userKey);
+      return saved ? { ...saved } : { ...currentTokens };
+    },
     saveTokens: (tokens) => {
       const saved = { ...tokens };
       persistedByScope.set(activeUserKey, saved);

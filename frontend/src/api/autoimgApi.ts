@@ -147,7 +147,7 @@ export function createAutoimgApi(invoke: IpcInvoke) {
     autoimgScanAll: () => invoke<{ success: boolean; results?: unknown }>('autoimg_scan_all'),
     autoimgCancelOperation: () => invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
     autoimgOperationStatus: () =>
-      invoke<{ running: boolean; operation?: string; progress?: number; message?: string; started_at?: string }>('autoimg_operation_status'),
+      invoke<{ active: string | null; cancellable: boolean }>('autoimg_operation_status'),
     autoimgStatus: () => invoke<AutoImgStatus>('autoimg_status'),
   };
 }

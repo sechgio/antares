@@ -38,9 +38,9 @@ export const toolsApi = {
   }) =>
     _invoke<ImageOptimizerSaveFilesResponse>('image_optimizer_save_files', body),
 
-  templatesList: () =>
-    cachedInvoke('templates_list', () =>
-      _invoke<{ templates: Array<{ id: string; name: string; filename: string; source?: string }> }>('templates_list'),
+  templatesList: (params?: { recursive?: boolean }) =>
+    cachedInvoke(params?.recursive ? 'templates_list:recursive' : 'templates_list', () =>
+      _invoke<{ templates: Array<{ id: string; name: string; filename: string; source?: string }> }>('templates_list', params),
     ),
   templateGet: (name: string) =>
     _invoke<{ name: string; content: string; source?: string }>('template_get', { name }),
@@ -57,5 +57,5 @@ export const toolsApi = {
     navigationType?: string;
     url?: string;
     timestamp?: number;
-  }) => _invoke<{ ok: boolean }>('telemetry', body as unknown as Record<string, unknown>),
+  }) => _invoke<{ ok: boolean }>('telemetry', body),
 };

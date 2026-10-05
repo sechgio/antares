@@ -151,6 +151,25 @@ async function verifyFolder(input) {
   };
 }
 
+async function listFileNames(folderId) {
+  const safeId = assertValidFolderId(folderId);
+  const names = new Set();
+  let pageToken = '';
+  do {
+    const data = await _driveFetch('files', {
+      q: `'${safeId}' in parents and trashed=false`,
+      fields: 'nextPageToken,files(name)',
+      pageSize: '200',
+      ...(pageToken ? { pageToken } : {}),
+    });
+    for (const f of data.files || []) {
+      if (f && f.name) names.add(f.name);
+    }
+    pageToken = data.nextPageToken || '';
+  } while (pageToken);
+  return names;
+}
+
 async function copyFileToFolder(fileId, destFolderId, newName) {
   const id = String(fileId || '').trim();
   if (!FILE_ID_RE.test(id)) throw new Error('ID de archivo de Drive inválido');
@@ -339,6 +358,7 @@ module.exports = {
   invalidateFolderPreview,
   getFileMetadata,
   copyFileToFolder,
+  listFileNames,
   findOrCreateSubfolder,
   getDriveStatus,
   assertValidFolderId,

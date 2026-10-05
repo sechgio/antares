@@ -104,8 +104,84 @@ function resolveReadToken(token, webContentsId) {
   return require('./file-capabilities').resolveCapability(token, 'read', webContentsId);
 }
 
-function maybeResolveFileTokens(params, win, method) {
+function stripFlowExpressions(value) {
+  if (typeof value === 'string' && value.startsWith('=')) return undefined;
+  if (Array.isArray(value)) return value.map(stripFlowExpressions);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, stripFlowExpressions(v)]));
+  return value;
+}
+
+function mergeFlowArgs(original, checked) {
+  if (typeof original === 'string' && original.startsWith('=')) return original;
+  if (Array.isArray(original)) return original.map((v, i) => mergeFlowArgs(v, checked?.[i]));
+  if (original && typeof original === 'object') return Object.fromEntries(Object.entries({ ...original, ...checked }).map(([k]) => [k, mergeFlowArgs(original[k], checked?.[k])]));
+  return checked === undefined ? original : checked;
+}
+
+function maybeResolveFileTokens(params, win, method, options = {}) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
+  if ((method === 'flows_create' || method === 'flows_update') && params.graph && Array.isArray(params.graph.nodes)) {
+    const outer = maybeResolveFileTokens({ ...params, graph: undefined }, win, method, options);
+    return { ...outer, graph: { ...params.graph, nodes: params.graph.nodes.map((node) => {
+      const config = { ...node.config };
+      const verifiedGrants = options.verifiedFlowGrants?.[node.id];
+      delete config._file_grants;
+      if (node.kind !== 'tool_call') return { ...node, config };
+      if (!config.args || typeof config.args !== 'object' || Array.isArray(config.args)) return { ...node, config };
+      const readSchemas = READ_FILE_TOKEN_SCHEMAS.get(config.method) || [];
+      let literal = stripFlowExpressions(config.args);
+      if (verifiedGrants && Array.isArray(verifiedGrants.read)) {
+        const webContentsId = win?.webContents?.id ?? null;
+        const { createFileCapability } = require('./file-capabilities');
+        for (const schema of readSchemas) {
+          literal = schemaTransform(literal, schema, (value) => (
+            typeof value === 'string' && verifiedGrants.read.includes(value)
+              ? createFileCapability({
+                filePath: value, mode: 'read', webContentsId,
+              }).token
+              : value
+          ));
+        }
+      }
+      const resolved = maybeResolveFileTokens(literal, win, config.method, { verifiedGrants });
+      const written = validateAndResolveWriteParams(resolved, win, config.method, { verifiedWriteRoots: verifiedGrants?.write });
+      const read = [];
+      for (const schema of readSchemas) collectSchemaValues(written, schema, read);
+      const write = [];
+      for (const key of new Set([...GENERIC_OUTPUT_PATH_KEYS, ...(ipcCatalog.METHOD_OUTPUT_PATH_KEYS.get(config.method) || []), ...(RAW_OUTPUT_PATH_METHODS.has(config.method) ? ['path'] : [])])) {
+        if (typeof written[key] === 'string' && written[key]) {
+          write.push(fs.existsSync(written[key]) && fs.statSync(written[key]).isDirectory() ? written[key] : path.dirname(written[key]));
+        }
+      }
+      config.args = mergeFlowArgs(config.args, written);
+      if (read.length || write.length || written._flow_file_grants?.folders?.length) {
+        config._file_grants = { ...written._flow_file_grants, read, write: [...new Set([...write, ...(written._flow_file_grants?.write || [])])] };
+      }
+      delete config.args._flow_file_grants;
+      return { ...node, config };
+    }) } };
+  }
+  if (method === 'flows_read_images') {
+    const { _isUnderRegisteredWriteRoot } = require('./write-roots');
+    const { hasSymlinkAncestor } = require('./path-allowlist');
+    const folders = [];
+    for (const key of ['source_folder', 'output_folder']) {
+      const value = params[key];
+      if (!value) continue;
+      const verifiedFolder = Array.isArray(options.verifiedGrants?.folders)
+        && options.verifiedGrants.folders.includes(value);
+      if (typeof value !== 'string' || !path.isAbsolute(value)
+          || (!_isUnderRegisteredWriteRoot(value) && !verifiedFolder)
+          || hasSymlinkAncestor(value) || (fs.existsSync(value) && fs.lstatSync(value).isSymbolicLink())) {
+        throw new Error('Selecciona la carpeta con el diálogo de Antares');
+      }
+      folders.push(value);
+    }
+    const next = maybeResolveFileTokens({ ...params, source_folder: undefined, output_folder: undefined, _flow_file_grants: undefined }, win, '_flows_read_images_files');
+    if (params.spreadsheet_path) next.spreadsheet_path = resolveReadPathValue(params.spreadsheet_path, 'spreadsheet_path', win?.webContents?.id ?? null, { allowRegistered: true });
+    return { ...next, source_folder: params.source_folder, output_folder: params.output_folder,
+      _flow_file_grants: { folders, read: next.spreadsheet_path ? [next.spreadsheet_path] : [], write: params.output_folder ? [params.output_folder] : [] } };
+  }
   if ('_resolved_file_token_path' in params || '_resolved_file_token_name' in params) {
     params = { ...params };
     delete params._resolved_file_token_path;
@@ -303,7 +379,7 @@ function _assertAllowedRawOutputPath(outRaw) {
   }
 }
 
-function validateAndResolveWriteParams(params, win, method) {
+function validateAndResolveWriteParams(params, win, method, options = {}) {
   if (!params || typeof params !== 'object') return params;
   if ('_resolved_output_path' in params || '_write_token' in params) {
     params = { ...params };
@@ -332,7 +408,19 @@ function validateAndResolveWriteParams(params, win, method) {
       throw new Error(`invalid output path for ${key}`);
     }
     if (!value.startsWith('antares-write_')) {
-      _assertAllowedRawOutputPath(value);
+      const { isPathInside, hasSymlinkAncestor } = require('./path-allowlist');
+      const verifiedWrite = path.isAbsolute(value) && Array.isArray(options.verifiedWriteRoots)
+        && options.verifiedWriteRoots.some((root) => (
+          typeof root === 'string' && path.isAbsolute(root)
+          && isPathInside(root, value)
+        ));
+      if (verifiedWrite) {
+        if ((fs.existsSync(value) && fs.lstatSync(value).isSymbolicLink()) || hasSymlinkAncestor(value)) {
+          throw new Error('symlink no permitido en ruta de salida');
+        }
+      } else {
+        _assertAllowedRawOutputPath(value);
+      }
       continue;
     }
     const { resolveCapability } = require('./file-capabilities');

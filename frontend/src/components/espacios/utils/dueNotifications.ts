@@ -9,6 +9,7 @@ interface DueTaskInput {
   title: string;
   due_date: string | null;
   status: string;
+  status_is_done?: boolean;
   proyecto_id: string;
   proyecto_name?: string;
   espacio_id?: string | null;
@@ -55,7 +56,7 @@ export function collectDueNotifications(
   const items: DueNotification[] = [];
 
   for (const task of tasks) {
-    if (!task.due_date || isDoneLikeStatus(task.status, doneOpts)) continue;
+    if (!task.due_date || (task.status_is_done ?? isDoneLikeStatus(task.status, doneOpts))) continue;
     const daysUntil = daysBetweenIsoDates(today, task.due_date);
     if (daysUntil == null) continue;
     if (daysUntil > soonDays) continue;

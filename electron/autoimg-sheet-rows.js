@@ -24,8 +24,47 @@ function resolveNotasForSync({ existingNotas }) {
   return existingNotas || '';
 }
 
+function _upperCell(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+// Índice de la primera fila de datos: 1 cuando la fila 0 abre con el nombre
+// canónico de la primera columna; si no, la fila 0 ya son datos.
+function tabStartIndex(values, header) {
+  const row = (values || [])[0];
+  return Array.isArray(row) && _upperCell(row[0]) === String(header[0]).toUpperCase() ? 1 : 0;
+}
+
 function _bdImgHasHeader(rows) {
-  return rows.length > 0 && String(rows[0]?.[0] || '').trim().toUpperCase() === 'NIS';
+  return rows.length > 0 && _upperCell(rows[0]?.[0]) === BD_IMG_HEADER[0];
+}
+
+// Falla ruidosa cuando la fila 0 trae un nombre de columna esperado en otra
+// posición: seguir posicionalmente reordenaría los valores entre columnas.
+// Nombres alternativos (p.ej. "DIR" por "DIRECCION") son válidos mientras no
+// usen un nombre reservado fuera de su columna.
+function assertBdImgLayout(values, header = BD_IMG_HEADER) {
+  const row = (values || [])[0];
+  if (!Array.isArray(row) || !row.length) return;
+  const indexByName = new Map(header.map((name, i) => [String(name).toUpperCase(), i]));
+  let hits = 0;
+  let misplaced = null;
+  for (let i = 0; i < row.length; i++) {
+    const idx = indexByName.get(_upperCell(row[i]));
+    if (idx === undefined) continue;
+    hits += 1;
+    if (idx !== i && !misplaced) misplaced = { name: header[idx], at: i, expected: idx };
+  }
+  if (!misplaced) return;
+  // Una fila de datos con un valor que coincide con un nombre de columna no
+  // es encabezado: exigir 2+ coincidencias o que la fila abra con un nombre.
+  const headerLike = hits >= 2 || indexByName.has(_upperCell(row[0]));
+  if (headerLike) {
+    throw new Error(
+      `Layout inesperado en la hoja: la columna "${misplaced.name}" está en la posición ${misplaced.at + 1} ` +
+      `y debe ir en la ${misplaced.expected + 1}. Reordena las columnas y reintenta.`,
+    );
+  }
 }
 
 function _bdImgStartIndex(rows) {
@@ -103,6 +142,7 @@ function _rowSignature(row) {
 }
 
 function applyScanResultsToRows(rows, nisResults, verification) {
+  assertBdImgLayout(rows);
   const nextRows = rows.length ? [...rows] : [BD_IMG_HEADER];
   const nisIndexes = buildNisRowIndexesMap(nextRows);
   const scanByNis = new Map();
@@ -200,7 +240,7 @@ function parseActivo(value) {
 function parseFoldersFromValues(values) {
   if (!values?.length) return [];
   const folders = [];
-  for (let i = 1; i < values.length; i++) {
+  for (let i = tabStartIndex(values, AUTOIMG_SHEET_TABS.FOLDERS); i < values.length; i++) {
     const row = values[i];
     if (!row[1]) continue;
     folders.push({
@@ -228,7 +268,7 @@ function parseResumenMetrics(values) {
 }
 
 function configValueFromRows(values, key) {
-  for (let i = 1; i < (values || []).length; i++) {
+  for (let i = tabStartIndex(values, AUTOIMG_SHEET_TABS.CONFIG); i < (values || []).length; i++) {
     if (String(values[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
       return values[i][1] || '';
     }
@@ -238,7 +278,7 @@ function configValueFromRows(values, key) {
 
 function countActiveFolders(values) {
   let count = 0;
-  for (let i = 1; i < (values || []).length; i++) {
+  for (let i = tabStartIndex(values, AUTOIMG_SHEET_TABS.FOLDERS); i < (values || []).length; i++) {
     if (parseActivo(values[i][2])) count += 1;
   }
   return count;
@@ -262,4 +302,6 @@ module.exports = {
   parseResumenMetrics,
   configValueFromRows,
   countActiveFolders,
+  tabStartIndex,
+  assertBdImgLayout,
 };
