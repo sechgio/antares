@@ -26,6 +26,7 @@ const STATUS_LABELS: Record<FlowRunStatus, string> = {
   success: 'Éxito',
   error: 'Error',
   cancelled: 'Cancelado',
+  skipped: 'Omitida',
 };
 
 const STATUS_COLORS: Record<FlowRunStatus, string> = {
@@ -34,6 +35,7 @@ const STATUS_COLORS: Record<FlowRunStatus, string> = {
   success: '#34d399',
   error: 'var(--accent-red, #ef4444)',
   cancelled: 'var(--text-secondary)',
+  skipped: 'var(--text-secondary)',
 };
 
 export function FlowStatusBadge({ status }: { status: FlowRunStatus }) {

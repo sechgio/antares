@@ -225,11 +225,43 @@ def test_canvas_flow_generates_real_pdf_and_deduplicates_after_restart(setup):
     assert not FlowRunner(restarted, runner._handler_getter).ready_to_start(restarted.get(flow["id"]))
     done = _execute(store, runner, store.get(flow["id"]))
     assert done["steps"][-1]["status"] == "skipped"
+    assert done["status"] == "skipped"
     assert len(list(output.glob("*.pdf"))) == 1
     _image(source / "dos.png")
     assert runner.ready_to_start(store.get(flow["id"]))
     assert _execute(store, runner, store.get(flow["id"]))["status"] == "success"
     assert len(list(output.glob("*.pdf"))) == 2
+
+
+def test_deleted_output_is_regenerated_instead_of_blocking_the_batch(setup):
+    store, source, output, _ = setup
+    _image(source / "uno.png")
+    flow = store.create("Paneles automáticos", graph=_graph(setup))
+    runner = _runner(setup)
+    done = _execute(store, runner, flow)
+    assert done["status"] == "success", done["steps"]
+    saved = Path(done["steps"][-1]["output"]["saved_path"])
+    saved.unlink()
+    assert runner.ready_to_start(store.get(flow["id"]))
+    done = _execute(store, runner, store.get(flow["id"]))
+    assert done["status"] == "success", done["steps"]
+    assert done["steps"][-1]["status"] == "success"
+    assert saved.is_file()
+    assert len(list(output.glob("*.pdf"))) == 1
+    assert not runner.ready_to_start(store.get(flow["id"]))
+
+
+def test_run_where_every_action_is_omitted_ends_skipped_not_success(setup):
+    runner = FlowRunner(setup[0], lambda method: lambda params: {"ready": False, "reason": "Sin datos"})
+    flow = setup[0].create("Sin datos", graph={
+        "nodes": [{"id": "trigger", "kind": "trigger", "config": {}},
+                  {"id": "read", "kind": "tool_call", "config": {"method": "flows_read_images", "args": {}}}],
+        "edges": [{"from_node": "trigger", "to_node": "read"}],
+    })
+    done = _execute(setup[0], runner, flow)
+    assert done["steps"][-1]["status"] == "skipped"
+    assert done["status"] == "skipped"
+    assert flows.HANDLERS["flows_run_cancel"]({"run_id": done["id"]})["cancelled"] is False
 
 
 def test_failure_does_not_acknowledge_source_or_retry_writes(setup):

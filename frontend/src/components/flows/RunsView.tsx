@@ -52,6 +52,7 @@ const STATUS_OPTIONS: { value: '' | FlowRunStatus; label: string }[] = [
   { value: 'success', label: 'Éxito' },
   { value: 'error', label: 'Error' },
   { value: 'cancelled', label: 'Cancelado' },
+  { value: 'skipped', label: 'Omitida' },
 ];
 
 export default function RunsView({ flowId }: { flowId?: string }) {

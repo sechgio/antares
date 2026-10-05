@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 MAX_RUNS_PER_FLOW = 25
 MAX_TOTAL_RUNS = 200
 
-_RUN_STATUSES = frozenset({"queued", "running", "success", "error", "cancelled"})
+_RUN_STATUSES = frozenset({"queued", "running", "success", "error", "cancelled", "skipped"})
 
 
 def _utc_now() -> str:
@@ -61,6 +61,10 @@ def _normalize_flow(raw: JsonObject) -> JsonObject | None:
         **({"source_checkpoint": str(raw.get("source_checkpoint") or "")} if "source_checkpoint" in raw else {}),
         **({"source_checkpoints": [s for s in raw["source_checkpoints"] if isinstance(s, str)]}
            if isinstance(raw.get("source_checkpoints"), list) else {}),
+        **({"source_artifacts": {str(fp): [str(p) for p in paths if isinstance(p, str)]
+                                 for fp, paths in raw["source_artifacts"].items()
+                                 if isinstance(fp, str) and isinstance(paths, list)}}
+           if isinstance(raw.get("source_artifacts"), dict) else {}),
     }
 
 
@@ -294,15 +298,23 @@ class FlowStore:
             flow["last_scheduled_at"] = run_at
             self._write_flows(flows)
 
-    def acknowledge_source(self, flow_id: str, fingerprint: str, *, remember: bool = False) -> None:
+    def acknowledge_source(
+        self, flow_id: str, fingerprint: str, *, remember: bool = False, artifacts: list[str] | None = None,
+    ) -> None:
         with self._lock:
             flows = self._read_flows()
             if flow_id in flows:
-                flows[flow_id]["source_checkpoint"] = fingerprint
+                flow = flows[flow_id]
+                flow["source_checkpoint"] = fingerprint
                 if remember:
-                    history = flows[flow_id].setdefault("source_checkpoints", [])
+                    history = flow.setdefault("source_checkpoints", [])
                     if fingerprint not in history:
                         history.append(fingerprint)
+                if artifacts is not None:
+                    keep = {fingerprint} | set(flow.get("source_checkpoints") or [])
+                    produced = {fp: paths for fp, paths in (flow.get("source_artifacts") or {}).items() if fp in keep}
+                    produced[fingerprint] = sorted(artifacts)
+                    flow["source_artifacts"] = produced
                 self._write_flows(flows)
 
     def begin_action(self, flow_id: str, fingerprint: str) -> JsonObject | None:

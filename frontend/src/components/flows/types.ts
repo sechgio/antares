@@ -52,7 +52,7 @@ export interface Flow {
 
 export type FlowMeta = Omit<Flow, 'graph'>;
 
-export type FlowRunStatus = 'queued' | 'running' | 'success' | 'error' | 'cancelled';
+export type FlowRunStatus = 'queued' | 'running' | 'success' | 'error' | 'cancelled' | 'skipped';
 
 export interface FlowRunStep {
   node_id: string;

@@ -157,6 +157,7 @@ class FlowRunner:
             if flow["id"] in _active_flow_ids:
                 return False
         sources = []
+        last_source: JsonObject = {}
         for node in flow["graph"]["nodes"]:
             config = node.get("config") or {}
             args = config.get("args") or {}
@@ -176,8 +177,11 @@ class FlowRunner:
             if not source.get("ready"):
                 return False
             sources.append(source["fingerprint"])
+            last_source = source
+        if not sources:
+            return True
         fingerprint = _source_fingerprint(flow["graph"], sources + self._template_fingerprints(flow["graph"]))
-        return not sources or (fingerprint != flow.get("source_checkpoint") and fingerprint not in flow.get("source_checkpoints", []))
+        return not _checkpoint_blocks(flow, fingerprint, _expected_output_paths(last_source, fingerprint))
 
     def _template_fingerprints(self, graph: JsonObject) -> list[str]:
         if not any(n.get("config", {}).get("method") == "flows_read_images" for n in graph["nodes"]):
@@ -247,6 +251,7 @@ class FlowRunner:
             "templates": self._template_fingerprints(graph),
             "read_paths": set(),
             "write_roots": set(),
+            "produced_paths": set(),
         }
         steps: list[JsonObject] = []
         any_error = False
@@ -352,12 +357,16 @@ class FlowRunner:
                 finished_at=_utc_now(),
             )
             return
-        status = "error" if any_error else "success"
-        action_steps = [s for s in steps if (nodes[s["node_id"]].get("config") or {}).get("method")
-                        in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS - {"flows_read_images"}]
+        actions = [s for s in steps if (nodes[s["node_id"]].get("config") or {}).get("method")
+                   in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS]
+        ran = any(s["status"] == "success" for s in actions) if actions else any(
+            s["status"] == "success" and nodes[s["node_id"]]["kind"] != "trigger" for s in steps)
+        status = "error" if any_error else "success" if ran else "skipped"
+        action_steps = [s for s in actions if (nodes[s["node_id"]].get("config") or {}).get("method") != "flows_read_images"]
         if memory["sources"] and action_steps and all(s["status"] == "success" for s in action_steps) and not any_error:
             self._store.acknowledge_source(run["flow_id"], _source_fingerprint(graph, memory["sources"] + memory["templates"]),
-                                           remember=bool(memory.get("report_batch")))
+                                           remember=bool(memory.get("report_batch")),
+                                           artifacts=sorted(memory.get("produced_paths") or ()))
         self._store.update_run(
             run_id,
             status=status,
@@ -523,9 +532,12 @@ class FlowRunner:
             if receipt is not None:
                 result = receipt["output"]
                 saved_path = result.get("saved_path")
-                if isinstance(saved_path, str):
-                    memory.setdefault("read_paths", set()).add(saved_path)
-                return {"json": result}
+                if not isinstance(saved_path, str) or Path(saved_path).is_file():
+                    if isinstance(saved_path, str):
+                        memory.setdefault("read_paths", set()).add(saved_path)
+                        memory.setdefault("produced_paths", set()).add(saved_path)
+                    return {"json": result}
+                # El archivo producido fue borrado o movido: se re-ejecuta para regenerarlo.
         result = fn(dict(resolved))
         if method == "process_start":
             if not result.get("started"):
@@ -560,20 +572,21 @@ class FlowRunner:
             memory.setdefault("sources", []).append(result["fingerprint"])
             fingerprint = _source_fingerprint(memory["graph"], memory["sources"] + memory.get("templates", []))
             flow = self._store.get(memory["run"]["flow_id"])
-            if flow and (fingerprint == flow.get("source_checkpoint") or fingerprint in flow.get("source_checkpoints", [])):
+            expected = _expected_output_paths(result, fingerprint)
+            if _checkpoint_blocks(flow, fingerprint, expected):
                 return {"json": {"ready": False, "reason": "Este lote ya fue generado"}}
             memory.setdefault("read_paths", set()).update(result["files"])
             memory.setdefault("write_roots", set()).add(result["output_folder"])
-            prefix = "reportes" if result.get("report_batch") else "paneles"
             memory["report_batch"] = result.get("report_batch", False)
             if result.get("report_batch"):
                 memory["report_template"] = result["template_name"]
-            result["output_path"] = str(Path(result["output_folder"]) / f"{prefix}-{fingerprint[:16]}.pdf")
+            result["output_path"] = expected[0]
             result["stamped_output_path"] = str(Path(result["output_folder"]) / f"paneles-{fingerprint[:16]}-sellado.pdf")
         if method in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS and isinstance(result.get("saved_path"), str):
             saved = Path(result["saved_path"])
             if saved.is_file() and not saved.is_symlink() and not any(p.is_symlink() for p in saved.parents):
                 memory.setdefault("read_paths", set()).add(str(saved))
+                memory.setdefault("produced_paths", set()).add(str(saved))
         return {"json": result}
 
     def _run_http_request(self, node: JsonObject, memory: JsonObject) -> JsonObject:
@@ -725,6 +738,29 @@ def _source_fingerprint(graph: JsonObject, sources: list[str]) -> str:
         return hashlib.sha256(json.dumps([operations, destinations, graph["edges"], sorted(sources)], sort_keys=True).encode()).hexdigest()
     operations = [{"id": n["id"], "kind": n["kind"], "config": n["config"]} for n in graph["nodes"]]
     return hashlib.sha256(json.dumps([operations, graph["edges"], sorted(sources)], sort_keys=True).encode()).hexdigest()
+
+
+def _expected_output_paths(source_result: JsonObject, fingerprint: str) -> list[str]:
+    """Ruta canónica del PDF que el lote dejaría en ``output_folder``."""
+    prefix = "reportes" if source_result.get("report_batch") else "paneles"
+    return [str(Path(source_result["output_folder"]) / f"{prefix}-{fingerprint[:16]}.pdf")]
+
+
+def _checkpoint_blocks(flow: JsonObject | None, fingerprint: str, expected: list[str]) -> bool:
+    """True si el lote (fingerprint) ya fue generado y sus artefactos siguen en disco.
+
+    ``source_artifacts`` guarda los ``saved_path`` que produjo el run que creó
+    el checkpoint; si alguno desapareció (borrado o movido) el lote puede
+    regenerarse. Los checkpoints anteriores al registro usan la ruta canónica
+    ``expected`` como comprobación.
+    """
+    if flow is None:
+        return False
+    if fingerprint != flow.get("source_checkpoint") and fingerprint not in (flow.get("source_checkpoints") or []):
+        return False
+    recorded = (flow.get("source_artifacts") or {}).get(fingerprint)
+    paths = recorded if recorded is not None else expected
+    return all(Path(p).is_file() for p in paths)
 
 
 def _validate_action_paths(method: str, args: JsonObject, memory: JsonObject, store: FlowStore | None = None) -> None:

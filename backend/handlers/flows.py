@@ -148,7 +148,7 @@ def _run_cancel(params: JsonObject) -> JsonObject:
     run = _store().get_run(run_id)
     if run is None:
         raise NotFoundError(f"Run no encontrado: {run_id}")
-    if run["status"] in ("success", "error", "cancelled"):
+    if run["status"] in ("success", "error", "cancelled", "skipped"):
         return {"run": run, "cancelled": False}
     if not cancel_run(run_id):
         return {"run": run, "cancelled": False}
