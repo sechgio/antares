@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Play, RefreshCw, Square } from 'lucide-react
 import { flowsApi } from '../../api/flowsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
+import { useDialog } from '../../hooks/useDialog';
 import Button from '../ui/Button';
 import ThemedSelect from '../ui/ThemedSelect';
 import { FlowStatusBadge } from './FlowList';
@@ -57,6 +58,7 @@ const STATUS_OPTIONS: { value: '' | FlowRunStatus; label: string }[] = [
 
 export default function RunsView({ flowId }: { flowId?: string }) {
   const { addToast } = useToast();
+  const { confirm } = useDialog();
   const [runs, setRuns] = useState<FlowRun[]>([]);
   const [flows, setFlows] = useState<FlowMeta[]>([]);
   const [filterFlow, setFilterFlow] = useState<string>(flowId ?? '');
@@ -138,9 +140,19 @@ export default function RunsView({ flowId }: { flowId?: string }) {
     }
   };
 
-  const rerun = async (flowId: string) => {
+  const rerun = async (run: FlowRun) => {
+    let acknowledge = false;
+    if (run.steps.some((step) => step.error?.includes('resultado incierto'))) {
+      acknowledge = await confirm({
+        title: 'Acción con resultado incierto',
+        description: 'La ejecución anterior quedó interrumpida tras una acción y no se sabe si llegó a completarse. Reintentar con los mismos datos puede repetir su efecto (p. ej. una impresión o una conversión). Comprueba el resultado antes de continuar.',
+        confirmLabel: 'Reintentar',
+        type: 'destructive',
+      });
+      if (!acknowledge) return;
+    }
     try {
-      await flowsApi.flowsRun(flowId);
+      await flowsApi.flowsRun(run.flow_id, undefined, acknowledge);
       addToast({ message: 'Ejecución iniciada', type: 'success' });
       void load(true);
     } catch (err) {
@@ -225,7 +237,7 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => void rerun(run.flow_id)}
+                        onClick={() => void rerun(run)}
                         aria-label="Ejecutar de nuevo"
                         title="Ejecutar de nuevo"
                       >

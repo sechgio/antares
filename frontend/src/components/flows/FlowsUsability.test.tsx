@@ -11,9 +11,9 @@ import { useState } from 'react';
 import NodeConfigDrawer from './NodeConfigDrawer';
 import type { FlowNode, FlowRun } from './types';
 
-const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
+const { addToast, confirm } = vi.hoisted(() => ({ addToast: vi.fn(), confirm: vi.fn() }));
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
-vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm: vi.fn() }) }));
+vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm }) }));
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -44,6 +44,21 @@ it('descubre ejecuciones nuevas y descarta respuestas anteriores que llegan tard
     view.unmount();
     vi.useRealTimers();
   }
+});
+
+it('pide confirmación antes de reintentar una acción con resultado incierto', async () => {
+  const step = { node_id: 'pdf', kind: 'tool_call', name: 'Imprimir', status: 'error' as const, started_at: null,
+    finished_at: null, duration_ms: null, output: null, error: 'Acción con resultado incierto; comprueba su resultado' };
+  const run: FlowRun = { id: 'r1', flow_id: 'flow-1', flow_name: 'Lote', status: 'error',
+    created_at: '2026-10-04T12:00:00Z', started_at: null, finished_at: null, steps: [step],
+    error: 'Uno o más nodos fallaron', trigger_payload: {} };
+  vi.spyOn(flowsApi, 'flowsRunsList').mockResolvedValue({ runs: [run] });
+  const runCall = vi.spyOn(flowsApi, 'flowsRun').mockResolvedValue({ run } as Awaited<ReturnType<typeof flowsApi.flowsRun>>);
+  confirm.mockResolvedValue(true);
+  render(<RunsView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ejecutar de nuevo' }));
+  await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ type: 'destructive' })));
+  await waitFor(() => expect(runCall).toHaveBeenCalledWith('flow-1', undefined, true));
 });
 
 it('crea un ejemplo manual que funciona sin configurar IA ni servicios externos', async () => {

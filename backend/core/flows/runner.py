@@ -106,7 +106,8 @@ class FlowRunner:
         self._store = store
         self._handler_getter = handler_getter
 
-    def start(self, flow_id: str, trigger_payload: JsonObject | None = None) -> JsonObject:
+    def start(self, flow_id: str, trigger_payload: JsonObject | None = None, *,
+              acknowledge_uncertain: bool = False) -> JsonObject:
         flow = self._store.get(flow_id)
         guarded = bool(flow and any(
             n.get("config", {}).get("method") in FLOW_ACTION_METHODS - ORCHESTRATABLE_METHODS for n in flow["graph"]["nodes"]
@@ -117,7 +118,7 @@ class FlowRunner:
                     raise ValueError("Este flujo ya tiene una ejecución en curso")
                 _active_flow_ids.add(flow_id)
         try:
-            run = self._store.create_run(flow_id, trigger_payload)
+            run = self._store.create_run(flow_id, trigger_payload, acknowledge_uncertain=acknowledge_uncertain)
         except Exception:
             with _active_lock:
                 _active_flow_ids.discard(flow_id)
@@ -252,6 +253,7 @@ class FlowRunner:
             "read_paths": set(),
             "write_roots": set(),
             "produced_paths": set(),
+            "acknowledge_uncertain": bool(run.get("acknowledge_uncertain")),
         }
         steps: list[JsonObject] = []
         any_error = False
@@ -528,7 +530,10 @@ class FlowRunner:
             identity = [node["id"], method, memory["sources"], memory.get("templates", []),
                         {key: value for key, value in resolved.items() if key != "_cancelled"}]
             effect_key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-            receipt = self._store.begin_action(memory["run"]["flow_id"], effect_key)
+            receipt = self._store.begin_action(
+                memory["run"]["flow_id"], effect_key,
+                allow_pending=bool(memory.get("acknowledge_uncertain")),
+            )
             if receipt is not None:
                 result = receipt["output"]
                 saved_path = result.get("saved_path")

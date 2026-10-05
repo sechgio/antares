@@ -391,6 +391,40 @@ def test_uncertain_action_is_not_repeated_after_restart(setup, monkeypatch):
     assert len(calls) == 1
 
 
+def test_uncertain_action_can_be_acknowledged_and_retried(setup, monkeypatch):
+    calls = []
+    flow, runner = _partial_action_flow(setup, lambda params: calls.append(params) or {"queued": True})
+
+    store = setup[0]
+    complete = store.complete_action
+    crashed = {"once": False}
+
+    def crash_once(flow_id, fingerprint, output):
+        if not crashed["once"]:
+            crashed["once"] = True
+            raise OSError("Simula cierre después del efecto")
+        return complete(flow_id, fingerprint, output)
+
+    monkeypatch.setattr(store, "complete_action", crash_once)
+    assert _execute(store, runner, flow)["status"] == "error"
+    assert len(calls) == 1
+
+    blocked = _execute(store, runner, flow)
+    assert "resultado incierto" in next(s for s in blocked["steps"] if s["node_id"] == "pdf")["error"]
+    assert len(calls) == 1
+
+    acknowledged = store.create_run(flow["id"], acknowledge_uncertain=True)
+    assert acknowledged["acknowledge_uncertain"] is True
+    runner._execute(acknowledged["id"], _CancelEvent())
+    done = store.get_run(acknowledged["id"])
+    assert next(s for s in done["steps"] if s["node_id"] == "pdf")["status"] == "success"
+    assert len(calls) == 2
+
+    repeated = _execute(store, runner, flow)
+    assert next(s for s in repeated["steps"] if s["node_id"] == "pdf")["status"] == "success"
+    assert len(calls) == 2
+
+
 def test_corrupt_receipt_store_does_not_reexecute_action(setup):
     calls = []
     flow, runner = _partial_action_flow(setup, lambda params: calls.append(params) or {"queued": True})

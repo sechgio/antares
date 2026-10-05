@@ -90,6 +90,7 @@ def _normalize_run(raw: JsonObject) -> JsonObject | None:
         "created_at": str(raw.get("created_at") or ""),
         "started_at": str(raw.get("started_at") or "") or None,
         "finished_at": str(raw.get("finished_at") or "") or None,
+        **({"acknowledge_uncertain": True} if raw.get("acknowledge_uncertain") is True else {}),
     }
 
 
@@ -317,8 +318,9 @@ class FlowStore:
                     flow["source_artifacts"] = produced
                 self._write_flows(flows)
 
-    def begin_action(self, flow_id: str, fingerprint: str) -> JsonObject | None:
-        """Reserva el efecto antes de ejecutarlo; un resultado incierto nunca se repite."""
+    def begin_action(self, flow_id: str, fingerprint: str, *, allow_pending: bool = False) -> JsonObject | None:
+        """Reserva el efecto antes de ejecutarlo; un resultado incierto solo se repite
+        cuando el usuario lo reconoce explícitamente (``allow_pending``)."""
         with self._lock:
             receipts = json.loads(self._effects_path.read_text(encoding="utf-8")) if self._effects_path.exists() else {}
             if not isinstance(receipts, dict):
@@ -326,9 +328,13 @@ class FlowStore:
             key = f"{flow_id}:{fingerprint}"
             previous = receipts.get(key)
             if key in receipts:
-                if not isinstance(previous, dict) or previous.get("status") != "done" or not isinstance(previous.get("output"), dict):
-                    raise ValueError("Acción con resultado incierto; comprueba su resultado antes de usar una entrada distinta")
-                return deepcopy(previous)
+                if isinstance(previous, dict) and previous.get("status") == "done" and isinstance(previous.get("output"), dict):
+                    return deepcopy(previous)
+                if allow_pending and isinstance(previous, dict) and previous.get("status") == "pending":
+                    receipts[key] = {"status": "pending", "attempt": int(previous.get("attempt") or 1) + 1}
+                    atomic_write_json(self._effects_path, receipts)
+                    return None
+                raise ValueError("Acción con resultado incierto; comprueba su resultado antes de usar una entrada distinta")
             receipts[key] = {"status": "pending"}
             atomic_write_json(self._effects_path, receipts)
             return None
@@ -349,7 +355,8 @@ class FlowStore:
             flow["last_run_at"] = run_at
             self._write_flows(flows)
 
-    def create_run(self, flow_id: str, trigger_payload: JsonObject | None = None) -> JsonObject | None:
+    def create_run(self, flow_id: str, trigger_payload: JsonObject | None = None, *,
+                   acknowledge_uncertain: bool = False) -> JsonObject | None:
         flow = self.get(flow_id)
         if flow is None:
             return None
@@ -366,6 +373,8 @@ class FlowStore:
             "started_at": None,
             "finished_at": None,
         }
+        if acknowledge_uncertain:
+            run["acknowledge_uncertain"] = True
         with self._lock:
             runs = self._read_runs()
             runs[run["id"]] = run

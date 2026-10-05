@@ -124,7 +124,7 @@
     "flows_printers_list": { "handler": "backend:flows", "idempotent": true, "orchestratable": true, "inputSchema": {"type":"object","properties":{}} },
     "flows_print_pdf": { "handler": "backend:flows", "lane": "heavy", "timeout": "heavy", "flowCallable": true, "fileTokens": [["pdf_path"]], "inputSchema": {"type":"object","properties":{"copies":{"type":"integer"},"pdf_path":{},"printer_name":{}}} },
     "flows_path_authorize": { "handler": "backend:flows", "internal": true, "idempotent": true },
-    "flows_run": { "handler": "backend:flows", "inputSchema": {"type":"object","properties":{"id":{"type":"string"},"trigger_payload":{}},"required":["id"]} },
+    "flows_run": { "handler": "backend:flows", "inputSchema": {"type":"object","properties":{"id":{"type":"string"},"trigger_payload":{},"acknowledge_uncertain":{"type":"boolean"}},"required":["id"]} },
     "flows_run_cancel": { "handler": "backend:flows", "inputSchema": {"type":"object","properties":{"run_id":{"type":"string"}},"required":["run_id"]} },
     "flows_run_status": { "handler": "backend:flows", "idempotent": true, "orchestratable": true, "inputSchema": {"type":"object","properties":{"run_id":{"type":"string"}},"required":["run_id"]} },
     "flows_runs_list": { "handler": "backend:flows", "idempotent": true, "orchestratable": true, "inputSchema": {"type":"object","properties":{"flow_id":{},"limit":{}}} },

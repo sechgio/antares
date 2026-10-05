@@ -31,10 +31,11 @@ export const flowsApi = {
   flowsDelete: (id: string) => _invoke<{ deleted: boolean; id: string }>('flows_delete', { id }),
   flowsDuplicate: (id: string, name?: string) =>
     _invoke<{ flow: Flow }>('flows_duplicate', name ? { id, name } : { id }),
-  flowsRun: (id: string, triggerPayload?: Record<string, unknown>) =>
+  flowsRun: (id: string, triggerPayload?: Record<string, unknown>, acknowledgeUncertain?: boolean) =>
     _invoke<{ run: FlowRun }>('flows_run', {
       id,
       ...(triggerPayload ? { trigger_payload: triggerPayload } : {}),
+      ...(acknowledgeUncertain ? { acknowledge_uncertain: true } : {}),
     }),
   flowsRunStatus: (runId: string) => _invoke<{ run: FlowRun }>('flows_run_status', { run_id: runId }),
   flowsRunsList: (params?: { flow_id?: string; limit?: number }) =>

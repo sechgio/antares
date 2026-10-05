@@ -115,7 +115,8 @@ def _run(params: JsonObject) -> JsonObject:
     if not isinstance(trigger_payload, dict):
         trigger_payload = {}
     try:
-        run = _runner.start(flow_id, {"source": "manual", **trigger_payload})
+        run = _runner.start(flow_id, {"source": "manual", **trigger_payload},
+                            acknowledge_uncertain=params.get("acknowledge_uncertain") is True)
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     return {"run": run}

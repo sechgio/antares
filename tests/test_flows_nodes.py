@@ -360,6 +360,40 @@ def test_runner_agent_node(store, monkeypatch):
     assert steps["t"]["output"] == {"txt": "respuesta del modelo"}
 
 
+def test_runner_agent_node_fails_on_unresolved_interpolation(store, monkeypatch):
+    from backend.core.flows import agent_chat
+
+    calls = []
+    monkeypatch.setattr(agent_chat, "chat", lambda *a, **k: calls.append(a) or {"text": "", "calls": []})
+    monkeypatch.setattr(
+        agent_chat.ai_providers,
+        "get_provider",
+        lambda provider: {"chat": {"default_model": "mod-test", "style": "openai_chat", "path": "/c"}},
+    )
+
+    flow = store.create(
+        "IA",
+        graph={
+            "nodes": [
+                {"id": "trigger", "kind": "trigger", "config": {}},
+                {
+                    "id": "ia",
+                    "kind": "agent",
+                    "config": {"provider": "ollama", "prompt": "Hola {{ =run.trigger.noexiste }}"},
+                },
+            ],
+            "edges": [{"from_node": "trigger", "to_node": "ia"}],
+        },
+    )
+    runner = FlowRunner(store, lambda m: lambda p: {})
+    done = _wait(runner.start(flow["id"])["id"], store)
+
+    step = {s["node_id"]: s for s in done["steps"]}["ia"]
+    assert step["status"] == "error"
+    assert "noexiste" in step["error"]
+    assert calls == []
+
+
 def test_validate_rejects_agent_without_prompt():
     with pytest.raises(ValueError, match=r"config\.prompt"):
         validate_graph(

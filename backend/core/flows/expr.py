@@ -98,13 +98,14 @@ _INTERPOLATE_RE = re.compile(r"\{\{\s*(=.*?)\s*\}\}")
 
 
 def interpolate_text(text: str, memory: JsonObject) -> str:
-    """Sustituye ``{{ =expresión }}`` dentro de textos largos (prompts del nodo agent)."""
+    """Sustituye ``{{ =expresión }}`` dentro de textos largos (prompts del nodo agent).
+
+    Una expresión que no se resuelve propaga el ``ValueError`` para que el paso
+    falle en lugar de enviar ``{{ =... }}`` literal al modelo.
+    """
 
     def sub(match: re.Match[str]) -> str:
-        try:
-            out = resolve(match.group(1).strip(), memory)
-        except ValueError:
-            return match.group(0)
+        out = resolve(match.group(1).strip(), memory)
         if isinstance(out, str):
             return out
         return json.dumps(out, ensure_ascii=False)
