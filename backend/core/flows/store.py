@@ -13,13 +13,13 @@ import hmac
 import json
 import logging
 import secrets
-import threading
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from backend.core.flows.os_tasks import HEADLESS_MUTEX, STORE_MUTEX, ProcessLock, mutex_held
 from backend.core.flows.schema import normalize_graph, validate_graph
 from backend.core.flows.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
@@ -102,9 +102,11 @@ class FlowStore:
         self._flows_path = flows_path or user_data_path("flows/flows.json")
         self._runs_path = runs_path or user_data_path("flows/flow_runs.json")
         self._effects_path = self._flows_path.with_suffix(".effects.json")
-        self._lock = threading.RLock()
+        # Mutex compartido con ``--flow-run``: un headless vivo es dueño de sus runs.
+        self._lock = ProcessLock(STORE_MUTEX)
         runs = self._read_runs()
-        interrupted = [run for run in runs.values() if run["status"] in _RESUMABLE_STATUSES]
+        interrupted = ([] if mutex_held(HEADLESS_MUTEX)
+                       else [run for run in runs.values() if run["status"] in _RESUMABLE_STATUSES])
         if interrupted:
             for run in interrupted:
                 if run["status"] == "waiting":

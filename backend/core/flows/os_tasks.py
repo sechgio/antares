@@ -13,6 +13,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 from typing import Any
 
 from backend.core.flows.types import JsonObject
@@ -20,6 +21,89 @@ from backend.core.flows.types import JsonObject
 logger = logging.getLogger(__name__)
 
 _TASK_PREFIX = "AntaresFlow-"
+
+# Mutexes con nombre de Windows: ``GUI`` lo retiene el backend de la app
+# abierta, ``HEADLESS`` cada ejecución ``--flow-run`` del Programador de tareas
+# y ``STORE`` serializa las lectura-modificación-escritura de los stores de
+# flujos entre procesos. Fuera de Windows no aplican.
+GUI_MUTEX = "Local\\AntaresFlowsGui"
+HEADLESS_MUTEX = "Local\\AntaresFlowsHeadless"
+STORE_MUTEX = "Local\\AntaresFlowsStore"
+
+
+def mutex_held(name: str) -> bool:
+    """True si otro proceso ya retiene el mutex nombrado (solo Windows)."""
+    if sys.platform != "win32":
+        return False
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        return False
+    try:
+        if kernel32.WaitForSingleObject(handle, 0) in (0, 0x80):  # libre o abandonado
+            kernel32.ReleaseMutex(handle)
+            return False
+        return True  # WAIT_TIMEOUT: lo retiene otro proceso
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def hold_mutex(name: str, timeout_ms: int) -> Any:
+    """Adquiere el mutex nombrado y devuelve su handle, o ``None`` al fallar.
+
+    El llamador debe guardar el handle para que el mutex viva hasta que el
+    proceso termine. Fuera de Windows devuelve ``None`` (no aplica).
+    """
+    if sys.platform != "win32":
+        return None
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        return None
+    if kernel32.WaitForSingleObject(handle, timeout_ms) in (0, 0x80):
+        return handle
+    kernel32.CloseHandle(handle)
+    return None
+
+
+class ProcessLock:
+    """``threading.RLock`` + mutex con nombre de Windows entre procesos.
+
+    Cubre las lectura-modificación-escritura compartidas: fuera de Windows el
+    modo ``--flow-run`` no existe y basta el lock local.
+    """
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._local = threading.RLock()
+        self._handle: Any = None
+
+    def __enter__(self) -> ProcessLock:
+        self._local.acquire()
+        if sys.platform != "win32":
+            return self
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        if self._handle is None:
+            self._handle = kernel32.CreateMutexW(None, False, self._name)
+        if self._handle:
+            kernel32.WaitForSingleObject(self._handle, 0xFFFFFFFF)  # INFINITE
+        return self
+
+    def __exit__(self, *exc_info: Any) -> None:
+        try:
+            if sys.platform != "win32" or not self._handle:
+                return
+            import ctypes
+
+            ctypes.WinDLL("kernel32", use_last_error=True).ReleaseMutex(self._handle)
+        finally:
+            self._local.release()
 
 
 def enabled() -> bool:

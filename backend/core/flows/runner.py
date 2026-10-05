@@ -781,6 +781,11 @@ class FlowRunner:
 
         collected = list(state.get("collected") or [])
         start_index = int(state.get("index") or 0)
+        if len(collected) > start_index:
+            # Checkpoints previos guardaban la iteración completada sin avanzar
+            # `index`: sus entradas ya están en `collected` y no se repiten.
+            start_index = len(collected)
+            state = {}
         token: _CancelEvent = ctx["token"]
         for index in range(start_index, len(items)):
             if token.cancelled:
@@ -858,6 +863,14 @@ class FlowRunner:
                     entry[nid] = ports[next(iter(ports))].get("json")
             collected.append(entry)
             with ctx["lock"]:
+                # `index` siempre apunta a la siguiente iteración pendiente y
+                # `collected` solo contiene las entradas ya completadas.
+                ctx["loop_progress"][loop_id] = {
+                    "index": index + 1,
+                    "collected": collected,
+                    "iteration_outputs": {},
+                    "body_settled": {},
+                }
                 ctx["persist"]()
         with ctx["lock"]:
             ctx["loop_progress"].pop(loop_id, None)
