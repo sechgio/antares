@@ -5,16 +5,17 @@ import contextlib
 import copy
 import json
 import math
-import pathlib
 import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, cast
 
+from backend.utils.paths import resource_path
+
 
 def _load_canvas_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
     try:
-        p = pathlib.Path(__file__).resolve().parents[3] / "shared" / "canvas-schema.json"
+        p = resource_path("shared/canvas-schema.json")
         if p.exists():
             return cast("dict[str, Any]", json.loads(p.read_text(encoding="utf-8")))  # allowlist: dict[str, Any]
     except Exception:

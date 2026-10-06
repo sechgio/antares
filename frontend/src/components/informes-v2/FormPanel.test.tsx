@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import FormPanel from './FormPanel';
-import { createEmptyClientReport } from './testFixtures';
+import { createEmptyInforme as createEmptyClientReport } from './types';
 
 describe('Informes v2 FormPanel', () => {
   it('exposes logo file inputs and opens section fields', () => {

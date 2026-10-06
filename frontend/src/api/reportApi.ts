@@ -1,4 +1,4 @@
-export interface ReportApiSpec<TReport> {
+interface ReportApiSpec<TReport> {
   list: (params: { summary: boolean }) => Promise<Record<string, unknown>>;
   get: (id: string) => Promise<Record<string, unknown>>;
   create: (item?: Partial<TReport>) => Promise<Record<string, unknown>>;
@@ -8,7 +8,7 @@ export interface ReportApiSpec<TReport> {
   importFile: (params: { filename: string; content_b64: string }) => Promise<{ imported_count: number }>;
 }
 
-export interface ReportListResult<TListItem> {
+interface ReportListResult<TListItem> {
   reports: TListItem[];
   total?: number;
 }

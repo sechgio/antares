@@ -129,7 +129,7 @@ export async function fetchTareas(proyectoId: string): Promise<Tarea[]> {
   return data ?? [];
 }
 
-export interface DueSoonTareaRow {
+interface DueSoonTareaRow {
   id: string;
   title: string;
   due_date: string;
@@ -245,24 +245,6 @@ export async function createTaskComment(
     .single();
   throwOnError(error);
   return requireData(data as TaskComment | null, 'Crear comentario');
-}
-
-export async function updateTaskComment(id: string, body: string): Promise<TaskComment> {
-  const trimmed = body.trim();
-  if (!trimmed) throw new Error('No puedes guardar un comentario vacío');
-  const client = requireClient();
-  const { data, error } = await client
-    .from('tarea_comments')
-    .update({ body: trimmed })
-    .eq('id', id)
-    .select('id, tarea_id, author_id, author_name, body, created_at, updated_at')
-    .single();
-  throwOnError(error);
-  return requireData(data as TaskComment | null, 'Actualizar comentario');
-}
-
-export async function deleteTaskComment(id: string): Promise<void> {
-  return deleteById('tarea_comments', id);
 }
 
 export async function fetchTaskActivity(tareaId: string): Promise<TaskActivity[]> {

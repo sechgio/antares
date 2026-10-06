@@ -203,7 +203,7 @@ function acquireWorker(signal?: AbortSignal): Promise<PooledWorker> {
 
 let requestSeq = 0;
 
-export type WorkerProcessInput = {
+type WorkerProcessInput = {
   buffer: ArrayBuffer;
   sourceType: string;
   fileName: string;

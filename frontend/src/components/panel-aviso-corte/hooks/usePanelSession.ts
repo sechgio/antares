@@ -26,7 +26,7 @@ import {
 } from '../utils/excelPreview';
 import { errorMessage } from '@/utils/errors';
 
-export interface PanelSession {
+interface PanelSession {
   headerForm: HeaderFormState;
   logoLeft: LogoAsset | null;
   logoRight: LogoAsset | null;

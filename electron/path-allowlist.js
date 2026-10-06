@@ -2,7 +2,11 @@ const fs = require('fs');
 const path = require('path');
 
 const _allowedReadPaths = new Set();
-const MAX_ALLOWED_READ_PATHS = 1000;
+// Debe cubrir un escaneo de carpeta completo (dialog_folder registra cada
+// archivo): con un tope menor, las entradas más viejas se eviccionan y los
+// consumidores de path crudo (is_video, thumbnails) rechazan archivos que el
+// usuario sí seleccionó.
+const MAX_ALLOWED_READ_PATHS = 50000;
 
 function isPathInside(parent, child) {
   const resolvedParent = path.resolve(parent);

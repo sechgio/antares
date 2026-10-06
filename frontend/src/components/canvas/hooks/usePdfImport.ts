@@ -18,7 +18,7 @@ interface UsePdfImportOptions {
   setPageIndex: (index: number) => void;
 }
 
-export interface UsePdfImportResult {
+interface UsePdfImportResult {
   pdfFile: File | null;
   pdfPreflight: PdfImportPreflight | null;
   pdfImportProgress: PdfImportProgress | null;

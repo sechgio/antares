@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createTaskComment,
-  deleteTaskComment,
   fetchTaskActivity,
   fetchTaskComments,
-  updateTaskComment,
 } from '../api/espaciosApi';
 
 const { from, query } = vi.hoisted(() => {
@@ -43,13 +41,6 @@ describe('task comments API', () => {
   it('rejects an empty comment before calling Supabase', async () => {
     await expect(createTaskComment('task-1', '   ', 'user-1')).rejects.toThrow('comentario vacío');
     expect(from).not.toHaveBeenCalled();
-  });
-
-  it('updates and deletes comments through the API layer', async () => {
-    await updateTaskComment('comment-1', '  Corregido  ');
-    expect(query.update).toHaveBeenCalledWith({ body: 'Corregido' });
-    await deleteTaskComment('comment-1');
-    expect(query.delete).toHaveBeenCalled();
   });
 });
 

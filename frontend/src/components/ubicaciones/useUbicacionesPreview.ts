@@ -11,7 +11,7 @@ import {
   type PreviewData,
 } from './ubicacionesTypes';
 
-export interface UbicacionesPreviewDeps {
+interface UbicacionesPreviewDeps {
   excelPath: string;
   inputMode: 'excel' | 'manual';
   manualData: ManualData;
@@ -30,7 +30,7 @@ export function hasManualAddress(data: ManualData): boolean {
   return Boolean(data.direccion?.trim() || data.localidad?.trim() || data.distrito?.trim());
 }
 
-export type PreviewFetchOptions = {
+type PreviewFetchOptions = {
   recomposeOnly?: boolean;
   softLoad?: boolean;
   excelPathOverride?: string;

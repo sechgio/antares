@@ -8,7 +8,7 @@ export const TITULO_SIZE_OPTIONS = [10, 12, 14, 16, 18, 20, 22, 24, 28] as const
 
 const HEX_COLOR_RE = /^#([0-9A-Fa-f]{6})$/;
 
-export interface TituloStyle {
+interface TituloStyle {
     fontSizePx: number;
     color: string;
 }

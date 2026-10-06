@@ -55,7 +55,7 @@ function radiusHandleStyle(left: number, top: number, cameraZoom: number): CSSPr
   };
 }
 
-export interface SelectionChromeOverlayProps {
+interface SelectionChromeOverlayProps {
   bbox: RectMm;
   zoom: number;
   showHandles?: boolean;

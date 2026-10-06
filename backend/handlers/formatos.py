@@ -31,7 +31,9 @@ def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
     output_path = str(params.get("output_path") or "").strip()
     if output_path:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
-        with atomic_output_file(resolved, extension=".pdf") as target:
+        with atomic_output_file(
+            resolved, extension=".pdf", write_token=params.get("_write_token")
+        ) as target:
             target.tmp_path.write_bytes(pdf_bytes)
         destination = target.destination
         return {"saved_path": str(destination), "filename": destination.name}

@@ -10,7 +10,7 @@ import type { CampoPanel, LogoData, PhotoFile, ReportTypeConfig } from '../types
 import { safeFilenamePart } from '../../../utils/filename';
 import { askPdfSavePath } from '../../../utils/deliverRenderedDocument';
 
-export interface ExportReportPdfResult {
+interface ExportReportPdfResult {
     cancelled?: boolean;
     filename?: string;
     savedPath?: string;

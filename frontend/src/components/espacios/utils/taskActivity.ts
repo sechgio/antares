@@ -3,7 +3,7 @@ import { formatDisplayDate } from './dates';
 import { PRIORITY_OPTIONS } from './priority';
 import { columnLabel } from './statusConfig';
 
-export type TaskTimelineItem =
+type TaskTimelineItem =
   | { kind: 'comment'; id: string; createdAt: string; comment: TaskComment }
   | { kind: 'activity'; id: string; createdAt: string; activity: TaskActivity };
 

@@ -11,7 +11,7 @@ export interface GanttBar {
   overdue: boolean;
 }
 
-export interface GanttDay {
+interface GanttDay {
   date: string;
   weekday: number;
   isWeekend: boolean;
@@ -158,7 +158,7 @@ export function buildDays(rangeStart: string, rangeEnd: string, today = localTod
   return days;
 }
 
-export interface GanttWeekGroup {
+interface GanttWeekGroup {
   key: string;
   label: string;
   startIndex: number;

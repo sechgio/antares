@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 export type PluginId = 'sticky-notes' | 'radio-live' | 'spotify' | 'audius' | 'jamendo' | 'archive';
 
-export const PLUGINS_CHANGED_EVENT = 'antares-plugins-changed';
+const PLUGINS_CHANGED_EVENT = 'antares-plugins-changed';
 
 // Radio Live conserva su activación por defecto; los demás plugins requieren activación.
 const DEFAULTS: Record<PluginId, boolean> = {

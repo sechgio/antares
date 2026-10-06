@@ -18,7 +18,7 @@ export type CanvasCollaborator = CanvasPresence & { presenceKey: string };
 
 export type CanvasRealtimeStatus = 'idle' | 'connecting' | 'live' | 'error' | 'offline';
 
-export type CanvasRealtimeHandlers = {
+type CanvasRealtimeHandlers = {
   onSaved: (event: CanvasDocumentSavedEvent) => void;
   onPresence: (collaborators: CanvasCollaborator[]) => void;
   onStatus: (status: CanvasRealtimeStatus) => void;

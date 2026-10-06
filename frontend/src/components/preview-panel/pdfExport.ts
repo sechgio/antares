@@ -2,15 +2,10 @@ import { matchesRecordId, naturalSortFilesByName } from '../../utils/recordMatch
 import { safeFilenamePart } from '../../utils/filename';
 import { isoDateStamp } from '../../utils/dates';
 import { sanitizeHtmlForPdf } from '../../../../shared/html-sanitizer.js';
-export {
-  buildLocalImageToken,
-  imageToPdfSource,
-  type PdfQuality,
-} from '../../utils/pdfAssets';
 
 export type PdfExportScope = 'single' | 'all';
 
-export interface PdfExportRow {
+interface PdfExportRow {
   row: Record<string, unknown>;
   rowIndex: number;
   idValue: string;

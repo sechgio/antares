@@ -22,7 +22,7 @@ import { createFrameRectCache } from './frameRectCache';
 import { RULER_SIZE } from './CanvasRulers';
 import type { GuideContextMenuState } from './GuideContextMenu';
 
-export interface GuideDragState {
+interface GuideDragState {
   id: string;
   axis: CanvasGuide['axis'];
   pageIndex: number;

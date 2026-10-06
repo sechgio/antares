@@ -1,5 +1,5 @@
 // Permite observar la salud de la cola sin cargar canvasCloudSync ni Supabase.
-export type CanvasPushHealthListener = (unhealthy: boolean) => void;
+type CanvasPushHealthListener = (unhealthy: boolean) => void;
 
 const pushHealthListeners = new Set<CanvasPushHealthListener>();
 let lastUnhealthy = false;

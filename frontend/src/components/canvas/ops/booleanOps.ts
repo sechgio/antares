@@ -19,7 +19,7 @@ type BooleanRenderItem = {
   heightMm: number;
 };
 
-export type BooleanRenderResult = {
+type BooleanRenderResult = {
   clipPath?: string;
   blendMode?: string;
   order: BooleanRenderItem[];

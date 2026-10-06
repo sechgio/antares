@@ -1,7 +1,7 @@
 import type { PdfPageSize, StampDragMode, StampRect } from './types';
 import { clampStampRect } from './utils';
 
-export interface ClientBounds {
+interface ClientBounds {
   left: number;
   top: number;
   width: number;

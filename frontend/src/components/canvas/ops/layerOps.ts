@@ -171,7 +171,7 @@ export function reorderAmongSiblings(
   return without;
 }
 
-export type LayerTreeDropPosition = 'before' | 'after' | 'inside';
+type LayerTreeDropPosition = 'before' | 'after' | 'inside';
 
 export function moveLayerInTree(
   layers: CanvasLayer[],
@@ -290,7 +290,7 @@ export function deleteLayers(layers: CanvasLayer[], ids: string[]): CanvasLayer[
   return layers.filter((l) => !remove.has(l.id));
 }
 
-export type AlignMode = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
+type AlignMode = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
 
 export function alignLayers(
   layers: CanvasLayer[],

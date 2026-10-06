@@ -492,7 +492,6 @@ module.exports = {
   exchangeCode,
   getAuthStatus,
   revokeAuth,
-  parseSheetId,
   openSpreadsheet,
   getStoredSheetConfig,
   restorePersistedSheet,

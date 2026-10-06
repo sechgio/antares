@@ -18,7 +18,7 @@ type VolantesPersistenceStatus = "loading" | "saving" | "saved" | "error";
 
 type PersistedSetter<T> = (value: SetStateAction<T>) => void;
 
-export interface UseVolantesDraftResult {
+interface UseVolantesDraftResult {
   records: FlyerRecord[];
   setRecords: PersistedSetter<FlyerRecord[]>;
   brand: BrandConfig;

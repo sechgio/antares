@@ -1,6 +1,6 @@
 import { parseMm, type CanvasLayer } from '../types';
 
-export type MixedValue<T> = { mixed: true } | { mixed: false; value: T };
+type MixedValue<T> = { mixed: true } | { mixed: false; value: T };
 
 export function selectLayersByIds(
   layers: CanvasLayer[],

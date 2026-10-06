@@ -29,6 +29,10 @@ function run() {
   assert(content.includes('invokeDroidFixer'), 'script has droid fallback for residual errors');
   assert(/NO elimines/i.test(content) || /no elimines codigo/i.test(content), 'script instructs droid to never delete code');
   assert(content.includes('sleepMs'), 'pending-check wait uses a portable Node sleep');
+  assert(
+    content.includes('cambios anteriores a las heuristicas'),
+    'pr-fix aborta si el worktree trae cambios previos a sus fixers',
+  );
 
   assert(fs.existsSync(workflowPath), '.github/workflows/pr-fix-loop.yml exists');
   const wf = fs.readFileSync(workflowPath, 'utf8');

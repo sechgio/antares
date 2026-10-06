@@ -1,10 +1,9 @@
-import type { MyTask, MyTasksFilters } from '../types';
-import { DEFAULT_MY_TASKS_FILTERS } from '../types';
+import type { MyTask } from '../types';
 import { addDaysToIsoDate } from './dates';
 
 type MyTasksGroupKey = 'overdue' | 'today' | 'week' | 'later' | 'undated' | 'completed';
 
-export interface MyTasksGroup {
+interface MyTasksGroup {
   key: MyTasksGroupKey;
   label: string;
   tasks: MyTask[];
@@ -24,22 +23,6 @@ function endOfWeek(today: string): string {
   const local = new Date(year, month - 1, day);
   const daysUntilSunday = (7 - local.getDay()) % 7;
   return addDaysToIsoDate(today, daysUntilSunday);
-}
-
-export function filterMyTasks(
-  tasks: MyTask[],
-  filters: MyTasksFilters = DEFAULT_MY_TASKS_FILTERS,
-): MyTask[] {
-  const search = filters.search.trim().toLocaleLowerCase('es');
-  return tasks.filter((task) => {
-    if (filters.completion === 'open' && task.status_is_done) return false;
-    if (filters.completion === 'completed' && !task.status_is_done) return false;
-    if (filters.priority !== 'all' && task.priority !== filters.priority) return false;
-    if (filters.espacioId !== 'all' && task.espacio_id !== filters.espacioId) return false;
-    if (filters.proyectoId !== 'all' && task.proyecto_id !== filters.proyectoId) return false;
-    if (search && !`${task.title} ${task.description ?? ''}`.toLocaleLowerCase('es').includes(search)) return false;
-    return true;
-  });
 }
 
 export function groupMyTasks(tasks: MyTask[], today: string): MyTasksGroup[] {

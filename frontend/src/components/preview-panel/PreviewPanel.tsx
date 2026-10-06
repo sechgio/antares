@@ -14,7 +14,7 @@ interface PreviewPanelProps {
   isFocusMode?: boolean;
 }
 
-export interface RenderPreviewHtmlOptions {
+interface RenderPreviewHtmlOptions {
   data?: Record<string, unknown> | null;
   images?: File[];
   imageUrls?: string[];

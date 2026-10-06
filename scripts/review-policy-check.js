@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Auditoría de la política de revisión de un PR: intención, tamaño, tests, aprobación, taxonomía.
+ * Auditoría de la política de revisión de un PR: intención, tamaño, alcance, tests, aprobación, taxonomía.
  *
  * Severidades: solo los checks `blocking` pueden tumbar el job. Bloquean la intención vacía y el
  * tamaño grande sin declarar (etiqueta `size/exempt`); el resto son señales para el revisor humano.
@@ -239,6 +239,25 @@ function evaluatePolicy(pr, meta = {}) {
     `${touchedTests.length} archivo(s) de test`,
     'El diff no toca tests. Si es un cambio de comportamiento, añade uno que falle sin él.',
   );
+
+  if (sizeUnknown) {
+    add(
+      'alcance',
+      'Alcance declarado',
+      'skip',
+      'Listado de archivos incompleto: no se puede auditar el alcance.',
+    );
+  } else {
+    gate(
+      'alcance',
+      'Alcance declarado',
+      effectiveLines <= SIZE_WARN || sizeExempt || /cambio amplio/i.test(body),
+      effectiveLines <= SIZE_WARN
+        ? 'Diff acotado'
+        : 'Declarado con `cambio amplio:` o la etiqueta `size/exempt`',
+      `${effectiveLines} líneas efectivas (>${SIZE_WARN}) sin \`cambio amplio:\` en el cuerpo ni etiqueta \`${EXEMPT_LABEL}\`. Declara la excepción del AGENTS.md o parte el PR.`,
+    );
+  }
 
   gate(
     'aprobacion',

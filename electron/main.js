@@ -182,15 +182,26 @@ ipcMain.handle('canvas-flush-ack', async (event) => {
 });
 
 if (typeof ipcMain.on === 'function') {
-  ipcMain.on('register-file-input-path', (event, rawPath) => {
+  ipcMain.on('register-file-input-path', (event, payload) => {
     try {
-      const { getMainWindow } = require('./window-manager');
+      const { getMainWindow, getFileInputNonce } = require('./window-manager');
       const win = getMainWindow();
       if (!isTrustedRendererFrame(event, win, isDev)) {
         appendLogEvent('WARN', 'security.rejected', {
           component: 'electron',
           outcome: 'rejected',
           reason: 'untrusted_sender',
+          method: 'register-file-input-path',
+        });
+        return;
+      }
+      const nonce = typeof getFileInputNonce === 'function' ? getFileInputNonce() : null;
+      const rawPath = payload && typeof payload === 'object' ? payload.path : null;
+      if (!nonce || !rawPath || payload.nonce !== nonce) {
+        appendLogEvent('WARN', 'security.rejected', {
+          component: 'electron',
+          outcome: 'rejected',
+          reason: 'invalid_file_input_nonce',
           method: 'register-file-input-path',
         });
         return;
@@ -221,28 +232,35 @@ async function _flushCanvasBeforeQuit(win) {
   if (!win || win.isDestroyed()) return false;
   const flushPromise = new Promise((resolve) => {
     let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      _canvasFlushResolver = null;
-      appendLogEvent('WARN', 'app.flush-timeout', { component: 'electron', timeout_ms: CANVAS_FLUSH_TIMEOUT_MS });
-      resolve(false);
-    }, CANVAS_FLUSH_TIMEOUT_MS);
-    _canvasFlushResolver = (ok) => {
+    const webContents = win.webContents;
+    function settle(ok) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve(!!ok);
+      _canvasFlushResolver = null;
+      try {
+        webContents.removeListener('render-process-gone', onRendererGone);
+        webContents.removeListener('destroyed', onRendererGone);
+      } catch {}
+      resolve(ok);
+    }
+    const onRendererGone = () => {
+      appendLogEvent('WARN', 'app.flush-aborted', { component: 'electron', reason: 'renderer_gone' });
+      settle(false);
     };
+    const timer = setTimeout(() => {
+      appendLogEvent('WARN', 'app.flush-timeout', { component: 'electron', timeout_ms: CANVAS_FLUSH_TIMEOUT_MS });
+      settle(false);
+    }, CANVAS_FLUSH_TIMEOUT_MS);
+    _canvasFlushResolver = (ok) => settle(!!ok);
+    if (webContents && typeof webContents.once === 'function') {
+      webContents.once('render-process-gone', onRendererGone);
+      webContents.once('destroyed', onRendererGone);
+    }
     try {
-      win.webContents.send('ipc-notify', 'app.flush-canvas-before-quit', {});
+      webContents.send('ipc-notify', 'app.flush-canvas-before-quit', {});
     } catch {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        _canvasFlushResolver = null;
-        resolve(false);
-      }
+      settle(false);
     }
   });
   const result = await flushPromise;

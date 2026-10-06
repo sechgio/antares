@@ -3,9 +3,22 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
 import { clearPlaintextApiKeys, readPlaintextApiKeys } from './ubicacionesTypes';
 
+export async function migratePlaintextApiKeys(): Promise<void> {
+  const migrated = readPlaintextApiKeys();
+  if (Object.keys(migrated).length === 0) return;
+  try {
+    await api.ubicacionesKeysSet(migrated);
+  } catch (err) {
+    console.error('Failed to migrate ubicaciones API keys', err);
+  } finally {
+    clearPlaintextApiKeys();
+  }
+}
+
 export function useUbicacionesApiKeys() {
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [keysConfigured, setKeysConfigured] = useState<Record<string, boolean>>({});
+  const [storageConfidential, setStorageConfidential] = useState(true);
   const apiKeysHydratedRef = useRef(false);
 
   useEffect(() => {
@@ -13,18 +26,11 @@ export function useUbicacionesApiKeys() {
 
     (async () => {
       try {
-        const migrated = readPlaintextApiKeys();
-        if (Object.keys(migrated).length > 0) {
-          try {
-            await api.ubicacionesKeysSet(migrated);
-          } catch (err) {
-            console.error('Failed to migrate ubicaciones API keys', err);
-          }
-          clearPlaintextApiKeys();
-        }
+        await migratePlaintextApiKeys();
 
-        const { keys: secureKeys, configured } = await api.ubicacionesKeysGet();
+        const { keys: secureKeys, configured, storage_confidential } = await api.ubicacionesKeysGet();
         if (cancelled) return;
+        setStorageConfidential(storage_confidential !== false);
 
         const next: Record<string, string> = {};
         for (const [k, v] of Object.entries(secureKeys || {})) {
@@ -74,5 +80,5 @@ export function useUbicacionesApiKeys() {
     };
   }, [apiKeys]);
 
-  return { apiKeys, setApiKeys, keysConfigured };
+  return { apiKeys, setApiKeys, keysConfigured, storageConfidential };
 }

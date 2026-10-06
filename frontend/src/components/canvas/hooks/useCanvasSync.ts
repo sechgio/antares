@@ -20,7 +20,7 @@ export type SyncConflictChoice = 'use-remote' | 'keep-local';
 const REALTIME_PULL_DEBOUNCE_MS = 350;
 const REALTIME_PULL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
-export interface UseCanvasSyncOptions {
+interface UseCanvasSyncOptions {
   historyDocRef: React.MutableRefObject<CanvasDocument>;
   // Evalúa hasUnsavedEdits y los baselines al leer.
   isOpenDirty: () => boolean;

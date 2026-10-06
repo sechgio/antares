@@ -9,7 +9,7 @@ type FrontendErrorKind =
   | 'storage_error'
   | 'worker_error';
 
-export interface FrontendErrorReport {
+interface FrontendErrorReport {
   kind: FrontendErrorKind;
   view?: string;
   name?: string;
@@ -31,7 +31,7 @@ type FrontendEventName =
   | 'storage.local'
   | 'worker.error';
 
-export interface FrontendEventReport {
+interface FrontendEventReport {
   event: FrontendEventName;
   level?: FrontendEventLevel;
   view?: string;

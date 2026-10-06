@@ -120,6 +120,28 @@ async function run() {
 
     const results = await Promise.all([first, second, third, fourth]);
     await Promise.all(results.map((result) => fs.promises.rm(result.saved_path, { force: true })));
+
+    const realSetTimeout = global.setTimeout;
+    const delays = [];
+    global.setTimeout = (fn, ms, ...args) => {
+      delays.push(ms);
+      return realSetTimeout(fn, ms, ...args);
+    };
+    try {
+      const huge = renderHtmlToPdf({ ...params('huge'), timeoutMs: 999_999_999 }, electronModules);
+      await waitFor(() => DeferredBrowserWindow.instances.some((window) => window.printResolvers.length === 1));
+      DeferredBrowserWindow.instances
+        .find((window) => window.printResolvers.length === 1)
+        .resolvePrint(Buffer.from('%PDF-huge'));
+      const result = await huge;
+      await fs.promises.rm(result.saved_path, { force: true });
+    } finally {
+      global.setTimeout = realSetTimeout;
+    }
+    assert(
+      delays.includes(900_000) && !delays.includes(999_999_999),
+      'renderer-supplied timeoutMs is clamped to 900 s',
+    );
   } finally {
     _resetPdfRenderPool();
     await cleanupAllStaged();

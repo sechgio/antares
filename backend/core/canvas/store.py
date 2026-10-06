@@ -191,6 +191,7 @@ class CanvasStore:
         using_default = docs_dir is None
         self.docs_dir = Path(docs_dir) if docs_dir is not None else _default_docs_dir()
         self.history_dir = (self.docs_dir.parent / "history") if using_default else (self.docs_dir / "history")
+        self.spill_dir = (self.docs_dir.parent / "spill") if using_default else (self.docs_dir / "spill")
         self._doc_locks: dict[str, _DocumentLockEntry] = {}
         self._doc_locks_guard = threading.Lock()
         self._index_lock = threading.RLock()
@@ -321,7 +322,7 @@ class CanvasStore:
         return [item for item in value if isinstance(item, dict)]
 
     def _recover_pending_spills(self) -> None:
-        spill_dir = self.docs_dir.parent / "spill"
+        spill_dir = self.spill_dir
         if not spill_dir.is_dir():
             return
         for tmp_path in sorted(
@@ -356,6 +357,10 @@ class CanvasStore:
                 logger.warning("Could not promote interrupted canvas spill %s: %s", tmp_path, exc)
 
         for spill_path in sorted(spill_dir.glob("*.json")):
+            # pending-assets.json lo escribe el GC de assets de Electron en este
+            # mismo directorio; no es un spill de documento.
+            if spill_path.name == "pending-assets.json":
+                continue
             if spill_path.name.startswith(HISTORY_SPILL_PREFIX) or (
                 not spill_path.name.startswith(DOCUMENT_SPILL_PREFIX)
                 and spill_path.name.endswith(_HISTORY_SPILL_SUFFIX)
@@ -370,7 +375,7 @@ class CanvasStore:
         Los spills recuperables se promueven antes de esta limpieza; los que
         todavía no se pudieron leer se conservan para el próximo arranque.
         """
-        spill_dir = self.docs_dir.parent / "spill"
+        spill_dir = self.spill_dir
         directories = (self.docs_dir, self.history_dir, spill_dir)
         for directory in directories:
             for tmp_path in directory.glob("*.tmp"):
@@ -621,7 +626,7 @@ class CanvasStore:
             safe_id = self._safe_stem(str(doc_id))
             path = self.docs_dir / f"{safe_id}.json"
             hist_path = self.history_dir / f"{safe_id}{_HISTORY_SPILL_SUFFIX}"
-            spill_dir = self.docs_dir.parent / "spill"
+            spill_dir = self.spill_dir
             spill_paths = (
                 spill_dir / f"{safe_id}.json",
                 spill_dir / f"{safe_id}{_HISTORY_SPILL_SUFFIX}",

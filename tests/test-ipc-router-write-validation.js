@@ -642,6 +642,11 @@ async function run() {
       await fs.promises.readFile(path.join(userDataDir, 'antares-write-roots.json'), 'utf8'),
     );
     assert(trimmedFile.length === MAX_ROOTS, 'la carga re-persiste el archivo recortado al tope');
+
+    const { _sanitizeFilename } = require('../electron/write-roots');
+    assert(_sanitizeFilename('') === 'reporte.pdf', 'nombre vacío cae al fallback');
+    assert(_sanitizeFilename(' / ') === 'reporte.pdf', 'basename que sanitiza a vacío cae al fallback');
+    assert(_sanitizeFilename('informe') === 'informe.pdf', 'añade extensión si falta');
   } finally {
     _clearAllowedWriteRoots();
     clearAllowedReadPaths();

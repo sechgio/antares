@@ -20,7 +20,7 @@ function yieldToMain(): Promise<void> {
 
 const YIELD_EVERY_CONTEXT = 2;
 
-export interface ExportCanvasPdfOptions {
+interface ExportCanvasPdfOptions {
   document: CanvasDocument;
   contexts: FillContext[];
   filename: string;

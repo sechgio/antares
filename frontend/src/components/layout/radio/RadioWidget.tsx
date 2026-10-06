@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ComponentType } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   ExternalLink,
@@ -6,13 +6,18 @@ import {
   Pause,
   Pin,
   Play,
-  Search,
   Volume2,
   VolumeX,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import {
+  StreamAction,
+  StreamSearchBox,
+  streamPanelStyle,
+  useDisposablePlayer,
+} from '../streaming/StreamWidget';
 import {
   NIGHTRIDE,
   PRESETS,
@@ -36,43 +41,6 @@ function NextArrow() {
       <Play style={{ width: 7, height: 12, flexShrink: 0 }} fill="currentColor" />
       <Play style={{ width: 7, height: 12, flexShrink: 0, marginLeft: -2 }} fill="currentColor" />
     </span>
-  );
-}
-
-interface SmallActionProps {
-  label: string;
-  icon: ComponentType<{ size?: number; style?: CSSProperties; fill?: string }>;
-  onClick: () => void;
-  pressed?: boolean;
-  className?: string;
-  wrapClassName?: string;
-  busy?: boolean;
-}
-
-function SmallAction({
-  label,
-  icon: Icon,
-  onClick,
-  pressed,
-  className,
-  wrapClassName,
-  busy = false,
-}: SmallActionProps) {
-  return (
-    <WithHoverTooltip label={label} placement="bottom" className={wrapClassName}>
-      <Button
-        variant="none"
-        size="none"
-        className={`antares-radio-action ${className ?? ''}`}
-        aria-label={label}
-        aria-pressed={pressed}
-        onClick={onClick}
-      >
-        <span className="antares-radio-action-icon">
-          {busy ? <LoaderCircle size={12} className="animate-spin" aria-label={label} /> : <Icon size={12} />}
-        </span>
-      </Button>
-    </WithHoverTooltip>
   );
 }
 
@@ -170,7 +138,8 @@ function StationRow({ station, player }: { station: Station; player: RadioPlayer
           <span className="antares-radio-row-name">{station.name}</span>
         </span>
       </Button>
-      <SmallAction
+      <StreamAction
+        p="antares-radio"
         label={`${saved ? T.unsave : T.save}: ${station.name}`}
         icon={Pin}
         onClick={() => player.favorite(station)}
@@ -218,25 +187,19 @@ function Stations({ player }: { player: RadioPlayer }) {
 
   return (
     <div>
-      <div className="antares-radio-search" data-filled={Boolean(search)}>
-        <div className="antares-radio-search-field">
-          <Search size={12} aria-hidden={true} />
-          <input
-            value={search}
-            onChange={(event) => {
-              setBrowseStation(player.station.get());
-              setSearch(event.target.value);
-            }}
-            placeholder={T.search}
-            aria-label={T.search}
-          />
-          {pending ? (
-            <span className="antares-radio-search-loader">
-              <LoaderCircle size={12} className="animate-spin" aria-label={T.searching} />
-            </span>
-          ) : null}
-        </div>
-      </div>
+      <StreamSearchBox
+        p="antares-radio"
+        value={search}
+        onChange={(value) => {
+          setBrowseStation(player.station.get());
+          setSearch(value);
+        }}
+        label={T.search}
+        pending={pending}
+        pendingLabel={T.searching}
+        dataFilled
+        fieldWrap
+      />
       <div ref={listRef} className="antares-radio-list" data-radio-pending={pending}>
         {items.map((item) => (
           <StationRow key={item.id} station={item} player={player} />
@@ -265,15 +228,17 @@ function Transport({ player }: { player: RadioPlayer }) {
 
   return (
     <div className="antares-radio-volume">
-      <SmallAction
+      <StreamAction
+        p="antares-radio"
         label={active ? T.pause : T.play}
         icon={active ? Pause : Play}
         busy={status === 'connecting'}
         onClick={player.toggle}
       />
-      <SmallAction label={T.next} icon={NextArrow} onClick={player.next} />
+      <StreamAction p="antares-radio" label={T.next} icon={NextArrow} onClick={player.next} />
       <span className="antares-radio-volume-space" />
-      <SmallAction
+      <StreamAction
+        p="antares-radio"
         label={volume ? T.mute : T.unmute}
         icon={volume ? Volume2 : VolumeX}
         onClick={player.mute}
@@ -289,7 +254,7 @@ function Transport({ player }: { player: RadioPlayer }) {
       />
       <span className="antares-radio-website">
         {homepage && (
-          <SmallAction label={T.visit} icon={ExternalLink} onClick={() => openExternal(homepage)} />
+          <StreamAction p="antares-radio" label={T.visit} icon={ExternalLink} onClick={() => openExternal(homepage)} />
         )}
       </span>
     </div>
@@ -336,46 +301,27 @@ function RadioBar({ player }: { player: RadioPlayer }) {
           className="antares-radio-panel rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-1 shadow-xl"
           role="dialog"
           aria-label={T.radio}
-          style={
-            popover.position
-              ? {
-                  position: 'fixed',
-                  top: popover.position.top,
-                  left: popover.position.left,
-                  width: popover.position.width,
-                  ...(popover.position.maxHeight !== undefined
-                    ? { maxHeight: popover.position.maxHeight }
-                    : {}),
-                  zIndex: 10000,
-                }
-              : { position: 'fixed', top: -10000, left: -10000, width: 292, zIndex: 10000 }
-          }
+          style={streamPanelStyle(popover.position, 292)}
         >
           <Stations player={player} />
           <Signal player={player} />
           <Transport player={player} />
         </div>
       )}
-      <SmallAction
+      <StreamAction
+        p="antares-radio"
         label={active ? T.pause : T.play}
         icon={active ? Pause : Play}
         busy={status === 'connecting'}
         onClick={player.toggle}
       />
-      <SmallAction label={T.next} icon={NextArrow} onClick={player.next} />
+      <StreamAction p="antares-radio" label={T.next} icon={NextArrow} onClick={player.next} />
     </div>
   );
 }
 
 export default function RadioWidget() {
-  const [player, setPlayer] = useState<RadioPlayer | null>(null);
-
-  useEffect(() => {
-    const created = createPlayer();
-    setPlayer(created);
-    return () => created.dispose();
-  }, []);
-
+  const player = useDisposablePlayer(createPlayer);
   if (!player) return null;
   return <RadioBar player={player} />;
 }

@@ -1,7 +1,7 @@
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from '../../../lib/supabase';
 
-export type RealtimeHandler = (payload: {
+type RealtimeHandler = (payload: {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE';
   table: string;
   new: Record<string, unknown> | null;

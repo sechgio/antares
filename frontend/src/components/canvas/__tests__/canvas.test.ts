@@ -58,7 +58,6 @@ import {
   clampStrokeWeight,
   lineHeightMmFromStrokePx,
   lineStrokeWidthPx,
-  lineVisualCssVars,
   resetLastStrokeWeight,
   resizeWithAspectLock,
   strokeWeightForNewLine,
@@ -670,9 +669,6 @@ describe('line stroke weight', () => {
     delete legacy.meta!.path;
     expect(legacy.cssVars['--border-width']).toBeUndefined();
     expect(lineStrokeWidthPx(legacy)).toBeGreaterThan(1);
-    const visual = lineVisualCssVars(legacy.cssVars);
-    expect(visual['--border-width']).toBe('0px');
-    expect(visual['--background-color']).toBe('#000000');
   });
 });
 

@@ -104,7 +104,7 @@ export const UbicacionesView: React.FC = () => {
     serialize: (v) => v || 'pe',
   });
 
-  const { apiKeys, setApiKeys, keysConfigured } = useUbicacionesApiKeys();
+  const { apiKeys, setApiKeys, keysConfigured, storageConfidential } = useUbicacionesApiKeys();
 
   const [customStyles, setCustomStyles] = useLocalStorageState<CustomStyles>(STORAGE_KEY, {
     parse: (s) => deepMergeStyles(DEFAULT_STYLES, JSON.parse(s)),
@@ -592,6 +592,7 @@ export const UbicacionesView: React.FC = () => {
               apiKeys={apiKeys}
               onApiKeyChange={handleApiKeyChange}
               keysConfigured={keysConfigured}
+              storageConfidential={storageConfidential}
               zoom={zoom}
               onZoomChange={updateZoom}
               onResetStyles={resetStyles}

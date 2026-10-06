@@ -2,7 +2,7 @@ type PhotoGridCell = number | null;
 
 export type PhotoImageSizing = 'aspectPreserve' | 'fill';
 
-export interface PhotoGridLayout {
+interface PhotoGridLayout {
     columns: number;
     rows: PhotoGridCell[][];
     imageSizing: PhotoImageSizing;

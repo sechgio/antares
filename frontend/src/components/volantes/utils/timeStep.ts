@@ -1,7 +1,7 @@
 export const MINUTE_STEP = 1;
 const MINUTES_PER_DAY = 24 * 60;
 
-export interface TimeParts {
+interface TimeParts {
   hours: number;
   minutes: number;
 }

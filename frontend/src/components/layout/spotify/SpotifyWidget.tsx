@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ComponentType } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Check,
   ExternalLink,
@@ -12,15 +12,19 @@ import {
   Plus,
   Repeat,
   Repeat1,
-  Search,
   Shuffle,
   SkipBack,
   SkipForward,
   Volume2,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import {
+  StreamAction,
+  StreamSearchBox,
+  streamPanelStyle,
+  useDisposablePlayer,
+} from '../streaming/StreamWidget';
 import { api } from '../../../api';
 import { errorMessage } from '@/utils/errors';
 import {
@@ -34,35 +38,6 @@ import {
   type TrackLite,
 } from './core';
 import './spotify.css';
-
-interface SmallActionProps {
-  label: string;
-  icon: ComponentType<{ size?: number; style?: CSSProperties }>;
-  onClick: () => void;
-  pressed?: boolean;
-  className?: string;
-  wrapClassName?: string;
-  busy?: boolean;
-}
-
-function SmallAction({ label, icon: Icon, onClick, pressed, className, wrapClassName, busy = false }: SmallActionProps) {
-  return (
-    <WithHoverTooltip label={label} placement="bottom" className={wrapClassName}>
-      <Button
-        variant="none"
-        size="none"
-        className={`antares-radio-action ${className ?? ''}`}
-        aria-label={label}
-        aria-pressed={pressed}
-        onClick={onClick}
-      >
-        <span className="antares-radio-action-icon">
-          {busy ? <LoaderCircle size={12} className="animate-spin" aria-label={label} /> : <Icon size={12} />}
-        </span>
-      </Button>
-    </WithHoverTooltip>
-  );
-}
 
 function _fmtMs(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -139,21 +114,24 @@ function Transport({ controller }: { controller: SpotifyController }) {
 
   return (
     <div className="antares-radio-volume">
-      <SmallAction
+      <StreamAction
+        p="antares-radio"
         label={playback.shuffle_state === true ? T.shuffleOn : T.shuffleOff}
         icon={Shuffle}
         pressed={playback.shuffle_state === true}
         onClick={() => void controller.setShuffle(!(playback.shuffle_state === true))}
       />
-      <SmallAction label={T.previous} icon={SkipBack} onClick={() => void controller.previous()} />
-      <SmallAction
+      <StreamAction p="antares-radio" label={T.previous} icon={SkipBack} onClick={() => void controller.previous()} />
+      <StreamAction
+        p="antares-radio"
         label={playing ? T.pause : T.play}
         icon={playing ? Pause : Play}
         busy={busy}
         onClick={() => void controller.toggle()}
       />
-      <SmallAction label={T.next} icon={SkipForward} onClick={() => void controller.next()} />
-      <SmallAction
+      <StreamAction p="antares-radio" label={T.next} icon={SkipForward} onClick={() => void controller.next()} />
+      <StreamAction
+        p="antares-radio"
         label={repeatLabel}
         icon={RepeatIcon}
         pressed={repeatState !== 'off'}
@@ -274,8 +252,8 @@ function SearchResults({ controller, query }: { controller: SpotifyController; q
               </span>
             </span>
           </Button>
-          <SmallAction label={T.queueAdd} icon={Plus} wrapClassName="antares-radio-pin" onClick={() => track.uri && void addToQueue(track.uri)} />
-          <SmallAction label={T.saveToLibrary} icon={Heart} wrapClassName="antares-radio-pin" onClick={() => track.uri && void saveTrack(track.uri)} />
+          <StreamAction p="antares-radio" label={T.queueAdd} icon={Plus} wrapClassName="antares-radio-pin" onClick={() => track.uri && void addToQueue(track.uri)} />
+          <StreamAction p="antares-radio" label={T.saveToLibrary} icon={Heart} wrapClassName="antares-radio-pin" onClick={() => track.uri && void saveTrack(track.uri)} />
         </div>
       ))}
       {([
@@ -469,7 +447,7 @@ function SavedTab({ controller }: { controller: SpotifyController }) {
                 </span>
               </span>
             </Button>
-            <SmallAction label={T.removeFromLibrary} icon={Heart} wrapClassName="antares-radio-pin" className="antares-spotify-liked" onClick={() => void remove(track.id)} />
+            <StreamAction p="antares-radio" label={T.removeFromLibrary} icon={Heart} wrapClassName="antares-radio-pin" className="antares-spotify-liked" onClick={() => void remove(track.id)} />
           </div>
         );
       })}
@@ -573,17 +551,14 @@ function ReadyPanel({ controller }: { controller: SpotifyController }) {
       </div>
       {tab === 'search' && (
         <div>
-          <div className="antares-radio-search" data-filled={Boolean(query)}>
-            <div className="antares-radio-search-field">
-              <Search size={12} aria-hidden={true} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={T.search}
-                aria-label={T.search}
-              />
-            </div>
-          </div>
+          <StreamSearchBox
+            p="antares-radio"
+            value={query}
+            onChange={setQuery}
+            label={T.search}
+            dataFilled
+            fieldWrap
+          />
           <SearchResults controller={controller} query={query} />
         </div>
       )}
@@ -834,20 +809,7 @@ function SpotifyBar({ controller }: { controller: SpotifyController }) {
           className="antares-spotify-panel rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-1 shadow-xl"
           role="dialog"
           aria-label={T.spotify}
-          style={
-            popover.position
-              ? {
-                  position: 'fixed',
-                  top: popover.position.top,
-                  left: popover.position.left,
-                  width: popover.position.width,
-                  ...(popover.position.maxHeight !== undefined
-                    ? { maxHeight: popover.position.maxHeight }
-                    : {}),
-                  zIndex: 10000,
-                }
-              : { position: 'fixed', top: -10000, left: -10000, width: 300, zIndex: 10000 }
-          }
+          style={streamPanelStyle(popover.position, 300)}
         >
           {session === 'ready' ? (
             <ReadyPanel controller={controller} />
@@ -856,25 +818,20 @@ function SpotifyBar({ controller }: { controller: SpotifyController }) {
           )}
         </div>
       )}
-      <SmallAction
+      <StreamAction
+        p="antares-radio"
         label={playing ? T.pause : T.play}
         icon={playing ? Pause : Play}
         busy={busy}
         onClick={() => onAction(controller.toggle)}
       />
-      <SmallAction label={T.next} icon={SkipForward} onClick={() => onAction(controller.next)} />
+      <StreamAction p="antares-radio" label={T.next} icon={SkipForward} onClick={() => onAction(controller.next)} />
     </div>
   );
 }
 
 export default function SpotifyWidget() {
-  const [controller, setController] = useState<SpotifyController | null>(null);
-
-  useEffect(() => {
-    const created = createSpotifyController();
-    setController(created);
-    return () => created.dispose();
-  }, []);
+  const controller = useDisposablePlayer(createSpotifyController);
 
   if (!controller) return null;
   return <SpotifyBar controller={controller} />;

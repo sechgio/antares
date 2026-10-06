@@ -3,12 +3,12 @@ import { normalizeRecordId } from "../../../utils/recordMatching";
 export type SortDirection = "asc" | "desc";
 export type FilterPhotoType = "all" | "with-photos" | "without-photos";
 
-export interface PhotoInfo {
+interface PhotoInfo {
   count: number;
   files: File[];
 }
 
-export interface RowItem {
+interface RowItem {
   row: Record<string, unknown>;
   originalIndex: number;
   photoInfo: PhotoInfo;

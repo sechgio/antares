@@ -85,42 +85,6 @@ export function resolveLineFillColor(vars: LayerCssVars): string {
   return hexToRgba(normalizeHex(hex, '#000000'), Number.isFinite(opacity) ? opacity : 100);
 }
 
-export function lineVisualCssVars(vars: LayerCssVars): LayerCssVars {
-  const hasStrokeWidth = vars['--border-width'] != null && vars['--border-width'] !== '';
-  const strokePx = hasStrokeWidth
-    ? parseBorderWidthPx(vars, DEFAULT_LINE_STROKE_PX)
-    : Math.round(mmToPxLength(parseMm(vars['--height'], pxToMm(DEFAULT_LINE_STROKE_PX))) * 100) / 100;
-  const heightMm = hasStrokeWidth
-    ? lineHeightMmFromStrokePx(strokePx)
-    : Math.max(0.05, parseMm(vars['--height'], lineHeightMmFromStrokePx(DEFAULT_LINE_STROKE_PX)));
-  const color =
-    (vars['--border-color'] && vars['--border-color'] !== 'transparent'
-      ? vars['--border-color']
-      : null) ||
-    (vars['--background-color'] && vars['--background-color'] !== 'transparent'
-      ? vars['--background-color']
-      : '#000000');
-  if (vars['--stroke-visible'] === '0') {
-    return {
-      ...vars,
-      '--height': mm(heightMm),
-      '--background-color': 'transparent',
-      '--fill-visible': '0',
-      '--border-width': '0px',
-      '--stroke-visible': '0',
-    };
-  }
-  return {
-    ...vars,
-    '--height': mm(heightMm),
-    '--background-color': color,
-    '--fill-visible': '1',
-    '--fill-opacity': vars['--stroke-opacity'] ?? vars['--fill-opacity'] ?? '100',
-    '--border-width': '0px',
-    '--stroke-visible': '0',
-  };
-}
-
 const SHAPE_TYPES = new Set<CanvasLayerType>([
   'rect',
   'ellipse',
@@ -374,7 +338,7 @@ export function strokeDasharrayMm(dash: StrokeDash, strokeWidthMm: number): stri
   return `${w * 3} ${w * 2}`;
 }
 
-export interface StrokeStyle {
+interface StrokeStyle {
   border?: string;
   outline?: string;
   outlineOffset?: string;
@@ -501,7 +465,7 @@ export function resizeWithAspectLock(
   };
 }
 
-export interface ParsedShadow {
+interface ParsedShadow {
   color: string;
   x: number;
   y: number;
@@ -536,7 +500,7 @@ export const BLEND_MODES = [
   'luminosity',
 ] as const;
 
-export type BlendMode = (typeof BLEND_MODES)[number];
+type BlendMode = (typeof BLEND_MODES)[number];
 
 export const BLEND_MODE_LABELS: Record<BlendMode, string> = {
   normal: 'Normal',

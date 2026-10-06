@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fileToBase64 } from '../utils/pdfAssets';
 import { useDialog } from './useDialog';
-import { useOperationCoordinator } from './useOperationCoordinator';
 import { useToast } from './useToast';
 import { errorMessage } from '@/utils/errors';
 
@@ -134,7 +133,18 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
   const importInputRef = useRef<HTMLInputElement>(null);
   const sessionGenRef = useRef(0);
   const formDataRef = useRef<TReport | null>(formData);
-  const { busy, runOperation } = useOperationCoordinator();
+  const [busy, setBusy] = useState(false);
+  const activeOperationsRef = useRef(0);
+  const runOperation = useCallback(async <T>(operation: () => Promise<T>): Promise<T> => {
+    activeOperationsRef.current += 1;
+    setBusy(true);
+    try {
+      return await operation();
+    } finally {
+      activeOperationsRef.current -= 1;
+      if (activeOperationsRef.current === 0) setBusy(false);
+    }
+  }, []);
   formDataRef.current = formData;
 
   const pendingDraftRef = useRef<string | null>(null);

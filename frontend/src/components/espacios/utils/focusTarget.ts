@@ -1,7 +1,7 @@
 const STORAGE_KEY = 'espacios:focusTarget';
 export const ESPACIOS_FOCUS_EVENT = 'espacios:focus';
 
-export interface EspaciosFocusTarget {
+interface EspaciosFocusTarget {
   tareaId?: string | null;
   proyectoId?: string | null;
   espacioId?: string | null;

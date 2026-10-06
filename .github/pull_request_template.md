@@ -23,7 +23,7 @@
 ## Checklist
 
 - [ ] Leí mi propio diff completo antes de pedir revisión
-- [ ] ≤ 400 líneas cambiadas, o justificación explícita
+- [ ] ≤ 400 líneas cambiadas; si no, declaré `cambio amplio: <archivos> — <motivo> — <riesgo> — <verificación>` en el cuerpo
 - [ ] Sin `any` / `# type: ignore` / `eslint-disable` nuevos sin justificar arriba
 - [ ] Ningún archivo nuevo supera 500 líneas
 - [ ] `CHANGELOG.md` actualizado si hay cambio visible para el usuario

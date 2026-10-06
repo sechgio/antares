@@ -20,6 +20,17 @@ function resolveAllowedMethods() {
 
 const ALLOWED_RENDERER_METHODS = resolveAllowedMethods();
 
+function resolveFileInputNonce() {
+  const prefix = '--file-input-nonce=';
+  const argv = Array.isArray(process.argv) ? process.argv : [];
+  const arg = argv.find((a) => typeof a === 'string' && a.startsWith(prefix));
+  return arg ? arg.slice(prefix.length) : '';
+}
+
+// Vive solo en el mundo aislado del preload: el contexto de la página no puede
+// leerlo, así que un renderer comprometido no puede forjar registros de rutas.
+const FILE_INPUT_NONCE = resolveFileInputNonce();
+
 function reportRendererError(payload) {
   try {
     ipcRenderer.send('renderer-error', payload);
@@ -28,9 +39,9 @@ function reportRendererError(payload) {
 }
 
 function registerFileInputPath(filePath) {
-  if (typeof filePath !== 'string' || !filePath.trim()) return false;
+  if (typeof filePath !== 'string' || !filePath.trim() || !FILE_INPUT_NONCE) return false;
   try {
-    ipcRenderer.send('register-file-input-path', filePath);
+    ipcRenderer.send('register-file-input-path', { path: filePath, nonce: FILE_INPUT_NONCE });
     return true;
   } catch {
     return false;

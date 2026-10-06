@@ -148,7 +148,9 @@ def sellador_apply(params: dict[str, Any]) -> dict[str, Any]:
 
     if output_path:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
-        with atomic_output_file(resolved, extension=".pdf") as target:
+        with atomic_output_file(
+            resolved, extension=".pdf", write_token=params.get("_write_token")
+        ) as target:
             target.tmp_path.write_bytes(result_bytes)
         payload["saved_path"] = str(target.destination)
         payload["filename"] = target.destination.name

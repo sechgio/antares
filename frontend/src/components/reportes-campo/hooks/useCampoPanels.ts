@@ -51,7 +51,7 @@ interface CampoPanelsActions {
     resetSession: () => void;
 }
 
-export interface CampoPanelsHookResult {
+interface CampoPanelsHookResult {
     panels: CampoPanel[];
     selectedPanel: CampoPanel | null;
     selectedPanelId: string | null;

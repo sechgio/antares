@@ -17,11 +17,11 @@ async function run() {
 
   const mainWindow = {
     isDestroyed: () => false,
-    webContents: {
+    webContents: Object.assign(new EventEmitter(), {
       id: 42,
       send: () => {},
       mainFrame: { url: 'http://localhost:5173/', parent: null },
-    },
+    }),
   };
   let quitCalls = 0;
   let killedPython = 0;
@@ -129,6 +129,19 @@ async function run() {
     assert(accepted.ok === true, 'ACK from the main renderer is accepted');
     assert(quitCalls === 1, 'accepted ACK allows deferred quit to complete');
     assert(killedPython === 1, 'shutdown is run exactly once');
+
+    // Second module load: renderer dies mid-flush -> quit must not wait for the
+    // full CANVAS_FLUSH_TIMEOUT_MS grace period.
+    evictModule('electron/main.js');
+    require('../electron/main.js');
+    const beforeQuit2 = app.listeners('before-quit').at(-1);
+    assert(typeof beforeQuit2 === 'function', 'reloaded module registers before-quit');
+    const quitPromise2 = beforeQuit2({ preventDefault: () => { prevented += 1; } });
+    await new Promise((resolve) => setImmediate(resolve));
+    mainWindow.webContents.emit('render-process-gone');
+    await quitPromise2;
+    assert(quitCalls === 2, 'renderer death short-circuits the flush wait');
+    assert(killedPython === 2, 'shutdown runs again for the reloaded module');
   } finally {
     Module._load = originalLoad;
     if (previousMain) require.cache[mainPath] = previousMain;

@@ -1,6 +1,6 @@
 export type PageNumberStyle = 'auto' | 'pagina_de' | 'n_de' | 'solo';
 
-export type ResolvedPageNumberStyle = Exclude<PageNumberStyle, 'auto'>;
+type ResolvedPageNumberStyle = Exclude<PageNumberStyle, 'auto'>;
 
 export type PageNumberSize = 'auto' | 'sm' | 'md' | 'lg' | 'xl';
 

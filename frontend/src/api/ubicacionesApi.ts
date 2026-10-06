@@ -78,7 +78,7 @@ export const ubicacionesApi = {
   previewUbicacion: (body: PreviewUbicacionParams) => _invoke<PreviewUbicacionResponse>('preview_ubicacion', body),
   generarUbicaciones: (body: GenerarUbicacionesParams) => _invoke<GenerarUbicacionesResponse>('generar_ubicaciones', body),
   ubicacionesKeysGet: () =>
-    _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean> }>('ubicaciones_keys_get'),
+    _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean>; storage_confidential?: boolean }>('ubicaciones_keys_get'),
   ubicacionesKeysSet: (keys: Record<string, string>) =>
-    _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean> }>('ubicaciones_keys_set', { keys }),
+    _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean>; storage_confidential?: boolean }>('ubicaciones_keys_set', { keys }),
 };

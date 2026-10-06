@@ -393,7 +393,7 @@ export function getTypeFilters(t: TFunction): { label: string; value: RunTypeId 
   ];
 }
 
-export interface ResolvedStat {
+interface ResolvedStat {
   label: string;
   value: string | number;
   color?: string;

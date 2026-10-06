@@ -2,7 +2,7 @@ const Module = require('module');
 
 const { assert, finish, evictModule } = require('./helpers/harness');
 
-function loadPreload({ packaged = false, allowedMethods, filePath = '' } = {}) {
+function loadPreload({ packaged = false, allowedMethods, filePath = '', fileInputNonce = '' } = {}) {
   const originalLoad = Module._load;
   let exposedApi = null;
   const invokeCalls = [];
@@ -37,8 +37,9 @@ function loadPreload({ packaged = false, allowedMethods, filePath = '' } = {}) {
   process.env.NODE_ENV = packaged ? 'production' : 'development';
   const allowedArg = `--allowed-ipc-methods=${JSON.stringify(allowedMethods || ['dialog_files', 'db_columns'])}`;
   const packagedArg = `--app-is-packaged=${packaged ? '1' : '0'}`;
+  const nonceArg = `--file-input-nonce=${fileInputNonce}`;
   const prevArgv = process.argv;
-  process.argv = [process.argv[0], allowedArg, packagedArg];
+  process.argv = [process.argv[0], allowedArg, packagedArg, nonceArg];
 
   try {
     evictModule('electron/preload.js');
@@ -80,10 +81,14 @@ async function run() {
 
   {
     const filePath = 'C:\\tmp\\input.jpg';
-    const { exposedApi, sendCalls, invokeCalls } = loadPreload({ packaged: false, filePath });
+    const fileInputNonce = 'test-nonce-123';
+    const { exposedApi, sendCalls, invokeCalls } = loadPreload({ packaged: false, filePath, fileInputNonce });
     assert(exposedApi.getPathForFile({}) === filePath, 'getPathForFile should preserve Electron path resolution');
+    const isRegistration = ([channel, value]) =>
+      channel === 'register-file-input-path'
+      && value && value.path === filePath && value.nonce === fileInputNonce;
     assert(
-      sendCalls.some(([channel, value]) => channel === 'register-file-input-path' && value === filePath),
+      sendCalls.some(isRegistration),
       'getPathForFile should best-effort register the derived path privately',
     );
     assert(
@@ -91,9 +96,16 @@ async function run() {
       'raw path registration should not be exposed to the renderer',
     );
     assert(
-      sendCalls.filter(([channel, value]) => channel === 'register-file-input-path' && value === filePath).length === 1,
+      sendCalls.filter(isRegistration).length === 1,
       'path registration should only happen through getPathForFile',
     );
+    {
+      const { sendCalls: noNonceCalls } = loadPreload({ packaged: false, filePath });
+      assert(
+        !noNonceCalls.some(([channel]) => channel === 'register-file-input-path'),
+        'path registration must not send without the main-issued nonce',
+      );
+    }
     await exposedApi.canvasFlushAck();
     assert(invokeCalls.some(([channel]) => channel === 'canvas-flush-ack'), 'canvas flush ACK should use its private channel');
   }

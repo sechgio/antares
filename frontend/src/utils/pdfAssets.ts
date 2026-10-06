@@ -4,7 +4,7 @@ import { createConcurrencyLimiter } from './concurrency';
 
 export type PdfQuality = 'max' | 'high' | 'low';
 
-export interface PdfImageSource {
+interface PdfImageSource {
   src: string;
   fileToken?: string;
   token?: string;

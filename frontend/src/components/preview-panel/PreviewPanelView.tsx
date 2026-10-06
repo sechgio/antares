@@ -36,12 +36,11 @@ import {
 } from "./utils/sheetLogic";
 import {
   buildPdfFilename,
-  imageToPdfSource,
   mergeHtmlDocuments,
   selectRowsForPdfExport,
   type PdfExportScope,
-  type PdfQuality,
 } from "./pdfExport";
+import { imageToPdfSource, type PdfQuality } from "../../utils/pdfAssets";
 import DataPreviewModal from "./DataPreviewModal";
 import Step from "./Step";
 import { usePersistedLogos } from "./usePersistedLogos";

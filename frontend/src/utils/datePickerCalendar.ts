@@ -1,6 +1,6 @@
 import { parseIsoDateLocal } from './dates';
 
-export interface CalendarCell {
+interface CalendarCell {
   date: Date | null;
   outside: boolean;
 }

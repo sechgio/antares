@@ -1,6 +1,6 @@
 import { fetchJson, httpsUrl, storage, timeoutSignal } from './core';
 
-export interface IcecastSource {
+interface IcecastSource {
   title?: string;
   artist?: string;
   listenurl?: string;
@@ -42,7 +42,7 @@ async function artistRequest(path: string, signal?: AbortSignal): Promise<unknow
   return locks ? locks.request('antares:radio:artist-lookup', { signal }, run) : run();
 }
 
-export interface MusicBrainzRelation {
+interface MusicBrainzRelation {
   ended?: boolean;
   type?: string;
   url?: { resource?: string };

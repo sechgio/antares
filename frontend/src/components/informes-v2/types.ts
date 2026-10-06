@@ -46,7 +46,7 @@ export const R2_CANASTILLA_LABELS: Record<string, string> = {
 };
 export const R2_CANASTILLA_ROWS = Object.keys(R2_CANASTILLA_LABELS);
 
-export interface InspeccionItem {
+interface InspeccionItem {
   key: string;
   label: string;
   sub: string;
@@ -189,7 +189,7 @@ export function emptyInspeccionRow(): InspeccionRow {
   return { normal: false, critico: false, observaciones: '', sugerencias: '' };
 }
 
-export function createEmptyReservorios2(): Reservorios2Data {
+function createEmptyReservorios2(): Reservorios2Data {
   return {
     inspeccion: Object.fromEntries(
       R2_INSPECCION_ROWS.map((key) => [key, emptyInspeccionRow()]),

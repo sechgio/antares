@@ -18,7 +18,7 @@ import { pendingCanvasDeletes, recordPendingCanvasDelete, clearPendingCanvasDele
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
-export const CLOUD_SYNC_TIMEOUT_MS = 30_000;
+const CLOUD_SYNC_TIMEOUT_MS = 30_000;
 export const MAX_CLOUD_CANVAS_DOCUMENT_BYTES = 16 * 1024 * 1024;
 
 function assertCloudCanvasDocumentSize(doc: CanvasDocument): void {
@@ -53,7 +53,7 @@ export async function listRemoteCanvasMeta(): Promise<CanvasRemoteMeta[] | null>
   return (data ?? []) as CanvasRemoteMeta[];
 }
 
-export type CanvasPushResult = {
+type CanvasPushResult = {
   accepted: boolean;
   documentId: string;
   updatedAt: string;
@@ -417,7 +417,7 @@ function remoteDocumentFromRow(
   }
 }
 
-export type TargetedCanvasPullResult =
+type TargetedCanvasPullResult =
   | { kind: 'unchanged'; remoteUpdatedAt?: string }
   | { kind: 'applied'; document: CanvasDocument; remoteUpdatedAt: string }
   | { kind: 'conflict'; conflict: SyncConflict }

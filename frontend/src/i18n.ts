@@ -10,25 +10,12 @@ i18n
     },
     lng: 'es',
     fallbackLng: 'es',
-    supportedLngs: ['es', 'en'],
+    supportedLngs: ['es'],
     load: 'languageOnly',
     nonExplicitSupportedLngs: false,
     interpolation: {
       escapeValue: false,
     },
   });
-
-async function ensureLocaleBundle(lng: string | undefined): Promise<void> {
-  const code = (lng || 'es').split('-')[0];
-  if (code !== 'en' || i18n.hasResourceBundle('en', 'translation')) return;
-  const mod = await import('./locales/en.json');
-  i18n.addResourceBundle('en', 'translation', mod.default);
-}
-
-const changeLanguage = i18n.changeLanguage.bind(i18n);
-i18n.changeLanguage = async (lng, callback) => {
-  await ensureLocaleBundle(typeof lng === 'string' ? lng : undefined);
-  return changeLanguage(lng, callback);
-};
 
 export default i18n;

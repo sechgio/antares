@@ -8,7 +8,7 @@ import {
   type ViewportState,
 } from '../ops/viewportNav';
 
-export type ViewportFrameListener = (zoom: number, pan: { x: number; y: number }) => void;
+type ViewportFrameListener = (zoom: number, pan: { x: number; y: number }) => void;
 
 const COMMIT_INTERVAL_MS = 150;
 const SETTLE_DELAY_MS = 120;

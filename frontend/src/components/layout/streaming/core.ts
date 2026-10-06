@@ -20,8 +20,8 @@ export interface StreamTrack extends StreamItem {
   url: string;
 }
 
-export interface StreamResolve {
-  tracks: StreamTrack[];
+export interface StreamResolve<T extends StreamItem = StreamTrack> {
+  tracks: T[];
   index: number;
 }
 

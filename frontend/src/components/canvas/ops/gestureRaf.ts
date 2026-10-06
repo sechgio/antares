@@ -4,7 +4,7 @@ import {
   type CoalescedWheel,
 } from './viewportNav';
 
-export interface GestureRaf<E> {
+interface GestureRaf<E> {
   schedule: (ev: E) => void;
   flush: () => void;
   cancel: () => void;

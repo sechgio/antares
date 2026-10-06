@@ -10,7 +10,7 @@ import {
   syncCanvasDocuments,
   _resetCanvasPushQueueForTests,
 } from './canvasCloudSync';
-import { isNewer, shouldPushCanvasRow } from './syncCompare';
+import { isNewer } from './syncCompare';
 import { notifyPushHealth, subscribeCanvasPushHealth } from './pushHealth';
 import { withTimeout } from '../../../utils/async';
 import { recordPendingCanvasDelete, clearPendingCanvasDelete } from './cloudQueue';
@@ -143,34 +143,6 @@ describe('canvasCloudSync isNewer', () => {
 
   it('rejects invalid remote timestamps', () => {
     expect(isNewer('not-a-date', '2026-07-22T12:00:00.000Z')).toBe(false);
-  });
-});
-
-describe('shouldPushCanvasRow', () => {
-  it('pushes when remote row is missing', () => {
-    expect(shouldPushCanvasRow('2026-07-22T13:00:00Z', null, null)).toBe(true);
-  });
-
-  it('skips when remote is newer', () => {
-    expect(
-      shouldPushCanvasRow('2026-07-22T12:00:00Z', '2026-07-22T13:00:00Z', null),
-    ).toBe(false);
-  });
-
-  it('skips when remote is soft-deleted', () => {
-    expect(
-      shouldPushCanvasRow('2026-07-22T13:00:00Z', '2026-07-22T12:00:00Z', '2026-07-22T12:30:00Z'),
-    ).toBe(false);
-  });
-
-  it('pushes when local is newer and remote is not deleted', () => {
-    expect(
-      shouldPushCanvasRow('2026-07-22T13:00:00Z', '2026-07-22T12:00:00Z', null),
-    ).toBe(true);
-  });
-
-  it('blocks push when local timestamp is undefined', () => {
-    expect(shouldPushCanvasRow(undefined, '2026-07-22T12:00:00Z', null)).toBe(false);
   });
 });
 

@@ -4,6 +4,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from backend.core.fichas_tecnicas.types import (
+    FichaObsRec,
+    FichaProducto,
+    FichaServicio,
+    FichaTratamiento,
+)
 from backend.core.report_types import REPORT_STATUS_VALUES
 
 SATISFACCION_VALUES = {"muy_satisfecho", "satisfecho", "regular", "insatisfecho", ""}
@@ -50,7 +56,7 @@ def _normalize_satisfaccion(value: Any) -> str:
     return val if val in SATISFACCION_VALUES else ""
 
 
-def empty_producto() -> dict[str, str]:
+def empty_producto() -> FichaProducto:
     return {
         "producto": "",
         "composicion": "",
@@ -62,7 +68,7 @@ def empty_producto() -> dict[str, str]:
     }
 
 
-def empty_servicio() -> dict[str, bool]:
+def empty_servicio() -> FichaServicio:
     return {
         "desinfeccion": False,
         "limpieza_ambientes": False,
@@ -71,7 +77,7 @@ def empty_servicio() -> dict[str, bool]:
     }
 
 
-def empty_tratamiento() -> dict[str, Any]:
+def empty_tratamiento() -> FichaTratamiento:
     return {
         "pulverizado": False,
         "atomizado": False,
@@ -81,7 +87,7 @@ def empty_tratamiento() -> dict[str, Any]:
     }
 
 
-def empty_obs_rec() -> dict[str, str]:
+def empty_obs_rec() -> FichaObsRec:
     return {
         "observacion_a": "",
         "observacion_b": "",
@@ -119,7 +125,7 @@ def create_empty_ficha(number: int | None = None) -> dict[str, Any]:
     }
 
 
-def _normalize_producto(raw: Any) -> dict[str, str]:
+def _normalize_producto(raw: Any) -> FichaProducto:
     source = raw if isinstance(raw, dict) else {}
     return {
         "producto": _safe_str(source.get("producto")),
@@ -132,7 +138,7 @@ def _normalize_producto(raw: Any) -> dict[str, str]:
     }
 
 
-def _normalize_productos(raw: Any) -> list[dict[str, str]]:
+def _normalize_productos(raw: Any) -> list[FichaProducto]:
     items = raw if isinstance(raw, list) else []
     productos = [_normalize_producto(item) for item in items[:4]]
     while len(productos) < 4:

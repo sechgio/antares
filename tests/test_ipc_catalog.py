@@ -130,6 +130,16 @@ def test_catalog_full_projection_matches_json() -> None:
     methods = catalog["methods"]
 
     for name, entry in methods.items():
+        if "fileTokens" in entry:
+            assert all(
+                isinstance(segments, list) and all(isinstance(s, str) for s in segments)
+                for segments in entry["fileTokens"]
+            ), f"{name}: fileTokens mal formado"
+        if "writePathKeys" in entry:
+            assert all(
+                isinstance(k, str) for k in entry["writePathKeys"]
+            ), f"{name}: writePathKeys mal formado"
+
         tier = entry.get("timeout", "normal")
         assert timeout_ms_for(name) == catalog["timeouts"][tier]
         assert is_idempotent(name) == (entry.get("idempotent") is True)

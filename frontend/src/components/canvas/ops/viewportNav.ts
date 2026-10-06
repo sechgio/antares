@@ -105,7 +105,7 @@ export function normalizeWheelDelta(delta: number, deltaMode = 0): number {
   return delta;
 }
 
-export type WheelKind = 'pan' | 'zoom';
+type WheelKind = 'pan' | 'zoom';
 
 export interface CoalescedWheel {
   kind: WheelKind;

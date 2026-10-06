@@ -2,9 +2,17 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from backend.core.report_types import REPORT_STATUS_VALUES, RESERVOIR_TYPES
+from backend.core.technical_reports.types import (
+    TechnicalCanastillas,
+    TechnicalHeader,
+    TechnicalInspection,
+    TechnicalMedidas,
+    TechnicalMetadata,
+    TechnicalValvulas,
+)
 from backend.utils.coercion import safe_int as _safe_int
 from backend.utils.coercion import safe_str as _safe_str
 
@@ -58,7 +66,7 @@ def _diameter_map(diameters: list[str], source: dict[str, Any] | None = None) ->
     return {diameter: _safe_int(source.get(diameter), 0) for diameter in diameters}
 
 
-def default_metadata(informe_id: int) -> dict[str, Any]:
+def default_metadata(informe_id: int) -> TechnicalMetadata:
     now = datetime.now()
     return {
         "informe_id": int(informe_id),
@@ -69,7 +77,7 @@ def default_metadata(informe_id: int) -> dict[str, Any]:
     }
 
 
-def default_header() -> dict[str, Any]:
+def default_header() -> TechnicalHeader:
     return {
         "cs": "",
         "contratista": "",
@@ -85,15 +93,15 @@ def default_header() -> dict[str, Any]:
     }
 
 
-def default_inspeccion() -> dict[str, Any]:
+def default_inspeccion() -> TechnicalInspection:
     data: dict[str, Any] = dict.fromkeys(INSPECTION_ITEMS, "unchecked")
     for obs_key, sug_key in INSPECTION_TEXT_FIELDS.values():
         data[obs_key] = ""
         data[sug_key] = ""
-    return data
+    return cast(TechnicalInspection, data)
 
 
-def default_valvulas() -> dict[str, Any]:
+def default_valvulas() -> TechnicalValvulas:
     data: dict[str, Any] = {
         "diametros": _diameter_map(VALVULA_DIAMETERS),
         "impulsion": _diameter_map(VALVULA_DIAMETERS),
@@ -106,10 +114,10 @@ def default_valvulas() -> dict[str, Any]:
     for key in ["conduccion", "impulsion", "aduccion", "bypass", "desague"]:
         data[f"observaciones_{key}"] = ""
         data[f"sugerencias_{key}"] = ""
-    return data
+    return cast(TechnicalValvulas, data)
 
 
-def default_canastillas() -> dict[str, Any]:
+def default_canastillas() -> TechnicalCanastillas:
     data: dict[str, Any] = {
         "diametros": _diameter_map(CANASTILLA_DIAMETERS),
         "aduccion": _diameter_map(CANASTILLA_DIAMETERS),
@@ -121,10 +129,10 @@ def default_canastillas() -> dict[str, Any]:
     for key in ["aduccion", "succion", "desague"]:
         data[f"observaciones_{key}"] = ""
         data[f"sugerencias_{key}"] = ""
-    return data
+    return cast(TechnicalCanastillas, data)
 
 
-def default_medidas() -> dict[str, str]:
+def default_medidas() -> TechnicalMedidas:
     return {
         "diametro": "",
         "diametro_interno": "",
@@ -136,7 +144,7 @@ def default_medidas() -> dict[str, str]:
 
 
 def _normalize_medidas(source: Any) -> dict[str, str]:
-    medidas = default_medidas()
+    medidas = cast("dict[str, str]", default_medidas())
     if not isinstance(source, dict):
         return medidas
     medidas.update({k: _safe_str(v, "") for k, v in source.items()})
@@ -228,7 +236,7 @@ class TechnicalReport:
 
 
 def _normalize_inspeccion(source: Any) -> dict[str, Any]:
-    data = default_inspeccion()
+    data: dict[str, Any] = dict(default_inspeccion())
     if not isinstance(source, dict):
         return data
     for item in INSPECTION_ITEMS:
@@ -241,7 +249,7 @@ def _normalize_inspeccion(source: Any) -> dict[str, Any]:
 
 
 def _normalize_valvulas(source: Any) -> dict[str, Any]:
-    data = default_valvulas()
+    data: dict[str, Any] = dict(default_valvulas())
     if not isinstance(source, dict):
         return data
     for section in ["diametros", "impulsion", "aduccion", "bypass", "desague"]:
@@ -255,7 +263,7 @@ def _normalize_valvulas(source: Any) -> dict[str, Any]:
 
 
 def _normalize_canastillas(source: Any) -> dict[str, Any]:
-    data = default_canastillas()
+    data: dict[str, Any] = dict(default_canastillas())
     if not isinstance(source, dict):
         return data
     for section in ["diametros", "aduccion", "succion", "desague"]:

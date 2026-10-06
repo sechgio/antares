@@ -36,7 +36,7 @@ const HISTORY_PERSIST_DELAY_MS = 500;
 const HISTORY_PERSIST_RETRY_DELAY_MS = 1_500;
 const HISTORY_PERSIST_MAX_RETRIES = 2;
 
-export interface UseDocumentLifecycleOptions {
+interface UseDocumentLifecycleOptions {
   history: CanvasHistoryHandle;
   refreshList: () => Promise<void>;
   flashStatus: (message: string, ms?: number) => void;

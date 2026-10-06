@@ -1,4 +1,4 @@
-export type SpreadsheetParseResult = Awaited<ReturnType<typeof import('../api').api.spreadsheetParse>>;
+type SpreadsheetParseResult = Awaited<ReturnType<typeof import('../api').api.spreadsheetParse>>;
 
 export async function stageAndParseSpreadsheet(
   file: File,

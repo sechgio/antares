@@ -15,10 +15,6 @@ export function takePendingHistoryReexecute(): HistoryRun | null {
   return run;
 }
 
-export function peekPendingHistoryReexecute(): HistoryRun | null {
-  return pendingReexecute;
-}
-
 export function subscribeHistoryReexecute(callback: (run: HistoryRun) => void): () => void {
   const listener = (event: Event) => {
     callback((event as CustomEvent<HistoryRun>).detail);

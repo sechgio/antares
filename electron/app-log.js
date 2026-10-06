@@ -66,6 +66,8 @@ const SENSITIVE_TEXT_RE = [
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
   /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
   /(\bBearer\s+)[A-Za-z0-9._~+/=-]+/gi,
+  /([a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:)[^\s/@]+@/gi,
+  /([?&](?:key|sig|signature|passwd|pwd)=)[^\s&#]+/gi,
   /(?:[A-Za-z]:\\|\\\\|\/(?:Users|home|tmp|var|private|opt|mnt|workspace)\/)[^\s"'`]+/g,
 ];
 const STALE_TEMP_PREFIX_RE = /^antares-(?:backend-command|pdf|staged)-/;

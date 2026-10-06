@@ -1,7 +1,7 @@
 
 type CanvasFontSource = 'system' | 'google';
 
-export interface CanvasFontEntry {
+interface CanvasFontEntry {
   id: string;
   label: string;
   family: string;
