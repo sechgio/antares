@@ -15,7 +15,7 @@ import logging
 import secrets
 import uuid
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +36,23 @@ _RESUMABLE_STATUSES = frozenset({"queued", "running", "waiting"})
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+_APPROVAL_TTL = timedelta(hours=24)
+
+
+def approval_expired(created_at: object) -> bool:
+    """Una aprobación ``pending`` más vieja que el TTL ya no es decidible:
+    una decisión tardía no debe disparar una acción aprobada hace días."""
+    if not isinstance(created_at, str) or not created_at:
+        return False
+    try:
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - created > _APPROVAL_TTL
 
 
 def _normalize_flow(raw: JsonObject) -> JsonObject | None:
@@ -482,6 +499,29 @@ class FlowStore:
             if "status" in fields:
                 self._touch_last_run(run["flow_id"], str(fields["status"]), run.get("finished_at") or _utc_now())
             return deepcopy(run)
+
+    def decide_run_approval(self, run_id: str, approval_id: str, approved: bool) -> JsonObject:
+        """Fija la decisión de una aprobación de forma atómica (check-and-set
+        bajo el lock del store: dos decisiones concurrentes no se pisan)."""
+        with self._lock:
+            runs = self._read_runs()
+            run = runs.get(run_id)
+            if run is None:
+                raise ValueError(f"Run no encontrado: {run_id}")
+            if run["status"] != "waiting":
+                raise ValueError("El run no está esperando una aprobación")
+            approval = ((run.get("checkpoint") or {}).get("approvals") or {}).get(approval_id)
+            if approval is None or approval.get("decision") is not None:
+                raise ValueError("Aprobación inexistente o ya decidida")
+            if approval_expired(approval.get("created_at")):
+                approval["decision"] = "expired"
+                approval["decided_at"] = _utc_now()
+                self._write_runs(runs)
+                raise ValueError("La aprobación expiró; cancela la ejecución o vuelve a lanzarla")
+            approval["decision"] = "approved" if approved else "denied"
+            approval["decided_at"] = _utc_now()
+            self._write_runs(runs)
+            return deepcopy(approval)
 
     def get_run(self, run_id: str) -> JsonObject | None:
         with self._lock:

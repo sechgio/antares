@@ -7,6 +7,7 @@ sale del backend: al renderer solo se expone una versión enmascarada.
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import urllib.error
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 _CATALOG_PATH = resource_path("shared/ai-providers-catalog.json")
 _HTTP_TIMEOUT_S = 15.0
+_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 
 def load_provider_specs() -> dict[str, JsonObject]:
@@ -149,7 +151,10 @@ def _get_json(url: str, headers: dict[str, str]) -> JsonObject:
         method="GET",
     )
     with http_guard.no_redirect_opener.open(req, timeout=_HTTP_TIMEOUT_S) as res:
-        data: JsonObject = json.loads(res.read().decode("utf-8"))
+        raw = res.read(_MAX_RESPONSE_BYTES + 1)
+        if len(raw) > _MAX_RESPONSE_BYTES:
+            raise ValueError("La respuesta del proveedor supera el tamaño máximo permitido")
+        data: JsonObject = json.loads(raw.decode("utf-8"))
         return data
 
 
@@ -195,7 +200,7 @@ def status(provider: str) -> JsonObject:
             if err.code in (404, 405) else f"HTTP {err.code} al consultar el proveedor"
         )
         return out
-    except (urllib.error.URLError, OSError, json.JSONDecodeError) as err:
+    except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as err:
         detail = getattr(err, "reason", err)
         out["error"] = f"Sin respuesta del proveedor: {detail}"
         return out

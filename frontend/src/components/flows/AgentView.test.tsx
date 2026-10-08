@@ -24,6 +24,7 @@ const scrollToDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  localStorage.clear();
   addToast.mockClear();
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [] });
@@ -131,4 +132,87 @@ it('un envío fallido conserva el borrador y termina el indicador de ejecución'
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Reintentar');
   expect(screen.queryByText('El agente está trabajando')).not.toBeInTheDocument();
   expect(addToast).toHaveBeenCalledWith({ message: 'Sin conexión', type: 'error' });
+});
+
+it('restaura la conversación y la cola sin enviar tareas automáticamente tras reiniciar', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: session.id, text: 'Tarea pendiente' }]));
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty, messages: [{ role: 'assistant', content: 'Progreso recuperado', ts: 2 }],
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  expect(screen.getByText('Progreso recuperado')).toBeInTheDocument();
+  expect(screen.getByText('Tarea pendiente')).toHaveAttribute('title', 'Mensaje pendiente — clic para enviar');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(screen.getByText('Tarea pendiente')); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Tarea pendiente');
+});
+
+it('muestra respuestas progresivas y estados de herramientas durante el sondeo', async () => {
+  vi.useFakeTimers();
+  localStorage.setItem('antares-agent-session', session.id);
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty, running: true, messages: [{ role: 'assistant', content: 'Progreso', partial: true, ts: 2 }],
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  expect(screen.getByText('Progreso')).toBeInTheDocument();
+  list.mockResolvedValue({ ...empty, running: true, messages: [{
+    role: 'assistant', content: 'Progreso ampliado', ts: 2,
+    tool_calls: [{ id: 'c1', name: 'flows_run', params: {}, gated: true, status: 'running' }],
+  }] });
+  await act(async () => { vi.advanceTimersByTime(1500); });
+  expect(screen.getByText('Progreso ampliado')).toBeInTheDocument();
+  expect(screen.getByText('ejecutando')).toBeInTheDocument();
+  list.mockResolvedValue({ ...empty, messages: [{
+    role: 'assistant', content: 'Turno interrumpido', ts: 2,
+    tool_calls: [{ id: 'c1', name: 'flows_run', params: {}, gated: true, status: 'interrupted', result: 'Resultado incierto' }],
+  }] });
+  await act(async () => { vi.advanceTimersByTime(1500); });
+  expect(screen.getByText('interrumpida · comprueba el resultado')).toBeInTheDocument();
+  expect(screen.getByText('Resultado incierto')).toBeInTheDocument();
+});
+
+it('detener pausa la cola y conserva las tareas pendientes para un envío explícito', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  vi.spyOn(agentApi, 'agentTurnCancel').mockImplementation(async () => {
+    list.mockResolvedValue(empty);
+    return { cancelled: true };
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Siguiente tarea' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
+  expect(agentApi.agentTurnCancel).toHaveBeenCalledWith(session.id);
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
+    { session: session.id, text: 'Siguiente tarea', failed: true },
+  ]);
+});
+
+it('recupera una aprobación pendiente sin aprobarla al montar y permite detenerla', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const approval = {
+    id: 'a1', session_id: session.id, call_id: 'c1', method: 'flows_run', params: {},
+    status: 'pending' as const, created_at: 1, decided_at: null,
+  };
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
+  const approve = vi.spyOn(agentApi, 'agentApprove');
+  const deny = vi.spyOn(agentApi, 'agentDeny');
+  vi.spyOn(agentApi, 'agentTurnCancel').mockImplementation(async () => {
+    list.mockResolvedValue(empty);
+    return { cancelled: true };
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: 'Aprobar' })).toBeInTheDocument();
+  expect(approve).not.toHaveBeenCalled();
+  expect(deny).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
+  expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
+  expect(approve).not.toHaveBeenCalled();
 });

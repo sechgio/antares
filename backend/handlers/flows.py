@@ -16,7 +16,7 @@ from backend.core.flows import os_tasks as _os_tasks
 from backend.core.flows import webhooks as _webhooks
 from backend.core.flows.events import APP_EVENTS
 from backend.core.flows.runner import FlowRunner, cancel_run
-from backend.core.flows.store import FlowStore, _utc_now
+from backend.core.flows.store import FlowStore, _utc_now, approval_expired
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import FLOW_ACTION_METHODS, ORCHESTRATABLE_METHODS
 from backend.handlers import HANDLERS as _REGISTRY
@@ -121,7 +121,7 @@ def _run(params: JsonObject) -> JsonObject:
     if not isinstance(trigger_payload, dict):
         trigger_payload = {}
     try:
-        run = _runner.start(flow_id, {"source": "manual", **trigger_payload},
+        run = _runner.start(flow_id, {**trigger_payload, "source": "manual"},
                             acknowledge_uncertain=params.get("acknowledge_uncertain") is True)
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
@@ -160,7 +160,8 @@ def _run_cancel(params: JsonObject) -> JsonObject:
     if run["status"] == "waiting":
         _store().update_run(run_id, status="cancelled", finished_at=_utc_now())
         return {"run": _store().get_run(run_id), "cancelled": True}
-    if not cancel_run(run_id):
+    # Run interrumpido sin hilo vivo (reinicio): no hay token que señalar.
+    if not cancel_run(run_id) and not run.get("interrupted"):
         return {"run": run, "cancelled": False}
     # Marcado inmediato: el hilo aún libera operaciones en curso en segundo plano.
     _store().update_run(run_id, status="cancelled", finished_at=_utc_now())
@@ -188,7 +189,7 @@ def _approvals_list(params: JsonObject) -> JsonObject:
         checkpoint = run.get("checkpoint") or {}
         pending = checkpoint.get("pending") or {}
         for approval_id, approval in (checkpoint.get("approvals") or {}).items():
-            if approval.get("decision") is not None:
+            if approval.get("decision") is not None or approval_expired(approval.get("created_at")):
                 continue
             approvals.append({
                 "id": approval_id,

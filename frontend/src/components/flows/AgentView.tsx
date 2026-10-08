@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, MessageSquare, Plus, Send, Sparkles, X } from 'lucide-react';
+import { Bot, MessageSquare, Plus, Send, Sparkles, Square, X } from 'lucide-react';
 import { agentApi, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
@@ -9,6 +9,8 @@ import Button from '../ui/Button';
 import { AgentContextPanel, ApprovalCard, MessageRow, ThinkingRow } from './AgentTimeline';
 
 const POLL_MS = 1500;
+const SESSION_KEY = 'antares-agent-session';
+const QUEUE_KEY = 'antares-agent-queue';
 
 const SUGGESTIONS = [
   '¿Qué flujos tengo configurados y cuáles están activos?',
@@ -41,7 +43,14 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
   const [model, setModel] = useState('');
   const [draft, setDraft] = useState('');
   const [deciding, setDeciding] = useState(false);
-  const [queued, setQueued] = useState<{ session: string; text: string; failed?: boolean }[]>([]);
+  const [queued, setQueued] = useState<{ session: string; text: string; failed?: boolean }[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
+      return Array.isArray(saved) ? saved.filter((item) => item && typeof item.session === 'string' && typeof item.text === 'string')
+        .map((item) => ({ session: item.session, text: item.text, failed: true })) : [];
+    } catch { return []; }
+  });
+  const [stopping, setStopping] = useState(false);
   const [runningSince, setRunningSince] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<number | null>(null);
@@ -55,6 +64,10 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
   useEffect(() => {
     if (initialDraft) setDraft(initialDraft);
   }, [initialDraft]);
+
+  useEffect(() => {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(queued));
+  }, [queued]);
 
   const loadMessages = useCallback(
     async (id: string, silent = true) => {
@@ -114,12 +127,15 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
       } catch {
         setTools([]); // la tarjeta de herramientas es informativa; no bloquea el chat
       }
-      await refreshSessions();
+      const restored = await refreshSessions();
+      const saved = localStorage.getItem(SESSION_KEY);
+      if (restored.some((s) => s.id === saved)) setSessionId(saved || '');
     })();
   }, [addToast, refreshSessions]);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
+    if (sessionId) localStorage.setItem(SESSION_KEY, sessionId);
     setMessages([]);
     setPending([]);
     if (sessionId) void loadMessages(sessionId, false);
@@ -147,7 +163,7 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages.length, pending.length]);
+  }, [messages.length, messages[messages.length - 1]?.content, pending.length]);
 
   useEffect(() => {
     if (!running) {
@@ -218,7 +234,10 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
     try {
       await agentApi.agentSessionDelete(id);
       setQueued((q) => q.filter((i) => i.session !== id));
-      if (sessionId === id) setSessionId('');
+      if (sessionId === id) {
+        setSessionId('');
+        localStorage.removeItem(SESSION_KEY);
+      }
       addToast({ message: 'Conversación eliminada', type: 'success' });
       await refreshSessions();
     } catch (err) {
@@ -259,20 +278,35 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
 
   // Envía el siguiente mensaje en cola cuando el turno termina y no quedan aprobaciones.
   useEffect(() => {
-    if (!sessionId || running || pending.length > 0) return;
+    if (!sessionId || running || stopping || pending.length > 0) return;
     const next = queued.find((i) => i.session === sessionId && !i.failed);
     if (!next) return;
-    setQueued((q) => q.filter((i) => i !== next));
+    const sending = { ...next, failed: true };
+    setQueued((q) => q.map((i) => i === next ? sending : i));
     void (async () => {
       const ok = await sendToSession(sessionId, next.text);
-      if (!ok) setQueued((q) => [{ ...next, failed: true }, ...q]);
+      if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, running, pending.length, queued]);
+  }, [sessionId, running, stopping, pending.length, queued]);
 
   const sendSuggestion = async (text: string) => {
     const id = sessionId || (await newSession());
     if (id) void sendToSession(id, text);
+  };
+
+  const cancelTurn = async () => {
+    if (!sessionId) return;
+    setStopping(true);
+    setQueued((q) => q.map((item) => item.session === sessionId ? { ...item, failed: true } : item));
+    try {
+      await agentApi.agentTurnCancel(sessionId);
+      await loadMessages(sessionId);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo detener el turno'), type: 'error' });
+    } finally {
+      setStopping(false);
+    }
   };
 
   const decide = async (id: string, ok: boolean) => {
@@ -425,7 +459,7 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
                   {item.failed ? (
                     <button
                       className="truncate text-[var(--accent-yellow)]"
-                      title="Falló el envío — clic para reintentar"
+                      title="Mensaje pendiente — clic para enviar"
                       onClick={() =>
                         setQueued((q) => q.map((i) => (i === item ? { ...i, failed: false } : i)))
                       }
@@ -476,6 +510,17 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { initi
                   ? `${sessionProviderLabel}${session.model ? ` · ${session.model}` : ''}`
                   : `${providerLabel || 'Proveedor IA'}${model ? ` · ${model}` : ''}`}
               </span>
+              {(running || pending.length > 0) && (
+                <button
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-red)] hover:text-[var(--accent-red)]"
+                  onClick={() => void cancelTurn()}
+                  aria-label="Detener"
+                  disabled={stopping}
+                  title="Detener el turno"
+                >
+                  <Square size={11} />
+                </button>
+              )}
               <button
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-all duration-150 hover:bg-[var(--accent-primary-hover)] active:scale-[0.96] disabled:bg-[var(--bg-input)] disabled:text-[var(--text-muted)]"
                 onClick={() => void send()}

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
 
-from backend.core.flows import agent_chat
+from backend.core.flows import agent_chat, agent_node
 from backend.core.flows.runner import FlowRunner
 from backend.core.flows.store import FlowStore
 
@@ -247,7 +248,7 @@ def test_agent_tools_auto_approve_runs_gated_call(store, monkeypatch):
     _provider_stub(monkeypatch)
     executed: list[str] = []
     replies = iter([
-        {"text": "", "calls": [{"id": "c1", "name": "flows_run", "params": {"flow_id": "x"}}]},
+        {"text": "", "calls": [{"id": "c1", "name": "canvas_save", "params": {"id": "doc1"}}]},
         {"text": "listo", "calls": []},
     ])
     monkeypatch.setattr(agent_chat, "chat", lambda *a, **k: next(replies))
@@ -256,12 +257,93 @@ def test_agent_tools_auto_approve_runs_gated_call(store, monkeypatch):
         {"provider": "ollama", "prompt": "ejecuta", "tools": True, "auto_approve": True}))
     runner = FlowRunner(
         store,
-        lambda m: (lambda p: executed.append(m) or {"ok": True}) if m == "flows_run" else None,
+        lambda m: (lambda p: executed.append(m) or {"ok": True}) if m == "canvas_save" else None,
     )
     done = _wait_done(runner.start(flow["id"])["id"], store)
 
     assert done["status"] == "success"
-    assert executed == ["flows_run"]
+    assert executed == ["canvas_save"]
+
+
+def test_agent_tools_auto_approve_still_waits_for_destructive(store, monkeypatch):
+    """auto_approve nunca cubre métodos destructivos: siguen pidiendo aprobación."""
+    _provider_stub(monkeypatch)
+    executed: list[str] = []
+    replies = iter([
+        {"text": "", "calls": [{"id": "c1", "name": "flows_delete", "params": {"id": "f1"}}]},
+        {"text": "ok", "calls": []},
+    ])
+    monkeypatch.setattr(agent_chat, "chat", lambda *a, **k: next(replies))
+
+    flow = store.create("Agente auto destructivo", graph=_agent_flow(
+        {"provider": "ollama", "prompt": "borra", "tools": True, "auto_approve": True}))
+    runner = FlowRunner(
+        store,
+        lambda m: (lambda p: executed.append(m) or {}) if m == "flows_delete" else None,
+    )
+    waiting = _wait(runner.start(flow["id"])["id"], store)
+
+    assert waiting["status"] == "waiting"
+    approval = next(iter(waiting["checkpoint"]["approvals"].values()))
+    assert approval["method"] == "flows_delete"
+    assert executed == []
+
+
+def test_agent_tools_auto_approve_still_waits_for_mcp_tool(store, monkeypatch):
+    """Las tools MCP son código de terceros: auto_approve no las cubre."""
+    _provider_stub(monkeypatch)
+    monkeypatch.setattr(
+        agent_node.mcp_servers, "parse_agent_tool",
+        lambda name: ("srv", "escribe") if name.startswith("mcp2__") else None,
+    )
+    monkeypatch.setattr(
+        agent_chat, "tool_specs",
+        lambda: [{"name": "mcp2__srv__escribe", "description": "x", "gated": True, "inputSchema": {}}],
+    )
+    replies = iter([
+        {"text": "", "calls": [{"id": "c1", "name": "mcp2__srv__escribe", "params": {}}]},
+        {"text": "ok", "calls": []},
+    ])
+    monkeypatch.setattr(agent_chat, "chat", lambda *a, **k: next(replies))
+
+    flow = store.create("Agente mcp", graph=_agent_flow(
+        {"provider": "ollama", "prompt": "usa mcp", "tools": True, "auto_approve": True}))
+    runner = FlowRunner(store, lambda m: lambda p: {})
+    waiting = _wait(runner.start(flow["id"])["id"], store)
+
+    assert waiting["status"] == "waiting"
+    approval = next(iter(waiting["checkpoint"]["approvals"].values()))
+    assert approval["method"] == "mcp2__srv__escribe"
+
+
+def test_tool_results_scrub_secrets():
+    """Los resultados de tools que viajan al LLM no llevan secretos ni grants."""
+
+    def handler_getter(method):
+        assert method == "flows_get"
+        return lambda _params: {
+            "flow": {
+                "graph": {
+                    "nodes": [
+                        {"id": "w", "kind": "trigger", "config": {
+                            "secret": "s3cr3t",
+                            "headers": {"Authorization": "Bearer x"},
+                            "_file_grants": {"signature": "abc", "read": ["C:\\tmp"]},
+                        }},
+                    ]
+                }
+            }
+        }
+
+    out = agent_node._execute_call(
+        {"name": "flows_get", "params": {}}, handler_getter, None, lambda m, a: None
+    )
+    assert "s3cr3t" not in out
+    assert "Bearer x" not in out
+    config = json.loads(out)["flow"]["graph"]["nodes"][0]["config"]
+    assert config["secret"] == "…"
+    assert config["headers"] == "…"
+    assert config["_file_grants"] == "…"
 
 
 def test_agent_tools_denied_method_never_executes(store, monkeypatch):

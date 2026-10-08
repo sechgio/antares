@@ -49,7 +49,7 @@ function run() {
   assert(windowsJob.includes('run: node scripts/run-test-suites.js'), 'Windows CI runs the test suites');
   assert(windowsJob.includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
 
-  assert(nodeVersion === '22.12.0', '.node-version pins Node 22.12.0');
+  assert(nodeVersion === '22.19.0', '.node-version pins Node 22.19.0');
   assert(setupCi.includes("node-version-file: '.node-version'"), 'setup-ci reads the committed Node version file');
   assert(setupCi.includes('cache: pip'), 'setup-ci caches Python dependencies');
   assert(setupCi.includes('frontend/package-lock.json'), 'setup-ci cache key includes the frontend lockfile');

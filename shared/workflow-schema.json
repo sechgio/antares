@@ -135,12 +135,13 @@
       }
     },
     "mcp_call": {
-      "description": "Llama a una tool de un servidor MCP registrado en Conexiones. args admite expresiones =...",
+      "description": "Llama a una tool de un servidor MCP registrado en Conexiones. args admite expresiones =... Cada run pausa en aprobación salvo auto_approve.",
       "implemented": true,
       "config": {
         "server": { "type": "string", "required": true, "description": "Id del servidor MCP registrado" },
         "tool": { "type": "string", "required": true, "description": "Nombre de la tool MCP" },
-        "args": { "type": "object", "description": "Argumentos de la tool (JSON, expresiones permitidas)" }
+        "args": { "type": "object", "description": "Argumentos de la tool (JSON, expresiones permitidas)" },
+        "auto_approve": { "type": "boolean", "default": false, "description": "Ejecuta la llamada sin pausar el run para aprobación" }
       }
     },
     "code": {

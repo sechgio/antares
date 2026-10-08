@@ -205,6 +205,8 @@ def validate_graph(graph: JsonObject) -> None:
             tool = node["config"].get("tool")
             if not isinstance(tool, str) or not tool.strip():
                 raise ValueError(f"El nodo {node_id} (mcp_call) requiere config.tool")
+            if not isinstance(node["config"].get("auto_approve", False), bool):
+                raise ValueError(f"auto_approve del nodo {node_id} debe ser true o false")
         if node["kind"] == "switch":
             field = node["config"].get("field")
             if not isinstance(field, str) or not field.strip():

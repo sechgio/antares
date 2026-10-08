@@ -8,7 +8,7 @@ const API_DIR = path.join(ROOT, 'frontend', 'src', 'api');
 const PRELOAD_PATH = path.join(ROOT, 'electron', 'preload.js');
 const CATALOG_PATH = path.join(ROOT, 'shared', 'ipc-method-catalog.js');
 
-const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|spotify|connections))$/;
+const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|spotify|connections|agent))$/;
 const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);
 const VALID_LANES = new Set(['sync', 'light', 'heavy']);
 

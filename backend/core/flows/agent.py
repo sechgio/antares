@@ -24,8 +24,9 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 from backend.core.flows import mcp_servers
-from backend.core.flows.agent_chat import chat, gated_methods
-from backend.core.flows.runner import _validate_action_paths
+from backend.core.flows.agent_chat import chat, gated_methods, scrub_secrets
+from backend.core.flows.cancel import RunCancelled, await_or_cancel
+from backend.core.flows.runner import _CancelEvent, _validate_action_paths
 from backend.core.flows.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, lane_for, timeout_ms_for
 from backend.core.scheduler import get_scheduler
@@ -37,6 +38,11 @@ logger = logging.getLogger(__name__)
 _MAX_TOOL_STEPS = 12
 _MAX_TOOL_RESULT_CHARS = 6_000
 _MAX_SESSIONS = 50
+_APPROVAL_TTL_MS = 24 * 3600 * 1000
+_INTERRUPTED_RESULT = json.dumps(
+    {"error": "Acción interrumpida: el resultado puede ser incierto. Compruébalo antes de repetirla."},
+    ensure_ascii=False,
+)
 
 
 def _now_ms() -> float:
@@ -51,11 +57,23 @@ class AgentStore:
         base.mkdir(parents=True, exist_ok=True)
         self._sessions_path = base / "sessions.json"
         self._approvals_path = base / "approvals.json"
+        self._dispatches_path = base / "dispatches.json"
         self._messages_dir = base / "messages"
         self._messages_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._sessions: dict[str, JsonObject] = self._read(self._sessions_path)
         self._approvals: dict[str, JsonObject] = self._read(self._approvals_path)
+        self._dispatches: dict[str, JsonObject] = self._read(self._dispatches_path)
+        # Un dispatch "running" al cargar quedó interrumpido: su resultado es
+        # incierto y no debe reejecutarse ni servirse como éxito.
+        dirty = False
+        for record in self._dispatches.values():
+            if record.get("status") == "running":
+                record["status"] = "interrupted"
+                record["result"] = _INTERRUPTED_RESULT
+                dirty = True
+        if dirty:
+            self._write_dispatches()
 
     @staticmethod
     def _read(path: Path) -> dict[str, JsonObject]:
@@ -70,6 +88,9 @@ class AgentStore:
 
     def _write_approvals(self) -> None:
         atomic_write_json(self._approvals_path, self._approvals)
+
+    def _write_dispatches(self) -> None:
+        atomic_write_json(self._dispatches_path, self._dispatches)
 
     def _messages_path(self, session_id: str) -> Path:
         safe = "".join(ch for ch in session_id if ch.isalnum() or ch in "-_")[:64]
@@ -144,12 +165,62 @@ class AgentStore:
         with self._lock:
             return [dict(m) for m in self._read_messages(session_id)]
 
+    def mark_interrupted_turns(self) -> int:
+        """Recupera progreso sin volver a ejecutar herramientas ni decisiones."""
+        marked = 0
+        with self._lock:
+            for session_id in list(self._sessions):
+                pending = {a["call_id"] for a in self.pending_approvals(session_id)}
+                messages = self._read_messages(session_id)
+                changed = False
+                for msg in messages:
+                    for call in msg.get("tool_calls") or []:
+                        if call.get("status") in ("queued", "running", "pending") and call["id"] not in pending:
+                            call.update(status="interrupted", result=_INTERRUPTED_RESULT)
+                            changed = True
+                partial = self._sessions[session_id].pop("_partial_text", "")
+                if (
+                    partial and messages and messages[-1].get("role") == "assistant"
+                    and not messages[-1].get("tool_calls")
+                    and str(messages[-1].get("content") or "").startswith(partial)
+                ):
+                    partial = ""  # la respuesta ya se escribió antes de limpiar el checkpoint
+                interrupted = bool(messages and (
+                    messages[-1].get("role") in ("user", "tool_result")
+                    or messages[-1].get("tool_calls")
+                ))
+                if not pending and (partial or interrupted):
+                    messages.append({
+                        "role": "assistant",
+                        "content": (f"{partial}\n\n" if partial else "") + (
+                            "⚠ El turno anterior quedó interrumpido al cerrar la aplicación. "
+                            "Comprueba las acciones antes de continuar; no se han repetido automáticamente."
+                        ),
+                        "ts": _now_ms(),
+                    })
+                    marked += 1
+                    changed = True
+                if changed:
+                    self._write_messages(session_id, messages)
+            self._write_sessions()
+        return marked
+
+    def save_partial(self, session_id: str, text: str) -> None:
+        with self._lock:
+            if session_id in self._sessions:
+                self._sessions[session_id]["_partial_text"] = text
+                self._write_sessions()
+
     def append_message(self, session_id: str, message: JsonObject) -> None:
         with self._lock:
+            if session_id not in self._sessions:
+                return  # sesión borrada con el turno en curso: no recrear el archivo
             messages = self._read_messages(session_id)
             messages.append({**message, "ts": _now_ms()})
             self._write_messages(session_id, messages)
             session = self._sessions.get(session_id)
+            if session is not None and message.get("role") == "assistant":
+                session.pop("_partial_text", None)
             if (
                 message.get("role") == "user"
                 and session is not None
@@ -188,7 +259,25 @@ class AgentStore:
             self._write_approvals()
         return approval
 
+    def _expire_stale_approvals(self) -> None:
+        """Las aprobaciones ``pending`` más viejas que el TTL dejan de ser
+        decidibles: una decisión tardía no debe disparar una acción antigua."""
+        with self._lock:
+            now = _now_ms()
+            stale = [
+                a for a in self._approvals.values()
+                if a.get("status") == "pending"
+                and now - float(a.get("created_at") or now) > _APPROVAL_TTL_MS
+            ]
+            if not stale:
+                return
+            for approval in stale:
+                approval["status"] = "expired"
+                approval["decided_at"] = now
+            self._write_approvals()
+
     def pending_approvals(self, session_id: str | None = None) -> list[JsonObject]:
+        self._expire_stale_approvals()
         with self._lock:
             out = [
                 dict(a)
@@ -203,6 +292,7 @@ class AgentStore:
             return dict(approval) if isinstance(approval, dict) else None
 
     def decide_approval(self, approval_id: str, approved: bool) -> JsonObject | None:
+        self._expire_stale_approvals()
         with self._lock:
             approval = self._approvals.get(approval_id)
             if approval is None or approval.get("status") != "pending":
@@ -211,6 +301,65 @@ class AgentStore:
             approval["decided_at"] = _now_ms()
             self._write_approvals()
             return dict(approval)
+
+    def approval_for_call(self, session_id: str, call_id: str) -> JsonObject | None:
+        """Aprobación existente para una llamada; permite reanudar la espera tras
+        un reinicio sin crear duplicados ni redecidir."""
+        self._expire_stale_approvals()
+        with self._lock:
+            for approval in self._approvals.values():
+                if approval.get("session_id") == session_id and approval.get("call_id") == call_id:
+                    return dict(approval)
+            return None
+
+    def deny_pending_approvals(self, session_id: str) -> list[str]:
+        self._expire_stale_approvals()
+        with self._lock:
+            denied: list[str] = []
+            for approval in self._approvals.values():
+                if approval.get("session_id") == session_id and approval.get("status") == "pending":
+                    approval["status"] = "denied"
+                    approval["decided_at"] = _now_ms()
+                    denied.append(str(approval["id"]))
+            if denied:
+                self._write_approvals()
+            return denied
+
+    # ---- ejecuciones deduplicadas (replay unsafe) ----
+
+    def get_dispatch(self, call_id: str) -> JsonObject | None:
+        with self._lock:
+            record = self._dispatches.get(call_id)
+            return dict(record) if isinstance(record, dict) else None
+
+    def dispatch_begin(self, call_id: str, session_id: str, method: str) -> JsonObject:
+        """Registra el inicio; si ya existe devuelve el registro previo para que
+        el llamador sirva el resultado guardado en vez de repetir el efecto."""
+        with self._lock:
+            existing = self._dispatches.get(call_id)
+            if isinstance(existing, dict):
+                return dict(existing)
+            record: JsonObject = {
+                "call_id": call_id,
+                "session_id": session_id,
+                "method": method,
+                "status": "running",
+                "started_at": _now_ms(),
+                "result": None,
+            }
+            self._dispatches[call_id] = record
+            self._write_dispatches()
+            return dict(record)
+
+    def dispatch_finish(self, call_id: str, status: str, result: str) -> None:
+        with self._lock:
+            record = self._dispatches.get(call_id)
+            if record is None or record.get("status") != "running":
+                return
+            record["status"] = status
+            record["result"] = result
+            record["finished_at"] = _now_ms()
+            self._write_dispatches()
 
 
 class AgentRunner:
@@ -225,7 +374,11 @@ class AgentRunner:
         self._handler_getter = handler_getter
         self._running: dict[str, threading.Thread] = {}
         self._decisions: dict[str, list[JsonObject]] = {}
+        self._cancel: dict[str, _CancelEvent] = {}
+        self._partial: dict[str, str] = {}
+        self._partial_saved_at: dict[str, float] = {}
         self._lock = threading.RLock()
+        self._store.mark_interrupted_turns()
 
     def is_running(self, session_id: str) -> bool:
         with self._lock:
@@ -235,9 +388,39 @@ class AgentRunner:
     def _spawn(self, session_id: str, name: str) -> None:
         if self.is_running(session_id):
             return
+        token = self._cancel.get(session_id)
+        if token is None or token.cancelled:
+            self._cancel[session_id] = _CancelEvent()
         thread = threading.Thread(target=self._turn_main, args=(session_id,), name=name, daemon=True)
         self._running[session_id] = thread
         thread.start()
+
+    def cancel_turn(self, session_id: str) -> bool:
+        """Detiene el turno en curso de forma cooperativa (la llamada al
+        proveedor en vuelo se abandona vía ``await_or_cancel``)."""
+        with self._lock:
+            if not self.is_running(session_id) and self._store.pending_approvals(session_id):
+                self._spawn(session_id, f"agent-cancel-{session_id}")
+            token = self._cancel.get(session_id)
+            if token is None or not self.is_running(session_id):
+                return False
+            token.cancel()
+            return True
+
+    def _set_partial(self, session_id: str, text: str, token: _CancelEvent | None = None) -> None:
+        with self._lock:
+            if token is not None and (token.cancelled or self._cancel.get(session_id) is not token):
+                return
+            self._partial[session_id] = text
+            now = time.monotonic()
+            if now - self._partial_saved_at.get(session_id, float("-inf")) >= 1:
+                self._store.save_partial(session_id, text)
+                self._partial_saved_at[session_id] = now
+
+    def partial_text(self, session_id: str) -> str | None:
+        """Texto en vivo; el último checkpoint permite recuperarlo tras reiniciar."""
+        with self._lock:
+            return self._partial.get(session_id) or None
 
     def start_turn(self, session_id: str, content: str) -> None:
         with self._lock:
@@ -245,14 +428,23 @@ class AgentRunner:
                 raise ValueError("Ya hay un turno en curso en esta conversación")
             if self._store.pending_approvals(session_id):
                 raise ValueError("Resuelve primero las aprobaciones pendientes de esta conversación")
+            self._partial.pop(session_id, None)
+            self._partial_saved_at.pop(session_id, None)
             self._store.append_message(session_id, {"role": "user", "content": content})
             self._spawn(session_id, f"agent-turn-{session_id}")
 
     def decide(self, approval_id: str, approved: bool) -> JsonObject:
         """Acepta la decisión y encola su ejecución, en orden por conversación."""
         with self._lock:
+            prior = self._store.get_approval(approval_id)
+            token = self._cancel.get(str(prior["session_id"])) if prior else None
+            if prior is not None and token is not None and token.cancelled and self.is_running(str(prior["session_id"])):
+                raise ValueError("El turno se está deteniendo; espera antes de decidir")
             approval = self._store.decide_approval(approval_id, approved)
             if approval is None:
+                prior = self._store.get_approval(approval_id)
+                if prior and prior.get("status") == "expired":
+                    raise ValueError("La aprobación expiró; vuelve a pedírselo al agente")
                 raise ValueError("Aprobación inexistente o ya decidida")
             session_id = str(approval["session_id"])
             self._decisions.setdefault(session_id, []).append(approval)
@@ -276,8 +468,9 @@ class AgentRunner:
                 or method in ORCHESTRATABLE_METHODS
             )
             if invocable:
-                result = self._execute({"name": method, "params": approval.get("params") or {}})
-                self._store.update_tool_call(session_id, call_id, "done", result)
+                result = self._execute_call(
+                    session_id, {"id": call_id, "name": method, "params": approval.get("params") or {}}
+                )
             else:
                 result = json.dumps(
                     {"error": f"Herramienta no disponible para el agente: {method}"},
@@ -293,6 +486,9 @@ class AgentRunner:
         try:
             while True:
                 with self._lock:
+                    token = self._cancel.get(session_id)
+                    if token is not None and token.cancelled:
+                        raise RunCancelled()
                     decisions = self._decisions.get(session_id)
                     approval = decisions.pop(0) if decisions else None
                     if not decisions:
@@ -303,23 +499,64 @@ class AgentRunner:
                 self._run_loop(session_id)
                 with self._lock:
                     if not self._decisions.get(session_id):
-                        self._running.pop(session_id, None)
                         return
-        except Exception as err:
-            logger.exception("agent turn failed")
-            self._store.touch_session(session_id, error=str(err)[:300])
+        except RunCancelled:
+            with self._lock:
+                self._decisions.pop(session_id, None)
+            for message in self._store.messages(session_id):
+                for call in message.get("tool_calls") or []:
+                    if call.get("status") in ("queued", "running", "pending"):
+                        self._store.update_tool_call(session_id, call["id"], "interrupted", _INTERRUPTED_RESULT)
+            for approval in self._store.pending_approvals(session_id):
+                self._store.decide_approval(approval["id"], False)
+            self._store.touch_session(session_id)
+            partial = self.partial_text(session_id)
             self._store.append_message(
                 session_id,
-                {"role": "assistant", "content": f"⚠ Error del agente: {str(err)[:300]}"},
+                {"role": "assistant", "content": (f"{partial}\n\n" if partial else "") + (
+                    "⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; "
+                    "comprueba su resultado antes de repetirla."
+                )},
             )
+        except Exception as err:
+            logger.exception("agent turn failed")
+            partial = self.partial_text(session_id)
+            self._store.append_message(
+                session_id,
+                {"role": "assistant", "content": (f"{partial}\n\n" if partial else "")
+                 + f"⚠ Error del agente: {str(err)[:300]}"},
+            )
+            self._store.touch_session(session_id, error=str(err)[:300])
         finally:
             with self._lock:
+                self._partial.pop(session_id, None)
+                self._partial_saved_at.pop(session_id, None)
                 if self._running.get(session_id) is threading.current_thread():
                     self._running.pop(session_id, None)
                 if self._decisions.get(session_id):
                     self._spawn(session_id, f"agent-resume-{session_id}")
 
-    def _execute(self, call: JsonObject) -> str:
+    def _execute_call(self, session_id: str, call: JsonObject) -> str:
+        token = self._cancel.get(session_id)
+        if token is not None and token.cancelled:
+            raise RunCancelled()
+        self._store.update_tool_call(session_id, str(call["id"]), "running", "")
+        try:
+            result = await_or_cancel(lambda: self._execute(call, token), token)
+        except RunCancelled:
+            self._store.update_tool_call(session_id, str(call["id"]), "interrupted", _INTERRUPTED_RESULT)
+            raise
+        try:
+            data = json.loads(result)
+        except json.JSONDecodeError:
+            data = None  # un resultado truncado sigue siendo visible
+        failed = isinstance(data, dict) and ("error" in data or data.get("isError") is True)
+        self._store.update_tool_call(session_id, str(call["id"]), "failed" if failed else "done", result)
+        return str(result)
+
+    def _execute(self, call: JsonObject, token: _CancelEvent | None = None) -> str:
+        if token is not None and token.cancelled:
+            raise RunCancelled()
         name = str(call.get("name") or "")
         mcp_ref = mcp_servers.parse_agent_tool(name)
         if mcp_ref is not None:
@@ -359,11 +596,16 @@ class AgentRunner:
                 if future is None:
                     raise ValueError("No se pudo programar la herramienta")
                 try:
-                    result = future.result(timeout=timeout_ms_for(name) / 1000)
+                    result = await_or_cancel(lambda: future.result(timeout=timeout_ms_for(name) / 1000), token)
+                except RunCancelled:
+                    future.cancel()
+                    raise
                 except FutureTimeoutError:
                     future.cancel()
                     raise ValueError("La herramienta excedió su tiempo; puede seguir ejecutándose, comprueba el resultado antes de repetirla") from None
-            return json.dumps(result, ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
+            return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
+        except RunCancelled:
+            raise
         except Exception as err:  # el error vuelve al modelo como resultado de la tool
             return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
 
@@ -371,12 +613,24 @@ class AgentRunner:
         session = self._store.get_session(session_id)
         if session is None:
             raise ValueError("Sesión de agente no encontrada")
+        token = self._cancel.get(session_id)
         gated = set(gated_methods())
         for _ in range(_MAX_TOOL_STEPS):
+            if token is not None and token.cancelled:
+                raise RunCancelled()
             with self._lock:
                 if self._store.pending_approvals(session_id) or self._decisions.get(session_id):
                     return  # pausa hasta aplicar las decisiones del usuario
-            reply = chat(str(session["provider"]), str(session["model"]), self._store.messages(session_id))
+            reply = await_or_cancel(
+                lambda: chat(str(session["provider"]), str(session["model"]), self._store.messages(session_id),
+                             on_delta=lambda chunk: self._set_partial(session_id, chunk, token)),
+                token,
+            )
+            if token is not None and token.cancelled:
+                raise RunCancelled()
+            with self._lock:
+                self._partial.pop(session_id, None)  # el texto parcial ya va a persistirse
+                self._partial_saved_at.pop(session_id, None)
             calls = reply.get("calls") or []
             text = str(reply.get("text") or "")
             if calls:
@@ -398,6 +652,8 @@ class AgentRunner:
                 return
 
             for call in calls:
+                if token is not None and token.cancelled:
+                    raise RunCancelled()
                 call_id = str(call["id"])
                 if not call.get("allowed"):
                     result = json.dumps(
@@ -411,8 +667,7 @@ class AgentRunner:
                     self._store.create_approval(session_id, call)
                     self._store.update_tool_call(session_id, call_id, "pending", "")
                     continue  # se reanuda desde decide()
-                result = self._execute(call)
-                self._store.update_tool_call(session_id, call_id, "done", result)
+                result = self._execute_call(session_id, call)
                 self._append_tool_result(session_id, call_id, call["name"], result)
         self._store.append_message(
             session_id,

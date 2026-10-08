@@ -23,6 +23,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Política de diffs**: `AGENTS.md` endurece la regla de cambios mínimos — subordina cualquier skill instalada, permite enmendar la lista de archivos declarada, exige persistir la declaración `cambio amplio:` en el commit o PR, documenta que `push:ship`/`pr-fix:ship` stagean todo el worktree y precisa las acompañantes permitidas.
 
 ### Fixed
+- **Proveedores IA**: OpenAI Chat Completions y Anthropic Messages acumulan streaming de texto y herramientas; las respuestas incompletas o inválidas fallan con mensajes controlados, los errores ocultan la clave y la sonda de modelos limita el tamaño de respuesta.
 - **Mensajes de error de herramientas**: `EvidenciaVolanteoError` y `PanelAvisoCorteError` derivan ahora de `ValueError`, así que la UI vuelve a mostrar el texto propio de la herramienta en lugar de "Error interno del servidor".
 - **Canvas / pegar**: pegar una capa que todavía estaba en el documento duplicaba el id y terminaba borrando la capa original; el portapapeles se re-keyea antes de clonar.
 - **Canvas / export CMYK**: con páginas pareadas el tope de 200 páginas multiplicaba contextos × páginas y rechazaba exportaciones que el renderer resuelve en una página por contexto.

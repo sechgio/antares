@@ -72,3 +72,23 @@ it('invalida el resultado de la prueba cuando cambian los ajustes y pide guardar
   expect(aiProvidersApi.aiProviderStatus).toHaveBeenCalledTimes(1);
   expect(addToast).toHaveBeenLastCalledWith(expect.objectContaining({ message: expect.stringMatching(/Guarda/) }));
 });
+
+it.each(['openai', 'anthropic'])('guarda, prueba y elimina la configuración de %s sin enviar la clave enmascarada', async (id) => {
+  const current = { ...provider, id, provider: id, label: id };
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [current] });
+  const probe = vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({ provider: { ...current, reachable: false, models_count: null, error: 'HTTP 401' } });
+  const remove = vi.spyOn(aiProvidersApi, 'aiProviderDelete').mockResolvedValue({ deleted: true });
+  render(<ProvidersView />);
+  fireEvent.change(await screen.findByLabelText(`Modelo ${id}`), { target: { value: 'otro-modelo' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
+  await waitFor(() => expect(aiProvidersApi.aiProviderSave).toHaveBeenCalledWith({
+    provider: id, api_key: undefined, base_url: current.base_url, model: 'otro-modelo',
+  }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Probar' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Probar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('HTTP 401');
+  expect(probe).toHaveBeenCalledWith(id);
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar' }));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith(id));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});

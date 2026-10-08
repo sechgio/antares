@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { flowsApi } from '../../api/flowsApi';
 import { aiProvidersApi } from '../../api/aiProvidersApi';
 import FlowList from './FlowList';
-import { ApprovalCard } from './AgentTimeline';
+import { ApprovalCard, MessageRow } from './AgentTimeline';
 import RunsView, { StepOutput } from './RunsView';
 import ConnectionDetail from './ConnectionDetail';
 import ProvidersView from './ProvidersView';
@@ -59,6 +59,34 @@ it('pide confirmación antes de reintentar una acción con resultado incierto', 
   fireEvent.click(await screen.findByRole('button', { name: 'Ejecutar de nuevo' }));
   await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ type: 'destructive' })));
   await waitFor(() => expect(runCall).toHaveBeenCalledWith('flow-1', undefined, true));
+});
+
+it('ofrece reanudar una ejecución que quedó interrumpida', async () => {
+  const run: FlowRun = { id: 'r1', flow_id: 'flow-1', flow_name: 'Lote', status: 'running', interrupted: true,
+    created_at: '2026-10-04T12:00:00Z', started_at: null, finished_at: null, steps: [], error: null, trigger_payload: {} };
+  vi.spyOn(flowsApi, 'flowsRunsList').mockResolvedValue({ runs: [run] });
+  const resume = vi.spyOn(flowsApi, 'flowsRunResume').mockResolvedValue({ run });
+  render(<RunsView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Reanudar' }));
+  await waitFor(() => expect(resume).toHaveBeenCalledWith('r1'));
+});
+
+it('permite aprobar una ejecución en espera desde su detalle', async () => {
+  const run: FlowRun = { id: 'r1', flow_id: 'f1', flow_name: 'Lote', status: 'waiting',
+    created_at: '2026-10-04T12:00:00Z', started_at: null, finished_at: null, steps: [],
+    error: null, trigger_payload: {},
+    checkpoint: { approvals: { a1: { id: 'a1', node_id: 'n1', node_name: 'Imprimir', method: 'flows_print_pdf', params: {}, decision: null } } } };
+  vi.spyOn(flowsApi, 'flowsRunsList').mockResolvedValue({ runs: [run] });
+  const decide = vi.spyOn(flowsApi, 'flowsApprovalDecide').mockResolvedValue({} as Awaited<ReturnType<typeof flowsApi.flowsApprovalDecide>>);
+  render(<RunsView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Expandir' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Aprobar' }));
+  await waitFor(() => expect(decide).toHaveBeenCalledWith({ run_id: 'r1', approval_id: 'a1', decision: 'approved' }));
+});
+
+it('muestra el texto parcial del agente con cursor de escritura', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: 'Escribiendo resp', partial: true, ts: 0 }} />);
+  expect(screen.getByText(/Escribiendo resp/)).toBeVisible();
 });
 
 it('crea un ejemplo manual que funciona sin configurar IA ni servicios externos', async () => {

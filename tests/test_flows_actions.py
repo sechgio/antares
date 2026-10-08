@@ -267,6 +267,61 @@ def test_run_where_every_action_is_omitted_ends_skipped_not_success(setup):
     assert flows.HANDLERS["flows_run_cancel"]({"run_id": done["id"]})["cancelled"] is False
 
 
+def test_cancel_marks_interrupted_run_without_live_thread(setup):
+    store = setup[0]
+    flow = store.create("Interrumpido", graph={
+        "nodes": [{"id": "trigger", "kind": "trigger", "config": {}},
+                  {"id": "slow", "kind": "tool_call", "config": {"method": "formats"}}],
+        "edges": [{"from_node": "trigger", "to_node": "slow"}],
+    })
+    run = store.create_run(flow["id"])
+    store.update_run(run["id"], interrupted=True)  # reinicio con el run en curso
+    res = flows.HANDLERS["flows_run_cancel"]({"run_id": run["id"]})
+    assert res["cancelled"] is True
+    assert res["run"]["status"] == "cancelled"
+
+
+def test_expired_approval_cannot_be_decided_or_listed(setup):
+    store = setup[0]
+    flow = store.create("En espera", graph={
+        "nodes": [{"id": "trigger", "kind": "trigger", "config": {}},
+                  {"id": "act", "kind": "tool_call", "config": {"method": "formats"}}],
+        "edges": [{"from_node": "trigger", "to_node": "act"}],
+    })
+    run = store.create_run(flow["id"])
+    store.update_run(run["id"], status="waiting", checkpoint={"approvals": {"a1": {
+        "id": "a1", "node_id": "act", "node_name": "Acción", "method": "formats",
+        "params": {}, "decision": None, "created_at": "2020-01-01T00:00:00Z"}}})
+    assert flows.HANDLERS["flows_approvals_list"]({})["approvals"] == []
+    with pytest.raises(ValueError, match="expir"):
+        store.decide_run_approval(run["id"], "a1", True)
+    assert store.get_run(run["id"])["checkpoint"]["approvals"]["a1"]["decision"] == "expired"
+
+
+def test_cancelled_queued_run_stops_waiting_for_a_slot(setup):
+    """Un run encolado sin slots libres sale de la espera al cancelarse."""
+    from backend.core.flows import runner as runner_mod
+
+    store = setup[0]
+    flow = store.create("En cola", graph={
+        "nodes": [{"id": "trigger", "kind": "trigger", "config": {}}], "edges": []})
+    runner = FlowRunner(store, lambda method: lambda params: {})
+    held = [runner_mod._RUN_SLOTS.acquire(timeout=2) for _ in range(3)]
+    assert all(held)
+    run = runner.start(flow["id"])
+    try:
+        time.sleep(0.3)  # deja al hilo llegar al wait del slot
+        res = flows.HANDLERS["flows_run_cancel"]({"run_id": run["id"]})
+        assert res["cancelled"] is True
+        deadline = time.time() + 5
+        while run["id"] in runner_mod._active_runs and time.time() < deadline:
+            time.sleep(0.05)
+        assert run["id"] not in runner_mod._active_runs
+    finally:
+        for _ in held:
+            runner_mod._RUN_SLOTS.release()
+
+
 def test_failure_does_not_acknowledge_source_or_retry_writes(setup):
     calls = []
 

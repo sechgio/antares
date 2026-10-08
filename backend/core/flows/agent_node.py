@@ -96,7 +96,7 @@ def _execute_call(
         if fn is None:
             raise ValueError(f"Método desconocido: {name}")
         result = lane_submit(name, fn, args) if lane_submit is not None and lane_for(name) != "sync" else fn(args)
-        return json.dumps(result, ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
+        return json.dumps(agent_chat.scrub_secrets(result), ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
     except Exception as err:  # el error vuelve al modelo como resultado de la tool
         return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
 
@@ -117,7 +117,7 @@ def _apply_calls(
             content = json.dumps(
                 {"error": f"Herramienta no disponible para este nodo: {name}"}, ensure_ascii=False
             )
-        elif serialized["gated"] and not auto_approve:
+        elif serialized["gated"] and not (auto_approve and agent_chat.auto_approve_allowed(name)):
             state["queued_calls"] = [_serialize_call(c) for c in calls[index + 1 :]]
             raise AwaitingApproval(state | {"pending_call": serialized})
         else:
@@ -163,7 +163,7 @@ def run_agent_node(
     auto_approve = config.get("auto_approve") is True
     gated = set(gated_methods())
     allowed = set(ORCHESTRATABLE_METHODS) | gated
-    allowed |= {t["name"] for t in agent_chat.tool_specs() if str(t.get("name") or "").startswith("mcp__")}
+    allowed |= {t["name"] for t in agent_chat.tool_specs() if str(t.get("name") or "").startswith(("mcp__", "mcp2__"))}
     if isinstance(tools_cfg, list):
         allowed &= {str(name) for name in tools_cfg}
 

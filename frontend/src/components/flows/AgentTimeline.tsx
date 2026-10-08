@@ -13,17 +13,21 @@ const CALL_STATUS_LABEL: Record<string, string> = {
   pending: 'esperando aprobación',
   done: 'ejecutada',
   denied: 'rechazada',
+  running: 'ejecutando',
+  failed: 'fallida',
+  interrupted: 'interrumpida · comprueba el resultado',
 };
 
 function CallStatusIcon({ status }: { status: string }) {
   if (status === 'done') return <Check size={12} className="text-[var(--accent-green)]" />;
-  if (status === 'denied') return <X size={12} className="text-[var(--accent-red)]" />;
+  if (status === 'denied' || status === 'failed') return <X size={12} className="text-[var(--accent-red)]" />;
+  if (status === 'interrupted') return <AlertTriangle size={12} className="text-[var(--accent-yellow)]" />;
   if (status === 'pending') return <ShieldCheck size={12} className="text-[var(--accent-yellow)]" />;
   return <Loader2 size={12} className="animate-spin text-[var(--text-muted)]" />;
 }
 
 function ToolCallStep({ call }: { call: AgentToolCall }) {
-  const detail = call.status === 'done' && call.result ? call.result : null;
+  const detail = call.result || null;
   const params = Object.keys(call.params).length > 0 ? JSON.stringify(call.params) : null;
   return (
     <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2">
@@ -69,6 +73,7 @@ function AssistantBlock({ msg }: { msg: AgentMessage }) {
       {msg.content && (
         <p className="max-w-[90%] whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--text-primary)]">
           {msg.content}
+          {msg.partial && <span className="ml-0.5 animate-pulse text-[var(--text-muted)]">▍</span>}
         </p>
       )}
       {(msg.tool_calls ?? []).length > 0 && (

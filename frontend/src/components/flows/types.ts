@@ -90,6 +90,15 @@ export interface FlowRunStep {
   attempts?: number | null;
 }
 
+export interface FlowRunApproval {
+  id: string;
+  node_id?: string;
+  node_name?: string;
+  method?: string;
+  params?: unknown;
+  decision?: string | null;
+}
+
 export interface FlowRun {
   id: string;
   flow_id: string;
@@ -100,6 +109,7 @@ export interface FlowRun {
   steps: FlowRunStep[];
   error: string | null;
   interrupted?: boolean;
+  checkpoint?: { approvals?: Record<string, FlowRunApproval> } | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;

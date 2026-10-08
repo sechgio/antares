@@ -16,7 +16,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.19.0"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

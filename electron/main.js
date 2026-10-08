@@ -137,6 +137,14 @@ function _shutdownOnce() {
     console.warn('[main] cleanupAutoUpdater threw during shutdown:', err && err.message);
   }
   try {
+    // Cierre best-effort: watchers y harness del agente nativo. Las escrituras
+    // SQLite de pi-durable son síncronas (node:sqlite), así que el estado ya
+    // es durable; esto solo libera recursos si el runtime llegó a abrirse.
+    require('./agent-runtime').shutdown().catch(() => {});
+  } catch (err) {
+    console.warn('[main] agent runtime shutdown threw:', err && err.message);
+  }
+  try {
     killPython();
   } catch (err) {
     console.warn('[main] killPython threw during shutdown:', err && err.message);

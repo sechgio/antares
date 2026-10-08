@@ -29,6 +29,16 @@
       "status": { "path": "/v1/models", "models_field": "data" },
       "chat": { "path": "/v1/messages", "style": "anthropic_messages", "default_model": "claude-sonnet-4-5" }
     },
+    "openrouter": {
+      "label": "OpenRouter",
+      "description": "Una sola clave para cientos de modelos (OpenAI, Anthropic, Llama y más)",
+      "docs": "https://openrouter.ai/keys",
+      "auth": { "type": "api_key", "header": "Authorization", "prefix": "Bearer ", "extra_headers": {} },
+      "base_url": "https://openrouter.ai/api/v1",
+      "editable_base_url": true,
+      "status": { "path": "/models", "models_field": "data" },
+      "chat": { "path": "/chat/completions", "style": "openai_chat", "default_model": "openai/gpt-4o-mini" }
+    },
     "ollama": {
       "label": "Ollama (local)",
       "description": "Modelos locales servidos por Ollama, sin clave",
