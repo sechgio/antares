@@ -38,6 +38,14 @@ def normalize_tabular_key(
     return re.sub(r"[^a-z0-9]+", "_", text).strip("_")
 
 
+def _xlsx_row_dict(keys: list[str], values: tuple[Any, ...]) -> ReportRow:
+    return {
+        keys[index]: values[index]
+        for index in range(min(len(keys), len(values)))
+        if keys[index]
+    }
+
+
 def import_reports(
     filename: str,
     content: bytes,
@@ -190,11 +198,7 @@ def parse_xlsx_rows(
                 worksheet.iter_rows(min_row=header_index + 2, values_only=True),
                 start=1,
             ):
-                row = {
-                    keys[index]: values[index]
-                    for index in range(min(len(keys), len(values)))
-                    if keys[index]
-                }
+                row = _xlsx_row_dict(keys, values)
                 if any(value is not None and str(value or "").strip() != "" for value in row.values()):
                     has_rows = True
                     break
@@ -214,7 +218,7 @@ def parse_xlsx_rows(
         rows: list[ReportRow] = []
         consecutive_empty = 0
         for values in selected_sheet.iter_rows(min_row=selected_header_index + 2, values_only=True):
-            row = {keys[index]: values[index] for index in range(min(len(keys), len(values))) if keys[index]}
+            row = _xlsx_row_dict(keys, values)
             if any(value is not None and str(value or "").strip() != "" for value in row.values()):
                 rows.append(row)
                 consecutive_empty = 0

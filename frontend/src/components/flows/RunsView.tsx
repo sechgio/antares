@@ -152,6 +152,24 @@ export default function RunsView({ flowId }: { flowId?: string }) {
     }
   };
 
+  const resume = async (runId: string) => {
+    try {
+      await flowsApi.flowsRunResume(runId);
+      void load(true);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo reanudar'), type: 'error' });
+    }
+  };
+
+  const decide = async (runId: string, approvalId: string, decision: 'approved' | 'denied') => {
+    try {
+      await flowsApi.flowsApprovalDecide({ run_id: runId, approval_id: approvalId, decision });
+      void load(true);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo registrar la decisión'), type: 'error' });
+    }
+  };
+
   const rerun = async (run: FlowRun) => {
     let acknowledge = false;
     if (run.steps.some((step) => step.error?.includes('resultado incierto'))) {
@@ -246,6 +264,17 @@ export default function RunsView({ flowId }: { flowId?: string }) {
                       </span>
                     </button>
                     <FlowStatusBadge status={run.status} />
+                    {run.interrupted && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void resume(run.id)}
+                        aria-label="Reanudar"
+                        title="Reanudar ejecución interrumpida"
+                      >
+                        <RefreshCw size={13} />
+                      </Button>
+                    )}
                     {run.status !== 'queued' && run.status !== 'running' && (
                       <Button
                         variant="ghost"
@@ -272,6 +301,15 @@ export default function RunsView({ flowId }: { flowId?: string }) {
 
                   {open && (
                     <div className="border-t border-[var(--border-medium)] px-4 py-3">
+                      {run.status === 'waiting' && Object.values(run.checkpoint?.approvals ?? {}).filter((a) => !a.decision).map((a) => (
+                        <div key={a.id} className="mb-2 flex items-center gap-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 py-2">
+                          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-secondary)]">
+                            {a.node_name || a.node_id} pide aprobación: {a.method}
+                          </span>
+                          <Button variant="primary" size="sm" onClick={() => void decide(run.id, a.id, 'approved')}>Aprobar</Button>
+                          <Button variant="secondary" size="sm" onClick={() => void decide(run.id, a.id, 'denied')}>Denegar</Button>
+                        </div>
+                      ))}
                       {run.error && (
                         <details className="mb-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] p-2 text-xs text-[var(--accent-red,#ef4444)]">
                           <summary className="cursor-pointer">La ejecución no se completó. Revisa el paso que falló. Ver detalle.</summary>

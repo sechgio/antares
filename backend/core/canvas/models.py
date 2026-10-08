@@ -111,26 +111,53 @@ def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:  # al
     }
 
 
+_GEOMETRY_CSS_DEFAULTS = {
+    "--width": "40mm",
+    "--height": "10mm",
+    "--translate-x": "10mm",
+    "--translate-y": "10mm",
+}
+
+
 def _normalize_css_vars(raw: Any, *, with_geometry_defaults: bool = True) -> dict[str, str]:
     if not isinstance(raw, dict):
-        if not with_geometry_defaults:
-            return {}
-        return {
-            "--width": "40mm",
-            "--height": "10mm",
-            "--translate-x": "10mm",
-            "--translate-y": "10mm",
-        }
+        return dict(_GEOMETRY_CSS_DEFAULTS) if with_geometry_defaults else {}
     out: dict[str, str] = {}
     for key, value in raw.items():
         if isinstance(key, str) and isinstance(value, (str, int, float)):
             out[key] = str(value)
     if with_geometry_defaults:
-        out.setdefault("--width", "40mm")
-        out.setdefault("--height", "10mm")
-        out.setdefault("--translate-x", "10mm")
-        out.setdefault("--translate-y", "10mm")
+        for key, value in _GEOMETRY_CSS_DEFAULTS.items():
+            out.setdefault(key, value)
     return out
+
+
+def _normalize_grid_rules(raw: Any) -> list[dict[str, int]]:
+    rules: list[dict[str, int]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            rules.append(
+                {
+                    "whenImages": _finite_int(item.get("whenImages", 0)),
+                    "cols": _finite_int(item.get("cols", 1)),
+                    "rows": _finite_int(item.get("rows", 1)),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+    return rules
+
+
+def _normalize_str_mapping(raw: Any) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(k): str(v)
+        for k, v in raw.items()
+        if isinstance(k, str) and isinstance(v, (str, int, float))
+    }
 
 
 def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
@@ -172,20 +199,7 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
         if isinstance(parsed_rows, dict) and isinstance(parsed_rows.get("cells"), list):
             cleaned["rowsData"] = rows_text
     if isinstance(raw.get("rules"), list):
-        rules = []
-        for item in raw["rules"]:
-            if not isinstance(item, dict):
-                continue
-            try:
-                rules.append(
-                    {
-                        "whenImages": _finite_int(item.get("whenImages", 0)),
-                        "cols": _finite_int(item.get("cols", 1)),
-                        "rows": _finite_int(item.get("rows", 1)),
-                    }
-                )
-            except (TypeError, ValueError):
-                continue
+        rules = _normalize_grid_rules(raw["rules"])
         if rules:
             cleaned["rules"] = rules
     if isinstance(raw.get("path"), dict):
@@ -200,21 +214,15 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
                         "x": _finite_float(pt.get("x", 0)),
                         "y": _finite_float(pt.get("y", 0)),
                     }
-                    if isinstance(pt.get("hin"), dict):
-                        pt_dict["hin"] = {
-                            "x": _finite_float(pt["hin"].get("x", 0)),
-                            "y": _finite_float(pt["hin"].get("y", 0)),
-                        }
-                    elif pt.get("hin") is None and "hin" in pt:
-                        pt_dict["hin"] = None
-
-                    if isinstance(pt.get("hout"), dict):
-                        pt_dict["hout"] = {
-                            "x": _finite_float(pt["hout"].get("x", 0)),
-                            "y": _finite_float(pt["hout"].get("y", 0)),
-                        }
-                    elif pt.get("hout") is None and "hout" in pt:
-                        pt_dict["hout"] = None
+                    for handle_key in ("hin", "hout"):
+                        handle = pt.get(handle_key)
+                        if isinstance(handle, dict):
+                            pt_dict[handle_key] = {
+                                "x": _finite_float(handle.get("x", 0)),
+                                "y": _finite_float(handle.get("y", 0)),
+                            }
+                        elif handle is None and handle_key in pt:
+                            pt_dict[handle_key] = None
 
                     cleaned_points.append(pt_dict)
                 except (TypeError, ValueError):
@@ -296,14 +304,9 @@ def _normalize_variant_binding(raw: Any) -> dict[str, Any] | None:  # allowlist:
         out["fieldKey"] = raw["fieldKey"].strip()
     if isinstance(raw.get("fallbackVariant"), str) and raw["fallbackVariant"].strip():
         out["fallbackVariant"] = raw["fallbackVariant"].strip()
-    if isinstance(raw.get("mapping"), dict):
-        mapping = {
-            str(k): str(v)
-            for k, v in raw["mapping"].items()
-            if isinstance(k, str) and isinstance(v, (str, int, float))
-        }
-        if mapping:
-            out["mapping"] = mapping
+    mapping = _normalize_str_mapping(raw.get("mapping"))
+    if mapping:
+        out["mapping"] = mapping
     if isinstance(raw.get("propBindings"), dict):
         prop_bindings: dict[str, Any] = {}  # allowlist: dict[str, Any]
         for pk, pv in raw["propBindings"].items():
@@ -313,14 +316,9 @@ def _normalize_variant_binding(raw: Any) -> dict[str, Any] | None:  # allowlist:
                     p_out["fieldKey"] = pv["fieldKey"].strip()
                 if pv.get("fallback") is not None:
                     p_out["fallback"] = str(pv["fallback"])
-                if isinstance(pv.get("mapping"), dict):
-                    p_map = {
-                        str(mk): str(mv)
-                        for mk, mv in pv["mapping"].items()
-                        if isinstance(mk, str) and isinstance(mv, (str, int, float))
-                    }
-                    if p_map:
-                        p_out["mapping"] = p_map
+                p_map = _normalize_str_mapping(pv.get("mapping"))
+                if p_map:
+                    p_out["mapping"] = p_map
                 if p_out:
                     prop_bindings[pk.strip()] = p_out
         if prop_bindings:
@@ -512,20 +510,7 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any
         except (TypeError, ValueError):
             pass
     if isinstance(raw.get("gridRules"), list):
-        rules = []
-        for item in raw["gridRules"]:
-            if not isinstance(item, dict):
-                continue
-            try:
-                rules.append(
-                    {
-                        "whenImages": _finite_int(item.get("whenImages", 0)),
-                        "cols": _finite_int(item.get("cols", 1)),
-                        "rows": _finite_int(item.get("rows", 1)),
-                    }
-                )
-            except (TypeError, ValueError):
-                continue
+        rules = _normalize_grid_rules(raw["gridRules"])
         if rules:
             out["gridRules"] = rules
     return out
@@ -577,7 +562,7 @@ def _normalize_guides(raw: Any, last_page: int) -> list[dict[str, Any]]:  # allo
                 page_index = _finite_int(page_raw)
             except (TypeError, ValueError):
                 page_index = 0
-        page_index = max(0, min(page_index, max(0, last_page)))
+        page_index = max(0, min(page_index, last_page))
         guides.append({"id": guide_id, "axis": axis, "posMm": pos_mm, "pageIndex": page_index})
     return guides
 
@@ -609,14 +594,14 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
         layers = create_empty_document()["layers"]
 
     updated_raw = raw.get("updatedAt")
-    updated_at = str(updated_raw).strip() if isinstance(updated_raw, str) and str(updated_raw).strip() else ""
+    updated_at = updated_raw.strip() if isinstance(updated_raw, str) else ""
 
     raw_pages = raw.get("pages")
     pages = _normalize_pages(raw_pages)
     is_legacy_no_pages = not isinstance(raw_pages, list) or len(raw_pages) == 0
-    if is_legacy_no_pages and layers:
+    if is_legacy_no_pages:
         try:
-            max_idx = max(int(layer.get("pageIndex", 0)) for layer in layers)
+            max_idx = max(layer["pageIndex"] for layer in layers)
         except (TypeError, ValueError):
             max_idx = 0
         max_idx = min(max_idx, MAX_LEGACY_MIGRATION_PAGES - 1)
@@ -625,7 +610,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
                 pages.append({"id": _new_id(), "name": f"Página {i + 1}"})
     last_page = len(pages) - 1
     layers = [
-        {**layer, "pageIndex": min(max(0, int(layer.get("pageIndex", 0))), last_page)} for layer in layers
+        {**layer, "pageIndex": min(max(0, layer["pageIndex"]), last_page)} for layer in layers
     ]
 
     valid_ids = {layer["id"] for layer in layers}
@@ -698,8 +683,6 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
         "fields": _normalize_fields(raw.get("fields")),
     }
 
-
-CanvasDocument = dict[str, Any]  # allowlist: dict[str, Any]
 
 def next_copy_name(name: str, existing_names: set[str] | None = None) -> str:
     taken = existing_names or set()

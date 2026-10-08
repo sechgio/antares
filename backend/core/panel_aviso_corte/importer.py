@@ -92,8 +92,6 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
         )
         msg = f"{_ERR_READ_PREFIX}: {err}"
         raise InvalidExcelError(msg) from err
-    except InvalidExcelError:
-        raise
     except Exception as err:  # pragma: no cover - defensivo
         logger.exception(
             "parse_excel_bytes: fallo inesperado abriendo %r: %s",

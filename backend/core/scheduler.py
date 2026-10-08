@@ -81,7 +81,7 @@ def _detect_limits() -> tuple[int, int, int, int]:
     ram_divisor = 2 if available_gb >= 16 else 3
     ram_limited_heavy = max(1, int(available_gb // ram_divisor))
     heavy_workers = max(1, min(max(1, cpu_count // 2), ram_limited_heavy, heavy_cap))
-    heavy_queue_limit = max(heavy_workers, heavy_workers * 2)
+    heavy_queue_limit = heavy_workers * 2
     light_queue_limit = _light_queue_default(light_workers)
     if available_gb < 1.0:
         light_queue_limit = min(light_queue_limit, max(4, light_workers))

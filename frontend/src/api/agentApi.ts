@@ -15,7 +15,7 @@ export interface AgentToolCall {
   name: string;
   params: Record<string, unknown>;
   gated: boolean;
-  status: 'queued' | 'pending' | 'done' | 'denied';
+  status: 'queued' | 'pending' | 'running' | 'done' | 'denied' | 'failed' | 'interrupted';
   result?: string | null;
 }
 
@@ -26,6 +26,7 @@ export interface AgentMessage {
   tool_use_id?: string;
   name?: string;
   ts: number;
+  partial?: boolean;
 }
 
 export interface AgentToolSpec {
@@ -40,7 +41,7 @@ export interface AgentApproval {
   call_id: string;
   method: string;
   params: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'denied';
+  status: 'pending' | 'approved' | 'denied' | 'expired';
   created_at: number;
   decided_at: number | null;
 }
@@ -72,6 +73,9 @@ export const agentApi = {
       pending_approvals: AgentApproval[];
       last_error: string | null;
     }>('agent_turn_status', { session_id }),
+
+  agentTurnCancel: (session_id: string) =>
+    _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 
   agentApprove: (approval_id: string) =>
     _invoke<{ approval: AgentApproval }>('agent_approve', { approval_id }),

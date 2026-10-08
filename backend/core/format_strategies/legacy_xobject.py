@@ -25,12 +25,12 @@ _NUMBER_FONT_NAME = "/FZD"
 _NUMBER_FONT_SIZE = 10.6599998
 
 
-def _find_number_xobject(page) -> tuple[str, Any]:
+def _find_number_xobject(page) -> Any:
     xobjects = page["/Resources"].get("/XObject")
     if xobjects is None:
         msg = "Template sin XObjects"
         raise ValueError(msg)
-    for name, ref in xobjects.get_object().items():
+    for ref in xobjects.get_object().values():
         xobject = ref.get_object()
         if xobject.get("/Subtype") != "/Form":
             continue
@@ -38,7 +38,7 @@ def _find_number_xobject(page) -> tuple[str, Any]:
         if data.count(b"Tj") != _NUMBER_XOBJECT_DRAW_COUNT:
             continue
         if all(marker in data for marker in _NUMBER_XOBJECT_MARKERS):
-            return name, xobject
+            return xobject
     msg = "No se encontro el XObject del correlativo en el template"
     raise ValueError(msg)
 
@@ -98,7 +98,7 @@ class LegacyXObjectStrategy:
         writer = PdfWriter()
         reader = PdfReader(io.BytesIO(template_bytes))
         base_page = writer.add_page(reader.pages[0])
-        _, template_xobject = _find_number_xobject(base_page)
+        template_xobject = _find_number_xobject(base_page)
         _ensure_number_font(template_xobject)
         shared_resources = cast(DictionaryObject, base_page["/Resources"])
         shared_xobjects = cast(DictionaryObject, shared_resources["/XObject"].get_object())

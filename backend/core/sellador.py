@@ -63,13 +63,10 @@ def _pdf_object(body: bytes, obj_id: int) -> bytes:
     return f"{obj_id} 0 obj\n".encode("ascii") + body + b"\nendobj\n"
 
 
-def _build_png_overlay_pdf(img: Image.Image, dpi: float = STAMP_EXPORT_DPI) -> bytes:
-    if img.mode != "RGBA":
-        img = img.convert("RGBA")
-
+def _build_png_overlay_pdf(img: Image.Image) -> bytes:
     width_px, height_px = img.size
-    width_pt = width_px * 72.0 / dpi
-    height_pt = height_px * 72.0 / dpi
+    width_pt = width_px * 72.0 / STAMP_EXPORT_DPI
+    height_pt = height_px * 72.0 / STAMP_EXPORT_DPI
 
     rgb = img.convert("RGB")
     alpha = img.split()[3]
@@ -132,7 +129,7 @@ def _build_png_overlay_pdf(img: Image.Image, dpi: float = STAMP_EXPORT_DPI) -> b
 
 def _stamp_image_to_pdf_page(img: Image.Image) -> bytes:
     if img.mode == "RGBA":
-        return _build_png_overlay_pdf(img, STAMP_EXPORT_DPI)
+        return _build_png_overlay_pdf(img)
     buffer = io.BytesIO()
     img.save(buffer, format="PDF", resolution=STAMP_EXPORT_DPI)
     return buffer.getvalue()
@@ -254,8 +251,7 @@ def apply_sellador(
         stamp_pdf_bytes = _stamp_image_to_pdf_page(stamp_img)
         stamp_page = PdfReader(io.BytesIO(stamp_pdf_bytes)).pages[0]
         for page_idx, page in enumerate(writer.pages):
-            stamps_on_page = page_counts.get(page_idx, 0)
-            for _ in range(stamps_on_page):
+            if page_idx in page_counts:
                 _apply_stamp_to_page(page, stamp_page, x, y, actual_h_pt)
 
     output = io.BytesIO()

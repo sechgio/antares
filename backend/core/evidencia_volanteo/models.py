@@ -7,8 +7,6 @@ from .layout import CUADRANTE_LABEL
 
 MAX_IMAGES_PER_PAGE = 6
 MAX_PAGES = 1000
-MAX_LOGO_BYTES = 5 * 1024 * 1024
-MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 
 @dataclass(frozen=True)

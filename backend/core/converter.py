@@ -5,6 +5,7 @@ import contextlib
 import os
 import shutil
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -83,25 +84,28 @@ def copiar_archivo(
     if ruta_destino.is_symlink() or ruta_destino.parent.is_symlink():
         raise ValueError("symlink no permitido en ruta de destino")
 
+    try:
+        _write_staged(ruta_destino, lambda tmp: shutil.copy2(ruta_origen, tmp))
+    except FileNotFoundError as exc:
+        msg = f"No se encontró el archivo: {ruta_origen}"
+        raise FileNotFoundError(msg) from exc
+
+    return ruta_destino
+
+
+def _write_staged(ruta_destino: Path, write: Callable[[Path], object]) -> None:
     fd, tmp_name = tempfile.mkstemp(
         dir=str(ruta_destino.parent), prefix=f".{ruta_destino.stem}-", suffix=".antares-tmp"
     )
     os.close(fd)
     tmp_destino = Path(tmp_name)
     try:
-        shutil.copy2(ruta_origen, tmp_destino)
+        write(tmp_destino)
         os.replace(tmp_destino, ruta_destino)
-    except FileNotFoundError as exc:
-        with contextlib.suppress(OSError):
-            tmp_destino.unlink(missing_ok=True)
-        msg = f"No se encontró el archivo: {ruta_origen}"
-        raise FileNotFoundError(msg) from exc
     except Exception:
         with contextlib.suppress(OSError):
             tmp_destino.unlink(missing_ok=True)
         raise
-
-    return ruta_destino
 
 
 def _ensure_mode(img: Image.Image, target_modes: tuple[str, ...]) -> Image.Image:
@@ -113,10 +117,8 @@ def _ensure_mode(img: Image.Image, target_modes: tuple[str, ...]) -> Image.Image
         fondo = Image.new("RGB", img.size, (255, 255, 255))
         if img.mode == "P":
             img = img.convert("RGBA")
-        if img.mode in ("RGBA", "LA"):
-            fondo.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
-            return fondo
-        return img.convert("RGB")
+        fondo.paste(img, mask=img.split()[-1])
+        return fondo
     target_mode = "RGB" if "RGB" in target_modes else target_modes[0]
     return img.convert(target_mode)
 
@@ -243,13 +245,8 @@ def convertir_imagen(
         if ruta_destino.is_symlink() or ruta_destino.parent.is_symlink():
             raise ValueError("symlink no permitido en ruta de salida")
         save_kwargs = _build_save_kwargs(formato, calidad, keep_exif, img, optimize=optimize)
-        fd, tmp_name = tempfile.mkstemp(
-            dir=str(ruta_destino.parent), prefix=f".{ruta_destino.stem}-", suffix=".antares-tmp"
-        )
-        os.close(fd)
-        tmp_destino = Path(tmp_name)
 
-        try:
+        def _save_tmp(tmp_destino: Path) -> None:
             encoder = info.get("encoder")
             if encoder is not None:
                 save_kwargs.setdefault("quality", calidad)
@@ -257,10 +254,7 @@ def convertir_imagen(
             else:
                 pil_formato = PIL_FORMAT_MAP.get(formato, formato)
                 img.save(tmp_destino, format=pil_formato, **save_kwargs)
-            os.replace(tmp_destino, ruta_destino)
-        except Exception:
-            with contextlib.suppress(OSError):
-                tmp_destino.unlink(missing_ok=True)
-            raise
+
+        _write_staged(ruta_destino, _save_tmp)
 
     return ruta_destino

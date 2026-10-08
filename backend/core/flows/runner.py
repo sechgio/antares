@@ -94,6 +94,7 @@ class _CancelEvent:
 
 _active_runs: dict[str, _CancelEvent] = {}
 _active_lock = threading.Lock()
+_PRIVATE_LOCK = threading.RLock()
 _active_flow_ids: set[str] = set()
 
 
@@ -116,6 +117,15 @@ def cancel_run(run_id: str) -> bool:
         return False
     token.cancel()
     return True
+
+
+def _acquire_run_slot(token: _CancelEvent) -> bool:
+    """Espera un slot global de runs reaccionando a la cancelación: un run
+    encolado que se cancela deja de esperar en vez de quedar de waiter zombie."""
+    while not token.cancelled:
+        if _RUN_SLOTS.acquire(timeout=0.1):
+            return True
+    return False
 
 
 class FlowRunner:
@@ -145,18 +155,22 @@ class FlowRunner:
         token = _register(run["id"])
         thread = threading.Thread(
             target=self._execute_safe,
-            args=(run["id"], token, flow_id),
+            args=(run["id"], token, flow_id, guarded),
             name=f"flow-run-{run['id']}",
             daemon=True,
         )
         thread.start()
         return run
 
-    def _execute_safe(self, run_id: str, token: _CancelEvent, flow_id: str) -> None:
+    def _execute_safe(self, run_id: str, token: _CancelEvent, flow_id: str, owns_flow_guard: bool) -> None:
         try:
-            # Límite global de runs simultáneos: el run espera en 'queued'.
-            with _RUN_SLOTS:
-                self._execute(run_id, token)
+            # Límite global de runs simultáneos: el run espera en 'queued'
+            # pero sale del wait si se cancela antes de obtener el slot.
+            if _acquire_run_slot(token):
+                try:
+                    self._execute(run_id, token)
+                finally:
+                    _RUN_SLOTS.release()
         except Exception:
             logger.exception("Fallo no controlado en run de flujo %s", run_id)
             self._store.update_run(
@@ -166,8 +180,9 @@ class FlowRunner:
                 finished_at=_utc_now(),
             )
         finally:
-            with _active_lock:
-                _active_flow_ids.discard(flow_id)
+            if owns_flow_guard:
+                with _active_lock:
+                    _active_flow_ids.discard(flow_id)
             _unregister(run_id)
 
     def ready_to_start(self, flow: JsonObject) -> bool:
@@ -422,18 +437,18 @@ class FlowRunner:
                         if isinstance(pending_state.get("agent_state"), dict):
                             pending_state["agent_state"]["approval_id"] = aid
                         call = pending_state.get("approval_call") or pending_state.get("pending_call") or {}
-                        approvals.setdefault(aid, {
-                            "id": aid,
-                            "node_id": nid,
-                            "node_name": nodes[nid].get("name") or nid,
-                            "method": call.get("name"),
-                            "params": call.get("params"),
-                            "decision": None,
-                            "created_at": _utc_now(),
-                        })
-                        pending[nid] = pending_state
-                        waiting_now.add(nid)
                         with lock:
+                            approvals.setdefault(aid, {
+                                "id": aid,
+                                "node_id": nid,
+                                "node_name": nodes[nid].get("name") or nid,
+                                "method": call.get("name"),
+                                "params": call.get("params"),
+                                "decision": None,
+                                "created_at": _utc_now(),
+                            })
+                            pending[nid] = pending_state
+                            waiting_now.add(nid)
                             persist()
                     else:
                         settle(nid, status, node_outputs)
@@ -441,6 +456,13 @@ class FlowRunner:
             pool.shutdown(wait=False)
 
         if token.cancelled:
+            with lock:
+                # Los futuros en vuelo ya no repersisten: sus pasos quedan
+                # "running" sin este cierre terminal.
+                for step in steps:
+                    if step["status"] in ("running", "waiting"):
+                        step["status"] = "cancelled"
+                        step["finished_at"] = step.get("finished_at") or _utc_now()
             self._store.update_run(run_id, status="cancelled", steps=list(steps), finished_at=_utc_now())
             return
         if pending:
@@ -491,7 +513,8 @@ class FlowRunner:
             "item": {"json": live_items[0]},
             "items": [{"json": i} for i in live_items],
         }
-        resumed = ctx.get("pending_state") or ctx["pending"].pop(node["id"], None)
+        with ctx["lock"]:
+            resumed = ctx.get("pending_state") or ctx["pending"].pop(node["id"], None)
         sub_ctx = {**ctx, "pending_state": resumed}
         attempts, delay_ms = _retry_config(node)
         tried = 0
@@ -525,49 +548,55 @@ class FlowRunner:
                 if node["kind"] == "http_request" and node["config"].get("fail_on_http_error", True):
                     response = node_outputs["main"]["json"]
                     if not response["ok"]:
-                        step["output"] = _summarize(response)
+                        with ctx["lock"]:
+                            step["output"] = _summarize(response)
                         raise ValueError(f"La solicitud HTTP devolvió {response['status']}")
                 if tried > 1:
-                    step["attempts"] = tried
+                    with ctx["lock"]:
+                        step["attempts"] = tried
             except agent_node.AwaitingApproval as exc:
-                step["status"] = "waiting"
-                step["finished_at"] = _utc_now()
-                step["duration_ms"] = round(_utc_ms() - started)
                 with ctx["lock"]:
+                    step["status"] = "waiting"
+                    step["finished_at"] = _utc_now()
+                    step["duration_ms"] = round(_utc_ms() - started)
                     ctx["persist"]()
                 return "waiting", {}, exc.state
             except _RunCancelled:
-                step["status"] = "cancelled"
-                step["finished_at"] = _utc_now()
-                step["duration_ms"] = round(_utc_ms() - started)
+                with ctx["lock"]:
+                    step["status"] = "cancelled"
+                    step["finished_at"] = _utc_now()
+                    step["duration_ms"] = round(_utc_ms() - started)
                 return "cancelled", {}, None
             except Exception as exc:
                 logger.info("Nodo %s del run %s falló: %s", node["id"], ctx["run"]["id"], exc)
-                step["status"] = "error"
-                step["error"] = str(exc)[:500]
-                if tried > 1:
-                    step["attempts"] = tried
-                step["finished_at"] = _utc_now()
-                step["duration_ms"] = round(_utc_ms() - started)
+                with ctx["lock"]:
+                    step["status"] = "error"
+                    step["error"] = str(exc)[:500]
+                    if tried > 1:
+                        step["attempts"] = tried
+                    step["finished_at"] = _utc_now()
+                    step["duration_ms"] = round(_utc_ms() - started)
                 return "error", {}, None
             finally:
                 if holds_slot:
                     _NODE_SLOTS.release()
 
-            step["status"] = "success"
-            if "waiting" in node_outputs:
-                step["status"] = "skipped"
-            step["finished_at"] = _utc_now()
-            step["duration_ms"] = round(_utc_ms() - started)
-            first_port = next(iter(node_outputs), "main")
-            step["output"] = _summarize(node_outputs[first_port].get("json"))
+            with ctx["lock"]:
+                step["status"] = "success"
+                if "waiting" in node_outputs:
+                    step["status"] = "skipped"
+                step["finished_at"] = _utc_now()
+                step["duration_ms"] = round(_utc_ms() - started)
+                first_port = next(iter(node_outputs), "main")
+                step["output"] = _summarize(node_outputs[first_port].get("json"))
             return step["status"], node_outputs, None
         except BaseException as exc:
             logger.exception("Fallo inesperado en el nodo %s", node["id"])
-            step["status"] = "error"
-            step["error"] = str(exc)[:500]
-            step["finished_at"] = _utc_now()
-            step["duration_ms"] = round(_utc_ms() - started)
+            with ctx["lock"]:
+                step["status"] = "error"
+                step["error"] = str(exc)[:500]
+                step["finished_at"] = _utc_now()
+                step["duration_ms"] = round(_utc_ms() - started)
             return "error", {}, None
 
     def resume(self, run_id: str) -> JsonObject:
@@ -577,17 +606,35 @@ class FlowRunner:
             raise ValueError(f"Run no encontrado: {run_id}")
         if run["status"] not in ("queued", "waiting", "running"):
             raise ValueError(f"El run {run_id} ya terminó ({run['status']})")
+        guarded = any(
+            n["config"].get("method") in _EFFECT_METHODS
+            for n in (run.get("graph") or {}).get("nodes") or []
+        )
+        # Registro atómico: check + alta del run y del guard del flujo bajo el
+        # mismo lock, para que dos resume concurrentes no lancen dos hilos.
         with _active_lock:
             if run_id in _active_runs:
                 return run
-        token = _register(run_id)
+            if guarded and run["flow_id"] in _active_flow_ids:
+                raise ValueError("Este flujo ya tiene una ejecución en curso")
+            token = _CancelEvent()
+            _active_runs[run_id] = token
+            if guarded:
+                _active_flow_ids.add(run["flow_id"])
         thread = threading.Thread(
             target=self._execute_safe,
-            args=(run_id, token, run["flow_id"]),
+            args=(run_id, token, run["flow_id"], guarded),
             name=f"flow-resume-{run_id}",
             daemon=True,
         )
-        thread.start()
+        try:
+            thread.start()
+        except Exception:
+            _unregister(run_id)
+            if guarded:
+                with _active_lock:
+                    _active_flow_ids.discard(run["flow_id"])
+            raise
         return run
 
     def resume_interrupted(self) -> int:
@@ -604,20 +651,9 @@ class FlowRunner:
         return resumed
 
     def decide_approval(self, run_id: str, approval_id: str, approved: bool) -> JsonObject:
-        run = self._store.get_run(run_id)
-        if run is None:
-            raise ValueError(f"Run no encontrado: {run_id}")
-        if run["status"] != "waiting":
-            raise ValueError("El run no está esperando una aprobación")
-        checkpoint = dict(run.get("checkpoint") or {})
-        approval = (checkpoint.get("approvals") or {}).get(approval_id)
-        if approval is None or approval.get("decision") is not None:
-            raise ValueError("Aprobación inexistente o ya decidida")
-        approval["decision"] = "approved" if approved else "denied"
-        approval["decided_at"] = _utc_now()
-        self._store.update_run(run_id, checkpoint=checkpoint)
+        approval = self._store.decide_run_approval(run_id, approval_id, approved)
         self.resume(run_id)
-        return dict(approval)
+        return approval
 
     @staticmethod
     def _topological_order(graph: JsonObject) -> list[str]:
@@ -680,7 +716,7 @@ class FlowRunner:
                 handler_getter=self._handler_getter,
                 token=ctx["token"],
                 lane_submit=self._lane_submit,
-                validate_paths=lambda m, a: _validate_action_paths(m, a, memory, self._store),
+                validate_paths=lambda m, a: _validate_action_paths_locked(m, a, memory, ctx, self._store),
                 is_cancelled=lambda: ctx["token"].cancelled,
                 state=ctx.get("pending_state"),
                 approvals=ctx["approvals"],
@@ -733,6 +769,35 @@ class FlowRunner:
                 raise _RunCancelled() from exc
             return {"main": result}
         if kind == "mcp_call":
+            config = node["config"]
+            # Igual que ``code``: la tool MCP corre código de terceros — exige
+            # aprobación (una por server/tool/args y run) salvo auto_approve.
+            if config.get("auto_approve") is not True:
+                resolved_args = resolve(config.get("args"), memory)
+                call_params: JsonObject = json.loads(json.dumps({
+                    "server": str(config.get("server") or ""),
+                    "tool": str(config.get("tool") or ""),
+                    "args": resolved_args if isinstance(resolved_args, dict) else {},
+                }, default=str))
+                state = ctx.get("pending_state") or {}
+                with ctx["lock"]:  # approvals lo mutan otros nodos en paralelo
+                    approval = ctx["approvals"].get(str(state.get("approval_id") or ""))
+                    if approval is None:
+                        approval = next(
+                            (
+                                a
+                                for a in ctx["approvals"].values()
+                                if a.get("method") == "mcp_call" and (a.get("params") or {}) == call_params
+                            ),
+                            None,
+                        )
+                decision = (approval or {}).get("decision")
+                if decision is None:
+                    raise agent_node.AwaitingApproval(
+                        {"pending_call": {"name": "mcp_call", "params": call_params, "gated": True}}
+                    )
+                if decision != "approved":
+                    raise ValueError("El usuario rechazó la llamada MCP")
             return {"main": mcp_servers.run_mcp_call_node(node, memory)}
         raise ValueError(f"Tipo de nodo desconocido: {kind}")
 
@@ -981,7 +1046,7 @@ class FlowRunner:
         if method == "flows_render_pdf" and resolved.get("expected_pages") is not None and memory.get("report_template"):
             resolved["template_name"] = memory["report_template"]
         if method != "flows_read_images":
-            _validate_action_paths(method, resolved, memory, self._store)
+            _validate_action_paths_locked(method, resolved, memory, ctx, self._store)
         if method == "canvas_export_cmyk_pdf":
             document = resolved.get("document") or {}
             layers = document.get("layers") or []
@@ -1021,8 +1086,9 @@ class FlowRunner:
                 saved_path = result.get("saved_path")
                 if not isinstance(saved_path, str) or Path(saved_path).is_file():
                     if isinstance(saved_path, str):
-                        memory.setdefault("read_paths", set()).add(saved_path)
-                        memory.setdefault("produced_paths", set()).add(saved_path)
+                        with ctx["lock"]:
+                            memory.setdefault("read_paths", set()).add(saved_path)
+                            memory.setdefault("produced_paths", set()).add(saved_path)
                     return {"json": result}
                 # El archivo producido fue borrado o movido: se re-ejecuta para regenerarlo.
         result = fn(dict(resolved))
@@ -1053,17 +1119,17 @@ class FlowRunner:
         if effect_key is not None:
             self._store.complete_action(memory["run"]["flow_id"], effect_key, result)
         if method == "flows_read_images" and result.get("ready"):
-            memory.setdefault("sources", []).append(result["fingerprint"])
-            fingerprint = _source_fingerprint(memory["graph"], memory["sources"] + memory.get("templates", []))
-            flow = self._store.get(memory["run"]["flow_id"])
-            expected = _expected_output_paths(result, fingerprint)
-            if _checkpoint_blocks(flow, fingerprint, expected):
-                return {"json": {"ready": False, "reason": "Este lote ya fue generado"}}
-            memory.setdefault("read_paths", set()).update(result["files"])
-            memory.setdefault("write_roots", set()).add(result["output_folder"])
             # Los escalares del run viajan en la memoria compartida (node_memory es una copia).
             shared = ctx["memory"]
             with ctx["lock"]:
+                shared.setdefault("sources", []).append(result["fingerprint"])
+                fingerprint = _source_fingerprint(memory["graph"], shared["sources"] + memory.get("templates", []))
+                flow = self._store.get(memory["run"]["flow_id"])
+                expected = _expected_output_paths(result, fingerprint)
+                if _checkpoint_blocks(flow, fingerprint, expected):
+                    return {"json": {"ready": False, "reason": "Este lote ya fue generado"}}
+                shared.setdefault("read_paths", set()).update(result["files"])
+                shared.setdefault("write_roots", set()).add(result["output_folder"])
                 shared["report_batch"] = result.get("report_batch", False)
                 if result.get("report_batch"):
                     shared["report_template"] = result["template_name"]
@@ -1072,8 +1138,9 @@ class FlowRunner:
         if method in _EFFECT_METHODS and isinstance(result.get("saved_path"), str):
             saved = Path(result["saved_path"])
             if saved.is_file() and not saved.is_symlink() and not any(p.is_symlink() for p in saved.parents):
-                memory.setdefault("read_paths", set()).add(str(saved))
-                memory.setdefault("produced_paths", set()).add(str(saved))
+                with ctx["lock"]:
+                    memory.setdefault("read_paths", set()).add(str(saved))
+                    memory.setdefault("produced_paths", set()).add(str(saved))
         return {"json": result}
 
     def _run_http_request(self, node: JsonObject, memory: JsonObject, token: _CancelEvent | None = None) -> JsonObject:
@@ -1251,6 +1318,15 @@ def _checkpoint_blocks(flow: JsonObject | None, fingerprint: str, expected: list
     recorded = (flow.get("source_artifacts") or {}).get(fingerprint)
     paths = recorded if recorded is not None else expected
     return all(Path(p).is_file() for p in paths)
+
+
+def _validate_action_paths_locked(
+    method: str, args: JsonObject, memory: JsonObject, ctx: JsonObject, store: FlowStore | None = None
+) -> None:
+    # ``ctx["lock"]`` serializa ramas paralelas; un ctx sin lock (llamadas
+    # directas en tests) no tiene competidores y puede usar uno privado.
+    with ctx.get("lock") or _PRIVATE_LOCK:
+        _validate_action_paths(method, args, memory, store)
 
 
 def _validate_action_paths(method: str, args: JsonObject, memory: JsonObject, store: FlowStore | None = None) -> None:

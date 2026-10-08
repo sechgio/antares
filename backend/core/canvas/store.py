@@ -271,19 +271,24 @@ class CanvasStore:
             logger.warning("Could not compare canvas spill %s with %s: %s", spill_path, target, exc)
             return _SPILL_UNKNOWN
 
+    def _load_recoverable_spill(self, spill_path: Path, target: Path, kind: str) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
+        outcome = self._spill_comparison(spill_path, target)
+        if outcome == _SPILL_UNKNOWN:
+            return None
+        if outcome == _SPILL_DISCARD:
+            spill_path.unlink(missing_ok=True)
+            return None
+        raw = json.loads(spill_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError(f"{kind} spill must be an object")
+        return raw
+
     def _recover_document_spill(self, spill_path: Path) -> None:
         doc_id = spill_path.stem.removeprefix(DOCUMENT_SPILL_PREFIX)
         try:
-            target = self._path_for(doc_id)
-            outcome = self._spill_comparison(spill_path, target)
-            if outcome == _SPILL_UNKNOWN:
+            raw = self._load_recoverable_spill(spill_path, self._path_for(doc_id), "document")
+            if raw is None:
                 return
-            if outcome == _SPILL_DISCARD:
-                spill_path.unlink(missing_ok=True)
-                return
-            raw = json.loads(spill_path.read_text(encoding="utf-8"))
-            if not isinstance(raw, dict):
-                raise ValueError("document spill must be an object")
             document = normalize_document(raw)
             document["id"] = doc_id
             self.save(document, touch=False)
@@ -297,16 +302,9 @@ class CanvasStore:
         if doc_id == spill_path.stem:
             doc_id = spill_path.name.removesuffix(_HISTORY_SPILL_SUFFIX)
         try:
-            target = self._history_path_for(doc_id)
-            outcome = self._spill_comparison(spill_path, target)
-            if outcome == _SPILL_UNKNOWN:
+            raw = self._load_recoverable_spill(spill_path, self._history_path_for(doc_id), "history")
+            if raw is None:
                 return
-            if outcome == _SPILL_DISCARD:
-                spill_path.unlink(missing_ok=True)
-                return
-            raw = json.loads(spill_path.read_text(encoding="utf-8"))
-            if not isinstance(raw, dict):
-                raise ValueError("history spill must be an object")
             past = self._history_entries(raw.get("past"))
             future = self._history_entries(raw.get("future"))
             self.save_history(doc_id, past, future)
@@ -634,8 +632,7 @@ class CanvasStore:
                 spill_dir / f"{HISTORY_SPILL_PREFIX}{safe_id}.json",
             )
             with contextlib.suppress(OSError):
-                if hist_path.exists():
-                    hist_path.unlink()
+                hist_path.unlink(missing_ok=True)
             for spill_path in spill_paths:
                 with contextlib.suppress(OSError):
                     spill_path.unlink()

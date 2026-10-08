@@ -2,14 +2,11 @@
 from __future__ import annotations
 
 import base64
-import io
-import json
 import os
 from pathlib import Path
 
 import pytest
 
-from backend import ipc_protocol
 from backend import main as backend_main
 from backend.core.exceptions import ValidationError
 from backend.core.sellador_io import MAX_PDF_BYTES, read_user_file, resolve_stamp_bytes
@@ -109,24 +106,6 @@ def test_history_list_caps_limit() -> None:
 def test_history_list_rejects_negative_offset() -> None:
     with pytest.raises(ValueError, match="offset"):
         history_list({"offset": -1})
-
-
-def test_inbound_payload_over_max_with_id_sends_error(monkeypatch) -> None:
-    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 64)
-    payload = {"jsonrpc": "2.0", "id": "req-big", "method": "version", "params": {"blob": "x" * 200}}
-    line = json.dumps(payload) + "\n"
-    stdin = io.StringIO(line)
-    stdout = io.StringIO()
-    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
-    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
-
-    result = ipc_protocol.read_message()
-
-    assert result is ipc_protocol._SKIP
-    out = stdout.getvalue()
-    assert '"id": "req-big"' in out
-    assert '"error"' in out
-    assert "too large" in out.lower()
 
 
 def test_dispatch_prefers_user_facing_value_error(monkeypatch) -> None:

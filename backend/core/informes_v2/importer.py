@@ -128,8 +128,6 @@ for section, aliases in LINEA_ALIASES.items():
         COLUMN_MAPPING[f"obs{alias}"] = f"linea_{section}_obs"
 
 for section in VALVULA_ROWS:
-    for diameter in DIAMETERS:
-        COLUMN_MAPPING[f"valv{section}{diameter}"] = f"valvulas_{section}_{diameter}"
     COLUMN_MAPPING[f"valv{section}oper"] = f"valvulas_{section}_oper"
     COLUMN_MAPPING[f"valv{section}noop"] = f"valvulas_{section}_no_op"
     COLUMN_MAPPING[f"valv{section}obs"] = f"valvulas_{section}_obs"
@@ -138,7 +136,6 @@ for section in LINEA_ROWS:
     short = section.replace("_", "")
     for diameter in DIAMETERS:
         COLUMN_MAPPING[f"lin{short}{diameter}"] = f"linea_{section}_{diameter}"
-        COLUMN_MAPPING[f"linea{short}{diameter}"] = f"linea_{section}_{diameter}"
     COLUMN_MAPPING[f"lin{short}oper"] = f"linea_{section}_oper"
     COLUMN_MAPPING[f"lin{short}noop"] = f"linea_{section}_no_op"
     COLUMN_MAPPING[f"lin{short}obs"] = f"linea_{section}_obs"
@@ -262,23 +259,14 @@ def transform_flat_to_nested(
         }
     )
 
-    for section in VALVULA_ROWS:
-        diametros = {d: _safe_int(row.get(f"valvulas_{section}_{d}"), 0) for d in DIAMETERS}
-        report["valvulas"][section] = {
-            "diametros": diametros,
-            "oper": _safe_int(row.get(f"valvulas_{section}_oper"), 0),
-            "no_op": _safe_int(row.get(f"valvulas_{section}_no_op"), 0),
-            "observaciones": _safe_str(row.get(f"valvulas_{section}_obs")),
-        }
-
-    for section in LINEA_ROWS:
-        diametros = {d: _safe_int(row.get(f"linea_{section}_{d}"), 0) for d in DIAMETERS}
-        report["linea"][section] = {
-            "diametros": diametros,
-            "oper": _safe_int(row.get(f"linea_{section}_oper"), 0),
-            "no_op": _safe_int(row.get(f"linea_{section}_no_op"), 0),
-            "observaciones": _safe_str(row.get(f"linea_{section}_obs")),
-        }
+    for prefix, sections in (("valvulas", VALVULA_ROWS), ("linea", LINEA_ROWS)):
+        for section in sections:
+            report[prefix][section] = {
+                "diametros": {d: _safe_int(row.get(f"{prefix}_{section}_{d}"), 0) for d in DIAMETERS},
+                "oper": _safe_int(row.get(f"{prefix}_{section}_oper"), 0),
+                "no_op": _safe_int(row.get(f"{prefix}_{section}_no_op"), 0),
+                "observaciones": _safe_str(row.get(f"{prefix}_{section}_obs")),
+            }
 
     report["medidas"].update(
         {
@@ -329,14 +317,6 @@ for _section, label in [
     ("aduccion", "Valv Aduc"),
     ("bypass", "Valv Bypass"),
     ("purga", "Valv Purga"),
-]:
-    for diameter in DIAMETERS:
-        TEMPLATE_HEADERS.append(f"{label} {diameter}")
-    TEMPLATE_HEADERS.append(f"{label} Oper")
-    TEMPLATE_HEADERS.append(f"{label} No Op")
-    TEMPLATE_HEADERS.append(f"{label} Obs")
-
-for _section, label in [
     ("aduccion", "Lin Aduccion"),
     ("alimentacion", "Lin Alimentacion"),
     ("impulsion_rebombeo", "Lin Impulsion"),

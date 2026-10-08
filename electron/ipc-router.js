@@ -737,6 +737,10 @@ const _NATIVE_CALLS = {
     const { handleConnectionsCall } = require('./connections-handlers');
     return handleConnectionsCall(method, params);
   },
+  agent: (method, params) => {
+    const { handleAgentCall } = require('./agent-handlers');
+    return handleAgentCall(method, params);
+  },
 };
 
 function _resolveCachedApiKey(provider) {

@@ -116,6 +116,15 @@ def set_no_wrap(cell: Any) -> None:
         ))
 
 
+def set_page_break_before(cell: Any) -> None:
+    from docx.oxml import parse_xml
+
+    pPr = cell.paragraphs[0]._p.get_or_add_pPr()
+    pPr.append(parse_xml(
+        '<w:pageBreakBefore xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+    ))
+
+
 def set_table_no_cell_margins(table: Any) -> None:
     from docx.oxml import parse_xml
     from docx.oxml.ns import qn

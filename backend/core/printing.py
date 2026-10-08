@@ -207,7 +207,7 @@ def print_pdf(pdf_path: str, printer_name: str, copies: int = 1,
         raise ValueError("Selecciona un PDF disponible sin enlaces simbólicos")
     if source.stat().st_size > 100 * 1024 * 1024:
         raise ValueError("El PDF excede el máximo de 100 MiB")
-    dpi = _QUALITY_DPI.get(quality or "normal", 150)
+    dpi = _QUALITY_DPI[quality or "normal"]
     with fitz.open(source) as document:
         if not document.is_pdf or document.needs_pass or not 1 <= len(document) <= 200:
             raise ValueError("La impresión requiere un PDF sin contraseña de 1 a 200 páginas")

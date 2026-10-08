@@ -8,10 +8,14 @@ del vault y traduce el historial persistido al wire de cada API.
 
 from __future__ import annotations
 
+import http.client
 import json
+import time
 import urllib.error
 import urllib.request
 import uuid
+from collections.abc import Callable
+from typing import Any
 
 from backend.core.flows import ai_providers, http_guard, mcp_servers
 from backend.core.flows.types import JsonObject
@@ -21,6 +25,11 @@ MAX_MESSAGE_CHARS = 12_000
 _MAX_TOOL_RESULT_CHARS = 6_000
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _CHAT_TIMEOUT_S = 120.0
+_RETRYABLE_HTTP = frozenset({429, 500, 502, 503, 529})
+_RETRY_DELAYS_S = (1.0, 4.0)
+_RETRY_AFTER_CAP_S = 15.0
+_ERR_BODY_MAX_BYTES = 4_096
+_ERR_MSG_MAX_CHARS = 300
 
 # Métodos backend que el agente nunca debe invocar (ni siquiera con aprobación):
 # vault/claves, el propio canal del agente y borrados destructivos.
@@ -30,6 +39,46 @@ _DENIED_METHODS = frozenset({
     "flows_approval_decide", "flows_approvals_list", "flows_effects_pending",
     "flows_effect_resolve", "flows_run_resume", "flows_events_list", "flows_webhook_info",
 })
+
+# Efectos que ``auto_approve`` nunca cubre: destructivos, control de procesos,
+# exportaciones masivas y escritura de flujos (el modelo no puede otorgarse
+# nuevas primitivas). Las tools MCP tampoco: son código de terceros.
+_AUTO_APPROVE_DENIED_PARTS = ("delete", "clear", "reset", "cancel")
+_AUTO_APPROVE_DENIED = frozenset({
+    "db_export", "db_import", "formatos_upload", "process_start",
+    "flows_create", "flows_update", "flows_duplicate", "flows_run",
+})
+
+
+def auto_approve_allowed(name: str) -> bool:
+    """False si la herramienta siempre exige aprobación humana, aunque el nodo
+    active ``auto_approve``."""
+    if name.startswith(("mcp__", "mcp2__")):
+        return False
+    if name in _AUTO_APPROVE_DENIED:
+        return False
+    return not any(part in name for part in _AUTO_APPROVE_DENIED_PARTS)
+
+
+# Claves cuyo valor nunca viaja al LLM: credenciales de nodos (webhook, headers
+# HTTP), grants de archivos y cualquier campo con pinta de secreto.
+_SECRET_RESULT_KEYS = frozenset({
+    "secret", "headers", "api_key", "client_secret", "token", "access_token",
+    "refresh_token", "authorization", "signature", "password",
+    "_file_grants", "_flow_file_grants",
+})
+
+
+def scrub_secrets(value: Any) -> Any:
+    """Copia recursiva sin credenciales ni grants para lo que viaja al LLM."""
+    if isinstance(value, dict):
+        return {
+            key: ("…" if str(key).lower() in _SECRET_RESULT_KEYS else scrub_secrets(child))
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [scrub_secrets(item) for item in value]
+    return value
 
 _SYSTEM_PROMPT = (
     "Eres el agente de Antares, una app de escritorio de documentos e imágenes. "
@@ -98,32 +147,162 @@ def _auth_headers(spec: JsonObject, config: JsonObject) -> dict[str, str]:
     return headers
 
 
-def _post_json(url: str, headers: dict[str, str], payload: JsonObject) -> JsonObject:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "User-Agent": "Antares/agent",
-            **headers,
-        },
-        method="POST",
-    )
+def _safe_error(message: str, headers: dict[str, str]) -> str:
+    for name, value in headers.items():
+        if name.lower() in {"authorization", "x-api-key"} and value:
+            message = message.replace(value.removeprefix("Bearer "), "[clave oculta]")
+    return message[:_ERR_MSG_MAX_CHARS]
+
+
+def _provider_http_error(err: urllib.error.HTTPError, headers: dict[str, str]) -> str:
+    detail = ""
     try:
-        with http_guard.no_redirect_opener.open(req, timeout=_CHAT_TIMEOUT_S) as res:
-            raw = res.read(_MAX_RESPONSE_BYTES + 1)
-        if len(raw) > _MAX_RESPONSE_BYTES:
+        data = json.loads(err.read(_ERR_BODY_MAX_BYTES))
+        err_obj = data.get("error") if isinstance(data, dict) else None
+        msg = err_obj.get("message") if isinstance(err_obj, dict) else None
+        if isinstance(msg, str) and msg.strip():
+            detail = f": {_safe_error(msg.strip(), headers)}"
+    except Exception:
+        pass
+    return (
+        f"El proveedor respondió HTTP {err.code}{detail}"
+        if detail
+        else f"El proveedor respondió HTTP {err.code}. Revisa la dirección, la clave y el modelo configurados."
+    )
+
+
+def _retry_delay_s(err: urllib.error.HTTPError, attempt: int) -> float:
+    retry_after = err.headers.get("Retry-After") if err.headers else None
+    try:
+        delay = float(retry_after) if retry_after else _RETRY_DELAYS_S[attempt]
+    except (TypeError, ValueError):
+        delay = _RETRY_DELAYS_S[attempt]
+    return max(0.0, min(delay, _RETRY_AFTER_CAP_S))
+
+
+def _stream_response(res: http.client.HTTPResponse, on_delta: Callable[[str], None] | None = None) -> JsonObject:
+    """Acumula SSE de ambos protocolos; ``on_delta`` recibe el texto parcial
+    acumulado para mostrar streaming, sin publicar herramientas parciales."""
+    message: JsonObject = {"content": "", "tool_calls": []}
+    calls: dict[int, JsonObject] = {}
+    blocks: dict[int, JsonObject] = {}
+    inputs: dict[int, str] = {}
+    open_blocks: set[int] = set()
+    lines: list[str] = []
+    total = 0
+    native = False
+    started = False
+    complete = False
+    deadline = time.monotonic() + _CHAT_TIMEOUT_S
+    while True:
+        if time.monotonic() >= deadline:
+            raise ValueError("El streaming del proveedor excedió el tiempo máximo")
+        raw = res.readline(_MAX_RESPONSE_BYTES - total + 1)
+        total += len(raw)
+        if total > _MAX_RESPONSE_BYTES:
             raise ValueError("La respuesta del proveedor supera el tamaño máximo permitido")
-        data: JsonObject = json.loads(raw.decode("utf-8"))
-        return data
-    except urllib.error.HTTPError as err:
-        raise ValueError(
-            f"El proveedor respondió HTTP {err.code}. Revisa la dirección, la clave y el modelo configurados."
-        ) from err
-    except urllib.error.URLError as err:
-        raise ValueError(f"Sin respuesta del proveedor: {err.reason}") from err
+        if not raw:
+            break
+        line = raw.decode("utf-8").rstrip("\r\n")
+        if line.startswith("data:"):
+            lines.append(line[5:].lstrip(" "))
+        if line or not lines:
+            continue
+        event = "\n".join(lines)
+        lines = []
+        if event == "[DONE]":
+            complete = True
+            break
+        data = json.loads(event)
+        if not isinstance(data, dict):
+            raise ValueError("El proveedor devolvió un evento de streaming inválido")
+        if data.get("error") or data.get("type") == "error":
+            error = data.get("error") or {}
+            detail = error.get("message", "Error de streaming") if isinstance(error, dict) else str(error)
+            raise ValueError(f"Error de streaming del proveedor: {detail}")
+        if "choices" in data:
+            for choice in data["choices"]:
+                if choice.get("index", 0) != 0:
+                    continue
+                started = True
+                delta = choice.get("delta") or {}
+                message["content"] += delta.get("content") or ""
+                if on_delta and delta.get("content"):
+                    on_delta(message["content"])
+                for part in delta.get("tool_calls") or []:
+                    call = calls.setdefault(part["index"], {"id": "", "function": {"name": "", "arguments": ""}})
+                    call["id"] += part.get("id") or ""
+                    for key in ("name", "arguments"):
+                        call["function"][key] += (part.get("function") or {}).get(key) or ""
+        elif data.get("type") == "message_start":
+            native = started = True
+        elif data.get("type") == "message_stop":
+            complete = True
+            break
+        elif data.get("type") == "content_block_start":
+            blocks[data["index"]] = dict(data["content_block"])
+            open_blocks.add(data["index"])
+        elif data.get("type") == "content_block_delta":
+            index = data["index"]
+            delta = data["delta"]
+            if delta.get("type") == "text_delta":
+                blocks[index]["text"] += delta["text"]
+                if on_delta:
+                    on_delta("".join(str(b.get("text") or "") for _, b in sorted(blocks.items())))
+            elif delta.get("type") == "input_json_delta":
+                inputs[index] = inputs.get(index, "") + delta["partial_json"]
+        elif data.get("type") == "content_block_stop":
+            open_blocks.remove(data["index"])
+            if data["index"] in inputs:
+                blocks[data["index"]]["input"] = json.loads(inputs.pop(data["index"]))
+    if not complete or not started or open_blocks:
+        raise ValueError("El streaming del proveedor terminó sin una respuesta completa")
+    if native:
+        return {"content": [blocks[index] for index in sorted(blocks)]}
+    message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    return {"choices": [{"message": message}]}
+
+
+def _post_json(
+    url: str, headers: dict[str, str], payload: JsonObject, on_delta: Callable[[str], None] | None = None
+) -> JsonObject:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    for attempt in range(len(_RETRY_DELAYS_S) + 1):
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+                "User-Agent": "Antares/agent",
+                **headers,
+            },
+            method="POST",
+        )
+        try:
+            with http_guard.no_redirect_opener.open(req, timeout=_CHAT_TIMEOUT_S) as res:
+                if res.headers.get_content_type() == "text/event-stream":
+                    return _stream_response(res, on_delta)
+                raw = res.read(_MAX_RESPONSE_BYTES + 1)
+            if len(raw) > _MAX_RESPONSE_BYTES:
+                raise ValueError("La respuesta del proveedor supera el tamaño máximo permitido")
+            data: JsonObject = json.loads(raw.decode("utf-8"))
+            return data
+        except urllib.error.HTTPError as err:
+            if err.code in _RETRYABLE_HTTP and attempt < len(_RETRY_DELAYS_S):
+                err.close()
+                time.sleep(_retry_delay_s(err, attempt))
+                continue
+            raise ValueError(_provider_http_error(err, headers)) from None
+        except urllib.error.URLError as err:
+            raise ValueError(_safe_error(f"Sin respuesta del proveedor: {err.reason}", headers)) from None
+        except (OSError, http.client.HTTPException) as err:
+            raise ValueError(_safe_error(f"Conexión interrumpida con el proveedor: {err}", headers)) from None
+        except (UnicodeError, json.JSONDecodeError, TypeError, AttributeError, KeyError, IndexError):
+            raise ValueError("El proveedor devolvió una respuesta inválida") from None
+        except ValueError as err:
+            raise ValueError(_safe_error(str(err), headers)) from None
+    raise ValueError("El proveedor no completó la solicitud tras los reintentos")
 
 
 def _with_synthetic_results(messages: list[JsonObject]) -> list[JsonObject]:
@@ -198,9 +377,11 @@ def _chat_openai(
     messages: list[JsonObject],
     with_tools: bool,
     system: str | None,
+    on_delta: Callable[[str], None] | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
         "model": model,
+        "stream": True,
         "messages": _openai_wire(messages, system),
     }
     if with_tools:
@@ -216,7 +397,7 @@ def _chat_openai(
             for s in tool_specs()
         ]
         payload["tool_choice"] = "auto"
-    data = _post_json(url, headers, payload)
+    data = _post_json(url, headers, payload, on_delta)
     choices = data.get("choices") if isinstance(data, dict) else None
     message = (
         choices[0].get("message")
@@ -226,20 +407,29 @@ def _chat_openai(
     if not isinstance(message, dict):
         raise ValueError("El proveedor no devolvió una respuesta válida de OpenAI Chat Completions")
     calls = []
-    for call in message.get("tool_calls") or []:
-        fn = call.get("function") or {}
+    tool_calls = message.get("tool_calls") or []
+    if not isinstance(tool_calls, list):
+        raise ValueError("El proveedor no devolvió una respuesta válida de OpenAI Chat Completions")
+    for call in tool_calls:
+        if not isinstance(call, dict) or not isinstance(call.get("function"), dict):
+            raise ValueError("El proveedor no devolvió una respuesta válida de OpenAI Chat Completions")
+        fn = call["function"]
         try:
             params = json.loads(fn.get("arguments") or "{}")
         except (TypeError, json.JSONDecodeError):
-            params = {}
+            raise ValueError("El proveedor devolvió argumentos de herramienta inválidos") from None
+        if not isinstance(params, dict):
+            raise ValueError("El proveedor devolvió argumentos de herramienta inválidos")
         calls.append(
             {
                 "id": str(call.get("id") or uuid.uuid4().hex[:8]),
                 "name": str(fn.get("name") or ""),
-                "params": params if isinstance(params, dict) else {},
+                "params": params,
             }
         )
     text = message.get("content")
+    if text is not None and not isinstance(text, str):
+        raise ValueError("El proveedor no devolvió una respuesta válida de OpenAI Chat Completions")
     return {"text": text if isinstance(text, str) else "", "calls": calls}
 
 
@@ -290,9 +480,11 @@ def _chat_anthropic(
     messages: list[JsonObject],
     with_tools: bool,
     system: str | None,
+    on_delta: Callable[[str], None] | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
         "model": model,
+        "stream": True,
         "max_tokens": 2048,
         "system": system or _SYSTEM_PROMPT,
         "messages": _anthropic_wire(messages),
@@ -306,21 +498,27 @@ def _chat_anthropic(
             }
             for s in tool_specs()
         ]
-    data = _post_json(url, headers, payload)
+    data = _post_json(url, headers, payload, on_delta)
     if not isinstance(data, dict) or not isinstance(data.get("content"), list):
         raise ValueError("El proveedor no devolvió una respuesta válida de Anthropic Messages")
     text_parts: list[str] = []
     calls: list[JsonObject] = []
     for block in data.get("content") or []:
+        if not isinstance(block, dict):
+            raise ValueError("El proveedor no devolvió una respuesta válida de Anthropic Messages")
         if block.get("type") == "text":
-            text_parts.append(str(block.get("text") or ""))
+            if not isinstance(block.get("text"), str):
+                raise ValueError("El proveedor no devolvió una respuesta válida de Anthropic Messages")
+            text_parts.append(block["text"])
         elif block.get("type") == "tool_use":
             params = block.get("input")
+            if not isinstance(params, dict):
+                raise ValueError("El proveedor devolvió argumentos de herramienta inválidos")
             calls.append(
                 {
                     "id": str(block.get("id") or uuid.uuid4().hex[:8]),
                     "name": str(block.get("name") or ""),
-                    "params": params if isinstance(params, dict) else {},
+                    "params": params,
                 }
             )
     return {"text": "".join(text_parts), "calls": calls}
@@ -332,11 +530,14 @@ def chat(
     messages: list[JsonObject],
     with_tools: bool = True,
     system: str | None = None,
+    on_delta: Callable[[str], None] | None = None,
 ) -> JsonObject:
     """Un turno LLM; `messages` es el historial persistido en formato neutro.
 
     ``with_tools=False`` desactiva las herramientas (nodos Agente de flujos:
     una sola respuesta de texto, sin tool-calling interactivo).
+    ``on_delta`` recibe el texto parcial acumulado cuando el proveedor hace
+    streaming (opcional; el chat del agente lo usa para mostrar progreso).
     """
     spec = ai_providers.get_provider(provider)
     config = ai_providers.get_config(provider) or {}
@@ -351,7 +552,7 @@ def chat(
     url = ai_providers.endpoint_url(base, path)
     headers = _auth_headers(spec, config)
     if style == "openai_chat":
-        return _chat_openai(url, headers, model, messages, with_tools, system)
+        return _chat_openai(url, headers, model, messages, with_tools, system, on_delta)
     if style == "anthropic_messages":
-        return _chat_anthropic(url, headers, model, messages, with_tools, system)
+        return _chat_anthropic(url, headers, model, messages, with_tools, system, on_delta)
     raise ValueError(f"Estilo de chat no soportado: {style}")

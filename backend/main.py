@@ -268,6 +268,20 @@ def _preload_pandas_for_worker(method_name: str, params: dict[str, Any]) -> None
         logger.debug("pandas preload before handler dispatch failed", exc_info=True)
 
 
+def _preload_numpy_before_ready() -> None:
+    if sys.platform != "win32":
+        return
+    # numpy carga OpenBLAS, cuya inicialización de DLL crea hilos bajo el loader
+    # lock de Windows; si _mupdf u otro módulo nativo está en DLL_THREAD_ATTACH
+    # cuando un worker dispara esa carga, ambos se bloquean de forma permanente.
+    # Importarlo en el hilo principal antes de `ready` fija el orden seguro.
+    try:
+        with serialized_import():
+            importlib.import_module("numpy")
+    except Exception:
+        logger.debug("numpy preload before ready failed", exc_info=True)
+
+
 def _reject_submit(
     msg_id: int,
     method_name: str,
@@ -423,6 +437,8 @@ def main() -> None:
     _warm_failed_core = HANDLERS.warm_core()
     if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
         HANDLERS.warm_deferred()
+
+    _preload_numpy_before_ready()
 
     scheduler = get_scheduler()
 

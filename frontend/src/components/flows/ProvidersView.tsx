@@ -1,16 +1,36 @@
 import { useCallback, useEffect, useState } from 'react';
-import { KeyRound, PlugZap, Trash2 } from 'lucide-react';
+import { AlertCircle, ChevronRight, ExternalLink, KeyRound, Lock, PlugZap, ShieldCheck, Trash2 } from 'lucide-react';
 import { aiProvidersApi, type AiProviderSpec, type AiProviderStatus } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import { ProviderIcon } from './connectionIcons';
 
-function StatusDot({ tone }: { tone: 'ok' | 'warn' | 'off' }) {
-  const color =
-    tone === 'ok' ? '#34d399' : tone === 'warn' ? '#f59e0b' : 'var(--text-secondary)';
-  return <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />;
+const TONE_COLOR = {
+  ok: 'var(--accent-green)',
+  warn: 'var(--accent-yellow)',
+  off: 'var(--text-secondary)',
+} as const;
+
+function StatusBadge({ tone, children }: { tone: keyof typeof TONE_COLOR; children: string }) {
+  const color = TONE_COLOR[tone];
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium"
+      style={{
+        color,
+        borderColor: tone === 'off' ? 'var(--border-subtle)' : `color-mix(in srgb, ${color} 40%, transparent)`,
+        background: tone === 'off' ? 'transparent' : `color-mix(in srgb, ${color} 10%, transparent)`,
+      }}
+    >
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+      {children}
+    </span>
+  );
 }
+
+const STEPS = ['Elige un servicio', 'Obtén su clave y guárdala aquí', 'Pulsa «Probar» para comprobar la conexión'];
 
 interface FormState {
   apiKey: string;
@@ -162,112 +182,161 @@ export default function ProvidersView() {
   }
 
   return (
-    <div className="h-full overflow-y-auto p-5">
-      <div className="mx-auto max-w-3xl">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-4xl px-6 py-5">
         <h2 className="text-sm font-semibold text-[var(--text-primary)]">Proveedores IA</h2>
-        <p className="mb-5 mt-1 text-xs text-[var(--text-secondary)]">
-          1. Elige un servicio. 2. Obtén su clave y guárdala aquí. 3. Pulsa «Probar» para comprobar la conexión.
-          Después podrás usarlo en el Agente o en un paso de IA. Las claves se guardan cifradas en este equipo.
-          Para otro proveedor compatible, usa la tarjeta del protocolo que indique su documentación y cambia la dirección y el modelo.
+        <p className="mt-1 text-xs text-[var(--text-secondary)]">
+          Después podrás usarlo en el Agente o en un paso de IA.
         </p>
+        <ol className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {STEPS.map((step, i) => (
+            <li
+              key={step}
+              className="flex items-center gap-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)]"
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--bg-input)] text-[10px] font-semibold tabular-nums text-[var(--text-primary)]">
+                {i + 1}
+              </span>
+              {step}
+            </li>
+          ))}
+        </ol>
+        <div className="mb-5 mt-3 flex flex-col gap-1 text-[11px] text-[var(--text-muted)]">
+          <span className="inline-flex items-center gap-1.5">
+            <ShieldCheck size={12} className="shrink-0 text-[var(--accent-green)]" />
+            Las claves se guardan cifradas en este equipo.
+          </span>
+          <span>
+            Para otro proveedor compatible, usa la tarjeta del protocolo que indique su documentación y cambia la dirección y el modelo.
+          </span>
+        </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
           {providers.map((p) => {
             const form = forms[p.id];
             const st = statuses[p.id];
+            const busy = form?.saving || probing === p.id;
             return (
               <section
                 key={p.id}
-                className="rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-4"
+                aria-label={p.label}
+                className="flex flex-col rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] transition-colors duration-150 hover:border-[var(--border-medium)]"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--bg-input)] text-sm font-bold uppercase text-[var(--text-secondary)]">
-                      {p.label.slice(0, 2)}
-                    </span>
-                    <div>
-                      <div className="text-sm font-semibold text-[var(--text-primary)]">{p.label}</div>
-                      <div className="text-[11px] text-[var(--text-secondary)]">{p.description}</div>
-                    </div>
+                <div className="flex items-start gap-3 p-4 pb-3">
+                  <ProviderIcon providerId={p.id} label={p.label} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-[var(--text-primary)]">{p.label}</div>
+                    <div className="mt-0.5 text-xs text-[var(--text-secondary)]">{p.description}</div>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
-                    <StatusDot tone={statusTone(p)} />
-                    {statusText(p)}
-                  </div>
+                  <StatusBadge tone={statusTone(p)}>{statusText(p)}</StatusBadge>
                 </div>
 
-                <div className="mt-3 rounded-md bg-[var(--bg-input)] px-3 py-2 font-mono text-[11px] text-[var(--text-secondary)]">
-                  {p.has_key && <div className="truncate">Clave: {p.key_masked}</div>}
-                  <p className="font-sans">{p.needs_key ? 'Usa una clave de tu cuenta en este servicio. El uso puede tener un coste según tu plan.' : 'Este servicio funciona en tu equipo. Instálalo y descarga un modelo antes de probar la conexión.'}</p>
-                  {p.docs && <Button className="mt-2" size="sm" variant="secondary" aria-label={`${p.needs_key ? 'Obtener clave de' : 'Instalar'} ${p.label}`} onClick={() => window.open(p.docs, '_blank')}>{p.needs_key ? 'Obtener clave de acceso' : 'Ver cómo instalar'}</Button>}
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {p.needs_key && (
-                    <Input
-                      type="password"
-                      disabled={form?.saving || probing === p.id}
-                      value={form?.apiKey ?? ''}
-                      onChange={(e) => updateForm(p, { apiKey: e.target.value })}
-                      placeholder={p.has_key ? `Actual: ${p.key_masked}` : 'Clave de acceso (API key)'}
-                      spellCheck={false}
-                      aria-label={`API key ${p.label}`}
-                    />
-                  )}
-                  {p.editable_base_url && (
-                    <details open={!p.needs_key}>
-                    <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">{p.needs_key ? 'Dirección del servicio (avanzado)' : 'Dirección del servicio local'}</summary>
-                    <Input
-                      value={form?.baseUrl ?? p.base_url}
-                      disabled={form?.saving || probing === p.id}
-                      onChange={(e) => updateForm(p, { baseUrl: e.target.value })}
-                      placeholder={`Base URL (vacío = ${p.default_base_url})`}
-                      spellCheck={false}
-                      aria-label={`Base URL ${p.label}`}
-                    />
-                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">Dirección base de la API, sin /chat/completions ni /messages. Conserva /v1 si el servicio lo indica. Vacío restaura la dirección original.</p>
-                    </details>
-                  )}
-                  <label className="block text-xs text-[var(--text-secondary)]">
-                  Modelo predeterminado
-                  <Input
-                    className="mt-1 w-full"
-                    value={form?.model ?? p.default_model}
-                    disabled={form?.saving || probing === p.id}
-                    onChange={(e) => updateForm(p, { model: e.target.value })}
-                    maxLength={120}
-                    spellCheck={false}
-                    aria-label={`Modelo ${p.label}`}
-                    placeholder="Nombre exacto del modelo según el servicio"
-                  />
-                  </label>
-                  <p className="text-[11px] text-[var(--text-muted)]">Se usará en conversaciones nuevas y pasos de IA sin modelo propio. «Probar» consulta el listado de modelos; no genera texto.</p>
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" disabled={form?.saving || probing === p.id} onClick={() => void save(p)}>
-                      <KeyRound size={13} className="mr-1" />
-                      {p.configured ? 'Actualizar' : 'Guardar'}
-                    </Button>
+                <div className="mx-4 flex items-start justify-between gap-3 rounded-lg bg-[var(--bg-input)] px-3 py-2.5">
+                  <div className="min-w-0 space-y-1 text-[11px] text-[var(--text-secondary)]">
+                    {p.has_key && (
+                      <div className="flex items-center gap-1.5 font-mono text-[var(--text-primary)]">
+                        <Lock size={11} className="shrink-0 text-[var(--text-secondary)]" />
+                        <span className="truncate">Clave: {p.key_masked}</span>
+                      </div>
+                    )}
+                    <p className="text-pretty">{p.needs_key ? 'Usa una clave de tu cuenta en este servicio. El uso puede tener un coste según tu plan.' : 'Este servicio funciona en tu equipo. Instálalo y descarga un modelo antes de probar la conexión.'}</p>
+                  </div>
+                  {p.docs && (
                     <Button
+                      className="shrink-0"
                       size="sm"
                       variant="secondary"
-                      disabled={form?.saving || probing === p.id || (p.needs_key && !p.has_key)}
-                      onClick={() => void probe(p)}
+                      aria-label={`${p.needs_key ? 'Obtener clave de' : 'Instalar'} ${p.label}`}
+                      onClick={() => window.open(p.docs, '_blank')}
                     >
-                      <PlugZap size={13} className="mr-1" />
-                      Probar
+                      {p.needs_key ? 'Obtener clave de acceso' : 'Ver cómo instalar'}
+                      <ExternalLink size={12} />
                     </Button>
-                    {p.configured && (
-                      <Button size="sm" variant="ghost" disabled={form?.saving || probing === p.id} onClick={() => void remove(p)}>
-                        <Trash2 size={13} className="mr-1" />
-                        Eliminar
-                      </Button>
-                    )}
-                  </div>
+                  )}
+                </div>
+
+                <div className="space-y-3 p-4">
+                  {p.needs_key && (
+                    <label className="block text-xs font-medium text-[var(--text-secondary)]">
+                      Clave de acceso
+                      <Input
+                        className="mt-1.5 w-full"
+                        type="password"
+                        disabled={busy}
+                        value={form?.apiKey ?? ''}
+                        onChange={(e) => updateForm(p, { apiKey: e.target.value })}
+                        placeholder={p.has_key ? `Actual: ${p.key_masked}` : 'Clave de acceso (API key)'}
+                        spellCheck={false}
+                        aria-label={`API key ${p.label}`}
+                      />
+                    </label>
+                  )}
+                  <label className="block text-xs font-medium text-[var(--text-secondary)]">
+                    Modelo predeterminado
+                    <Input
+                      className="mt-1.5 w-full"
+                      value={form?.model ?? p.default_model}
+                      disabled={busy}
+                      onChange={(e) => updateForm(p, { model: e.target.value })}
+                      maxLength={120}
+                      spellCheck={false}
+                      aria-label={`Modelo ${p.label}`}
+                      placeholder="Nombre exacto del modelo según el servicio"
+                    />
+                    <span className="mt-1 block text-[11px] font-normal text-[var(--text-muted)]">
+                      Se usará en conversaciones nuevas y pasos de IA sin modelo propio. «Probar» consulta el listado de modelos; no genera texto.
+                    </span>
+                  </label>
+                  {p.editable_base_url && (
+                    <details open={!p.needs_key} className="group">
+                      <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] [&::-webkit-details-marker]:hidden">
+                        <ChevronRight size={13} className="transition-transform duration-150 group-open:rotate-90" />
+                        {p.needs_key ? 'Dirección del servicio (avanzado)' : 'Dirección del servicio local'}
+                      </summary>
+                      <div className="mt-1.5 pl-[17px]">
+                        <Input
+                          className="w-full"
+                          value={form?.baseUrl ?? p.base_url}
+                          disabled={busy}
+                          onChange={(e) => updateForm(p, { baseUrl: e.target.value })}
+                          placeholder={`Base URL (vacío = ${p.default_base_url})`}
+                          spellCheck={false}
+                          aria-label={`Base URL ${p.label}`}
+                        />
+                        <p className="mt-1 text-[11px] text-[var(--text-muted)]">Dirección base de la API, sin /chat/completions ni /messages. Conserva /v1 si el servicio lo indica. Vacío restaura la dirección original.</p>
+                      </div>
+                    </details>
+                  )}
                 </div>
 
                 {st && !st.reachable && st.error && (
-                  <p className="mt-2 truncate text-[11px] text-[var(--danger,#f87171)]">{st.error}</p>
+                  <p role="alert" className="mx-4 mb-3 flex items-start gap-1.5 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-red)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_8%,transparent)] px-3 py-2 text-[11px] text-[var(--accent-red)]">
+                    <AlertCircle size={12} className="mt-px shrink-0" />
+                    <span className="break-words">{st.error}</span>
+                  </p>
                 )}
+
+                <div className="flex items-center gap-2 border-t border-[var(--border-subtle)] px-4 py-3">
+                  <Button size="sm" disabled={busy} onClick={() => void save(p)}>
+                    <KeyRound size={13} />
+                    {p.configured ? 'Actualizar' : 'Guardar'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy || (p.needs_key && !p.has_key)}
+                    onClick={() => void probe(p)}
+                  >
+                    <PlugZap size={13} />
+                    Probar
+                  </Button>
+                  {p.configured && (
+                    <Button className="ml-auto hover:text-[var(--accent-red)]" size="sm" variant="ghost" disabled={busy} onClick={() => void remove(p)}>
+                      <Trash2 size={13} />
+                      Eliminar
+                    </Button>
+                  )}
+                </div>
               </section>
             );
           })}

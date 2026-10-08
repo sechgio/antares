@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 _IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
-def _validate_identifier(name: str, context: str = "column") -> str:
+def _validate_identifier(name: str) -> str:
     if not _IDENTIFIER_RE.match(name):
-        msg = f"Invalid SQL {context} name: {name!r}"
+        msg = f"Invalid SQL column name: {name!r}"
         raise ValueError(msg)
     return name
 
@@ -44,7 +44,7 @@ def _normalize_excel_column_name(name: Any, fallback: str) -> str:
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = re.sub(r"[^a-zA-Z0-9_]+", "_", text.strip().lower())
     text = re.sub(r"_+", "_", text).strip("_")
-    if not text or not re.match(r"^[a-z_]", text):
+    if not re.match(r"^[a-z_]", text):
         text = fallback
     return text
 
@@ -72,8 +72,6 @@ def _build_schema(fields: list[dict[str, Any]]) -> str:
     columns = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
     for f in _data_fields(fields):
         name = _validate_identifier(f["name"])
-        if name == "id":
-            continue
         quoted_name = _qi(name)
         ftype = f["type"]
         constraints: list[str] = []
@@ -179,7 +177,6 @@ def _init_db(*, allow_catalog_wipe: bool = False) -> None:
                             with contextlib.suppress(sqlite3.Error):
                                 read_cursor.close()
                             read_cursor = None
-                        total_old = 0
                         has_rows = False
                         old_cols = []
                     cursor.execute("ALTER TABLE imagenes RENAME TO imagenes_old")
@@ -275,8 +272,7 @@ def _init_db(*, allow_catalog_wipe: bool = False) -> None:
 
 
 def validate_fields_migration(fields: list[dict[str, Any]]) -> None:
-    with _db_schema_lock.read():
-        _validate_fields_migration(fields)
+    _validate_fields_migration(fields)
 
 
 def _validate_fields_migration(fields: list[dict[str, Any]]) -> None:
@@ -359,7 +355,7 @@ def importar_excel(excel_path: str) -> dict[str, int]:
                     "La configuración de campos cambió durante la importación; vuelve a intentarlo."
                 )
             field_names = [_validate_identifier(f["name"]) for f in fields]
-            required = [f["name"] for f in fields if f.get("required")]
+            required_set = {f["name"] for f in fields if f.get("required")}
 
             conn = _get_connection()
             cursor = conn.cursor()
@@ -377,7 +373,6 @@ def importar_excel(excel_path: str) -> dict[str, int]:
                 chunk_size = 500
                 inserted = 0
                 skipped = 0
-                required_set = set(required)
                 for row in rows_iter:
                     row_dict = dict(zip(columns, row, strict=False))
                     values: list[Any] = []
@@ -497,21 +492,9 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
 
         preferred = "codigo" if "codigo" in field_names else field_names[0]
 
-        def _scan_column(codes: list[str], column: str) -> None:
-            CHUNK = 900
-            for i in range(0, len(codes), CHUNK):
-                chunk = codes[i:i + CHUNK]
-                placeholders = ", ".join(["?"] * len(chunk))
-                cursor.execute(
-                    f"SELECT rowid AS __antares_rowid__, {cols} FROM imagenes "
-                    f"WHERE lower({_qi(column)}) IN ({placeholders})",
-                    chunk,
-                )
-                _collect_code_matches(
-                    cursor.fetchall(), field_names, query_by_fold, result, code_rowids,
-                )
-
-        _scan_column(folded_codes, preferred)
+        _scan_code_chunks(
+            cursor, cols, preferred, folded_codes, field_names, query_by_fold, result, code_rowids,
+        )
 
         unresolved = [c for c in folded_codes if query_by_fold[c] not in result]
         if unresolved and len(field_names) > 1:
@@ -532,6 +515,29 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                     cursor.fetchall(), field_names, query_by_fold, result, code_rowids,
                 )
         return result
+
+
+def _scan_code_chunks(
+    cursor: sqlite3.Cursor,
+    cols: str,
+    column: str,
+    codes: list[str],
+    collect_fields: Iterable[str],
+    query_by_fold: dict[str, str],
+    result: dict[str, dict[str, Any]],
+    code_rowids: dict[str, int],
+) -> None:
+    for i in range(0, len(codes), 900):
+        chunk = codes[i : i + 900]
+        placeholders = ", ".join(["?"] * len(chunk))
+        cursor.execute(
+            f"SELECT rowid AS __antares_rowid__, {cols} FROM imagenes "
+            f"WHERE lower({_qi(column)}) IN ({placeholders})",
+            chunk,
+        )
+        _collect_code_matches(
+            cursor.fetchall(), collect_fields, query_by_fold, result, code_rowids,
+        )
 
 
 def _folded_query_keys(codigos: list[str]) -> dict[str, str]:
@@ -581,8 +587,7 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
         conn = _get_read_connection()
         cursor = conn.cursor()
         field_names_list = [_validate_identifier(fn) for fn in get_field_names()]
-        field_names = set(field_names_list)
-        if safe_column not in field_names:
+        if safe_column not in field_names_list:
             return {}
 
         query_by_fold = _folded_query_keys(codigos)
@@ -592,19 +597,10 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
 
         result: dict[str, dict[str, Any]] = {}
         code_rowids: dict[str, int] = {}
-        CHUNK = 900
         cols = ", ".join(_qi(fn) for fn in field_names_list)
-        for i in range(0, len(folded_codes), CHUNK):
-            chunk = folded_codes[i:i + CHUNK]
-            placeholders = ", ".join(["?"] * len(chunk))
-            cursor.execute(
-                f"SELECT rowid AS __antares_rowid__, {cols} FROM imagenes "
-                f"WHERE lower({_qi(safe_column)}) IN ({placeholders})",
-                chunk,
-            )
-            _collect_code_matches(
-                cursor.fetchall(), [safe_column], query_by_fold, result, code_rowids,
-            )
+        _scan_code_chunks(
+            cursor, cols, safe_column, folded_codes, [safe_column], query_by_fold, result, code_rowids,
+        )
         return result
 
 

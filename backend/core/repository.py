@@ -129,8 +129,7 @@ def get_read_connection(db_path: Path) -> sqlite3.Connection:
                     _db_read_conn.close()
             if not db_path.exists():
                 get_connection(db_path)
-            uri = db_path.resolve().as_uri()
-            uri = f"{uri}?mode=ro" if "?" not in uri else f"{uri}&mode=ro"
+            uri = f"{db_path.resolve().as_uri()}?mode=ro"
             try:
                 _db_read_conn = sqlite3.connect(
                     uri,

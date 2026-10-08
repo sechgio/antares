@@ -343,7 +343,6 @@ export function createArtboardSelectionHandlers(deps: SelectionHandlersDeps) {
       preventDefault: () => void;
     },
   ) => {
-    if (e.button === 1) return;
     if (e.button !== 0) return;
     onCancelInertia?.();
     if (eyedropperActiveRef.current) {

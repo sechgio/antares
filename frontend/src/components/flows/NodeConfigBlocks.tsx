@@ -389,6 +389,18 @@ export function McpCallConfigEditor({ node, patchConfig, sources = [], invalid =
         />
         </details>
       </div>
+      <label className="flex items-center gap-2 text-xs text-[var(--text-primary)]">
+        <input
+          type="checkbox"
+          checked={node.config.auto_approve === true}
+          onChange={(e) => patchConfig({ auto_approve: e.target.checked ? true : undefined })}
+          className="accent-[var(--accent-primary)]"
+        />
+        Ejecutar la herramienta sin pedir aprobación
+      </label>
+      <p className="-mt-2 text-[11px] text-[var(--text-secondary)]">
+        Cada ejecución pausa en Ejecuciones hasta que apruebes esta llamada; actívalo solo si el flujo debe correr desatendido.
+      </p>
     </>
   );
 }

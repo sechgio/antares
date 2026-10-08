@@ -41,6 +41,7 @@ function main() {
   const { UBICACIONES_METHODS } = require('../electron/ubicaciones-ipc-methods');
   const { SPOTIFY_METHODS } = require('../electron/spotify-ipc-methods');
   const { CONNECTIONS_METHODS } = require('../electron/connections-ipc-methods');
+  const { AGENT_METHODS } = require('../electron/agent-handlers');
 
   check(
     Array.isArray(sourceNative) && new Set(sourceNative).size === sourceNative.length,
@@ -84,6 +85,7 @@ function main() {
     ['UBICACIONES_METHODS', UBICACIONES_METHODS, byHandler('native:ubicaciones')],
     ['SPOTIFY_METHODS', SPOTIFY_METHODS, byHandler('native:spotify')],
     ['CONNECTIONS_METHODS', CONNECTIONS_METHODS, byHandler('native:connections')],
+    ['AGENT_METHODS', AGENT_METHODS, byHandler('native:agent')],
   ];
   for (const [name, exported, expected] of buckets) {
     check(setsEqual(exported, expected), `${name} coincide con su bucket del catálogo`);

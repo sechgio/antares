@@ -1,11 +1,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Any
 
 import jsonschema  # type: ignore
@@ -139,17 +136,7 @@ _FICHA_TECNICA_OPTIONS_SCHEMA: dict[str, Any] = {
     },
 }
 
-_ANY_OBJECT: dict[str, Any] = {"type": "object", "additionalProperties": True}
 _ANY_ARRAY: dict[str, Any] = {"type": "array"}
-
-
-@dataclass(frozen=True)
-class StatField:
-
-    key: str
-    label_key: str
-    resolve: Callable[[dict[str, Any]], Any]
-    color_token: str | None = None
 
 
 @dataclass(frozen=True)
@@ -157,392 +144,95 @@ class RunTypeMeta:
 
     id: str
     label_key: str
-    description_key: str
     color_token: str
     options_schema: dict[str, Any] = field(default_factory=dict)
     files_schema: dict[str, Any] = field(default_factory=dict)
-    stats: tuple[StatField, ...] = ()
-    show_patron: bool = False
-    filter_group: str = "default"
-
-
-# StatField es frozen: una instancia por columna semántica puede compartirse entre registros.
-_STAT_FORMATO = StatField(
-    key="formato",
-    label_key="history.stats.format",
-    resolve=lambda r: r.get("formato") or "—",
-)
-
-_STAT_OK = StatField(
-    key="ok",
-    label_key="history.stats.ok",
-    resolve=lambda r: r.get("ok_count") or 0,
-    color_token="var(--accent-green)",
-)
-
-_STAT_ERR = StatField(
-    key="err",
-    label_key="history.stats.err",
-    resolve=lambda r: r.get("err_count") or 0,
-    color_token="var(--accent-red)",
-)
-
-
-def _conversion_stats() -> tuple[StatField, ...]:
-    return (
-        _STAT_FORMATO,
-        StatField(
-            key="calidad",
-            label_key="history.stats.quality",
-            resolve=lambda r: f"{int(r.get('calidad') or 0)}%",
-        ),
-        _STAT_OK,
-        _STAT_ERR,
-    )
-
-
-def _formato_stats() -> tuple[StatField, ...]:
-    return (
-        _STAT_FORMATO,
-        StatField(
-            key="desde",
-            label_key="history.stats.from",
-            resolve=lambda r: (r.get("options_json") and _opt(r, "desde")) or "?",
-        ),
-        StatField(
-            key="hasta",
-            label_key="history.stats.to",
-            resolve=lambda r: (r.get("options_json") and _opt(r, "hasta")) or "?",
-        ),
-        StatField(
-            key="files",
-            label_key="history.stats.pages",
-            resolve=lambda r: len(_files(r)),
-            color_token="var(--accent-primary)",
-        ),
-    )
-
-
-def _padron_stats() -> tuple[StatField, ...]:
-    return (
-        _STAT_FORMATO,
-        StatField(
-            key="items",
-            label_key="history.stats.items",
-            resolve=lambda r: len(_files(r)),
-            color_token="var(--accent-yellow)",
-        ),
-        _STAT_OK,
-        _STAT_ERR,
-    )
-
-
-def _volante_stats() -> tuple[StatField, ...]:
-    return (
-        _STAT_FORMATO,
-        StatField(
-            key="records",
-            label_key="history.stats.records",
-            resolve=lambda r: len(_files(r)),
-            color_token="var(--accent-secondary)",
-        ),
-        _STAT_OK,
-        _STAT_ERR,
-    )
-
-
-def _image_optimizer_stats() -> tuple[StatField, ...]:
-    return (
-        StatField(
-            key="preset",
-            label_key="history.stats.preset",
-            resolve=lambda r: _opt(r, "preset") or "custom",
-            color_token="var(--accent-purple, #a855f7)",
-        ),
-        StatField(
-            key="scope",
-            label_key="history.stats.scope",
-            resolve=lambda r: _opt(r, "scope") or "all",
-        ),
-        StatField(
-            key="ok",
-            label_key="history.stats.processed",
-            resolve=lambda r: r.get("ok_count") or 0,
-            color_token="var(--accent-green)",
-        ),
-        _STAT_ERR,
-    )
-
-
-def _sellador_stats() -> tuple[StatField, ...]:
-    return (
-        StatField(
-            key="file",
-            label_key="history.stats.file",
-            resolve=lambda r: r.get("formato") or "—",
-        ),
-        StatField(
-            key="stamps",
-            label_key="history.stats.stamps",
-            resolve=lambda r: _opt(r, "stamp_count") or r.get("ok_count") or 0,
-            color_token="var(--accent-amber, #fbbf24)",
-        ),
-        StatField(
-            key="pages",
-            label_key="history.stats.pagesStamped",
-            resolve=lambda r: _opt(r, "stamped_pages") or "—",
-        ),
-        StatField(
-            key="seed",
-            label_key="history.stats.seed",
-            resolve=lambda r: _opt(r, "seed") or "—",
-        ),
-    )
-
-
-def _reporte_campo_stats() -> tuple[StatField, ...]:
-    return (
-        StatField(
-            key="cs",
-            label_key="history.stats.cs",
-            resolve=lambda r: _opt(r, "cs") or "—",
-        ),
-        StatField(
-            key="contratista",
-            label_key="history.stats.contractor",
-            resolve=lambda r: _opt(r, "contratista") or "—",
-        ),
-        _STAT_OK,
-        _STAT_ERR,
-    )
-
-
-def _panel_aviso_corte_stats() -> tuple[StatField, ...]:
-    return (
-        StatField(
-            key="strategy",
-            label_key="history.stats.strategy",
-            resolve=lambda r: _opt(r, "strategy") or "—",
-        ),
-        StatField(
-            key="key",
-            label_key="history.stats.keyColumn",
-            resolve=lambda r: _opt(r, "key_column") or "—",
-        ),
-        StatField(
-            key="ok",
-            label_key="history.stats.panels",
-            resolve=lambda r: r.get("ok_count") or 0,
-            color_token="var(--accent-rose, #fb7185)",
-        ),
-        _STAT_ERR,
-    )
-
-
-def _evidencia_volanteo_stats() -> tuple[StatField, ...]:
-    return (
-        StatField(
-            key="format",
-            label_key="history.stats.format",
-            resolve=lambda r: _opt(r, "format") or "—",
-        ),
-        StatField(
-            key="pages",
-            label_key="history.stats.pages",
-            resolve=lambda r: _opt(r, "pages") or "—",
-        ),
-        StatField(
-            key="ok",
-            label_key="history.stats.images",
-            resolve=lambda r: r.get("ok_count") or 0,
-            color_token="var(--accent-teal, #2dd4bf)",
-        ),
-    )
-
-
-def _informe_tecnico_stats() -> tuple[StatField, ...]:
-    return (
-        StatField(
-            key="cs",
-            label_key="history.stats.cs",
-            resolve=lambda r: _opt(r, "cs") or "—",
-        ),
-        StatField(
-            key="contratista",
-            label_key="history.stats.contractor",
-            resolve=lambda r: _opt(r, "contratista") or "—",
-        ),
-        StatField(
-            key="status",
-            label_key="history.stats.status",
-            resolve=lambda r: _opt(r, "status") or "—",
-        ),
-        StatField(
-            key="ok",
-            label_key="history.stats.ok",
-            resolve=lambda r: r.get("ok_count") or 0,
-            color_token="var(--accent-cyan, #22d3ee)",
-        ),
-    )
-
-
-def _ficha_tecnica_stats() -> tuple[StatField, ...]:
-    return (
-        StatField(
-            key="type",
-            label_key="history.stats.status",
-            resolve=lambda r: _opt(r, "type") or "—",
-        ),
-        StatField(
-            key="ok",
-            label_key="history.stats.ok",
-            resolve=lambda r: r.get("ok_count") or 0,
-            color_token="var(--accent-teal, #2dd4bf)",
-        ),
-    )
-
-
-@lru_cache(maxsize=256)
-def _parse_options_json(raw: str | bytes) -> dict[str, Any]:
-    try:
-        data = json.loads(raw)
-    except (TypeError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-@lru_cache(maxsize=256)
-def _parse_files_json(raw: str | bytes) -> list[str]:
-    try:
-        data = json.loads(raw)
-    except (TypeError, ValueError):
-        return []
-    return data if isinstance(data, list) else []
-
-
-def _opt(run: dict[str, Any], key: str) -> Any:
-    raw = run.get("options_json")
-    if not isinstance(raw, (str, bytes)) or not raw:
-        return None
-    return _parse_options_json(raw).get(key)
-
-
-def _files(run: dict[str, Any]) -> list[str]:
-    raw = run.get("files_json")
-    if not isinstance(raw, (str, bytes)) or not raw:
-        return []
-    return _parse_files_json(raw)
 
 
 RUN_TYPE_REGISTRY: dict[str, RunTypeMeta] = {
     "conversion": RunTypeMeta(
         id="conversion",
         label_key="history.runTypes.conversion",
-        description_key="history.runTypes.conversionDesc",
         color_token="var(--accent-green)",
         options_schema=_CONVERSION_OPTIONS_SCHEMA,
         files_schema=_NON_EMPTY_STRING_ARRAY,
-        stats=_conversion_stats(),
-        show_patron=True,
     ),
     "formato": RunTypeMeta(
         id="formato",
         label_key="history.runTypes.formato",
-        description_key="history.runTypes.formatoDesc",
         color_token="var(--accent-primary)",
         options_schema=_FORMATO_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_formato_stats(),
     ),
     "sellador": RunTypeMeta(
         id="sellador",
         label_key="history.runTypes.sellador",
-        description_key="history.runTypes.selladorDesc",
         color_token="var(--accent-amber, #fbbf24)",
         options_schema=_SELLADOR_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_sellador_stats(),
     ),
     "padron": RunTypeMeta(
         id="padron",
         label_key="history.runTypes.padron",
-        description_key="history.runTypes.padronDesc",
         color_token="var(--accent-yellow)",
         options_schema=_PADRON_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_padron_stats(),
     ),
     "volante": RunTypeMeta(
         id="volante",
         label_key="history.runTypes.volante",
-        description_key="history.runTypes.volanteDesc",
         color_token="var(--accent-secondary)",
         options_schema=_VOLANTE_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_volante_stats(),
     ),
     "image_optimizer": RunTypeMeta(
         id="image_optimizer",
         label_key="history.runTypes.imageOptimizer",
-        description_key="history.runTypes.imageOptimizerDesc",
         color_token="var(--accent-purple, #a855f7)",
         options_schema=_IMAGE_OPTIMIZER_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_image_optimizer_stats(),
     ),
     "reporte_campo": RunTypeMeta(
         id="reporte_campo",
         label_key="history.runTypes.reporteCampo",
-        description_key="history.runTypes.reporteCampoDesc",
         color_token="var(--accent-orange, #fb923c)",
         options_schema=_REPORTE_CAMPO_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_reporte_campo_stats(),
     ),
     "panel_aviso_corte": RunTypeMeta(
         id="panel_aviso_corte",
         label_key="history.runTypes.panelAvisoCorte",
-        description_key="history.runTypes.panelAvisoCorteDesc",
         color_token="var(--accent-rose, #fb7185)",
         options_schema=_PANEL_AVISO_CORTE_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_panel_aviso_corte_stats(),
     ),
     "evidencia_volanteo": RunTypeMeta(
         id="evidencia_volanteo",
         label_key="history.runTypes.evidenciaVolanteo",
-        description_key="history.runTypes.evidenciaVolanteoDesc",
         color_token="var(--accent-teal, #2dd4bf)",
         options_schema=_EVIDENCIA_VOLANTEO_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_evidencia_volanteo_stats(),
     ),
     "informe_tecnico": RunTypeMeta(
         id="informe_tecnico",
         label_key="history.runTypes.informeTecnico",
-        description_key="history.runTypes.informeTecnicoDesc",
         color_token="var(--accent-cyan, #22d3ee)",
         options_schema=_INFORME_TECNICO_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_informe_tecnico_stats(),
     ),
     "informe_v2": RunTypeMeta(
         id="informe_v2",
         label_key="history.runTypes.informeV2",
-        description_key="history.runTypes.informeV2Desc",
         color_token="var(--accent-sky, #38bdf8)",
         options_schema=_INFORME_V2_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_informe_tecnico_stats(),
     ),
     "ficha_tecnica": RunTypeMeta(
         id="ficha_tecnica",
         label_key="history.runTypes.fichaTecnica",
-        description_key="history.runTypes.fichaTecnicaDesc",
         color_token="var(--accent-teal, #2dd4bf)",
         options_schema=_FICHA_TECNICA_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
-        stats=_ficha_tecnica_stats(),
     ),
 }
 

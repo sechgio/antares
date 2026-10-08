@@ -9,7 +9,7 @@ import pytest
 
 from backend.core.flows import runner as runner_module
 from backend.core.flows.runner import FlowRunner, cancel_run
-from backend.core.flows.store import FlowStore
+from backend.core.flows.store import FlowStore, _utc_now
 
 
 @pytest.fixture()
@@ -43,16 +43,30 @@ def _fan_out_graph(node_ids):
     }
 
 
-def test_parallel_branches_overlap(store):
+def test_parallel_branches_overlap(store, monkeypatch):
+    """El solape se mide por concurrencia máxima, no por reloj de pared."""
+    counts = {"active": 0, "max": 0}
+    lock = threading.Lock()
+
+    def fake_run_python(code, payload, timeout_s, token):
+        with lock:
+            counts["active"] += 1
+            counts["max"] = max(counts["max"], counts["active"])
+        time.sleep(0.2)
+        with lock:
+            counts["active"] -= 1
+        return {"json": "ok"}
+
+    # El spawn real del intérprete (~0.3 s por proceso en Windows) haría el
+    # resultado dependiente de la máquina; el solape lo decide el runner.
+    monkeypatch.setattr(runner_module.code_exec, "run_python", fake_run_python)
+
     flow = store.create("Paralelo", graph=_fan_out_graph(["a", "b", "c"]))
     runner = FlowRunner(store, lambda m: lambda p: {})
-    started = time.monotonic()
     done = _wait(runner.start(flow["id"])["id"], store)
-    elapsed = time.monotonic() - started
 
     assert done["status"] == "success"
-    # 3 code nodes de ~0.2 s en paralelo deben terminar bastante antes que en serie.
-    assert elapsed < 0.55
+    assert counts["max"] == 3
     steps = {s["node_id"]: s for s in done["steps"]}
     assert all(steps[n]["status"] == "success" for n in ("a", "b", "c", "fin"))
 
@@ -266,3 +280,104 @@ def test_resume_loop_completed_iteration_not_duplicated(store):
     assert [entry["dup"] for entry in loop_out["items"]] == [2, 4, 6]
     dup_steps = [s for s in done["steps"] if s["node_id"] == "dup"]
     assert sorted(s["iteration"] for s in dup_steps) == [1, 2]
+
+
+def test_resume_twice_registers_one_active_run(store):
+    """Un segundo resume del mismo run devuelve el run sin relanzar otro hilo."""
+    flow = store.create(
+        "Doble resume",
+        graph={
+            "nodes": [
+                {"id": "trigger", "kind": "trigger", "config": {}},
+                {"id": "slow", "kind": "code",
+                 "config": {"code": "import time\ntime.sleep(2)\nresult = 1", "auto_approve": True}},
+            ],
+            "edges": [{"from_node": "trigger", "to_node": "slow"}],
+        },
+    )
+    run = store.create_run(flow["id"])
+    store.update_run(run["id"], status="waiting", checkpoint={"pending": {}, "approvals": {}})
+    runner = FlowRunner(store, lambda m: lambda p: {})
+
+    first = runner.resume(run["id"])
+    second = runner.resume(run["id"])
+
+    assert second["id"] == first["id"]
+    assert _wait(run["id"], store, timeout=10)["status"] == "success"
+
+
+def test_resume_rejects_second_active_run_of_guarded_flow(store):
+    """resume recupera el guard por flujo: un flujo con efectos no corre dos runs."""
+    flow = store.create(
+        "Efectos",
+        graph={
+            "nodes": [
+                {"id": "trigger", "kind": "trigger", "config": {}},
+                {"id": "slow", "kind": "code",
+                 "config": {"code": "import time\ntime.sleep(3)\nresult = 1", "auto_approve": True}},
+                {"id": "eff", "kind": "tool_call",
+                 "config": {"method": "sellador_apply", "args": {}}},
+            ],
+            "edges": [
+                {"from_node": "trigger", "to_node": "slow"},
+                {"from_node": "slow", "to_node": "eff"},
+            ],
+        },
+    )
+    runner = FlowRunner(store, lambda m: lambda p: {})
+    first = runner.start(flow["id"])
+
+    second = store.create_run(flow["id"])
+    store.update_run(second["id"], status="waiting", checkpoint={"pending": {}, "approvals": {}})
+    with pytest.raises(ValueError, match="ejecución en curso"):
+        runner.resume(second["id"])
+
+    assert cancel_run(first["id"]) is True
+    assert _wait(first["id"], store, timeout=10)["status"] == "cancelled"
+
+
+def test_decide_approval_is_atomic_under_concurrency(store):
+    """Decisiones concurrentes sobre la misma aprobación: solo una se persiste."""
+    flow = store.create(
+        "Aprobación",
+        graph={
+            "nodes": [
+                {"id": "trigger", "kind": "trigger", "config": {}},
+                {"id": "a", "kind": "transform", "config": {"output": {"v": 1}}},
+            ],
+            "edges": [{"from_node": "trigger", "to_node": "a"}],
+        },
+    )
+    run = store.create_run(flow["id"])
+    store.update_run(
+        run["id"],
+        status="waiting",
+        checkpoint={
+            "pending": {},
+            "approvals": {
+                "ap1": {
+                    "id": "ap1", "node_id": "a", "method": "flows_run", "params": {},
+                    "decision": None, "created_at": _utc_now(),
+                }
+            },
+        },
+    )
+    runner = FlowRunner(store, lambda m: lambda p: {})
+    outcomes: list[str] = []
+
+    def decide():
+        try:
+            runner.decide_approval(run["id"], "ap1", True)
+            outcomes.append("ok")
+        except ValueError:
+            outcomes.append("rejected")
+
+    threads = [threading.Thread(target=decide) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert outcomes.count("ok") == 1
+    assert outcomes.count("rejected") == 3
+    assert _wait(run["id"], store)["status"] in ("success", "skipped")

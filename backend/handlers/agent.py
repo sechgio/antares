@@ -53,6 +53,7 @@ def _session_create(params: JsonObject) -> JsonObject:
 @validate_params("id")
 def _session_delete(params: JsonObject) -> JsonObject:
     session_id = str(params["id"])
+    _runner().cancel_turn(session_id)
     if not _store().delete_session(session_id):
         raise NotFoundError(f"Conversación no encontrada: {session_id}")
     return {"deleted": True, "id": session_id}
@@ -63,9 +64,14 @@ def _session_delete(params: JsonObject) -> JsonObject:
 def _messages_list(params: JsonObject) -> JsonObject:
     session_id = str(params["session_id"])
     _session_or_raise(session_id)
+    runner = _runner()
+    messages = _store().messages(session_id)
+    partial = runner.partial_text(session_id)
+    if partial:
+        messages.append({"role": "assistant", "content": partial, "partial": True})
     return {
-        "messages": _store().messages(session_id),
-        "running": _runner().is_running(session_id),
+        "messages": messages,
+        "running": runner.is_running(session_id),
         "pending_approvals": _store().pending_approvals(session_id),
     }
 
@@ -113,6 +119,14 @@ def _turn_status(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id")
+def _turn_cancel(params: JsonObject) -> JsonObject:
+    session_id = str(params["session_id"])
+    _session_or_raise(session_id)
+    return {"cancelled": _runner().cancel_turn(session_id)}
+
+
+@with_locale
 @validate_params("approval_id")
 def _approve(params: JsonObject) -> JsonObject:
     try:
@@ -140,6 +154,7 @@ HANDLERS = {
     "agent_message_send": _message_send,
     "agent_tools_list": _tools_list,
     "agent_turn_status": _turn_status,
+    "agent_turn_cancel": _turn_cancel,
     "agent_approve": _approve,
     "agent_deny": _deny,
 }

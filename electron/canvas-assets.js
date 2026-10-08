@@ -366,6 +366,7 @@ async function gcOrphanCanvasAssets({ nowMs = Date.now(), graceMs = GC_GRACE_MS 
 
 module.exports = {
   GC_GRACE_MS,
+  antaresUserData: _antaresUserData,
   assetsDir,
   parseAssetRef,
   toAssetRef,

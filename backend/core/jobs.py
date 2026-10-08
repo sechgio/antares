@@ -112,8 +112,6 @@ class JobManager:
             stale = [k for k, owner in self._reserved_out_paths.items() if owner == job_id]
             for key in stale:
                 del self._reserved_out_paths[key]
-            if not self._reserved_out_paths:
-                self._reserved_out_paths = {}
 
     def create_job(
         self,

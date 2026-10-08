@@ -54,11 +54,10 @@ def _resolve_file_mapping(params: dict[str, Any]) -> tuple[dict[str, str] | None
 def _probe_key_columns(
     files: list[str],
     columns: list[str],
-    sample_size: int = 30,
 ) -> tuple[str, int, list[tuple[str, int]], bool]:
     from backend.core.database import contar_por_columna
 
-    sample_files = files[:sample_size]
+    sample_files = files[:30]
     codigos: list[str] = []
     stems: list[str] = []
     for f in sample_files:
@@ -98,7 +97,6 @@ def _resolve_key_column(
     files: list[str],
     db_columns: list[str] | None = None,
     *,
-    sample_size: int = 30,
     probe_result: tuple[str, int, list[tuple[str, int]], bool] | None = None,
 ) -> str:
     from backend.core.config_fields import get_field_names
@@ -110,7 +108,7 @@ def _resolve_key_column(
         return columns[0]
 
     if probe_result is None:
-        probe_result = _probe_key_columns(files, columns, sample_size=sample_size)
+        probe_result = _probe_key_columns(files, columns)
     best_col, best_count, per_column, had_keys = probe_result
     if not had_keys:
         return best_col

@@ -227,12 +227,10 @@ def delete_format(fmt_id: str) -> bool:
         entry = _formats.get(fmt_id)
         if entry is None:
             return False
-        is_builtin = entry["origen"] == "builtin"
-        if is_builtin:
+        if entry["origen"] == "builtin":
             entry["enabled"] = False
         else:
             _formats.pop(fmt_id, None)
-        if not is_builtin:
             try:
                 os.remove(_resolve_path(entry))
             except FileNotFoundError:
@@ -454,7 +452,7 @@ def generate_pdf(fmt_id: str, desde: int, hasta: int) -> tuple[bytes, str]:
     strategy_impl = get_strategy(entry["strategy"])
     pdf_bytes = strategy_impl.generate(template_bytes, desde, hasta, entry.get("mapping"))
 
-    pad = entry.get("mapping", {}).get("padding", 7) if entry.get("mapping") else 7
+    pad = (entry.get("mapping") or {}).get("padding", 7)
     desde_s = str(desde).zfill(pad)
     hasta_s = str(hasta).zfill(pad)
     pattern = entry["filename_pattern"]

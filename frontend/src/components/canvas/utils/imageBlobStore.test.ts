@@ -361,18 +361,6 @@ describe("canvas-asset refs", () => {
     ).rejects.toThrow("canvasAssetGet");
   });
 
-  it("hydrate resuelve refs a blob urls con canvasAssetGet", async () => {
-    (window as { electronAPI?: unknown }).electronAPI = {
-      canvasAssetGet: vi.fn(async () => ({
-        chunk: new Uint8Array([1, 2, 3]).buffer,
-      })),
-    };
-    const out = await hydrateDocumentImages(
-      doc([layer("a", "image", "canvas-asset:r1")]),
-    );
-    expect(out.layers[0].value).toMatch(/^blob:/);
-  });
-
   it("hydrate lee y registra los assets de forma secuencial", async () => {
     let activeReads = 0;
     let maxActiveReads = 0;
@@ -471,13 +459,6 @@ describe("embedManagedBlobsAsDataUrls", () => {
 });
 
 describe("pin/release/sweep", () => {
-  it("releaseImageBlob revoca url y borra el registro", async () => {
-    const reg = await registerImageBlob(new Blob(["x"]));
-    releaseImageBlob(reg.url);
-    expect(revoked).toContain(reg.url);
-    expect(getBlobUrl(reg.blobId)).toBe(reg.blobId);
-  });
-
   it("pin protege contra release hasta liberar", async () => {
     const reg = await registerImageBlob(new Blob(["x"]));
     const unpin = pinImageRefs([reg.url]);

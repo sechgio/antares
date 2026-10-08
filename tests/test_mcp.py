@@ -378,6 +378,16 @@ def _wait(run_id: str, store: FlowStore, timeout: float = 10.0):
     raise AssertionError("run did not finish")
 
 
+def _wait_done(run_id: str, store: FlowStore, timeout: float = 10.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        run = store.get_run(run_id)
+        if run is not None and run["status"] not in ("queued", "running", "waiting"):
+            return run
+        time.sleep(0.05)
+    raise AssertionError("run did not finish")
+
+
 def test_validate_graph_mcp_call(mcp_root):
     graph = normalize_graph(
         {
@@ -400,12 +410,21 @@ def test_validate_graph_mcp_call(mcp_root):
     )
     with pytest.raises(ValueError, match=r"config\.tool"):
         validate_graph(bad)
+    bad_flag = normalize_graph(
+        {
+            "nodes": [
+                {"id": "t", "kind": "trigger", "config": {}},
+                {"id": "m", "kind": "mcp_call", "config": {"server": "s", "tool": "t", "auto_approve": "sí"}},
+            ],
+            "edges": [{"from_node": "t", "to_node": "m"}],
+        }
+    )
+    with pytest.raises(ValueError, match="auto_approve"):
+        validate_graph(bad_flag)
 
 
-def test_runner_mcp_call_node(mcp_root, store):
-    command, args = _fake_stdio(mcp_root)
-    server = mcp_servers.add_server("Fake", "stdio", command=command, args=args)
-    flow = store.create(
+def _mcp_flow(store, server_id: str, **config_extra):
+    return store.create(
         "MCP",
         graph={
             "nodes": [
@@ -413,16 +432,43 @@ def test_runner_mcp_call_node(mcp_root, store):
                 {
                     "id": "m",
                     "kind": "mcp_call",
-                    "config": {"server": server["id"], "tool": "echo", "args": {"valor": "=run.trigger.n"}},
+                    "config": {"server": server_id, "tool": "echo", "args": {"valor": "=run.trigger.n"}, **config_extra},
                 },
             ],
             "edges": [{"from_node": "t", "to_node": "m"}],
         },
     )
+
+
+def test_runner_mcp_call_node(mcp_root, store):
+    """mcp_call corre código de terceros: pausa en aprobación como el nodo code."""
+    command, args = _fake_stdio(mcp_root)
+    server = mcp_servers.add_server("Fake", "stdio", command=command, args=args)
+    flow = _mcp_flow(store, server["id"])
     runner = FlowRunner(store, lambda m: lambda p: {})
     run = runner.start(flow["id"], {"n": 7})
-    finished = _wait(run["id"], store)
+    waiting = _wait(run["id"], store)
+
+    assert waiting["status"] == "waiting"
+    approval = next(iter((waiting["checkpoint"]["approvals"] or {}).values()))
+    assert approval["method"] == "mcp_call"
+    assert approval["params"] == {"server": server["id"], "tool": "echo", "args": {"valor": 7}}
+
+    runner.decide_approval(run["id"], approval["id"], True)
+    finished = _wait_done(run["id"], store)
     assert finished["status"] == "success"
     steps = {s["node_id"]: s for s in finished["steps"]}
     assert steps["m"]["status"] == "success"
     assert json.loads(steps["m"]["output"]["text"]) == {"valor": 7}
+
+
+def test_runner_mcp_call_node_auto_approve(mcp_root, store):
+    command, args = _fake_stdio(mcp_root)
+    server = mcp_servers.add_server("Fake", "stdio", command=command, args=args)
+    flow = _mcp_flow(store, server["id"], auto_approve=True)
+    runner = FlowRunner(store, lambda m: lambda p: {})
+    finished = _wait(runner.start(flow["id"], {"n": 7})["id"], store)
+
+    assert finished["status"] == "success"
+    steps = {s["node_id"]: s for s in finished["steps"]}
+    assert steps["m"]["status"] == "success"

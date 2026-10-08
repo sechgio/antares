@@ -55,7 +55,7 @@ def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style)
     }])
     seen = {}
     response = {"choices": [{"message": {"content": "ok"}}]} if style == "openai" else {"content": []}
-    monkeypatch.setattr(agent_chat, "_post_json", lambda url, headers, payload: seen.update(payload) or response)
+    monkeypatch.setattr(agent_chat, "_post_json", lambda url, headers, payload, on_delta=None: seen.update(payload) or response)
     chat = agent_chat._chat_openai if style == "openai" else agent_chat._chat_anthropic
     chat("https://example.com", {}, "model", [], True, None)
     wire = {s["function"]["name"]: s["function"]["parameters"] for s in seen["tools"]} if style == "openai" else {
@@ -190,7 +190,7 @@ def _fake_runner(tmp_path, monkeypatch, replies):
     monkeypatch.setattr(
         agent,
         "chat",
-        lambda provider, model, messages: replies.pop(0) if replies else {"text": "fin", "calls": []},
+        lambda provider, model, messages, on_delta=None: replies.pop(0) if replies else {"text": "fin", "calls": []},
     )
     runner = agent.AgentRunner(store, lambda name: lambda params: executed.append((name, params)) or {"ok": True})
     return store, runner, executed
@@ -323,7 +323,7 @@ def test_chat_requires_configured_provider(tmp_path, monkeypatch):
     # ollama no exige clave pero sí alcanzable; forzamos red falsa
     seen = {}
 
-    def fake_post(url, headers, payload):
+    def fake_post(url, headers, payload, on_delta=None):
         seen["url"] = url
         return {"choices": [{"message": {"content": "ok", "tool_calls": []}}]}
 
@@ -376,7 +376,7 @@ def test_approval_accepts_without_waiting_and_serializes_session_tools(tmp_path,
             assert release.wait(5)
         return {"ok": True}
 
-    def chat(provider, model, messages):
+    def chat(provider, model, messages, on_delta=None):
         replies.setdefault(model, []).append(messages)
         return {"text": "fin", "calls": []}
 
@@ -424,3 +424,308 @@ def test_approval_accepts_without_waiting_and_serializes_session_tools(tmp_path,
     assert executed == [1, 2]
     results = [message for message in replies["m"][0] if message["role"] == "tool_result"]
     assert [message["tool_use_id"] for message in results] == ["c1", "c2"]
+
+
+def test_cancel_turn_stops_turn_and_marks_session(tmp_path, monkeypatch):
+    """Un turno bloqueado en el proveedor se detiene de forma cooperativa."""
+    import time
+
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Lenta")
+    entered = threading.Event()
+
+    def slow_chat(provider, model, messages, on_delta=None):
+        entered.set()
+        time.sleep(30)
+        return {"text": "nunca", "calls": []}
+
+    monkeypatch.setattr(agent, "chat", slow_chat)
+    runner = agent.AgentRunner(store, lambda name: lambda params: {})
+
+    from backend.handlers import agent as handlers
+
+    monkeypatch.setattr(handlers, "_runner", lambda: runner)
+    monkeypatch.setattr(handlers, "_store", lambda: store)
+    assert handlers._turn_cancel({"session_id": session["id"]}) == {"cancelled": False}
+
+    runner.start_turn(session["id"], "hola")
+    assert entered.wait(3)
+    assert handlers._turn_cancel({"session_id": session["id"]}) == {"cancelled": True}
+
+    deadline = time.time() + 5
+    while runner.is_running(session["id"]) and time.time() < deadline:
+        time.sleep(0.05)
+    assert not runner.is_running(session["id"])
+    messages = store.messages(session["id"])
+    assert "detenido" in messages[-1]["content"]
+    # El turno siguiente parte con un token nuevo: la cancelación no se hereda.
+    monkeypatch.setattr(agent, "chat", lambda *a, **k: {"text": "listo", "calls": []})
+    runner.start_turn(session["id"], "otra vez")
+    worker = runner._running.get(session["id"])
+    if worker:
+        worker.join(timeout=5)
+    assert not runner.is_running(session["id"])
+    assert store.messages(session["id"])[-1]["content"] == "listo"
+
+
+def test_interrupted_turn_gets_marked_once_on_runner_init(tmp_path):
+    """Un reinicio con turno a medias deja constancia en la conversación."""
+    store = _store(tmp_path)
+    interrupted = store.create_session("ollama", "m", "A medias")
+    store.append_message(interrupted["id"], {"role": "user", "content": "sin respuesta"})
+    ok = store.create_session("ollama", "m", "Cerrada")
+    store.append_message(ok["id"], {"role": "user", "content": "hola"})
+    store.append_message(ok["id"], {"role": "assistant", "content": "respuesta"})
+    waiting = store.create_session("ollama", "m", "Con aprobación")
+    store.append_message(waiting["id"], {"role": "user", "content": "haz algo"})
+    store.create_approval(waiting["id"], {"id": "c1", "name": "flows_delete", "params": {}})
+
+    store2 = _store(tmp_path)
+    agent.AgentRunner(store2, lambda name: lambda params: {})
+
+    assert "interrumpido" in store2.messages(interrupted["id"])[-1]["content"]
+    assert store2.messages(ok["id"])[-1]["content"] == "respuesta"
+    assert store2.messages(waiting["id"])[-1]["content"] == "haz algo"
+    # Un segundo runner no duplica el marcador.
+    store3 = _store(tmp_path)
+    agent.AgentRunner(store3, lambda name: lambda params: {})
+    assert sum("interrumpido" in m["content"] for m in store3.messages(interrupted["id"])) == 1
+
+
+def test_stale_approval_expires_and_cannot_be_decided(tmp_path):
+    """Una aprobación más vieja que el TTL ya no ejecuta la acción."""
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "S")
+    approval = store.create_approval(session["id"], {"id": "c1", "name": "flows_delete", "params": {}})
+    store._approvals[approval["id"]]["created_at"] = agent._now_ms() - agent._APPROVAL_TTL_MS - 1
+    assert store.pending_approvals(session["id"]) == []
+    assert store.get_approval(approval["id"])["status"] == "expired"
+    runner = agent.AgentRunner(store, lambda name: lambda params: {})
+    with pytest.raises(ValueError, match="expir"):
+        runner.decide(approval["id"], True)
+
+
+def test_stream_response_emits_accumulated_deltas():
+    """Los deltas SSE del protocolo OpenAI alimentan el texto parcial."""
+    import io
+
+    sse = (
+        b'data: {"choices":[{"index":0,"delta":{"content":"Ho"}}]}\n\n'
+        b'data: {"choices":[{"index":0,"delta":{"content":"la"}}]}\n\n'
+        b'data: [DONE]\n\n'
+    )
+    seen: list[str] = []
+    res = agent_chat._stream_response(io.BytesIO(sse), on_delta=seen.append)
+    assert seen == ["Ho", "Hola"]
+    assert res["choices"][0]["message"]["content"] == "Hola"
+
+
+def test_stream_response_emits_deltas_for_native_protocol():
+    """Los deltas de bloques del protocolo Anthropic también llegan."""
+    import io
+
+    sse = (
+        b'data: {"type":"message_start"}\n\n'
+        b'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n'
+        b'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Ho"}}\n\n'
+        b'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"la"}}\n\n'
+        b'data: {"type":"content_block_stop","index":0}\n\n'
+        b'data: {"type":"message_stop"}\n\n'
+    )
+    seen: list[str] = []
+    res = agent_chat._stream_response(io.BytesIO(sse), on_delta=seen.append)
+    assert seen == ["Ho", "Hola"]
+    assert res["content"][0]["text"] == "Hola"
+
+
+def test_partial_text_checkpoint_survives_restart(tmp_path):
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "S")
+    runner = agent.AgentRunner(store, lambda name: lambda params: {})
+    runner._set_partial(session["id"], "escribiendo…")
+    assert runner.partial_text(session["id"]) == "escribiendo…"
+    runner._partial.pop(session["id"], None)
+    assert runner.partial_text(session["id"]) is None
+    restored = _store(tmp_path)
+    agent.AgentRunner(restored, lambda name: pytest.fail("No debe ejecutar herramientas al recuperar"))
+    assert "escribiendo…" in restored.messages(session["id"])[-1]["content"]
+    assert "interrumpido" in restored.messages(session["id"])[-1]["content"]
+    assert "_partial_text" not in restored.get_session(session["id"])
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "pending", "done"])
+def test_recovery_never_replays_a_tool_or_a_decided_approval(tmp_path, status):
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Tarea")
+    call = {"id": "effect", "name": "flows_run", "params": {}, "status": status, "result": "resultado"}
+    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
+    approval = store.create_approval(session["id"], call)
+    store.decide_approval(approval["id"], True)
+    restored = _store(tmp_path)
+    runner = agent.AgentRunner(restored, lambda name: pytest.fail("No repetir efectos"))
+    messages = restored.messages(session["id"])
+    assert messages[0]["tool_calls"][0]["status"] == ("done" if status == "done" else "interrupted")
+    assert "interrumpido" in messages[-1]["content"]
+    assert not runner.is_running(session["id"])
+    with pytest.raises(ValueError, match="ya decidida"):
+        runner.decide(approval["id"], True)
+    agent.AgentRunner(_store(tmp_path), lambda name: None)
+    assert _store(tmp_path).messages(session["id"]) == messages
+
+
+def test_pending_approval_recovers_and_still_requires_one_explicit_decision(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Tarea")
+    method = agent_chat.gated_methods()[0]
+    call = {"id": "effect", "name": method, "params": {}, "status": "pending"}
+    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
+    approval = store.create_approval(session["id"], call)
+    restored = _store(tmp_path)
+    executed = []
+    monkeypatch.setattr(agent, "chat", lambda *a, **k: {"text": "fin", "calls": []})
+    runner = agent.AgentRunner(restored, lambda name: lambda params: executed.append(name) or {"ok": True})
+    assert executed == []
+    assert restored.pending_approvals(session["id"])[0]["id"] == approval["id"]
+    with pytest.raises(ValueError, match="aprobaciones pendientes"):
+        runner.start_turn(session["id"], "otra tarea")
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
+    runner.decide(approval["id"], True)
+    assert executed == [method]
+    with pytest.raises(ValueError, match="ya decidida"):
+        runner.decide(approval["id"], True)
+
+
+def test_cancel_running_tool_discards_late_result_and_queued_approved_effect(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Tarea")
+    method = agent_chat.gated_methods()[0]
+    calls = [{"id": f"c{i}", "name": method, "params": {"i": i}, "status": "pending"} for i in (1, 2)]
+    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": calls})
+    approvals = [store.create_approval(session["id"], call) for call in calls]
+    entered, release, finished = (threading.Event() for _ in range(3))
+    executed = []
+
+    def execute(call, token=None):
+        executed.append(call["params"]["i"])
+        entered.set()
+        assert release.wait(5)
+        finished.set()
+        return '{"ok": true}'
+
+    monkeypatch.setattr(agent, "chat", lambda *a, **k: pytest.fail("No continuar tras cancelar"))
+    runner = agent.AgentRunner(store, lambda name: None)
+    monkeypatch.setattr(runner, "_execute", execute)
+    runner.decide(approvals[0]["id"], True)
+    try:
+        assert entered.wait(3)
+        assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == "running"
+        runner.decide(approvals[1]["id"], True)
+        worker = runner._running[session["id"]]
+        assert runner.cancel_turn(session["id"])
+        worker.join(3)
+        assert not runner.is_running(session["id"])
+        assert executed == [1]
+        assert [c["status"] for c in store.messages(session["id"])[0]["tool_calls"]] == ["interrupted"] * 2
+        release.set()
+        assert finished.wait(3)
+        assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == "interrupted"
+    finally:
+        release.set()
+
+
+def test_cancel_turn_waiting_for_approval_does_not_execute(tmp_path):
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Tarea")
+    call = {"id": "c1", "name": "flows_run", "params": {}, "status": "pending"}
+    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
+    approval = store.create_approval(session["id"], call)
+    runner = agent.AgentRunner(store, lambda name: pytest.fail("No ejecutar al cancelar"))
+    assert runner.cancel_turn(session["id"])
+    worker = runner._running.get(session["id"])
+    if worker:
+        worker.join(3)
+    assert not runner.is_running(session["id"])
+    assert store.pending_approvals(session["id"]) == []
+    with pytest.raises(ValueError, match="ya decidida"):
+        runner.decide(approval["id"], True)
+
+
+def test_cancelled_provider_cannot_publish_deltas_to_a_new_turn(tmp_path):
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Tarea")
+    runner = agent.AgentRunner(store, lambda name: None)
+    old = agent._CancelEvent()
+    old.cancel()
+    runner._cancel[session["id"]] = agent._CancelEvent()
+    runner._set_partial(session["id"], "tardío", old)
+    assert runner.partial_text(session["id"]) is None
+    assert "_partial_text" not in store.get_session(session["id"])
+
+
+@pytest.mark.parametrize("result", ['{"error": "falló"}', '{"isError": true}', '{"ok": true}'])
+def test_tool_failures_have_distinct_status(tmp_path, monkeypatch, result):
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Tarea")
+    call = {"id": "c1", "name": "flows_run", "params": {}, "status": "queued"}
+    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
+    runner = agent.AgentRunner(store, lambda name: None)
+    monkeypatch.setattr(runner, "_execute", lambda call, token=None: result)
+    assert runner._execute_call(session["id"], call) == result
+    assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == ("done" if "ok" in result else "failed")
+
+
+def test_first_messages_snapshot_includes_restart_recovery(tmp_path, monkeypatch):
+    from backend.handlers import agent as handlers
+
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Tarea")
+    store.append_message(session["id"], {"role": "user", "content": "pendiente"})
+    restored = _store(tmp_path)
+    monkeypatch.setattr(handlers, "_store", lambda: restored)
+    monkeypatch.setattr(agent, "_store_singleton", restored)
+    monkeypatch.setattr(agent, "_runner_singleton", None)
+    snapshot = handlers._messages_list({"session_id": session["id"]})
+    assert "interrumpido" in snapshot["messages"][-1]["content"]
+    assert not snapshot["running"]
+
+
+def test_recovery_does_not_duplicate_a_response_written_before_checkpoint_cleanup(tmp_path):
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Tarea")
+    store.append_message(session["id"], {"role": "assistant", "content": "Progreso completado"})
+    store.save_partial(session["id"], "Progreso")
+    restored = _store(tmp_path)
+    agent.AgentRunner(restored, lambda name: None)
+    assert restored.messages(session["id"]) == store.messages(session["id"])
+    assert "_partial_text" not in restored.get_session(session["id"])
+
+
+def test_cancel_removes_a_tool_still_queued_in_the_scheduler(tmp_path, monkeypatch):
+    from concurrent.futures import Future
+    from unittest.mock import Mock
+
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "m", "Tarea")
+    method = sorted(ORCHESTRATABLE_METHODS)[0]
+    call = {"id": "queued", "name": method, "params": {}, "status": "pending"}
+    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
+    approval = store.create_approval(session["id"], call)
+    future = Future()
+    submitted, cancelled = threading.Event(), threading.Event()
+    future.add_done_callback(lambda result: cancelled.set())
+
+    def submit(fn, params):
+        submitted.set()
+        return future
+
+    monkeypatch.setattr(agent, "lane_for", lambda name: "light")
+    monkeypatch.setattr(agent, "get_scheduler", lambda: Mock(submit_light=submit))
+    runner = agent.AgentRunner(store, lambda name: lambda params: pytest.fail("No ejecutar trabajo en cola"))
+    runner.decide(approval["id"], True)
+    assert submitted.wait(3)
+    worker = runner._running[session["id"]]
+    assert runner.cancel_turn(session["id"])
+    worker.join(3)
+    assert cancelled.wait(3)
+    assert future.cancelled()
+    assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == "interrupted"

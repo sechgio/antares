@@ -87,28 +87,23 @@ def extend_column_mappings(column_mapping: dict[str, str]) -> dict[str, str]:
         column_mapping[f"insp{alias}sug"] = f"r2_inspeccion_{section}_sug"
         column_mapping[f"insp{alias}sugerencias"] = f"r2_inspeccion_{section}_sug"
 
-    for section in R2_VALVULA_ROWS:
-        alias = section.replace("_", "")
-        for diameter in R2_VALVULA_DIAMETERS:
-            column_mapping[f"r2valv{alias}{diameter}"] = f"r2_valvulas_{section}_{diameter}"
-        column_mapping[f"r2valv{alias}oper"] = f"r2_valvulas_{section}_oper"
-        column_mapping[f"r2valv{alias}noop"] = f"r2_valvulas_{section}_no_op"
-        column_mapping[f"r2valv{alias}obs"] = f"r2_valvulas_{section}_obs"
-        column_mapping[f"r2valv{alias}sug"] = f"r2_valvulas_{section}_sug"
-
-    for section in R2_CANASTILLA_ROWS:
-        alias = section.replace("_", "")
-        for diameter in R2_CANASTILLA_DIAMETERS:
-            column_mapping[f"r2can{alias}{diameter}"] = f"r2_canastilla_{section}_{diameter}"
-        column_mapping[f"r2can{alias}oper"] = f"r2_canastilla_{section}_oper"
-        column_mapping[f"r2can{alias}noop"] = f"r2_canastilla_{section}_no_op"
-        column_mapping[f"r2can{alias}obs"] = f"r2_canastilla_{section}_obs"
-        column_mapping[f"r2can{alias}sug"] = f"r2_canastilla_{section}_sug"
+    for sections, diameters, short, target_prefix in (
+        (R2_VALVULA_ROWS, R2_VALVULA_DIAMETERS, "r2valv", "r2_valvulas"),
+        (R2_CANASTILLA_ROWS, R2_CANASTILLA_DIAMETERS, "r2can", "r2_canastilla"),
+    ):
+        for section in sections:
+            alias = section.replace("_", "")
+            for diameter in diameters:
+                column_mapping[f"{short}{alias}{diameter}"] = f"{target_prefix}_{section}_{diameter}"
+            column_mapping[f"{short}{alias}oper"] = f"{target_prefix}_{section}_oper"
+            column_mapping[f"{short}{alias}noop"] = f"{target_prefix}_{section}_no_op"
+            column_mapping[f"{short}{alias}obs"] = f"{target_prefix}_{section}_obs"
+            column_mapping[f"{short}{alias}sug"] = f"{target_prefix}_{section}_sug"
 
     for field in ("diametro", "diametro_interno", "altura_util", "altura_total"):
         column_mapping[f"r2medida{field.replace('_', '')}"] = f"r2_medidas_{field}"
 
-    for _section, (estado_col, suffix) in TECNICO_INSPECCION_FIELDS.items():
+    for estado_col, suffix in TECNICO_INSPECCION_FIELDS.values():
         column_mapping[estado_col.replace("_", "")] = estado_col
         column_mapping[f"obs{suffix.replace('_', '')}"] = f"obs_{suffix}"
         column_mapping[f"sug{suffix.replace('_', '')}"] = f"sug_{suffix}"
@@ -116,19 +111,18 @@ def extend_column_mappings(column_mapping: dict[str, str]) -> dict[str, str]:
     for section in R2_VALVULA_ROWS:
         for diameter in R2_VALVULA_DIAMETERS:
             column_mapping.setdefault(f"valvulas{section}{diameter}", f"valvulas_{section}_{diameter}")
-        column_mapping[f"valvulas{section}oper"] = f"valvulas_{section}_oper"
-        column_mapping[f"valvulas{section}noop"] = f"valvulas_{section}_no_op"
-        column_mapping[f"obsvalvulas{section}"] = f"obs_valvulas_{section}"
-        column_mapping[f"sugvalvulas{section}"] = f"sug_valvulas_{section}"
 
     for section in R2_CANASTILLA_ROWS:
         for diameter in R2_CANASTILLA_DIAMETERS:
             column_mapping[f"canastillas{section}{diameter}"] = f"canastillas_{section}_{diameter}"
             column_mapping[f"canastilla{section}{diameter}"] = f"canastillas_{section}_{diameter}"
-        column_mapping[f"canastillas{section}oper"] = f"canastillas_{section}_oper"
-        column_mapping[f"canastillas{section}noop"] = f"canastillas_{section}_no_op"
-        column_mapping[f"obscanastillas{section}"] = f"obs_canastillas_{section}"
-        column_mapping[f"sugcanastillas{section}"] = f"sug_canastillas_{section}"
+
+    for prefix, sections in (("valvulas", R2_VALVULA_ROWS), ("canastillas", R2_CANASTILLA_ROWS)):
+        for section in sections:
+            column_mapping[f"{prefix}{section}oper"] = f"{prefix}_{section}_oper"
+            column_mapping[f"{prefix}{section}noop"] = f"{prefix}_{section}_no_op"
+            column_mapping[f"obs{prefix}{section}"] = f"obs_{prefix}_{section}"
+            column_mapping[f"sug{prefix}{section}"] = f"sug_{prefix}_{section}"
 
     column_mapping.update(
         {
@@ -181,29 +175,21 @@ def fill_reservorios2_report(
             "sugerencias": _safe_str(row.get(f"r2_inspeccion_{section}_sug")),
         }
 
-    for section in R2_VALVULA_ROWS:
-        reservorios2["valvulas"][section] = {
-            "diametros": {
-                diameter: _safe_int(row.get(f"r2_valvulas_{section}_{diameter}"), 0)
-                for diameter in R2_VALVULA_DIAMETERS
-            },
-            "oper": _safe_int(row.get(f"r2_valvulas_{section}_oper"), 0),
-            "no_op": _safe_int(row.get(f"r2_valvulas_{section}_no_op"), 0),
-            "observaciones": _safe_str(row.get(f"r2_valvulas_{section}_obs")),
-            "sugerencias": _safe_str(row.get(f"r2_valvulas_{section}_sug")),
-        }
-
-    for section in R2_CANASTILLA_ROWS:
-        reservorios2["canastilla"][section] = {
-            "diametros": {
-                diameter: _safe_int(row.get(f"r2_canastilla_{section}_{diameter}"), 0)
-                for diameter in R2_CANASTILLA_DIAMETERS
-            },
-            "oper": _safe_int(row.get(f"r2_canastilla_{section}_oper"), 0),
-            "no_op": _safe_int(row.get(f"r2_canastilla_{section}_no_op"), 0),
-            "observaciones": _safe_str(row.get(f"r2_canastilla_{section}_obs")),
-            "sugerencias": _safe_str(row.get(f"r2_canastilla_{section}_sug")),
-        }
+    for prefix, subkey, sections, diameters in (
+        ("r2_valvulas", "valvulas", R2_VALVULA_ROWS, R2_VALVULA_DIAMETERS),
+        ("r2_canastilla", "canastilla", R2_CANASTILLA_ROWS, R2_CANASTILLA_DIAMETERS),
+    ):
+        for section in sections:
+            reservorios2[subkey][section] = {
+                "diametros": {
+                    diameter: _safe_int(row.get(f"{prefix}_{section}_{diameter}"), 0)
+                    for diameter in diameters
+                },
+                "oper": _safe_int(row.get(f"{prefix}_{section}_oper"), 0),
+                "no_op": _safe_int(row.get(f"{prefix}_{section}_no_op"), 0),
+                "observaciones": _safe_str(row.get(f"{prefix}_{section}_obs")),
+                "sugerencias": _safe_str(row.get(f"{prefix}_{section}_sug")),
+            }
 
     reservorios2["medidas"].update(
         {
@@ -240,43 +226,26 @@ def _fill_tecnico(report: InformePayload, row: ReportRow) -> None:
             if suffix in row:
                 inspeccion[field] = _safe_str(row[suffix])
 
-    for section in R2_VALVULA_ROWS:
-        valvula = reservorios2["valvulas"][section]
-        for diameter in R2_VALVULA_DIAMETERS:
-            key = f"valvulas_{section}_{diameter}"
-            if key in row:
-                valvula["diametros"][diameter] = _safe_int(row[key], 0)
-        for field, key in (
-            ("oper", f"valvulas_{section}_oper"),
-            ("no_op", f"valvulas_{section}_no_op"),
-        ):
-            if key in row:
-                valvula[field] = _safe_int(row[key], 0)
-        for field, key in (
-            ("observaciones", f"obs_valvulas_{section}"),
-            ("sugerencias", f"sug_valvulas_{section}"),
-        ):
-            if key in row:
-                valvula[field] = _safe_str(row[key])
-
-    for section in R2_CANASTILLA_ROWS:
-        canastilla = reservorios2["canastilla"][section]
-        for diameter in R2_CANASTILLA_DIAMETERS:
-            key = f"canastillas_{section}_{diameter}"
-            if key in row:
-                canastilla["diametros"][diameter] = _safe_int(row[key], 0)
-        for field, key in (
-            ("oper", f"canastillas_{section}_oper"),
-            ("no_op", f"canastillas_{section}_no_op"),
-        ):
-            if key in row:
-                canastilla[field] = _safe_int(row[key], 0)
-        for field, key in (
-            ("observaciones", f"obs_canastillas_{section}"),
-            ("sugerencias", f"sug_canastillas_{section}"),
-        ):
-            if key in row:
-                canastilla[field] = _safe_str(row[key])
+    for prefix, subkey, sections, diameters in (
+        ("valvulas", "valvulas", R2_VALVULA_ROWS, R2_VALVULA_DIAMETERS),
+        ("canastillas", "canastilla", R2_CANASTILLA_ROWS, R2_CANASTILLA_DIAMETERS),
+    ):
+        for section in sections:
+            entry = reservorios2[subkey][section]
+            for diameter in diameters:
+                key = f"{prefix}_{section}_{diameter}"
+                if key in row:
+                    entry["diametros"][diameter] = _safe_int(row[key], 0)
+            for field in ("oper", "no_op"):
+                key = f"{prefix}_{section}_{field}"
+                if key in row:
+                    entry[field] = _safe_int(row[key], 0)
+            for field, key in (
+                ("observaciones", f"obs_{prefix}_{section}"),
+                ("sugerencias", f"sug_{prefix}_{section}"),
+            ):
+                if key in row:
+                    entry[field] = _safe_str(row[key])
 
     if not any(row["oper"] or row["no_op"] for row in reservorios2["valvulas"].values()):
         reservorios2["valvulas_totales"] = {
@@ -370,19 +339,16 @@ for _section in R2_INSPECCION_ROWS:
     _suffix = TECNICO_INSPECCION_FIELDS[_section][1]
     R2_TEMPLATE_HEADERS.extend([f"obs_{_suffix}", f"sug_{_suffix}"])
 
-for _section in R2_VALVULA_ROWS:
-    R2_TEMPLATE_HEADERS.extend(f"valvulas_{_section}_{diameter}" for diameter in R2_VALVULA_DIAMETERS)
-    R2_TEMPLATE_HEADERS.extend([f"valvulas_{_section}_oper", f"valvulas_{_section}_no_op"])
-R2_TEMPLATE_HEADERS.extend(["valvulas_operativas", "valvulas_no_operativas"])
-for _section in R2_VALVULA_ROWS:
-    R2_TEMPLATE_HEADERS.extend([f"obs_valvulas_{_section}", f"sug_valvulas_{_section}"])
-
-for _section in R2_CANASTILLA_ROWS:
-    R2_TEMPLATE_HEADERS.extend(f"canastillas_{_section}_{diameter}" for diameter in R2_CANASTILLA_DIAMETERS)
-    R2_TEMPLATE_HEADERS.extend([f"canastillas_{_section}_oper", f"canastillas_{_section}_no_op"])
-R2_TEMPLATE_HEADERS.extend(["canastillas_operativas", "canastillas_no_operativas"])
-for _section in R2_CANASTILLA_ROWS:
-    R2_TEMPLATE_HEADERS.extend([f"obs_canastillas_{_section}", f"sug_canastillas_{_section}"])
+for _prefix, _rows, _diameters in (
+    ("valvulas", R2_VALVULA_ROWS, R2_VALVULA_DIAMETERS),
+    ("canastillas", R2_CANASTILLA_ROWS, R2_CANASTILLA_DIAMETERS),
+):
+    for _section in _rows:
+        R2_TEMPLATE_HEADERS.extend(f"{_prefix}_{_section}_{diameter}" for diameter in _diameters)
+        R2_TEMPLATE_HEADERS.extend([f"{_prefix}_{_section}_oper", f"{_prefix}_{_section}_no_op"])
+    R2_TEMPLATE_HEADERS.extend([f"{_prefix}_operativas", f"{_prefix}_no_operativas"])
+    for _section in _rows:
+        R2_TEMPLATE_HEADERS.extend([f"obs_{_prefix}_{_section}", f"sug_{_prefix}_{_section}"])
 
 R2_TEMPLATE_HEADERS.extend(
     [

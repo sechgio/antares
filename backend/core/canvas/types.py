@@ -28,7 +28,6 @@ CanvasLayerType = Literal[
     "boolean",
 ]
 
-StrokeCap = Literal["none", "round", "square", "arrow"]
 AutoLayoutDirection = Literal["row", "col"]
 AutoLayoutAlign = Literal["start", "center", "end", "stretch"]
 AutoLayoutSizing = Literal["hug", "fixed"]
