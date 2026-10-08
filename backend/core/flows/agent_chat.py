@@ -302,7 +302,7 @@ def _post_json(
             raise ValueError("El proveedor devolvió una respuesta inválida") from None
         except ValueError as err:
             raise ValueError(_safe_error(str(err), headers)) from None
-    raise ValueError("unreachable")
+    raise ValueError("El proveedor no completó la solicitud tras los reintentos")
 
 
 def _with_synthetic_results(messages: list[JsonObject]) -> list[JsonObject]:
