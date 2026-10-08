@@ -1,5 +1,3 @@
-export type { FieldSpec } from './presets/helpers';
-
 import { createCertLugoPreset, createCertSjlBlancoPreset, createCertSjlGuardaminoPreset } from './presets/certificates';
 import { createFormatEtapasPreset } from './presets/etapas';
 import { createInformeTecnicoPreset } from './presets/informeTecnico';
@@ -21,27 +19,6 @@ import {
   createReservoriosVillaSunassPreset,
 } from './presets/reservorios';
 import type { CanvasDocument } from './types';
-
-export {
-  createAniegosChorrillosPreset,
-  createCertLugoPreset,
-  createCertSjlBlancoPreset,
-  createCertSjlGuardaminoPreset,
-  createEmergenciasPreset,
-  createEvidenciaVolanteoPreset,
-  createFormatEtapasPreset,
-  createFormatReservoriosPreset,
-  createInformeTecnicoPreset,
-  createMaquinaBaldePreset,
-  createPanelAvisoCortePreset,
-  createPanelReservoriosPreset,
-  createPanelVolanteoPreset,
-  createReportPreset,
-  createReservoriosLuriganchoSgioPreset,
-  createReservoriosLuriganchoV2Preset,
-  createReservoriosVillaSunassPreset,
-  createVolanMaqBaldeSjlPreset,
-};
 
 export const CANVAS_PRESETS: ReadonlyArray<{
   id: string;

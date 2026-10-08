@@ -14,6 +14,7 @@ from .models import (
     ExportMode,
     MatchResult,
     MatchRule,
+    MatchSummary,
     Panel,
     PanelImageRef,
 )
@@ -180,8 +181,6 @@ def build_panels(
     address_column: str | None,
     export_mode: ExportMode,
 ) -> MatchResult:
-    from .models import MatchResult, MatchSummary, Panel, PanelImageRef
-
     compiled = compile_match_rule(rule) if rule.strategy == "regex" else None
 
     warnings: list[str] = []
@@ -260,9 +259,10 @@ def build_panels(
                 f"por exceder el límite de {MAX_IMAGES_PER_PANEL}",
             )
 
-        direccion = "(Indicar dirección según lista de usuarios)"
-        if address_col_original:
-            direccion = row.get(address_col_original, "") or "(Indicar dirección según lista de usuarios)"
+        direccion = (
+            (row.get(address_col_original, "") if address_col_original else "")
+            or "(Indicar dirección según lista de usuarios)"
+        )
 
         for img_name in matched_for_row:
             assigned_images.add(img_name)

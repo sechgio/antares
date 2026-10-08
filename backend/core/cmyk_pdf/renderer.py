@@ -215,21 +215,12 @@ def _parse_length_pt(val_str: Any, default_mm: float = 0.0) -> float:
     if val_str is None:
         return default_mm * MM_TO_PT
     s = str(val_str).strip().lower()
-    if s.endswith("mm"):
-        try:
-            return float(s[:-2]) * MM_TO_PT
-        except ValueError:
-            return default_mm * MM_TO_PT
-    if s.endswith("px"):
-        try:
-            return float(s[:-2]) * 0.75
-        except ValueError:
-            return default_mm * MM_TO_PT
-    if s.endswith("pt"):
-        try:
-            return float(s[:-2])
-        except ValueError:
-            return default_mm * MM_TO_PT
+    for suffix, factor in (("mm", MM_TO_PT), ("px", 0.75), ("pt", 1.0)):
+        if s.endswith(suffix):
+            try:
+                return float(s[:-len(suffix)]) * factor
+            except ValueError:
+                return default_mm * MM_TO_PT
     try:
         return float(s) * MM_TO_PT
     except ValueError:
@@ -359,7 +350,6 @@ class CanvasCmykRenderer:
     ) -> None:
         self.document = document
         self.contexts = contexts or [{}]
-        self.color_profile = color_profile
         self.dpi = max(150, min(1200, dpi))
         self.bleed_mm = max(0.0, bleed_mm)
         self.show_crop_marks = show_crop_marks

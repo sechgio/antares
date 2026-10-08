@@ -356,7 +356,6 @@ function LayerNode({
       return;
     }
     if (!interactive) return;
-    if (e.button === 1) return;
     if (e.button !== 0) return;
     e.stopPropagation();
     onLayerPointerDownRef.current(layer.id, e);

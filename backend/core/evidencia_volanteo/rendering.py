@@ -15,6 +15,7 @@ from backend.core.docx_helpers import (
     reset_cell_paragraph,
     set_cell_margins_pt,
     set_cell_width,
+    set_page_break_before,
     set_row_height,
     set_table_no_cell_margins,
     set_vertical_align,
@@ -79,29 +80,21 @@ def _breakable_text(value: str, chunk: int = 20) -> str:
     return zwsp.join(value[i : i + chunk] for i in range(0, len(value), chunk))
 
 
-def _table_borders_xml() -> str:
-    return (
-        '<w:tblBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-        f'<w:top w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
-        f'<w:left w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
-        f'<w:bottom w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
-        f'<w:right w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+def _table_borders_xml(*, with_inside: bool = True) -> str:
+    inner = (
         f'<w:insideH w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
         f'<w:insideV w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
-        '</w:tblBorders>'
+        if with_inside
+        else '<w:insideH w:val="nil"/><w:insideV w:val="nil"/>'
     )
-
-
-def _photos_table_borders_xml() -> str:
     return (
         '<w:tblBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
         f'<w:top w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
         f'<w:left w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
         f'<w:bottom w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
         f'<w:right w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
-        '<w:insideH w:val="nil"/>'
-        '<w:insideV w:val="nil"/>'
-        '</w:tblBorders>'
+        + inner
+        + '</w:tblBorders>'
     )
 
 
@@ -196,8 +189,6 @@ def render_pdf_html(html_string: str) -> tuple[bytes, str]:
         raise RenderingError(msg)
     try:
         return write_pdf_sanitized(html_string), _default_filename("pdf")
-    except RenderingError:
-        raise
     except Exception as exc:
         logger.exception("Error al generar PDF desde HTML de evidencia volanteo")
         msg = f"Error al generar PDF: {exc}"
@@ -242,8 +233,6 @@ def render_pdf(
     try:
         html_string = template.render(context)
         return write_pdf_sanitized(html_string), filename
-    except RenderingError:
-        raise
     except Exception as exc:
         logger.exception("Error al generar PDF de evidencia volanteo")
         msg = f"Error al generar PDF: {exc}"
@@ -271,6 +260,28 @@ def render_docx(
     from docx.shared import Cm, RGBColor
 
     doc = Document()
+
+    def _set_table_geometry(table: Any, borders_xml: str, col_widths: list[float]) -> None:
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = False
+        table.allow_autofit = False
+        tblPr = table._tbl.tblPr
+        existing = tblPr.find(qn("w:tblBorders"))
+        if existing is not None:
+            tblPr.remove(existing)
+        tblPr.append(parse_xml(borders_xml))
+        tblPr.append(parse_xml(
+            '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
+        ))
+        tblPr.append(parse_xml(
+            '<w:tblLayout xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            'w:type="fixed"/>',
+        ))
+        grid = table._tbl.tblGrid
+        for col, width_cm in zip(grid.gridCol_lst, col_widths, strict=True):
+            col.set(qn("w:w"), str(cm_to_twips(width_cm)))
+
     section = doc.sections[0]
     section.page_height = Cm(29.7)
     section.page_width = Cm(21.0)
@@ -311,37 +322,16 @@ def render_docx(
 
     for page_idx, page in enumerate(document.pages):
         header_table = doc.add_table(rows=2, cols=3)
-        header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        header_table.autofit = False
-        header_table.allow_autofit = False
 
         if page_idx > 0:
-            first_cell = header_table.cell(0, 0)
-            pPr = first_cell.paragraphs[0]._p.get_or_add_pPr()
-            pPr.append(parse_xml(
-                '<w:pageBreakBefore xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
-            ))
+            set_page_break_before(header_table.cell(0, 0))
 
-        tblPr = header_table._tbl.tblPr
-        for tag in ("w:tblBorders",):
-            existing = tblPr.find(qn(tag))
-            if existing is not None:
-                tblPr.remove(existing)
-        tblPr.append(parse_xml(_table_borders_xml()))
-        tblPr.append(parse_xml(
-            '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
-        ))
-        tblPr.append(parse_xml(
-            '<w:tblLayout xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            'w:type="fixed"/>',
-        ))
+        _set_table_geometry(
+            header_table,
+            _table_borders_xml(),
+            [HEADER_LOGO_WIDTH_CM, HEADER_TITLE_WIDTH_CM, HEADER_LOGO_WIDTH_CM],
+        )
         set_table_no_cell_margins(header_table)
-
-        header_widths = [HEADER_LOGO_WIDTH_CM, HEADER_TITLE_WIDTH_CM, HEADER_LOGO_WIDTH_CM]
-        grid = header_table._tbl.tblGrid
-        for col, width_cm in zip(grid.gridCol_lst, header_widths, strict=True):
-            col.set(qn("w:w"), str(cm_to_twips(width_cm)))
 
         set_row_height(header_table.rows[0], HEADER_TITLE_HEIGHT_CM)
         set_row_height(header_table.rows[1], HEADER_INFO_HEIGHT_CM, rule="atLeast")
@@ -349,16 +339,20 @@ def render_docx(
         header_table.cell(0, 0).merge(header_table.cell(1, 0))
         header_table.cell(0, 2).merge(header_table.cell(1, 2))
 
-        merged_left = header_table.cell(0, 0)
-        set_cell_width(merged_left, HEADER_LOGO_WIDTH_CM)
-        set_cell_margins_pt(merged_left, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
-        set_vertical_align(merged_left, "center")
-        merged_left.paragraphs[0].clear()
-        reset_cell_paragraph(merged_left.paragraphs[0])
-        merged_left.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        if logo_left_bytes:
-            run = merged_left.paragraphs[0].add_run()
-            run.add_picture(BytesIO(logo_left_bytes), width=Cm(logo_left_dims[0]), height=Cm(logo_left_dims[1]))
+        for col_idx, logo_bytes, logo_dims in (
+            (0, logo_left_bytes, logo_left_dims),
+            (2, logo_right_bytes, logo_right_dims),
+        ):
+            logo_cell = header_table.cell(0, col_idx)
+            set_cell_width(logo_cell, HEADER_LOGO_WIDTH_CM)
+            set_cell_margins_pt(logo_cell, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
+            set_vertical_align(logo_cell, "center")
+            logo_cell.paragraphs[0].clear()
+            reset_cell_paragraph(logo_cell.paragraphs[0])
+            logo_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            if logo_bytes:
+                run = logo_cell.paragraphs[0].add_run()
+                run.add_picture(BytesIO(logo_bytes), width=Cm(logo_dims[0]), height=Cm(logo_dims[1]))
 
         title_cell = header_table.cell(0, 1)
         set_cell_width(title_cell, HEADER_TITLE_WIDTH_CM)
@@ -374,17 +368,6 @@ def render_docx(
             run = title_cell.paragraphs[0].add_run(line)
             format_run(run, TITLE_FONT_PT, bold=True, font_name=DOC_FONT)
             run.underline = True
-
-        merged_right = header_table.cell(0, 2)
-        set_cell_width(merged_right, HEADER_LOGO_WIDTH_CM)
-        set_cell_margins_pt(merged_right, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
-        set_vertical_align(merged_right, "center")
-        merged_right.paragraphs[0].clear()
-        reset_cell_paragraph(merged_right.paragraphs[0])
-        merged_right.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        if logo_right_bytes:
-            run = merged_right.paragraphs[0].add_run()
-            run.add_picture(BytesIO(logo_right_bytes), width=Cm(logo_right_dims[0]), height=Cm(logo_right_dims[1]))
 
         info_cell = header_table.cell(1, 1)
         set_cell_width(info_cell, HEADER_TITLE_WIDTH_CM)
@@ -403,25 +386,8 @@ def render_docx(
         format_run(value_run, INFO_FONT_PT, bold=True, font_name=DOC_FONT)
 
         spacer = doc.add_table(rows=1, cols=1)
-        spacer.alignment = WD_TABLE_ALIGNMENT.CENTER
-        spacer.autofit = False
-        spacer.allow_autofit = False
         set_table_no_cell_margins(spacer)
-        sp_pr = spacer._tbl.tblPr
-        for tag in ("w:tblBorders",):
-            existing = sp_pr.find(qn(tag))
-            if existing is not None:
-                sp_pr.remove(existing)
-        sp_pr.append(parse_xml(_nil_table_borders_xml()))
-        sp_pr.append(parse_xml(
-            '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
-        ))
-        sp_pr.append(parse_xml(
-            '<w:tblLayout xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            'w:type="fixed"/>',
-        ))
-        spacer._tbl.tblGrid.gridCol_lst[0].set(qn("w:w"), str(cm_to_twips(TABLE_WIDTH_CM)))
+        _set_table_geometry(spacer, _nil_table_borders_xml(), [TABLE_WIDTH_CM])
         set_row_height(spacer.rows[0], GAP_UNDER_HEADER_CM)
         sp_cell = spacer.cell(0, 0)
         set_cell_width(sp_cell, TABLE_WIDTH_CM)
@@ -434,33 +400,13 @@ def render_docx(
         tc_pr.append(parse_xml(_nil_cell_borders_xml()))
 
         photos_table = doc.add_table(rows=PHOTO_TABLE_ROWS, cols=PHOTO_TABLE_COLS)
-        photos_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        photos_table.autofit = False
-        photos_table.allow_autofit = False
         set_table_no_cell_margins(photos_table)
-
-        tblPr = photos_table._tbl.tblPr
-        for tag in ("w:tblBorders",):
-            existing = tblPr.find(qn(tag))
-            if existing is not None:
-                tblPr.remove(existing)
-        tblPr.append(parse_xml(_photos_table_borders_xml()))
-        tblPr.append(parse_xml(
-            '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
-        ))
-        tblPr.append(parse_xml(
-            '<w:tblLayout xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            'w:type="fixed"/>',
-        ))
 
         photo_col_widths: list[float] = [PHOTO_GAP_CM]
         for _ in range(PHOTO_COLS):
             photo_col_widths.append(PHOTO_WIDTH_CM)
             photo_col_widths.append(PHOTO_GAP_CM)
-        grid = photos_table._tbl.tblGrid
-        for col, width_cm in zip(grid.gridCol_lst, photo_col_widths, strict=True):
-            col.set(qn("w:w"), str(cm_to_twips(width_cm)))
+        _set_table_geometry(photos_table, _table_borders_xml(with_inside=False), photo_col_widths)
 
         set_row_height(photos_table.rows[0], PHOTO_GAP_CM)
         set_row_height(photos_table.rows[1], PHOTO_HEIGHT_CM)

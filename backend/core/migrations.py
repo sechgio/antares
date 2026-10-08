@@ -43,7 +43,6 @@ class MigrationManager:
         return migration_id in self.applied()
 
     def apply(self, migration: Migration) -> bool:
-        self.ensure_table()
         if self.is_applied(migration.id):
             return False
         if self.conn.in_transaction:

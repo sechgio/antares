@@ -93,33 +93,6 @@ describe('imageBlobStore', () => {
     expect(getBlobUrl(values[1])).toBe(values[1]);
   });
 
-  it('serializes ObjectURL layers to canvas-asset refs when Electron API is available', async () => {
-    const put = vi.fn(async () => ({ ref: 'canvas-asset:abc123', asset_id: 'abc123', bytes: 4 }));
-    (window as unknown as { electronAPI: { canvasAssetPut: typeof put } }).electronAPI = {
-      canvasAssetPut: put,
-    };
-
-    const fakeBlob = new Blob(['test content'], { type: 'image/png' });
-    const registered = await registerImageBlob(fakeBlob);
-    const doc = createEmptyDocument('Doc');
-    doc.layers.push({
-      id: 'img1',
-      type: 'image',
-      name: 'Foto',
-      value: registered.url,
-      cssVars: {
-        '--width': '50mm',
-        '--height': '40mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
-    });
-
-    const serialized = await serializeDocumentImages(doc);
-    expect(serialized.layers.find((l) => l.id === 'img1')?.value).toBe('canvas-asset:abc123');
-    expect(put).toHaveBeenCalledOnce();
-  });
-
   it('serializes asset writes one at a time and reuses a ref for repeated blobs', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {

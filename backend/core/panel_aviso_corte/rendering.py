@@ -16,6 +16,7 @@ from backend.core.docx_helpers import (
     set_cell_width,
     set_no_wrap,
     set_normal_font,
+    set_page_break_before,
     set_row_height,
     set_vertical_align,
 )
@@ -82,14 +83,7 @@ def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None
     right_raw = logos.get("right")
     left = data_uri_from_b64(left_raw) if left_raw and valid_b64_image(left_raw) else None
     right = data_uri_from_b64(right_raw) if right_raw and valid_b64_image(right_raw) else None
-    center = None
-    if left and not right:
-        center = left
-    elif right and not left:
-        center = right
-    elif left and right:
-        center = left
-    return left, right, center
+    return left, right, left or right
 
 
 def _panels_for_export(panels: tuple[Panel, ...], export_mode: ExportMode) -> tuple[Panel, ...]:
@@ -194,16 +188,16 @@ def render_docx(
     doc = Document()
     set_normal_font(doc, DOC_FONT)
 
-    def cover_image_size_cm(
+    def cover_crop(
         content: bytes, max_width_cm: float, max_height_cm: float,
-    ) -> tuple[float, float, tuple[int, int, int, int]]:
+    ) -> tuple[int, int, int, int]:
         from PIL import Image
 
         with Image.open(BytesIO(content)) as image:
             width_px, height_px = image.size
 
         if width_px <= 0 or height_px <= 0:
-            return max_width_cm, max_height_cm, (0, 0, 0, 0)
+            return (0, 0, 0, 0)
 
         width_ratio = max_width_cm / width_px
         height_ratio = max_height_cm / height_px
@@ -227,7 +221,7 @@ def render_docx(
             crop_top = 0
             crop_bottom = round(excess_pct * 100_000)
 
-        return max_width_cm, max_height_cm, (crop_top, crop_bottom, crop_left, crop_right)
+        return (crop_top, crop_bottom, crop_left, crop_right)
 
     def _apply_crop(inline_shape: Any, crop: tuple[int, int, int, int]) -> None:
         top, bottom, left, right = crop
@@ -292,20 +286,13 @@ def render_docx(
         logo_w, logo_h = contain_fit_cm(logo_bytes, logo_avail_w, logo_avail_h)
 
     for pidx, panel in enumerate(panels):
-        if pidx > 0:
-            pass
-
         table = doc.add_table(rows=9, cols=4)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.autofit = False
         table.allow_autofit = False
 
         if pidx > 0:
-            first_cell = table.cell(0, 0)
-            pPr = first_cell.paragraphs[0]._p.get_or_add_pPr()
-            pPr.append(parse_xml(
-                '<w:pageBreakBefore xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
-            ))
+            set_page_break_before(table.cell(0, 0))
 
         tblPr = table._tbl.tblPr
         existing_borders = tblPr.find(qn("w:tblBorders"))
@@ -429,16 +416,12 @@ def render_docx(
                     image_content = image_bytes[img_ref.filename]
 
                 if image_content is not None:
-                    width_cm, height_cm, crop = cover_image_size_cm(
-                        image_content,
-                        PHOTO_WIDTH_CM,
-                        PHOTO_HEIGHT_CM,
-                    )
+                    crop = cover_crop(image_content, PHOTO_WIDTH_CM, PHOTO_HEIGHT_CM)
                     run = p.add_run()
                     inline_shape = run.add_picture(
                         BytesIO(image_content),
-                        width=Cm(width_cm),
-                        height=Cm(height_cm),
+                        width=Cm(PHOTO_WIDTH_CM),
+                        height=Cm(PHOTO_HEIGHT_CM),
                     )
                     _apply_crop(inline_shape, crop)
                 else:
@@ -448,13 +431,11 @@ def render_docx(
 
                 p = cap_cell.paragraphs[0]
                 p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                if img_ref:
-                    cap_text = img_ref.caption
-                else:
-                    cap_text = (
-                        f"IMAGEN N\u00b0{pos}: "
-                        "(Indicar direcci\u00f3n seg\u00fan lista de usuarios)"
-                    )
+                cap_text = (
+                    img_ref.caption
+                    if img_ref
+                    else f"IMAGEN N\u00b0{pos}: (Indicar direcci\u00f3n seg\u00fan lista de usuarios)"
+                )
                 run = p.add_run(cap_text)
                 format_run(run, 12, font_name=DOC_FONT)
 

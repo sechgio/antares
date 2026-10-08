@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 _legacy_migration_lock = threading.Lock()
 
 
-def _read_items(path: Path, normalizer: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
+def _items_from_raw(
+    raw: Any,
+    normalizer: Callable[[dict[str, Any]], dict[str, Any]],
+    path: Path,
+) -> dict[str, dict[str, Any]]:
     if isinstance(raw, list):
         items = [normalizer(item) for item in raw if isinstance(item, dict)]
         return {str(item["id"]): item for item in items if item.get("id") is not None}
@@ -30,6 +33,11 @@ def _read_items(path: Path, normalizer: Callable[[dict[str, Any]], dict[str, Any
             if isinstance(item, dict)
         }
     raise DatabaseError(f"Formato JSON incompatible en {path}")
+
+
+def _read_items(path: Path, normalizer: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return _items_from_raw(raw, normalizer, path)
 
 
 def _copy_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -132,18 +140,9 @@ class JsonDocumentStore:
                 msg = f"JSON corrupto en {self.db_path}; backup creado en {backup_path}"
                 raise DatabaseError(msg) from exc
 
-            if isinstance(raw, list):
-                items = [self._normalizer(item) for item in raw if isinstance(item, dict)]
-                self._items = {
-                    str(item["id"]): item for item in items if item.get("id") is not None
-                }
-            elif isinstance(raw, dict):
-                self._items = {
-                    str(item_id): self._normalizer(item)
-                    for item_id, item in raw.items()
-                    if isinstance(item, dict)
-                }
-            else:
+            try:
+                self._items = _items_from_raw(raw, self._normalizer, self.db_path)
+            except DatabaseError:
                 self._items = {}
             self._encoded_items = {}
 

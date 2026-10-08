@@ -96,11 +96,7 @@ class RequestTrace:
         self.rejected: str | None = None
 
     def mark(self, name: str) -> None:
-        try:
-            rss = _rss_bytes()
-        except Exception:
-            rss = None
-        self.marks[name] = (time.perf_counter(), rss)
+        self.marks[name] = (time.perf_counter(), _rss_bytes())
 
 
 def start(
@@ -114,10 +110,7 @@ def start(
     try:
         key = _key(msg_id)
         with _LOCK:
-            trace = _TRACES.get(key)
-            if trace is None:
-                trace = RequestTrace(msg_id)
-                _TRACES[key] = trace
+            trace = _get_or_create_locked(key, msg_id)
             if method:
                 trace.method = method
             if lane:
@@ -146,11 +139,7 @@ def begin_parse() -> tuple[float, int | None] | None:
     if not enabled():
         return None
     try:
-        try:
-            rss = _rss_bytes()
-        except Exception:
-            rss = None
-        return time.perf_counter(), rss
+        return time.perf_counter(), _rss_bytes()
     except Exception:
         return None
 
@@ -168,10 +157,7 @@ def finish_parse(
         elapsed_ms = (time.perf_counter() - start_t) * 1000.0
         key = _key(msg_id)
         with _LOCK:
-            trace = _TRACES.get(key)
-            if trace is None:
-                trace = RequestTrace(msg_id)
-                _TRACES[key] = trace
+            trace = _get_or_create_locked(key, msg_id)
             if method:
                 trace.method = method
             trace.marks["line_ready"] = (start_t, start_rss)
@@ -206,6 +192,14 @@ def set_fields(msg_id: str | int, **fields: Any) -> None:
                 trace.durations_ms[name] = float(value)
 
 
+def _get_or_create_locked(key: str, msg_id: str | int) -> RequestTrace:
+    trace = _TRACES.get(key)
+    if trace is None:
+        trace = RequestTrace(msg_id)
+        _TRACES[key] = trace
+    return trace
+
+
 def _compute_derived(trace: RequestTrace) -> None:
     marks = trace.marks
     if "enqueue" in marks and "dispatch_start" in marks:
@@ -222,7 +216,6 @@ def _compute_derived(trace: RequestTrace) -> None:
 
 
 def _format_line(trace: RequestTrace) -> str:
-    _compute_derived(trace)
     parts = [
         "ipc_phase",
         f"msg_id={trace.msg_id}",

@@ -59,7 +59,7 @@ def _resolve_api_key(map_opts: dict[str, Any] | None) -> str | None:  # allowlis
             return str(map_opts["api_key"])
         if map_opts.get("google_maps_key"):
             return str(map_opts["google_maps_key"])
-    return os.environ.get("ANTARES_MAPS_API_KEY") or os.environ.get("ANTARES_GOOGLE_MAPS_KEY") or None
+    return os.environ.get("ANTARES_MAPS_API_KEY") or os.environ.get("ANTARES_GOOGLE_MAPS_KEY")
 
 
 def _scale_to_max_dim(width: int, height: int, cap: int) -> tuple[int, int]:
