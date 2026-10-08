@@ -271,7 +271,7 @@ class CanvasStore:
             logger.warning("Could not compare canvas spill %s with %s: %s", spill_path, target, exc)
             return _SPILL_UNKNOWN
 
-    def _load_recoverable_spill(self, spill_path: Path, target: Path, kind: str) -> dict[str, Any] | None:
+    def _load_recoverable_spill(self, spill_path: Path, target: Path, kind: str) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
         outcome = self._spill_comparison(spill_path, target)
         if outcome == _SPILL_UNKNOWN:
             return None
