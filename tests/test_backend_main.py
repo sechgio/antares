@@ -721,3 +721,49 @@ def test_main_unknown_method_rejected_without_import(monkeypatch) -> None:
 
     assert len(responses) == 1
     assert "Método desconocido" in str(responses[0][1])
+
+
+def test_main_preloads_numpy_before_ready(monkeypatch) -> None:
+    events: list[str] = []
+
+    monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
+    monkeypatch.setattr(backend_main, "_shutdown_requested", False)
+    monkeypatch.setattr(backend_main, "init_db", lambda: None)
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: None)
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", lambda: None)
+    monkeypatch.setattr(backend_main.threading, "Thread", _ImmediateThread)
+    monkeypatch.setattr(
+        backend_main,
+        "get_scheduler",
+        lambda: _ShutdownRecorderScheduler(events),
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "_preload_numpy_before_ready",
+        lambda: events.append("numpy_preload"),
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "send_notification",
+        lambda method, _params: events.append(method),
+    )
+    monkeypatch.setattr(backend_main, "read_message", lambda: None)
+    monkeypatch.setattr(backend_main, "close_connection", lambda: None)
+
+    backend_main.main()
+
+    assert events.index("numpy_preload") < events.index("ready")
+
+
+def test_preload_numpy_before_ready_imports_numpy_only_on_windows(monkeypatch) -> None:
+    imported: list[str] = []
+    monkeypatch.setattr(backend_main.importlib, "import_module", imported.append)
+
+    monkeypatch.setattr(backend_main.sys, "platform", "win32")
+    backend_main._preload_numpy_before_ready()
+    assert imported == ["numpy"]
+
+    imported.clear()
+    monkeypatch.setattr(backend_main.sys, "platform", "linux")
+    backend_main._preload_numpy_before_ready()
+    assert imported == []
