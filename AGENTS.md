@@ -1,304 +1,59 @@
-# Repository Guidelines
+# Instrucciones para agentes
 
-Antares es una aplicación de escritorio para Windows que convierte, renombra y genera documentos e informes a partir de imágenes, hojas de cálculo y PDFs. El repositorio combina una UI React, un proceso principal Electron, un backend Python local y servicios Supabase opcionales.
+Antares es una aplicación de escritorio Windows con UI React, shell Electron, backend Python local y servicios Supabase opcionales.
 
-Estas reglas describen el estado real del proyecto auditado. Para valores que cambian con frecuencia, la fuente de verdad es el archivo de configuración o script que se menciona, no una copia de la versión en este documento.
+## Antes de editar
 
-### Precedencia
+1. Inspecciona `git status` y `git worktree list`. Conserva los cambios ajenos; no uses `git reset --hard` ni `git checkout --` para limpiar. Busca, lee y edita solo en el worktree asignado, excluyendo los demás checkouts de `.worktrees/`.
+2. Localiza el punto de integración y declara archivo, símbolo y línea antes de escribir código. Declara los archivos que tocarás y la razón técnica de cada uno. Anuncia cualquier acompañante imprescindible antes de añadirlo al alcance.
+3. Si una ambigüedad cambia el resultado o los permisos, explicita los supuestos y tradeoffs y pregunta antes de implementar esa parte.
+4. Lee las secciones de [CODING_STANDARDS.md](CODING_STANDARDS.md) indicadas por la tabla antes de trabajar en el área correspondiente. Aplica todas las filas que coincidan con la tarea.
 
-Si dos reglas de este archivo chocan, gana la primera de esta lista:
-
-1. [Restricción de archivos Markdown (HARD RULE)](#restricción-de-archivos-markdown-hard-rule): no tiene excepciones ni protocolo de excepción.
-2. [Política de cambios mínimos (HARD RULE)](#política-de-cambios-mínimos-hard-rule): prevalece sobre el resto del archivo y sobre cualquier skill instalada.
-3. El resto de secciones, en igualdad; las reglas de dominio (IPC, Canvas, Supabase, persistencia) concretan la política de cambios mínimos, no la sustituyen.
+| Si la tarea toca… | Lee… |
+| --- | --- |
+| Python, handlers, arranque del backend o scheduler | [Backend](CODING_STANDARDS.md#backend) |
+| IPC, bridge, timeouts, serialización, `shared/`, seguridad de ventana Electron o arranque/empaquetado del backend | [IPC y contratos](CODING_STANDARDS.md#ipc-y-contratos) |
+| React, controles, navegación, textos, preview o HTML/PDF | [Frontend](CODING_STANDARDS.md#frontend) |
+| Rutas, lectura/escritura, salidas generadas, plantillas, assets o credenciales | [Persistencia y seguridad](CODING_STANDARDS.md#persistencia-y-seguridad) |
+| Canvas, historial, gestos, exportación, sync, montaje en `App.tsx` o flush de cierre | [Canvas](CODING_STANDARDS.md#canvas) |
+| Auth, conectividad cloud, Supabase, RLS, migraciones o Edge Functions | [Supabase](CODING_STANDARDS.md#supabase) |
+| Instalación, build, calidad o configuración de herramientas | [Entorno y calidad](CODING_STANDARDS.md#entorno-y-calidad) |
+| Commit, PR, publicación, fixes de CI o release | [Git, PR y releases](CODING_STANDARDS.md#git-pr-y-releases) |
 
 ## Política de cambios mínimos (HARD RULE)
 
-Regla rectora: una petición se resuelve con el diff correcto más pequeño posible. El tamaño del diff lo fija lo que exige el comportamiento pedido, no lo que se pueda mejorar de paso.
+Resuelve la petición con el diff correcto más pequeño. Esta política prevalece sobre las demás instrucciones del repositorio y las skills: ninguna skill autoriza cambios fuera del alcance ni elimina las confirmaciones exigidas aquí. Un refactor, limpieza o rediseño pedido explícitamente define su propio alcance; declara los archivos y qué queda fuera.
 
-Ninguna skill instalada autoriza por sí sola un cambio fuera del diff mínimo ni elimina las paradas de confirmación de esta política. Esto incluye `simplify` (Claude Code), `code-simplification` (Codex, `.agents/skills/`), `architect`, `unslop`, `improve-codebase-architecture`, `clean`, `deslop`, `ui-only` y las `principle-*`. Aplícalas solo al código que la tarea pide escribir o cuando el usuario lo pida explícitamente.
-
-Un cambio que excede el diff mínimo solo está autorizado por una de dos vías: la [limpieza solicitada](#vía-limpieza-solicitada) o el [protocolo de excepción](#protocolo-de-excepción-para-cambios-amplios). Sin una de ellas, no está autorizado.
-
-- Antes de escribir código, localiza el punto exacto de integración (archivo, símbolo y línea) y decláralo en el plan o en la primera respuesta. Si no lo encuentras, falta lectura, no sobra reescribir.
-- Declara la lista de archivos que vas a tocar y la razón técnica de cada uno. Un archivo que no esté en la lista no se toca; si durante la implementación aparece una acompañante obligatoria o imprescindible no prevista, amplía la lista y declara la adición antes de tocarla.
-- Entre las opciones que cumplen el requisito, elige siempre la que toca menos archivos y escribe menos líneas. Un parche en el sitio correcto vale más que un rediseño en el sitio equivocado.
-
-El diff solo puede contener:
+El diff puede contener únicamente:
 
 - La funcionalidad pedida y su cableado en el punto de integración.
-- Lo técnicamente imprescindible para que compile y pasen lint, tipos y tests: ajustar una firma que la nueva llamada usa, exportar un símbolo, añadir un campo a una interfaz o un caso a un union, registrar un método en el catálogo IPC.
-- Las acompañantes que este archivo exige de forma explícita:
-  - las de un método IPC nuevo o modificado ([Electron y bridge](#electron-y-bridge));
-  - las de un contrato de `shared/` ([Stack y estructura](#stack-y-estructura), "Contratos compartidos");
-  - las pruebas que exige [Testing y verificación](#testing-y-verificación);
-  - `CHANGELOG.md` cuando lo pida la plantilla de PR (`.github/pull_request_template.md`);
-  - lockfiles regenerados por un cambio de dependencias;
-  - `shared/budgets.json` o `.quality-baseline.json` cuando un check falle por este cambio concreto y no exista vía mínima para cumplir el techo. Subir un techo del trinquete requiere justificación explícita en el cuerpo del PR.
-- Imports, variables, funciones o archivos que tus cambios hayan dejado huérfanos.
+- Ajustes imprescindibles para compilar y pasar lint, tipos y tests: firmas usadas por la nueva llamada, exports, campos de interfaces, casos de unions y registro IPC.
+- Acompañantes obligatorias: catálogo IPC, revisión de `frontend/src/api.ts`, `electron/preload.js` y pruebas de paridad; consumidores y pruebas de contratos compartidos; pruebas del comportamiento modificado; `CHANGELOG.md` cuando lo exija la plantilla de PR; lockfiles regenerados por cambios de dependencias.
+- Ajustes de `shared/budgets.json` o `.quality-baseline.json` solo si un check falla por este cambio y no existe una vía mínima para cumplir el techo. Justifica cualquier aumento de techo en el PR.
+- Imports, variables, funciones o archivos que este cambio deje huérfanos.
 
-Prohibido salvo por una de las dos vías declaradas arriba (esta lista es la única fuente de las reglas de estilo sobre código ajeno):
+Entre soluciones válidas, elige la que toque menos archivos y líneas. Fuera del alcance quedan renombrados, movimientos, divisiones, reescrituras, reordenamientos, formato o lint de líneas ajenas; modernizaciones; tipos o validaciones añadidos a firmas existentes; abstracciones cuando basta el código en el sitio; unificación con archivos vecinos; refactors preparatorios y bugs o deuda observados de paso.
 
-- renombrar por "claridad", mover, dividir o reescribir archivos;
-- reordenar o agrupar imports no relacionados;
-- reformatear ni aplicar lint o estilo a líneas que no tocaste;
-- sustituir construcciones ajenas por otras más modernas, o imitar el estilo de un archivo vecino para "unificar";
-- añadir tipos o validaciones a firmas existentes;
-- cambiar formatos, orden, mensajes o valores por defecto observables ajenos a la petición;
-- crear una abstracción (helper, hook, capa, wrapper, config, feature flag) cuando bastaba el código en el sitio;
-- refactorizar para "preparar el terreno" antes de agregar;
-- arreglar bugs o deuda que solo observaste de paso.
+Conserva el comportamiento observable ajeno a la petición: salidas, formatos, orden, mensajes, valores por defecto, JSON, PDF, SQLite, localStorage, IPC y props. Reporta la deuda vecinal con archivo y línea al entregar, sin arreglarla.
 
-Invariante de compatibilidad: todo flujo existente debe comportarse exactamente igual después del cambio (salidas, JSON, PDF, SQLite, localStorage, respuestas IPC, props por defecto, orden de listas, textos visibles en español). La tarea sí puede cambiar exactamente el comportamiento que pide, incluidas salidas, mensajes o valores defectuosos que deba corregir. Lo que no puede cambiar es comportamiento observable no relacionado con la petición: ese cambio debe ser pedido explícitamente o pasar por el protocolo; nunca es un efecto colateral aceptable.
+### Excepción para cambios amplios
 
-### Vía "limpieza solicitada"
+Úsala solo cuando la funcionalidad pedida no pueda funcionar con un cambio mínimo. Limpieza, mantenibilidad y convenciones modernas no bastan.
 
-Aplica cuando el usuario pide explícitamente un refactor, una limpieza o un rediseño. En esa vía, "queda más limpio" sí es el motivo, porque es lo pedido; el resto de esta política sigue vigente.
+1. Antes de implementar, declara `cambio amplio: <archivos o líneas> — <motivo técnico por el que no existe vía mínima> — <riesgo> — <verificación>` y repítelo en el commit o PR.
+2. Si toca contratos de `shared/`, IPC, esquema Canvas, migraciones o RLS, o elimina/reemplaza APIs existentes, detente y pide confirmación antes de escribir.
+3. Separa los commits: primero el movimiento estructural sin cambio de comportamiento y con checks verdes; después la funcionalidad.
 
-1. Declara antes de editar, en este formato: `limpieza solicitada: <archivos> — <criterio de corte: qué queda fuera> — <verificación>`. Repítelo en el cuerpo del commit o del PR; si el diff supera el umbral de tamaño de `review-policy`, añade también una línea `cambio amplio:` (es el marcador que reconoce `scripts/review-policy-check.js`).
-2. Toma una baseline antes de tocar nada: ejecuta los tests más cercanos a cada archivo de la lista ([Comandos de un test suelto](#comandos-de-un-test-suelto)) y anota cuáles pasan y cuáles ya fallaban.
-3. Edita solo los archivos declarados. La limpieza no cambia comportamiento observable (invariante de compatibilidad); si una mejora lo cambiaría, déjala fuera y repórtala.
-4. Exclusiones: aunque estén dentro de la lista, detente y pide confirmación antes de tocar contratos (`shared/`, catálogo IPC, esquema Canvas), migraciones, RLS, APIs públicas (métodos IPC, exports consumidos fuera del archivo, funciones de `frontend/src/api.ts` y `frontend/src/api/*.ts`) o dependencias.
-5. Verifica: los mismos tests de la baseline deben dar el mismo resultado o mejor, y después corre los checks de entrega de [Testing y verificación](#testing-y-verificación).
-6. Si la limpieza y una funcionalidad van juntas, sepáralas en commits: primero la limpieza sin cambio de comportamiento y en verde, después la funcionalidad.
+## Antes de entregar
 
-### Protocolo de excepción para cambios amplios
+- Todo cambio de comportamiento incluye o actualiza pruebas. Para IPC, schema, timeout, permisos o serialización, revisa ambos extremos y las pruebas de integración.
+- Ejecuta primero el test más cercano y los checks afectados. Antes de entregar una rama, ejecuta `npm run lint:python`, `npm run typecheck:backend`, `npm run typecheck:frontend` y `npm test`. Para build, IPC o seguridad, ejecuta `npm run ci` si el entorno lo permite. Reporta comando, error concreto y si cada fallo es de la tarea, preexistente o del entorno.
+- Revisa `git diff` y `git diff --stat` hunk por hunk. Retira cambios que no respondan a la petición; si retirarlos rompe un check, ajusta el diff mínimo o reporta el conflicto. Recorta o explica cualquier desviación respecto al alcance declarado.
+- Trabaja en una feature branch con prefijo `codex/` por defecto y entrega mediante PR hacia `main`; nunca hagas push directo a `main`. Stagea solo los archivos declarados con `git add -- <archivos>`, nunca `git add -A` ni `git add .`. Revisa `git status` y `git diff --cached` antes de commitear.
+- Los commits usan Conventional Commits. Mantén secretos, `.env`, `dist/`, `release/`, caches y `__pycache__` fuera de los commits.
 
-Aplica cuando no hay petición de limpieza y la funcionalidad pedida no puede funcionar con el diff mínimo.
+## Restricción de Markdown (HARD RULE)
 
-1. Úsalo solo cuando la funcionalidad pedida no puede funcionar de otro modo. "Queda más limpio", "es más mantenible" o "es la convención moderna" no son motivos.
-2. Decláralo antes de implementar con esta forma: `cambio amplio: <archivos o líneas> — <motivo técnico por el que no existe vía mínima> — <riesgo> — <verificación>`, y repítelo en el cuerpo del commit o del PR.
-3. Sepáralo en commits distintos: primero el movimiento estructural sin cambio de comportamiento y en verde, después la funcionalidad pedida.
-4. Si toca contratos (`shared/`, IPC, esquema Canvas, migraciones, RLS) o elimina o reemplaza APIs existentes, detente y pide confirmación antes de escribir.
+Solo se permite commit o push de estos Markdown: `AGENTS.md`, `CODING_STANDARDS.md`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, `CONTEXT.md`, `docs/adr/*.md`, `docs/adr/README.md` y `.github/pull_request_template.md`.
 
-### Cierre de cualquier tarea
-
-- Deuda y problemas vecinales: repórtalos con archivo y línea al final, sin arreglarlos. Observar un problema no es una autorización.
-- Autocrítica obligatoria antes de entregar:
-  1. Revisa el diff completo hunk por hunk con `git diff` y `git diff --stat`; cada hunk debe responder a la petición original.
-  2. Revierte los hunks de estilo, renombrado, reordenamiento o "mejora" que no respondan a ella.
-  3. Si revertirlos rompe un check, ajusta el diff mínimo o reporta el conflicto concreto; no arrastres el cambio amplio en silencio.
-  4. Si el resultado supera con holgura lo declarado al empezar, recórtalo o explica la desviación.
-- Las operaciones de rama (merge, sync con `origin/main`, resolución de conflictos, restauración de stash o snapshots aprobados) no son un diff de tarea: documéntalas en el cuerpo del PR y aplica las reglas de [staging](#cambios-ajenos-y-staging).
-
-## Fuente de verdad y alcance
-
-- `package.json`, `frontend/package.json`, `pyproject.toml`, `uv.lock`, `package-lock.json`, `frontend/package-lock.json` y `.node-version` definen versiones, dependencias y comandos.
-- `backend/`, `electron/`, `frontend/`, `shared/` y `supabase/` son código de producto. `scripts/` contiene automatización de calidad, build, publicación y base de datos.
-- El worktree puede contener cambios ajenos a la tarea: inspecciona `git status` antes de editar y sigue [Cambios ajenos y staging](#cambios-ajenos-y-staging).
-- `git worktree list` puede mostrar checkouts completos en `.worktrees/` (por ejemplo `base-main` y ramas de PR). Los que no sean el worktree asignado a tu tarea son copias obsoletas del repo: exclúyelos de búsquedas y lecturas, y nunca edites ahí. Escribir en una de esas rutas produce un diff duplicado que no pertenece a la tarea.
-- No uses el `README.md` para inferir versiones actuales sin comprobar los manifests; puede quedarse atrás respecto del código.
-
-## Stack y estructura
-
-- Requisitos: Windows para el producto empaquetado; Node según `engines.node` de `package.json` y `.node-version`; Python según `requires-python` de `pyproject.toml`; uv en la versión fijada en `.github/actions/setup-ci/action.yml`.
-- UI: React, TypeScript estricto, Vite, TailwindCSS y Vitest/Testing Library (versiones en `frontend/package.json`). La UI vive en `frontend/src/`.
-- Shell: Electron (versión en `package.json`) en `electron/`. `main.js` coordina ventana, backend, updater, observabilidad y cierre seguro; `preload.js` expone el bridge; `ipc-router.js` aplica allowlist, timeouts, reintentos y backpressure.
-- Backend: Python en `backend/`. `main.py` implementa JSON-RPC 2.0 delimitado por líneas sobre stdin/stdout; las respuestas van por stdout y los logs por stderr. `handlers/` enruta métodos y `core/` contiene procesamiento, catálogo, trabajos, formatos, informes, Canvas y observabilidad.
-- Contratos compartidos: `shared/` contiene el esquema Canvas, sanitizador HTML, clasificación de métodos IPC y budgets de bundles. Cuando cambia un contrato compartido, actualiza todos sus consumidores y pruebas. Esa actualización es una acompañante obligatoria del cambio, no una invitación a reorganizar consumidores ni a tocar contratos no relacionados.
-- Cloud: `supabase/` contiene `config.toml`, migraciones, seed y Edge Functions administrativas. `frontend/src/components/espacios/` usa Auth, Postgres/RLS y Realtime; las herramientas locales deben seguir funcionando sin sesión.
-- Recursos: `assets/`, `data/`, `formatos/` y `backend/templates/` contienen recursos o plantillas empaquetables. `docs/` se reserva para documentación permitida, y `tests/` contiene suites Python y Node; las pruebas frontend viven dentro de `frontend/src/`.
-
-### Mapa funcional
-
-- Conversión y catálogo: `frontend/src/components/conversion/`, `backend/core/converter.py`, `renamer.py`, `database.py`, `jobs.py` e `history.py`.
-- Plantillas y generación: `formatos/`, `backend/core/formatos.py`, `format_strategies/`, `frontend/src/components/formatos/`.
-- Herramientas documentales: `sellador`, `padron`, `volantes`, `reportes-campo`, `preview-panel`, `technical-reports`, `informes-v2`, `fichas-tecnicas`, `panel-aviso-corte`, `ubicaciones`, `evidencia-volanteo` e `image-optimizer`.
-- Integración externa: `autoimg/` coordina Google OAuth, Drive, Sheets, sincronización y renombrado; `espacios/` coordina colaboración cloud; `canvas/` es el editor A4 local-first con espejo cloud opcional.
-- La navegación y los nombres de tabs están centralizados en `frontend/src/navigation.ts`; las vistas se cargan de forma diferida desde `frontend/src/App.tsx`. Las secciones de ajustes (`appearance`, `history`, `panel`, `petdex`) también salen de `navigation.ts` y viven en `frontend/src/components/settings/`.
-
-## Arquitectura y límites entre procesos
-
-### Backend Python
-
-- `backend/handlers/__init__.py` usa un `HandlerRegistry` lazy. Los handlers core se calientan antes de emitir `ready`; Canvas y conversión se calientan después, y el resto se carga bajo demanda.
-- `backend/core/scheduler.py` separa lanes `light` y `heavy` con límites de workers, backpressure y reducción dinámica por presión de memoria; el lane `sync` se resuelve en línea en `backend/main.py`, no es un pool del scheduler.
-- `shared/ipc-method-catalog.json` es la fuente de verdad por método (clave `methods`). Solo `handler` es obligatorio (`backend:<módulo>` o `native:<nombre>`); el resto de campos (`lane` del scheduler, tier de `timeout`, `idempotent`, `fileTokens`, `writePathKeys`, `rawOutputPath`, entre otros) son opcionales y usan valores por defecto del router. Los tiers de timeout y sus milisegundos están en la clave `timeouts` del mismo archivo.
-- Proyecciones del catálogo: `shared/ipc-method-catalog.js` para Electron, `backend/core/ipc_catalog.py` para Python; `frontend/src/api.ts` consume los tiers directamente.
-- El lane del scheduler y el timeout del bridge son ejes independientes declarados en el catálogo: por ejemplo, `process_start` corre en lane `light` con timeout `heavy`, y `canvas_export_cmyk_pdf` corre en lane `heavy` con timeout `heavy`. No reconstruyas listas paralelas fuera del catálogo.
-- `process_start` inicia un trabajo en segundo plano mediante `JobManager`; no lo conviertas en una operación bloqueante del lector IPC.
-- stdout del backend es un protocolo, no un canal de debug. Todo logging debe ir a stderr mediante las utilidades existentes.
-
-### Electron y bridge
-
-- La ruta normal es `frontend/src/api.ts` (y los módulos de `frontend/src/api/*.ts`) → `preload.js`/`window.electronAPI` → `ipc-router.js` → handler nativo o backend Python. No importes Electron, Node ni módulos del proceso principal directamente desde React.
-- Acompañantes de un método IPC nuevo o modificado (única lista; el resto del archivo la referencia):
-  1. Declararlo en `shared/ipc-method-catalog.json`.
-  2. Exponerlo en `frontend/src/api.ts` o en el módulo de `frontend/src/api/*.ts` del área.
-  3. Revisar `electron/preload.js`: cámbialo solo si el método necesita una entrada propia en el bridge.
-  4. Implementar o ajustar el handler en `backend/handlers/` o el handler nativo correspondiente.
-  5. Mantener verdes las pruebas de paridad `tests/test-electron-ipc-allowlist.js` y `tests/test_ipc_catalog.py`, y añadir la prueba del handler que exige [Testing y verificación](#testing-y-verificación).
-- El router aplica el timeout del tier declarado en el catálogo (`normal` por defecto). Solo reintenta lecturas explícitamente idempotentes; no marques escrituras como reintentables sin demostrar idempotencia.
-- El spawner espera el handshake `ready`, hace health checks y autorrecuperación acotada. En desarrollo ejecuta `backend/main.py` usando primero `.venv` (el entorno de `uv sync --locked`), luego `venv312` si existe y por último Python del sistema; en producción ejecuta `AntaresBackend.exe` empaquetado.
-- La ventana usa `contextIsolation: true`, `nodeIntegration: false`, sandbox y CSP. Mantén la validación del sender, la allowlist de métodos y las restricciones de navegación.
-
-### Frontend
-
-- `App.tsx` mantiene un shell con lazy loading, Error Boundaries y providers de toast/dialog. `AuthGate` solo es obligatorio para `espacios`; conversión, informes y demás herramientas locales no deben depender de Supabase.
-- Canvas puede quedar montado durante `CANVAS_KEEPALIVE_MS` (`frontend/src/App.tsx`) al cambiar de tab para conservar estado; el flush de Canvas participa en el cierre de la aplicación. No desmontes ni cambies ese ciclo de vida sin actualizar sus pruebas.
-- El HTML que viaja a preview/PDF debe pasar por `shared/html-sanitizer.js` y respetar `shared/html-sanitizer-spec.json`. No agregues HTML no sanitizado ni recursos externos que contradigan la CSP.
-- La UI del producto es solo en español. `frontend/src/i18n.ts` (i18next) con `locales/es.json` cubre únicamente las áreas adoptadas (auth, settings/appearance/panel, history, image-optimizer, chrome del sidebar). No hay selector de idioma ni soporte de inglés para el usuario. No agregues claves a los locales sin un consumidor `t()` en el mismo cambio; el catálogo debe reflejar exactamente lo que la UI usa (las claves `optimizer.presets.*` se resuelven dinámicamente por id de preset).
-
-## Persistencia y seguridad de archivos
-
-- Usa `backend/utils/paths.py` para resolver rutas. En Windows, el root de datos de usuario es `%LOCALAPPDATA%\Antares`; los helpers también contemplan otros sistemas para desarrollo y pruebas.
-- El catálogo SQLite vive en datos de usuario; `repository.py` gestiona conexiones/pools y WAL. Los stores JSON de informes pueden usar `data/` en desarrollo y datos de usuario en una build congelada. No hardcodees rutas ni asumas que `data/` es el origen persistente universal.
-- Canvas guarda documentos en `%LOCALAPPDATA%\Antares\canvas\documents`, historial en `canvas\history`, assets en `canvas\assets` y spill/recovery en los directorios hermanos definidos por `paths.py`. Los documentos antiguos de `data/canvas/documents` solo se migran según la lógica de `canvas/store.py`.
-- Las plantillas bundled son recursos de aplicación; las plantillas del usuario se resuelven desde el directorio de datos de usuario. No sobrescribas recursos bundled durante la ejecución.
-- El renderer nunca debe enviar rutas absolutas arbitrarias para leer archivos. Usa tokens de capacidad (`file_token`), diálogos nativos aprobados o staging binario; las escrituras deben pasar por roots/tokens de escritura. Se rechazan traversal, symlinks y paths no permitidos.
-- Conserva el flujo de `dialog-handlers.js`, `file-capabilities.js`, `ipc-file-policy.js` y `path-allowlist.js`. No devuelvas secretos, service-role keys ni credenciales a la UI; las variables `VITE_*` son configuración pública del cliente, no un lugar para secretos.
-
-## Canvas
-
-Canvas es un editor A4 Figma-style local-first: el JSON local es la fuente inmediata de verdad y Supabase es un espejo best-effort.
-
-- Backend: `backend/core/canvas/` normaliza modelos y mantiene store atómico con locks, recovery e historial. `backend/handlers/canvas.py` expone los métodos con `handler: "backend:canvas"` en `shared/ipc-method-catalog.json` (listado, bootstrap, CRUD, duplicado, export CMYK e historial).
-- Electron añade `canvas_asset_put`, `canvas_asset_get` y `canvas_asset_info` para assets binarios. Los documentos usan referencias `canvas-asset:`; no vuelvas a embutir blobs grandes en JSON salvo que el contrato lo exija. El GC de assets huérfanos corre por timer interno en `electron/main.js` (`runCanvasAssetGc`), no es un método IPC.
-- El contrato compartido es `shared/canvas-schema.json`: versión de documento en `documentVersion`, tamaño de página en `a4` y tipos de capa en `layerTypes`.
-- TypeScript y Python mantienen tipos espejo de ese esquema y normalizan en carga. El frontend actualiza documentos de versiones anteriores, el backend reestampa la versión y ambos acotan `pageIndex`.
-- `useCanvasHistory` distingue `setDocument` (edición discreta), `updateSilent` (preview vivo) y `commitFromBaseline` (una entrada por gesto). `gestureRaf` y `pointerGestureSession` (en `frontend/src/components/canvas/ops/`) coalescen drag/pointer events y abortan correctamente en undo, cancel o unmount.
-- El historial RAM tiene dos techos independientes, `MAX_HISTORY` (entradas) y `MAX_HISTORY_BYTES`, definidos en `frontend/src/components/canvas/hooks/useCanvasHistory.ts`; el historial por documento se persiste en disco.
-- El autosave ocurre por cambios y durante los cambios de documento, duplicado, borrado, pérdida de foco/unmount y cierre; no dependas únicamente de Ctrl+S.
-- RGB PDF usa `frontend/src/components/canvas/runtime/renderHtml.ts` y `html_to_pdf`, con mayor paridad visual. CMYK usa `canvas_export_cmyk_pdf` y el renderer Python; algunas capas complejas tienen fallback a bounding box. Prefiere RGB cuando la fidelidad de tabla, grid, checkbox, firma o formas complejas sea importante.
-- `frontend/src/components/canvas/sync/canvasCloudSync.ts` aplica LWW por `updatedAt`, empuja mediante RPC cuando está disponible, mantiene fallback compatible, agrupa pushes por documento y usa el timeout `CLOUD_SYNC_TIMEOUT_MS`. Los errores cloud no deben inutilizar el modo local.
-- Canvas usa Realtime privado para eventos de guardado, presencia y pulls dirigidos, con debounce/reintentos. No existe merge operacional por capa ni coedición de operaciones: si el editor local está dirty aparece conflicto y la resolución es conservar local o usar remoto; los snapshots concurrentes terminan en LWW.
-- El primer sync está protegido para no borrar o sobrescribir silenciosamente documentos locales. Un pull remoto más nuevo solo reemplaza un documento limpio; reemplazarlo reinicia las pilas de undo/redo en memoria.
-- Los budgets de Canvas y del shell están en `shared/budgets.json`: `canvasAppear` fija el incremento permitido y los vendors prohibidos en el chunk inicial de Canvas; `shellPreload` fija los vendors prohibidos en modulepreload del shell.
-
-## Supabase y datos cloud
-
-- Las migraciones en `supabase/migrations/` son la fuente de verdad del esquema. Incluyen perfiles/roles, `espacios`, `proyectos`, `tareas`, `board_columns`, `canvas_documents` y versiones Canvas, junto con RLS, triggers LWW, Realtime privado e invocadores RPC restringidos.
-- Toda funcionalidad nueva debe conservar RLS, least privilege y la separación de funciones privadas. No soluciones un problema de permisos exponiendo tablas o funciones privilegiadas al cliente.
-- Las Edge Functions `supabase/functions/admin-create-user` y `admin-delete-user` son administrativas y requieren el modelo de credenciales existente; no las llames desde la UI con secretos.
-- Para aplicar migraciones remotas usa el complemento Supabase autenticado en Codex, verifica el project ref y compara el historial remoto antes de aplicar las migraciones locales pendientes. No pongas credenciales en el repo ni ejecutes un despliegue remoto como sustituto de pruebas locales.
-
-## Instalación, desarrollo y comandos
-
-Desde la raíz del repositorio:
-
-```powershell
-npm ci
-npm ci --prefix frontend
-uv sync --locked --extra dev
-```
-
-Variables del cliente cloud, cuando sean necesarias para una tarea, se configuran fuera del repositorio (`VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`). Opcionalmente, `ANTARES_SUPABASE_URL` (o `VITE_SUPABASE_URL` si está en el entorno del proceso principal) hace que la CSP de la ventana pínne `connect-src` al host `*.supabase.co` del proyecto en lugar del wildcard; sin ella se usa el wildcard.
-
-- `npm run dev` — inicia Vite (puerto en el script `dev` de `package.json`) y Electron.
-- `npm run preview:unpacked` — construye una distribución sin instalador y la ejecuta.
-- `npm run build:frontend` — ejecuta typecheck y build Vite.
-- `npm run build:backend` — empaqueta PyInstaller; el flujo soportado es Windows y valida recursos bundled.
-- `npm run build:win` — construye backend/frontend y el instalador Windows con electron-builder.
-- `npm test` — `scripts/run-test-suites.js`: contratos Node, pytest (sin marca `slow`), integraciones Electron y `frontend` `test:all`. Para una sola suite: `npm test -- contracts|backend|electron|frontend`.
-- `npm run test:frontend` — Vitest frontend; `npm run test:stress` — `tests/test_stress_conversion.py` con la marca `slow`.
-- `npm run lint:python` / `npm run lint:fix` — Ruff sobre backend, tests y scripts.
-- `npm run typecheck:backend` — mypy; `npm run typecheck:frontend` — `tsc --noEmit`.
-- `npm run check:any` — falla si `backend/core/canvas` usa `dict[str, Any]` sin allowlist; en el resto del backend solo advierte (el techo lo pone `dictAnyBackend` en el trinquete). Una excepción debe ser explícita y justificada según el script.
-- `npm run check:ratchet` — trinquete de `# type: ignore`, `any` en frontend, `dict[str, Any]` sin allowlist en backend y archivos grandes contra `.quality-baseline.json`.
-- `npm run check:budgets` — valida budgets de chunks y modulepreload; puede construir frontend si faltan artefactos.
-- `npm run audit:python` / `npm run audit:node` — pip-audit y npm audit con severidad alta.
-- `npm run ci` — quality gate completo: lint, typecheck, guard `Any`, trinquete, audits, budgets y `npm test`.
-- `npm run bump:patch|minor|major` — actualiza versión siguiendo los scripts del repo; revisa `CHANGELOG.md` antes de release.
-
-## Estilo y reglas de implementación
-
-- Python: indentación de 4 espacios, Ruff con las reglas de `[tool.ruff.lint]` en `pyproject.toml`, type hints nuevos, nombres `snake_case` y clases `PascalCase`. `E501` está ignorado, así que el lint no corta el largo de línea: respeta `line-length` de `pyproject.toml` por criterio propio. mypy corre con la configuración de `[tool.mypy]` (`python_version`, sin `disallow_untyped_defs`).
-- TypeScript/React: 2 espacios, strict TypeScript, componentes `PascalCase`, hooks `use*`, utilidades puras cuando sea posible y Tailwind/tokens existentes para estilos. No agregues CSS global ad hoc sin necesidad.
-- UI compartida: los controles de formulario y superficies flotantes deben consumir `frontend/src/components/ui/` (`Button`, `DatePicker`, `ThemedSelect`, `Dialog`, `HoverTooltip`, …) y `frontend/src/hooks/useAnchoredPopover.ts`. No existe una primitiva `Modal`: la superficie modal es `ui/Dialog.tsx`. Antes de crear un botón, select, menú flotante o date picker nuevo, extiende el primitivo existente con una prop o variante; una skin local se hace con overrides CSS con scope (patrón `.vpad-*`/`.vgen-*`), no duplicando el componente.
-- Mantén responsabilidades únicas, nombres descriptivos y la mínima complejidad en el código que escribes. No introduzcas abstracciones, dependencias o configuraciones sin una necesidad demostrable. Estas reglas se aplican al código nuevo; para el existente rige la lista de prohibiciones de la [política de cambios mínimos](#política-de-cambios-mínimos-hard-rule).
-- Antes de codificar, explicita supuestos y tradeoffs si hay ambigüedad. Si una interpretación puede cambiar el resultado o permisos, detente y pregunta. Preguntar por el alcance correcto es más barato que revertir un diff amplio.
-- Commits usan Conventional Commits (`feat:`, `feat(scope):`, `fix:`, `refactor:`, `perf:`, `chore:`). Nunca incluyas secretos, `.env`, `dist/`, `release/`, caches o `__pycache__`. Cuándo commitear: [Git, PR y releases](#git-pr-y-releases).
-
-## Testing y verificación
-
-- Tests Python: `tests/test_*.py`, configurados en `pyproject.toml` (`addopts` excluye la marca `slow`); usa `-m slow` solo para pruebas explícitamente lentas.
-- Tests Node/Electron: `tests/test-*.js`; cubren allowlists, rutas, staging, CSP, spawner, router, AutoIMG, Canvas assets y contratos nativos. Cada archivo es un script autónomo.
-- Tests frontend: `frontend/src/**/*.test.ts` y `*.test.tsx`, especialmente `frontend/src/components/canvas/__tests__/` para operaciones puras, gestos, componentes, history y cloud sync. Los tests de CSS estático listados en `frontend/vitest.static.config.ts` solo corren con esa configuración.
-- Todo cambio de comportamiento debe incluir o actualizar pruebas. Un cambio en IPC, schema, timeout, permisos o serialización requiere revisar ambos extremos del contrato y las pruebas de integración correspondientes.
-
-### Comandos de un test suelto
-
-```powershell
-# Python (desde la raíz); filtra con -k "<patrón>"
-uv run --locked --extra dev pytest tests/test_ipc_catalog.py
-# Node/Electron (desde la raíz)
-node tests/test-electron-ipc-allowlist.js
-# Vitest: debe ejecutarse dentro de frontend/ (desde la raíz no carga la configuración); filtra con -t "<nombre>"
-cd frontend
-npx vitest run src/components/canvas/__tests__/Artboard.drag.test.tsx
-# Vitest, tests de CSS estático (dentro de frontend/)
-npx vitest run --config vitest.static.config.ts src/components/padron/vpad-styles.test.ts
-```
-
-### Orden de verificación
-
-1. Ejecuta primero el test más cercano al cambio con los comandos anteriores.
-2. Después, los checks afectados (por ejemplo `npm test -- electron` o `npm run typecheck:frontend`).
-3. Antes de entregar una rama, ejecuta al menos `npm run lint:python`, `npm run typecheck:backend`, `npm run typecheck:frontend` y `npm test`.
-4. Para cambios de build, IPC o seguridad, ejecuta `npm run ci` si el entorno lo permite.
-
-Si un check falla por cambios preexistentes o por el entorno, reporta el comando, el error concreto y si el fallo está dentro o fuera del alcance de la tarea.
-
-## Git, PR y releases
-
-### Cuándo commitear
-
-- Haz commit, push, PR o release solo cuando el usuario lo pida explícitamente en la conversación. Sin esa petición, deja los cambios en el worktree y entrega el informe con `git diff --stat`.
-- La petición cubre lo que nombra: "haz commit" no autoriza push ni PR, y "abre el PR" no autoriza merge ni release.
-- Los scripts `push:ship`, `push:merge`, `pr-fix:ship`, `pr-fix:merge`, `release:ship` y `release:full` commitean, empujan o mergean: ejecútalos solo con esa petición. `push:dry-run`, `pr-fix` y `release:dry-run` solo inspeccionan y se pueden usar sin ella.
-
-### Cambios ajenos y staging
-
-Única fuente de esta regla; las demás secciones la referencian.
-
-- Conserva los cambios ajenos a la tarea. No uses `git reset --hard` ni `git checkout --` para limpiar, y no los borres para conseguir un árbol limpio: resuélvelo con la rama o el PR adecuado.
-- Stagea solo los archivos declarados en el diff de tu tarea con `git add -- <archivos>`; nunca `git add -A` ni `git add .`.
-- `push:ship` y `pr-fix:ship` commitean el índice cuando hay archivos stageados y recurren a `git add -A` solo con el índice vacío. Con el índice vacío, invócalos solo si el worktree no contiene cambios ajenos. `pr-fix:ship` además aborta si el worktree trae cambios previos a sus heurísticas.
-- Antes de commitear, verifica `git status` y `git diff --cached` para confirmar que el commit no arrastra hunks de otra tarea.
-
-### Flujo de PR
-
-- El flujo es PR-first: no hagas push directo a `main`. Trabaja en una feature branch (prefijo `codex/` por defecto salvo instrucción distinta), publica la rama y crea/actualiza un PR hacia `main`.
-- `npm run push:dry-run` inspecciona el flujo; `npm run push:ship` hace commit/push y crea o actualiza el PR; `npm run push:merge` además espera checks y solicita merge. En modo ship, proporciona el mensaje requerido por el script cuando haya cambios. Usa los flags y mensajes del script, no una secuencia manual que omita validaciones.
-- `npm run pr-fix` inspecciona los checks del PR de la rama actual (o `--pr <n>`) sin modificar nada; `npm run pr-fix:ship` aplica fixes acotados en iteraciones (`--max`, por defecto `MAX_ITER_DEFAULT` de `scripts/pr-fix-loop.js`), commitea con `[skip-ci-fix]` y empuja; `npm run pr-fix:merge` además solicita el merge cuando el PR está aprobado, sin conflictos y con checks verdes.
-- Antes de solicitar review, incluye propósito, issue/PR relacionado, evidencia de tests y screenshots si hay cambios de UI.
-
-### Workflow `review-policy`
-
-- Audita cada PR en `opened`/`synchronize`/`reopened`/`ready_for_review`, edición de descripción y cambio de etiquetas. Lógica en `scripts/review-policy-check.js`, ejecutable en local con `--pr <n>`; los umbrales son las constantes `SIZE_WARN`, `SIZE_LARGE`, `MAX_NEW_FILE_LINES` y `TAXONOMY_TARGET` de ese script.
-- Solo dos checks bloquean el job (`--fail-on blocking`):
-  - intención real en el cuerpo (la plantilla sin rellenar no cuenta);
-  - tamaño efectivo ≥ `SIZE_LARGE` sin la etiqueta `size/exempt` (excluye lockfiles y generados, y usa `changed_files` del PR para saber si el listado quedó incompleto).
-- El resto son avisos para el revisor:
-  - tamaño > `SIZE_WARN`, y tamaño efectivo > `SIZE_WARN` sin marcador `cambio amplio:` en el cuerpo ni etiqueta `size/exempt`;
-  - archivos nuevos (`status: added`) > `MAX_NEW_FILE_LINES` fuera de tests/generados;
-  - ausencia de tests tocados, falta de sección de riesgo y aprobación de un tercero;
-  - taxonomía `blocking:`/`suggestion:`/`nit:`/`question:`/`praise:` en al menos `TAXONOMY_TARGET` de los comentarios humanos (excluye bots y el propio informe).
-- En borrador todo degrada a aviso, y un fallo de infraestructura (`gh` ausente, API inestable, datos parciales, PR cerrado) omite el check sin romper. El informe vive en un único comentario auto-actualizado.
-
-### Releases
-
-- `scripts/release-loop.js` ejecuta estos pasos:
-  1. Validar `gh`, remote, branch, árbol limpio y sincronización con `origin/main`.
-  2. Comprobar versión, tag y release.
-  3. Validar `CHANGELOG.md`.
-  4. Ejecutar el quality gate (`npm run ci`).
-  5. Opcionalmente, construir en local.
-  6. Crear el tag anotado.
-  7. Empujar el tag. GitHub Actions construye y publica la release.
-- `npm run release:dry-run` valida sin crear ni empujar tag (puede hacer `fetch` para comprobar sincronización); `npm run release:ship` crea y empuja el tag; `npm run release:full` añade el build local.
-- Los releases requieren branch `main`, worktree limpio, HEAD exactamente en `origin/main`, entrada de changelog con fecha/sección y tag no duplicado.
-
-## Restricción de archivos Markdown (HARD RULE)
-
-Está estrictamente prohibido hacer `commit` o `push` de archivos `.md`, salvo:
-
-- `AGENTS.md`
-- `CHANGELOG.md`
-- `CLAUDE.md` (aún no existe; reservado para el archivo que Claude Code carga automáticamente, que debe limitarse a apuntar a este)
-- `README.md`
-- `CONTEXT.md`
-- `docs/adr/*.md` (incluye un futuro índice `docs/adr/README.md`)
-- `.github/pull_request_template.md`
-
-Todo otro Markdown —incluyendo documentación temporal, planes, notas, drafts, reportes, `scratch/*.md` y `docs/*.md` fuera de ADR— debe permanecer local, añadirse a `.gitignore` o eliminarse antes del commit/PR. Esta regla no se omite.
+Cualquier otro Markdown, incluidos planes, notas, drafts y reportes temporales, debe permanecer local, añadirse a `.gitignore` o eliminarse antes del commit/PR.
