@@ -49,7 +49,7 @@ Conserva el comportamiento observable ajeno a la petición: salidas, formatos, o
 - Todo cambio de comportamiento incluye o actualiza pruebas. Para IPC, schema, timeout, permisos o serialización, revisa ambos extremos y las pruebas de integración.
 - Ejecuta primero el test más cercano y los checks afectados. Antes de entregar una rama, ejecuta `npm run lint:python`, `npm run typecheck:backend`, `npm run typecheck:frontend` y `npm test`. Para build, IPC o seguridad, ejecuta `npm run ci` si el entorno lo permite. Reporta comando, error concreto y si cada fallo es de la tarea, preexistente o del entorno.
 - Revisa `git diff` y `git diff --stat` hunk por hunk. Retira cambios que no respondan a la petición; si retirarlos rompe un check, ajusta el diff mínimo o reporta el conflicto. Recorta o explica cualquier desviación respecto al alcance declarado.
-- Trabaja en una feature branch con prefijo `codex/` por defecto y entrega mediante PR hacia `main`; nunca hagas push directo a `main`. Stagea solo los archivos declarados con `git add -- <archivos>`, nunca `git add -A` ni `git add .`. Revisa `git status` y `git diff --cached` antes de commitear.
+- Trabaja en una feature branch con prefijo `feat/` por defecto y entrega mediante PR hacia `main`; nunca hagas push directo a `main`. Stagea solo los archivos declarados con `git add -- <archivos>`, nunca `git add -A` ni `git add .`. Revisa `git status` y `git diff --cached` antes de commitear.
 - Los commits usan Conventional Commits. Mantén secretos, `.env`, `dist/`, `release/`, caches y `__pycache__` fuera de los commits.
 
 ## Restricción de Markdown (HARD RULE)
