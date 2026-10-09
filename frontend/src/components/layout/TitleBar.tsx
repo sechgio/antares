@@ -1,32 +1,21 @@
 import { Suspense, lazy } from 'react';
-import { Minus, Square, X, Settings } from 'lucide-react';
+import { Minus, Square, X } from 'lucide-react';
 import UpdateButton from './UpdateButton';
 import { HoverTooltip } from '@/components/ui/HoverTooltip';
 import Button from '@/components/ui/Button';
 import { usePluginEnabled } from '../../plugins';
+import { cn } from '@/lib/utils';
 
-// El import lazy mantiene Supabase fuera del bundle inicial del shell.
-const TaskNotificationsBell = lazy(() => import('./TaskNotificationsBell'));
 // Los plugins se cargan aparte para excluir dnd-kit del bundle inicial.
 const TitleBarPlugins = lazy(() => import('./TitleBarPlugins'));
 
-const bellPlaceholder = (
-  <div className="relative flex h-full" aria-hidden>
-    <div className="h-full w-10" />
-  </div>
-);
+const WINDOW_BUTTON = 'app-titlebar-button flex size-8 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors';
 
 function handleWindowAction(action: 'minimizeWindow' | 'maximizeWindow' | 'closeWindow') {
   window.electronAPI?.[action]?.();
 }
 
-interface TitleBarProps {
-  onOpenSettings?: () => void;
-  onPrefetchSettings?: () => void;
-  onOpenEspacios?: () => void;
-}
-
-export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEspacios }: TitleBarProps) {
+export default function TitleBar() {
   const radioEnabled = usePluginEnabled('radio-live');
   const spotifyEnabled = usePluginEnabled('spotify');
   const audiusEnabled = usePluginEnabled('audius');
@@ -36,58 +25,43 @@ export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEsp
   return (
     <div
       data-testid="app-titlebar"
-      className="app-titlebar flex h-9 shrink-0 items-center justify-end overflow-visible border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] select-none"
+      className="app-titlebar flex h-11 shrink-0 items-center justify-end overflow-visible pr-2 text-[var(--text-secondary)] select-none"
     >
-      <div className="app-titlebar-controls flex h-full items-stretch overflow-visible">
+      <div className="app-titlebar-controls flex h-8 items-stretch overflow-visible">
         {hasTitlebarPlugins && (
           <Suspense fallback={null}>
             <TitleBarPlugins />
           </Suspense>
         )}
-        <Suspense fallback={bellPlaceholder}>
-          <TaskNotificationsBell onOpenEspacios={onOpenEspacios} />
-        </Suspense>
         <UpdateButton />
-        {onOpenSettings && (
-          <div className="group relative flex h-full">
-            <Button variant="none" size="none"
-              data-testid="titlebar-settings-button"
-              aria-label="Configuración"
-              onClick={onOpenSettings}
-              onMouseEnter={onPrefetchSettings}
-              onFocus={onPrefetchSettings}
-              className="app-titlebar-button flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              <Settings size={14} strokeWidth={1.8} className="transition-transform duration-300 group-hover:rotate-45" />
-            </Button>
-            <HoverTooltip label="Configuración" placement="bottom" />
-          </div>
-        )}
-        <div className="relative flex h-full">
+      </div>
+      <span className="mx-2 h-4 w-px bg-[var(--border-medium)]" aria-hidden />
+      <div className="app-titlebar-controls flex items-center gap-0.5">
+        <div className="relative">
           <Button variant="none" size="none"
             aria-label="Minimizar"
             onClick={() => handleWindowAction('minimizeWindow')}
-            className="app-titlebar-button flex h-full w-12 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            className={cn(WINDOW_BUTTON, 'hover:bg-[var(--sidebar-accent)] hover:text-[var(--text-primary)]')}
           >
             <Minus size={14} strokeWidth={1.8} />
           </Button>
           <HoverTooltip label="Minimizar" placement="bottom" />
         </div>
-        <div className="relative flex h-full">
+        <div className="relative">
           <Button variant="none" size="none"
             aria-label="Maximizar"
             onClick={() => handleWindowAction('maximizeWindow')}
-            className="app-titlebar-button flex h-full w-12 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            className={cn(WINDOW_BUTTON, 'hover:bg-[var(--sidebar-accent)] hover:text-[var(--text-primary)]')}
           >
             <Square size={11} strokeWidth={1.8} />
           </Button>
           <HoverTooltip label="Maximizar" placement="bottom" />
         </div>
-        <div className="relative flex h-full">
+        <div className="relative">
           <Button variant="none" size="none"
             aria-label="Cerrar"
             onClick={() => handleWindowAction('closeWindow')}
-            className="app-titlebar-button flex h-full w-12 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)]"
+            className={cn(WINDOW_BUTTON, 'hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)]')}
           >
             <X size={15} strokeWidth={1.8} />
           </Button>

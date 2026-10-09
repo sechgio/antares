@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
+import { findSidebarTab } from './sidebarNav';
 
 const { mockSupabase } = vi.hoisted(() => {
   const empty = { data: [] as unknown[], error: null };
@@ -80,17 +81,17 @@ describe('App Canvas keep-alive', () => {
   it('keeps Canvas mounted when switching away and back', async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Canvas' }, { timeout: 5000 }));
+    fireEvent.click(await findSidebarTab('Canvas'));
     expect(await screen.findByTestId('canvas-keep-alive', {}, { timeout: 15000 })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Conversión' }));
+    fireEvent.click(await findSidebarTab('Conversión'));
     await waitFor(() => {
       expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
     }, { timeout: 8000 });
 
     expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Canvas' }));
+    fireEvent.click(await findSidebarTab('Canvas'));
     expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
   }, 30000);
 
@@ -98,10 +99,10 @@ describe('App Canvas keep-alive', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Canvas' }, { timeout: 5000 }));
+      fireEvent.click(await findSidebarTab('Canvas'));
       expect(await screen.findByTestId('canvas-keep-alive', {}, { timeout: 15000 })).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Conversión' }));
+      fireEvent.click(await findSidebarTab('Conversión'));
       await waitFor(() => {
         expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
       });
