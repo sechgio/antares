@@ -53,8 +53,7 @@ function run() {
   const parallelStep = windowsJob.match(/- name: Run checks and test suites in parallel\r?\n\s+shell: bash\r?\n\s+env:\r?\n\s+WEASYPRINT_DLL_DIRECTORIES: C:\\msys64\\mingw64\\bin\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
   const branches = [...parallelStep.matchAll(/"([^"]+)"/g)].map((match) => match[1].replace(/\s+/g, ' ').trim());
   const qualityCommands = packageJson.scripts.ci.split(' && ')
-    .filter((command) => !['npm test', 'npm run typecheck:frontend'].includes(command))
-    .map((command) => command === 'npm run check:budgets' ? 'npm run build:frontend' : command);
+    .filter((command) => !['npm test', 'npm run typecheck:frontend', 'npm run check:budgets'].includes(command));
   assert(
     frontendPackageJson.scripts.build.startsWith('tsc && ') &&
       frontendPackageJson.scripts.build.includes('node scripts/canvas-appear-budget.mjs') &&
@@ -62,8 +61,16 @@ function run() {
     'The frontend build checks types and both budgets, replacing duplicate CI commands',
   );
   assert(
-    branches[0] === ['pwsh -NoProfile -File scripts/install-ci-pango.ps1', ...qualityCommands, ...['contracts', 'backend', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
+    branches[0] === 'node scripts/run-test-suites.js frontend',
+    'The frontend suite runs on its own branch so it neither blocks nor waits for the quality gate',
+  );
+  assert(
+    branches[1] === ['pwsh -NoProfile -File scripts/install-ci-pango.ps1', ...qualityCommands, ...['contracts', 'backend', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
     'Windows CI preserves every check from the shared quality gate in order and fails closed',
+  );
+  assert(
+    branches[2] === 'npm run build:frontend',
+    'The frontend build gets its own branch instead of extending the backend chain',
   );
   assert(pangoSetup.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
   assert(pangoSetup.includes('if ($LASTEXITCODE -ne 0)') && pangoSetup.includes('exit $LASTEXITCODE'), 'Pango installation failures stop the backend branch');
@@ -76,13 +83,13 @@ function run() {
   assert(!/run: node scripts\/run-test-suites\.js\s*$/m.test(ci), 'CI does not repeat the full suite alongside parallel suites');
   assert(
     parallelStep.includes('npx --no-install concurrently --kill-others-on-fail --success all'),
-    'The test step runs concurrently and fails if either branch fails',
+    'The test step runs concurrently and fails if any branch fails',
   );
   assert(
-    branches.length === 2 && branches[1] === 'node scripts/run-test-suites.js frontend',
-    'The single runner overlaps frontend with quality checks, backend, contracts, and Electron using two branches',
+    branches.length === 3,
+    'The single runner splits the frontend suite, the quality gate and the frontend build into three branches',
   );
-  assert(parallelStep.includes('--names quality-backend,frontend --timings'), 'CI logs the duration of each parallel branch');
+  assert(parallelStep.includes('--names frontend,backend,build --timings'), 'CI logs the duration of each parallel branch');
   assert(windowsJob.includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
 
   assert(nodeVersion === '22.19.0', '.node-version pins Node 22.19.0');

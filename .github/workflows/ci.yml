@@ -42,14 +42,14 @@ jobs:
           WEASYPRINT_DLL_DIRECTORIES: C:\msys64\mingw64\bin
         run: >-
           npx --no-install concurrently --kill-others-on-fail --success all
-          --names quality-backend,frontend --timings
+          --names frontend,backend,build --timings
+          "node scripts/run-test-suites.js frontend"
           "pwsh -NoProfile -File scripts/install-ci-pango.ps1 &&
           npm run lint:python && npm run typecheck:backend &&
           npm run check:any && npm run check:ratchet &&
           npm run audit:python && npm run audit:node &&
-          npm run build:frontend &&
           node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js backend && node scripts/run-test-suites.js electron"
-          "node scripts/run-test-suites.js frontend"
+          "npm run build:frontend"
 
       - name: Run slow stress tests (excluded from the default gate)
         run: uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py -m slow -q
