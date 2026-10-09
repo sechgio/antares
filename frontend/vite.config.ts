@@ -144,8 +144,9 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
-    fileParallelism: false,
-    maxWorkers: 1,
+    pool: 'threads',
+    fileParallelism: true,
+    maxWorkers: 4,
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
