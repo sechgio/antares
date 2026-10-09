@@ -5,9 +5,16 @@
  *   node scripts/review-metrics.js [--days 14] [--strict] [--json] [--repo o/n]
  */
 
-const fs = require('fs');
+const { fs } = require('fs');
 const { detectRepo, gh, parseCliArgs } = require('./lib/loop-utils');
-const { SIZE_WARN, isBot, hasThirdPartyApproval, taxonomyCompliance } = require('./review-policy-check.js');
+const {
+  SIZE_WARN,
+  TAXONOMY_TARGET,
+  effectiveChangedLines,
+  isBot,
+  hasThirdPartyApproval,
+  taxonomyCompliance,
+} = require('./review-policy-check.js');
 
 const FIRST_REVIEW_TARGET_H = 4;
 const RUBBER_STAMP_SECONDS = 60;
@@ -19,7 +26,7 @@ const TARGETS = {
   reviewCoverage: 100,
   rubberStamp: 5,
   rework: 20,
-  taxonomy: 80,
+  taxonomy: Math.round(TAXONOMY_TARGET * 100),
   authorConcentration: 70,
 };
 
@@ -38,6 +45,9 @@ function hoursBetween(from, to) {
 }
 
 function firstReviewSignal(pr) {
+  // `gh` no expone cuándo se marcó listo un borrador: medirlo desde la creación castigaría al
+  // autor por tenerlo abierto, así que los borradores se excluyen en lugar de inflar la métrica.
+  if (pr.isDraft) return null;
   const authorLogin = pr.author && pr.author.login;
   const stamps = [];
   for (const r of pr.reviews || []) {
@@ -60,6 +70,18 @@ function nonAuthorApprovals(pr) {
   );
 }
 
+// Una ronda de retrabajo es lo que tuvo que rehacer el autor: dos revisores pidiendo lo mismo
+// cuentan como una sola, y de cada revisor manda su última review.
+function reworkRounds(pr) {
+  const authorLogin = pr.author && pr.author.login;
+  const latest = new Map();
+  for (const r of pr.reviews || []) {
+    if (!r.author || !r.author.login || r.author.login === authorLogin) continue;
+    latest.set(r.author.login, r.state);
+  }
+  return [...latest.values()].filter((state) => state === 'CHANGES_REQUESTED').length;
+}
+
 function pct(part, total, digits = 1) {
   if (total === 0) return null;
   return Number(((part / total) * 100).toFixed(digits));
@@ -71,25 +93,25 @@ function computeMetrics(prs) {
   const metric = (id, label, value, unit, target, op, ok, detail) =>
     ({ id, label, value, unit, target, op, ok, detail });
 
-  const medianSize = median(list.map((pr) => (Number(pr.additions) || 0) + (Number(pr.deletions) || 0)));
+  const medianSize = median(list.map((pr) => effectiveChangedLines(pr).effective));
+  const drafts = list.filter((pr) => pr.isDraft).length;
   const firstReview = list.map(firstReviewSignal).filter((v) => v !== null);
   const medianFirst = median(firstReview);
   const covered = list.filter(hasThirdPartyApproval).length;
   const coverage = pct(covered, n);
   const stamps = list.filter((pr) =>
+    !pr.isDraft &&
     nonAuthorApprovals(pr).some((r) => {
       const delta = hoursBetween(pr.createdAt, r.submittedAt);
       return delta !== null && delta * 3600 < RUBBER_STAMP_SECONDS;
     }),
   ).length;
   const stampRate = pct(stamps, n);
-  const reworked = list.filter(
-    (pr) => (pr.reviews || []).filter((r) => r.state === 'CHANGES_REQUESTED').length > REWORK_ROUNDS,
-  ).length;
+  const reworked = list.filter((pr) => reworkRounds(pr) > REWORK_ROUNDS).length;
   const reworkRate = pct(reworked, n);
   const taxAcc = { prefixed: 0, total: 0 };
   for (const pr of list) {
-    const tax = taxonomyCompliance([...(pr.reviews || []), ...(pr.comments || [])]);
+    const tax = taxonomyCompliance([...(pr.reviews || []), ...(pr.comments || [])], pr.author && pr.author.login);
     taxAcc.prefixed += tax.prefixed;
     taxAcc.total += tax.total;
   }
@@ -108,7 +130,9 @@ function computeMetrics(prs) {
     metric('firstReviewHours', 'Tiempo hasta la primera revisión',
       medianFirst === null ? null : Number(medianFirst.toFixed(2)), 'horas', TARGETS.firstReviewHours, '<',
       medianFirst !== null && medianFirst < TARGETS.firstReviewHours,
-      firstReview.length === 0 ? 'sin señales de revisión' : `${firstReview.length} PRs con señal`),
+      firstReview.length === 0
+        ? (drafts > 0 ? `${drafts} en borrador excluidos` : 'sin señales de revisión')
+        : `${firstReview.length} PRs con señal${drafts > 0 ? ` · ${drafts} en borrador excluidos` : ''}`),
     metric('reviewCoverage', 'Cobertura de revisión', coverage, '%', TARGETS.reviewCoverage, '>=',
       coverage !== null && coverage >= TARGETS.reviewCoverage,
       `${covered}/${n} PRs con aprobación de un tercero`),
@@ -146,7 +170,7 @@ function renderMarkdown(metrics, days) {
     ...metrics.map((m) =>
       `| ${m.label} | ${formatValue(m.value, m.unit)} | ${renderTarget(m)} | ${m.ok ? '✅' : '⚠️'} | ${m.detail} |`),
     '',
-    '> Objetivos: tamaño < 400, primera review < 4 h, cobertura 100%, rubber-stamp < 5%.',
+    `> Objetivos: ${metrics.map((m) => `${m.label.toLowerCase()} ${renderTarget(m)}`).join(' · ')}.`,
   ].join('\n');
 }
 
@@ -176,6 +200,29 @@ function fetchMergedPrs(repo, days) {
   return JSON.parse(out);
 }
 
+// Solo los PRs que pasan del umbral necesitan el detalle de archivos para saber si el tamaño
+// es real o lo infla un lockfile. Si la llamada falla se conserva el tamaño bruto.
+function withEffectiveSizes(repo, prs) {
+  return prs.map((pr) => {
+    if (effectiveChangedLines(pr).raw <= SIZE_WARN) return pr;
+    let files;
+    try {
+      const out = gh(['pr', 'view', String(pr.number), '--repo', repo, '--json', 'files'], {
+        timeout: 30000,
+        maxBuffer: 24 * 1024 * 1024,
+      });
+      files = ((JSON.parse(out || '{}').files) || []).map((f) => ({
+        path: f.path,
+        additions: f.additions,
+        deletions: f.deletions,
+      }));
+    } catch {
+      return pr;
+    }
+    return files.length > 0 ? { ...pr, files } : pr;
+  });
+}
+
 function run() {
   const args = parseArgs(process.argv.slice(2));
   const repo = args.repo || detectRepo();
@@ -193,7 +240,7 @@ function run() {
     process.exit(0);
   }
 
-  const metrics = computeMetrics(prs);
+  const metrics = computeMetrics(withEffectiveSizes(repo, prs));
   const payload = { repo, days: args.days, prCount: prs.length, metrics };
   if (args.jsonFile) fs.writeFileSync(args.jsonFile, `${JSON.stringify(payload, null, 2)}\n`);
   if (args.json && !args.jsonFile) {
@@ -219,6 +266,7 @@ module.exports = {
   hoursBetween,
   firstReviewSignal,
   nonAuthorApprovals,
+  reworkRounds,
   computeMetrics,
   renderMarkdown,
 };
