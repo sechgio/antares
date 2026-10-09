@@ -9,10 +9,12 @@ const RELEASE_PATH = path.join(ROOT, '.github', 'workflows', 'release.yml');
 const SETUP_CI_PATH = path.join(ROOT, '.github', 'actions', 'setup-ci', 'action.yml');
 const RUNNER_PATH = path.join(ROOT, 'scripts', 'run-test-suites.js');
 const PACKAGE_PATH = path.join(ROOT, 'package.json');
+const FRONTEND_PACKAGE_PATH = path.join(ROOT, 'frontend', 'package.json');
 const UV_LOCK_PATH = path.join(ROOT, 'uv.lock');
 const NODE_VERSION_PATH = path.join(ROOT, '.node-version');
 const VITE_CONFIG_PATH = path.join(ROOT, 'frontend', 'vite.config.ts');
 const STATIC_VITEST_CONFIG_PATH = path.join(ROOT, 'frontend', 'vitest.static.config.ts');
+const PANGO_SETUP_PATH = path.join(ROOT, 'scripts', 'install-ci-pango.ps1');
 
 function assertSingleWorker(config, label) {
   assert(
@@ -29,9 +31,11 @@ function run() {
   const setupCi = fs.readFileSync(SETUP_CI_PATH, 'utf8');
   const runner = fs.readFileSync(RUNNER_PATH, 'utf8');
   const packageJson = JSON.parse(fs.readFileSync(PACKAGE_PATH, 'utf8'));
+  const frontendPackageJson = JSON.parse(fs.readFileSync(FRONTEND_PACKAGE_PATH, 'utf8'));
   const nodeVersion = fs.readFileSync(NODE_VERSION_PATH, 'utf8').trim();
   const viteConfig = fs.readFileSync(VITE_CONFIG_PATH, 'utf8');
   const staticVitestConfig = fs.readFileSync(STATIC_VITEST_CONFIG_PATH, 'utf8');
+  const pangoSetup = fs.readFileSync(PANGO_SETUP_PATH, 'utf8');
 
   assert(/permissions:\r?\n\s+contents:\s+read/.test(ci), 'CI has explicit read-only permissions');
   assert(ci.includes('cancel-in-progress: true'), 'CI cancels obsolete runs for the same ref');
@@ -40,18 +44,54 @@ function run() {
   assert(!/\bnpm install\b/.test(ci), 'CI never performs mutable npm install');
   assert(ci.includes('persist-credentials: false'), 'CI checkout does not persist Git credentials');
   assertActionsPinned(ci, 'CI');
-  const [linuxJob, windowsJob = ''] = ci.split(/^  test-windows:\s*$/m);
-  assert(linuxJob.includes('run: npm run ci'), 'Linux CI runs the shared quality gate');
-  assert(Boolean(windowsJob), 'CI retains the Windows test job');
-  assert(windowsJob.includes('runs-on: windows-latest'), 'Windows tests run on Windows');
-  assert(windowsJob.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
-  assert(windowsJob.includes('WEASYPRINT_DLL_DIRECTORIES='), 'Windows tests configure WeasyPrint DLLs');
-  assert(windowsJob.includes('run: node scripts/run-test-suites.js'), 'Windows CI runs the test suites');
+  const ciJobs = ci.split(/^jobs:\s*$/m)[1] || '';
+  const windowsJob = ciJobs.split(/^  verify:\s*$/m)[1] || '';
+  assert((ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === 1, 'CI has exactly one job');
+  assert(!/^\s+(?:strategy|matrix):/m.test(ci), 'The single CI job does not expand into a matrix');
+  assert(!ci.includes('ubuntu-latest'), 'PR CI runs only on Windows');
+  assert(windowsJob.includes('runs-on: windows-latest'), 'Backend and quality checks run on Windows');
+  const parallelStep = windowsJob.match(/- name: Run checks and test suites in parallel\r?\n\s+shell: bash\r?\n\s+env:\r?\n\s+WEASYPRINT_DLL_DIRECTORIES: C:\\msys64\\mingw64\\bin\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
+  const branches = [...parallelStep.matchAll(/"([^"]+)"/g)].map((match) => match[1].replace(/\s+/g, ' ').trim());
+  const qualityCommands = packageJson.scripts.ci.split(' && ')
+    .filter((command) => !['npm test', 'npm run typecheck:frontend'].includes(command))
+    .map((command) => command === 'npm run check:budgets' ? 'npm run build:frontend' : command);
+  assert(
+    frontendPackageJson.scripts.build.startsWith('tsc && ') &&
+      frontendPackageJson.scripts.build.includes('node scripts/canvas-appear-budget.mjs') &&
+      frontendPackageJson.scripts.build.includes('node scripts/shell-preload-budget.mjs'),
+    'The frontend build checks types and both budgets, replacing duplicate CI commands',
+  );
+  assert(
+    branches[0] === ['pwsh -NoProfile -File scripts/install-ci-pango.ps1', ...qualityCommands, ...['contracts', 'backend', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
+    'Windows CI preserves every check from the shared quality gate in order and fails closed',
+  );
+  assert(pangoSetup.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
+  assert(pangoSetup.includes('if ($LASTEXITCODE -ne 0)') && pangoSetup.includes('exit $LASTEXITCODE'), 'Pango installation failures stop the backend branch');
+  assert(!windowsJob.includes('- name: Install Pango'), 'Pango installation overlaps frontend tests instead of blocking their start');
+  assert(pangoSetup.includes('WEASYPRINT_DLL_DIRECTORIES=') && ci.includes('WEASYPRINT_DLL_DIRECTORIES: C:\\msys64\\mingw64\\bin'), 'Windows tests configure WeasyPrint DLLs for parallel and later steps');
+  for (const suite of ['contracts', 'backend', 'electron', 'frontend']) {
+    const calls = windowsJob.match(new RegExp(`node scripts/run-test-suites\\.js ${suite}\\b`, 'g')) || [];
+    assert(calls.length === 1, `The single Windows job runs the ${suite} suite exactly once`);
+  }
+  assert(!/run: node scripts\/run-test-suites\.js\s*$/m.test(ci), 'CI does not repeat the full suite alongside parallel suites');
+  assert(
+    parallelStep.includes('npx --no-install concurrently --kill-others-on-fail --success all'),
+    'The test step runs concurrently and fails if either branch fails',
+  );
+  assert(
+    branches.length === 2 && branches[1] === 'node scripts/run-test-suites.js frontend',
+    'The single runner overlaps frontend with quality checks, backend, contracts, and Electron using two branches',
+  );
+  assert(parallelStep.includes('--names quality-backend,frontend --timings'), 'CI logs the duration of each parallel branch');
   assert(windowsJob.includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
 
   assert(nodeVersion === '22.19.0', '.node-version pins Node 22.19.0');
   assert(setupCi.includes("node-version-file: '.node-version'"), 'setup-ci reads the committed Node version file');
-  assert(setupCi.includes('cache: pip'), 'setup-ci caches Python dependencies');
+  assert(
+    setupCi.includes('uv cache dir') && setupCi.includes('path: ${{ steps.uv-cache.outputs.dir }}') &&
+      setupCi.includes("hashFiles('uv.lock', '.github/actions/setup-ci/action.yml')"),
+    'setup-ci caches the Python dependencies installed by uv, keyed by the lock and toolchain',
+  );
   assert(setupCi.includes('frontend/package-lock.json'), 'setup-ci cache key includes the frontend lockfile');
   assert(setupCi.includes('npm ci'), 'setup-ci installs root dependencies with npm ci');
   assert(setupCi.includes('npm ci --prefix frontend'), 'setup-ci installs frontend dependencies with npm ci');
