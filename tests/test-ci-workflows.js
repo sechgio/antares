@@ -122,7 +122,11 @@ function run() {
     packageJson.scripts['test:stress'].includes('uv run --project .. --locked --extra dev pytest'),
     'stress tests use the locked Python environment',
   );
-  assertSingleWorker(viteConfig, 'Frontend Vitest');
+  assert(
+    viteConfig.includes("pool: 'threads'") && viteConfig.includes('fileParallelism: true') &&
+      viteConfig.includes('maxWorkers: 4'),
+    'Frontend Vitest runs test files in parallel on a bounded worker pool',
+  );
   assertSingleWorker(staticVitestConfig, 'Static Vitest');
   assert(
     packageJson.scripts['audit:node'].includes('npm audit --omit=dev --audit-level=high') &&
