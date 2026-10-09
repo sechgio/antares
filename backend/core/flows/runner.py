@@ -31,7 +31,7 @@ from typing import Any
 from backend.core.flows import agent_chat, agent_node, code_exec, connections, events, mcp_servers
 from backend.core.flows.cancel import RunCancelled as _RunCancelled
 from backend.core.flows.cancel import await_or_cancel as _await_or_cancel
-from backend.core.flows.expr import interpolate_text, resolve
+from backend.core.flows.expr import resolve
 from backend.core.flows.http_guard import assert_allowed_url, build_flow_opener
 from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, loop_body_regions, normalize_graph, validate_graph
 from backend.core.flows.store import MAX_TOTAL_RUNS, FlowStore, _utc_now
@@ -985,28 +985,13 @@ class FlowRunner:
 
     @staticmethod
     def _run_agent(node: JsonObject, memory: JsonObject) -> JsonObject:
-        config = node["config"]
-        provider = str(config.get("provider") or "").strip()
-        prompt = resolve(config.get("prompt"), memory)
-        if isinstance(prompt, str):
-            prompt = interpolate_text(prompt, memory)
-        if not provider:
-            raise ValueError("El nodo agent requiere config.provider")
-        if not isinstance(prompt, str) or not prompt.strip():
-            raise ValueError("El nodo agent requiere config.prompt")
-        default_model = agent_chat.ai_providers.public_state(provider).get("default_model", "")
-        model = str(config.get("model") or default_model or "").strip()
-        if not model:
-            raise ValueError("El nodo agent requiere un modelo (config.model)")
-        system = resolve(config.get("system"), memory)
-        if isinstance(system, str):
-            system = interpolate_text(system, memory)
+        provider, model, prompt, system = agent_node.resolve_agent_config(node["config"], memory)
         response = agent_chat.chat(
             provider,
             model,
             [{"role": "user", "content": prompt.strip()}],
             with_tools=False,
-            system=system.strip() if isinstance(system, str) and system.strip() else None,
+            system=system,
         )
         return {"json": {"text": response.get("text") or "", "provider": provider, "model": model}}
 

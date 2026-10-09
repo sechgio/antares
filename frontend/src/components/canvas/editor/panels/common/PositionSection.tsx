@@ -5,7 +5,7 @@ import { mm } from '../../../types';
 import { cornerRadiusPx, parseScale, toggleFlip } from '../../../ops/layerStyle';
 import { applyCssVarToLayerIds, mixedNumeric, mixedNumericMm, selectLayersByIds } from '../../../ops/mixedSelection';
 import InlineNumField from '../../InlineNumField';
-import { ALIGN_ITEMS } from '../shared';
+import { AlignmentButtons } from '../shared';
 import type { SectionProps } from '../types';
 import Button from '@/components/ui/Button';
 
@@ -42,19 +42,7 @@ export default function PositionSection({
 
   return (
     <>
-      <div className="canvas-alignment-tools" role="group" aria-label="Alinear capa">
-        {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
-          <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
-            <Button variant="none" size="none"
-              className="canvas-icon-btn"
-              aria-label={label}
-              onClick={() => onAlign(align)}
-            >
-              <Icon className="h-3.5 w-3.5" />
-            </Button>
-          </WithHoverTooltip>
-        ))}
-      </div>
+      <AlignmentButtons onAlign={onAlign} ariaLabel="Alinear capa" />
       <div className="flex gap-1.5">
         <InlineNumField
           prefix="X"

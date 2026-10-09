@@ -40,10 +40,6 @@ def load_provider_specs() -> dict[str, JsonObject]:
     return dict(providers) if isinstance(providers, dict) else {}
 
 
-def provider_ids() -> list[str]:
-    return sorted(load_provider_specs())
-
-
 def get_provider(provider: str) -> JsonObject:
     spec = load_provider_specs().get(provider)
     if not isinstance(spec, dict):
@@ -177,7 +173,3 @@ def fresh_tokens(provider: str) -> JsonObject:
 
 def fresh_access_token(provider: str) -> str:
     return str(fresh_tokens(provider)["access_token"])
-
-
-def list_statuses() -> list[JsonObject]:
-    return [status(pid) for pid in provider_ids()]

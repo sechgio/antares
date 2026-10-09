@@ -65,12 +65,13 @@ def _agent_flow(agent_config):
     }
 
 
-def test_agent_tools_execute_orchestratable_call(store, monkeypatch):
+@pytest.mark.parametrize("reply_text", ["", "hecho", None])
+def test_agent_tools_execute_orchestratable_call(store, monkeypatch, reply_text):
     _provider_stub(monkeypatch)
     executed: list[str] = []
     replies = iter([
         {"text": "", "calls": [{"id": "c1", "name": "flows_list", "params": {}}]},
-        {"text": "hecho", "calls": []},
+        {"text": reply_text, "calls": []},
     ])
 
     def fake_chat(provider, model, messages, with_tools=True, system=None):
@@ -92,7 +93,9 @@ def test_agent_tools_execute_orchestratable_call(store, monkeypatch):
     assert done["status"] == "success"
     assert executed == ["flows_list"]
     steps = {s["node_id"]: s for s in done["steps"]}
-    assert steps["ia"]["output"]["text"] == "hecho"
+    assert steps["ia"]["output"] == {
+        "text": reply_text or "", "provider": "ollama", "model": "mod-test", "steps": 2,
+    }
 
 
 def test_agent_tools_gated_call_waits_for_approval(store, monkeypatch):

@@ -5,12 +5,9 @@ import {
   hashPdfBase64,
   selladorPreviewCache,
 } from './lruMap';
-import { loadPdfDocument } from './pdfjs';
+import { loadPdfDocument, renderPdfPageToCanvas } from './pdfjs';
 import { acquireStagedFile, type StagedFileHandle } from '../../utils/stageFile';
 import {
-  MAX_PREVIEW_PIXEL_WIDTH,
-  MIN_PREVIEW_PIXEL_WIDTH,
-  selladorPreviewDpr,
   selladorPreviewPixelWidth,
 } from './previewDpi';
 import type { PdfPageSize, StampRect } from './utils';
@@ -87,24 +84,9 @@ async function renderPageWithStampFromPdf(
   stampUrl: string | null,
   stampRects: StampRect[],
 ): Promise<string> {
-  const page = await pdf.getPage(pageNum);
-  const unscaled = page.getViewport({ scale: 1 });
-  const dpr = selladorPreviewDpr();
-  const minScale = MIN_PREVIEW_PIXEL_WIDTH / unscaled.width;
-  const maxScale = MAX_PREVIEW_PIXEL_WIDTH / unscaled.width;
-  const scale = Math.min(Math.max((containerW / unscaled.width) * dpr, minScale), maxScale);
-  const viewport = page.getViewport({ scale });
-
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(viewport.width));
-  canvas.height = Math.max(1, Math.round(viewport.height));
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvasContext: ctx, viewport }).promise;
+  const { canvas, ctx, pxScale } = await renderPdfPageToCanvas(pdf, pageNum, containerW);
 
   if (stampUrl && stampRects.length > 0) {
-    const pxScale = viewport.width / unscaled.width;
     await drawStampsOnCanvas(ctx, stampUrl, stampRects, pxScale);
   }
 
