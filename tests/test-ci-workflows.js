@@ -9,6 +9,7 @@ const RELEASE_PATH = path.join(ROOT, '.github', 'workflows', 'release.yml');
 const SETUP_CI_PATH = path.join(ROOT, '.github', 'actions', 'setup-ci', 'action.yml');
 const RUNNER_PATH = path.join(ROOT, 'scripts', 'run-test-suites.js');
 const PACKAGE_PATH = path.join(ROOT, 'package.json');
+const FRONTEND_PACKAGE_PATH = path.join(ROOT, 'frontend', 'package.json');
 const UV_LOCK_PATH = path.join(ROOT, 'uv.lock');
 const NODE_VERSION_PATH = path.join(ROOT, '.node-version');
 const VITE_CONFIG_PATH = path.join(ROOT, 'frontend', 'vite.config.ts');
@@ -29,6 +30,7 @@ function run() {
   const setupCi = fs.readFileSync(SETUP_CI_PATH, 'utf8');
   const runner = fs.readFileSync(RUNNER_PATH, 'utf8');
   const packageJson = JSON.parse(fs.readFileSync(PACKAGE_PATH, 'utf8'));
+  const frontendPackageJson = JSON.parse(fs.readFileSync(FRONTEND_PACKAGE_PATH, 'utf8'));
   const nodeVersion = fs.readFileSync(NODE_VERSION_PATH, 'utf8').trim();
   const viteConfig = fs.readFileSync(VITE_CONFIG_PATH, 'utf8');
   const staticVitestConfig = fs.readFileSync(STATIC_VITEST_CONFIG_PATH, 'utf8');
@@ -48,7 +50,15 @@ function run() {
   assert(windowsJob.includes('runs-on: windows-latest'), 'Backend and quality checks run on Windows');
   const parallelStep = windowsJob.match(/- name: Run checks and test suites in parallel\r?\n\s+shell: bash\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
   const branches = [...parallelStep.matchAll(/"([^"]+)"/g)].map((match) => match[1].replace(/\s+/g, ' ').trim());
-  const qualityCommands = packageJson.scripts.ci.split(' && ').filter((command) => command !== 'npm test');
+  const qualityCommands = packageJson.scripts.ci.split(' && ')
+    .filter((command) => !['npm test', 'npm run typecheck:frontend'].includes(command))
+    .map((command) => command === 'npm run check:budgets' ? 'npm run build:frontend' : command);
+  assert(
+    frontendPackageJson.scripts.build.startsWith('tsc && ') &&
+      frontendPackageJson.scripts.build.includes('node scripts/canvas-appear-budget.mjs') &&
+      frontendPackageJson.scripts.build.includes('node scripts/shell-preload-budget.mjs'),
+    'The frontend build checks types and both budgets, replacing duplicate CI commands',
+  );
   assert(
     branches[0] === [...qualityCommands, ...['contracts', 'backend', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
     'Windows CI preserves every check from the shared quality gate in order and fails closed',
@@ -73,7 +83,11 @@ function run() {
 
   assert(nodeVersion === '22.19.0', '.node-version pins Node 22.19.0');
   assert(setupCi.includes("node-version-file: '.node-version'"), 'setup-ci reads the committed Node version file');
-  assert(setupCi.includes('cache: pip'), 'setup-ci caches Python dependencies');
+  assert(
+    setupCi.includes('uv cache dir') && setupCi.includes('path: ${{ steps.uv-cache.outputs.dir }}') &&
+      setupCi.includes("hashFiles('uv.lock', '.github/actions/setup-ci/action.yml')"),
+    'setup-ci caches the Python dependencies installed by uv, keyed by the lock and toolchain',
+  );
   assert(setupCi.includes('frontend/package-lock.json'), 'setup-ci cache key includes the frontend lockfile');
   assert(setupCi.includes('npm ci'), 'setup-ci installs root dependencies with npm ci');
   assert(setupCi.includes('npm ci --prefix frontend'), 'setup-ci installs frontend dependencies with npm ci');
@@ -105,6 +119,7 @@ function run() {
     'stress tests use the locked Python environment',
   );
   assertSingleWorker(viteConfig, 'Frontend Vitest');
+  assert(viteConfig.includes("pool: 'threads'"), 'Frontend uses one isolated thread to reduce worker startup cost');
   assertSingleWorker(staticVitestConfig, 'Static Vitest');
   assert(
     packageJson.scripts['audit:node'].includes('npm audit --omit=dev --audit-level=high') &&

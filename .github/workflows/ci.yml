@@ -53,7 +53,7 @@ jobs:
           "npm run lint:python && npm run typecheck:backend &&
           npm run check:any && npm run check:ratchet &&
           npm run audit:python && npm run audit:node &&
-          npm run typecheck:frontend && npm run check:budgets &&
+          npm run build:frontend &&
           node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js backend && node scripts/run-test-suites.js electron"
           "node scripts/run-test-suites.js frontend"
 
