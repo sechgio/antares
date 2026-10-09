@@ -13,7 +13,8 @@ const FETCH_ATTEMPTS = 3;
 const LIST_PER_PAGE = 100;
 const LIST_CONCURRENCY = 6;
 const MAX_FILE_PAGES = 30;
-const MAX_COMMENT_PAGES = 3;
+const MAX_COMMENT_PAGES = 5;
+const MAX_REVIEW_PAGES = 2;
 const COMMENT_MARKER = 'antares-review-policy:';
 
 function sleep(ms) {
@@ -99,6 +100,19 @@ async function fetchListPages(urls) {
   return { items, partial };
 }
 
+// Página a página: la primera corta agota la lista con una sola llamada. `truncated` avisa de que
+// quedaron datos sin leer, porque un ratio calculado sobre ellos mentiría.
+async function fetchPagedList(base, maxPages) {
+  const items = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const result = await settle(fetchListPage(listUrl(base, page)));
+    if (result.error) return { items, truncated: true };
+    items.push(...result.value);
+    if (result.value.length < LIST_PER_PAGE) return { items, truncated: false };
+  }
+  return { items, truncated: true };
+}
+
 async function fetchPrMeta(repo, number) {
   const raw = await withRetry(() => ghApiAsync([`repos/${repo}/pulls/${number}`], { timeout: FETCH_TIMEOUT_MS }));
   const meta = JSON.parse(raw || 'null');
@@ -123,25 +137,17 @@ async function fetchPrMeta(repo, number) {
 }
 
 async function fetchReviews(repo, number) {
-  const { items } = await fetchListPages([listUrl(`repos/${repo}/pulls/${number}/reviews`, 1)]);
-  return items.map((r) => ({ author: r.user, state: r.state, submittedAt: r.submitted_at, body: r.body }));
+  const { items, truncated } = await fetchPagedList(`repos/${repo}/pulls/${number}/reviews`, MAX_REVIEW_PAGES);
+  return {
+    items: items.map((r) => ({ author: r.user, state: r.state, submittedAt: r.submitted_at, body: r.body })),
+    truncated,
+  };
 }
 
-// El PR no anuncia cuántos comentarios tiene: se amplía sólo si la primera página viene llena.
+// El PR no anuncia cuántos comentarios tiene: la paginación crece solo si la página viene llena.
 async function fetchComments(repo, number) {
-  const base = `repos/${repo}/issues/${number}/comments`;
-  const first = await settle(fetchListPage(listUrl(base, 1)));
-  if (first.error) return { items: [], failed: true };
-  let items = first.value;
-  let failed = false;
-  if (items.length === LIST_PER_PAGE) {
-    const urls = [];
-    for (let page = 2; page <= MAX_COMMENT_PAGES; page++) urls.push(listUrl(base, page));
-    const rest = await fetchListPages(urls);
-    items = items.concat(rest.items);
-    failed = rest.partial;
-  }
-  return { items: items.map(normalizeComment), failed };
+  const { items, truncated } = await fetchPagedList(`repos/${repo}/issues/${number}/comments`, MAX_COMMENT_PAGES);
+  return { items: items.map(normalizeComment), truncated };
 }
 
 // Meta, primera página de archivos, revisiones y comentarios salen en paralelo; el resto de
@@ -158,11 +164,14 @@ async function fetchPrData(number, repo) {
 
   const pr = meta.value;
   const wantedPages = Math.min(Math.ceil(pr.changedFiles / LIST_PER_PAGE) || 1, MAX_FILE_PAGES);
-  const commentData = comments.value || { items: [], failed: true };
+  const reviewData = reviews.error ? { items: [], truncated: true } : reviews.value;
+  const commentData = comments.error ? { items: [], truncated: true } : comments.value;
   let partial =
     Boolean(firstFiles.error) ||
     Boolean(reviews.error) ||
-    commentData.failed ||
+    Boolean(comments.error) ||
+    reviewData.truncated ||
+    commentData.truncated ||
     wantedPages * LIST_PER_PAGE < pr.changedFiles;
   let files = firstFiles.error ? [] : firstFiles.value;
 
@@ -177,11 +186,12 @@ async function fetchPrData(number, repo) {
   return {
     pr: {
       ...pr,
-      reviews: reviews.error ? [] : reviews.value,
+      reviews: reviewData.items,
       comments: commentData.items,
       files: files.map(normalizeFile),
     },
     partial,
+    commentsComplete: !commentData.truncated,
   };
 }
 
@@ -214,7 +224,24 @@ function selectPolicyComment(comments) {
   return { update: marked[marked.length - 1] || null, remove: marked.slice(0, -1) };
 }
 
+// El head puede avanzar mientras se audita (un push nuevo cancela esta corrida). Publicar entonces
+// dejaría un informe apuntando a un commit que ya no es el del PR: lo decide el run más reciente.
+// Puro para poder probarlo sin gh; si no se puede comprobar, se publica (falla abierta).
+function shouldPublishReport(auditedSha, currentSha) {
+  return !auditedSha || !currentSha || auditedSha === currentSha;
+}
+
+async function currentHeadSha(repo, number) {
+  try {
+    const raw = await withRetry(() => ghApiAsync([`repos/${repo}/pulls/${number}`], { timeout: FETCH_TIMEOUT_MS }));
+    return (JSON.parse(raw || '{}').head || {}).sha || '';
+  } catch {
+    return '';
+  }
+}
+
 // Un único informe por PR: actualiza en el sitio y borra duplicados, sin volver a paginar la conversación.
+// Los duplicados solo se detectan dentro de `MAX_COMMENT_PAGES` páginas de comentarios.
 async function upsertPolicyComment(repo, pr, report) {
   const { update, remove } = selectPolicyComment(pr.comments);
   for (const stale of remove) {
@@ -233,9 +260,12 @@ async function upsertPolicyComment(repo, pr, report) {
 module.exports = {
   COMMENT_MARKER,
   currentBranchPr,
+  currentHeadSha,
   fetchPrData,
+  fetchPagedList,
   upsertPolicyComment,
   selectPolicyComment,
+  shouldPublishReport,
   normalizeFile,
   normalizeComment,
   ghErrorMessage,

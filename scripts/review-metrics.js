@@ -45,6 +45,9 @@ function hoursBetween(from, to) {
 }
 
 function firstReviewSignal(pr) {
+  // `gh` no expone cuándo se marcó listo un borrador: medirlo desde la creación castigaría al
+  // autor por tenerlo abierto, así que los borradores se excluyen en lugar de inflar la métrica.
+  if (pr.isDraft) return null;
   const authorLogin = pr.author && pr.author.login;
   const stamps = [];
   for (const r of pr.reviews || []) {
@@ -67,6 +70,18 @@ function nonAuthorApprovals(pr) {
   );
 }
 
+// Una ronda de retrabajo es lo que tuvo que rehacer el autor: dos revisores pidiendo lo mismo
+// cuentan como una sola, y de cada revisor manda su última review.
+function reworkRounds(pr) {
+  const authorLogin = pr.author && pr.author.login;
+  const latest = new Map();
+  for (const r of pr.reviews || []) {
+    if (!r.author || !r.author.login || r.author.login === authorLogin) continue;
+    latest.set(r.author.login, r.state);
+  }
+  return [...latest.values()].filter((state) => state === 'CHANGES_REQUESTED').length;
+}
+
 function pct(part, total, digits = 1) {
   if (total === 0) return null;
   return Number(((part / total) * 100).toFixed(digits));
@@ -79,20 +94,20 @@ function computeMetrics(prs) {
     ({ id, label, value, unit, target, op, ok, detail });
 
   const medianSize = median(list.map((pr) => effectiveChangedLines(pr).effective));
+  const drafts = list.filter((pr) => pr.isDraft).length;
   const firstReview = list.map(firstReviewSignal).filter((v) => v !== null);
   const medianFirst = median(firstReview);
   const covered = list.filter(hasThirdPartyApproval).length;
   const coverage = pct(covered, n);
   const stamps = list.filter((pr) =>
+    !pr.isDraft &&
     nonAuthorApprovals(pr).some((r) => {
       const delta = hoursBetween(pr.createdAt, r.submittedAt);
       return delta !== null && delta * 3600 < RUBBER_STAMP_SECONDS;
     }),
   ).length;
   const stampRate = pct(stamps, n);
-  const reworked = list.filter(
-    (pr) => (pr.reviews || []).filter((r) => r.state === 'CHANGES_REQUESTED').length > REWORK_ROUNDS,
-  ).length;
+  const reworked = list.filter((pr) => reworkRounds(pr) > REWORK_ROUNDS).length;
   const reworkRate = pct(reworked, n);
   const taxAcc = { prefixed: 0, total: 0 };
   for (const pr of list) {
@@ -115,7 +130,9 @@ function computeMetrics(prs) {
     metric('firstReviewHours', 'Tiempo hasta la primera revisión',
       medianFirst === null ? null : Number(medianFirst.toFixed(2)), 'horas', TARGETS.firstReviewHours, '<',
       medianFirst !== null && medianFirst < TARGETS.firstReviewHours,
-      firstReview.length === 0 ? 'sin señales de revisión' : `${firstReview.length} PRs con señal`),
+      firstReview.length === 0
+        ? (drafts > 0 ? `${drafts} en borrador excluidos` : 'sin señales de revisión')
+        : `${firstReview.length} PRs con señal${drafts > 0 ? ` · ${drafts} en borrador excluidos` : ''}`),
     metric('reviewCoverage', 'Cobertura de revisión', coverage, '%', TARGETS.reviewCoverage, '>=',
       coverage !== null && coverage >= TARGETS.reviewCoverage,
       `${covered}/${n} PRs con aprobación de un tercero`),
@@ -153,7 +170,7 @@ function renderMarkdown(metrics, days) {
     ...metrics.map((m) =>
       `| ${m.label} | ${formatValue(m.value, m.unit)} | ${renderTarget(m)} | ${m.ok ? '✅' : '⚠️'} | ${m.detail} |`),
     '',
-    '> Objetivos: tamaño < 400, primera review < 4 h, cobertura 100%, rubber-stamp < 5%.',
+    `> Objetivos: ${metrics.map((m) => `${m.label.toLowerCase()} ${renderTarget(m)}`).join(' · ')}.`,
   ].join('\n');
 }
 
@@ -249,6 +266,7 @@ module.exports = {
   hoursBetween,
   firstReviewSignal,
   nonAuthorApprovals,
+  reworkRounds,
   computeMetrics,
   renderMarkdown,
 };

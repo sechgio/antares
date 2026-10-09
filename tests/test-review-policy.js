@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
 
 const ROOT = path.join(__dirname, '..');
 const policy = require(path.join(ROOT, 'scripts', 'review-policy-check.js'));
@@ -38,6 +38,8 @@ function testArtifacts() {
   assert(/issues:\s+write/.test(wf), 'el workflow puede publicar y editar comentarios del PR');
   assert(/pull-requests:\s+read/.test(wf), 'el workflow solo lee los pull requests');
   assert(!/pull-requests:\s*write/.test(wf), 'el workflow no pide escribir en pull requests');
+  const agents = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
+  assert(agents.includes('size/exempt'), 'AGENTS.md documenta la etiqueta size/exempt');
   assert(wf.includes('edited'), 'el workflow reacciona a ediciones de la descripción');
   assert(wf.includes('labeled'), 'el workflow reacciona a cambios de etiquetas');
   assert(wf.includes('review-policy-check.js --pr "$PR_NUMBER"'), 'el workflow audita el PR indicado');
@@ -794,9 +796,185 @@ function testTaxonomyIgnoresAuthor() {
   eq(inPr.checks.find((c) => c.id === 'taxonomia').status, 'pass', 'la respuesta del autor no degrada el check');
 }
 
+function testStabilityAndExemptions() {
+  console.log('\nSeveridad estable, isNewFile y etiqueta documentada:');
+
+  const good = policy.evaluatePolicy({
+    number: 50,
+    body: goodPrBody(),
+    additions: 120,
+    deletions: 30,
+    files: [{ path: 'backend/core/repository.py', additions: 90, deletions: 20, status: 'modified' }],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  const ids = ['intencion', 'tamano'];
+  for (const id of ids) {
+    const severities = new Set(good.checks.filter((c) => c.id === id).map((c) => c.severity));
+    eq(severities.size, 1, `${id} mantiene una sola severidad en todos sus estados`);
+    eq([...severities][0], policy.BLOCKING, `${id} es bloqueante también cuando pasa o avisa`);
+  }
+
+  // Un archivo modificado sin `status` ya no parece nuevo.
+  assert(!policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0 }), 'sin status no se puede afirmar que es nuevo');
+  assert(!policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0, status: 'modified' }), 'modified no es nuevo');
+  assert(policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0, status: 'added' }), 'added es nuevo');
+  const noStatus = policy.evaluatePolicy({
+    number: 51,
+    body: goodPrBody(),
+    additions: 900,
+    deletions: 0,
+    files: [{ path: 'backend/handlers/nuevo.py', additions: 900, deletions: 0 }],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  eq(noStatus.checks.find((c) => c.id === 'archivos').status, 'pass', 'un archivo sin status no se marca como nuevo');
+}
+
+async function testCommentTruncation() {
+  console.log('\nConversación truncada:');
+
+  const truncated = policy.evaluatePolicy(
+    {
+      number: 52,
+      body: goodPrBody(),
+      additions: 20,
+      deletions: 2,
+      files: [{ path: 'backend/core/converter.py', additions: 20, deletions: 2, status: 'modified' }],
+      reviews: [],
+      comments: [{ author: { login: 'revisora' }, body: 'nit: ok' }],
+      author: { login: 'sechgio' },
+    },
+    { commentsComplete: false },
+  );
+  eq(truncated.checks.find((c) => c.id === 'taxonomia').status, 'skip', 'sin la conversación completa no se mide la taxonomía');
+  assert(
+    truncated.checks.find((c) => c.id === 'taxonomia').detail.includes('incompleto'),
+    'el detalle dice que el listado está incompleto',
+  );
+
+  const complete = policy.evaluatePolicy({
+    number: 53,
+    body: goodPrBody(),
+    additions: 20,
+    deletions: 2,
+    files: [{ path: 'backend/core/converter.py', additions: 20, deletions: 2, status: 'modified' }],
+    reviews: [],
+    comments: [{ author: { login: 'revisora' }, body: 'nit: ok' }],
+    author: { login: 'sechgio' },
+  });
+  eq(complete.checks.find((c) => c.id === 'taxonomia').status, 'pass', 'con la conversación completa sí se mide');
+
+  assert(audit.shouldPublishReport('sha1', 'sha1'), 'el head no avanzó: se publica');
+  assert(!audit.shouldPublishReport('sha1', 'sha2'), 'el head avanzó: no se publica un informe obsoleto');
+  assert(audit.shouldPublishReport('', 'sha2'), 'sin sha auditado se publica (falla abierta)');
+  assert(audit.shouldPublishReport('sha1', ''), 'sin poder comprobar se publica (falla abierta)');
+}
+
+async function testCommentPagination() {
+  console.log('\nPaginación de la conversación:');
+
+  const LIST_PER_PAGE = 100;
+  const base = 'repos/o/r/issues/7/comments';
+  const pageUrl = (n) => `${base}?per_page=${LIST_PER_PAGE}&page=${n}`;
+  const scripted = new Map();
+  const calls = [];
+  const full = (tag) => Array.from({ length: LIST_PER_PAGE }, (_, i) => ({ id: `${tag}-${i}`, user: { login: 'r' }, body: 'nit: x' }));
+
+  stubModule('scripts/lib/loop-utils', {
+    ghApiAsync: async (args) => {
+      if (!scripted.has(args[0])) throw new Error(`página inesperada: ${args[0]}`);
+      calls.push(args[0]);
+      return JSON.stringify(scripted.get(args[0]));
+    },
+    ghAsync: async () => '',
+  });
+  evictModule('scripts/lib/pr-audit');
+  const fresh = require(path.join(ROOT, 'scripts', 'lib', 'pr-audit.js'));
+
+  scripted.set(pageUrl(1), [{ id: 'a', user: { login: 'r' }, body: 'nit: x' }]);
+  calls.length = 0;
+  const one = await fresh.fetchPagedList(base, 5);
+  eq(calls.length, 1, 'una página corta no pide más');
+  eq(one.items.length, 1, 'no queda nada por leer');
+  eq(one.truncated, false, 'sin truncamiento');
+
+  scripted.set(pageUrl(1), full('p1'));
+  scripted.set(pageUrl(2), []);
+  calls.length = 0;
+  const two = await fresh.fetchPagedList(base, 5);
+  eq(two.items.length, LIST_PER_PAGE, 'una página llena sí pide la siguiente');
+  eq(calls.length, 2, 'pide justo hasta la primera corta');
+  eq(two.truncated, false, 'la página corta agota la lista');
+
+  for (let page = 1; page <= 5; page++) scripted.set(pageUrl(page), full(`q${page}`));
+  calls.length = 0;
+  const capped = await fresh.fetchPagedList(base, 5);
+  eq(capped.truncated, true, 'agotar el tope con páginas llenas avisa de que hay más');
+  eq(capped.items.length, LIST_PER_PAGE * 5, 'trae todas las páginas que pudo leer');
+
+  scripted.clear();
+  calls.length = 0;
+  const failed = await fresh.fetchPagedList(base, 5);
+  eq(failed.items.length, 0, 'sin páginas legibles no hay comentarios');
+  eq(failed.truncated, true, 'un fallo de red también marca truncamiento');
+
+  evictModule('scripts/lib/pr-audit');
+  evictModule('scripts/lib/loop-utils');
+}
+
+function testMetricsRounds() {
+  console.log('\nRondas de retrabajo y borradores:');
+
+  const prs = [
+    {
+      author: { login: 'a' },
+      createdAt: '2026-08-01T10:00:00Z',
+      isDraft: true,
+      additions: 100,
+      deletions: 0,
+      reviews: [
+        { author: { login: 'r1' }, state: 'CHANGES_REQUESTED', submittedAt: '2026-08-01T10:05:00Z' },
+        { author: { login: 'r2' }, state: 'CHANGES_REQUESTED', submittedAt: '2026-08-01T10:06:00Z' },
+      ],
+      comments: [],
+    },
+    {
+      author: { login: 'b' },
+      createdAt: '2026-08-02T10:00:00Z',
+      isDraft: true,
+      additions: 100,
+      deletions: 0,
+      reviews: [{ author: { login: 'r1' }, state: 'APPROVED', submittedAt: '2026-08-02T10:02:00Z' }],
+      comments: [],
+    },
+  ];
+  const byId = Object.fromEntries(metrics.computeMetrics(prs).map((m) => [m.id, m]));
+  eq(byId.firstReviewHours.value, null, 'los borradores no miden tiempo hasta la primera revisión');
+  assert(byId.firstReviewHours.detail.includes('borrador'), 'el detalle dice cuántos borradores se excluyeron');
+  eq(byId.rubberStamp.value, 0, 'los borradores no cuentan como rubber-stamp');
+
+  // Dos revisores pidiendo cambios en la misma Review = una ronda.
+  eq(metrics.reworkRounds(prs[0]), 2, 'dos revisores distintos son dos peticiones');
+  const sameTwice = metrics.reworkRounds({
+    author: { login: 'a' },
+    reviews: [
+      { author: { login: 'r1' }, state: 'CHANGES_REQUESTED' },
+      { author: { login: 'r1' }, state: 'CHANGES_REQUESTED' },
+      { author: { login: 'a' }, state: 'CHANGES_REQUESTED' },
+    ],
+  });
+  eq(sameTwice, 1, 'las reviews repetidas de un revisor cuentan una vez y las propias ninguna');
+
+  const md = metrics.renderMarkdown(metrics.computeMetrics(prs), 14);
+  assert(md.includes('concentración de autor'), 'el pie lista los siete objetivos');
+  assert(!md.includes('Objetivos: tamaño < 400'), 'el pie ya no es una lista corta escrita a mano');
+}
+
 function testAdvisoryChecks() {
   console.log('\nChecks no bloqueantes y datos incompletos:');
-
   const renamed = policy.evaluatePolicy({
     number: 20,
     body: goodPrBody(),
@@ -871,6 +1049,10 @@ async function run() {
   testIntentExemptions();
   testRiskSection();
   testTaxonomyIgnoresAuthor();
+  testStabilityAndExemptions();
+  await testCommentTruncation();
+  await testCommentPagination();
+  testMetricsRounds();
   testDraftDowngrade();
   testSelectPolicyComment();
   await testPrAuditNormalizers();

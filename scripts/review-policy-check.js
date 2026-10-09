@@ -16,9 +16,11 @@ const { parseCliArgs, detectRepo } = require('./lib/loop-utils');
 const {
   COMMENT_MARKER,
   currentBranchPr,
+  currentHeadSha,
   fetchPrData,
   ghErrorMessage,
   isMissingGh,
+  shouldPublishReport,
   upsertPolicyComment,
 } = require('./lib/pr-audit');
 
@@ -65,10 +67,9 @@ function isGeneratedPath(filePath) {
 }
 
 function isNewFile(file) {
-  const status = String(file.status || '').toLowerCase();
-  if (status) return status === 'added';
-  // Payloads sin `status` (pruebas unitarias): un archivo puramente nuevo no tiene borrados.
-  return (Number(file.deletions) || 0) === 0;
+  // Sin `status` no se puede afirmar que el archivo sea nuevo: REST siempre lo manda, así que un
+  // payload sin él es un archivo modificado del que faltan datos, no un archivo creado.
+  return String((file && file.status) || '').toLowerCase() === 'added';
 }
 
 function effectiveBodyLength(body) {
@@ -165,6 +166,8 @@ function effectiveChangedLines(data) {
 
 function evaluatePolicy(pr, meta = {}) {
   const data = pr || {};
+  // `commentsComplete: false` = la conversación viene truncada y el ratio mentiría.
+  const commentsComplete = meta.commentsComplete !== false;
   const files = data.files || [];
   const body = String(data.body || '').trim();
   const isDraft = Boolean(data.isDraft);
@@ -201,6 +204,7 @@ function evaluatePolicy(pr, meta = {}) {
       'Intención declarada',
       'skip',
       botAuthor ? 'PR abierto por un bot: no se exige intención.' : 'El diff solo toca archivos generados: no se exige intención.',
+      true,
     );
   } else {
     add(
@@ -227,13 +231,20 @@ function evaluatePolicy(pr, meta = {}) {
       'Tamaño del PR',
       'skip',
       `${sizeUnknownReason}: no se puede medir ni bloquear por tamaño.`,
+      true,
     );
   } else if (size === 'ok') {
-    add('tamano', 'Tamaño del PR', 'pass', `${sizeDetail} en ${files.length} archivo(s)`);
+    add('tamano', 'Tamaño del PR', 'pass', `${sizeDetail} en ${files.length} archivo(s)`, true);
   } else if (size === 'warn') {
-    add('tamano', 'Tamaño del PR', 'warn', `${sizeDetail} (>${SIZE_WARN}): considera partirlo en PRs apilados.`);
+    add('tamano', 'Tamaño del PR', 'warn', `${sizeDetail} (>${SIZE_WARN}): considera partirlo en PRs apilados.`, true);
   } else if (sizeExempt) {
-    add('tamano', 'Tamaño del PR', 'warn', `${sizeDetail} (≥${SIZE_LARGE}) declarado con la etiqueta \`${EXEMPT_LABEL}\`.`);
+    add(
+      'tamano',
+      'Tamaño del PR',
+      'warn',
+      `${sizeDetail} (≥${SIZE_LARGE}) declarado con la etiqueta \`${EXEMPT_LABEL}\`.`,
+      true,
+    );
   } else {
     add(
       'tamano',
@@ -309,7 +320,14 @@ function evaluatePolicy(pr, meta = {}) {
     (data.reviews || []).concat(data.comments || []),
     data.author && data.author.login,
   );
-  if (tax.total === 0) {
+  if (!commentsComplete) {
+    add(
+      'taxonomia',
+      'Taxonomía de comentarios',
+      'skip',
+      `Listado de comentarios incompleto (${tax.total} leídos): no se puede medir la taxonomía.`,
+    );
+  } else if (tax.total === 0) {
     add('taxonomia', 'Taxonomía de comentarios', 'skip', 'Sin comentarios de revisión aún');
   } else {
     const pct = Math.round(tax.ratio * 100);
@@ -433,7 +451,7 @@ async function run() {
     process.exit(0);
   }
 
-  const result = evaluatePolicy(pr, { partial: data.partial });
+  const result = evaluatePolicy(pr, { partial: data.partial, commentsComplete: data.commentsComplete });
   const report = renderReport(pr, result, { headSha: pr.headRefOid });
   const timingMs = Date.now() - startedAt;
 
@@ -453,11 +471,15 @@ async function run() {
   annotate(result);
 
   if (args.comment) {
-    try {
-      const action = await upsertPolicyComment(repo, pr, report);
-      console.log(`Informe ${action} en el PR.`);
-    } catch (err) {
-      console.warn(`⚠️  No se pudo comentar en el PR: ${ghErrorMessage(err).split('\n').pop()}`);
+    if (shouldPublishReport(pr.headRefOid, await currentHeadSha(repo, pr.number))) {
+      try {
+        const action = await upsertPolicyComment(repo, pr, report);
+        console.log(`Informe ${action} en el PR.`);
+      } catch (err) {
+        console.warn(`⚠️  No se pudo comentar en el PR: ${ghErrorMessage(err).split('\n').pop()}`);
+      }
+    } else {
+      console.log('⏭️  El PR avanzó mientras se auditaba: otro run publicará el informe fresco.');
     }
   }
 
