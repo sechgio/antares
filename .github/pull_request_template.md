@@ -13,7 +13,6 @@
 ## Verification
 
 - [ ] `npm run ci` pasa en local
-- [ ] Tests añadidos/actualizados que fallan sin este cambio
 - [ ] Probé la ruta negativa (entrada inválida, job cancelado, archivo ausente)
 
 ## Notes for the reviewer
@@ -23,11 +22,11 @@
 ## Checklist
 
 - [ ] Leí mi propio diff completo antes de pedir revisión
-- [ ] ≤ 400 líneas cambiadas; si no, declaré `cambio amplio: <archivos> — <motivo> — <riesgo> — <verificación>` en el cuerpo
 - [ ] Sin `any` / `# type: ignore` / `eslint-disable` nuevos sin justificar arriba
-- [ ] Ningún archivo nuevo supera 500 líneas
 - [ ] `CHANGELOG.md` actualizado si hay cambio visible para el usuario
 - [ ] Docs/ADR actualizados si cambió una restricción arquitectónica
+
+<!-- Tamaño del diff, archivos nuevos y tests los audita `review-policy` en cada push: lee su comentario en el PR. -->
 
 ---
 

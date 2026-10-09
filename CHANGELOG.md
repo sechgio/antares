@@ -20,6 +20,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Changed
 - **Barra lateral**: nuevo riel con los grupos General, Producción, Reportes y Herramientas, teñido con el acento del tema de Apariencia; al pasar el cursor por un grupo se muestra su panel flotante y se puede fijar (botón o `Ctrl+B`) para dejarlo unido al layout. La campana de notificaciones y el menú de cuenta (Cuenta, Configuración, Cerrar sesión o Iniciar sesión) pasan al riel; la barra de título se integra en la tarjeta de contenido con controles de ventana rediseñados y sin el botón de Configuración.
 - **CI**: `review-policy` avisa cuando un PR supera 400 líneas efectivas sin marcador `cambio amplio:` en el cuerpo ni etiqueta `size/exempt`.
+- **Política de revisión**: se retiran los modos `--fail-on`/`--enforce` sin consumidor y los ítems de la plantilla de PR que la máquina ya audita (tamaño, archivos nuevos, tests). Los checks y el veredicto no cambian.
 - **Loops de push y pr-fix**: `commitAll` commitea el índice cuando hay archivos stageados en lugar de barrer todo el worktree con `git add -A`, y `pr-fix:ship` aborta si el worktree trae cambios anteriores a sus heurísticas.
 - **Política de diffs**: `AGENTS.md` endurece la regla de cambios mínimos — subordina cualquier skill instalada, permite enmendar la lista de archivos declarada, exige persistir la declaración `cambio amplio:` en el commit o PR, documenta que `push:ship`/`pr-fix:ship` stagean todo el worktree y precisa las acompañantes permitidas.
 

@@ -5,13 +5,11 @@
  * Severidades: solo los checks `blocking` pueden tumbar el job. Bloquean la intención vacía y el
  * tamaño grande sin declarar (etiqueta `size/exempt`); el resto son señales para el revisor humano.
  * La puerta falla abierta ante problemas de infraestructura (sin `gh`, API caída, PR cerrado) y
- * falla cerrada ante errores de uso (repo o número de PR imposibles, `--fail-on` inválido).
+ * falla cerrada ante errores de uso (repo o número de PR imposibles).
  *
  *   node scripts/review-policy-check.js --pr 42 [--comment] [--json]
- *                                       [--fail-on blocking|advisory|never]
  *
- * `--enforce` es un alias de `--fail-on blocking`. Sin ninguna de las dos la auditoría informa y sale 0.
- * Exit 1 solo cuando `--fail-on` encuentra checks en su umbral, o ante un error de uso.
+ * Exit 1 solo cuando un check bloqueante falla, o ante un error de uso.
  */
 
 const { parseCliArgs, detectRepo } = require('./lib/loop-utils');
@@ -33,7 +31,6 @@ const COMMENT_PREFIXES = ['blocking', 'suggestion', 'nit', 'question', 'praise']
 const TAXONOMY_TARGET = 0.8;
 const BLOCKING = 'blocking';
 const ADVISORY = 'advisory';
-const FAIL_MODES = [BLOCKING, 'advisory', 'never'];
 const STATUS_ICON = { pass: '✅', warn: '⚠️', fail: '❌', skip: '⏭️' };
 const VERDICT_ICON = { blocked: '❌', warning: '⚠️', ok: '✅' };
 const GENERATED_PATHS = [
@@ -343,22 +340,18 @@ function annotate(result) {
   }
 }
 
-function shouldFail(result, mode) {
-  if (mode === 'never') return false;
-  if (result.verdict === 'blocked') return true;
-  return mode === 'advisory' && result.verdict === 'warning';
+function shouldFail(result) {
+  return result.verdict === 'blocked';
 }
 
 function parseArgs(argv) {
   return parseCliArgs(argv, {
-    defaults: { pr: null, comment: false, json: false, repo: null, failOn: 'never', enforce: false },
+    defaults: { pr: null, comment: false, json: false, repo: null },
     flags: {
-      '--enforce': { key: 'enforce' },
       '--comment': { key: 'comment' },
       '--json': { key: 'json' },
       '--pr': { key: 'pr', value: true },
       '--repo': { key: 'repo', value: true },
-      '--fail-on': { key: 'failOn', value: true },
     },
   });
 }
@@ -371,8 +364,6 @@ function usageError(message) {
 async function run() {
   const startedAt = Date.now();
   const args = parseArgs(process.argv.slice(2));
-  const mode = args.enforce ? BLOCKING : args.failOn;
-  if (!FAIL_MODES.includes(mode)) usageError(`--fail-on vale ${FAIL_MODES.join(', ')}; recibido "${args.failOn}".`);
 
   const repo = args.repo || detectRepo();
   if (!repo) usageError('No se pudo determinar el repositorio. Usa --repo owner/name');
@@ -413,7 +404,7 @@ async function run() {
   } else {
     console.log(`\nPolítica de revisión — ${repo}#${pr.number}: ${pr.title}\n`);
     console.log(report);
-    console.log(`\nAuditado en ${(timingMs / 1000).toFixed(1)} s · --fail-on=${mode}${data.partial ? ' · datos parciales' : ''}.`);
+    console.log(`\nAuditado en ${(timingMs / 1000).toFixed(1)} s${data.partial ? ' · datos parciales' : ''}.`);
   }
   annotate(result);
 
@@ -426,11 +417,9 @@ async function run() {
     }
   }
 
-  if (shouldFail(result, mode)) {
-    const blockers = result.checks.filter(
-      (c) => c.status === 'fail' || (mode === 'advisory' && c.status === 'warn'),
-    );
-    console.error(`\n✗ ${blockers.length} check(s) con modo --fail-on=${mode}: ${blockers.map((c) => c.id).join(', ')}`);
+  if (shouldFail(result)) {
+    const blockers = result.checks.filter((c) => c.status === 'fail');
+    console.error(`\n✗ ${blockers.length} check(s) bloqueante(s): ${blockers.map((c) => c.id).join(', ')}`);
     process.exit(1);
   }
   process.exit(0);
@@ -439,12 +428,7 @@ async function run() {
 module.exports = {
   SIZE_WARN,
   SIZE_LARGE,
-  MAX_NEW_FILE_LINES,
   MIN_BODY_CHARS,
-  EXEMPT_LABEL,
-  COMMENT_PREFIXES,
-  GENERATED_PATHS,
-  TAXONOMY_TARGET,
   BLOCKING,
   ADVISORY,
   classifySize,
@@ -456,7 +440,6 @@ module.exports = {
   hasThirdPartyApproval,
   humanComments,
   taxonomyCompliance,
-  summarizeFiles,
   evaluatePolicy,
   renderReport,
   shouldFail,

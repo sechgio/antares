@@ -38,7 +38,7 @@ function testArtifacts() {
   assert(/issues:\s+write/.test(wf), 'el workflow puede publicar y editar comentarios del PR');
   assert(wf.includes('edited'), 'el workflow reacciona a ediciones de la descripción');
   assert(wf.includes('labeled'), 'el workflow reacciona a cambios de etiquetas');
-  assert(wf.includes('--fail-on blocking'), 'el workflow fija el umbral de bloqueo');
+  assert(wf.includes('review-policy-check.js --pr "$PR_NUMBER"'), 'el workflow audita el PR indicado');
   assert(wf.includes('^[1-9][0-9]*$'), 'el workflow valida pr_number en dispatch');
   assert(wf.includes('timeout-minutes:'), 'el workflow acota su tiempo de ejecución');
   assert(wf.includes('persist-credentials: false'), 'el checkout no persiste credenciales');
@@ -640,12 +640,9 @@ function testAdvisoryChecks() {
   );
   eq(partial.verdict, 'warning', 'un dato incompleto no convierte el aviso en bloqueo');
 
-  const withVerdict = (verdict) => ({ verdict, checks: [], stats: {} });
-  assert(!policy.shouldFail(withVerdict('blocked'), 'never'), 'never nunca falla');
-  assert(policy.shouldFail(withVerdict('blocked'), policy.BLOCKING), 'blocking falla ante bloqueos');
-  assert(!policy.shouldFail(withVerdict('warning'), policy.BLOCKING), 'blocking ignora los avisos');
-  assert(policy.shouldFail(withVerdict('warning'), 'advisory'), 'advisory sí exige limpiar avisos');
-  assert(!policy.shouldFail(withVerdict('ok'), 'advisory'), 'sin avisos nada falla');
+  assert(policy.shouldFail({ verdict: 'blocked' }), 'un veredicto bloqueado hace fallar el job');
+  assert(!policy.shouldFail({ verdict: 'warning' }), 'un aviso no tumba el job');
+  assert(!policy.shouldFail({ verdict: 'ok' }), 'sin problemas nada falla');
 
   assert(policy.isBot({ login: 'github-actions', type: 'Bot' }), 'REST identifica bots por user.type');
   assert(!policy.isBot({ login: 'sechgio', type: 'User' }), 'un humano no es bot');
