@@ -36,21 +36,15 @@ jobs:
           restore-keys: |
             msys2-pango-${{ runner.os }}-
 
-      - name: Install Pango/GTK via MSYS2 (for WeasyPrint)
-        run: |
-          C:\msys64\usr\bin\bash -lc 'pacman -S mingw-w64-x86_64-pango --noconfirm --needed'
-          echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-          if (Test-Path "C:\msys64\mingw64\bin\python.exe") {
-            Remove-Item "C:\msys64\mingw64\bin\python.exe" -Force
-          }
-          echo "WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
-
       - name: Run checks and test suites in parallel
         shell: bash
+        env:
+          WEASYPRINT_DLL_DIRECTORIES: C:\msys64\mingw64\bin
         run: >-
           npx --no-install concurrently --kill-others-on-fail --success all
           --names quality-backend,frontend --timings
-          "npm run lint:python && npm run typecheck:backend &&
+          "pwsh -NoProfile -File scripts/install-ci-pango.ps1 &&
+          npm run lint:python && npm run typecheck:backend &&
           npm run check:any && npm run check:ratchet &&
           npm run audit:python && npm run audit:node &&
           npm run build:frontend &&

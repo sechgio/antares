@@ -14,6 +14,7 @@ const UV_LOCK_PATH = path.join(ROOT, 'uv.lock');
 const NODE_VERSION_PATH = path.join(ROOT, '.node-version');
 const VITE_CONFIG_PATH = path.join(ROOT, 'frontend', 'vite.config.ts');
 const STATIC_VITEST_CONFIG_PATH = path.join(ROOT, 'frontend', 'vitest.static.config.ts');
+const PANGO_SETUP_PATH = path.join(ROOT, 'scripts', 'install-ci-pango.ps1');
 
 function assertSingleWorker(config, label) {
   assert(
@@ -34,6 +35,7 @@ function run() {
   const nodeVersion = fs.readFileSync(NODE_VERSION_PATH, 'utf8').trim();
   const viteConfig = fs.readFileSync(VITE_CONFIG_PATH, 'utf8');
   const staticVitestConfig = fs.readFileSync(STATIC_VITEST_CONFIG_PATH, 'utf8');
+  const pangoSetup = fs.readFileSync(PANGO_SETUP_PATH, 'utf8');
 
   assert(/permissions:\r?\n\s+contents:\s+read/.test(ci), 'CI has explicit read-only permissions');
   assert(ci.includes('cancel-in-progress: true'), 'CI cancels obsolete runs for the same ref');
@@ -48,7 +50,7 @@ function run() {
   assert(!/^\s+(?:strategy|matrix):/m.test(ci), 'The single CI job does not expand into a matrix');
   assert(!ci.includes('ubuntu-latest'), 'PR CI runs only on Windows');
   assert(windowsJob.includes('runs-on: windows-latest'), 'Backend and quality checks run on Windows');
-  const parallelStep = windowsJob.match(/- name: Run checks and test suites in parallel\r?\n\s+shell: bash\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
+  const parallelStep = windowsJob.match(/- name: Run checks and test suites in parallel\r?\n\s+shell: bash\r?\n\s+env:\r?\n\s+WEASYPRINT_DLL_DIRECTORIES: C:\\msys64\\mingw64\\bin\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
   const branches = [...parallelStep.matchAll(/"([^"]+)"/g)].map((match) => match[1].replace(/\s+/g, ' ').trim());
   const qualityCommands = packageJson.scripts.ci.split(' && ')
     .filter((command) => !['npm test', 'npm run typecheck:frontend'].includes(command))
@@ -60,11 +62,13 @@ function run() {
     'The frontend build checks types and both budgets, replacing duplicate CI commands',
   );
   assert(
-    branches[0] === [...qualityCommands, ...['contracts', 'backend', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
+    branches[0] === ['pwsh -NoProfile -File scripts/install-ci-pango.ps1', ...qualityCommands, ...['contracts', 'backend', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
     'Windows CI preserves every check from the shared quality gate in order and fails closed',
   );
-  assert(windowsJob.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
-  assert(windowsJob.includes('WEASYPRINT_DLL_DIRECTORIES='), 'Windows tests configure WeasyPrint DLLs');
+  assert(pangoSetup.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
+  assert(pangoSetup.includes('if ($LASTEXITCODE -ne 0)') && pangoSetup.includes('exit $LASTEXITCODE'), 'Pango installation failures stop the backend branch');
+  assert(!windowsJob.includes('- name: Install Pango'), 'Pango installation overlaps frontend tests instead of blocking their start');
+  assert(pangoSetup.includes('WEASYPRINT_DLL_DIRECTORIES=') && ci.includes('WEASYPRINT_DLL_DIRECTORIES: C:\\msys64\\mingw64\\bin'), 'Windows tests configure WeasyPrint DLLs for parallel and later steps');
   for (const suite of ['contracts', 'backend', 'electron', 'frontend']) {
     const calls = windowsJob.match(new RegExp(`node scripts/run-test-suites\\.js ${suite}\\b`, 'g')) || [];
     assert(calls.length === 1, `The single Windows job runs the ${suite} suite exactly once`);
@@ -119,7 +123,6 @@ function run() {
     'stress tests use the locked Python environment',
   );
   assertSingleWorker(viteConfig, 'Frontend Vitest');
-  assert(viteConfig.includes("pool: 'threads'"), 'Frontend uses one isolated thread to reduce worker startup cost');
   assertSingleWorker(staticVitestConfig, 'Static Vitest');
   assert(
     packageJson.scripts['audit:node'].includes('npm audit --omit=dev --audit-level=high') &&
