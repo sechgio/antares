@@ -45,19 +45,16 @@ jobs:
           }
           echo "WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Run quality checks
-        shell: bash
-        run: >-
-          npm run lint:python && npm run typecheck:backend &&
-          npm run check:any && npm run check:ratchet &&
-          npm run audit:python && npm run audit:node &&
-          npm run typecheck:frontend && npm run check:budgets
-
-      - name: Run test suites in parallel
+      - name: Run checks and test suites in parallel
         shell: bash
         run: >-
           npx --no-install concurrently --kill-others-on-fail --success all
-          "node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js backend && node scripts/run-test-suites.js electron"
+          --names quality-backend,frontend --timings
+          "npm run lint:python && npm run typecheck:backend &&
+          npm run check:any && npm run check:ratchet &&
+          npm run audit:python && npm run audit:node &&
+          npm run typecheck:frontend && npm run check:budgets &&
+          node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js backend && node scripts/run-test-suites.js electron"
           "node scripts/run-test-suites.js frontend"
 
       - name: Run slow stress tests (excluded from the default gate)

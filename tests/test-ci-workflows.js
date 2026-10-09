@@ -46,10 +46,11 @@ function run() {
   assert(!/^\s+(?:strategy|matrix):/m.test(ci), 'The single CI job does not expand into a matrix');
   assert(!ci.includes('ubuntu-latest'), 'PR CI runs only on Windows');
   assert(windowsJob.includes('runs-on: windows-latest'), 'Backend and quality checks run on Windows');
+  const parallelStep = windowsJob.match(/- name: Run checks and test suites in parallel\r?\n\s+shell: bash\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
+  const branches = [...parallelStep.matchAll(/"([^"]+)"/g)].map((match) => match[1].replace(/\s+/g, ' ').trim());
   const qualityCommands = packageJson.scripts.ci.split(' && ').filter((command) => command !== 'npm test');
-  const qualityStep = windowsJob.match(/- name: Run quality checks\r?\n\s+shell: bash\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
   assert(
-    qualityStep.trim().split(/\s*&&\s*/).join(' && ') === qualityCommands.join(' && '),
+    branches[0] === [...qualityCommands, ...['contracts', 'backend', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
     'Windows CI preserves every check from the shared quality gate in order and fails closed',
   );
   assert(windowsJob.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
@@ -59,16 +60,15 @@ function run() {
     assert(calls.length === 1, `The single Windows job runs the ${suite} suite exactly once`);
   }
   assert(!/run: node scripts\/run-test-suites\.js\s*$/m.test(ci), 'CI does not repeat the full suite alongside parallel suites');
-  const parallelStep = windowsJob.match(/- name: Run test suites in parallel\r?\n\s+shell: bash\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
   assert(
     parallelStep.includes('npx --no-install concurrently --kill-others-on-fail --success all'),
     'The test step runs concurrently and fails if either branch fails',
   );
   assert(
-    parallelStep.includes('"node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js backend && node scripts/run-test-suites.js electron"') &&
-      parallelStep.includes('"node scripts/run-test-suites.js frontend"'),
-    'The single runner overlaps frontend with backend, contracts, and Electron using two branches',
+    branches.length === 2 && branches[1] === 'node scripts/run-test-suites.js frontend',
+    'The single runner overlaps frontend with quality checks, backend, contracts, and Electron using two branches',
   );
+  assert(parallelStep.includes('--names quality-backend,frontend --timings'), 'CI logs the duration of each parallel branch');
   assert(windowsJob.includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
 
   assert(nodeVersion === '22.19.0', '.node-version pins Node 22.19.0');
