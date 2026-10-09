@@ -40,7 +40,10 @@ function run() {
   assert(!/\bnpm install\b/.test(ci), 'CI never performs mutable npm install');
   assert(ci.includes('persist-credentials: false'), 'CI checkout does not persist Git credentials');
   assertActionsPinned(ci, 'CI');
-  const [, windowsJob = '', frontendJob = ''] = ci.split(/^  (?:verify|test-frontend):\s*$/m);
+  const ciJobs = ci.split(/^jobs:\s*$/m)[1] || '';
+  const windowsJob = ciJobs.split(/^  verify:\s*$/m)[1] || '';
+  assert((ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === 1, 'CI has exactly one job');
+  assert(!/^\s+(?:strategy|matrix):/m.test(ci), 'The single CI job does not expand into a matrix');
   assert(!ci.includes('ubuntu-latest'), 'PR CI runs only on Windows');
   assert(windowsJob.includes('runs-on: windows-latest'), 'Backend and quality checks run on Windows');
   const qualityCommands = packageJson.scripts.ci.split(' && ').filter((command) => command !== 'npm test');
@@ -51,22 +54,22 @@ function run() {
   );
   assert(windowsJob.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
   assert(windowsJob.includes('WEASYPRINT_DLL_DIRECTORIES='), 'Windows tests configure WeasyPrint DLLs');
-  for (const suite of ['contracts', 'backend', 'electron']) {
-    assert(windowsJob.includes(`run: node scripts/run-test-suites.js ${suite}`), `Windows CI runs the ${suite} suite`);
+  for (const suite of ['contracts', 'backend', 'electron', 'frontend']) {
+    const calls = windowsJob.match(new RegExp(`node scripts/run-test-suites\\.js ${suite}\\b`, 'g')) || [];
+    assert(calls.length === 1, `The single Windows job runs the ${suite} suite exactly once`);
   }
-  assert(!/run: node scripts\/run-test-suites\.js\s*$/m.test(ci), 'CI does not repeat the full suite alongside frontend shards');
-  assert(windowsJob.includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
-  assert(frontendJob.includes('runs-on: windows-latest'), 'Frontend shards run on Windows');
-  assert(frontendJob.includes('shard: [1, 2]'), 'Frontend tests run in two complementary shards');
-  assert(frontendJob.includes('fail-fast: false'), 'A failing shard does not cancel the other shard');
-  assert(!/^\s+needs:/m.test(frontendJob), 'Frontend shards run in parallel with backend and quality checks');
-  assert(frontendJob.includes("node-version-file: '.node-version'"), 'Frontend shards use the pinned Node version');
-  assert(frontendJob.includes('run: npm ci --prefix frontend'), 'Frontend shards install locked frontend dependencies');
-  assert(frontendJob.includes('run: npm run test --prefix frontend -- --shard=${{ matrix.shard }}/2'), 'Frontend shard selection reaches Vitest');
+  assert(!/run: node scripts\/run-test-suites\.js\s*$/m.test(ci), 'CI does not repeat the full suite alongside parallel suites');
+  const parallelStep = windowsJob.match(/- name: Run test suites in parallel\r?\n\s+shell: bash\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
   assert(
-    /if: matrix\.shard == 1\r?\n\s+run: npm run test:static --prefix frontend/.test(frontendJob),
-    'Static frontend tests run exactly once',
+    parallelStep.includes('npx --no-install concurrently --kill-others-on-fail --success all'),
+    'The test step runs concurrently and fails if either branch fails',
   );
+  assert(
+    parallelStep.includes('"node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js backend && node scripts/run-test-suites.js electron"') &&
+      parallelStep.includes('"node scripts/run-test-suites.js frontend"'),
+    'The single runner overlaps frontend with backend, contracts, and Electron using two branches',
+  );
+  assert(windowsJob.includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
 
   assert(nodeVersion === '22.19.0', '.node-version pins Node 22.19.0');
   assert(setupCi.includes("node-version-file: '.node-version'"), 'setup-ci reads the committed Node version file');
