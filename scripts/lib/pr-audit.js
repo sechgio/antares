@@ -113,8 +113,9 @@ async function fetchPrMeta(repo, number) {
     headRefOid: (meta.head && meta.head.sha) || '',
     baseRefName: (meta.base && meta.base.ref) || '',
     headRefName: (meta.head && meta.head.ref) || '',
-    additions: Number(meta.additions) || 0,
-    deletions: Number(meta.deletions) || 0,
+    // `null` significa "GitHub no calculó el diff": se conserva para no confundirlo con 0 líneas.
+    additions: meta.additions == null ? null : Number(meta.additions) || 0,
+    deletions: meta.deletions == null ? null : Number(meta.deletions) || 0,
     changedFiles: Number(meta.changed_files) || 0,
     author: meta.user || null,
     labels: (meta.labels || []).map((l) => l && l.name).filter(Boolean),

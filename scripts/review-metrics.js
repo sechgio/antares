@@ -5,9 +5,16 @@
  *   node scripts/review-metrics.js [--days 14] [--strict] [--json] [--repo o/n]
  */
 
-const fs = require('fs');
+const { fs } = require('fs');
 const { detectRepo, gh, parseCliArgs } = require('./lib/loop-utils');
-const { SIZE_WARN, isBot, hasThirdPartyApproval, taxonomyCompliance } = require('./review-policy-check.js');
+const {
+  SIZE_WARN,
+  TAXONOMY_TARGET,
+  effectiveChangedLines,
+  isBot,
+  hasThirdPartyApproval,
+  taxonomyCompliance,
+} = require('./review-policy-check.js');
 
 const FIRST_REVIEW_TARGET_H = 4;
 const RUBBER_STAMP_SECONDS = 60;
@@ -19,7 +26,7 @@ const TARGETS = {
   reviewCoverage: 100,
   rubberStamp: 5,
   rework: 20,
-  taxonomy: 80,
+  taxonomy: Math.round(TAXONOMY_TARGET * 100),
   authorConcentration: 70,
 };
 
@@ -71,7 +78,7 @@ function computeMetrics(prs) {
   const metric = (id, label, value, unit, target, op, ok, detail) =>
     ({ id, label, value, unit, target, op, ok, detail });
 
-  const medianSize = median(list.map((pr) => (Number(pr.additions) || 0) + (Number(pr.deletions) || 0)));
+  const medianSize = median(list.map((pr) => effectiveChangedLines(pr).effective));
   const firstReview = list.map(firstReviewSignal).filter((v) => v !== null);
   const medianFirst = median(firstReview);
   const covered = list.filter(hasThirdPartyApproval).length;
@@ -89,7 +96,7 @@ function computeMetrics(prs) {
   const reworkRate = pct(reworked, n);
   const taxAcc = { prefixed: 0, total: 0 };
   for (const pr of list) {
-    const tax = taxonomyCompliance([...(pr.reviews || []), ...(pr.comments || [])]);
+    const tax = taxonomyCompliance([...(pr.reviews || []), ...(pr.comments || [])], pr.author && pr.author.login);
     taxAcc.prefixed += tax.prefixed;
     taxAcc.total += tax.total;
   }
@@ -176,6 +183,29 @@ function fetchMergedPrs(repo, days) {
   return JSON.parse(out);
 }
 
+// Solo los PRs que pasan del umbral necesitan el detalle de archivos para saber si el tamaño
+// es real o lo infla un lockfile. Si la llamada falla se conserva el tamaño bruto.
+function withEffectiveSizes(repo, prs) {
+  return prs.map((pr) => {
+    if (effectiveChangedLines(pr).raw <= SIZE_WARN) return pr;
+    let files;
+    try {
+      const out = gh(['pr', 'view', String(pr.number), '--repo', repo, '--json', 'files'], {
+        timeout: 30000,
+        maxBuffer: 24 * 1024 * 1024,
+      });
+      files = ((JSON.parse(out || '{}').files) || []).map((f) => ({
+        path: f.path,
+        additions: f.additions,
+        deletions: f.deletions,
+      }));
+    } catch {
+      return pr;
+    }
+    return files.length > 0 ? { ...pr, files } : pr;
+  });
+}
+
 function run() {
   const args = parseArgs(process.argv.slice(2));
   const repo = args.repo || detectRepo();
@@ -193,7 +223,7 @@ function run() {
     process.exit(0);
   }
 
-  const metrics = computeMetrics(prs);
+  const metrics = computeMetrics(withEffectiveSizes(repo, prs));
   const payload = { repo, days: args.days, prCount: prs.length, metrics };
   if (args.jsonFile) fs.writeFileSync(args.jsonFile, `${JSON.stringify(payload, null, 2)}\n`);
   if (args.json && !args.jsonFile) {

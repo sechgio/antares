@@ -36,6 +36,8 @@ function testArtifacts() {
   );
   assert(/permissions:/.test(wf) && /contents:\s+read/.test(wf), 'el workflow limita contents a solo lectura');
   assert(/issues:\s+write/.test(wf), 'el workflow puede publicar y editar comentarios del PR');
+  assert(/pull-requests:\s+read/.test(wf), 'el workflow solo lee los pull requests');
+  assert(!/pull-requests:\s*write/.test(wf), 'el workflow no pide escribir en pull requests');
   assert(wf.includes('edited'), 'el workflow reacciona a ediciones de la descripción');
   assert(wf.includes('labeled'), 'el workflow reacciona a cambios de etiquetas');
   assert(wf.includes('review-policy-check.js --pr "$PR_NUMBER"'), 'el workflow audita el PR indicado');
@@ -521,6 +523,33 @@ function testMetrics() {
   assert(Math.abs(byId.authorConcentration.value - 66.7) < 0.1, 'concentración de autor ~66.7%');
   assert(byId.authorConcentration.ok, 'la concentración está por debajo del 70%');
   eq(byId.taxonomy.value, 100, 'taxonomía al 100% en el ejemplo');
+  eq(
+    metrics.TARGETS.taxonomy,
+    Math.round(policy.TAXONOMY_TARGET * 100),
+    'el objetivo de taxonomía sale de la política, no de una constante duplicada',
+  );
+
+  // El tamaño que mide la métrica es el mismo que mide la política: sin excluir generados.
+  const big = { author: { login: 'sechgio' }, createdAt: '2026-08-05T10:00:00Z', additions: 3500, deletions: 500, reviews: [], comments: [] };
+  const rawOnly = metrics.computeMetrics([big]);
+  eq(
+    Object.fromEntries(rawOnly.map((m) => [m.id, m])).size.value,
+    4000,
+    'sin detalle de archivos la métrica usa el tamaño bruto',
+  );
+  const withFiles = metrics.computeMetrics([
+    { ...big, files: [{ path: 'uv.lock', additions: 3400, deletions: 480 }, { path: 'backend/x.py', additions: 100, deletions: 20 }] },
+  ]);
+  const filesById = Object.fromEntries(withFiles.map((m) => [m.id, m]));
+  eq(filesById.size.value, 120, 'con el detalle de archivos excluye los generados');
+  assert(filesById.size.ok, 'un bump de dependencias cumple el objetivo de tamaño');
+
+  eq(policy.effectiveChangedLines({ additions: 1200, deletions: 40 }).effective, 1240, 'sin archivos el efectivo es el bruto');
+  eq(
+    policy.effectiveChangedLines({ additions: 1200, deletions: 40, files: [{ path: 'uv.lock', additions: 1150, deletions: 35 }] }).effective,
+    55,
+    'las líneas de lockfile no cuentan',
+  );
 
   const fast = metrics.computeMetrics([
     {
@@ -586,6 +615,183 @@ function testMetrics() {
   assert(md.includes('Métricas de revisión'), 'el markdown tiene título');
   assert(md.includes('Cobertura de revisión'), 'el markdown lista la cobertura');
   assert(md.includes('|'), 'el markdown es una tabla');
+}
+
+function testUnmeasurableSize() {
+  console.log('\nDiff sin recuento de líneas:');
+
+  // GitHub omite additions/deletions/changed_files cuando el diff es demasiado grande.
+  const unknown = policy.evaluatePolicy({
+    number: 40,
+    body: goodPrBody(),
+    additions: null,
+    deletions: null,
+    changedFiles: null,
+    files: [],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  assert(unknown.stats.sizeUnknown, 'sin recuento el tamaño queda desconocido');
+  eq(unknown.checks.find((c) => c.id === 'tamano').status, 'skip', 'no se bloquea por tamaño');
+  eq(unknown.checks.find((c) => c.id === 'alcance').status, 'skip', 'tampoco se audita el alcance');
+  assert(!unknown.checks.some((c) => c.status === 'fail'), 'un PR de tamaño desconocido no bloquea');
+  eq(unknown.verdict, 'warning', 'avisa por los checks de revisor, nunca por tamaño');
+  assert(
+    unknown.checks.find((c) => c.id === 'tamano').detail.includes('demasiado grande'),
+    'el detalle explica por qué no se pudo medir',
+  );
+  const report = policy.renderReport({ number: 40, author: { login: 'sechgio' } }, unknown);
+  assert(report.includes('tamaño no medible'), 'el informe no afirma 0 líneas cuando no se puede medir');
+  assert(!report.includes('**0** líneas'), 'el informe no inventa un tamaño de cero');
+
+  const measurable = policy.evaluatePolicy({
+    number: 41,
+    body: goodPrBody(),
+    additions: 0,
+    deletions: 0,
+    files: [],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  eq(measurable.checks.find((c) => c.id === 'tamano').status, 'pass', 'un diff vacío declarado sí se mide');
+  assert(!measurable.stats.sizeUnknown, 'conocer el recuento aunque sea cero basta');
+}
+
+function testIntentExemptions() {
+  console.log('\nExenciones del check de intención:');
+
+  const bot = policy.evaluatePolicy({
+    number: 42,
+    body: 'Bump pdf-lib from 1.17.0 to 1.17.1',
+    additions: 20,
+    deletions: 2,
+    files: [
+      { path: 'package.json', additions: 1, deletions: 1 },
+      { path: 'package-lock.json', additions: 19, deletions: 1 },
+    ],
+    reviews: [],
+    comments: [],
+    author: { login: 'dependabot[bot]', is_bot: true },
+  });
+  eq(bot.checks.find((c) => c.id === 'intencion').status, 'skip', 'un PR de bot no exige intención');
+  eq(bot.verdict, 'warning', 'el PR de bot avisa por los checks de revisor pero no bloquea');
+
+  const generatedOnly = policy.evaluatePolicy({
+    number: 43,
+    body: 'bump',
+    additions: 1150,
+    deletions: 35,
+    files: [{ path: 'uv.lock', additions: 1150, deletions: 35, status: 'modified' }],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  eq(generatedOnly.checks.find((c) => c.id === 'intencion').status, 'skip', 'un diff solo de lockfile no exige intención');
+  assert(
+    generatedOnly.checks.every((c) => c.status !== 'fail'),
+    'un bump de dependencias no bloquea',
+  );
+
+  const real = policy.evaluatePolicy({
+    number: 44,
+    body: 'corto',
+    additions: 30,
+    deletions: 4,
+    files: [{ path: 'backend/core/converter.py', additions: 30, deletions: 4, status: 'modified' }],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  });
+  eq(real.checks.find((c) => c.id === 'intencion').status, 'fail', 'código real sin intención sigue bloqueando');
+}
+
+function testRiskSection() {
+  console.log('\nSección de riesgo:');
+
+  const base = {
+    additions: 30,
+    deletions: 4,
+    files: [{ path: 'backend/core/converter.py', additions: 30, deletions: 4, status: 'modified' }],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  };
+  const riskBoxes = ['- [ ] Toca el protocolo IPC', '- [ ] Toca esquema de base de datos o migraciones'];
+  const bodyWithRisk = (lines, extra = '') =>
+    [
+      '## What / Why',
+      '',
+      'El lock global serializaba lecturas innecesariamente y provocaba timeouts.',
+      'Este cambio introduce un lock por tabla manteniendo el contrato del repositorio.',
+      '',
+      '## Risk',
+      '',
+      ...lines,
+      extra,
+    ].join('\n');
+
+  const unchecked = policy.evaluatePolicy({ ...base, number: 45, body: bodyWithRisk(riskBoxes) });
+  eq(unchecked.checks.find((c) => c.id === 'riesgo').status, 'warn', 'risk sin casilla marcada avisa');
+
+  const checkedElsewhere = policy.evaluatePolicy({
+    ...base,
+    number: 46,
+    body: bodyWithRisk(riskBoxes, '\n## Verification\n\n- [x] `npm run ci` pasa en local'),
+  });
+  eq(
+    checkedElsewhere.checks.find((c) => c.id === 'riesgo').status,
+    'warn',
+    'una casilla marcada fuera de Risk no cuenta',
+  );
+
+  const checked = policy.evaluatePolicy({
+    ...base,
+    number: 47,
+    files: [
+      { path: 'backend/core/converter.py', additions: 30, deletions: 4, status: 'modified' },
+      { path: 'tests/test_converter.py', additions: 6, deletions: 0, status: 'modified' },
+    ],
+    body: bodyWithRisk(['- [ ] Toca el protocolo IPC', '- [x] Ninguna de las anteriores']),
+  });
+  eq(checked.checks.find((c) => c.id === 'riesgo').status, 'pass', 'marcar una casilla dentro de Risk basta');
+  eq(checked.verdict, 'ok', 'con riesgo declarado el PR queda limpio');
+
+  assert(policy.hasCheckedLine('- [x] ok') && policy.hasCheckedLine('* [X] ok'), 'acepta - y * en cualquier caja');
+  assert(!policy.hasCheckedLine('- [ ] ok'), '- [ ] no está marcada');
+  assert(policy.sectionText('## Risk\n- [x] a\n\n## Notes\nhola', 'Risk').includes('- [x] a'), 'sectionText aísla la sección');
+  assert(policy.sectionText('## Risk\n- [x] a\n\n## Notes\nhola', 'Notes').includes('hola'), 'sectionText llega hasta la siguiente');
+}
+
+function testTaxonomyIgnoresAuthor() {
+  console.log('\nTaxonomía sin comentarios del autor:');
+
+  const mixed = policy.taxonomyCompliance(
+    [
+      { author: { login: 'autor' }, body: 'gracias, subido el fix' },
+      { author: { login: 'revisora' }, body: 'nit: renombra' },
+    ],
+    'autor',
+  );
+  eq(mixed.total, 1, 'los comentarios del autor del PR no cuentan');
+  eq(mixed.prefixed, 1, 'solo se miden los del revisor');
+  eq(mixed.ratio, 1, 'el autor no hunde la taxonomía respondiendo');
+
+  const inPr = policy.evaluatePolicy({
+    number: 48,
+    body: goodPrBody(),
+    additions: 30,
+    deletions: 4,
+    files: [
+      { path: 'backend/core/converter.py', additions: 30, deletions: 4, status: 'modified' },
+      { path: 'tests/test_converter.py', additions: 6, deletions: 0, status: 'modified' },
+    ],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED', body: 'nit: ok' }],
+    comments: [{ author: { login: 'sechgio' }, body: 'listo, ya mergeo' }],
+    author: { login: 'sechgio' },
+  });
+  eq(inPr.checks.find((c) => c.id === 'taxonomia').status, 'pass', 'la respuesta del autor no degrada el check');
 }
 
 function testAdvisoryChecks() {
@@ -661,6 +867,10 @@ async function run() {
   testTaxonomy();
   testEffectiveBody();
   testGeneratedPaths();
+  testUnmeasurableSize();
+  testIntentExemptions();
+  testRiskSection();
+  testTaxonomyIgnoresAuthor();
   testDraftDowngrade();
   testSelectPolicyComment();
   await testPrAuditNormalizers();

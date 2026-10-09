@@ -103,25 +103,39 @@ function hasThirdPartyApproval(pr) {
   );
 }
 
-function humanComments(comments) {
+function humanComments(comments, authorLogin) {
   return (comments || []).filter(
     (c) =>
       c &&
       c.body &&
       String(c.body).trim().length > 0 &&
       !isBot(c.author) &&
+      !(authorLogin && c.author && c.author.login === authorLogin) &&
       !String(c.body).includes(COMMENT_MARKER),
   );
 }
 
-function taxonomyCompliance(comments) {
-  const list = humanComments(comments);
+function taxonomyCompliance(comments, authorLogin) {
+  const list = humanComments(comments, authorLogin);
   if (list.length === 0) return { total: 0, prefixed: 0, ratio: 1 };
   const prefixed = list.filter((c) => {
     const head = String(c.body).trim().toLowerCase();
     return COMMENT_PREFIXES.some((p) => head.startsWith(`${p}:`));
   }).length;
   return { total: list.length, prefixed, ratio: prefixed / list.length };
+}
+
+// Texto de una sección `## heading` hasta la siguiente del mismo nivel.
+// `(?![\s\S])` en lugar de `$`: en modo multilínea `$` también encaja al final de cada línea.
+function sectionText(body, heading) {
+  const match = String(body || '').match(
+    new RegExp(`^##[^\\S\\n]*${heading}\\b[^\\n]*\\n([\\s\\S]*?)(?=^##[^\\S\\n]*\\S|(?![\\s\\S]))`, 'im'),
+  );
+  return match ? match[1] : '';
+}
+
+function hasCheckedLine(section) {
+  return /^[ \t]*[-*+][ \t]+\[[xX]\]/m.test(section);
 }
 
 function summarizeFiles(files) {
@@ -139,17 +153,28 @@ function summarizeFiles(files) {
   return { generatedLines, bigNewFiles };
 }
 
+// Tamaño comparable: GitHub omite `additions`/`deletions` cuando el diff es demasiado grande
+// para calcularlo, y un PR solo de lockfiles no debe contar como grande.
+function effectiveChangedLines(data) {
+  const files = (data && data.files) || [];
+  const raw = (Number(data && data.additions) || 0) + (Number(data && data.deletions) || 0);
+  if (files.length === 0) return { raw, generated: 0, effective: raw };
+  const generated = summarizeFiles(files).generatedLines;
+  return { raw, generated, effective: Math.max(0, raw - generated) };
+}
+
 function evaluatePolicy(pr, meta = {}) {
   const data = pr || {};
   const files = data.files || [];
   const body = String(data.body || '').trim();
   const isDraft = Boolean(data.isDraft);
   const labels = (data.labels || []).map((l) => (l && l.name) || l).filter(Boolean);
-  const changedLines = (Number(data.additions) || 0) + (Number(data.deletions) || 0);
+  const { raw: changedLines, generated: generatedLines, effective: effectiveLines } = effectiveChangedLines(data);
   const changedFiles = Number(data.changedFiles) || files.length;
-  const sizeUnknown = Boolean(meta.partial) && files.length < changedFiles;
-  const { generatedLines, bigNewFiles } = summarizeFiles(files);
-  const effectiveLines = files.length > 0 ? Math.max(0, changedLines - generatedLines) : changedLines;
+  // Sin recuento de líneas (GitHub no lo calcula) o sin el listado completo de archivos, el tamaño no se puede afirmar.
+  const sizeUnknown =
+    (data.additions == null && data.deletions == null) || (Boolean(meta.partial) && files.length < changedFiles);
+  const { bigNewFiles } = summarizeFiles(files);
   const sizeExempt = labels.includes(EXEMPT_LABEL);
   const checks = [];
 
@@ -167,25 +192,41 @@ function evaluatePolicy(pr, meta = {}) {
 
   const intentLen = effectiveBodyLength(body);
   const intentOk = intentLen >= MIN_BODY_CHARS;
-  add(
-    'intencion',
-    'Intención declarada',
-    intentOk ? 'pass' : 'fail',
-    intentOk
-      ? `${intentLen} caracteres de contenido`
-      : `${intentLen} caracteres efectivos (mínimo ${MIN_BODY_CHARS}; la plantilla sin rellenar no cuenta). Explica el *por qué* en "What / Why".`,
-    true,
-  );
+  const botAuthor = isBot(data.author);
+  // Un PR de bot o un diff que solo toca archivos generados (lockfile, snapshot) no necesita prosa.
+  const onlyGenerated = files.length > 0 && files.every((f) => isGeneratedPath(f.path));
+  if (botAuthor || onlyGenerated) {
+    add(
+      'intencion',
+      'Intención declarada',
+      'skip',
+      botAuthor ? 'PR abierto por un bot: no se exige intención.' : 'El diff solo toca archivos generados: no se exige intención.',
+    );
+  } else {
+    add(
+      'intencion',
+      'Intención declarada',
+      intentOk ? 'pass' : 'fail',
+      intentOk
+        ? `${intentLen} caracteres de contenido`
+        : `${intentLen} caracteres efectivos (mínimo ${MIN_BODY_CHARS}; la plantilla sin rellenar no cuenta). Explica el *por qué* en "What / Why".`,
+      true,
+    );
+  }
 
   const sizeDetail =
     generatedLines > 0 ? `${effectiveLines} efectivas (${generatedLines} generadas excluidas)` : `${effectiveLines} líneas`;
   const size = classifySize(effectiveLines);
+  const sizeUnknownReason =
+    data.additions == null && data.deletions == null
+      ? 'GitHub no devolvió el recuento de líneas (diff demasiado grande)'
+      : `Listado de archivos incompleto (${files.length}/${changedFiles})`;
   if (sizeUnknown) {
     add(
       'tamano',
       'Tamaño del PR',
       'skip',
-      `Listado de archivos incompleto (${files.length}/${changedFiles}): no se puede medir ni bloquear por tamaño.`,
+      `${sizeUnknownReason}: no se puede medir ni bloquear por tamaño.`,
     );
   } else if (size === 'ok') {
     add('tamano', 'Tamaño del PR', 'pass', `${sizeDetail} en ${files.length} archivo(s)`);
@@ -223,9 +264,9 @@ function evaluatePolicy(pr, meta = {}) {
   gate(
     'riesgo',
     'Sección de riesgo completada',
-    /##\s*Risk/i.test(body) && /- \[[xX]\]/.test(body),
+    hasCheckedLine(sectionText(body, 'Risk')),
     'OK',
-    'Falta la sección "Risk" de la plantilla marcada. Complétala antes de pedir revisión.',
+    'Falta la sección "Risk" de la plantilla con una casilla marcada (aunque sea "Ninguna de las anteriores").',
   );
 
   const touchedTests = files.filter((f) => isTestPath(f.path));
@@ -242,7 +283,7 @@ function evaluatePolicy(pr, meta = {}) {
       'alcance',
       'Alcance declarado',
       'skip',
-      'Listado de archivos incompleto: no se puede auditar el alcance.',
+      `${sizeUnknownReason}: no se puede auditar el alcance.`,
     );
   } else {
     gate(
@@ -264,7 +305,10 @@ function evaluatePolicy(pr, meta = {}) {
     'Sin aprobación de alguien que no sea el autor. Objetivo: 100% de PRs con revisor distinto.',
   );
 
-  const tax = taxonomyCompliance((data.reviews || []).concat(data.comments || []));
+  const tax = taxonomyCompliance(
+    (data.reviews || []).concat(data.comments || []),
+    data.author && data.author.login,
+  );
   if (tax.total === 0) {
     add('taxonomia', 'Taxonomía de comentarios', 'skip', 'Sin comentarios de revisión aún');
   } else {
@@ -273,7 +317,7 @@ function evaluatePolicy(pr, meta = {}) {
       'taxonomia',
       'Taxonomía de comentarios',
       tax.ratio >= TAXONOMY_TARGET ? 'pass' : 'warn',
-      `${tax.prefixed}/${tax.total} comentarios con prefijo (${pct}%, objetivo ${Math.round(TAXONOMY_TARGET * 100)}%): \`blocking:\` / \`suggestion:\` / \`nit:\` / \`question:\` / \`praise:\``,
+      `${tax.prefixed}/${tax.total} comentarios del revisor con prefijo (${pct}%, objetivo ${Math.round(TAXONOMY_TARGET * 100)}%): \`blocking:\` / \`suggestion:\` / \`nit:\` / \`question:\` / \`praise:\``,
     );
   }
 
@@ -313,7 +357,7 @@ function renderReport(pr, result, extra = {}) {
   const lines = [
     `## ${VERDICT_ICON[result.verdict]} Política de revisión — PR #${pr && pr.number ? pr.number : '?'}`,
     '',
-    `**Veredicto:** \`${result.verdict}\` · **${stats.effectiveLines}** líneas efectivas en **${stats.files}** archivo(s)`,
+    `**Veredicto:** \`${result.verdict}\` · ${stats.sizeUnknown ? 'tamaño no medible' : `**${stats.effectiveLines}** líneas efectivas`} en **${stats.files}** archivo(s)`,
     `Brutas: ${result.changedLines}${stats.generatedLines > 0 ? ` · generadas excluidas: ${stats.generatedLines}` : ''} · autor: @${(pr && pr.author && pr.author.login) || '?'}`,
   ];
   if (extra.headSha && pr) {
@@ -429,6 +473,7 @@ module.exports = {
   SIZE_WARN,
   SIZE_LARGE,
   MIN_BODY_CHARS,
+  TAXONOMY_TARGET,
   BLOCKING,
   ADVISORY,
   classifySize,
@@ -436,6 +481,9 @@ module.exports = {
   isGeneratedPath,
   isNewFile,
   effectiveBodyLength,
+  sectionText,
+  hasCheckedLine,
+  effectiveChangedLines,
   isBot,
   hasThirdPartyApproval,
   humanComments,
