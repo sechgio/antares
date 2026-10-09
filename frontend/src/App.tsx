@@ -265,11 +265,6 @@ function AppContent() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <TitleBar
-        onOpenSettings={openAppearanceSettings}
-        onPrefetchSettings={prefetchSettingsModal}
-        onOpenEspacios={() => handleTabChange('espacios')}
-      />
       <div className="flex min-h-0 flex-1">
         <Sidebar
           activeTab={activeTab}
@@ -277,8 +272,10 @@ function AppContent() {
           onPrefetchTab={(tab) => {
             if (tab === 'canvas') prefetchCanvasView();
           }}
-        />
+          onOpenSettings={openAppearanceSettings}
+        >
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <TitleBar />
           <main className="flex-1 overflow-hidden relative">
             {cloudAuthBlocked ? (
               authLoading ? (
@@ -313,6 +310,7 @@ function AppContent() {
             )}
           </main>
         </div>
+        </Sidebar>
       </div>
       {settingsOpen && (
         <Suspense fallback={null}>

@@ -1,236 +1,278 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import Sidebar from '../Sidebar';
-import { TAB_DEFINITIONS } from '../../../navigation';
+import { TAB_DEFINITIONS, type TabId } from '../../../navigation';
 import { ToastProvider } from '../../../hooks/useToast';
 
 const STORAGE_KEY = 'antares_sidebar_expanded';
 const mockSignOut = vi.fn(async () => {});
+const TEST_USER = { id: 'u1', email: 'user@test.com', displayName: 'Test User', isAdmin: false, isDisabled: false, createdAt: '' };
+let mockUser: typeof TEST_USER | null = TEST_USER;
 
 vi.mock('../../../auth/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'user@test.com', displayName: 'Test User', isAdmin: false, isDisabled: false, createdAt: '' },
+    user: mockUser,
     signOut: mockSignOut,
   }),
 }));
 
-function renderSidebar(props: { activeTab: 'convert'; onTabChange: ReturnType<typeof vi.fn> }) {
+vi.mock('../TaskNotificationsBell', () => ({
+  default: ({ onOpenEspacios }: { onOpenEspacios?: () => void }) => (
+    <button type="button" data-testid="titlebar-notifications-button" onClick={onOpenEspacios}>Notificaciones</button>
+  ),
+}));
+
+const GROUP_IDS = ['general', 'produccion', 'reportes', 'herramientas'];
+
+function renderSidebar(props: { activeTab?: TabId; onTabChange?: (tab: TabId) => void; onOpenSettings?: () => void } = {}) {
   return render(
     <ToastProvider>
-      <Sidebar {...props} />
+      <Sidebar activeTab={props.activeTab ?? 'convert'} onTabChange={props.onTabChange ?? vi.fn()} onOpenSettings={props.onOpenSettings} />
     </ToastProvider>,
   );
+}
+
+function panel() {
+  return screen.getByRole('navigation', { name: (name) => name !== 'Grupos' });
 }
 
 describe('Sidebar', () => {
   beforeEach(() => {
     localStorage.clear();
     mockSignOut.mockClear();
+    mockUser = TEST_USER;
+  });
+
+  it('shows the notifications bell in the rail and opens Espacios from it', async () => {
+    const onTabChange = vi.fn();
+    renderSidebar({ onTabChange });
+
+    const aside = screen.getByTestId('app-sidebar');
+    fireEvent.click(await within(aside).findByTestId('titlebar-notifications-button'));
+
+    expect(onTabChange).toHaveBeenCalledWith('espacios');
+  });
+
+  it('keeps the account avatar and menu without a session, offering sign-in', () => {
+    mockUser = null;
+    const onTabChange = vi.fn();
+    renderSidebar({ onTabChange });
+
+    fireEvent.click(screen.getByTestId('sidebar-account-button'));
+    const menu = screen.getByRole('menu', { name: 'Cuenta' });
+
+    expect(within(menu).getByText('Sin sesión')).toBeInTheDocument();
+    expect(screen.queryByTestId('sidebar-signout-button')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Iniciar sesión' }));
+    expect(onTabChange).toHaveBeenCalledWith('espacios');
   });
 
   it('does not show the removed brand tagline', () => {
     const removedTagline = ['Precision', 'tools'].join(' ');
 
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+    renderSidebar();
 
     expect(screen.queryByText(removedTagline)).not.toBeInTheDocument();
   });
 
   it('does not render the removed sidebar search shortcut', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+    renderSidebar();
 
     expect(screen.queryByText('Buscar')).not.toBeInTheDocument();
     expect(screen.queryByText('Ctrl+K')).not.toBeInTheDocument();
   });
 
-  it('renders the sidebar toggle with the expected label', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+  it('renders the panel toggle with the expected label and tooltip', () => {
+    renderSidebar();
 
-    expect(screen.getByRole('button', { name: 'Alternar barra lateral' })).toBeInTheDocument();
-  });
-
-  it('shows a Hide Sidebar tooltip when expanded', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
-
-    const toggle = screen.getByTestId('sidebar-toggle');
+    const toggle = screen.getByRole('button', { name: 'Alternar barra lateral' });
     expect(toggle).not.toHaveAttribute('title');
     fireEvent.focus(toggle);
-    expect(screen.getByText('Hide Sidebar')).toBeInTheDocument();
-    expect(screen.queryByText('Ctrl')).not.toBeInTheDocument();
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Ocultar panel');
   });
 
-  it('shows Show Sidebar after collapsing', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+  it('shows the group of the active tab in the panel', () => {
+    renderSidebar({ activeTab: 'sellador' });
 
-    const toggle = screen.getByTestId('sidebar-toggle');
-    fireEvent.click(toggle);
-    fireEvent.focus(toggle);
-
-    expect(screen.getByText('Show Sidebar')).toBeInTheDocument();
-    expect(screen.queryByText('Hide Sidebar')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Producción' })).toBeInTheDocument();
+    const items = within(panel()).getAllByRole('button').map((node) => node.textContent);
+    expect(items).toEqual(['Conversión', 'Formatos PDF', 'Sellador', 'Generar Padrones', 'Generar Volantes']);
+    expect(within(panel()).getByRole('button', { name: 'Sellador' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('collapses and expands when toggled', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+  it('switches the panel group from the rail without navigating', () => {
+    const onTabChange = vi.fn();
+    renderSidebar({ onTabChange });
+
+    fireEvent.click(screen.getByTestId('sidebar-group-herramientas'));
+
+    expect(screen.getByRole('heading', { name: 'Herramientas' })).toBeInTheDocument();
+    expect(within(panel()).getByRole('button', { name: 'Flujos' })).toBeInTheDocument();
+    expect(onTabChange).not.toHaveBeenCalled();
+  });
+
+  it('reaches every navigation section through its rail group', () => {
+    renderSidebar();
+
+    const seen = new Set<string>();
+    for (const id of GROUP_IDS) {
+      fireEvent.click(screen.getByTestId(`sidebar-group-${id}`));
+      for (const node of within(panel()).getAllByRole('button')) seen.add(node.textContent ?? '');
+    }
+
+    expect([...seen].sort()).toEqual(TAB_DEFINITIONS.map((tab) => tab.label).sort());
+  });
+
+  it('shows group name tooltips on the rail', () => {
+    renderSidebar();
+
+    const reportes = screen.getByRole('button', { name: 'Reportes' });
+    expect(reportes).not.toHaveAttribute('title');
+    fireEvent.focus(reportes);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Reportes');
+  });
+
+  it('collapses the panel with the toggle and reopens it from the rail', () => {
+    renderSidebar();
 
     const sidebar = screen.getByTestId('app-sidebar');
-    const toggle = screen.getByTestId('sidebar-toggle');
-
     expect(sidebar).toHaveAttribute('data-expanded', 'true');
 
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
     expect(sidebar).toHaveAttribute('data-expanded', 'false');
 
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getByTestId('sidebar-group-reportes'));
     expect(sidebar).toHaveAttribute('data-expanded', 'true');
+    expect(screen.getByRole('heading', { name: 'Reportes' })).toBeInTheDocument();
   });
 
-  it('toggles the sidebar with Ctrl+B', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+  it('collapses the panel when clicking the group already shown', () => {
+    renderSidebar();
+
+    fireEvent.click(screen.getByTestId('sidebar-group-produccion'));
+
+    expect(screen.getByTestId('app-sidebar')).toHaveAttribute('data-expanded', 'false');
+  });
+
+  it('peeks the hovered group as a floating panel when the panel is not pinned', () => {
+    vi.useFakeTimers();
+    try {
+      renderSidebar();
+      fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+      fireEvent.mouseEnter(screen.getByTestId('sidebar-group-herramientas'));
+      const peek = screen.getByTestId('sidebar-peek');
+      expect(peek).toHaveAttribute('aria-hidden', 'false');
+      expect(within(peek).getByRole('heading', { name: 'Herramientas' })).toBeInTheDocument();
+      expect(screen.getByTestId('app-sidebar')).toHaveAttribute('data-expanded', 'false');
+
+      fireEvent.mouseLeave(screen.getByTestId('app-sidebar'));
+      fireEvent.mouseEnter(peek);
+      act(() => { vi.advanceTimersByTime(500); });
+      expect(peek).toHaveAttribute('aria-hidden', 'false');
+
+      fireEvent.mouseLeave(peek);
+      act(() => { vi.advanceTimersByTime(500); });
+      expect(peek).toHaveAttribute('aria-hidden', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pins the peeked panel from its header button', () => {
+    renderSidebar();
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+    fireEvent.mouseEnter(screen.getByTestId('sidebar-group-reportes'));
+    fireEvent.click(within(screen.getByTestId('sidebar-peek')).getByRole('button', { name: 'Fijar panel' }));
+
+    expect(screen.getByTestId('app-sidebar')).toHaveAttribute('data-expanded', 'true');
+    expect(screen.queryByTestId('sidebar-peek')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Reportes' })).toBeInTheDocument();
+  });
+
+  it('closes the peek after choosing a section', () => {
+    const onTabChange = vi.fn();
+    renderSidebar({ onTabChange });
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+    fireEvent.mouseEnter(screen.getByTestId('sidebar-group-herramientas'));
+    fireEvent.click(within(screen.getByTestId('sidebar-peek')).getByRole('button', { name: 'Flujos' }));
+
+    expect(onTabChange).toHaveBeenCalledWith('flows');
+    expect(screen.getByTestId('sidebar-peek')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('toggles the panel with Ctrl+B', () => {
+    renderSidebar();
 
     const sidebar = screen.getByTestId('app-sidebar');
-    expect(sidebar).toHaveAttribute('data-expanded', 'true');
-
     fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
     expect(sidebar).toHaveAttribute('data-expanded', 'false');
 
     fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
     expect(sidebar).toHaveAttribute('data-expanded', 'true');
-  });
-
-  it('shows tool name tooltips when collapsed, without shortcut keycaps', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
-
-    fireEvent.click(screen.getByTestId('sidebar-toggle'));
-
-    const espacios = screen.getByRole('button', { name: 'Espacios' });
-    expect(espacios).not.toHaveAttribute('title');
-    fireEvent.focus(espacios);
-
-    const tooltips = screen.getAllByRole('tooltip');
-    const espaciosTip = tooltips.find((node) => node.textContent === 'Espacios');
-
-    expect(espaciosTip).toBeTruthy();
-    expect(espaciosTip?.textContent).not.toContain('Ctrl');
-
-    fireEvent.blur(espacios);
-    const informes = screen.getByRole('button', { name: 'Informes técnicos' });
-    fireEvent.focus(informes);
-    const informesTip = screen.getByRole('tooltip');
-    expect(informesTip).toHaveTextContent('Informes técnicos');
-    expect(informesTip).not.toHaveTextContent('Ctrl');
-  });
-
-  it('does not render tool name tooltips when expanded', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
-
-    fireEvent.focus(screen.getByTestId('sidebar-toggle'));
-    const tooltips = screen.getAllByRole('tooltip');
-    expect(tooltips).toHaveLength(1);
-    expect(tooltips[0]).toHaveTextContent('Hide Sidebar');
-  });
-
-  it('keeps collapsed labels centered on the icon row', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
-
-    fireEvent.click(screen.getByTestId('sidebar-toggle'));
-
-    const convertButton = screen.getByRole('button', { name: 'Conversión' });
-    expect(convertButton.parentElement).toHaveClass('flex', 'size-8', 'items-center');
-    fireEvent.focus(convertButton);
-
-    const convertTooltip = screen
-      .getAllByRole('tooltip')
-      .find((node) => node.textContent === 'Conversión');
-    expect(convertTooltip).toBeTruthy();
-    expect(convertTooltip).toHaveClass('fixed');
-    expect(document.body.contains(convertTooltip as HTMLElement)).toBe(true);
-  });
-
-  it('keeps navigation rows on a uniform rhythm', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
-
-    const nav = screen.getByRole('navigation');
-    const expandedButton = screen.getByRole('button', { name: 'Conversión' });
-
-    expect(nav).toHaveClass('gap-0.5');
-    expect(expandedButton).toHaveClass('h-8');
-    fireEvent.click(screen.getByTestId('sidebar-toggle'));
-
-    expect(nav).toHaveClass('gap-0.5');
-    expect(screen.getByRole('button', { name: 'Conversión' })).toHaveClass('size-8');
-  });
-
-  it('hides all navigation group headings', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
-
-    expect(screen.queryByText('General')).not.toBeInTheDocument();
-    expect(screen.queryByText('Reportes')).not.toBeInTheDocument();
-    expect(screen.queryByText('Herramientas')).not.toBeInTheDocument();
-    expect(screen.queryByText('Producción')).not.toBeInTheDocument();
-  });
-
-  it('keeps navigation content mounted while toggling', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
-
-    const sidebar = screen.getByTestId('app-sidebar');
-    const conversionButton = screen.getByRole('button', { name: 'Conversión' });
-    const conversionLabel = within(conversionButton).getByText('Conversión');
-
-    expect(sidebar).toHaveClass('min-w-0');
-    fireEvent.click(screen.getByTestId('sidebar-toggle'));
-
-    expect(within(conversionButton).getByText('Conversión')).toBe(conversionLabel);
-    expect(conversionLabel).toHaveClass('max-w-0', 'opacity-0');
-    expect(screen.getByRole('button', { name: 'Conversión' })).toHaveClass('gap-0', 'justify-start', 'pl-2');
-    expect(screen.getByAltText('Antares')).toBeInTheDocument();
   });
 
   it('persists the collapsed state in localStorage', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+    renderSidebar();
 
     fireEvent.click(screen.getByTestId('sidebar-toggle'));
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
   });
 
-  it('keeps all current navigation sections', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
-
-    for (const tab of TAB_DEFINITIONS) {
-      expect(screen.getByRole('button', { name: tab.label })).toBeInTheDocument();
-    }
-  });
-
   it('calls onTabChange when a navigation item is clicked', () => {
     const onTabChange = vi.fn();
-
-    renderSidebar({ activeTab: 'convert', onTabChange });
+    renderSidebar({ onTabChange });
 
     fireEvent.click(screen.getByRole('button', { name: 'Conversión' }));
     expect(onTabChange).toHaveBeenCalledWith('convert');
   });
 
   it('does not render history or appearance as sidebar navigation items', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+    renderSidebar();
 
     expect(screen.queryByRole('button', { name: 'Historial' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Apariencia' })).not.toBeInTheDocument();
   });
 
-  it('shows a sign-out tooltip when collapsed', () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+  it('opens the account menu with the user identity', () => {
+    renderSidebar();
 
-    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+    expect(screen.queryByTestId('sidebar-account-menu')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('sidebar-account-button'));
 
-    const signOut = screen.getByTestId('sidebar-signout-button');
-    expect(signOut).not.toHaveAttribute('title');
-    fireEvent.focus(signOut);
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Cerrar sesión');
+    const menu = screen.getByRole('menu', { name: 'Cuenta' });
+    expect(within(menu).getByText('Test User')).toBeInTheDocument();
+    expect(within(menu).getByText('user@test.com')).toBeInTheDocument();
+    expect(screen.getByTestId('sidebar-account-button')).toHaveTextContent('TU');
   });
 
-  it('calls signOut from the bottom logout button', async () => {
-    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+  it('opens settings from the account menu and closes it', () => {
+    const onOpenSettings = vi.fn();
+    renderSidebar({ onOpenSettings });
 
+    fireEvent.click(screen.getByTestId('sidebar-account-button'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Configuración' }));
+
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('sidebar-account-menu')).not.toBeInTheDocument();
+  });
+
+  it('lists only the account menu entries the app supports', () => {
+    renderSidebar({ onOpenSettings: vi.fn() });
+
+    fireEvent.click(screen.getByTestId('sidebar-account-button'));
+    const items = screen.getAllByRole('menuitem').map((node) => node.textContent);
+
+    expect(items).toEqual(['Cuenta', 'Configuración', 'Cerrar sesión']);
+    expect(screen.getByRole('menuitem', { name: 'Cuenta' })).toBeDisabled();
+  });
+
+  it('calls signOut from the account menu', () => {
+    renderSidebar();
+
+    fireEvent.click(screen.getByTestId('sidebar-account-button'));
     fireEvent.click(screen.getByTestId('sidebar-signout-button'));
 
     expect(mockSignOut).toHaveBeenCalledTimes(1);
