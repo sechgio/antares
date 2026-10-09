@@ -5,6 +5,7 @@ export { ensurePdfJs } from '../../lib/pdfjs';
 import {
   MAX_PREVIEW_PIXEL_WIDTH,
   MIN_PREVIEW_PIXEL_WIDTH,
+  selladorPreviewDpr,
 } from './previewDpi';
 import type { PdfPageSize } from './utils';
 
@@ -19,11 +20,22 @@ export async function renderPdfPageToDataUrl(
   containerW: number,
   dpr = 1.5,
 ): Promise<{ url: string; pageSize: PdfPageSize }> {
+  const { canvas, pageSize } = await renderPdfPageToCanvas(pdf, pageNum, containerW, dpr);
+  return { url: canvas.toDataURL('image/png'), pageSize };
+}
+
+export async function renderPdfPageToCanvas(
+  pdf: PDFDocumentProxy,
+  pageNum: number,
+  containerW: number,
+  dpr?: number,
+): Promise<{ canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; pageSize: PdfPageSize; pxScale: number }> {
   const page = await pdf.getPage(pageNum);
   const unscaled = page.getViewport({ scale: 1 });
+  const pixelRatio = dpr ?? selladorPreviewDpr();
   const minScale = MIN_PREVIEW_PIXEL_WIDTH / unscaled.width;
   const maxScale = MAX_PREVIEW_PIXEL_WIDTH / unscaled.width;
-  const scale = Math.min(Math.max((containerW / unscaled.width) * dpr, minScale), maxScale);
+  const scale = Math.min(Math.max((containerW / unscaled.width) * pixelRatio, minScale), maxScale);
   const viewport = page.getViewport({ scale });
 
   const canvas = document.createElement('canvas');
@@ -40,7 +52,9 @@ export async function renderPdfPageToDataUrl(
   await renderTask.promise;
 
   return {
-    url: canvas.toDataURL('image/png'),
+    canvas,
+    ctx,
     pageSize: { width: unscaled.width, height: unscaled.height },
+    pxScale: viewport.width / unscaled.width,
   };
 }

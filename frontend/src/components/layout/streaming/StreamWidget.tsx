@@ -36,8 +36,6 @@ export const STREAM_STRINGS = {
   playTrack: 'Reproducir',
 } as const;
 
-export type StreamStrings = typeof STREAM_STRINGS & StreamSource['strings'];
-
 export interface StreamListStrings {
   search: string;
   searching: string;

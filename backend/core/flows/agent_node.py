@@ -126,21 +126,7 @@ def _apply_calls(
     state["queued_calls"] = []
 
 
-def run_agent_node(
-    node: JsonObject,
-    memory: JsonObject,
-    *,
-    handler_getter: Callable[[str], Any],
-    token: object | None,
-    lane_submit: Callable[[str, Callable[[JsonObject], Any], JsonObject], Any] | None,
-    validate_paths: Callable[[str, JsonObject], None],
-    is_cancelled: Callable[[], bool],
-    state: JsonObject | None,
-    approvals: dict[str, JsonObject],
-    execute_with_effect: Callable[[JsonObject, Callable[[JsonObject], str]], str] | None = None,
-) -> JsonObject:
-    """Ejecuta el nodo agente; reanuda desde ``state`` cuando existe."""
-    config = node["config"]
+def resolve_agent_config(config: JsonObject, memory: JsonObject) -> tuple[str, str, str, str | None]:
     provider = str(config.get("provider") or "").strip()
     prompt = resolve(config.get("prompt"), memory)
     if isinstance(prompt, str):
@@ -157,6 +143,25 @@ def run_agent_node(
     if isinstance(system, str):
         system = interpolate_text(system, memory)
     system = system.strip() if isinstance(system, str) and system.strip() else None
+    return provider, model, prompt, system
+
+
+def run_agent_node(
+    node: JsonObject,
+    memory: JsonObject,
+    *,
+    handler_getter: Callable[[str], Any],
+    token: object | None,
+    lane_submit: Callable[[str, Callable[[JsonObject], Any], JsonObject], Any] | None,
+    validate_paths: Callable[[str, JsonObject], None],
+    is_cancelled: Callable[[], bool],
+    state: JsonObject | None,
+    approvals: dict[str, JsonObject],
+    execute_with_effect: Callable[[JsonObject, Callable[[JsonObject], str]], str] | None = None,
+) -> JsonObject:
+    """Ejecuta el nodo agente; reanuda desde ``state`` cuando existe."""
+    config = node["config"]
+    provider, model, prompt, system = resolve_agent_config(config, memory)
 
     tools_cfg = config.get("tools")
     max_steps = int(config.get("max_steps") or 8)
@@ -214,8 +219,6 @@ def run_agent_node(
             messages.append({"role": "assistant", "content": text, "tool_calls": calls})
             _apply_calls(calls, allowed, auto_approve, execute, state)
             continue
-        if not text:
-            return {"json": {"text": "", "provider": provider, "model": model, "steps": state["step"]}}
         return {"json": {"text": text, "provider": provider, "model": model, "steps": state["step"]}}
     return {"json": {"text": "Alcancé el límite de pasos de herramienta de este nodo.",
                      "provider": provider, "model": model, "steps": state["step"], "limit_reached": True}}

@@ -304,7 +304,8 @@ def test_runner_retries_transient_http_status(store, monkeypatch):
         httpd.shutdown()
 
 
-def test_runner_agent_node(store, monkeypatch):
+@pytest.mark.parametrize("with_tools", [False, True])
+def test_runner_agent_node(store, monkeypatch, with_tools):
     from backend.core.flows import agent_chat
 
     seen = {}
@@ -336,6 +337,7 @@ def test_runner_agent_node(store, monkeypatch):
                         "provider": "ollama",
                         "prompt": "Di hola {{ =run.trigger.nombre }}",
                         "system": "Sé breve",
+                        "tools": with_tools,
                     },
                 },
                 {"id": "t", "kind": "transform", "config": {"output": {"txt": "=nodes.ia.json.text"}}},
@@ -352,7 +354,7 @@ def test_runner_agent_node(store, monkeypatch):
     assert done["status"] == "success"
     assert seen["provider"] == "ollama"
     assert seen["model"] == "mod-test"
-    assert seen["with_tools"] is False
+    assert seen["with_tools"] is with_tools
     assert seen["system"] == "Sé breve"
     assert seen["messages"] == [{"role": "user", "content": "Di hola mundo"}]
     steps = {s["node_id"]: s for s in done["steps"]}
@@ -360,7 +362,8 @@ def test_runner_agent_node(store, monkeypatch):
     assert steps["t"]["output"] == {"txt": "respuesta del modelo"}
 
 
-def test_runner_agent_node_fails_on_unresolved_interpolation(store, monkeypatch):
+@pytest.mark.parametrize("with_tools", [False, True])
+def test_runner_agent_node_fails_on_unresolved_interpolation(store, monkeypatch, with_tools):
     from backend.core.flows import agent_chat
 
     calls = []
@@ -379,7 +382,7 @@ def test_runner_agent_node_fails_on_unresolved_interpolation(store, monkeypatch)
                 {
                     "id": "ia",
                     "kind": "agent",
-                    "config": {"provider": "ollama", "prompt": "Hola {{ =run.trigger.noexiste }}"},
+                    "config": {"provider": "ollama", "prompt": "Hola {{ =run.trigger.noexiste }}", "tools": with_tools},
                 },
             ],
             "edges": [{"from_node": "trigger", "to_node": "ia"}],

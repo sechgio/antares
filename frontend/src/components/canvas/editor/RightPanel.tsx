@@ -25,7 +25,7 @@ import {
 import { exportSelectionPng } from '../ops/exportPng';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import StylesSection from './StylesSection';
-import { ALIGN_ITEMS, BulkOpacityField, SectionHeader, ZOrderButtons } from './panels/shared';
+import { AlignmentButtons, BulkOpacityField, SectionHeader, ZOrderButtons } from './panels/shared';
 import PositionSection from './panels/common/PositionSection';
 import DispositionSection from './panels/common/DispositionSection';
 import AppearanceSection from './panels/common/AppearanceSection';
@@ -499,19 +499,7 @@ export default memo(function RightPanel({
                   />
                 </div>
               )}
-              <div className="canvas-alignment-tools" role="group" aria-label="Alinear selección">
-                {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
-                  <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
-                    <Button variant="none" size="none"
-                      className="canvas-icon-btn"
-                      aria-label={label}
-                      onClick={() => onAlign(align)}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                    </Button>
-                  </WithHoverTooltip>
-                ))}
-              </div>
+              <AlignmentButtons onAlign={onAlign} ariaLabel="Alinear selección" />
               <div>
                 {selectedCount < 3 && (
                   <p className="canvas-distribution-hint" data-testid="canvas-distribution-hint">

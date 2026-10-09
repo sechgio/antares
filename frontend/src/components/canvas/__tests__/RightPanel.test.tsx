@@ -325,6 +325,19 @@ describe('LayerNode applies fill from cssVars', () => {
 });
 
 describe('RightPanel shape inspector', () => {
+  it.each([[1, 'Alinear capa'], [3, 'Alinear selección']] as const)(
+    'keeps alignment controls and callbacks for %i selected layers',
+    (selectedCount, ariaLabel) => {
+      const onAlign = vi.fn();
+      render(<RightPanel layer={createLayer('rect')} onChange={vi.fn()} {...panelProps} selectedCount={selectedCount} onAlign={onAlign} />);
+      const controls = within(screen.getByRole('group', { name: ariaLabel }));
+      expect(controls.getAllByRole('button').map((button) => button.getAttribute('aria-label')))
+        .toEqual(['Izquierda', 'Centro', 'Derecha', 'Arriba', 'Medio', 'Abajo']);
+      fireEvent.click(controls.getByRole('button', { name: 'Derecha' }));
+      expect(onAlign).toHaveBeenCalledExactlyOnceWith('right');
+    },
+  );
+
   it('shows Figma-like sections for a selected rectangle', () => {
     const layer = createLayer('rect');
     const onChange = vi.fn();

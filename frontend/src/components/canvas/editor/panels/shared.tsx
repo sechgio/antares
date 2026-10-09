@@ -161,7 +161,7 @@ export function PropRow({
   );
 }
 
-export const ALIGN_ITEMS = [
+const ALIGN_ITEMS = [
   { align: 'left' as const, icon: AlignStartVertical, label: 'Izquierda' },
   { align: 'center' as const, icon: AlignCenterVertical, label: 'Centro' },
   { align: 'right' as const, icon: AlignEndVertical, label: 'Derecha' },
@@ -169,6 +169,30 @@ export const ALIGN_ITEMS = [
   { align: 'middle' as const, icon: AlignCenterHorizontal, label: 'Medio' },
   { align: 'bottom' as const, icon: AlignEndHorizontal, label: 'Abajo' },
 ];
+
+export function AlignmentButtons({
+  onAlign,
+  ariaLabel,
+}: {
+  onAlign: (align: (typeof ALIGN_ITEMS)[number]['align']) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="canvas-alignment-tools" role="group" aria-label={ariaLabel}>
+      {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
+        <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
+          <Button variant="none" size="none"
+            className="canvas-icon-btn"
+            aria-label={label}
+            onClick={() => onAlign(align)}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </Button>
+        </WithHoverTooltip>
+      ))}
+    </div>
+  );
+}
 
 const IMAGE_FIT_OPTIONS = [
   { value: 'cover', label: 'Cubrir' },

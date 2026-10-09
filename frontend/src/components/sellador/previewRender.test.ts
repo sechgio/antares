@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   stageFileForIpc: vi.fn(),
   cleanupStagedToken: vi.fn(),
   selladorRenderPage: vi.fn(),
+  loadPdfDocument: vi.fn(),
 }));
 
 vi.mock('../../utils/stageFile', () => ({
@@ -18,8 +19,9 @@ vi.mock('../../api', () => ({
   api: { selladorRenderPage: mocks.selladorRenderPage },
 }));
 
-vi.mock('./pdfjs', () => ({
-  loadPdfDocument: vi.fn(async () => ({ destroy: vi.fn(async () => {}), getPage: vi.fn(async () => ({})) })),
+vi.mock('./pdfjs', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./pdfjs')>(),
+  loadPdfDocument: mocks.loadPdfDocument,
 }));
 
 const STAGED_TOKEN = 'antares-read_staged_1';
@@ -53,6 +55,7 @@ describe('renderOtherPagesPreview staging', () => {
     mocks.stageFileForIpc.mockReset();
     mocks.cleanupStagedToken.mockReset();
     mocks.selladorRenderPage.mockReset();
+    mocks.loadPdfDocument.mockReset();
 
     mocks.acquireStagedFile.mockImplementation(async () => ({ token: STAGED_TOKEN, release }));
     mocks.selladorRenderPage.mockResolvedValue({
@@ -188,5 +191,37 @@ describe('renderOtherPagesPreview staging', () => {
     await renderOtherPagesPreview({ ...options, containerW: 801 });
 
     expect(mocks.selladorRenderPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a base64 PDF before composing its stamp at the preview scale', async () => {
+    const page = {
+      getViewport: ({ scale }: { scale: number }) => ({ width: 595 * scale, height: 842 * scale }),
+      render: vi.fn().mockReturnValue({ promise: Promise.resolve() }),
+    };
+    const pdf = { getPage: vi.fn().mockResolvedValue(page), destroy: vi.fn() };
+    mocks.loadPdfDocument.mockResolvedValue(pdf);
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    const progress = vi.fn();
+
+    await renderOtherPagesPreview(baseOptions({
+      pdfBase64: 'QUJD',
+      pageNumbers: [2],
+      sourceRevision: 101,
+      stampUrl: 'data:image/png;base64,c2VsbG8=',
+      placementsByPage: new Map([[2, [{ x: 10, y: 20, width: 30, height: 40 }]]]),
+      assignmentCounts: new Map([[2, 1]]),
+      onProgress: progress,
+    }));
+
+    const viewport = page.render.mock.calls[0][0].viewport;
+    const scale = viewport.width / 595;
+    expect(mocks.loadPdfDocument).toHaveBeenCalledWith('QUJD');
+    expect(pdf.getPage).toHaveBeenCalledWith(2);
+    expect(viewport.width).toBeCloseTo(1800);
+    expect(ctx.fillRect).toHaveBeenCalledWith(0, 0, 1800, Math.round(viewport.height));
+    expect(ctx.drawImage).toHaveBeenCalledWith(expect.any(Image), 10 * scale, 20 * scale, 30 * scale, 40 * scale);
+    expect(page.render.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(ctx.drawImage).mock.invocationCallOrder[0]);
+    expect(progress).toHaveBeenLastCalledWith([{ pageNum: 2, url: 'data:image/png;base64,cGFnZQ==', stampCount: 1 }]);
+    expect(pdf.destroy).toHaveBeenCalledOnce();
   });
 });
