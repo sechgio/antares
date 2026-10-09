@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ctypes
 import sys
+import threading
+import time
 from collections.abc import Callable
 from ctypes import wintypes
 from pathlib import Path
@@ -81,9 +83,33 @@ def _spool() -> Any:
     return spool
 
 
+# EnumPrintersW tarda ~80-340 ms por llamada (medido con bench:ipc en
+# flows_printers_list): el listado se cachea unos segundos para aperturas
+# sucesivas del selector. Una impresora instalada hace <TTL puede no aparecer
+# hasta el próximo vencimiento.
+_PRINTERS_CACHE_TTL_SECONDS = 30.0
+_printers_cache: tuple[float, list[dict[str, str | bool]]] | None = None
+_printers_cache_lock = threading.Lock()
+
+
+def reset_printer_cache_for_tests() -> None:
+    global _printers_cache
+    with _printers_cache_lock:
+        _printers_cache = None
+
+
 def list_printers() -> list[dict[str, str | bool]]:
     if sys.platform != "win32":
         return []
+    global _printers_cache
+    with _printers_cache_lock:
+        now = time.monotonic()
+        if _printers_cache is None or now - _printers_cache[0] >= _PRINTERS_CACHE_TTL_SECONDS:
+            _printers_cache = (now, _enum_printers())
+        return list(_printers_cache[1])
+
+
+def _enum_printers() -> list[dict[str, str | bool]]:
     spool = _spool()
     needed, count = wintypes.DWORD(), wintypes.DWORD()
     found = spool.EnumPrintersW(6, None, 4, None, 0, ctypes.byref(needed), ctypes.byref(count))

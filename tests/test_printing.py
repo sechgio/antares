@@ -55,6 +55,31 @@ class FakeGdi:
         return 1
 
 
+@pytest.fixture(autouse=True)
+def _clear_printer_cache():
+    printing.reset_printer_cache_for_tests()
+    yield
+    printing.reset_printer_cache_for_tests()
+
+
+class CountingSpool:
+    def __init__(self):
+        self.enum_calls = 0
+        self.printers = (printing._PrinterInfo * 1)(printing._PrinterInfo("Uno", None, 0))
+
+    def EnumPrintersW(self, flags, name, level, buffer, size, needed, count):
+        self.enum_calls += 1
+        needed._obj.value = ctypes.sizeof(self.printers)
+        count._obj.value = 1
+        if buffer is not None:
+            ctypes.memmove(buffer, self.printers, needed._obj.value)
+            return 1
+        return 0
+
+    def GetDefaultPrinterW(self, buffer, size):
+        return 0
+
+
 @pytest.fixture
 def device(tmp_path, monkeypatch):
     source = tmp_path / "sellado.pdf"
@@ -145,3 +170,33 @@ def test_non_windows_does_not_offer_printing(monkeypatch):
     assert printing.list_printers() == []
     with pytest.raises(ValueError, match="Windows"):
         printing.print_pdf("reporte.pdf", "Prueba")
+
+
+def test_printer_list_is_cached_within_ttl(monkeypatch):
+    spool = CountingSpool()
+    monkeypatch.setattr(printing.sys, "platform", "win32")
+    monkeypatch.setattr(printing, "_spool", lambda: spool)
+    expected = [{"name": "Uno", "default": False}]
+    assert printing.list_printers() == expected
+    assert printing.list_printers() == expected
+    assert spool.enum_calls == 2  # una enumeración = probe + fill
+
+
+def test_printer_list_cache_expires(monkeypatch):
+    spool = CountingSpool()
+    monkeypatch.setattr(printing.sys, "platform", "win32")
+    monkeypatch.setattr(printing, "_spool", lambda: spool)
+    monkeypatch.setattr(printing, "_PRINTERS_CACHE_TTL_SECONDS", 0)
+    assert printing.list_printers() == [{"name": "Uno", "default": False}]
+    assert printing.list_printers() == [{"name": "Uno", "default": False}]
+    assert spool.enum_calls == 4  # TTL=0: cada llamada re-enumera
+
+
+def test_printer_list_cache_reset(monkeypatch):
+    spool = CountingSpool()
+    monkeypatch.setattr(printing.sys, "platform", "win32")
+    monkeypatch.setattr(printing, "_spool", lambda: spool)
+    printing.list_printers()
+    printing.reset_printer_cache_for_tests()
+    printing.list_printers()
+    assert spool.enum_calls == 4

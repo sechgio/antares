@@ -116,8 +116,26 @@ class HandlerRegistry:
                 except Exception:
                     log_event(logger, logging.ERROR, "handlers.warm_history_schema", outcome="failed", message="history schema background warm failed", exc_info=True)
 
+            def _warm_heavy_deps() -> None:
+                # Imports fríos medidos: pandas ~1s, weasyprint ~1s, openpyxl
+                # ~0.5s, pymupdf/docx ~0.15s. Precargarlos en background evita
+                # el pico de 1-3s en el primer render/export del usuario.
+                warmed = []
+                for module_name in ("weasyprint", "pandas", "openpyxl", "pymupdf", "docx"):
+                    try:
+                        with serialized_import():
+                            importlib.import_module(module_name)
+                        warmed.append(module_name)
+                    except Exception:
+                        logger.debug("Post-ready heavy-dep warm skipped: %s", module_name, exc_info=True)
+                log_event(
+                    logger, logging.INFO, "handlers.warm_heavy_deps", outcome="success",
+                    count=len(warmed), message=f"heavy deps post-ready warm complete: {','.join(warmed)}",
+                )
+
             executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="history-warm")
             executor.submit(_warm_history_bg)
+            executor.submit(_warm_heavy_deps)
             executor.shutdown(wait=False)
         except Exception:
             logger.exception("history schema background warm submission failed")

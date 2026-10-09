@@ -92,7 +92,7 @@
     "db_template": { "handler": "backend:database", "rawOutputPath": true, "inputSchema": {"type":"object","properties":{"path":{"type":"string"}},"required":["path"]} },
     "db_validate_mapping": { "handler": "backend:database", "idempotent": true, "fileTokens": [["files", "*"]], "inputSchema": {"type":"object","properties":{"files":{},"mapping":{}}} },
     "diagnostics_export": { "handler": "native:dialog", "timeout": "long" },
-    "diagnostics_snapshot": { "handler": "backend:diagnostics", "lane": "sync", "orchestratable": true, "inputSchema": {"type":"object","properties":{}} },
+    "diagnostics_snapshot": { "handler": "backend:diagnostics", "lane": "light", "orchestratable": true, "inputSchema": {"type":"object","properties":{}} },
     "dialog_dest": { "handler": "native:dialog", "timeout": "long" },
     "dialog_files": { "handler": "native:dialog", "timeout": "long" },
     "dialog_folder": { "handler": "native:dialog", "timeout": "long" },
