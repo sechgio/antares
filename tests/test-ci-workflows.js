@@ -40,14 +40,33 @@ function run() {
   assert(!/\bnpm install\b/.test(ci), 'CI never performs mutable npm install');
   assert(ci.includes('persist-credentials: false'), 'CI checkout does not persist Git credentials');
   assertActionsPinned(ci, 'CI');
-  const [linuxJob, windowsJob = ''] = ci.split(/^  test-windows:\s*$/m);
-  assert(linuxJob.includes('run: npm run ci'), 'Linux CI runs the shared quality gate');
-  assert(Boolean(windowsJob), 'CI retains the Windows test job');
-  assert(windowsJob.includes('runs-on: windows-latest'), 'Windows tests run on Windows');
+  const [, windowsJob = '', frontendJob = ''] = ci.split(/^  (?:verify|test-frontend):\s*$/m);
+  assert(!ci.includes('ubuntu-latest'), 'PR CI runs only on Windows');
+  assert(windowsJob.includes('runs-on: windows-latest'), 'Backend and quality checks run on Windows');
+  const qualityCommands = packageJson.scripts.ci.split(' && ').filter((command) => command !== 'npm test');
+  const qualityStep = windowsJob.match(/- name: Run quality checks\r?\n\s+shell: bash\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1] || '';
+  assert(
+    qualityStep.trim().split(/\s*&&\s*/).join(' && ') === qualityCommands.join(' && '),
+    'Windows CI preserves every check from the shared quality gate in order and fails closed',
+  );
   assert(windowsJob.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
   assert(windowsJob.includes('WEASYPRINT_DLL_DIRECTORIES='), 'Windows tests configure WeasyPrint DLLs');
-  assert(windowsJob.includes('run: node scripts/run-test-suites.js'), 'Windows CI runs the test suites');
+  for (const suite of ['contracts', 'backend', 'electron']) {
+    assert(windowsJob.includes(`run: node scripts/run-test-suites.js ${suite}`), `Windows CI runs the ${suite} suite`);
+  }
+  assert(!/run: node scripts\/run-test-suites\.js\s*$/m.test(ci), 'CI does not repeat the full suite alongside frontend shards');
   assert(windowsJob.includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
+  assert(frontendJob.includes('runs-on: windows-latest'), 'Frontend shards run on Windows');
+  assert(frontendJob.includes('shard: [1, 2]'), 'Frontend tests run in two complementary shards');
+  assert(frontendJob.includes('fail-fast: false'), 'A failing shard does not cancel the other shard');
+  assert(!/^\s+needs:/m.test(frontendJob), 'Frontend shards run in parallel with backend and quality checks');
+  assert(frontendJob.includes("node-version-file: '.node-version'"), 'Frontend shards use the pinned Node version');
+  assert(frontendJob.includes('run: npm ci --prefix frontend'), 'Frontend shards install locked frontend dependencies');
+  assert(frontendJob.includes('run: npm run test --prefix frontend -- --shard=${{ matrix.shard }}/2'), 'Frontend shard selection reaches Vitest');
+  assert(
+    /if: matrix\.shard == 1\r?\n\s+run: npm run test:static --prefix frontend/.test(frontendJob),
+    'Static frontend tests run exactly once',
+  );
 
   assert(nodeVersion === '22.19.0', '.node-version pins Node 22.19.0');
   assert(setupCi.includes("node-version-file: '.node-version'"), 'setup-ci reads the committed Node version file');

@@ -16,23 +16,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Lint, audit, and test
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup CI toolchain
-        uses: ./.github/actions/setup-ci
-
-      - name: Run CI checks
-        run: npm run ci
-
-  test-windows:
-    name: Test on Windows
+    name: Backend, Electron, and quality (Windows)
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -61,8 +45,53 @@ jobs:
           }
           echo "WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Run test suites
-        run: node scripts/run-test-suites.js
+      - name: Run quality checks
+        shell: bash
+        run: >-
+          npm run lint:python && npm run typecheck:backend &&
+          npm run check:any && npm run check:ratchet &&
+          npm run audit:python && npm run audit:node &&
+          npm run typecheck:frontend && npm run check:budgets
+
+      - name: Run contract tests
+        run: node scripts/run-test-suites.js contracts
+
+      - name: Run backend tests
+        run: node scripts/run-test-suites.js backend
+
+      - name: Run Electron tests
+        run: node scripts/run-test-suites.js electron
 
       - name: Run slow stress tests (excluded from the default gate)
         run: uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py -m slow -q
+
+  test-frontend:
+    name: Frontend ${{ matrix.shard }}/2 (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.node-version'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Run frontend tests
+        run: npm run test --prefix frontend -- --shard=${{ matrix.shard }}/2
+
+      - name: Run static frontend tests
+        if: matrix.shard == 1
+        run: npm run test:static --prefix frontend
