@@ -82,7 +82,7 @@ def test_lane_and_handler_projections() -> None:
 
     assert "process_start" not in HEAVY_METHODS
     assert "canvas_export_cmyk_pdf" in HEAVY_METHODS
-    assert frozenset({"version", "process_status", "diagnostics_snapshot"}) == SYNC_METHODS
+    assert frozenset({"version", "process_status"}) == SYNC_METHODS
     assert SYNC_METHODS.isdisjoint(HEAVY_METHODS)
 
 
