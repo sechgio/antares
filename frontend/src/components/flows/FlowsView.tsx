@@ -5,7 +5,7 @@ import { useToast } from '../../hooks/useToast';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import ConnectionsView from './ConnectionsView';
 import ProvidersView from './ProvidersView';
-import AgentView from './AgentView';
+import AgentView from '../agent/AgentView';
 import FlowEditor from './FlowEditor';
 import FlowList from './FlowList';
 import RunsView from './RunsView';

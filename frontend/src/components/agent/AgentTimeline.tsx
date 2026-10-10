@@ -4,7 +4,7 @@ import type { AiProviderSpec } from '../../api/aiProvidersApi';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
-import { METHOD_LABELS } from './nodeDefs';
+import { METHOD_LABELS } from '../flows/nodeDefs';
 import { useEffect, useState } from 'react';
 import { flowsApi } from '../../api/flowsApi';
 
