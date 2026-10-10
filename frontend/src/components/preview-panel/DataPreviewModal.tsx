@@ -414,6 +414,7 @@ export default function DataPreviewModal({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Buscar en todas las columnas..."
+                aria-label="Buscar en todas las columnas"
                 className="h-8 w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-all focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary-glow)]"
               />
               {searchQuery && (
@@ -493,6 +494,7 @@ export default function DataPreviewModal({
                       value={columnFilterQuery}
                       onChange={(e) => setColumnFilterQuery(e.target.value)}
                       placeholder="Filtrar columna..."
+                      aria-label="Filtrar columna"
                       className="h-7 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
                     />
                   </div>
@@ -818,6 +820,8 @@ export default function DataPreviewModal({
                 <thead>
                   <tr className="sticky top-0 z-20 border-b border-[var(--border-medium)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_95%,transparent)] backdrop-blur-md shadow-sm">
                     <th
+                      scope="col"
+                      aria-sort={sortCol === "#" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                       className="sticky left-0 z-30 w-12 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_95%,transparent)] border-r border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
                       onClick={() => handleHeaderClick("#")}
                       title="Ordenar por número de fila"
@@ -844,6 +848,8 @@ export default function DataPreviewModal({
                       return (
                         <th
                           key={header}
+                          scope="col"
+                          aria-sort={isSorted ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                           onClick={() => handleHeaderClick(header)}
                           className={`group/th px-3.5 py-2.5 font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none transition-colors ${getColumnWidthClass(
                             header,
@@ -880,6 +886,8 @@ export default function DataPreviewModal({
                     })}
 
                     <th
+                      scope="col"
+                      aria-sort={sortCol === "__fotos__" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                       onClick={() => handleHeaderClick("__fotos__")}
                       className="sticky right-0 z-20 w-28 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_95%,transparent)] border-l border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
                       title="Ordenar por cantidad de fotos vinculadas"
@@ -916,6 +924,8 @@ export default function DataPreviewModal({
                           rowComponent={PreviewVirtualRow as never}
                           rowProps={virtualRowProps}
                           style={{ height: listHeight, width: "100%" }}
+                          role="list"
+                          aria-label="Filas de datos"
                         />
                       </td>
                     </tr>
@@ -929,8 +939,12 @@ export default function DataPreviewModal({
                         return (
                           <tr
                             key={originalIndex}
+                            tabIndex={0}
                             onClick={() => setFocusedRowIndex(originalIndex)}
                             onDoubleClick={() => handleRowClick(originalIndex)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleRowClick(originalIndex);
+                            }}
                             className={`group cursor-pointer transition-colors ${
                               isSelected
                                 ? "bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)] font-medium"

@@ -545,6 +545,31 @@ export default function PreviewPanelView() {
     [headers],
   );
 
+  // El selector construía el array de N opciones en cada render, incluida cada
+  // tecla del buscador. Se memoiza y se topa para no asignar miles de objetos.
+  const rowOptions = useMemo(() => {
+    const MAX_ROW_OPTIONS = 500;
+    const labelFor = (row: Record<string, unknown>, idx: number) =>
+      `${idx + 1}. ${idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}`;
+    if (data.length <= MAX_ROW_OPTIONS) {
+      return data.map((row, idx) => ({ value: String(idx), label: labelFor(row, idx) }));
+    }
+    const kept = data
+      .slice(0, MAX_ROW_OPTIONS)
+      .map((row, idx) => ({ value: String(idx), label: labelFor(row, idx) }));
+    const selected = Number(selectedIndex);
+    if (
+      selectedIndex !== "" &&
+      Number.isInteger(selected) &&
+      selected >= MAX_ROW_OPTIONS &&
+      selected < data.length
+    ) {
+      const row = data[selected];
+      if (row) kept.push({ value: selectedIndex, label: labelFor(row, selected) });
+    }
+    return kept;
+  }, [data, idColumn, selectedIndex]);
+
   const canPrevRow = selectedIndex !== "" && parseInt(selectedIndex) > 0;
   const canNextRow =
     selectedIndex !== "" && parseInt(selectedIndex) < data.length - 1;
@@ -741,16 +766,24 @@ export default function PreviewPanelView() {
               <input
                 id="logoLeftInput"
                 type="file"
-                hidden
+                className="sr-only"
                 accept="image/*"
-                onChange={(e) => handleLogoUpload(e, "left")}
+                aria-label="Subir logo izquierdo"
+                onChange={(e) => {
+                  handleLogoUpload(e, "left");
+                  e.target.value = "";
+                }}
               />
               <input
                 id="logoRightInput"
                 type="file"
-                hidden
+                className="sr-only"
                 accept="image/*"
-                onChange={(e) => handleLogoUpload(e, "right")}
+                aria-label="Subir logo derecho"
+                onChange={(e) => {
+                  handleLogoUpload(e, "right");
+                  e.target.value = "";
+                }}
               />
             </div>
           </Step>
@@ -780,9 +813,13 @@ export default function PreviewPanelView() {
                 <input
                   id="templateInput"
                   type="file"
-                  hidden
+                  className="sr-only"
                   accept=".html"
-                  onChange={handleTemplateUpload}
+                  aria-label="Subir plantilla HTML"
+                  onChange={(e) => {
+                    handleTemplateUpload(e);
+                    e.target.value = "";
+                  }}
                 />
               </label>
 
@@ -1131,10 +1168,14 @@ export default function PreviewPanelView() {
                 </div>
                 <input
                   type="file"
-                  hidden
+                  className="sr-only"
                   multiple
                   accept="image/*"
-                  onChange={handleImageUpload}
+                  aria-label="Subir fotos"
+                  onChange={(e) => {
+                    handleImageUpload(e);
+                    e.target.value = "";
+                  }}
                 />
               </label>
             ) : (
@@ -1162,6 +1203,7 @@ export default function PreviewPanelView() {
                 <input
                   type="text"
                   placeholder="Buscar orden..."
+                  aria-label="Buscar orden"
                   value={searchOrder}
                   onChange={(e) => {
                     const term = e.target.value;
@@ -1186,10 +1228,7 @@ export default function PreviewPanelView() {
                 aria-label="Seleccionar fila"
                 placeholder="-- Seleccionar Fila --"
                 value={selectedIndex}
-                options={data.map((row, idx) => ({
-                  value: String(idx),
-                  label: `${idx + 1}. ${idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}`,
-                }))}
+                options={rowOptions}
                 onChange={setSelectedIndex}
                 disabled={exportScope === "all"}
                 maxMenuHeight={280}

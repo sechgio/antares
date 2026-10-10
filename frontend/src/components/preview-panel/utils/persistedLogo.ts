@@ -19,10 +19,13 @@ export function savePersistedLogo(
   key: string,
   dataUrl: string,
   fileName: string,
-): void {
+): boolean {
   try {
     localStorage.setItem(key, JSON.stringify({ dataUrl, fileName }));
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function clearPersistedLogo(key: string): void {
