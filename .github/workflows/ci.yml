@@ -15,8 +15,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: Lint, audit, and test (Windows)
+  frontend:
+    name: Frontend tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup frontend toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          python: 'false'
+          root: 'false'
+
+      - name: Run frontend tests
+        run: node scripts/run-test-suites.js frontend
+
+  backend:
+    name: Backend tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup backend toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          root: 'false'
+          frontend: 'false'
+
+      - name: Identify runner image
+        id: runner-image
+        shell: pwsh
+        run: |
+          if (-not $env:ImageOS -or -not $env:ImageVersion) { throw 'Missing runner image metadata' }
+          "version=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Cache installed Pango runtime
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            C:\msys64\mingw64
+            C:\msys64\var\lib\pacman\local
+          key: pango-runtime-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-image.outputs.version }}-${{ hashFiles('scripts/install-ci-pango.ps1') }}
+
+      - name: Install and validate Pango
+        shell: pwsh
+        run: ./scripts/install-ci-pango.ps1
+
+      - name: Run backend tests
+        run: node scripts/run-test-suites.js backend
+
+      - name: Run slow stress tests (excluded from the default gate)
+        run: uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py -m slow -q
+
+  quality:
+    name: Quality and build (Windows)
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -28,28 +88,31 @@ jobs:
       - name: Setup CI toolchain
         uses: ./.github/actions/setup-ci
 
-      - name: Cache MSYS2 packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: C:\msys64\var\cache\pacman\pkg
-          key: msys2-pango-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            msys2-pango-${{ runner.os }}-
-
-      - name: Run checks and test suites in parallel
+      - name: Run quality checks
         shell: bash
-        env:
-          WEASYPRINT_DLL_DIRECTORIES: C:\msys64\mingw64\bin
         run: >-
-          npx --no-install concurrently --kill-others-on-fail --success all
-          --names frontend,backend,build --timings
-          "node scripts/run-test-suites.js frontend"
-          "pwsh -NoProfile -File scripts/install-ci-pango.ps1 &&
           npm run lint:python && npm run typecheck:backend &&
           npm run check:any && npm run check:ratchet &&
           npm run audit:python && npm run audit:node &&
-          node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js backend && node scripts/run-test-suites.js electron"
-          "npm run build:frontend"
+          node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js electron
 
-      - name: Run slow stress tests (excluded from the default gate)
-        run: uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py -m slow -q
+      - name: Build frontend and check budgets
+        run: npm run build:frontend
+
+  verify:
+    name: Lint, audit, and test (Windows)
+    needs: [frontend, backend, quality]
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to succeed
+        shell: pwsh
+        env:
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+        run: |
+          foreach ($result in @($env:FRONTEND_RESULT, $env:BACKEND_RESULT, $env:QUALITY_RESULT)) {
+            if ($result -ne 'success') { throw "Required CI job ended with: $result" }
+          }

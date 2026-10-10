@@ -1,10 +1,22 @@
 name: Setup CI
 description: Node from .node-version, Python 3.10, locked uv, npm ci (root + frontend)
 
+inputs:
+  python:
+    description: Install the locked Python environment
+    default: 'true'
+  root:
+    description: Install root Node dependencies
+    default: 'true'
+  frontend:
+    description: Install frontend Node dependencies
+    default: 'true'
+
 runs:
   using: composite
   steps:
     - name: Setup Python
+      if: inputs.python == 'true'
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: '3.10'
@@ -19,15 +31,18 @@ runs:
           frontend/package-lock.json
 
     - name: Install uv
+      if: inputs.python == 'true'
       shell: bash
       run: python -m pip install uv==0.11.19
 
     - name: Locate uv cache
+      if: inputs.python == 'true'
       id: uv-cache
       shell: bash
       run: echo "dir=$(uv cache dir)" >> "$GITHUB_OUTPUT"
 
     - name: Cache Python dependencies
+      if: inputs.python == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.uv-cache.outputs.dir }}
@@ -36,11 +51,16 @@ runs:
           uv-${{ runner.os }}-
 
     - name: Sync Python dependencies
+      if: inputs.python == 'true'
       shell: bash
       run: uv sync --locked --extra dev
 
     - name: Install Node dependencies
+      if: inputs.root == 'true'
       shell: bash
-      run: |
-        npm ci
-        npm ci --prefix frontend
+      run: npm ci
+
+    - name: Install frontend dependencies
+      if: inputs.frontend == 'true'
+      shell: bash
+      run: npm ci --prefix frontend
