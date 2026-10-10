@@ -53,18 +53,22 @@ describe('useKeyboardShortcut', () => {
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
-  it('yields while a view owns the shell chords', () => {
-    const cb = vi.fn();
-    renderHook(() => useKeyboardShortcut('0', cb, { ctrl: true }));
-    claimShellShortcuts('canvas', true);
+  it('yields only the chords a view claims', () => {
+    const owned = vi.fn();
+    const other = vi.fn();
+    renderHook(() => useKeyboardShortcut('0', owned, { ctrl: true }));
+    renderHook(() => useKeyboardShortcut('2', other, { ctrl: true }));
+    claimShellShortcuts('canvas', ['ctrl+0']);
     try {
       dispatchKey(document.body, '0', { ctrlKey: true });
-      expect(cb).not.toHaveBeenCalled();
+      dispatchKey(document.body, '2', { ctrlKey: true });
+      expect(owned).not.toHaveBeenCalled();
+      expect(other).toHaveBeenCalledTimes(1);
     } finally {
-      claimShellShortcuts('canvas', false);
+      claimShellShortcuts('canvas', null);
     }
     dispatchKey(document.body, '0', { ctrlKey: true });
-    expect(cb).toHaveBeenCalledTimes(1);
+    expect(owned).toHaveBeenCalledTimes(1);
   });
 
   it('stays silent while a modal dialog is open', () => {

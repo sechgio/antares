@@ -1,6 +1,6 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import { api, onNotify } from '../../../api';
-import { acknowledgeCanvasFlush } from '../../../utils/ackCanvasFlush';
+import { acknowledgeCanvasFlush, registerCanvasFlushOwner } from '../../../utils/ackCanvasFlush';
 import { reportFrontendEvent } from '../../../utils/observability';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 import type { CanvasDocument } from '../types';
@@ -139,14 +139,21 @@ export function useCanvasQuitFlush({
     renameBaselineRef,
   ]);
 
-  useEffect(() => onNotify(async (method) => {
-    if (method !== 'app.flush-canvas-before-quit') return;
-    try {
-      await flushRef.current();
-    } finally {
+  useEffect(() => {
+    const release = registerCanvasFlushOwner();
+    const unsubscribe = onNotify(async (method) => {
+      if (method !== 'app.flush-canvas-before-quit') return;
       try {
-        await acknowledgeCanvasFlush();
-      } catch {}
-    }
-  }), []);
+        await flushRef.current();
+      } finally {
+        try {
+          await acknowledgeCanvasFlush();
+        } catch {}
+      }
+    });
+    return () => {
+      unsubscribe();
+      release();
+    };
+  }, []);
 }
