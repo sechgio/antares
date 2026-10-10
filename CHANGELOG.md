@@ -53,6 +53,20 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Preview de reportes**: un `{%` literal dentro del texto borraba todo el contenido hasta la etiqueta siguiente.
 - **Staging de archivos**: `file_staged_abort` cancelaba la sesión de otra ventana; el token queda ligado a la ventana que lo creó.
 - **Canvas / PDF**: la importación rechaza documentos con más de 500.000 operadores acumulados, aunque cada página permanezca bajo su límite individual.
+- **Espacios / tablero**: arrastrar una tarjeta hacia abajo dentro de su propia columna no cambiaba el orden persistido y la tarjeta volvía a su sitio; el valor se calcula ahora con la misma convención que aplica el tablero.
+- **Diálogos**: cerrar con `Escape` o clic en el fondo dejaba colgada la promesa de `confirm`, de modo que la acción que la esperaba (por ejemplo, salir de Flujos con cambios) no volvía a responder; toda salida resuelve ahora la espera.
+- **Atajos**: `Ctrl+0`, `Ctrl+Shift+I` y `Ctrl+Shift+V` ejecutaban a la vez su acción de Canvas y la navegación del shell; Canvas reclama sus chords mientras está activo y el shell deja de disparar atajos con un modal abierto.
+- **Cierre de la app**: el acuse del flush de Canvas podía quedar sin suscribir mientras cargaba su chunk y detenía el cierre; los Flujos con cambios sin guardar ya no se pierden al cerrar la ventana.
+- **Evidencia de volanteo**: un fallo de lectura de IndexedDB desactivaba el autoguardado durante el resto de la sesión y la última edición se descartaba al desmontar; ahora se conserva el trabajo y el estado se muestra junto a exportar.
+- **Padrón**: la exportación PDF no capturaba errores (el botón volvía a su estado sin avisar) y los campos de fecha no tenían nombre accesible; el modal de importación gana diálogo, foco y `Escape`.
+- **Informes v2 / Preview de reportes**: la exportación de una sola fila saneaba el HTML de la plantilla igual que la consolidada, y generar un PDF sin contenido deja de reportar éxito sin archivo.
+- **Reportes de campo**: los campos usaban la etiqueta como único nombre accesible, la carga de paneles fallaba en silencio y el derivado de esquema antiguo rompía la restauración.
+- **Optimizador**: cancelar regeneraba los workers en lugar de reciclarlos, `ThemeSelect` anunciaba un listbox sin teclado y el recorte gana diálogo, `Escape` y ajuste con flechas.
+- **Notas adhesivas**: los controles por nota no eran alcanzables por teclado, el guardado podía perderse al cerrar y las pilas se apilaban siempre por encima de las notas libres.
+- **Sellador**: mover y redimensionar el sello solo era posible con ratón; el panel gana campos numéricos de posición y tamaño.
+- **Volantes**: la selección de registros y los controles de formato no eran operables por teclado ni anunciaban su estado.
+- **Gantt / Historial**: las tareas sin fecha se anclaban al día UTC de creación y la búsqueda del historial solo filtraba las páginas ya cargadas.
+- **Exportación PNG de Canvas**: los tres caminos de exportación fallaban en silencio; ahora el panel y la selección muestran el error.
 
 ### Security
 - **Flujos / webhook**: un webhook sin `secret` configurado aceptaba cualquier llamada local; ahora el secreto es obligatorio y toda llamada sin clave válida recibe 403.
