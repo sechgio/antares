@@ -360,8 +360,18 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
 
   useEffect(() => {
     registerLeaveGuard?.(prepareLeave);
-    return () => registerLeaveGuard?.(null);
-  }, [registerLeaveGuard, prepareLeave]);
+    // El guard solo cubre el cambio de pestaña dentro de la app: sin este
+    // listener, cerrar la ventana con un flujo sucio perdía el trabajo.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      registerLeaveGuard?.(null);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [registerLeaveGuard, prepareLeave, dirty]);
 
   const rename = useCallback(
     async (name: string) => {
