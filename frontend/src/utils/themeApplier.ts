@@ -39,9 +39,9 @@ const LIGHT_THEME: Partial<ThemeConfig> = {
   bg: '#F6F7FB',
   bg_secondary: '#FFFFFF',
   fg: '#121826',
-  fg_muted: '#667085',
+  fg_muted: '#5B6577',
   fg_secondary: '#475467',
-  fg_tertiary: '#98A2B3',
+  fg_tertiary: '#848D9E',
   border: '#D9DEE8',
 };
 
@@ -175,6 +175,15 @@ function applyContrastToColor(color: string, foreground: string, background: str
   return mixHexColors(color, target, amount);
 }
 
+function readableAccentOn(accent: string, background: string, isLightBg: boolean) {
+  const target = isLightBg ? '#000000' : '#FFFFFF';
+  let next = accent;
+  for (let amount = 0.04; contrastRatio(next, background) < 3 && amount <= 1; amount += 0.04) {
+    next = mixHexColors(accent, target, amount);
+  }
+  return next;
+}
+
 function isThemeConfig(value: unknown): value is ThemeConfig {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<ThemeConfig>;
@@ -260,6 +269,8 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
   const nextTheme = composeTheme(theme, mode, accentKey);
   const root = document.documentElement;
   const isLightTheme = relativeLuminance(nextTheme.bg) > 0.55;
+  const accent = readableAccentOn(nextTheme.accent, nextTheme.bg, isLightTheme);
+  const cssTheme: ThemeConfig = { ...nextTheme, accent };
   const contrast = normalizeContrast(nextTheme.contrast);
   const density = normalizeThemeDensity(nextTheme.density);
   const elevated = nextTheme.bg_elevated || shadeHex(nextTheme.bg_secondary, isLightTheme ? -0.04 : 0.04);
@@ -275,7 +286,7 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
   const cssCache: Record<string, string> = {};
 
   Object.entries(CSS_VAR_MAP).forEach(([key, cssVars]) => {
-    const value = nextTheme[key];
+    const value = cssTheme[key];
     if (!value) return;
     cssVars.forEach((cssVar) => {
       root.style.setProperty(cssVar, value);
@@ -296,14 +307,14 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
     '--mc-charcoal': secondaryText,
     '--mc-slate': secondaryText,
     '--mc-graphite': strongText,
-    '--text-on-accent': readableTextFor(nextTheme.accent),
+    '--text-on-accent': readableTextFor(accent),
     '--text-on-danger': readableTextFor(nextTheme.error || '#EF4444'),
-    '--accent-primary-glow': `${nextTheme.accent}33`,
-    '--accent-orange-glow': `${nextTheme.accent}33`,
+    '--accent-primary-glow': `${accent}33`,
+    '--accent-orange-glow': `${accent}33`,
     '--scrollbar-thumb': `${nextTheme.fg_muted}55`,
     '--scrollbar-thumb-hover': `${nextTheme.fg_muted}88`,
-    '--selection-bg': `${nextTheme.accent}55`,
-    '--selection-fg': readableTextFor(nextTheme.accent),
+    '--selection-bg': `${accent}55`,
+    '--selection-fg': readableTextFor(accent),
     '--app-interface-font': interfaceFont,
     '--app-code-font': codeFont,
     '--app-font-size': `${interfaceFontSize}px`,
