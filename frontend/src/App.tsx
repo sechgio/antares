@@ -8,6 +8,7 @@ import ToastContainer from './components/ui/Toast';
 import Dialog from './components/ui/Dialog';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import { DEFAULT_TAB, FULL_BLEED_TABS, type TabId, type ConfigSectionId } from './navigation';
+import type { FlowsSection } from './components/flows';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthSkeleton';
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
@@ -39,6 +40,7 @@ const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas
 const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
 const FlowsView = React.lazy(() => import('./components/flows'));
+const AgentView = React.lazy(() => import('./components/agent'));
 
 const CANVAS_KEEPALIVE_MS = 60 * 1000;
 function prefetchSettingsModal() {
@@ -71,6 +73,7 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   previewPanel: PreviewPanelView,
   canvas: CanvasView,
   flows: FlowsView,
+  agent: AgentView,
   panelAvisoCorte: PanelAvisoCorteView,
   ubicaciones: UbicacionesView,
   evidenciaVolanteo: EvidenciaVolanteoView,
@@ -149,6 +152,8 @@ function AppContent() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<ConfigSectionId>('appearance');
   const [petEnabled, setPetEnabled] = useState(isPetMascotEnabled);
+  const [agentDraft, setAgentDraft] = useState('');
+  const [flowsSection, setFlowsSection] = useState<FlowsSection | null>(null);
   const stickyNotesEnabled = usePluginEnabled('sticky-notes');
   const flowsLeaveGuard = useRef<(() => Promise<boolean>) | null>(null);
   const registerFlowsLeaveGuard = useCallback((guard: (() => Promise<boolean>) | null) => {
@@ -157,6 +162,7 @@ function AppContent() {
 
   const handleTabChange = useCallback(async (tab: TabId) => {
     if (activeTab === 'flows' && tab !== 'flows' && flowsLeaveGuard.current && !await flowsLeaveGuard.current()) return;
+    setFlowsSection(null);
     if (tab === 'canvas') {
       prefetchCanvasView();
       setCanvasMounted(true);
@@ -170,6 +176,14 @@ function AppContent() {
   }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openAppearanceSettings = useCallback(() => openSettings('appearance'), [openSettings]);
+  const openProvidersSection = useCallback(() => {
+    setFlowsSection('providers');
+    setActiveTab('flows');
+  }, []);
+  const askAgent = useCallback((draft: string) => {
+    setAgentDraft(draft);
+    void handleTabChange('agent');
+  }, [handleTabChange]);
 
   useEffect(() => {
     if (!canvasMounted || activeTab === 'canvas') return;
@@ -302,7 +316,17 @@ function AppContent() {
                 {ActiveView && (
                   <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
                     <ErrorBoundary key={activeTab} view={activeTab}>
-                      {activeTab === 'flows' ? <FlowsView registerLeaveGuard={registerFlowsLeaveGuard} /> : <ActiveView />}
+                      {activeTab === 'flows' ? (
+                        <FlowsView
+                          registerLeaveGuard={registerFlowsLeaveGuard}
+                          initialSection={flowsSection ?? undefined}
+                          onAskAgent={askAgent}
+                        />
+                      ) : activeTab === 'agent' ? (
+                        <AgentView initialDraft={agentDraft} onConfigureProvider={openProvidersSection} />
+                      ) : (
+                        <ActiveView />
+                      )}
                     </ErrorBoundary>
                   </div>
                 )}
