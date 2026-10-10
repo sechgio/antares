@@ -1,1 +1,1 @@
-export { default } from './FlowsView';
+export { default, type FlowsSection } from './FlowsView';

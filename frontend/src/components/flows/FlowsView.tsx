@@ -5,28 +5,34 @@ import { useToast } from '../../hooks/useToast';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import ConnectionsView from './ConnectionsView';
 import ProvidersView from './ProvidersView';
-import AgentView from './AgentView';
 import FlowEditor from './FlowEditor';
 import FlowList from './FlowList';
 import RunsView from './RunsView';
 
-type Section = 'flows' | 'runs' | 'connections' | 'providers' | 'agent';
+export type FlowsSection = 'flows' | 'runs' | 'connections' | 'providers';
 
-const SECTIONS: { value: Section; label: string }[] = [
+const SECTIONS: { value: FlowsSection; label: string }[] = [
   { value: 'flows', label: 'Flujos' },
   { value: 'runs', label: 'Ejecuciones' },
   { value: 'connections', label: 'Conexiones' },
   { value: 'providers', label: 'Proveedores IA' },
-  { value: 'agent', label: 'Agente' },
 ];
 
-export default function FlowsView({ registerLeaveGuard }: { active?: boolean; registerLeaveGuard?: (guard: (() => Promise<boolean>) | null) => void }) {
+export default function FlowsView({
+  registerLeaveGuard,
+  initialSection,
+  onAskAgent,
+}: {
+  active?: boolean;
+  registerLeaveGuard?: (guard: (() => Promise<boolean>) | null) => void;
+  initialSection?: FlowsSection;
+  onAskAgent?: (flowName: string) => void;
+}) {
   const { addToast } = useToast();
-  const [section, setSection] = useState<Section>('flows');
+  const [section, setSection] = useState<FlowsSection>(initialSection ?? 'flows');
   const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
   const [runsFlowId, setRunsFlowId] = useState<string | undefined>(undefined);
   const [listRefresh, setListRefresh] = useState(0);
-  const [agentDraft, setAgentDraft] = useState('');
 
   const openEditor = useCallback((flowId: string) => setEditingFlowId(flowId), []);
   const closeEditor = useCallback(() => {
@@ -57,7 +63,7 @@ export default function FlowsView({ registerLeaveGuard }: { active?: boolean; re
           value={section}
           onChange={setSection}
           aria-label="Secciones de Flujos"
-          className="flex w-[560px] gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5"
+          className="flex w-[460px] gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5"
         />
       </header>
 
@@ -70,12 +76,7 @@ export default function FlowsView({ registerLeaveGuard }: { active?: boolean; re
               flowId={editingFlowId}
               onBack={closeEditor}
               onRunStarted={() => setSection('runs')}
-              onAskAgent={(flowName) => {
-                setAgentDraft(
-                  `Estoy editando el flujo "${flowName}". ¿Puedes ayudarme a revisarlo o mejorarlo?`,
-                );
-                setSection('agent');
-              }}
+              onAskAgent={onAskAgent}
             />
           </div>
           ) : section === 'flows' && (
@@ -92,7 +93,6 @@ export default function FlowsView({ registerLeaveGuard }: { active?: boolean; re
         {section === 'runs' && <RunsView flowId={runsFlowId} />}
         {section === 'connections' && <ConnectionsView />}
         {section === 'providers' && <ProvidersView />}
-        {section === 'agent' && <AgentView initialDraft={agentDraft} onConfigureProvider={() => setSection('providers')} />}
       </div>
     </div>
   );

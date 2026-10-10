@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { flowsApi } from '../../api/flowsApi';
 import { aiProvidersApi } from '../../api/aiProvidersApi';
 import FlowList from './FlowList';
-import { ApprovalCard, MessageRow } from './AgentTimeline';
+import { ApprovalCard, MessageRow } from '../agent/AgentTimeline';
 import RunsView, { StepOutput } from './RunsView';
 import ConnectionDetail from './ConnectionDetail';
 import ProvidersView from './ProvidersView';
