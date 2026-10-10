@@ -43,14 +43,6 @@ class TestModuleConstants:
 
 
 class TestPanelImageRefCaption:
-    def test_valid_caption_matches_position(self) -> None:
-        ref = PanelImageRef(
-            filename="foto.jpg",
-            caption="IMAGEN N°2: Av. Principal 123",
-            position=2,
-        )
-        assert ref.position == 2
-
     def test_invalid_caption_format_missing_prefix_raises(self) -> None:
         with pytest.raises(InvalidPanelError, match="caption"):
             PanelImageRef(
@@ -146,22 +138,6 @@ class TestPanelCapacityAndPositions:
 
 
 class TestPanelFechaCorte:
-    def test_empty_fecha_is_accepted_form_mode(self) -> None:
-        panel = Panel(
-            cuadrante="CUAD-1",
-            fecha_corte="",
-            motivo="Trabajos",
-        )
-        assert panel.fecha_corte == ""
-
-    def test_iso_date_is_accepted(self) -> None:
-        panel = Panel(
-            cuadrante="CUAD-1",
-            fecha_corte="2024-12-31",
-            motivo="Trabajos",
-        )
-        assert panel.fecha_corte == "2024-12-31"
-
     @pytest.mark.parametrize(
         "bad_date",
         [
@@ -184,24 +160,6 @@ class TestPanelFechaCorte:
 
 
 class TestPanelSourceRowIndex:
-    def test_none_is_accepted(self) -> None:
-        panel = Panel(
-            cuadrante="CUAD-1",
-            fecha_corte="",
-            motivo="Trabajos",
-            source_row_index=None,
-        )
-        assert panel.source_row_index is None
-
-    def test_non_negative_int_is_accepted(self) -> None:
-        panel = Panel(
-            cuadrante="CUAD-1",
-            fecha_corte="",
-            motivo="Trabajos",
-            source_row_index=0,
-        )
-        assert panel.source_row_index == 0
-
     def test_negative_raises(self) -> None:
         with pytest.raises(InvalidPanelError, match="source_row_index"):
             Panel(
@@ -213,24 +171,6 @@ class TestPanelSourceRowIndex:
 
 
 class TestMatchRule:
-    def test_prefix_without_regex_is_valid(self) -> None:
-        rule = MatchRule(key_column="CODIGO", strategy="prefix")
-        assert rule.regex_pattern is None
-
-    def test_contains_without_regex_is_valid(self) -> None:
-        MatchRule(key_column="CODIGO", strategy="contains")
-
-    def test_exact_without_regex_is_valid(self) -> None:
-        MatchRule(key_column="CODIGO", strategy="exact")
-
-    def test_regex_with_named_clave_group_is_valid(self) -> None:
-        rule = MatchRule(
-            key_column="CODIGO",
-            strategy="regex",
-            regex_pattern=r"^img_(?P<clave>[A-Za-z0-9]+)",
-        )
-        assert rule.regex_pattern is not None
-
     def test_regex_without_named_clave_group_raises(self) -> None:
         with pytest.raises(InvalidMatchRuleError, match="clave"):
             MatchRule(

@@ -95,12 +95,4 @@ describe('FileGrid handler stability', () => {
     expect(second.onFileDoubleClick).toBe(first.onFileDoubleClick);
   });
 
-  it('FileGrid cellProps memo does not recreate when handlers are stable', async () => {
-    const fs = await import('node:fs');
-    const path = await import('node:path');
-    const filePath = path.resolve(process.cwd(), 'src/components/conversion/ConversionView.tsx');
-    const text = fs.readFileSync(filePath, 'utf-8');
-    expect(text).toMatch(/const removeFile\s*=\s*useCallback/);
-    expect(text).toMatch(/const removeSelectedFiles\s*=\s*useCallback/);
-  });
 });

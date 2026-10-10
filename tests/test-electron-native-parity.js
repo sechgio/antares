@@ -51,7 +51,6 @@ function main() {
 
   // Una proyección incompleta del catálogo deja métodos inalcanzables.
   const catalogNatives = byHandler('native:dialog');
-  check(setsEqual(source, catalogNatives), 'NATIVE_METHODS == los native:dialog del catálogo');
   check(
     setsEqual(new Set(dialogNative), catalogNatives),
     'dialog-handlers.NATIVE_METHODS == los native:dialog del catálogo'

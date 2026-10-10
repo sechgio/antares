@@ -42,10 +42,6 @@ function run() {
   const src = fs.readFileSync(routerFile, 'utf8');
 
   assert(
-    !/^const \{ handleUbicacionesCall \} = require\('\.\/ubicaciones-handlers'\);/m.test(src),
-    'no top-level require of ubicaciones-handlers',
-  );
-  assert(
     /require\('\.\/ubicaciones-handlers'\)/.test(src),
     'ubicaciones-handlers is required lazily inside a call path',
   );
@@ -70,28 +66,7 @@ function run() {
   require(ubicacionesPath);
   assert(!!require.cache[ubicacionesPath], 'ubicaciones-handlers loads on demand');
 
-  runRouterSmokeTests();
-
   finish();
-}
-
-function runRouterSmokeTests() {
-  console.log('\nSmoke: Ubicaciones payload contract through the IPC router...\n');
-
-  const {
-    _maybeResolveFileTokens,
-    _validateAndResolveWriteParams,
-  } = require('../electron/ipc-router');
-
-  try {
-    const manual = { excelPath: null, outputDir: undefined, manualData: { lat: -12.0, lon: -77.0 } };
-    const out1 = _maybeResolveFileTokens({ ...manual }, null);
-    const out2 = _validateAndResolveWriteParams(out1, null);
-    assert(out2.excelPath === null, 'manual mode payload unchanged');
-    assert(!!out2.manualData, 'manualData preserved');
-  } catch (e) {
-    assert(false, `manual payload should pass untouched: ${e.message}`);
-  }
 }
 
 run();

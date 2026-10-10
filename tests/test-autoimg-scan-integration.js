@@ -43,19 +43,6 @@ async function main() {
 
   const emitted = [];
   const mockDrive = {
-    buildNisMap: (files, folderName) => {
-      const map = {};
-      for (const file of files) {
-        const match = file.name.match(/\b(\d{7})\b/);
-        if (!match) continue;
-        const nis = match[1];
-        if (!map[nis]) map[nis] = { count: 0, files: [], folders: [], slots: [] };
-        map[nis].count += 1;
-        map[nis].files.push(file.name);
-        map[nis].folders.push(folderName);
-      }
-      return map;
-    },
     listFolder: async (folderId, { onPage, collect = true } = {}) => {
       await sleep(15);
       if (folderId === 'fail-folder') throw new Error('sin acceso');

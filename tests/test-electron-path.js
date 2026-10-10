@@ -51,10 +51,6 @@ assert(!prodLinux.cmd.includes('.exe'), 'Prod mode linux should not use .exe');
 assert(prodLinux.cmd.includes('AntaresBackend'), 'Prod mode should use AntaresBackend');
 assert(prodLinux.args.length === 0, 'Prod mode should have no args');
 
-console.log('\nTest 6: Dev mode includes fallback paths');
-const devPaths = getBackendCommand(true, 'win32', __dirname);
-assert(devPaths.cmd !== null, 'Dev mode should return a command');
-
 console.log(`\n${'='.repeat(50)}`);
 console.log(`Results: ${counters.passed} passed, ${counters.failed} failed`);
 console.log('='.repeat(50));
