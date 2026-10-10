@@ -6,6 +6,7 @@ import '../../i18n';
 import { ImageItem } from './types';
 import { formatBytes } from '../../utils/format';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
+import { useRovingListbox } from '../../hooks/useRovingListbox';
 import Button from '@/components/ui/Button';
 
 export const glassPanelClass =
@@ -58,6 +59,12 @@ export function ThemeSelect({
     lockSize: true,
   });
 
+  const pick = (next: string) => {
+    onChange(next);
+    close();
+  };
+  const onListKeyDown = useRovingListbox(menuRef, open, pick, { focusFallback: true });
+
   return (
     <>
       <Button variant="none" size="none"
@@ -83,6 +90,7 @@ export function ThemeSelect({
           id={listId}
           role="listbox"
           aria-label={ariaLabel}
+          onKeyDown={onListKeyDown}
           style={{
             top: menuBox.top,
             left: menuBox.left,
@@ -97,6 +105,7 @@ export function ThemeSelect({
               <Button variant="none" size="none"
                 key={opt.value}
                 role="option"
+                data-value={opt.value}
                 aria-selected={active}
                 onClick={() => {
                   onChange(opt.value);

@@ -166,11 +166,21 @@ export default function PreviewWorkspace({
       <div
         key={item.id}
         data-image-optimizer-card="true"
+        role="button"
+        tabIndex={0}
+        aria-label={`Ver ${item.originalName}`}
         className="group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] transition-[transform,background-color,border-color] duration-100 hover:bg-[var(--bg-elevated)] active:scale-[0.98] motion-reduce:active:scale-100"
         style={gridIsVirtualized ? { height: gridCardHeight } : undefined}
         onClick={() => {
           onSetActiveItem(item.id);
           onViewModeChange('single');
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSetActiveItem(item.id);
+            onViewModeChange('single');
+          }
         }}
       >
         <div className="relative aspect-[3/4] w-full overflow-hidden bg-[var(--bg-surface)]">
@@ -222,6 +232,7 @@ export default function PreviewWorkspace({
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'processing' ? 'animate-pulse' : ''}`}
             style={{ backgroundColor: statusColor }}
+            title={item.status === 'error' ? (item.error ?? undefined) : undefined}
           />
         </div>
       </div>

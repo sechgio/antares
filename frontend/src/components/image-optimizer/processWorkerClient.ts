@@ -258,7 +258,20 @@ export async function runProcessInWorker(input: WorkerProcessInput): Promise<{
       retireWorker(entry, new Error('Image process worker timed out'));
     }, PROCESS_WORKER_TIMEOUT_MS);
     const abortHandler = () => {
-      retireWorker(entry, createAbortError());
+      // Cancelar no retira el worker: terminarlo y regenerarlo por cada
+      // cancelación dejaba la cola parada re-descargando el módulo y
+      // re-JITeando por cada ítem en vuelo. Se rechaza lo pendiente y el
+      // worker se recicla; su respuesta tardía no encuentra pending y se
+      // ignora en onmessage. Solo onerror/onmessageerror/timeout retiran.
+      const pending = pendingById.get(requestId);
+      if (pending) {
+        pendingById.delete(requestId);
+        clearPending(pending);
+        pending.reject(createAbortError());
+      }
+      entry.requestId = null;
+      entry.busy = false;
+      wakeNextWorker();
     };
     const pending: Pending = {
       resolve,
@@ -267,6 +280,8 @@ export async function runProcessInWorker(input: WorkerProcessInput): Promise<{
       signal: input.signal,
       abortHandler,
     };
+    // Registrar antes de escuchar el abort: si la señal ya venía abortada, el
+    // handler debe encontrar el pending para rechazar la promesa.
     pendingById.set(requestId, pending);
     entry.requestId = requestId;
     if (input.signal) {

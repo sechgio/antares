@@ -1,7 +1,8 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crop, Move, RotateCw, X } from 'lucide-react';
 import { CropOffset, CropOrigin, ImageItem, AspectRatio } from './types';
 import { getCropRectangle } from './utils';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import Button from '@/components/ui/Button';
 
 interface CropEditorProps {
@@ -14,7 +15,17 @@ interface CropEditorProps {
 
 export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, onSave }: CropEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  useFocusTrap(dialogRef, true);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const defaultY = cropOrigin === 'top' ? 0 : 1;
 
@@ -91,22 +102,44 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
     onClose();
   }, [image.id, offset, onClose, onSave]);
 
+  const nudgeOffset = useCallback((key: 'x' | 'y', delta: number) => {
+    setOffset((prev) => {
+      const next = Math.max(0, Math.min(1, prev[key] + delta));
+      return next === prev[key] ? prev : { ...prev, [key]: next };
+    });
+  }, []);
+
+  const handleCropBoxKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 0.25 : 0.05;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); nudgeOffset('x', -step); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); nudgeOffset('x', step); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); nudgeOffset('y', -step); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); nudgeOffset('y', step); }
+  }, [nudgeOffset]);
+
   if (!cropInfo || cropInfo.cropType === 'none') {
     return null;
   }
 
   return (
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="crop-editor-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-[color:color-mix(in_srgb,var(--bg-base)_90%,transparent)] backdrop-blur-sm p-4"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div className="flex max-h-[95vh] w-full max-w-6xl flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between rounded-xl border border-[var(--border-medium)] bg-[var(--bg-base)] px-5 py-4 shadow-sm">
           <div className="flex items-center gap-3">
             <Crop size={16} className="text-[var(--text-primary)]" />
-            <h3 className="font-mono text-[11px] uppercase tracking-widest text-[var(--text-primary)]">Ajustar Recorte</h3>
+            <h3 id="crop-editor-title" className="font-mono text-[11px] uppercase tracking-widest text-[var(--text-primary)]">Ajustar Recorte</h3>
             <span className="rounded bg-[var(--bg-surface)] px-2 py-0.5 text-[10px] font-mono text-[var(--text-muted)] border border-[var(--border-medium)]">{aspectRatio}</span>
           </div>
           <div className="flex items-center gap-3">
@@ -117,7 +150,7 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
               <RotateCw size={12} />
               Resetear
             </Button>
-            <Button variant="none" size="none" onClick={onClose} className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]">
+            <Button variant="none" size="none" onClick={onClose} aria-label="Cerrar recorte" className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]">
               <X size={16} />
             </Button>
           </div>
@@ -132,9 +165,13 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
             <img src={image.preview} alt={image.originalName} className="max-h-[64vh] w-auto select-none" draggable={false} />
             <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }} />
             <div
+              role="button"
+              tabIndex={0}
+              aria-label="Mover recorte (flechas para ajustar)"
               className="absolute cursor-grab border-[3px] border-[var(--accent-primary)] active:cursor-grabbing"
               style={{ ...cropBoxStyle, boxShadow: '0 0 0 9999px color-mix(in srgb, var(--bg-base) 70%, transparent), 0 0 20px var(--accent-primary-glow)' }}
               onMouseDown={handleMouseDown}
+              onKeyDown={handleCropBoxKeyDown}
             >
               <div
                 className="absolute inset-0 overflow-hidden"
