@@ -55,7 +55,17 @@ function runNodeTests(testNames) {
   }
 }
 
-function runSuite(name) {
+function runFrontendSuite(shard) {
+  const frontend = path.join(ROOT, 'frontend');
+  if (shard) {
+    run(npmCommand, ['run', 'test:shard', '--', `--shard=${shard}`], frontend);
+    if (shard.split('/')[0] === '1') run(npmCommand, ['run', 'test:static'], frontend);
+    return;
+  }
+  run(npmCommand, ['run', 'test:all'], frontend);
+}
+
+function runSuite(name, shard = null) {
   switch (name) {
     case 'contracts':
       runNodeTests(CONTRACT_TESTS);
@@ -67,7 +77,7 @@ function runSuite(name) {
       runNodeTests(ELECTRON_TESTS);
       return;
     case 'frontend':
-      run(npmCommand, ['run', 'test:all'], path.join(ROOT, 'frontend'));
+      runFrontendSuite(shard);
       return;
     default:
       throw new Error(`Unknown test suite: ${name}`);
@@ -75,10 +85,14 @@ function runSuite(name) {
 }
 
 const requestedSuite = process.argv[2];
+const requestedShard = process.argv[3];
+if (requestedShard && !/^\d+\/\d+$/.test(requestedShard)) {
+  throw new Error(`Invalid shard (expected <index>/<count>): ${requestedShard}`);
+}
 const suites = requestedSuite ? [requestedSuite] : ['contracts', 'backend', 'electron', 'frontend'];
 
 try {
-  for (const suite of suites) runSuite(suite);
+  for (const suite of suites) runSuite(suite, requestedShard);
   console.log('\nAll requested test suites passed.');
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

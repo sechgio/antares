@@ -11,6 +11,7 @@
     "check:shell-budget": "node scripts/shell-preload-budget.mjs",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:shard": "vitest run",
     "test:static": "vitest run --config vitest.static.config.ts",
     "test:all": "vitest run && npm run test:static",
     "test:coverage": "vitest run --coverage"
