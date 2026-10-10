@@ -460,4 +460,30 @@ describe('useReportWorkspace', () => {
     expect(mocks.addToast).toHaveBeenCalledWith({ message: 'CSV inválido', type: 'error' });
     expect(result.current.busy).toBe(false);
   });
+
+  it('asks for confirmation before importing with unsaved changes', async () => {
+    const api = makeApi();
+    const { result } = renderHook(() => useReportWorkspace(api));
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      await result.current.selectReport('TR-0001');
+    });
+    await act(async () => {
+      result.current.patchForm({ id: 'TR-0001', title: 'editado sin guardar' });
+    });
+    expect(result.current.hasChanges).toBe(true);
+
+    mocks.confirm.mockResolvedValueOnce(false);
+    await act(async () => {
+      await result.current.importFile(new File(['id,title'], 'informes.csv', { type: 'text/csv' }));
+    });
+    expect(api.importFile).not.toHaveBeenCalled();
+    expect(result.current.formData).toMatchObject({ title: 'editado sin guardar' });
+
+    mocks.confirm.mockResolvedValueOnce(true);
+    await act(async () => {
+      await result.current.importFile(new File(['id,title'], 'informes.csv', { type: 'text/csv' }));
+    });
+    expect(api.importFile).toHaveBeenCalledTimes(1);
+  });
 });
