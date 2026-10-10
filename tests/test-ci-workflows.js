@@ -12,6 +12,7 @@ const RUNNER_PATH = path.join(ROOT, 'scripts', 'run-test-suites.js');
 const PACKAGE_PATH = path.join(ROOT, 'package.json');
 const FRONTEND_PACKAGE_PATH = path.join(ROOT, 'frontend', 'package.json');
 const UV_LOCK_PATH = path.join(ROOT, 'uv.lock');
+const PYPROJECT_PATH = path.join(ROOT, 'pyproject.toml');
 const NODE_VERSION_PATH = path.join(ROOT, '.node-version');
 const VITE_CONFIG_PATH = path.join(ROOT, 'frontend', 'vite.config.ts');
 const STATIC_VITEST_CONFIG_PATH = path.join(ROOT, 'frontend', 'vitest.static.config.ts');
@@ -37,6 +38,7 @@ function run() {
   const viteConfig = fs.readFileSync(VITE_CONFIG_PATH, 'utf8');
   const staticVitestConfig = fs.readFileSync(STATIC_VITEST_CONFIG_PATH, 'utf8');
   const pangoSetup = fs.readFileSync(PANGO_SETUP_PATH, 'utf8');
+  const pyproject = fs.readFileSync(PYPROJECT_PATH, 'utf8');
 
   assert(/permissions:\r?\n\s+contents:\s+read/.test(ci), 'CI has explicit read-only permissions');
   assert(ci.includes('cancel-in-progress: true'), 'CI cancels obsolete runs for the same ref');
@@ -173,6 +175,10 @@ function run() {
   assert(
     runner.includes("run('uv', ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v']"),
     'test runner runs pytest through the locked Python environment',
+  );
+  assert(
+    pyproject.includes('"pytest-xdist>=3.6.0"') && /^addopts\s*=\s*"[^"]*-n 4"/m.test(pyproject),
+    'Backend pytest distributes the suite across four workers instead of running serially',
   );
   assert(runner.includes("'test-quality-ratchet.js'"), 'test runner treats quality-ratchet as a contract test');
   assert(runner.includes("'test-review-policy.js'"), 'test runner treats review-policy as a contract test');
