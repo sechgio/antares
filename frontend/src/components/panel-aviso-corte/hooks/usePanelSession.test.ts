@@ -66,22 +66,22 @@ describe("usePanelSession", () => {
 
   it("setLogo valida tipo y tamaño, y limpia con null", async () => {
     const { result } = renderHook(() => usePanelSession());
-    expect(result.current.setLogoLeft(img("x.txt", "text/plain"))).toBe(
+    expect(result.current.setLogoRight(img("x.txt", "text/plain"))).toBe(
       "Archivo de logo inválido",
     );
     expect(
-      result.current.setLogoLeft(img("big.png", "image/png", 6 * 1024 * 1024)),
+      result.current.setLogoRight(img("big.png", "image/png", 6 * 1024 * 1024)),
     ).toBe("El logo supera el tamaño máximo de 5 MB");
     let err: string | null = "x";
     act(() => {
-      err = result.current.setLogoLeft(img("ok.png"));
+      err = result.current.setLogoRight(img("ok.png"));
     });
     expect(err).toBeNull();
-    expect(result.current.logoLeft?.file.name).toBe("ok.png");
+    expect(result.current.logoRight?.file.name).toBe("ok.png");
     act(() => {
-      result.current.setLogoLeft(null);
+      result.current.setLogoRight(null);
     });
-    expect(result.current.logoLeft).toBeNull();
+    expect(result.current.logoRight).toBeNull();
   });
 
   it("addImages filtra tipo/tamaño y devuelve errores por imagen grande", async () => {
@@ -95,8 +95,9 @@ describe("usePanelSession", () => {
       ]);
     });
     expect(result.current.images.map((i) => i.file.name)).toEqual(["a.png"]);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("c.png");
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain("b.txt");
+    expect(errors[1]).toContain("c.png");
   });
 
   it("removeImage y clearImages vacían la lista", async () => {
