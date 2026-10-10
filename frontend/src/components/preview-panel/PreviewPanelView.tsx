@@ -23,6 +23,7 @@ import { useBackendStatus } from "../../hooks/useBackendStatus";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useLocalStorageState } from "../../hooks/useLocalStorageState";
 import { mapWithConcurrencyLimit } from "../../utils/mapWithConcurrencyLimit";
+import { sanitizeHtmlForPdf } from "../../../../shared/html-sanitizer.js";
 import PreviewPanel, { renderPreviewHtml } from "./PreviewPanel";
 import TemplatePicker from "./TemplatePicker";
 import { REPORT_FIELDS } from "./constants";
@@ -658,7 +659,9 @@ export default function PreviewPanelView() {
       );
 
       const html =
-        exportScope === "all" ? mergeHtmlDocuments(documents) : documents[0];
+        exportScope === "all"
+          ? mergeHtmlDocuments(documents)
+          : sanitizeHtmlForPdf(documents[0]);
       const res = await api.htmlToPdf({
         html,
         filename,
