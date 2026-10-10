@@ -187,8 +187,6 @@
   "optimizer.fields.maxSizeMb": "Peso maximo (MB)",
   "optimizer.fields.prefix": "Prefijo",
   "optimizer.fields.start": "Inicio",
-  "optimizer.fields.preview": "Vista previa",
-  "optimizer.fields.enableRename": "activa Renombrar",
   "optimizer.fields.zipFolder": "Carpeta ZIP",
   "optimizer.status.excluded": "Excluida",
   "optimizer.status.processing": "Procesando",

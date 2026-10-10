@@ -31,14 +31,14 @@ interface QueuePanelProps {
 }
 
 const chipBtn =
-  'h-6 rounded-md px-2 text-[10px] font-medium text-[var(--text-secondary)] border border-[var(--border-medium)] bg-[var(--bg-input)] transition-[color,background-color,transform] duration-100 hover:text-[var(--text-primary)] active:scale-[0.96] motion-reduce:active:scale-100';
+  'h-7 rounded-md bg-[var(--bg-input)] px-2.5 text-[12px] font-medium text-[var(--text-secondary)] transition-[color,background-color,transform] duration-150 hover:text-[var(--text-primary)] active:scale-[0.97] motion-reduce:active:scale-100';
 
 const iconBtn =
-  'flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] transition-[color,background-color,transform] duration-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] active:scale-[0.96] disabled:pointer-events-none disabled:opacity-25';
+  'flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-[color,background-color,transform] duration-150 hover:bg-[var(--border-medium)] hover:text-[var(--text-primary)] active:scale-[0.97] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-25';
 
 const QUEUE_VIRTUALIZATION_THRESHOLD = 100;
-const QUEUE_ITEM_HEIGHT = 40;
-const QUEUE_GAP = 4;
+const QUEUE_ITEM_HEIGHT = 52;
+const QUEUE_GAP = 2;
 const QUEUE_ROW_HEIGHT = QUEUE_ITEM_HEIGHT + QUEUE_GAP;
 const QUEUE_OVERSCAN = 6;
 
@@ -194,43 +194,43 @@ export default function QueuePanel({
           onDragLeave={() => setDropTargetId((current) => current === item.id ? null : current)}
           onDrop={(e) => handleDrop(e, item.id)}
           onDragEnd={resetDragState}
-          className={`group flex h-10 w-full flex-none cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 py-1.5 transition-[background-color,opacity] duration-100 ${
+          className={`group flex h-[52px] w-full flex-none cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 transition-[background-color,opacity] duration-150 ${
             isActive
               ? 'bg-[var(--bg-input)]'
               : 'hover:bg-[var(--bg-input)]'
           } ${dropTargetId === item.id ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)]' : ''} ${draggedItemId === item.id ? 'opacity-55' : item.excluded ? 'opacity-45' : ''}`}
           onClick={() => onSetActiveItem(item.id)}
         >
-          <GripVertical size={12} className="shrink-0 text-[var(--text-secondary)] opacity-35 transition-opacity group-hover:opacity-70" />
+          <GripVertical size={14} className="-mx-1 shrink-0 text-[var(--text-muted)] opacity-0 transition-opacity group-hover:opacity-100" />
 
           <input
             type="checkbox"
             checked={item.selected}
             onChange={() => onToggleSelection(item.id)}
             onClick={(e) => e.stopPropagation()}
-            className="h-3 w-3 shrink-0 cursor-pointer rounded accent-[var(--accent-primary)]"
+            className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-[var(--accent-primary)]"
           />
 
-          <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md bg-[var(--bg-surface)]">
+          <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md bg-[var(--bg-input)]">
             {item.preview ? (
               <img src={item.preview} alt={item.originalName} loading="lazy" decoding="async" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full items-center justify-center">
-                <ImageIcon size={11} className="text-[var(--text-secondary)]" />
+                <ImageIcon size={14} className="text-[var(--text-secondary)]" />
               </div>
             )}
             {item.status === 'processing' && (
               <div className="absolute inset-0 flex items-center justify-center bg-[color:color-mix(in_srgb,var(--bg-base)_55%,transparent)]">
-                <Loader2 size={10} className="animate-spin text-[var(--text-primary)]" />
+                <Loader2 size={14} className="animate-spin text-[var(--text-primary)]" />
               </div>
             )}
           </div>
 
           <div className="min-w-0 flex-1 overflow-hidden">
-            <p className={`truncate text-[11px] font-medium leading-tight text-[var(--text-primary)] ${item.excluded ? 'line-through' : ''}`}>
+            <p className={`truncate text-[13px] leading-tight text-[var(--text-primary)] ${item.excluded ? 'line-through' : ''}`}>
               {outputName}
             </p>
-            <p className="mt-px truncate whitespace-nowrap font-mono text-[9px] tabular-nums leading-tight text-[var(--text-secondary)]">
+            <p className="mt-1 truncate whitespace-nowrap font-mono text-[12px] tabular-nums leading-tight text-[var(--text-secondary)]">
               {formatBytes(item.originalSize)}
               {hasResult && item.resultSize != null && (
                 <span className="text-[var(--accent-green)]">{' → '}{formatBytes(item.resultSize)}</span>
@@ -238,38 +238,40 @@ export default function QueuePanel({
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-px opacity-70 transition-opacity group-hover:opacity-100">
-            <WithHoverTooltip label={t('optimizer.queue.cropEditor')} placement="bottom">
-              <Button variant="none" size="none"
-                aria-label={t('optimizer.queue.cropEditor')}
-                onClick={(e) => { e.stopPropagation(); onOpenCropEditor(item.id); }}
-                disabled={!itemSettings.operations.cropEnabled || itemSettings.crop.aspectRatio === 'original'}
-                className={iconBtn}
-              >
-                <Crop size={12} />
-              </Button>
-            </WithHoverTooltip>
-            <WithHoverTooltip label={t('optimizer.preview.download')} placement="bottom">
-              <Button variant="none" size="none"
-                aria-label={t('optimizer.preview.download')}
-                onClick={(e) => { e.stopPropagation(); onDownloadSingle(item); }}
-                disabled={!isReady}
-                className={iconBtn}
-              >
-                <FileDown size={12} />
-              </Button>
-            </WithHoverTooltip>
-            <WithHoverTooltip label={t('optimizer.queue.remove')} placement="bottom">
-              <Button variant="none" size="none"
-                aria-label={t('optimizer.queue.remove')}
-                onClick={(e) => { e.stopPropagation(); onRemoveItem(item.id); }}
-                className={`${iconBtn} hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] hover:text-[var(--accent-red)]`}
-              >
-                <Trash2 size={12} />
-              </Button>
-            </WithHoverTooltip>
+          <div className="flex shrink-0 items-center">
+            <div className="hidden items-center gap-0.5 group-hover:flex group-focus-within:flex">
+              <WithHoverTooltip label={t('optimizer.queue.cropEditor')} placement="bottom">
+                <Button variant="none" size="none"
+                  aria-label={t('optimizer.queue.cropEditor')}
+                  onClick={(e) => { e.stopPropagation(); onOpenCropEditor(item.id); }}
+                  disabled={!itemSettings.operations.cropEnabled || itemSettings.crop.aspectRatio === 'original'}
+                  className={iconBtn}
+                >
+                  <Crop size={14} />
+                </Button>
+              </WithHoverTooltip>
+              <WithHoverTooltip label={t('optimizer.preview.download')} placement="bottom">
+                <Button variant="none" size="none"
+                  aria-label={t('optimizer.preview.download')}
+                  onClick={(e) => { e.stopPropagation(); onDownloadSingle(item); }}
+                  disabled={!isReady}
+                  className={iconBtn}
+                >
+                  <FileDown size={14} />
+                </Button>
+              </WithHoverTooltip>
+              <WithHoverTooltip label={t('optimizer.queue.remove')} placement="bottom">
+                <Button variant="none" size="none"
+                  aria-label={t('optimizer.queue.remove')}
+                  onClick={(e) => { e.stopPropagation(); onRemoveItem(item.id); }}
+                  className={`${iconBtn} hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] hover:text-[var(--accent-red)]`}
+                >
+                  <Trash2 size={14} />
+                </Button>
+              </WithHoverTooltip>
+            </div>
             <span
-              className={`ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'processing' ? 'animate-pulse' : ''}`}
+              className={`ml-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'processing' ? 'animate-pulse' : ''}`}
               style={{ backgroundColor: color }}
             />
           </div>
@@ -280,10 +282,10 @@ export default function QueuePanel({
 
   return (
     <section data-surface-part="queue" className={`relative flex h-full flex-col overflow-hidden ${glassPanelClass}`}>
-      <header className="flex shrink-0 flex-col gap-1 px-2.5 pb-1.5 pt-2.5">
+      <header className="flex shrink-0 flex-col gap-2 px-5 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] font-semibold text-[var(--text-primary)]">
-            {t('optimizer.queue.title')} <span className="ml-1 font-mono text-[10px] tabular-nums text-[var(--text-secondary)]">{items.length}</span>
+          <p className="text-[14px] font-medium text-[var(--text-primary)]">
+            {t('optimizer.queue.title')} <span className="ml-1 font-mono text-[12px] font-normal tabular-nums text-[var(--text-muted)]">{items.length}</span>
           </p>
           <div className="flex items-center gap-1">
             <Button variant="none" size="none" onClick={onSelectAll} className={chipBtn}>
@@ -296,7 +298,7 @@ export default function QueuePanel({
             )}
           </div>
         </div>
-        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] tabular-nums text-[var(--text-secondary)]">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12px] tabular-nums text-[var(--text-secondary)]">
           <span>{t('optimizer.queue.included', { count: includedCount })}</span>
           {pendingCount > 0 && <span>{t('optimizer.queue.pending', { count: pendingCount })}</span>}
           {downloadableItems.length > 0 && (
@@ -310,7 +312,7 @@ export default function QueuePanel({
             <Button variant="none" size="none" onClick={onToggleExcludeSelected} className={chipBtn}>{t('optimizer.queue.exclude')}</Button>
             <Button variant="none" size="none"
               onClick={onRemoveSelected}
-              className="h-6 rounded-md border border-[color:color-mix(in_srgb,var(--accent-red)_25%,transparent)] px-2 text-[10px] font-medium text-[var(--accent-red)] transition-[background-color,transform] duration-100 hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] active:scale-[0.96]"
+              className="h-7 rounded-md bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] px-2.5 text-[12px] font-medium text-[var(--accent-red)] transition-[background-color,transform] duration-150 hover:bg-[color:color-mix(in_srgb,var(--accent-red)_16%,transparent)] active:scale-[0.97] motion-reduce:active:scale-100"
             >
               {t('optimizer.queue.remove')}
             </Button>
@@ -323,11 +325,11 @@ export default function QueuePanel({
         data-virtualized-queue={isVirtualized ? 'true' : undefined}
         data-image-optimizer-queue-scroll="true"
         onScroll={handleQueueScroll}
-        className="custom-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 pb-1.5"
+        className="custom-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2"
       >
         <div
           data-virtualized-queue-content={isVirtualized ? 'true' : undefined}
-          className={isVirtualized ? 'relative w-full' : 'flex w-full flex-1 flex-col gap-1'}
+          className={isVirtualized ? 'relative w-full' : 'flex w-full flex-1 flex-col gap-0.5'}
           style={isVirtualized ? { height: queueContentHeight } : undefined}
         >
           {isVirtualized
@@ -338,9 +340,9 @@ export default function QueuePanel({
             : items.map((item, index) => renderQueueItem(item, index))}
 
           {items.length === 0 && (
-            <div className="flex h-full min-h-[7rem] w-full flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border-medium)] text-center">
-              <ImageIcon size={14} className="mb-1.5 text-[var(--text-secondary)]" />
-              <p className="text-[10px] font-medium text-[var(--text-secondary)]">{t('optimizer.queue.empty')}</p>
+            <div className="flex h-full min-h-[7rem] w-full flex-1 flex-col items-center justify-center gap-2 text-center">
+              <ImageIcon size={18} className="text-[var(--text-muted)]" />
+              <p className="text-[13px] text-[var(--text-secondary)]">{t('optimizer.queue.empty')}</p>
             </div>
           )}
         </div>

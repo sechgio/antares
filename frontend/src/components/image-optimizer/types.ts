@@ -123,7 +123,6 @@ export interface PresetDefinition {
   id: PresetId;
   label: string;
   description: string;
-  accentClassName: string;
   settings: BatchSettings;
 }
 

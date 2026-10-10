@@ -39,8 +39,8 @@ export default function ItemOverridesPanel({
   ];
 
   return (
-    <div className="space-y-1.5 border-t border-[var(--border-medium)] pt-1.5 pb-1.5">
-      <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+    <div className="space-y-3 border-t border-[var(--border-subtle)] pt-3">
+      <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
         <FormField label={t('optimizer.item.finalName')}>
           <input
             type="text"
@@ -51,13 +51,13 @@ export default function ItemOverridesPanel({
           />
         </FormField>
 
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-medium text-[var(--text-secondary)]">{t('optimizer.item.localPreset')}</span>
+            <span className="text-[12px] text-[var(--text-secondary)]">{t('optimizer.item.localPreset')}</span>
             {item.overrides.presetId ? (
               <Button variant="none" size="none"
                 onClick={() => onClearPresetOverride(item.id)}
-                className="text-[10px] font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                className="text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
               >
                 {t('optimizer.queue.clearSelection')}
               </Button>
@@ -72,7 +72,7 @@ export default function ItemOverridesPanel({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <SettingSwitchRow
           switchId={skipCompressionId}
           label={t('optimizer.item.skipCompression')}
@@ -90,7 +90,7 @@ export default function ItemOverridesPanel({
           accentColor="var(--accent-red)"
         />
 
-        <p className="text-[10px] text-[var(--text-secondary)] sm:ml-auto">
+        <p className="text-[12px] text-[var(--text-muted)] sm:ml-auto">
           {primaryActionLabel}
           <span className="mx-1 text-[var(--border-medium)]">·</span>
           {isDirect ? t('optimizer.item.direct') : t('optimizer.item.processed')}
@@ -98,7 +98,7 @@ export default function ItemOverridesPanel({
       </div>
 
       {item.error ? (
-        <p className="text-[10px] leading-snug text-[var(--accent-red)]">{item.error}</p>
+        <p className="text-[12px] leading-snug text-[var(--accent-red)]">{item.error}</p>
       ) : null}
     </div>
   );
