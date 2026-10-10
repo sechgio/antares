@@ -143,21 +143,21 @@ describe('image optimizer virtualization', () => {
     await waitFor(() => expect(container.querySelector('[data-virtualized-queue-content]')).not.toBeNull());
 
     const content = container.querySelector('[data-virtualized-queue-content]') as HTMLElement;
-    expect(content.style.height).toBe(`${items.length * 44 - 4}px`);
+    expect(content.style.height).toBe(`${items.length * 54 - 2}px`);
 
     const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-virtualized-queue-row]'));
     expect(rows[0]?.parentElement?.style.top).toBe('0px');
-    expect(rows[1]?.parentElement?.style.top).toBe('44px');
-    expect(rows[0]?.parentElement?.style.height).toBe('40px');
+    expect(rows[1]?.parentElement?.style.top).toBe('54px');
+    expect(rows[0]?.parentElement?.style.height).toBe('52px');
   });
 
-  it('maps a deep queue scroll offset to the same 44 px row interval', async () => {
+  it('maps a deep queue scroll offset to the same 54 px row interval', async () => {
     mockViewport();
     const { container } = renderQueue(makeItems(200));
     const scrollElement = container.querySelector('[data-image-optimizer-queue-scroll]') as HTMLElement;
 
     await waitFor(() => expect(container.querySelector('[data-virtualized-queue]')).not.toBeNull());
-    Object.defineProperty(scrollElement, 'scrollTop', { configurable: true, value: 44 * 50, writable: true });
+    Object.defineProperty(scrollElement, 'scrollTop', { configurable: true, value: 54 * 50, writable: true });
     fireEvent.scroll(scrollElement);
 
     await waitFor(() => {
@@ -170,7 +170,7 @@ describe('image optimizer virtualization', () => {
     const items = makeItems(99);
     const { container, rerender } = renderQueue(items);
     const scrollElement = container.querySelector('[data-image-optimizer-queue-scroll]') as HTMLElement;
-    Object.defineProperty(scrollElement, 'scrollTop', { configurable: true, value: 500, writable: true });
+    Object.defineProperty(scrollElement, 'scrollTop', { configurable: true, value: 54 * 11, writable: true });
     fireEvent.scroll(scrollElement);
 
     rerender(queueElement(makeItems(200)));

@@ -65,14 +65,12 @@ export const IMAGE_OPTIMIZER_PRESETS: PresetDefinition[] = [
     id: 'web',
     label: 'Optimizar web',
     description: 'JPEG ligero para sitios y catalogos.',
-    accentClassName: 'border-[color:color-mix(in_srgb,var(--accent-green)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-green)_10%,transparent)] text-[var(--accent-green)]',
     settings: cloneSettings(DEFAULT_BATCH_SETTINGS),
   },
   {
     id: 'social',
     label: 'Redes sociales',
     description: 'Formato vertical con limite listo para publicaciones.',
-    accentClassName: 'border-[color:color-mix(in_srgb,var(--accent-blue)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-blue)_10%,transparent)] text-[var(--accent-blue)]',
     settings: withPatch(DEFAULT_BATCH_SETTINGS, {
       operations: { cropEnabled: true, resizeEnabled: true, formatEnabled: true, compressionEnabled: true, renameEnabled: false },
       crop: { aspectRatio: '4:5', cropOrigin: 'bottom' },
@@ -85,7 +83,6 @@ export const IMAGE_OPTIMIZER_PRESETS: PresetDefinition[] = [
     id: 'rename-only',
     label: 'Solo renombrar',
     description: 'No altera bytes ni dimensiones, solo nombres y exportacion.',
-    accentClassName: 'border-[color:color-mix(in_srgb,var(--accent-yellow)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] text-[var(--accent-yellow)]',
     settings: withPatch(DEFAULT_BATCH_SETTINGS, {
       operations: {
         cropEnabled: false,
@@ -103,7 +100,6 @@ export const IMAGE_OPTIMIZER_PRESETS: PresetDefinition[] = [
     id: 'webp',
     label: 'Convertir a WEBP',
     description: 'Conversion con compresion para peso minimo.',
-    accentClassName: 'border-[color:color-mix(in_srgb,var(--accent-primary)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]',
     settings: withPatch(DEFAULT_BATCH_SETTINGS, {
       operations: { cropEnabled: false, resizeEnabled: false, formatEnabled: true, compressionEnabled: true, renameEnabled: false },
       format: { outputFormat: 'webp' },
@@ -115,7 +111,6 @@ export const IMAGE_OPTIMIZER_PRESETS: PresetDefinition[] = [
     id: 'crop-export',
     label: 'Recorte + exportacion',
     description: 'Recorta y conserva calidad alta para salidas editoriales.',
-    accentClassName: 'border-[color:color-mix(in_srgb,var(--accent-primary)_25%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]',
     settings: withPatch(DEFAULT_BATCH_SETTINGS, {
       operations: { cropEnabled: true, resizeEnabled: false, formatEnabled: false, compressionEnabled: false, renameEnabled: false },
       crop: { aspectRatio: '1:1', cropOrigin: 'bottom' },

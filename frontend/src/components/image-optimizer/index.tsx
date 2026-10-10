@@ -6,7 +6,7 @@ import CropEditor from './CropEditor';
 import PreviewWorkspace from './PreviewWorkspace';
 import QueuePanel from './QueuePanel';
 import SettingsPanel from './SettingsPanel';
-import { glassToolbarClass, PillPreset } from './ui';
+import { PillPreset } from './ui';
 import { useToast } from '../../hooks/useToast';
 import { createImageItem, processImageItem } from './pipeline';
 import { disposeProcessWorkers } from './processWorkerClient';
@@ -654,13 +654,13 @@ export default function ImageOptimizer() {
   const activeIsDirect = activeItem ? isItemDirectExport(activeItem, settings) : false;
 
   const toolbarBtn =
-    'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[10px] font-medium transition-[color,background-color,opacity,transform] duration-100 ease-out active:scale-[0.96] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40';
+    'inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-[13px] font-medium transition-[color,background-color,opacity,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40';
 
   return (
     <div
       ref={rootRef}
       data-surface="image-optimizer"
-      className={`relative flex h-full flex-col overflow-hidden bg-[var(--bg-base)] px-1.5 py-1.5 text-[var(--text-primary)] antialiased transition-[box-shadow] duration-150 ${
+      className={`relative flex h-full flex-col overflow-hidden bg-[var(--bg-base)] p-4 text-[14px] text-[var(--text-primary)] antialiased transition-[box-shadow] duration-150 ${
         isDragActive ? 'shadow-[inset_0_0_0_2px_var(--accent-blue)]' : ''
       }`}
       onDragEnter={handleDrag}
@@ -678,120 +678,107 @@ export default function ImageOptimizer() {
         }}
       />
 
-      <div className="flex h-full w-full flex-col gap-2 overflow-hidden">
-        <section className={`relative shrink-0 overflow-hidden px-2.5 py-1.5 ${glassToolbarClass}`}>
-          <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
-              {IMAGE_OPTIMIZER_PRESETS.map((preset) => (
-                <PillPreset
-                  key={preset.id}
-                  label={t(`optimizer.presets.${preset.id}`, { defaultValue: preset.label })}
-                  accentClassName={preset.accentClassName}
-                  active={activePresetId === preset.id}
-                  onClick={() => handleApplyGlobalPreset(preset.id as PresetId)}
-                />
-              ))}
+      <div className="flex h-full w-full flex-col gap-4 overflow-hidden">
+        <section className="flex shrink-0 flex-wrap items-center gap-3">
+          <div className="flex min-w-0 max-w-full items-center gap-0.5 overflow-x-auto rounded-xl bg-[var(--bg-surface)] p-1 no-scrollbar">
+            {IMAGE_OPTIMIZER_PRESETS.map((preset) => (
+              <PillPreset
+                key={preset.id}
+                label={t(`optimizer.presets.${preset.id}`, { defaultValue: preset.label })}
+                active={activePresetId === preset.id}
+                onClick={() => handleApplyGlobalPreset(preset.id as PresetId)}
+              />
+            ))}
+          </div>
+
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button variant="none" size="none"
+              aria-label={t('optimizer.actions.chooseFolder')}
+              onClick={handlePickOutputFolder}
+              disabled={isProcessing}
+              className={`${toolbarBtn} max-w-[min(14rem,100%)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]`}
+            >
+              <FolderOpen size={16} className="shrink-0" />
+              <span className="truncate">{outputFolderLabel}</span>
+              {!settings.export.outputFolder.trim() && (
+                <AlertCircle size={14} className="shrink-0 text-[var(--accent-yellow)]" />
+              )}
+            </Button>
+            <Button variant="none" size="none"
+              onClick={handleClearAll}
+              disabled={isProcessing || items.length === 0}
+              className={`${toolbarBtn} text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] hover:text-[var(--accent-red)]`}
+            >
+              <Trash2 size={15} />
+              {t('optimizer.actions.clear')}
+            </Button>
+            <div
+              ref={downloadMenuAnchorRef}
+              className="relative flex h-9 items-stretch overflow-hidden rounded-lg bg-[var(--bg-input)]"
+            >
+              <Button variant="none" size="none"
+                onClick={() => { downloadItems(downloadableItems); closeDownloadMenu(); }}
+                disabled={isProcessing || downloadableItems.length === 0}
+                className="inline-flex h-full items-center gap-2 px-3.5 text-[13px] font-medium text-[var(--text-primary)] transition-[opacity,transform] duration-150 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <FileDown size={15} />
+                {downloadableItems.length > 1 ? 'ZIP' : t('optimizer.actions.download')}
+              </Button>
+              {downloadableItems.length > 0 && (
+                <Button variant="none" size="none"
+                  onClick={toggleDownloadMenu}
+                  disabled={isProcessing || downloadableItems.length === 0}
+                  aria-expanded={downloadMenuOpen}
+                  aria-haspopup="menu"
+                  aria-label={t('optimizer.actions.downloadOptions')}
+                  className="inline-flex h-full items-center border-l border-[var(--border-medium)] px-2 text-[var(--text-secondary)] transition-[color,transform] duration-150 hover:text-[var(--text-primary)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronDown size={14} className={`transition-transform duration-150 ${downloadMenuOpen ? 'rotate-180' : ''}`} />
+                </Button>
+              )}
             </div>
-
-            <div className="flex w-full flex-wrap items-center justify-end gap-1.5 xl:w-auto xl:flex-nowrap">
-              <div className="flex flex-wrap items-center gap-1">
-                <Button variant="none" size="none"
-                  aria-label={t('optimizer.actions.chooseFolder')}
-                  onClick={handlePickOutputFolder}
-                  disabled={isProcessing}
-                  className={`${toolbarBtn} max-w-[min(11rem,100%)] border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]`}
-                >
-                  <FolderOpen size={12} className="shrink-0" />
-                  <span className="truncate">{outputFolderLabel}</span>
-                  {!settings.export.outputFolder.trim() && (
-                    <AlertCircle size={11} className="shrink-0 text-[var(--accent-yellow)]" />
-                  )}
-                </Button>
-              </div>
-
-              <div className="mx-0.5 hidden h-4 w-px bg-[var(--border-medium)] xl:block" aria-hidden="true" />
-
-              <div className="flex flex-wrap items-center gap-1">
-                <Button variant="none" size="none"
-                  onClick={() => handleProcessScope(activeScope)}
-                  disabled={isProcessing || stats.includedCount === 0}
-                  className={`${toolbarBtn} bg-[var(--text-primary)] text-[var(--bg-base)] hover:opacity-90 disabled:opacity-30`}
-                >
-                  {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                  {primaryActionLabel}
-                </Button>
+            {downloadMenuOpen && downloadMenuPosition && createPortal(
                 <div
-                  ref={downloadMenuAnchorRef}
-                  className={`relative flex h-7 items-stretch overflow-hidden rounded-full border ${downloadableItems.length > 0 && !isProcessing
-                    ? 'border-[color:color-mix(in_srgb,var(--accent-green)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-green)_12%,transparent)]'
-                    : 'border-[var(--border-medium)] bg-[var(--bg-input)]'
-                    }`}
+                  ref={downloadMenuRef}
+                  role="menu"
+                  style={{ top: downloadMenuPosition.top, left: downloadMenuPosition.left }}
+                  className="fixed z-[130] w-56 overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1 shadow-lg"
                 >
-                  <Button variant="none" size="none"
-                    onClick={() => { downloadItems(downloadableItems); closeDownloadMenu(); }}
-                    disabled={isProcessing || downloadableItems.length === 0}
-                    className={`inline-flex h-full items-center gap-1.5 px-2.5 text-[10px] font-medium transition-[opacity,transform] duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 ${downloadableItems.length > 0 && !isProcessing ? 'text-[var(--accent-green)]' : 'text-[var(--text-secondary)]'}`}
-                  >
-                    <FileDown size={12} />
-                    {downloadableItems.length > 1 ? 'ZIP' : t('optimizer.actions.download')}
-                  </Button>
-                  {downloadableItems.length > 0 && (
+                  {downloadableItems.length > 1 && (
                     <Button variant="none" size="none"
-                      onClick={toggleDownloadMenu}
-                      disabled={isProcessing || downloadableItems.length === 0}
-                      aria-expanded={downloadMenuOpen}
-                      aria-haspopup="menu"
-                      aria-label={t('optimizer.actions.downloadOptions')}
-                      className="inline-flex h-full items-center border-l border-[color:color-mix(in_srgb,var(--accent-green)_30%,transparent)] px-1.5 text-[var(--accent-green)] transition-transform duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40"
+                      role="menuitem"
+                      onClick={() => { downloadItemsAsZip(downloadableItems); closeDownloadMenu(); }}
+                      className="flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
                     >
-                      <ChevronDown size={11} className={`transition-transform duration-100 ${downloadMenuOpen ? 'rotate-180' : ''}`} />
+                      <FileDown size={15} className="shrink-0 text-[var(--text-secondary)]" />
+                      {t('optimizer.actions.downloadZip')}
+                      <span className="ml-auto font-mono text-[12px] tabular-nums text-[var(--text-muted)]">{downloadableItems.length}</span>
                     </Button>
                   )}
-                </div>
-                {downloadMenuOpen && downloadMenuPosition && createPortal(
-                    <div
-                      ref={downloadMenuRef}
-                      role="menu"
-                      style={{ top: downloadMenuPosition.top, left: downloadMenuPosition.left }}
-                      className="fixed z-[130] w-52 overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-0.5 shadow-lg"
-                    >
-                      {downloadableItems.length > 1 && (
-                        <Button variant="none" size="none"
-                          role="menuitem"
-                          onClick={() => { downloadItemsAsZip(downloadableItems); closeDownloadMenu(); }}
-                          className="flex h-8 w-full items-center gap-2 px-3 text-left text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
-                        >
-                          <FileDown size={12} className="shrink-0 text-[var(--accent-green)]" />
-                          {t('optimizer.actions.downloadZip')}
-                          <span className="ml-auto font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{downloadableItems.length}</span>
-                        </Button>
-                      )}
-                      <Button variant="none" size="none"
-                        role="menuitem"
-                        onClick={() => { downloadItemsIndividually(downloadableItems); closeDownloadMenu(); }}
-                        className="flex h-8 w-full items-center gap-2 px-3 text-left text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
-                      >
-                        <FileDown size={12} className="shrink-0 text-sky-500" />
-                        {t('optimizer.actions.downloadIndividual')}
-                        <span className="ml-auto font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{downloadableItems.length}</span>
-                      </Button>
-                    </div>,
-                  document.body,
-                )}
-                <Button variant="none" size="none"
-                  onClick={handleClearAll}
-                  disabled={isProcessing || items.length === 0}
-                  className={`${toolbarBtn} border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:border-[color:color-mix(in_srgb,var(--accent-red)_40%,transparent)] hover:text-[var(--accent-red)] disabled:opacity-30`}
-                >
-                  <Trash2 size={12} />
-                  {t('optimizer.actions.clear')}
-                </Button>
-              </div>
-            </div>
+                  <Button variant="none" size="none"
+                    role="menuitem"
+                    onClick={() => { downloadItemsIndividually(downloadableItems); closeDownloadMenu(); }}
+                    className="flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
+                  >
+                    <FileDown size={15} className="shrink-0 text-[var(--text-secondary)]" />
+                    {t('optimizer.actions.downloadIndividual')}
+                    <span className="ml-auto font-mono text-[12px] tabular-nums text-[var(--text-muted)]">{downloadableItems.length}</span>
+                  </Button>
+                </div>,
+              document.body,
+            )}
+            <Button variant="none" size="none"
+              onClick={() => handleProcessScope(activeScope)}
+              disabled={isProcessing || stats.includedCount === 0}
+              className={`${toolbarBtn} bg-[var(--text-primary)] font-semibold text-[var(--bg-base)] hover:opacity-90 disabled:opacity-30`}
+            >
+              {isProcessing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              {primaryActionLabel}
+            </Button>
           </div>
         </section>
 
-        <div data-surface-part="workspace" className="grid min-h-0 flex-1 gap-2 pb-1 xl:grid-cols-[220px_minmax(0,1fr)_260px]">
+        <div data-surface-part="workspace" className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
           <SettingsPanel
             settings={settings}
             previewNames={previewNames}
@@ -873,7 +860,7 @@ export default function ImageOptimizer() {
 
       {
         isProcessing ? (
-          <div className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[12px] tabular-nums text-[var(--text-primary)] shadow-lg">
+          <div className="fixed bottom-6 left-1/2 z-40 flex h-10 -translate-x-1/2 items-center gap-2.5 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-4 text-[13px] tabular-nums text-[var(--text-primary)] shadow-lg">
             <Loader2 size={14} className="animate-spin text-[var(--accent-primary)]" />
             {processingMessage || t('optimizer.actions.processingImages', { count: processableItems.length })}
           </div>
