@@ -9,6 +9,26 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return attr === '' || attr === 'true';
 }
 
+// Una vista a pantalla completa puede declarar que sus atajos mandan sobre los
+// del shell mientras está activa. Canvas usa Ctrl+0, Ctrl+Shift+I y Ctrl+Shift+V,
+// que App también capturaba: el shell se registra en fase capture sobre window,
+// su handler corre antes que el de la vista y preventDefault no detiene la
+// propagación, así que ambos se ejecutaban y el usuario salía despedido del
+// editor justo al usar un atajo documentado del propio Canvas.
+const shellShortcutOwners = new Set<string>();
+
+export function claimShellShortcuts(owner: string, claim: boolean): void {
+  if (claim) shellShortcutOwners.add(owner);
+  else shellShortcutOwners.delete(owner);
+}
+
+function isModalOpen(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.querySelector(
+    '[role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"]',
+  ) !== null;
+}
+
 export function useKeyboardShortcut(
   key: string,
   callback: (e: KeyboardEvent) => void,
@@ -40,6 +60,11 @@ export function useKeyboardShortcut(
       const keyOk = e.key.toLowerCase() === normalizedKey || e.code.toLowerCase() === `key${normalizedKey}`;
 
       if (keyOk && ctrlOk && shiftOk && altOk) {
+        // Con un modal abierto el atajo desmontaba la vista que esperaba el
+        // diálogo (ErrorBoundary lleva key={activeTab}) y dejaba el diálogo
+        // huérfano sobre otra herramienta.
+        if (isModalOpen()) return;
+        if (shellShortcutOwners.size > 0) return;
         if (opts?.preventDefault !== false) e.preventDefault();
         callbackRef.current(e);
       }

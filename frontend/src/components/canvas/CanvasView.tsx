@@ -29,6 +29,7 @@ import { useDocumentLifecycle } from './hooks/useDocumentLifecycle';
 import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useLiveRef } from '../../hooks/useLiveRef';
+import { claimShellShortcuts } from '../../hooks/useKeyboardShortcut';
 import { useInlineEdit } from './hooks/useInlineEdit';
 import { useCanvasQuitFlush } from './hooks/useCanvasQuitFlush';
 import { useCanvasCommandPalette } from './hooks/useCanvasCommandPalette';
@@ -788,6 +789,14 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   );
 
   const onKeyDownRef = useRef<(e: KeyboardEvent) => void>(() => {});
+
+  useEffect(() => {
+    if (!active) return;
+    // Canvas posee Ctrl+0, Ctrl+Shift+I y Ctrl+Shift+V: mientras está activo el
+    // shell debe ceder esos chords en lugar de navegar a otra pestaña.
+    claimShellShortcuts('canvas', true);
+    return () => claimShellShortcuts('canvas', false);
+  }, [active]);
 
   useEffect(() => {
     if (!active) return;
