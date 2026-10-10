@@ -1,6 +1,6 @@
 
 
-const { assertOrExit:assert, stubModule, evictModule } = require('./helpers/harness');
+const { assertOrExit: assert, stubModule, evictModule } = require('./helpers/harness');
 
 evictModule('electron/google-drive-service');
 evictModule('electron/autoimg-nis');

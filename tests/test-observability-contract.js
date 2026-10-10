@@ -87,7 +87,7 @@ function main() {
   assertSubset(extractTsUnion(frontendSrc, 'FrontendEventLevel'), new Set(contract.levels), 'levels FE vs contrato');
   assertSubset(extractTsUnion(frontendSrc, 'FrontendEventOutcome'), new Set(contract.outcomes), 'outcomes FE vs contrato');
 
-  console.log('observability contract parity: TODO OK');
+  console.log('observability contract parity: OK');
 }
 
 main();

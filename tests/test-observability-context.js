@@ -21,140 +21,140 @@ function readEvents() {
 }
 
 async function main() {
-try {
-  assert.strictEqual(contract.schema_version, 1, 'contrato versionado');
-  for (const field of ['event', 'level', 'component', 'timestamp', 'app_version', 'session_id']) {
-    assert(contract.required_fields.includes(field), `contrato requiere ${field}`);
-  }
-  assert(!contract.allowed_labels.includes('request_id'), 'request_id no es label agregable');
-  assert(contract.sensitive_fields.includes('token'), 'contrato bloquea tokens');
-  assert(contract.sensitive_fields.includes('path'), 'contrato bloquea rutas');
-
-  appLog.setAppContext({ appVersion: '0.10.20-test', backendVersion: '0.10.20-backend' });
-  const firstSession = appLog.getSessionId();
-  assert.match(firstSession, /^[0-9a-f-]{36}$/i, 'session_id tiene formato UUID');
-  assert.strictEqual(appLog.getSessionId(), firstSession, 'la sesión permanece estable');
-
-  appLog.appendLogEvent('ERROR', 'backend.stderr', {
-    component: 'backend',
-    pid: 1234,
-    backend_pid: 1234,
-    stream: 'stderr',
-    outcome: 'failed',
-    request_id: '11111111-1111-4111-8111-111111111111',
-    timeout_ms: 5000,
-    message: 'Authorization: Bearer secret-value access_token=token-value en C:\\Users\\Alice\\secret.txt alice@example.com',
-    token: 'must-not-be-serialized',
-    path: 'C:\\Users\\Alice\\secret.txt',
-  });
-  appLog.appendLogLine('INFO', 'linea con salto\ninterno');
-  await appLog.flushLogQueue();
-
-  const events = readEvents();
-  const firstEvent = events.find((event) => event.event === 'backend.stderr');
-  assert(firstEvent, 'evento estructurado escrito en JSONL');
-  assert.strictEqual(firstEvent.schema_version, 1, 'evento usa el schema versionado');
-  assert.strictEqual(firstEvent.component, 'backend', 'evento identifica el backend');
-  assert.strictEqual(firstEvent.backend_pid, 1234, 'evento conserva el PID del backend');
-  assert.strictEqual(firstEvent.timeout_ms, 5000, 'evento conserva timeout_ms entero');
-  assert.strictEqual(firstEvent.app_version, '0.10.20-test', 'evento conserva versión de app');
-  assert.strictEqual(firstEvent.backend_version, '0.10.20-backend', 'evento conserva versión de backend');
-  assert.strictEqual(firstEvent.session_id, firstSession, 'evento conserva la sesión');
-  assert(!firstEvent.message.includes('secret-value'), 'redacta bearer token');
-  assert(!firstEvent.message.includes('token-value'), 'redacta access token');
-  assert(!firstEvent.message.includes('C:\\Users\\Alice\\secret.txt'), 'redacta ruta completa');
-  assert(!firstEvent.message.includes('alice@example.com'), 'redacta email');
-  assert.strictEqual(firstEvent.token, undefined, 'omite campos no permitidos');
-  assert.strictEqual(firstEvent.path, undefined, 'omite rutas como campos');
-
-  for (let i = 0; i < 4; i += 1) {
-    appLog.appendLogEvent('INFO', `test.rotation.${i}`, { message: 'x'.repeat(180) });
-  }
-  await appLog.flushLogQueue();
-  const rotatedFiles = fs.readdirSync(appLog.getLogsDir())
-    .filter((name) => /\.jsonl$/.test(name));
-  assert(rotatedFiles.length > 1, 'el JSONL rota por tamaño');
-
-  const droppedBefore = appLog.getDroppedEventCount();
-  const originalAppend = fs.promises.appendFile;
-  fs.promises.appendFile = async () => { throw new Error('simulated unwritable sink'); };
   try {
-    appLog.appendLogEvent('ERROR', 'test.sink_failure', { message: 'must remain fail-open' });
+    assert.strictEqual(contract.schema_version, 1, 'contrato versionado');
+    for (const field of ['event', 'level', 'component', 'timestamp', 'app_version', 'session_id']) {
+      assert(contract.required_fields.includes(field), `contrato requiere ${field}`);
+    }
+    assert(!contract.allowed_labels.includes('request_id'), 'request_id no es label agregable');
+    assert(contract.sensitive_fields.includes('token'), 'contrato bloquea tokens');
+    assert(contract.sensitive_fields.includes('path'), 'contrato bloquea rutas');
+  
+    appLog.setAppContext({ appVersion: '0.10.20-test', backendVersion: '0.10.20-backend' });
+    const firstSession = appLog.getSessionId();
+    assert.match(firstSession, /^[0-9a-f-]{36}$/i, 'session_id tiene formato UUID');
+    assert.strictEqual(appLog.getSessionId(), firstSession, 'la sesión permanece estable');
+  
+    appLog.appendLogEvent('ERROR', 'backend.stderr', {
+      component: 'backend',
+      pid: 1234,
+      backend_pid: 1234,
+      stream: 'stderr',
+      outcome: 'failed',
+      request_id: '11111111-1111-4111-8111-111111111111',
+      timeout_ms: 5000,
+      message: 'Authorization: Bearer secret-value access_token=token-value en C:\\Users\\Alice\\secret.txt alice@example.com',
+      token: 'must-not-be-serialized',
+      path: 'C:\\Users\\Alice\\secret.txt',
+    });
+    appLog.appendLogLine('INFO', 'linea con salto\ninterno');
     await appLog.flushLogQueue();
+  
+    const events = readEvents();
+    const firstEvent = events.find((event) => event.event === 'backend.stderr');
+    assert(firstEvent, 'evento estructurado escrito en JSONL');
+    assert.strictEqual(firstEvent.schema_version, 1, 'evento usa el schema versionado');
+    assert.strictEqual(firstEvent.component, 'backend', 'evento identifica el backend');
+    assert.strictEqual(firstEvent.backend_pid, 1234, 'evento conserva el PID del backend');
+    assert.strictEqual(firstEvent.timeout_ms, 5000, 'evento conserva timeout_ms entero');
+    assert.strictEqual(firstEvent.app_version, '0.10.20-test', 'evento conserva versión de app');
+    assert.strictEqual(firstEvent.backend_version, '0.10.20-backend', 'evento conserva versión de backend');
+    assert.strictEqual(firstEvent.session_id, firstSession, 'evento conserva la sesión');
+    assert(!firstEvent.message.includes('secret-value'), 'redacta bearer token');
+    assert(!firstEvent.message.includes('token-value'), 'redacta access token');
+    assert(!firstEvent.message.includes('C:\\Users\\Alice\\secret.txt'), 'redacta ruta completa');
+    assert(!firstEvent.message.includes('alice@example.com'), 'redacta email');
+    assert.strictEqual(firstEvent.token, undefined, 'omite campos no permitidos');
+    assert.strictEqual(firstEvent.path, undefined, 'omite rutas como campos');
+  
+    for (let i = 0; i < 4; i += 1) {
+      appLog.appendLogEvent('INFO', `test.rotation.${i}`, { message: 'x'.repeat(180) });
+    }
+    await appLog.flushLogQueue();
+    const rotatedFiles = fs.readdirSync(appLog.getLogsDir())
+      .filter((name) => /\.jsonl$/.test(name));
+    assert(rotatedFiles.length > 1, 'el JSONL rota por tamaño');
+  
+    const droppedBefore = appLog.getDroppedEventCount();
+    const originalAppend = fs.promises.appendFile;
+    fs.promises.appendFile = async () => { throw new Error('simulated unwritable sink'); };
+    try {
+      appLog.appendLogEvent('ERROR', 'test.sink_failure', { message: 'must remain fail-open' });
+      await appLog.flushLogQueue();
+    } finally {
+      fs.promises.appendFile = originalAppend;
+    }
+    assert(appLog.getDroppedEventCount() > droppedBefore, 'cuenta eventos descartados sin bloquear');
+  
+    const backendSpawner = require('../electron/backend-spawner.js');
+    backendSpawner._recordStderr(
+      Buffer.from('[ERROR] Python exception in C:\\Users\\Alice\\private.txt\n'),
+      5678,
+    );
+    await appLog.flushLogQueue();
+    const stderrEvent = readEvents().find((event) => event.event === 'backend.stderr' && event.backend_pid === 5678);
+    assert(stderrEvent, 'stderr del backend llega al sink durable');
+    assert.strictEqual(stderrEvent.stream, 'stderr', 'stderr identifica el stream');
+    assert.strictEqual(stderrEvent.session_id, firstSession, 'stderr usa la sesión de la app');
+    assert.strictEqual(stderrEvent.backend_pid, 5678, 'stderr conserva el PID del proceso hijo');
+  
+    backendSpawner._recordStderr(
+      Buffer.from(`${JSON.stringify({
+        event: 'backend.ipc',
+        level: 'WARN',
+        message: 'request degraded',
+        request_id: 'req-2',
+        method: 'canvas_save',
+        lane: 'heavy',
+        outcome: 'degraded',
+        duration_ms: 321,
+      })}\n`),
+      5679,
+    );
+    await appLog.flushLogQueue();
+    const structuredEvent = readEvents().find((event) => event.event === 'backend.ipc');
+    assert(structuredEvent, 'el spawner conserva eventos JSON del backend');
+    assert.strictEqual(structuredEvent.request_id, 'req-2', 'evento conserva request_id');
+    assert.strictEqual(structuredEvent.method, 'canvas_save', 'evento conserva método');
+    assert.strictEqual(structuredEvent.lane, 'heavy', 'evento conserva lane');
+    assert.strictEqual(structuredEvent.outcome, 'degraded', 'evento conserva outcome');
+    assert.strictEqual(structuredEvent.duration_ms, 321, 'evento conserva duración');
+  
+    backendSpawner._recordStderr(
+      Buffer.from(`${JSON.stringify({
+        event: 'job.finished',
+        level: 'INFO',
+        job_id: 'job-9',
+        method: 'process_start',
+        outcome: 'partial',
+        duration_ms: 1200,
+        ok_count: 7,
+        err_count: 2,
+        bytes: 987654,
+        count: 12,
+      })}\n`),
+      5679,
+    );
+    await appLog.flushLogQueue();
+    const jobEvent = readEvents().find((event) => event.event === 'job.finished');
+    assert(jobEvent, 'job.finished del backend llega al sink durable');
+    assert.strictEqual(jobEvent.ok_count, 7, 'el spawner conserva ok_count entero');
+    assert.strictEqual(jobEvent.err_count, 2, 'el spawner conserva err_count entero');
+    assert.strictEqual(jobEvent.bytes, 987654, 'el spawner conserva bytes (heartbeat RSS)');
+    assert.strictEqual(jobEvent.count, 12, 'el spawner conserva count (heartbeat threads)');
+  
+    const humanLog = fs.readdirSync(appLog.getLogsDir())
+      .find((name) => /\.log$/.test(name));
+    assert(humanLog, 'se conserva el log humano existente');
+    const humanContent = fs.readFileSync(path.join(appLog.getLogsDir(), humanLog), 'utf8');
+    assert(humanContent.includes(`session_id=${firstSession}`), 'log humano incluye contexto de sesión');
+    assert(!humanContent.includes('\ninterno'), 'log humano no permite inyección de líneas');
+    assert(!humanContent.includes('Python exception'), 'stderr del backend no se duplica en el log humano');
+  
+    console.log('observability context/sink: OK');
   } finally {
-    fs.promises.appendFile = originalAppend;
+    fs.rmSync(dataRoot, { recursive: true, force: true });
   }
-  assert(appLog.getDroppedEventCount() > droppedBefore, 'cuenta eventos descartados sin bloquear');
-
-  const backendSpawner = require('../electron/backend-spawner.js');
-  backendSpawner._recordStderr(
-    Buffer.from('[ERROR] Python exception in C:\\Users\\Alice\\private.txt\n'),
-    5678,
-  );
-  await appLog.flushLogQueue();
-  const stderrEvent = readEvents().find((event) => event.event === 'backend.stderr' && event.backend_pid === 5678);
-  assert(stderrEvent, 'stderr del backend llega al sink durable');
-  assert.strictEqual(stderrEvent.stream, 'stderr', 'stderr identifica el stream');
-  assert.strictEqual(stderrEvent.session_id, firstSession, 'stderr usa la sesión de la app');
-  assert.strictEqual(stderrEvent.backend_pid, 5678, 'stderr conserva el PID del proceso hijo');
-
-  backendSpawner._recordStderr(
-    Buffer.from(`${JSON.stringify({
-      event: 'backend.ipc',
-      level: 'WARN',
-      message: 'request degraded',
-      request_id: 'req-2',
-      method: 'canvas_save',
-      lane: 'heavy',
-      outcome: 'degraded',
-      duration_ms: 321,
-    })}\n`),
-    5679,
-  );
-  await appLog.flushLogQueue();
-  const structuredEvent = readEvents().find((event) => event.event === 'backend.ipc');
-  assert(structuredEvent, 'el spawner conserva eventos JSON del backend');
-  assert.strictEqual(structuredEvent.request_id, 'req-2', 'evento conserva request_id');
-  assert.strictEqual(structuredEvent.method, 'canvas_save', 'evento conserva método');
-  assert.strictEqual(structuredEvent.lane, 'heavy', 'evento conserva lane');
-  assert.strictEqual(structuredEvent.outcome, 'degraded', 'evento conserva outcome');
-  assert.strictEqual(structuredEvent.duration_ms, 321, 'evento conserva duración');
-
-  backendSpawner._recordStderr(
-    Buffer.from(`${JSON.stringify({
-      event: 'job.finished',
-      level: 'INFO',
-      job_id: 'job-9',
-      method: 'process_start',
-      outcome: 'partial',
-      duration_ms: 1200,
-      ok_count: 7,
-      err_count: 2,
-      bytes: 987654,
-      count: 12,
-    })}\n`),
-    5679,
-  );
-  await appLog.flushLogQueue();
-  const jobEvent = readEvents().find((event) => event.event === 'job.finished');
-  assert(jobEvent, 'job.finished del backend llega al sink durable');
-  assert.strictEqual(jobEvent.ok_count, 7, 'el spawner conserva ok_count entero');
-  assert.strictEqual(jobEvent.err_count, 2, 'el spawner conserva err_count entero');
-  assert.strictEqual(jobEvent.bytes, 987654, 'el spawner conserva bytes (heartbeat RSS)');
-  assert.strictEqual(jobEvent.count, 12, 'el spawner conserva count (heartbeat threads)');
-
-  const humanLog = fs.readdirSync(appLog.getLogsDir())
-    .find((name) => /\.log$/.test(name));
-  assert(humanLog, 'se conserva el log humano existente');
-  const humanContent = fs.readFileSync(path.join(appLog.getLogsDir(), humanLog), 'utf8');
-  assert(humanContent.includes(`session_id=${firstSession}`), 'log humano incluye contexto de sesión');
-  assert(!humanContent.includes('\ninterno'), 'log humano no permite inyección de líneas');
-  assert(!humanContent.includes('Python exception'), 'stderr del backend no se duplica en el log humano');
-
-  console.log('observability context/sink: TODO OK');
-} finally {
-  fs.rmSync(dataRoot, { recursive: true, force: true });
-}
 }
 
 main().catch((error) => {

@@ -1,5 +1,5 @@
 
-const { assertOrExit:assert, stubModule, evictModule } = require('./helpers/harness');
+const { assertOrExit: assert, stubModule, evictModule } = require('./helpers/harness');
 
 const scopePath = require.resolve('../electron/autoimg-user-scope');
 
