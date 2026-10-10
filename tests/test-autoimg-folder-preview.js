@@ -23,7 +23,7 @@ const fakeScope = {
     };
   },
 };
-require.cache[scopePath] = { id: scopePath, filename: scopePath, loaded: true, exports: fakeScope };
+stubModule(scopePath, fakeScope);
 stubModule('electron/google-session', {
     getValidTokens: async () => activeTokens,
     refreshAccessToken: async (tokens) => tokens,

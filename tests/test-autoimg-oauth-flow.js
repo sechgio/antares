@@ -1,6 +1,6 @@
 
 
-const { assertOrExit:assert, evictModule } = require('./helpers/harness');
+const { assertOrExit: assert, evictModule, stubModule } = require('./helpers/harness');
 
 async function main() {
   const http = require('http');
@@ -138,8 +138,8 @@ async function main() {
       scopedFilename: (base) => base,
       scopedNamespace: (ns) => ns,
     };
-    require.cache[storePath] = { id: storePath, filename: storePath, loaded: true, exports: fakeStore };
-    require.cache[scopePath] = { id: scopePath, filename: scopePath, loaded: true, exports: fakeScope };
+    stubModule(storePath, fakeStore);
+    stubModule(scopePath, fakeScope);
     evictModule('electron/google-sheets-service');
     const svc = require(sheetsPath);
 

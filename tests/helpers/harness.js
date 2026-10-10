@@ -74,6 +74,15 @@ function evictModule(spec) {
   delete require.cache[_resolveRepoModule(spec)];
 }
 
+// Los módulos autoimg comparten estado en require.cache; se purgan por prefijo.
+function clearAutoimgModules() {
+  for (const key of Object.keys(require.cache)) {
+    if (key.includes(`${path.sep}electron${path.sep}autoimg-`)) {
+      delete require.cache[key];
+    }
+  }
+}
+
 function stubBackendCommand(exports = {}) {
   return stubModule('electron/backend-command.js', {
     getBackendCommand: () => ({ cmd: 'python', args: [] }),
@@ -177,6 +186,7 @@ module.exports = {
   waitFor,
   stubModule,
   evictModule,
+  clearAutoimgModules,
   stubBackendCommand,
   emitBackendReady,
   makeFakeProc,
