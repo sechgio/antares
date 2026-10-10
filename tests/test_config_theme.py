@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import backend.core.config_theme as config_theme
 from backend.core.config_theme import (
@@ -9,6 +8,7 @@ from backend.core.config_theme import (
     reset_theme,
     save_theme,
 )
+from tests.conftest import BACKEND_ROOT as REPO_ROOT
 
 
 def test_save_and_load_theme_roundtrip(tmp_path, monkeypatch) -> None:
@@ -77,9 +77,6 @@ def test_preset_list_includes_varied_appearance_styles() -> None:
     names = set(config_theme.PRESETS)
     assert {"Slate Modern", "Copper Night", "Bosque Operativo", "Twilight Lavender", "Stealth Black"}.issubset(names)
     assert not {"Vanta Black", "Porcelain Light", "Graphite Focus", "Royal Purple", "Arctic Frost"} & names
-
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _contrast(a: str, b: str) -> float:

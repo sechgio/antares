@@ -919,7 +919,6 @@ def test_template_choice_and_content_invalidate_batch_and_legacy_fixed_renderer_
     args["report_template"] = "emergencias.html"
     graph = _report_graph(setup, args)
     captured = []
-
     def handler(params):
         captured.append(params["template_name"])
         return {"saved_path": str(setup[2] / "salida.pdf")}

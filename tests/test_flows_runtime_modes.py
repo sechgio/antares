@@ -1,4 +1,4 @@
-"""Regressions for packaged flow execution and mutex handoff."""
+# Regressions for packaged flow execution and mutex handoff.
 
 import io
 import json

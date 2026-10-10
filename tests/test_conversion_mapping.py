@@ -5,6 +5,7 @@ from pathlib import Path
 
 from backend.core.jobs import Job
 from backend.handlers import conversion, conversion_job
+from tests.conftest import patch_field_names
 
 
 class _ImmediateFuture:
@@ -236,7 +237,7 @@ def test_prepare_chunk_renames_windows_parenthesized_sequence(monkeypatch, tmp_p
     source_file.write_text("data")
 
     monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
-    monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["nis", "sgio"])
+    patch_field_names(monkeypatch, "nis", "sgio")
 
     def buscar_por_nis(codigos, columna):
         assert columna == "nis"

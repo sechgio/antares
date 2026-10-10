@@ -4,7 +4,7 @@ import pathlib
 import re
 from typing import get_args
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+from tests.conftest import BACKEND_ROOT as REPO_ROOT
 
 
 def _read_frontend_interface(path: pathlib.Path, interface: str) -> dict[str, str]:

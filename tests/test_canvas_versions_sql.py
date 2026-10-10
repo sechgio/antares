@@ -1,6 +1,4 @@
-from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from tests.conftest import BACKEND_ROOT as REPO_ROOT
 
 
 def _function_body(content, name):
