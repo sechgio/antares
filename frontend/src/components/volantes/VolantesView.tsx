@@ -504,12 +504,13 @@ export default function VolantesView() {
           </span>
         </div>
 
-        <div className="vgen-layout-toggle" role="group">
+        <div className="vgen-layout-toggle" role="group" aria-label="Registros por hoja">
           <Button
             variant="none"
             size="none"
             className={layoutMode === "2-up" ? "active" : ""}
             onClick={() => setLayoutMode("2-up")}
+            aria-pressed={layoutMode === "2-up"}
           >
             <svg
               width="15"
@@ -529,6 +530,7 @@ export default function VolantesView() {
             size="none"
             className={layoutMode === "3-up" ? "active" : ""}
             onClick={() => setLayoutMode("3-up")}
+            aria-pressed={layoutMode === "3-up"}
           >
             <svg
               width="15"
@@ -898,6 +900,7 @@ export default function VolantesView() {
                     <div className="vgen-group-title">Zonas afectadas</div>
                     <textarea
                       className="vgen-input vgen-textarea-compact"
+                      aria-label="Zonas afectadas"
                       onChange={(e) =>
                         updateSelectedRecord({
                           zonasAfectadas: sanitizeMultilineText(e.target.value),
@@ -997,6 +1000,7 @@ export default function VolantesView() {
                           <input
                             type="color"
                             value={selectedRecord.districtColor ?? "#55caeb"}
+                            aria-label="Color personalizado del distrito"
                             onChange={(e) =>
                               updateSelectedRecord({
                                 districtColor: e.target.value,
