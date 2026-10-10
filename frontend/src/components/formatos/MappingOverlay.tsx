@@ -244,6 +244,9 @@ export default function MappingOverlay({
         onClick={(event) => event.stopPropagation()}
         onMouseDown={startMove}
         onKeyDown={(event) => {
+          // Las flechas del asa de redimensionar burbujean hasta aquí: sin esta
+          // guarda también moverían el recuadro y pisarían el redimensionado.
+          if (event.target !== event.currentTarget) return;
           const step = event.shiftKey ? 10 : 1;
           if (event.key === 'ArrowLeft') { event.preventDefault(); nudgeBox(-step, 0); }
           else if (event.key === 'ArrowRight') { event.preventDefault(); nudgeBox(step, 0); }
