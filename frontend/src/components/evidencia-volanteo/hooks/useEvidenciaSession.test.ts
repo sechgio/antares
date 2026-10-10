@@ -176,9 +176,12 @@ describe("useEvidenciaSession", () => {
     const { result } = renderHook(() => useEvidenciaSession());
     // El guardado solo se programa cuando isLoaded es true: si la lectura
     // fallaba sin marcarlo, el autoguardado quedaba muerto para la sesión.
-    await waitFor(() => expect(saveSession).toHaveBeenCalled());
+    // Se espera al estado y no al conteo de llamadas: temporizadores de otros
+    // tests pueden disparar el mock antes que el timer propio.
+    await waitFor(() => expect(result.current.persistenceStatus).toBe("saved"), {
+      timeout: 2000,
+    });
     expect(result.current.restoreFailed).toBe(true);
-    expect(result.current.persistenceStatus).toBe("saved");
   });
 
   it("vuelca el guardado pendiente al desmontar", async () => {
