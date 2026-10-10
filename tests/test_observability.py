@@ -69,9 +69,6 @@ def test_formatter_emits_single_json_line_with_context() -> None:
 
 
 def test_install_exception_hooks_captures_uncaught_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
-    original_sys_hook = sys.excepthook
-    original_thread_hook = getattr(threading, "excepthook", None)
-
     records: list[logging.LogRecord] = []
 
     class TestCrashHandler(logging.Handler):
@@ -86,8 +83,7 @@ def test_install_exception_hooks_captures_uncaught_exceptions(monkeypatch: pytes
     mock_thread_called = []
 
     monkeypatch.setattr(sys, "excepthook", lambda t, v, tb: mock_sys_called.append((t, v)))
-    if hasattr(threading, "excepthook"):
-        monkeypatch.setattr(threading, "excepthook", lambda args: mock_thread_called.append(args))
+    monkeypatch.setattr(threading, "excepthook", lambda args: mock_thread_called.append(args))
 
     try:
         install_exception_hooks()
@@ -112,30 +108,25 @@ def test_install_exception_hooks_captures_uncaught_exceptions(monkeypatch: pytes
         assert len(records) == 1
         assert len(mock_sys_called) == 2
 
-        if hasattr(threading, "excepthook"):
+        class DummyThread:
+            name = "worker-pool-1"
 
-            class DummyThread:
-                name = "worker-pool-1"
+        try:
+            raise RuntimeError("worker failure")
+        except RuntimeError as exc:
+            t_tb = exc.__traceback__
+            thread_args = threading.ExceptHookArgs((RuntimeError, exc, t_tb, DummyThread()))  # type: ignore[arg-type]
+            threading.excepthook(thread_args)
 
-            try:
-                raise RuntimeError("worker failure")
-            except RuntimeError as exc:
-                t_tb = exc.__traceback__
-                thread_args = threading.ExceptHookArgs((RuntimeError, exc, t_tb, DummyThread()))  # type: ignore[arg-type]
-                threading.excepthook(thread_args)
-
-            assert len(records) == 2
-            assert records[1].levelno == logging.CRITICAL
-            assert getattr(records[1], "observability_event", None) == "backend.crash"
-            t_fields = getattr(records[1], "observability_fields", {})
-            assert t_fields["reason"] == "uncaught_thread_exception"
-            assert t_fields["error_code"] == "RuntimeError"
-            assert len(mock_thread_called) == 1
+        assert len(records) == 2
+        assert records[1].levelno == logging.CRITICAL
+        assert getattr(records[1], "observability_event", None) == "backend.crash"
+        t_fields = getattr(records[1], "observability_fields", {})
+        assert t_fields["reason"] == "uncaught_thread_exception"
+        assert t_fields["error_code"] == "RuntimeError"
+        assert len(mock_thread_called) == 1
     finally:
         crash_logger.removeHandler(handler)
-        sys.excepthook = original_sys_hook
-        if original_thread_hook is not None:
-            threading.excepthook = original_thread_hook
 
 
 def test_log_message_emits_structured_batch_events() -> None:

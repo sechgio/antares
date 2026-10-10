@@ -8,6 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
+import openpyxl
 import pandas as pd
 import pytest
 from PIL import Image
@@ -23,6 +24,10 @@ def _png_bytes(size: tuple[int, int], color: tuple[int, int, int] = (70, 130, 18
     buf = BytesIO()
     Image.new("RGB", size, color).save(buf, format="PNG")
     return buf.getvalue()
+
+
+def _stub_fetch_static_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(u_cache, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
 
 
 class TestProviderResolution:
@@ -192,7 +197,7 @@ def test_map_fallback_uses_short_negative_cache(monkeypatch: pytest.MonkeyPatch)
     ub._clear_ubicaciones_caches()
 
 
-def test_fetch_static_map_google_without_key_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_static_map_google_without_key_falls_back() -> None:
     data = ub.fetch_static_map(-12.0, -77.0, 800, 600, zoom=18, provider="google", api_key=None)
     assert not ub._screenshot_has_map_tiles(data)
 
@@ -236,9 +241,7 @@ def test_fetch_static_map_google_requests_proportional_viewport(monkeypatch: pyt
 
 def test_handle_generar_ubicaciones_skips_non_numeric_coords(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    import openpyxl
-
-    monkeypatch.setattr(u_cache, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+    _stub_fetch_static_map(monkeypatch)
 
     xlsx = tmp_path / "coords.xlsx"
     wb = openpyxl.Workbook()
@@ -263,9 +266,7 @@ def test_handle_generar_ubicaciones_skips_non_numeric_coords(
 
 def test_handle_generar_ubicaciones_continues_after_row_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    import openpyxl
-
-    monkeypatch.setattr(u_cache, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+    _stub_fetch_static_map(monkeypatch)
 
     xlsx = tmp_path / "coords.xlsx"
     wb = openpyxl.Workbook()
@@ -321,8 +322,6 @@ def test_map_cache_key_with_zoom_and_provider() -> None:
 
 
 def test_excel_cache_reloads_when_content_changes_without_mtime_change(tmp_path: Path) -> None:
-    import openpyxl
-
     xlsx = tmp_path / "addresses.xlsx"
     fixed_ns = 2_000_000_000_000_000_000
 
@@ -346,8 +345,6 @@ def test_excel_cache_reloads_when_content_changes_without_mtime_change(tmp_path:
 
 
 def test_excel_cache_does_not_retain_oversized_dataframes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import openpyxl
-
     xlsx = tmp_path / "large.xlsx"
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -389,9 +386,7 @@ def test_parse_combined_coord_value_parses_google_maps_url() -> None:
 def test_handle_generar_ubicaciones_rejects_all_invalid_rows(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    import openpyxl
-
-    monkeypatch.setattr(u_cache, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+    _stub_fetch_static_map(monkeypatch)
 
     xlsx = tmp_path / "invalid.xlsx"
     wb = openpyxl.Workbook()
@@ -422,9 +417,7 @@ def test_handle_generar_ubicaciones_rejects_manual_invalid_coords(tmp_path: Path
 def test_handle_generar_ubicaciones_unique_pdf_for_duplicate_cod(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    import openpyxl
-
-    monkeypatch.setattr(u_cache, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+    _stub_fetch_static_map(monkeypatch)
 
     xlsx = tmp_path / "dup.xlsx"
     wb = openpyxl.Workbook()

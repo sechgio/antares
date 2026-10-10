@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import base64
+import os
+import tempfile
 from pathlib import Path
 
 import fitz
 import pytest
+from PIL import Image
 
 from backend.core.canvas.models import create_empty_document
 from backend.core.cmyk_pdf.color import css_color_to_cmyk, hex_to_rgb, rgb_to_cmyk
@@ -30,7 +33,6 @@ def test_hex_to_rgb_accepts_alpha():
 def test_parse_css_named_and_rgba():
     from backend.core.cmyk_pdf.color import parse_css_color_to_rgb
 
-    assert parse_css_color_to_rgb("orange") != (0.0, 0.0, 0.0)
     assert parse_css_color_to_rgb("orange") == (1.0, 0.647, 0.0)
     assert parse_css_color_to_rgb("rgba(255, 0, 0, 0.5)") == (1.0, 0.0, 0.0)
     assert parse_css_color_to_rgb("bogusname") == (0.0, 0.0, 0.0)
@@ -327,11 +329,6 @@ def test_cmyk_renderer_z_order_text_below_rect():
 
 
 def test_cmyk_renderer_resolves_runtime_content_from_context():
-    import os
-    import tempfile
-
-    from PIL import Image
-
     png_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -578,11 +575,6 @@ def test_cmyk_renderer_rotated_text_90():
 
 
 def test_cmyk_renderer_image_object_fit_cover():
-    import os
-    import tempfile
-
-    from PIL import Image
-
     png_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -621,11 +613,6 @@ def test_cmyk_renderer_image_object_fit_cover():
 
 
 def test_cmyk_renderer_caches_repeated_image_bytes(monkeypatch):
-    import os
-    import tempfile
-
-    from PIL import Image
-
     import backend.core.cmyk_pdf.renderer as renderer_mod
 
     png_path = None
@@ -680,8 +667,6 @@ def test_cmyk_renderer_caches_repeated_image_bytes(monkeypatch):
 def test_cmyk_renderer_image_cache_evicts_lru(monkeypatch):
     from contextlib import contextmanager
 
-    from PIL import Image
-
     import backend.core.cmyk_pdf.renderer as renderer_mod
 
     renderer = CanvasCmykRenderer(document=create_empty_document(name="LRU"))
@@ -703,8 +688,6 @@ def test_cmyk_renderer_image_cache_evicts_lru(monkeypatch):
 
 def test_cmyk_renderer_image_cache_respects_byte_budget(monkeypatch):
     from contextlib import contextmanager
-
-    from PIL import Image
 
     import backend.core.cmyk_pdf.renderer as renderer_mod
 
@@ -728,8 +711,6 @@ def test_cmyk_renderer_image_cache_respects_byte_budget(monkeypatch):
 
 def test_cmyk_renderer_rejects_images_above_pixel_budget(monkeypatch):
     from contextlib import contextmanager
-
-    from PIL import Image
 
     import backend.core.cmyk_pdf.renderer as renderer_mod
 
@@ -779,8 +760,6 @@ def test_cmyk_renderer_text_align_and_font():
 def test_cmyk_renderer_opens_data_url_without_disk_path():
     from io import BytesIO
 
-    from PIL import Image
-
     buf = BytesIO()
     Image.new("RGB", (8, 8), color=(255, 0, 0)).save(buf, format="PNG")
     data_url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
@@ -812,8 +791,6 @@ def test_cmyk_renderer_opens_data_url_without_disk_path():
 
 
 def test_cmyk_renderer_resolves_canvas_asset_ref(tmp_path, monkeypatch):
-    from PIL import Image
-
     from backend.core.cmyk_pdf import renderer as renderer_mod
 
     assets = tmp_path / "canvas" / "assets"

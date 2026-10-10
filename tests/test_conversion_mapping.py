@@ -30,7 +30,7 @@ class _RecordingScheduler:
         return _ImmediateFuture(fn(task))
 
 
-def test_preview_with_mapping(monkeypatch, tmp_path) -> None:
+def test_preview_with_mapping(tmp_path) -> None:
     files = [str(tmp_path / "IMG_0001.jpg"), str(tmp_path / "IMG_0002.jpg")]
     for f in files:
         Path(f).write_text("x")
@@ -74,7 +74,7 @@ def test_preview_truncates_over_max_files(tmp_path) -> None:
     assert result["preview"][-1]["origen"] == f"IMG_{conversion.MAX_PREVIEW_FILES - 1:04d}.jpg"
 
 
-def test_preview_reports_collisions(monkeypatch, tmp_path) -> None:
+def test_preview_reports_collisions(tmp_path) -> None:
     files = [str(tmp_path / "A.jpg"), str(tmp_path / "B.jpg")]
     for f in files:
         Path(f).write_text("x")
@@ -336,12 +336,11 @@ def test_run_conversion_job_with_mapping_path_and_columns(monkeypatch, tmp_path)
     df.to_excel(excel, index=False, engine="openpyxl")
 
     scheduler = _RecordingScheduler()
-    copied: list[tuple[str, str]] = []
 
     monkeypatch.setattr(conversion_job, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
     monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion_job, "copiar_archivo", lambda _src_path, _out_path, **_kwargs: None)
     monkeypatch.setattr(conversion_job, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
 

@@ -37,8 +37,7 @@ def test_heavy_methods_match_ipc_catalog() -> None:
         f"missing={sorted(catalog_heavy - HEAVY_METHODS)}"
     )
 
-    for required in ("db_import", "fichas_tecnicas_import_file", "informes_v2_render_html"):
-        assert required in HEAVY_METHODS
+    assert {"db_import", "fichas_tecnicas_import_file", "informes_v2_render_html"} <= HEAVY_METHODS
 
 
 def test_canvas_document_version_matches_frontend() -> None:
@@ -51,10 +50,9 @@ def test_canvas_document_version_matches_frontend() -> None:
     assert schema["a4"]["heightMm"] == A4_HEIGHT_MM
     assert frozenset(schema["layerTypes"]) == ALLOWED_LAYER_TYPES
     frontend_types = ROOT / "frontend" / "src" / "components" / "canvas" / "types.ts"
-    if frontend_types.exists():
-        text = frontend_types.read_text(encoding="utf-8")
-        assert "shared/canvas-schema.json" in text, "frontend types.ts must import single source shared/canvas-schema.json"
-        assert "DOCUMENT_VERSION = 2" not in text or "schema.documentVersion" in text
+    text = frontend_types.read_text(encoding="utf-8")
+    assert "shared/canvas-schema.json" in text, "frontend types.ts must import single source shared/canvas-schema.json"
+    assert "DOCUMENT_VERSION = 2" not in text or "schema.documentVersion" in text
 
 
 def test_frontend_layer_type_union_matches_schema() -> None:

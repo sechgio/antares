@@ -2,9 +2,13 @@
 from backend.core.renamer import RenamerEngine
 
 
+def _patch_field_names(monkeypatch, *names: str) -> None:
+    monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: list(names))
+
+
 class TestRenamerMapping:
     def test_mapping_without_extension_in_id(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("{codigo}{ext}")
         archivo = tmp_path / "IMG_0001.jpg"
         archivo.write_text("x")
@@ -12,7 +16,7 @@ class TestRenamerMapping:
         assert result == "fachada.jpg"
 
     def test_mapping_case_insensitive(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("{codigo}{ext}")
         archivo = tmp_path / "IMG_0001.jpg"
         archivo.write_text("x")
@@ -20,7 +24,7 @@ class TestRenamerMapping:
         assert result == "fachada.jpg"
 
     def test_no_match_falls_back_to_pattern(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("{codigo}{ext}")
         archivo = tmp_path / "IMG_0001.jpg"
         archivo.write_text("x")
@@ -32,7 +36,7 @@ class TestRenamerMapping:
         assert result == "IMG_0001.jpg"
 
     def test_empty_mapping_ignored(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("{codigo}{ext}")
         archivo = tmp_path / "X.jpg"
         archivo.write_text("x")
@@ -40,7 +44,7 @@ class TestRenamerMapping:
         assert result == "X.jpg"
 
     def test_mapping_does_not_consume_secuencia(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("img_{seq}{ext}", secuencia_inicial=1)
         mapped = tmp_path / "mapped.jpg"
         mapped.write_text("x")
@@ -54,7 +58,7 @@ class TestRenamerMapping:
         assert engine.aplicar(unmapped) == "img_002.jpg"
 
     def test_mixed_mapping_and_pattern_keeps_secuencia(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("img_{seq}{ext}", secuencia_inicial=1)
         mapping = {f"mapped_{i}.jpg": f"fachada_{i}" for i in range(1, 6)}
         results: list[str] = []
@@ -73,7 +77,7 @@ class TestRenamerMapping:
         assert results[5:] == [f"img_{i:03d}.jpg" for i in range(1, 6)]
 
     def test_preview_lote_unmapped_preserves_original(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("img_{seq}{ext}", secuencia_inicial=1)
         mapped = tmp_path / "mapped.jpg"
         orphan = tmp_path / "orphan_1.jpg"
@@ -93,7 +97,7 @@ class TestRenamerMapping:
     def test_preview_lote_empty_patron_unmapped_not_extension_only(
         self, monkeypatch, tmp_path
     ) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("")
         orphan = tmp_path / "orphan.jpg"
         orphan.write_text("x")

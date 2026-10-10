@@ -6,6 +6,7 @@ from pathlib import Path
 from backend.core import out_path_dedupe
 from backend.core.jobs import JobManager
 from backend.core.out_path_dedupe import _dedupe_chunk_out_paths, _out_path_key
+from backend.handlers import conversion
 
 
 def test_cross_job_reservation_blocks_other_job() -> None:
@@ -172,7 +173,6 @@ def test_dedupe_spans_chunks_via_shared_reserved_set() -> None:
 
 
 def test_preview_catalog_applies_out_path_dedupe_suffixes(monkeypatch, tmp_path) -> None:
-    from backend.handlers import conversion
 
     files = [str(tmp_path / "a.jpg"), str(tmp_path / "b.jpg")]
     for f in files:
@@ -200,7 +200,6 @@ def test_preview_catalog_applies_out_path_dedupe_suffixes(monkeypatch, tmp_path)
 
 
 def test_preview_mapping_still_reports_collisions_without_suffix(tmp_path) -> None:
-    from backend.handlers import conversion
 
     files = [str(tmp_path / "A.jpg"), str(tmp_path / "B.jpg")]
     for f in files:
@@ -218,7 +217,6 @@ def test_preview_mapping_still_reports_collisions_without_suffix(tmp_path) -> No
 
 
 def test_preview_dedupe_sees_pre_existing_destino_files(monkeypatch, tmp_path) -> None:
-    from backend.handlers import conversion
 
     destino = tmp_path / "salida"
     destino.mkdir()
@@ -245,7 +243,6 @@ def test_preview_dedupe_sees_pre_existing_destino_files(monkeypatch, tmp_path) -
 
 
 def test_preview_without_destino_never_consults_cwd_exists(monkeypatch, tmp_path) -> None:
-    from backend.handlers import conversion
 
     files = [str(tmp_path / "a.jpg"), str(tmp_path / "b.jpg")]
     for f in files:

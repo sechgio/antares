@@ -4,6 +4,8 @@ import pathlib
 import re
 from typing import get_args
 
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
 
 def _read_frontend_interface(path: pathlib.Path, interface: str) -> dict[str, str]:
     text = path.read_text(encoding="utf-8")
@@ -53,8 +55,8 @@ def _read_frontend_const(path: pathlib.Path, name: str) -> str:
 
 
 def test_ficha_schema_parity() -> None:
-    frontend = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "fichas-tecnicas" / "types.ts"
-    backend = pathlib.Path(__file__).resolve().parent.parent / "backend" / "core" / "fichas_tecnicas" / "types.py"
+    frontend = REPO_ROOT / "frontend" / "src" / "components" / "fichas-tecnicas" / "types.ts"
+    backend = REPO_ROOT / "backend" / "core" / "fichas_tecnicas" / "types.py"
     assert frontend.exists() and backend.exists()
     from backend.core.fichas_tecnicas.types import FichaDocument, FichaStatus
 
@@ -64,8 +66,8 @@ def test_ficha_schema_parity() -> None:
 
 
 def test_informe_schema_parity() -> None:
-    frontend = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "informes-v2" / "types.ts"
-    backend = pathlib.Path(__file__).resolve().parent.parent / "backend" / "core" / "informes_v2" / "types.py"
+    frontend = REPO_ROOT / "frontend" / "src" / "components" / "informes-v2" / "types.ts"
+    backend = REPO_ROOT / "backend" / "core" / "informes_v2" / "types.py"
     assert frontend.exists() and backend.exists()
     from backend.core.informes_v2.models import PLANTILLA_VALUES, R2_TITULO_LINEA1, R2_TITULO_LINEA2
     from backend.core.informes_v2.types import (
@@ -100,8 +102,8 @@ def test_informe_schema_parity() -> None:
 
 
 def test_technical_report_schema_parity() -> None:
-    frontend = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "technical-reports" / "types.ts"
-    backend = pathlib.Path(__file__).resolve().parent.parent / "backend" / "core" / "technical_reports" / "types.py"
+    frontend = REPO_ROOT / "frontend" / "src" / "components" / "technical-reports" / "types.ts"
+    backend = REPO_ROOT / "backend" / "core" / "technical_reports" / "types.py"
     assert frontend.exists(), f"frontend types missing: {frontend}"
     assert backend.exists(), f"backend types missing: {backend}"
     from backend.core.technical_reports.types import (

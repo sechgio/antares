@@ -79,6 +79,9 @@ def test_preset_list_includes_varied_appearance_styles() -> None:
     assert not {"Vanta Black", "Porcelain Light", "Graphite Focus", "Royal Purple", "Arctic Frost"} & names
 
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
 def _contrast(a: str, b: str) -> float:
     def lum(hex_color: str) -> float:
         channels = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
@@ -99,7 +102,7 @@ def test_presets_meet_contrast_floors() -> None:
 
 
 def test_default_theme_strictly_matches_shared_default_theme_json() -> None:
-    shared_path = Path(__file__).resolve().parent.parent / "shared" / "default-theme.json"
+    shared_path = REPO_ROOT / "shared" / "default-theme.json"
     assert shared_path.is_file(), f"Missing shared contract: {shared_path}"
     shared_theme = json.loads(shared_path.read_text(encoding="utf-8"))
 
@@ -108,7 +111,7 @@ def test_default_theme_strictly_matches_shared_default_theme_json() -> None:
 
 
 def test_frontend_theme_contract_parity() -> None:
-    frontend_applier = Path(__file__).resolve().parent.parent / "frontend" / "src" / "utils" / "themeApplier.ts"
+    frontend_applier = REPO_ROOT / "frontend" / "src" / "utils" / "themeApplier.ts"
     assert frontend_applier.is_file(), f"Missing frontend themeApplier: {frontend_applier}"
     applier_text = frontend_applier.read_text(encoding="utf-8")
     assert "shared/default-theme.json" in applier_text, (
@@ -117,7 +120,7 @@ def test_frontend_theme_contract_parity() -> None:
     assert "export const DEFAULT_THEME" in applier_text
 
     appearance_view = (
-        Path(__file__).resolve().parent.parent
+        REPO_ROOT
         / "frontend"
         / "src"
         / "components"

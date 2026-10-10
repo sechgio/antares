@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.jobs import Job
-from backend.core.naming import record_group_key
 from backend.core.renamer import RenamerEngine
 from backend.handlers import conversion, conversion_job
 from backend.utils.validators import parse_filename_parts
@@ -48,46 +47,6 @@ def _broken_lookup(codigos_list: list[str], db_rows: list[dict[str, Any]]):
         return db_cache.get(idx) if idx else None
 
     return lookup
-
-
-def _preview_via_broken_lookup(
-    files: list[str],
-    db_rows: list[dict[str, Any]],
-    *,
-    codigos_manuales: dict[str, str] | None = None,
-    sequence_mode: str = "global",
-    autofill_codigos_manuales: bool = True,
-) -> list[tuple[str, bool]]:
-    codigos_manuales = {} if codigos_manuales is None else dict(codigos_manuales)
-    codigos_list: list[str] = []
-    file_seqs: dict[str, str] = {}
-    sequence_groups: dict[str, str] = {}
-
-    for index, f in enumerate(files):
-        name = Path(f).name
-        code, seq = parse_filename_parts(name)
-        if autofill_codigos_manuales:
-            codigos_manuales.setdefault(name, code)
-        codigos_list.append(code)
-        file_seqs[name] = seq
-        datos = db_rows[index] if index < len(db_rows) else None
-        if datos and name in codigos_manuales:
-            sequence_groups[name] = record_group_key(datos, "", codigos_manuales[name])
-
-    engine = RenamerEngine(
-        "{sgio}_{seq}{ext}",
-        1,
-        sequence_mode=sequence_mode,  # type: ignore[arg-type]
-    )
-    lookup = _broken_lookup(codigos_list, db_rows)
-    rows = engine.preview_lote(
-        files,
-        lookup_fn=lookup,
-        codigos_manuales=codigos_manuales,
-        file_seqs=file_seqs,
-        sequence_groups=sequence_groups,
-    )
-    return [(nuevo, en_bd) for _orig, nuevo, en_bd in rows]
 
 
 def test_preview_column_rename_maps_by_file_index_not_first_code_match(monkeypatch, tmp_path) -> None:

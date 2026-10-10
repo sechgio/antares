@@ -30,7 +30,7 @@ def test_resolve_rename_plan_key_column_prefiere_stem(monkeypatch, tmp_path) -> 
     assert plan.file_seqs == {"PLAN_001.jpg": "1", "PLAN_002.jpg": "002"}
 
 
-def test_resolve_rename_plan_lote_con_grupos_y_lookup(monkeypatch, tmp_path) -> None:
+def test_resolve_rename_plan_lote_con_grupos_y_lookup(tmp_path) -> None:
     files = [str(tmp_path / n) for n in ("L1_1.jpg", "L2_5.jpg")]
     catalog = {"L1": {"sgio": "SGIO_A"}, "L2_5": {"sgio": "SGIO_B"}}
 

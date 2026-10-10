@@ -99,8 +99,6 @@ def test_conversion_copy_real_io_small_files(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(conversion_job, "send_notification", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 500)
 
-    rss0 = None
-    proc = None
     try:
         import psutil
 

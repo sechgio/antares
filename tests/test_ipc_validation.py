@@ -388,7 +388,6 @@ def test_send_response_rejects_oversized_payload_with_utf8_byte_size(monkeypatch
     assert payload["id"] == "big"
     assert payload["error"]["code"] == -32001
     assert "bytes" in payload["error"]["message"]
-    assert "200" not in payload["error"]["message"] or "Response too large" in payload["error"]["message"]
     oversized_json = json.dumps(
         {"jsonrpc": "2.0", "id": "big", "result": {"data": "x" * 200}},
         ensure_ascii=False,

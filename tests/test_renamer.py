@@ -2,13 +2,14 @@
 from backend.core.renamer import RenamerEngine
 
 
+def _patch_field_names(monkeypatch, *names: str) -> None:
+    monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: list(names))
+
+
 class TestRenamerEngine:
 
     def test_aplicar_con_datos_completos(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo", "nombre"],
-        )
+        _patch_field_names(monkeypatch, "codigo", "nombre")
 
         engine = RenamerEngine("{codigo}_{nombre}{ext}", secuencia_inicial=1)
         archivo = tmp_path / "1.jpg"
@@ -19,10 +20,7 @@ class TestRenamerEngine:
         assert resultado == "1_2454514245.jpg"
 
     def test_aplicar_fallback_codigo_para_campo_principal(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo", "nombre"],
-        )
+        _patch_field_names(monkeypatch, "codigo", "nombre")
 
         engine = RenamerEngine("{codigo}_{nombre}{ext}", secuencia_inicial=1)
         archivo = tmp_path / "1.jpg"
@@ -33,10 +31,7 @@ class TestRenamerEngine:
         assert resultado == "1.jpg"
 
     def test_aplicar_otros_campos_vacios_si_no_estan_en_bd(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo", "nombre"],
-        )
+        _patch_field_names(monkeypatch, "codigo", "nombre")
 
         engine = RenamerEngine("{codigo}_{nombre}{ext}", secuencia_inicial=1)
         archivo = tmp_path / "1.jpg"
@@ -47,10 +42,7 @@ class TestRenamerEngine:
         assert resultado == "1.jpg"
 
     def test_aplicar_no_propaga_stem_como_dato(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo", "nombre"],
-        )
+        _patch_field_names(monkeypatch, "codigo", "nombre")
 
         engine = RenamerEngine("{codigo}_{nombre}{ext}", secuencia_inicial=1)
         archivo = tmp_path / "1_1.jpg"
@@ -62,10 +54,7 @@ class TestRenamerEngine:
         assert "1_1_1_1" not in resultado
 
     def test_limpia_separadores_repetidos_al_faltar_datos(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo", "nombre", "categoria"],
-        )
+        _patch_field_names(monkeypatch, "codigo", "nombre", "categoria")
 
         engine = RenamerEngine("{codigo} - {nombre} - {categoria}{ext}", secuencia_inicial=1)
         archivo = tmp_path / "1.jpg"
@@ -76,10 +65,7 @@ class TestRenamerEngine:
         assert resultado == "1.jpg"
 
     def test_secuencia_autoincremental(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo"],
-        )
+        _patch_field_names(monkeypatch, "codigo")
 
         engine = RenamerEngine("img_{seq}{ext}", secuencia_inicial=5)
         archivo = tmp_path / "a.jpg"
@@ -90,10 +76,7 @@ class TestRenamerEngine:
         assert engine.aplicar(archivo) == "img_007.jpg"
 
     def test_ext_mantiene_extension_original(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo"],
-        )
+        _patch_field_names(monkeypatch, "codigo")
 
         engine = RenamerEngine("{codigo}{ext}", secuencia_inicial=1)
 
@@ -106,10 +89,7 @@ class TestRenamerEngine:
         assert engine.aplicar(png, codigo_manual="Y") == "Y.png"
 
     def test_sanitiza_nombre(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo", "nombre"],
-        )
+        _patch_field_names(monkeypatch, "codigo", "nombre")
 
         engine = RenamerEngine("{nombre}{ext}", secuencia_inicial=1)
         archivo = tmp_path / "a.jpg"
@@ -122,10 +102,7 @@ class TestRenamerEngine:
         assert resultado == "prod_1_.jpg"
 
     def test_preview_lote_no_mutua_secuencia(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo"],
-        )
+        _patch_field_names(monkeypatch, "codigo")
 
         engine = RenamerEngine("{seq}{ext}", secuencia_inicial=10)
         a = tmp_path / "a.jpg"
@@ -139,15 +116,10 @@ class TestRenamerEngine:
         assert engine.secuencia == 10
         assert engine.aplicar(a, codigo_manual="x") == "010.jpg"
 
-    def test_patron_por_defecto(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo", "nombre", "categoria"],
-        )
+    def test_patron_por_defecto(self, monkeypatch) -> None:
+        _patch_field_names(monkeypatch, "codigo", "nombre", "categoria")
 
         engine = RenamerEngine(patron=None, secuencia_inicial=1)
-        archivo = tmp_path / "a.jpg"
-        archivo.write_text("dummy")
 
         assert engine.patron == "{codigo}_{nombre}{ext}"
 
@@ -165,10 +137,7 @@ class TestRenamerEngine:
         assert engine.aplicar(archivo) == "img_001.jpg"
 
     def test_sep_placeholder_usa_separador_configurado(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["sgio", "nombre"],
-        )
+        _patch_field_names(monkeypatch, "sgio", "nombre")
 
         engine = RenamerEngine("{sgio}{sep}{nombre}{ext}", secuencia_inicial=1, separador="_")
         archivo = tmp_path / "1.jpg"
@@ -183,10 +152,7 @@ class TestRenamerEngine:
         assert resultado == "454654001_producto.jpg"
 
     def test_sep_placeholder_guion_medio(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(
-            "backend.core.renamer.get_field_names",
-            lambda: ["codigo", "nombre"],
-        )
+        _patch_field_names(monkeypatch, "codigo", "nombre")
 
         engine = RenamerEngine("{codigo}{sep}{nombre}{ext}", secuencia_inicial=1, separador="-")
         archivo = tmp_path / "1.jpg"
@@ -201,7 +167,7 @@ class TestRenamerEngine:
         assert resultado == "A-foto.jpg"
 
     def test_secuencia_por_fila_es_independiente_e_ignora_el_sufijo(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["nis", "sgio"])
+        _patch_field_names(monkeypatch, "nis", "sgio")
         engine = RenamerEngine("{sgio}_{seq}{ext}", sequence_mode="record")
         archivo = tmp_path / "foto.jpg"
         archivo.write_text("x")
@@ -214,7 +180,7 @@ class TestRenamerEngine:
         assert engine.aplicar(archivo, datos_bd=fila_a, file_seq="1", sequence_group="4210502") == "69841274_002.jpg"
 
     def test_preview_lote_record_sin_match_sanitiza_nombre(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("{codigo}{ext}", sequence_mode="record")
         archivo = tmp_path / "  spaced name  .jpg"
         archivo.write_text("x")
@@ -224,7 +190,7 @@ class TestRenamerEngine:
         assert preview == [(str(archivo), "spaced name.jpg", False)]
 
     def test_preview_lote_mapeo_parcial_no_consume_contador_por_fila(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["nis", "sgio"])
+        _patch_field_names(monkeypatch, "nis", "sgio")
         engine = RenamerEngine("{sgio}_{seq}{ext}", sequence_mode="record")
         mapped = tmp_path / "mapped.jpg"
         con_datos = tmp_path / "a.jpg"
@@ -254,7 +220,7 @@ class TestRenamerEngine:
         assert engine.aplicar(con_datos, datos_bd=fila, sequence_group="4210502") == "69841274_001.jpg"
 
     def test_preview_lote_restaura_contador_por_fila(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["nis", "sgio"])
+        _patch_field_names(monkeypatch, "nis", "sgio")
         engine = RenamerEngine("{sgio}_{seq}{ext}", sequence_mode="record")
         a = tmp_path / "a.jpg"
         b = tmp_path / "b.jpg"
@@ -272,7 +238,7 @@ class TestRenamerEngine:
         assert engine.aplicar(a, datos_bd=fila, sequence_group="4210502") == "69841274_001.jpg"
 
     def test_aplicar_valor_bd_con_token_queda_literal(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo", "nombre"])
+        _patch_field_names(monkeypatch, "codigo", "nombre")
         engine = RenamerEngine("{codigo}_{nombre}{ext}", secuencia_inicial=1)
         archivo = tmp_path / "f.jpg"
         archivo.write_text("x")
@@ -282,7 +248,7 @@ class TestRenamerEngine:
         assert resultado == "A_{seq}.jpg"
 
     def test_aplicar_tokens_repetidos_se_sustituyen_todos(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        _patch_field_names(monkeypatch, "codigo")
         engine = RenamerEngine("{codigo}_{codigo}{ext}")
         archivo = tmp_path / "f.jpg"
         archivo.write_text("x")
@@ -292,7 +258,7 @@ class TestRenamerEngine:
         assert resultado == "X_X.jpg"
 
     def test_aplicar_placeholders_solapados_no_se_corrompen(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo", "codigo_nombre"])
+        _patch_field_names(monkeypatch, "codigo", "codigo_nombre")
         engine = RenamerEngine("{codigo}_{codigo_nombre}{ext}")
         archivo = tmp_path / "f.jpg"
         archivo.write_text("x")

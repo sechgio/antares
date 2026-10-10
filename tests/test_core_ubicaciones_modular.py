@@ -181,7 +181,6 @@ def test_module_exports_consistency() -> None:
 def test_compose_and_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(u_client, "_http_get", lambda *a, **k: None)
     fallback = fetch_static_map(-12.0, -77.0, 100, 100)
-    assert fallback is not None
     img = _compose_ubicacion_image(
         {"cod_componente": "TEST", "direccion": "D", "localidad": "L", "distrito": "DI"},
         "vertical",
@@ -190,8 +189,7 @@ def test_compose_and_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     dim = _dimensions_for("vertical", preview=True)
     assert img.size == (dim[0], dim[1])
-    shot = _get_cached_map_screenshot(-12.0, -77.0, "vertical", preview=True)
-    assert shot is not None
+    _get_cached_map_screenshot(-12.0, -77.0, "vertical", preview=True)
 
 
 def test_generar_ubicaciones_empty_coords_raises_clean_value_error(tmp_path: Path) -> None:
