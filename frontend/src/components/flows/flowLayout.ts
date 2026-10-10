@@ -42,8 +42,9 @@ export function layoutByDepth(nodes: Node[], edges: Edge[]): Map<string, { x: nu
   const depth = new Map<string, number>();
   const queue = nodes.filter((n) => (incoming.get(n.id) ?? 0) === 0).map((n) => n.id);
   if (!queue.length) queue.push(nodes[0].id);
-  while (queue.length) {
-    const cur = queue.shift()!;
+  // Índice en lugar de shift(): shift es O(n) y el pase sería cuadrático.
+  for (let head = 0; head < queue.length; head += 1) {
+    const cur = queue[head];
     for (const next of outgoing.get(cur) ?? []) {
       const d = (depth.get(cur) ?? 0) + 1;
       if ((depth.get(next) ?? -1) < d) {
