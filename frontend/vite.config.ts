@@ -144,6 +144,7 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
+    // 4 workers, matching the 4 vCPUs of the CI runner and shared with the other branches.
     pool: 'threads',
     fileParallelism: true,
     maxWorkers: 4,
