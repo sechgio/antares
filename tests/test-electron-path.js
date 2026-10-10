@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 const { getBackendCommand } = require('../electron/backend-command.js');
 
-const { assert, counters } = require('./helpers/harness');
+const { assert, finish } = require('./helpers/harness');
 
 console.log('Testing getBackendCommand...\n');
 
@@ -51,12 +51,5 @@ assert(!prodLinux.cmd.includes('.exe'), 'Prod mode linux should not use .exe');
 assert(prodLinux.cmd.includes('AntaresBackend'), 'Prod mode should use AntaresBackend');
 assert(prodLinux.args.length === 0, 'Prod mode should have no args');
 
-console.log(`\n${'='.repeat(50)}`);
-console.log(`Results: ${counters.passed} passed, ${counters.failed} failed`);
-console.log('='.repeat(50));
-
-if (counters.failed > 0) {
-  process.exit(1);
-} else {
-  console.log('All path tests passed!');
-}
+finish();
+console.log('All path tests passed!');

@@ -26,6 +26,18 @@ def _write_xlsx(path: Path, rows: list[list[Any]]) -> None:
     wb.close()
 
 
+def _xlsx_b64(rows: list[list[Any]]) -> str:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    for row in rows:
+        ws.append(list(row))
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 def test_serialize_cell_nonfinite_floats_become_none() -> None:
     from backend.handlers.spreadsheet import _serialize_cell
 
@@ -173,14 +185,7 @@ def test_parse_csv_reads_windows_ansi_file(tmp_path: Path) -> None:
 def test_b64_inline_uses_unique_temp_file() -> None:
     from backend.handlers.spreadsheet import _resolve_input_path
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    assert ws is not None
-    ws.append(["A", "B"])
-    buf = io.BytesIO()
-    wb.save(buf)
-    wb.close()
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    b64 = _xlsx_b64([["A", "B"]])
 
     p1, is_temp1 = _resolve_input_path({"xlsx_b64": b64})
     p2, is_temp2 = _resolve_input_path({"xlsx_b64": b64})
@@ -224,14 +229,7 @@ def test_b64_inline_decodes_in_bounded_chunks(monkeypatch) -> None:
 def test_user_file_with_temp_prefix_not_deleted() -> None:
     from backend.handlers.spreadsheet import _INLINE_TEMP_PREFIX, spreadsheet_parse
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    assert ws is not None
-    ws.append(["A", "B"])
-    buf = io.BytesIO()
-    wb.save(buf)
-    wb.close()
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    b64 = _xlsx_b64([["A", "B"]])
 
     tmp_dir = tempfile.mkdtemp()
     try:
@@ -251,14 +249,7 @@ def test_user_file_with_temp_prefix_not_deleted() -> None:
 def test_b64_inline_temp_file_removed_after_parse() -> None:
     from backend.handlers.spreadsheet import _INLINE_TEMP_PREFIX, spreadsheet_parse
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    assert ws is not None
-    ws.append(["A", "B"])
-    buf = io.BytesIO()
-    wb.save(buf)
-    wb.close()
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    b64 = _xlsx_b64([["A", "B"]])
 
     before = set(Path(tempfile.gettempdir()).glob(f"{_INLINE_TEMP_PREFIX}*"))
     result = spreadsheet_parse({"xlsx_b64": b64})
@@ -271,14 +262,7 @@ def test_b64_inline_temp_file_removed_after_parse() -> None:
 def test_b64_inline_parse_succeeds_even_if_temp_unlink_locked(monkeypatch) -> None:
     from backend.handlers import spreadsheet as ss
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    assert ws is not None
-    ws.append(["A", "B"])
-    buf = io.BytesIO()
-    wb.save(buf)
-    wb.close()
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    b64 = _xlsx_b64([["A", "B"]])
 
     def locked_unlink(_self, *_a, **_kw) -> None:
         raise PermissionError(13, "Permission denied", "antares_inline_x")

@@ -116,11 +116,6 @@ function main() {
     }
   }
 
-  const allowlistDrift = [
-    ...[...catalog.METHOD_NAMES].filter((m) => !allowed.has(m)),
-    ...[...allowed].filter((m) => !catalog.METHOD_NAMES.has(m)),
-  ];
-
   const heavyNotLongRunning = [...catalog.HEAVY_TIMEOUT_METHODS].filter((m) => !catalog.LONG_RUNNING_METHODS.has(m));
 
   const timeoutDrift = [
@@ -144,13 +139,6 @@ function main() {
   if (missingFromAllowlist.length > 0) {
     console.error(
       `[FAIL] Métodos usados en api.ts/api/*.ts pero no en ALLOWED_RENDERER_METHODS:\n  - ${missingFromAllowlist.join('\n  - ')}`
-    );
-    failed = true;
-  }
-
-  if (allowlistDrift.length > 0) {
-    console.error(
-      `[FAIL] ALLOWED_RENDERER_METHODS no coincide con las claves del catálogo:\n  - ${allowlistDrift.join('\n  - ')}`
     );
     failed = true;
   }

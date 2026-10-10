@@ -3,7 +3,7 @@ const scope = require('../electron/autoimg-user-scope');
 const store = require('../electron/autoimg-user-store');
 const secure = require('../electron/autoimg-secure-storage');
 
-const { assertOrExit:assert } = require('./helpers/harness');
+const { assertOrExit: assert } = require('./helpers/harness');
 
 scope.clearActiveUser();
 

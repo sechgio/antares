@@ -1,6 +1,6 @@
-const fsForDialog = require('fs');
-const osForDialog = require('os');
-const pathForDialog = require('path');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { assert, finish } = require('./helpers/harness');
 
 const {
@@ -16,12 +16,12 @@ async function run() {
   clearAllowedReadPaths();
   _clearAllowedWriteRoots();
 
-  const selectedInputDir = pathForDialog.join(osForDialog.tmpdir(), `antares-dialog-input-${process.pid}`);
-  const selectedInputPath = pathForDialog.join(selectedInputDir, 'data.xlsx');
-  fsForDialog.mkdirSync(selectedInputDir, { recursive: true });
-  fsForDialog.writeFileSync(selectedInputPath, 'test input');
+  const selectedInputDir = path.join(os.tmpdir(), `antares-dialog-input-${process.pid}`);
+  const selectedInputPath = path.join(selectedInputDir, 'data.xlsx');
+  fs.mkdirSync(selectedInputDir, { recursive: true });
+  fs.writeFileSync(selectedInputPath, 'test input');
   process.on('exit', () => {
-    try { fsForDialog.rmSync(selectedInputDir, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(selectedInputDir, { recursive: true, force: true }); } catch {}
   });
 
   const calls = [];
@@ -51,16 +51,13 @@ async function run() {
   assert(save.result.paths[0] === 'C:/tmp/export.xlsx', 'dialog_save should return saved file path');
   assert(calls[1].options.title === 'Guardar archivo', 'dialog_save should set a save title');
 
-  const folderFs = require('fs');
-  const folderOs = require('os');
-  const folderPath = require('path');
-  const tempFolderDir = await folderFs.promises.mkdtemp(folderPath.join(folderOs.tmpdir(), 'antares-folder-test-'));
+  const tempFolderDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-folder-test-'));
   try {
-    await folderFs.promises.mkdir(folderPath.join(tempFolderDir, 'sub'), { recursive: true });
-    await folderFs.promises.writeFile(folderPath.join(tempFolderDir, 'photo.jpg'), 'x');
-    await folderFs.promises.writeFile(folderPath.join(tempFolderDir, 'clip.mp4'), 'x');
-    await folderFs.promises.writeFile(folderPath.join(tempFolderDir, 'notes.txt'), 'x');
-    await folderFs.promises.writeFile(folderPath.join(tempFolderDir, 'sub', 'deep.png'), 'x');
+    await fs.promises.mkdir(path.join(tempFolderDir, 'sub'), { recursive: true });
+    await fs.promises.writeFile(path.join(tempFolderDir, 'photo.jpg'), 'x');
+    await fs.promises.writeFile(path.join(tempFolderDir, 'clip.mp4'), 'x');
+    await fs.promises.writeFile(path.join(tempFolderDir, 'notes.txt'), 'x');
+    await fs.promises.writeFile(path.join(tempFolderDir, 'sub', 'deep.png'), 'x');
 
     const folderDialog = {
       async showOpenDialog(win, options) {
@@ -76,7 +73,7 @@ async function run() {
     assert(folderResult.result.paths.length === 3, 'dialog_folder should return 3 supported files (jpg, mp4, png) and skip txt');
     assert(folderResult.result.paths.some((p) => p.endsWith('photo.jpg')), 'dialog_folder should include top-level jpg');
     assert(folderResult.result.paths.some((p) => p.endsWith('clip.mp4')), 'dialog_folder should include top-level mp4');
-    assert(folderResult.result.paths.some((p) => folderPath.basename(p) === 'deep.png'), 'dialog_folder should include nested png from subfolder');
+    assert(folderResult.result.paths.some((p) => path.basename(p) === 'deep.png'), 'dialog_folder should include nested png from subfolder');
     assert(!folderResult.result.paths.some((p) => p.endsWith('notes.txt')), 'dialog_folder should exclude unsupported txt');
     assert(folderResult.result.file_tokens.length === folderResult.result.paths.length, 'dialog_folder should return one token per scanned file');
     assert(folderResult.result.file_tokens.every((token) => /^antares-read_/.test(token)), 'dialog_folder tokens should be read capabilities');
@@ -102,7 +99,7 @@ async function run() {
     assert(pickOnlyResult.result.folder === 'C:/tmp/out', 'dialog_folder with pickOnly should return the raw folder path');
     assert(pickOnlyResult.result.file_tokens.length === 0, 'dialog_folder with pickOnly should return no file tokens');
   } finally {
-    await folderFs.promises.rm(tempFolderDir, { recursive: true, force: true });
+    await fs.promises.rm(tempFolderDir, { recursive: true, force: true });
   }
 
   const ignored = await handleDialogCall('db_columns', {}, dialog, win);
@@ -115,12 +112,10 @@ async function run() {
       this.options = options;
       this.closed = false;
       this.listeners = {};
-      this.lastFilter = null;
       this.webContents = {
         session: {
           webRequest: {
-            onBeforeRequest: (filter, callback) => {
-              this.lastFilter = filter;
+            onBeforeRequest: (_filter, callback) => {
               if (callback) {
                 this.onBeforeRequest = callback;
               }
@@ -143,7 +138,7 @@ async function run() {
 
     async loadFile(filePath) {
       this.loadedFile = filePath;
-      this.loadedHtml = await require('fs').promises.readFile(filePath, 'utf8');
+      this.loadedHtml = await fs.promises.readFile(filePath, 'utf8');
       if (this.listeners['did-finish-load']) this.listeners['did-finish-load']();
     }
 
@@ -211,9 +206,6 @@ async function run() {
     assert(FakeBrowserWindow.instances.length === 1, 'html_to_pdf with a reset pool creates exactly one window');
   }
 
-  const fsForImage = require('fs');
-  const osForImage = require('os');
-  const pathForImage = require('path');
   const {
     createFileCapability,
     createStagedSession,
@@ -221,9 +213,9 @@ async function run() {
     completeStagedSession,
     resolveCapability,
   } = require('../electron/file-capabilities');
-  const imageTempDir = await fsForImage.promises.mkdtemp(pathForImage.join(osForImage.tmpdir(), 'antares-pdf-img-'));
-  const realImagePath = pathForImage.join(imageTempDir, 'foto.jpg');
-  await fsForImage.promises.writeFile(realImagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  const imageTempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-pdf-img-'));
+  const realImagePath = path.join(imageTempDir, 'foto.jpg');
+  await fs.promises.writeFile(realImagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
 
   clearAllowedReadPaths();
   assert(
@@ -299,7 +291,7 @@ async function run() {
     win,
     { BrowserWindow: FakeBrowserWindow },
   );
-  assert(!fsForImage.existsSync(stagedImagePath), 'html_to_pdf cleans staged image files after rendering');
+  assert(!fs.existsSync(stagedImagePath), 'html_to_pdf cleans staged image files after rendering');
   let stagedRevoked = false;
   try {
     resolveCapability(stagedImageCap.token, 'read', null);
@@ -309,7 +301,7 @@ async function run() {
   assert(stagedRevoked, 'html_to_pdf revokes staged image capabilities after rendering');
 
   try {
-    await fsForImage.promises.rm(imageTempDir, { recursive: true, force: true });
+    await fs.promises.rm(imageTempDir, { recursive: true, force: true });
   } catch {}
 
   class DeferredBrowserWindow {
@@ -480,9 +472,6 @@ async function run() {
     );
   }
 
-  const fs = require('fs');
-  const os = require('os');
-  const path = require('path');
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-dialog-test-'));
   try {
     const outputPath = path.join(tempDir, 'salida.pdf');
@@ -610,7 +599,6 @@ async function run() {
     const imgPath = path.join(thumbTempDir, 'tiny.jpg');
     await fs.promises.writeFile(imgPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
 
-    const { createFileCapability } = require('../electron/file-capabilities');
     const thumbCap = createFileCapability({
       filePath: imgPath,
       mode: 'read',
@@ -703,19 +691,16 @@ async function run() {
   }
 
   {
-    const osB4 = require('os');
-    const pathB4 = require('path');
-    const { createFileCapability, resolveCapability } = require('../electron/file-capabilities.js');
-    const tmpDir = await fs.promises.mkdtemp(pathB4.join(osB4.tmpdir(), 'antares-b4-'));
+    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-b4-'));
     try {
-      const smallPath = pathB4.join(tmpDir, 'small.json');
+      const smallPath = path.join(tmpDir, 'small.json');
       await fs.promises.writeFile(smallPath, JSON.stringify({ ok: true }), 'utf8');
       const smallCap = createFileCapability({ filePath: smallPath, mode: 'read' });
       const smallRes = await handleDialogCall('file_token_read_json', { token: smallCap.token }, dialog, win);
       assert(smallRes.handled === true, 'file_token_read_json maneja tokens válidos');
       assert(smallRes.result.ok === true, 'file_token_read_json parsea el JSON pequeño');
 
-      const bigPath = pathB4.join(tmpDir, 'big.json');
+      const bigPath = path.join(tmpDir, 'big.json');
       const fh = await fs.promises.open(bigPath, 'w');
       await fh.truncate(64 * 1024 * 1024 + 1024);
       await fh.close();
@@ -777,8 +762,8 @@ async function run() {
     assert(cancelRes.result.canceled === true, 'diagnostics_export cancelado debe retornar canceled: true');
     assert(cancelRes.result.exported === false, 'diagnostics_export cancelado debe retornar exported: false');
 
-    const diagOutDir = await fsForDialog.promises.mkdtemp(pathForDialog.join(osForDialog.tmpdir(), 'antares-diag-test-'));
-    const diagOutFile = pathForDialog.join(diagOutDir, 'diag.json');
+    const diagOutDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-diag-test-'));
+    const diagOutFile = path.join(diagOutDir, 'diag.json');
     try {
       const saveDiagDialog = {
         async showSaveDialog() {
@@ -790,13 +775,13 @@ async function run() {
       assert(exportRes.result.exported === true, 'diagnostics_export debe retornar exported: true');
       assert(exportRes.result.path === diagOutFile, 'diagnostics_export debe retornar la ruta guardada');
 
-      const fileContent = JSON.parse(await fsForDialog.promises.readFile(diagOutFile, 'utf8'));
+      const fileContent = JSON.parse(await fs.promises.readFile(diagOutFile, 'utf8'));
       assert(fileContent.app !== undefined, 'diagnostics_export debe incluir objeto app');
       assert(fileContent.system !== undefined, 'diagnostics_export debe incluir objeto system');
       assert(fileContent.backend !== undefined, 'diagnostics_export debe incluir objeto backend');
       assert(Array.isArray(fileContent.recent_logs), 'diagnostics_export debe incluir recent_logs array');
     } finally {
-      await fsForDialog.promises.rm(diagOutDir, { recursive: true, force: true });
+      await fs.promises.rm(diagOutDir, { recursive: true, force: true });
     }
   }
 

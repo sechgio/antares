@@ -1,26 +1,13 @@
 
 const fs = require('fs');
 const path = require('path');
-let passed = 0;
-let failed = 0;
 
-function check(condition, message) {
-  if (condition) {
-    console.log(`  ✓ ${message}`);
-    passed++;
-  } else {
-    console.error(`  ✗ ${message}`);
-    failed++;
-  }
-}
+const { assert, finish } = require('./helpers/harness');
 
 function setsEqual(a, b) {
   if (!(a instanceof Set) || !(b instanceof Set)) return false;
   if (a.size !== b.size) return false;
-  for (const x of a) {
-    if (!b.has(x)) return false;
-  }
-  return true;
+  return diffSets(a, b).length === 0;
 }
 
 function diffSets(a, b) {
@@ -43,7 +30,7 @@ function main() {
   const { CONNECTIONS_METHODS } = require('../electron/connections-ipc-methods');
   const { AGENT_METHODS } = require('../electron/agent-handlers');
 
-  check(
+  assert(
     Array.isArray(sourceNative) && new Set(sourceNative).size === sourceNative.length,
     'catalog.NATIVE_METHODS es una lista sin duplicados'
   );
@@ -51,11 +38,11 @@ function main() {
 
   // Una proyección incompleta del catálogo deja métodos inalcanzables.
   const catalogNatives = byHandler('native:dialog');
-  check(
+  assert(
     setsEqual(new Set(dialogNative), catalogNatives),
     'dialog-handlers.NATIVE_METHODS == los native:dialog del catálogo'
   );
-  check(setsEqual(ALLOWED_RENDERER_METHODS, new Set(Object.keys(catalog))),
+  assert(setsEqual(ALLOWED_RENDERER_METHODS, new Set(Object.keys(catalog))),
     'ALLOWED_RENDERER_METHODS == todos los métodos del catálogo');
 
   // Un nativo sin rama propia cae al diálogo de apertura por defecto.
@@ -64,12 +51,12 @@ function main() {
   const openDialogFallthrough = new Set(['dialog_files', 'dialog_dest']);
   const serviced = new Set([...branches, ...openDialogFallthrough]);
   const sinRama = diffSets(catalogNatives, serviced);
-  check(
+  assert(
     sinRama.length === 0,
     `cada native:dialog tiene rama en handleDialogCall${sinRama.length ? ` (faltan: ${sinRama.join(', ')})` : ''}`
   );
   const ramaHuérfana = diffSets(branches, catalogNatives);
-  check(
+  assert(
     ramaHuérfana.length === 0,
     `handleDialogCall no atiende métodos fuera de native:dialog${ramaHuérfana.length ? ` (sobran: ${ramaHuérfana.join(', ')})` : ''}`
   );
@@ -87,7 +74,7 @@ function main() {
     ['AGENT_METHODS', AGENT_METHODS, byHandler('native:agent')],
   ];
   for (const [name, exported, expected] of buckets) {
-    check(setsEqual(exported, expected), `${name} coincide con su bucket del catálogo`);
+    assert(setsEqual(exported, expected), `${name} coincide con su bucket del catálogo`);
   }
 
   const solapados = [];
@@ -97,17 +84,16 @@ function main() {
     if (en.length === 0) sinBucket.push(method);
     if (en.length > 1) solapados.push(`${method} (${en.map(([n]) => n).join(', ')})`);
   }
-  check(
+  assert(
     sinBucket.length === 0,
     `ningún método del catálogo queda fuera de todo bucket${sinBucket.length ? ` (huérfanos: ${sinBucket.join(', ')})` : ''}`
   );
-  check(
+  assert(
     solapados.length === 0,
     `los buckets son disjuntos entre sí${solapados.length ? ` (solapados: ${solapados.join('; ')})` : ''}`
   );
 
-  console.log(`\n${passed} passed, ${failed} failed`);
-  if (failed > 0) process.exit(1);
+  finish();
 }
 
 main();

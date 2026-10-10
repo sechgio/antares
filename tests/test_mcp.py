@@ -388,7 +388,7 @@ def _wait_done(run_id: str, store: FlowStore, timeout: float = 10.0):
     raise AssertionError("run did not finish")
 
 
-def test_validate_graph_mcp_call(mcp_root):
+def test_validate_graph_mcp_call():
     graph = normalize_graph(
         {
             "nodes": [

@@ -82,8 +82,6 @@ def test_import_file_handler_accepts_data_uri_and_unpadded_base64(monkeypatch, t
 
 
 def test_import_file_handler_raises_descriptive_error_on_invalid_base64(monkeypatch, tmp_path) -> None:
-    import pytest
-
     from backend.core.technical_reports import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")

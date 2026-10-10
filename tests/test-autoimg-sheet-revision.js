@@ -1,16 +1,5 @@
 
-const path = require('path');
-
-const { assertOrExit:assert, evictModule } = require('./helpers/harness');
-
-function installMock(resolvedPath, exports) {
-  require.cache[resolvedPath] = {
-    id: resolvedPath,
-    filename: resolvedPath,
-    loaded: true,
-    exports,
-  };
-}
+const { assertOrExit: assert, stubModule, clearAutoimgModules } = require('./helpers/harness');
 
 async function main() {
   const sheetsPath = require.resolve('../electron/google-sheets-service');
@@ -19,7 +8,6 @@ async function main() {
 
   let sheetModifiedTime = '2026-07-01T10:00:00.000Z';
   let readRangesCalls = 0;
-  let readRangeCalls = 0;
 
   const bdHeader = ['NIS', 'SGIO', 'DESTINO'];
   const bdRows = [bdHeader, ['4210801', '69656525', 'DVD 03']];
@@ -30,13 +18,12 @@ async function main() {
     ['JUAN', 'folderJuan01', '✅', '', '0'],
   ];
 
-  installMock(sheetsPath, {
+  stubModule(sheetsPath, {
     getSheetId: () => 'sheetRevisionTest01',
     getStoredSheetConfig: () => ({ sheet_id: 'sheetRevisionTest01', name: 'AutoIMG', linked: true }),
     getAuthStatus: async () => ({ authenticated: true, email: 'u@x.com' }),
     openSpreadsheet: async () => ({ sheet_id: 'sheetRevisionTest01', name: 'AutoIMG' }),
     readRange: async (range) => {
-      readRangeCalls += 1;
       if (String(range).startsWith('FOLDERS')) return { values: folderRows };
       if (String(range).startsWith('LOGS')) return { values: logRows };
       if (String(range).startsWith('BD_ARRASTRE')) return { values: arrastreRows };
@@ -60,19 +47,14 @@ async function main() {
     batchWriteRanges: async () => ({ success: true }),
   });
 
-  installMock(drivePath, {
+  stubModule(drivePath, {
     getFileMetadata: async () => ({ modifiedTime: sheetModifiedTime, version: '7' }),
     assertDriveFolder: async (folder_id) => ({ folder_id, name: 'x' }),
   });
 
-  installMock(wmPath, { getMainWindow: () => null });
+  stubModule(wmPath, { getMainWindow: () => null });
 
-  for (const key of Object.keys(require.cache)) {
-    if (key.includes(`${path.sep}electron${path.sep}autoimg-`)) {
-      delete require.cache[key];
-    }
-  }
-  evictModule('electron/autoimg-sync-engine');
+  clearAutoimgModules();
 
   const engine = require('../electron/autoimg-sync-engine');
 
@@ -80,7 +62,6 @@ async function main() {
   assert(first.success && first.cached === false, 'primer syncFromSheet lee sheet');
   assert(readRangesCalls === 1, `primer sync debe llamar readRanges 1 vez (got ${readRangesCalls})`);
 
-  const CACHE_TTL_MS = 60_000;
   const second = await engine.syncFromSheet();
   assert(second.cached === true && second.revision_match === true, 'syncFromSheet con misma revision debe cachear');
   assert(readRangesCalls === 1, `segunda sync no debe readRanges (got ${readRangesCalls})`);
@@ -90,19 +71,14 @@ async function main() {
   assert(third.cached === false, 'revision distinta debe refetch');
   assert(readRangesCalls === 2, `tercera sync debe readRanges (got ${readRangesCalls})`);
 
-  readRangeCalls = 0;
   const foldersForce = await engine.listFolders({ force: true });
   assert(foldersForce.folders.length === 1, 'listFolders force carga');
-  const beforeRev = readRangeCalls;
   const foldersCached = await engine.listFolders({ force: false });
   assert(foldersCached.cached === true, 'listFolders force:false con TTL fresco usa cache');
   sheetModifiedTime = '2026-07-03T00:00:00.000Z';
   await engine.listFolders({ force: true });
   const sameRev = await engine.listFolders({ force: false });
   assert(sameRev.cached === true, 'listFolders TTL fresco');
-
-  void beforeRev;
-  void CACHE_TTL_MS;
 
   console.log('[PASS] AutoIMG sheet revision cache + rename concurrency OK.');
 }

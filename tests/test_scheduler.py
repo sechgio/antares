@@ -232,13 +232,9 @@ def test_cancelled_queued_light_future_releases_slot() -> None:
         release.set()
         scheduler.shutdown(wait=True)
 
-def test_detect_limits_allows_8_heavy_on_high_ram(monkeypatch) -> None:
-    from backend.core import scheduler as sched
-
-    monkeypatch.setattr(sched.os, 'cpu_count', lambda: 16)
-
+def _stub_psutil(monkeypatch, available_bytes: int) -> None:
     class _Mem:
-        available = 20 * (1024 ** 3)
+        available = available_bytes
 
     class _Psutil:
         @staticmethod
@@ -246,6 +242,14 @@ def test_detect_limits_allows_8_heavy_on_high_ram(monkeypatch) -> None:
             return _Mem()
 
     monkeypatch.setitem(__import__('sys').modules, 'psutil', _Psutil())
+
+
+def test_detect_limits_allows_8_heavy_on_high_ram(monkeypatch) -> None:
+    from backend.core import scheduler as sched
+
+    monkeypatch.setattr(sched.os, 'cpu_count', lambda: 16)
+
+    _stub_psutil(monkeypatch, 20 * (1024 ** 3))
     _light, heavy, queue, light_queue = sched._detect_limits()
     assert heavy <= 8
     assert heavy >= 2
@@ -259,15 +263,7 @@ def test_detect_limits_caps_at_6_below_16gb(monkeypatch) -> None:
 
     monkeypatch.setattr(sched.os, 'cpu_count', lambda: 16)
 
-    class _Mem:
-        available = 10 * (1024 ** 3)
-
-    class _Psutil:
-        @staticmethod
-        def virtual_memory():
-            return _Mem()
-
-    monkeypatch.setitem(__import__('sys').modules, 'psutil', _Psutil())
+    _stub_psutil(monkeypatch, 10 * (1024 ** 3))
     _light, heavy, _queue, _light_queue = sched._detect_limits()
     assert heavy <= 6
 
@@ -277,15 +273,7 @@ def test_detect_limits_allows_one_heavy_worker_when_ram_is_low(monkeypatch) -> N
 
     monkeypatch.setattr(sched.os, 'cpu_count', lambda: 16)
 
-    class _Mem:
-        available = 512 * 1024 ** 2
-
-    class _Psutil:
-        @staticmethod
-        def virtual_memory():
-            return _Mem()
-
-    monkeypatch.setitem(__import__('sys').modules, 'psutil', _Psutil())
+    _stub_psutil(monkeypatch, 512 * 1024 ** 2)
     _light, heavy, queue, _light_queue = sched._detect_limits()
 
     assert heavy == 1

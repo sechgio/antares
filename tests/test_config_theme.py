@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import backend.core.config_theme as config_theme
 from backend.core.config_theme import (
@@ -9,6 +8,7 @@ from backend.core.config_theme import (
     reset_theme,
     save_theme,
 )
+from tests.conftest import BACKEND_ROOT as REPO_ROOT
 
 
 def test_save_and_load_theme_roundtrip(tmp_path, monkeypatch) -> None:
@@ -99,7 +99,7 @@ def test_presets_meet_contrast_floors() -> None:
 
 
 def test_default_theme_strictly_matches_shared_default_theme_json() -> None:
-    shared_path = Path(__file__).resolve().parent.parent / "shared" / "default-theme.json"
+    shared_path = REPO_ROOT / "shared" / "default-theme.json"
     assert shared_path.is_file(), f"Missing shared contract: {shared_path}"
     shared_theme = json.loads(shared_path.read_text(encoding="utf-8"))
 
@@ -108,7 +108,7 @@ def test_default_theme_strictly_matches_shared_default_theme_json() -> None:
 
 
 def test_frontend_theme_contract_parity() -> None:
-    frontend_applier = Path(__file__).resolve().parent.parent / "frontend" / "src" / "utils" / "themeApplier.ts"
+    frontend_applier = REPO_ROOT / "frontend" / "src" / "utils" / "themeApplier.ts"
     assert frontend_applier.is_file(), f"Missing frontend themeApplier: {frontend_applier}"
     applier_text = frontend_applier.read_text(encoding="utf-8")
     assert "shared/default-theme.json" in applier_text, (
@@ -117,7 +117,7 @@ def test_frontend_theme_contract_parity() -> None:
     assert "export const DEFAULT_THEME" in applier_text
 
     appearance_view = (
-        Path(__file__).resolve().parent.parent
+        REPO_ROOT
         / "frontend"
         / "src"
         / "components"

@@ -1,24 +1,5 @@
 
-const path = require('path');
-
-const { assertOrExit:assert, evictModule } = require('./helpers/harness');
-
-function installMock(resolvedPath, exports) {
-  require.cache[resolvedPath] = {
-    id: resolvedPath,
-    filename: resolvedPath,
-    loaded: true,
-    exports,
-  };
-}
-
-function clearAutoimgModules() {
-  for (const key of Object.keys(require.cache)) {
-    if (key.includes(`${path.sep}electron${path.sep}autoimg-`)) {
-      delete require.cache[key];
-    }
-  }
-}
+const { assertOrExit: assert, stubModule, clearAutoimgModules } = require('./helpers/harness');
 
 async function main() {
   const sheetsPath = require.resolve('../electron/google-sheets-service');
@@ -59,7 +40,7 @@ async function main() {
     ['JUAN', 'folderJuan01', '✅', '', '0'],
   ];
 
-  installMock(sheetsPath, {
+  stubModule(sheetsPath, {
     getSheetId: () => 'sheetCacheBudget01',
     getStoredSheetConfig: () => ({ sheet_id: 'sheetCacheBudget01', name: 'AutoIMG', linked: true }),
     getAuthStatus: async () => ({ authenticated: true, email: 'u@x.com' }),
@@ -99,7 +80,7 @@ async function main() {
 
   const nis = require('../electron/autoimg-nis');
 
-  installMock(drivePath, {
+  stubModule(drivePath, {
     getFileMetadata: async () => ({ modifiedTime: sheetModifiedTime, version: '1' }),
     assertDriveFolder: async (folder_id) => ({ folder_id, name: 'JUAN' }),
     listFolder: async (_folderId, opts = {}) => {
@@ -113,10 +94,9 @@ async function main() {
     computeEstado: nis.computeEstado,
   });
 
-  installMock(wmPath, { getMainWindow: () => null });
+  stubModule(wmPath, { getMainWindow: () => null });
 
   clearAutoimgModules();
-  evictModule('electron/autoimg-sync-engine');
   const engine = require('../electron/autoimg-sync-engine');
 
   assert(engine.SHEET_CACHE_BUDGET_BYTES === 32 * 1024 * 1024, 'presupuesto por defecto 32 MiB');

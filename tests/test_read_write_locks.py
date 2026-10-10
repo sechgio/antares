@@ -7,7 +7,7 @@ from backend.core.config_fields import save_fields
 from backend.core.repository import _db_lock, close_connection
 
 
-def _setup(db_path, config_path) -> None:
+def _setup(db_path) -> None:
     save_fields([{"name": "codigo", "type": "TEXT", "required": True}])
     db.init_db()
     conn = sqlite3.connect(str(db_path))
@@ -26,7 +26,7 @@ class TestReadPool:
             "backend.core.config_fields._config_file",
             lambda: tmp_path / "fields_config.json",
         )
-        _setup(db_file, tmp_path / "fields_config.json")
+        _setup(db_file)
 
         try:
             read_conn = db._get_read_connection()
@@ -42,7 +42,7 @@ class TestReadPool:
             "backend.core.config_fields._config_file",
             lambda: tmp_path / "fields_config.json",
         )
-        _setup(db_file, tmp_path / "fields_config.json")
+        _setup(db_file)
 
         errors: list[Exception] = []
         reads_done = threading.Event()

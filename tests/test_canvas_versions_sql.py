@@ -1,9 +1,12 @@
-from pathlib import Path
+from tests.conftest import BACKEND_ROOT as REPO_ROOT
+
+
+def _function_body(content, name):
+    return content.split(f"CREATE OR REPLACE FUNCTION {name}", 1)[1].split("$$;", 1)[0]
 
 
 def test_canvas_versions_migration_exists():
-    repo_root = Path(__file__).resolve().parent.parent
-    migration_file = repo_root / "supabase" / "migrations" / "20260731160200_canvas_document_versions.sql"
+    migration_file = REPO_ROOT / "supabase" / "migrations" / "20260731160200_canvas_document_versions.sql"
     assert migration_file.exists(), f"Migration SQL file must exist at {migration_file}"
 
     content = migration_file.read_text(encoding="utf-8")
@@ -16,15 +19,13 @@ def test_canvas_versions_migration_exists():
 
 
 def test_canvas_lww_migration_remains_in_history():
-    repo_root = Path(__file__).resolve().parent.parent
-    migration_file = repo_root / "supabase" / "migrations" / "20260828000000_canvas_lww_atomic.sql"
+    migration_file = REPO_ROOT / "supabase" / "migrations" / "20260828000000_canvas_lww_atomic.sql"
     assert migration_file.exists(), f"Historical migration SQL file must exist at {migration_file}"
 
 
 def test_canvas_version_storage_guard_bounds_current_and_stale_write_paths():
-    repo_root = Path(__file__).resolve().parent.parent
     migration_file = (
-        repo_root
+        REPO_ROOT
         / "supabase"
         / "migrations"
         / "20260904170000_canvas_version_storage_guard.sql"
@@ -55,9 +56,8 @@ def test_canvas_version_storage_guard_bounds_current_and_stale_write_paths():
 
 
 def test_canvas_version_storage_prune_before_insert_migration_bounds_transient_quota():
-    repo_root = Path(__file__).resolve().parent.parent
     migration_file = (
-        repo_root
+        REPO_ROOT
         / "supabase"
         / "migrations"
         / "20260907180000_canvas_version_storage_prune_before_insert.sql"
@@ -72,15 +72,14 @@ def test_canvas_version_storage_prune_before_insert_migration_bounds_transient_q
     assert "CREATE OR REPLACE FUNCTION private.canvas_record_document_version" in content
     assert "PERFORM private.canvas_prune_document_versions(p_document_id, 49);" in content
     assert "PERFORM private.canvas_prune_document_versions(p_document_id, 50);" in content
-    record_body = content.split("CREATE OR REPLACE FUNCTION private.canvas_record_document_version", 1)[1].split("$$;", 1)[0]
+    record_body = _function_body(content, "private.canvas_record_document_version")
     assert "RETURN NULL" not in record_body
     assert "SET search_path = pg_catalog, pg_temp" in content
 
 
 def test_canvas_storage_idempotency_migration_deduplicates_noop_versions_and_exposes_maintenance():
-    repo_root = Path(__file__).resolve().parent.parent
     migration_file = (
-        repo_root
+        REPO_ROOT
         / "supabase"
         / "migrations"
         / "20260909090000_canvas_storage_idempotency_and_maintenance.sql"
@@ -98,7 +97,7 @@ def test_canvas_storage_idempotency_migration_deduplicates_noop_versions_and_exp
     assert "NEW.content_hash IS NOT DISTINCT FROM OLD.content_hash" in content
     assert "md5(p_document::text)" in content
     assert "created_at = v_created_at" in content
-    assert "RETURN NULL" not in content.split("CREATE OR REPLACE FUNCTION private.canvas_record_document_version", 1)[1].split("$$;", 1)[0]
+    assert "RETURN NULL" not in _function_body(content, "private.canvas_record_document_version")
     assert "canvas_prune_document_versions(p_document_id, 49)" in content
     assert "canvas_prune_document_versions(p_document_id, 50)" in content
     assert "canvas_maintenance" in content
@@ -108,9 +107,8 @@ def test_canvas_storage_idempotency_migration_deduplicates_noop_versions_and_exp
 
 
 def test_canvas_lww_v2_rpc_is_explicit_and_serializes_document_and_delete_writes():
-    repo_root = Path(__file__).resolve().parent.parent
     migration_file = (
-        repo_root
+        REPO_ROOT
         / "supabase"
         / "migrations"
         / "20260909100000_canvas_lww_rpc_v2.sql"
@@ -131,15 +129,14 @@ def test_canvas_lww_v2_rpc_is_explicit_and_serializes_document_and_delete_writes
     assert "p_deleted_at timestamptz" in content
     assert "GRANT EXECUTE ON FUNCTION public.canvas_push_document_lww_v2" in content
     assert "GRANT EXECUTE ON FUNCTION public.canvas_delete_document_lww_v2" in content
-    v2_body = content.split("CREATE OR REPLACE FUNCTION private.canvas_push_document_lww_v2", 1)[1].split("$$;", 1)[0]
+    v2_body = _function_body(content, "private.canvas_push_document_lww_v2")
     assert "content_hash" in v2_body
     assert "v_existing.updated_at = v_updated_at" in v2_body
 
 
 def test_canvas_upgrade_compatibility_migration_preserves_legacy_rpc_and_serializes_first_insert():
-    repo_root = Path(__file__).resolve().parent.parent
     migration_file = (
-        repo_root
+        REPO_ROOT
         / "supabase"
         / "migrations"
         / "20260909100000_canvas_lww_rpc_v2.sql"
@@ -165,9 +162,8 @@ def test_canvas_upgrade_compatibility_migration_preserves_legacy_rpc_and_seriali
 
 
 def test_supabase_perf_audit_migration_delegates_legacy_rpc_and_narrows_hot_path():
-    repo_root = Path(__file__).resolve().parent.parent
     migration_file = (
-        repo_root
+        REPO_ROOT
         / "supabase"
         / "migrations"
         / "20260911200000_supabase_perf_audit.sql"
@@ -179,28 +175,20 @@ def test_supabase_perf_audit_migration_delegates_legacy_rpc_and_narrows_hot_path
     assert "SELECT private.canvas_push_document_lww_v2(p_document, p_updated_at, false)" in content
     assert "pg_try_advisory_xact_lock" in content
 
-    v2_body = content.split(
-        "CREATE OR REPLACE FUNCTION private.canvas_push_document_lww_v2", 1
-    )[1].split("$$;", 1)[0]
+    v2_body = _function_body(content, "private.canvas_push_document_lww_v2")
     assert "%ROWTYPE" not in v2_body
     assert "SELECT id, updated_at, deleted_at, content_hash" in v2_body
 
-    record_body = content.split(
-        "CREATE OR REPLACE FUNCTION private.canvas_record_document_version", 1
-    )[1].split("$$;", 1)[0]
+    record_body = _function_body(content, "private.canvas_record_document_version")
     assert "canvas_assert_document_within_limit" not in record_body
     assert "canvas_prune_document_versions(p_document_id, 49)" in record_body
     assert "canvas_prune_document_versions(p_document_id, 50)" not in record_body
 
-    delta_body = content.split(
-        "CREATE OR REPLACE FUNCTION private.canvas_storage_apply_delta", 1
-    )[1].split("$$;", 1)[0]
+    delta_body = _function_body(content, "private.canvas_storage_apply_delta")
     assert "FOR UPDATE" not in delta_body
     assert "RETURNING document_bytes, version_bytes, max_total_bytes" in delta_body
 
-    append_body = content.split(
-        "CREATE OR REPLACE FUNCTION private.canvas_append_document_version", 1
-    )[1].split("$$;", 1)[0]
+    append_body = _function_body(content, "private.canvas_append_document_version")
     assert "canvas_assert_document_within_limit(p_document)" in append_body
 
     assert "AND (SELECT private.is_active_user())" in content

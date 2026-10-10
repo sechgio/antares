@@ -14,17 +14,12 @@ def test_html_sanitizer_spec_holds_for_cmyk_adapter() -> None:
     failures: list[str] = []
     for case in spec["cases"]:
         lowered = sanitize_html_for_pdf(case["html"]).lower()
-        for needle in case.get("absent", []):
-            if needle.lower() in lowered:
-                failures.append(f"[cmyk] {case['id']}: output contiene \"{needle}\"")
-        for needle in case.get("present", []):
-            if needle.lower() not in lowered:
-                failures.append(f"[cmyk] {case['id']}: output no contiene \"{needle}\"")
         per_adapter = (case.get("adapters") or {}).get("cmyk", {})
-        for needle in per_adapter.get("absent", []):
-            if needle.lower() in lowered:
-                failures.append(f"[cmyk] {case['id']}: output contiene \"{needle}\"")
-        for needle in per_adapter.get("present", []):
-            if needle.lower() not in lowered:
-                failures.append(f"[cmyk] {case['id']}: output no contiene \"{needle}\"")
+        for scope in (case, per_adapter):
+            for needle in scope.get("absent", []):
+                if needle.lower() in lowered:
+                    failures.append(f"[cmyk] {case['id']}: output contiene \"{needle}\"")
+            for needle in scope.get("present", []):
+                if needle.lower() not in lowered:
+                    failures.append(f"[cmyk] {case['id']}: output no contiene \"{needle}\"")
     assert not failures, "\n".join(failures)

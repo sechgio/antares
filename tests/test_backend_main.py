@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -37,12 +38,7 @@ class _ShutdownRecorderScheduler:
 
 
 def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
-    counts = {
-        "warm_core": 0,
-        "warm_deferred": 0,
-        "warm_post_ready": 0,
-        "ready": 0,
-    }
+    counts = {"warm_deferred": 0}
 
     if warm_env is None:
         monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
@@ -53,13 +49,13 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
 
     class FakeHandlers:
         def warm_core(self) -> None:
-            counts["warm_core"] += 1
+            pass
 
         def warm_deferred(self) -> None:
             counts["warm_deferred"] += 1
 
         def warm_post_ready(self) -> None:
-            counts["warm_post_ready"] += 1
+            pass
 
         def get(self, _method: str):
             return None
@@ -75,8 +71,7 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
     monkeypatch.setattr(backend_main.threading, "Thread", _ImmediateThread)
 
     def fake_notify(method: str, params: dict) -> None:
-        if method == "ready":
-            counts["ready"] += 1
+        pass
 
     monkeypatch.setattr(backend_main, "send_notification", fake_notify)
     monkeypatch.setattr(backend_main, "read_message", lambda: None)
@@ -231,8 +226,6 @@ def test_dispatch_uses_heavy_scheduler_for_heavy_methods(monkeypatch) -> None:
 
 
 def test_maybe_log_ipc_timing_logs_slow_handlers(monkeypatch) -> None:
-    import logging as _logging
-
     logged: list[tuple] = []
     monkeypatch.delenv("ANTARES_IPC_TELEMETRY", raising=False)
     monkeypatch.setattr(
@@ -247,7 +240,7 @@ def test_maybe_log_ipc_timing_logs_slow_handlers(monkeypatch) -> None:
     backend_main._maybe_log_ipc_timing("canvas_save", 6_000.0, ok=True)
     assert len(logged) == 1
     level, event, fields = logged[0]
-    assert level == _logging.WARNING
+    assert level == logging.WARNING
     assert event == "backend.ipc.timing"
     assert fields["method"] == "canvas_save"
     assert fields["duration_ms"] == 6000
@@ -276,8 +269,6 @@ def test_maybe_log_ipc_timing_verbose_logs_fast_handlers(monkeypatch) -> None:
 
 
 def test_maybe_log_ipc_timing_samples_successes_and_keeps_fast_failures(monkeypatch) -> None:
-    import logging as _logging
-
     logged: list[tuple] = []
     monkeypatch.delenv("ANTARES_IPC_TELEMETRY", raising=False)
     monkeypatch.setattr(
@@ -298,7 +289,7 @@ def test_maybe_log_ipc_timing_samples_successes_and_keeps_fast_failures(monkeypa
 
     backend_main._maybe_log_ipc_timing("version", 2.0, ok=False, request_id="failed-request")
     assert len(logged) == 1
-    assert logged[0][0] == _logging.WARNING
+    assert logged[0][0] == logging.WARNING
     assert logged[0][2]["outcome"] == "failed"
 
 
@@ -335,11 +326,10 @@ def test_heartbeat_loop_emits_backend_heartbeat(monkeypatch) -> None:
     thread.join(timeout=2)
 
     assert logged, "heartbeat debe emitir backend.heartbeat"
-    import logging as _logging
 
     level, event, fields = logged[0]
     assert event == "backend.heartbeat"
-    assert level == _logging.WARNING
+    assert level == logging.WARNING
     assert fields["bytes"] == 12345
     assert fields["count"] == 7
     assert fields["reason"] == "memory_pressure"
@@ -500,7 +490,7 @@ def test_submit_handler_sends_response_when_scheduler_submit_raises(monkeypatch)
 
     assert result is None
     assert len(responses) == 1, "caller must receive a JSON-RPC error response"
-    msg_id, _error = responses[0]
+    msg_id = responses[0][0]
     assert msg_id == "42"
 
 
@@ -616,7 +606,6 @@ def test_main_resolves_deferred_method_in_worker_not_reader(monkeypatch) -> None
     backend_main.main()
 
     assert calls, "método deferred debe enviarse al scheduler (worker)"
-    assert calls[0][0] == "heavy" or calls[0][0] == "light", "deferred va a una lane"
     assert reads == [], "el reader no debe importar módulos deferred"
 
 

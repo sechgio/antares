@@ -1,15 +1,6 @@
 const assert = require('assert/strict');
 
-const { evictModule } = require('./helpers/harness');
-
-function installMock(resolvedPath, exports) {
-  require.cache[resolvedPath] = {
-    id: resolvedPath,
-    filename: resolvedPath,
-    loaded: true,
-    exports,
-  };
-}
+const { evictModule, stubModule } = require('./helpers/harness');
 
 async function main() {
   const sheetsPath = require.resolve('../electron/google-sheets-service');
@@ -17,18 +8,18 @@ async function main() {
   const enginePath = require.resolve('../electron/autoimg-sync-engine');
   const windowManagerPath = require.resolve('../electron/window-manager');
 
-  installMock(sheetsPath, {
+  stubModule(sheetsPath, {
     openSpreadsheet: async () => ({ success: true, sheet_id: 'sheet-1', name: 'AutoIMG' }),
   });
-  installMock(drivePath, {});
-  installMock(enginePath, {
+  stubModule(drivePath, {});
+  stubModule(enginePath, {
     persistSheetIdConfig: async () => ({
       success: false,
       persisted: false,
       error: 'configuración de solo lectura',
     }),
   });
-  installMock(windowManagerPath, { getMainWindow: () => null });
+  stubModule(windowManagerPath, { getMainWindow: () => null });
   evictModule('electron/autoimg-handlers');
 
   const { handleAutoimgCall } = require('../electron/autoimg-handlers');

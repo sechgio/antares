@@ -3,17 +3,10 @@ const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, eq, finish } = require('./helpers/harness');
 
 const ROOT = path.join(__dirname, '..');
 const HELPER = path.join(ROOT, 'frontend', 'scripts', 'lib', 'chunk-graph.mjs');
-
-function eq(actual, expected, message) {
-  assert(
-    actual === expected,
-    `${message} (esperado: ${JSON.stringify(expected)}, actual: ${JSON.stringify(actual)})`,
-  );
-}
 
 function tmpDist(chunks, indexHtml) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-chunkgraph-'));
