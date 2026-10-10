@@ -154,6 +154,11 @@ export default function GanttView({
 
   const visualLanes = Math.max(lanes, Math.floor(Math.max(0, bodyHeight - 8) / LANE_HEIGHT));
 
+  // El contenedor con scrollRef solo existe con tareas: el efecto debe
+  // reengancharse cuando el nodo aparece o desaparece, no en cada cambio de
+  // cantidad.
+  const hasTasks = tareas.length > 0;
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -169,7 +174,7 @@ export default function GanttView({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [hasTasks]);
 
   const applyFreeZoom = useCallback((nextColW: number, clientX?: number) => {
     const el = scrollRef.current;
@@ -219,7 +224,7 @@ export default function GanttView({
 
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [applyFreeZoom]);
+  }, [applyFreeZoom, hasTasks]);
 
   const {
     scheduled: scheduledCount,
