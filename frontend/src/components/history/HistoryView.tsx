@@ -141,31 +141,21 @@ export default function HistoryView() {
 
 
 
-  const toggleSelected = (id: number) => {
-
+  const toggleSelected = useCallback((id: number) => {
+    // Estable: MemoizedRunListItem es React.memo y cada tecla del buscador
+    // re-renderizaba todas las filas al cambiar la identidad del handler.
     setSelectedIds((prev) => {
-
       const next = new Set(prev);
-
       if (next.has(id)) {
-
         next.delete(id);
-
       } else {
-
         next.add(id);
-
       }
-
       return next;
-
     });
+  }, []);
 
-  };
-
-
-
-  const clearSelection = () => setSelectedIds(new Set());
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
 
 

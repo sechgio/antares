@@ -169,7 +169,7 @@ export default function GanttView({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [tareas.length]);
+  }, []);
 
   const applyFreeZoom = useCallback((nextColW: number, clientX?: number) => {
     const el = scrollRef.current;
@@ -219,13 +219,13 @@ export default function GanttView({
 
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [applyFreeZoom, tareas.length]);
+  }, [applyFreeZoom]);
 
   const {
     scheduled: scheduledCount,
     unscheduled: unscheduledCount,
     overdue: overdueCount,
-  } = computeTaskStats(tareas, columns);
+  } = useMemo(() => computeTaskStats(tareas, columns), [tareas, columns]);
 
   const dayIndex = useCallback(
     (iso: string) => {
@@ -344,12 +344,13 @@ export default function GanttView({
       const deltaDays = Math.round((e.clientX - drag.startX) / colW);
       if (deltaDays !== 0) drag.moved = true;
       const next = applyGanttDragDelta(drag.mode, drag.originStart, drag.originEnd, deltaDays);
-      setDragPreview({
-        id: drag.id,
-        mode: drag.mode,
-        start: next.start,
-        end: next.end,
-      });
+      // Sin esta guarda, cada pointermove re-renderizaba todo el gráfico aunque
+      // el día no hubiera cambiado.
+      setDragPreview((prev) =>
+        prev && prev.id === drag.id && prev.start === next.start && prev.end === next.end
+          ? prev
+          : { id: drag.id, mode: drag.mode, start: next.start, end: next.end },
+      );
     },
     [colW],
   );
@@ -599,7 +600,9 @@ export default function GanttView({
             onClick={handleGridClick}
             onMouseMove={(e) => {
               const d = dateFromClientX(e.clientX);
-              setHoverDate(d);
+              // Cada mousemove re-renderizaba todo el gráfico; solo cambia el
+              // estado al cruzar un borde de día.
+              setHoverDate((prev) => (prev === d ? prev : d));
             }}
             onMouseLeave={() => setHoverDate(null)}
             role="presentation"
