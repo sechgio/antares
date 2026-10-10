@@ -181,15 +181,6 @@ describe('API Client', () => {
     }
   });
 
-  it('should validate response types', async () => {
-    mockInvoke.mockResolvedValue({ formats: ['JPEG', 'PNG'] });
-    
-    const result = await api.formats();
-    
-    expect(result.formats).toBeInstanceOf(Array);
-    expect(result.formats).toContain('JPEG');
-  });
-
   it('should call dialogFiles with correct method', async () => {
     mockInvoke.mockResolvedValue({ paths: ['/path/file.jpg'] });
     

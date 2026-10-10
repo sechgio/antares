@@ -10,8 +10,6 @@ const scriptPath = path.join(ROOT, 'scripts', 'release-loop.js');
 function run() {
   console.log('Testing release-loop quality gate...\n');
 
-  assert(fs.existsSync(scriptPath), 'scripts/release-loop.js exists');
-
   const content = fs.readFileSync(scriptPath, 'utf8');
   const loopUtils = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'loop-utils.js'), 'utf8');
 

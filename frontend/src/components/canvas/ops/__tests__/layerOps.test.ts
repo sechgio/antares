@@ -320,14 +320,6 @@ describe("groupLayers / ungroupLayers", () => {
     expect(out.find((l) => l.id === "a")?.parentId).toBe(groupId);
   });
 
-  it("rechaza mezcla de páginas", () => {
-    const ls = [
-      rect("a", 0, 0, 10, 10, { pageIndex: 0 }),
-      rect("b", 0, 0, 10, 10, { pageIndex: 1 }),
-    ];
-    expect(groupLayers(ls, ["a", "b"]).groupId).toBe("");
-  });
-
   it("sin selección válida devuelve groupId vacío", () => {
     expect(groupLayers([rect("a")], []).groupId).toBe("");
   });

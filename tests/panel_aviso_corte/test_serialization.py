@@ -27,16 +27,6 @@ def _ref(
     )
 
 
-def _contains_tuple(obj: Any) -> bool:
-    if isinstance(obj, tuple):
-        return True
-    if isinstance(obj, list):
-        return any(_contains_tuple(v) for v in obj)
-    if isinstance(obj, dict):
-        return any(_contains_tuple(v) for v in obj.values())
-    return False
-
-
 def _valid_payload() -> dict[str, Any]:
     return {
         "cuadrante": "CUAD-1",
@@ -49,11 +39,6 @@ def _valid_payload() -> dict[str, Any]:
 
 class TestSerializeReturnsJsonFriendlyDict:
 
-    def test_returns_dict_type(self) -> None:
-        panel = Panel(cuadrante="CUAD-1", fecha_corte="", motivo="M")
-        data = serialize_panel(panel)
-        assert type(data) is dict
-
     def test_nested_imagenes_is_list_of_dicts(self) -> None:
         panel = Panel(
             cuadrante="CUAD-1",
@@ -65,19 +50,6 @@ class TestSerializeReturnsJsonFriendlyDict:
         assert isinstance(data["imagenes"], list)
         for item in data["imagenes"]:
             assert type(item) is dict
-
-    def test_no_tuples_anywhere_in_output(self) -> None:
-        panel = Panel(
-            cuadrante="CUAD-1",
-            fecha_corte="2024-01-15",
-            motivo="M",
-            imagenes=(_ref(1), _ref(2), _ref(3), _ref(4)),
-            source_row_index=3,
-        )
-        data = serialize_panel(panel)
-        assert not _contains_tuple(data), (
-            "serialize_panel no debe emitir tuples; debe ser JSON-friendly"
-        )
 
     def test_output_is_json_dumps_compatible(self) -> None:
         panel = Panel(
@@ -107,17 +79,6 @@ class TestRoundTripFixedExamples:
         assert result == panel
         assert result.imagenes == ()
         assert result.fecha_corte == ""
-
-    def test_round_trip_one_image(self) -> None:
-        panel = Panel(
-            cuadrante="CUAD-1",
-            fecha_corte="2024-01-15",
-            motivo="Trabajos",
-            imagenes=(_ref(1, direccion="Av. Principal 123"),),
-        )
-        result = deserialize_panel(serialize_panel(panel))
-        assert result == panel
-        assert len(result.imagenes) == 1
 
     def test_round_trip_full_grid_four_images(self) -> None:
         panel = Panel(

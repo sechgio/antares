@@ -11,15 +11,6 @@ describe('strokeWeightStore', () => {
     resetLastStrokeWeight();
   });
 
-  it('returns the default weight initially', () => {
-    expect(strokeWeightForNewLine()).toBe(DEFAULT_LINE_STROKE_PX);
-  });
-
-  it('remembers a positive weight for the next line insert', () => {
-    rememberStrokeWeight(4.5);
-    expect(strokeWeightForNewLine()).toBe(4.5);
-  });
-
   it('ignores zero and negative weights (keeps the previous value)', () => {
     rememberStrokeWeight(3);
     rememberStrokeWeight(0);

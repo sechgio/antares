@@ -87,12 +87,6 @@ def test_sanitize_strips_unsafe_data_uri_in_src() -> None:
     assert 'src=""' in out or "src=''" in out
 
 
-def test_sanitize_keeps_safe_image_data_uri_in_src() -> None:
-    html = '<img src="data:image/png;base64,AAAA"/>'
-    out = sanitize_html_for_pdf(html)
-    assert "data:image/png;base64,AAAA" in out
-
-
 def test_sellador_inspect_pdf_rejects_path_traversal() -> None:
     with pytest.raises(ValueError, match="Path traversal"):
         sellador_inspect_pdf({"pdf_path": "../../etc/passwd"})

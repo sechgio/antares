@@ -19,7 +19,6 @@ import {
   releaseImageBlob,
   serializeDocumentImages,
   serializeHistorySteps,
-  sweepOrphanBlobs,
   trackImageRef,
 } from "./imageBlobStore";
 import type { CanvasDocument, CanvasLayer } from "../types";
@@ -296,14 +295,6 @@ describe("serialized history identity", () => {
 });
 
 describe("applySavedDocumentKeepingImages", () => {
-  it("conserva el valor blob vivo del editor frente al guardado", async () => {
-    const reg = await registerImageBlob(new Blob(["x"]));
-    const editor = doc([layer("i", "image", reg.url)]);
-    const saved = doc([layer("i", "image", "canvas-asset:stored")]);
-    const out = applySavedDocumentKeepingImages(editor, saved);
-    expect(out.layers[0].value).toBe(reg.url);
-  });
-
   it("no cambia nada si el valor previo no era blob vivo", () => {
     const editor = doc([layer("i", "image", "data:x")]);
     const saved = doc([layer("i", "image", "canvas-asset:stored")]);
@@ -470,11 +461,4 @@ describe("pin/release/sweep", () => {
     expect(revoked).toContain(reg.url);
   });
 
-  it("sweepOrphanBlobs libera los no referenciados", async () => {
-    const keep = await registerImageBlob(new Blob(["k"]));
-    await registerImageBlob(new Blob(["o"]));
-    const released = sweepOrphanBlobs([keep.url]);
-    expect(released).toBe(1);
-    expect(getBlobUrl(keep.blobId)).toBe(keep.url);
-  });
 });

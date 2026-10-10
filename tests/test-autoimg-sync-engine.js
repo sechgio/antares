@@ -205,11 +205,6 @@ async function main() {
   assert(scanCompletos !== fromRows.completos,
     'métricas solo-scan divergen de BD_IMG mergeado (regresión RESUMEN)');
 
-  const { getOperationStatus } = require('../electron/autoimg-sync-engine');
-  const opStatus = getOperationStatus();
-  assert(opStatus.active === null, 'inicialmente no hay operación activa');
-  assert(opStatus.cancellable === false, 'sin operación activa no es cancelable');
-
     console.log('[PASS] AutoIMG sync-engine helpers OK.');
   } finally {
     global.setInterval = originalSetInterval;

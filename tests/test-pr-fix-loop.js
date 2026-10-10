@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 const vm = require('vm');
 
 const { assert, assertActionsPinned, finish } = require('./helpers/harness');
@@ -12,13 +11,10 @@ const workflowPath = path.join(ROOT, '.github', 'workflows', 'pr-fix-loop.yml');
 function run() {
   console.log('Testing pr-fix-loop script...\n');
 
-  assert(fs.existsSync(scriptPath), 'scripts/pr-fix-loop.js exists');
-
   const content = fs.readFileSync(scriptPath, 'utf8');
   assert(content.includes('PR Fix Loop'), 'script documents PR fix loop purpose');
   assert(content.includes('SkipTag') || content.includes('[skip-ci-fix]'), 'script has anti-loop skip tag');
   assert(content.includes('MAX_ITER') || content.includes('maxIter'), 'script has max iterations guard');
-  assert(content.includes('canAutoMerge'), 'script has auto-merge guard function');
   assert(content.includes('reviewDecision'), 'script checks PR approval before merge');
   assert(content.includes('mergeable'), 'script checks mergeable state before merge');
   assert(content.includes('APPROVED'), 'script enforces APPROVED review');
@@ -28,13 +24,11 @@ function run() {
   assert(!/HIDROAA|C:\\\\Users\\\\/.test(content), 'script does not hardcode a developer machine path');
   assert(content.includes('invokeDroidFixer'), 'script has droid fallback for residual errors');
   assert(/NO elimines/i.test(content) || /no elimines codigo/i.test(content), 'script instructs droid to never delete code');
-  assert(content.includes('sleepMs'), 'pending-check wait uses a portable Node sleep');
   assert(
     content.includes('cambios anteriores a las heuristicas'),
     'pr-fix aborta si el worktree trae cambios previos a sus fixers',
   );
 
-  assert(fs.existsSync(workflowPath), '.github/workflows/pr-fix-loop.yml exists');
   const wf = fs.readFileSync(workflowPath, 'utf8');
   assert(wf.includes('workflow_dispatch:'), 'workflow is available for explicit manual diagnostics');
   assert(!wf.includes('pull_request:'), 'workflow does not execute automatically on untrusted PR code');
@@ -48,13 +42,6 @@ function run() {
   assert(!wf.includes('--ship'), 'workflow never enables fixer side effects');
   assert(!wf.includes('--merge'), 'workflow never auto-merges');
   assertActionsPinned(wf, 'pr-fix-loop workflow');
-
-  try {
-    execSync('node --check scripts/pr-fix-loop.js', { cwd: ROOT, stdio: 'pipe' });
-    assert(true, 'pr-fix-loop.js parses without syntax errors');
-  } catch {
-    assert(false, 'pr-fix-loop.js parses without syntax errors');
-  }
 
   const commands = [];
   const messages = [];

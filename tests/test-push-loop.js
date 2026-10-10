@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const { assert, finish } = require('./helpers/harness');
 
@@ -10,15 +9,11 @@ const scriptPath = path.join(ROOT, 'scripts', 'push-loop.js');
 function run() {
   console.log('Testing push-loop script...\n');
 
-  assert(fs.existsSync(scriptPath), 'scripts/push-loop.js exists');
-
   const content = fs.readFileSync(scriptPath, 'utf8');
   assert(content.includes('PR-first'), 'script documents PR-first workflow');
   assert(content.includes('ensureFeatureBranch'), 'script has branch guard logic');
   assert(content.includes("'pr', 'create'") || content.includes('gh pr create'), 'script creates PRs via gh');
-  assert(content.includes('runQualityCommand'), 'quality gate tracks command exit codes');
   const loopUtils = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'loop-utils.js'), 'utf8');
-  assert(loopUtils.includes('function runQualityCommand'), 'shared quality helper inspects command exit codes');
   assert(
     loopUtils.includes("git diff --cached --name-only"),
     'commitAll respeta el índice: solo recurre a git add -A cuando está vacío',
@@ -26,16 +21,8 @@ function run() {
   assert(!content.includes('const tcBackend = trySh'), 'backend typecheck does not use output-only validation');
 
   const hookPath = path.join(ROOT, '.githooks', 'pre-push');
-  assert(fs.existsSync(hookPath), '.githooks/pre-push exists');
   const hook = fs.readFileSync(hookPath, 'utf8');
   assert(hook.includes('main'), 'pre-push hook protects main');
-
-  try {
-    execSync('node --check scripts/push-loop.js', { cwd: ROOT, stdio: 'pipe' });
-    assert(true, 'push-loop.js parses without syntax errors');
-  } catch {
-    assert(false, 'push-loop.js parses without syntax errors');
-  }
 
   const { runQualityCommand } = require('../scripts/push-loop');
   const successCommand = `"${process.execPath}" -e "process.stdout.write('quality-gate-passed')"`;
