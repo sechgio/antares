@@ -44,7 +44,8 @@ function reportExportError(err: unknown): void {
   });
 }
 
-export interface CanvasPaletteInput {  paletteOpen: boolean;
+export interface CanvasPaletteInput {
+  paletteOpen: boolean;
   document: CanvasDocument;
   canUndo: boolean;
   canRedo: boolean;

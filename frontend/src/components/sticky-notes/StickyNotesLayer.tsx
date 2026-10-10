@@ -247,7 +247,7 @@ export default function StickyNotesLayer() {
           );
         }
         const pid = entry.pileId ?? '';
-        const top = pileTopNote(pid);
+        const top = entry.note;
         const mem = notesInPile(pid);
         return (
           <FloatingCard

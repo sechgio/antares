@@ -309,7 +309,7 @@ export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ r
       <div className="w-16 h-16 rounded-full bg-[color:color-mix(in_srgb,var(--accent-red)_15%,transparent)] flex items-center justify-center mb-5">
         <AlertCircle size={32} className="text-[var(--accent-red)]" />
       </div>
-      <p className="text-lg font-semibold text-[var(--accent-red)] mb-3">Error al generar la vista previa</p>
+      <p className="text-lg font-semibold text-[var(--accent-red)] mb-3">No se pudo generar</p>
       <div className="max-w-md w-full rounded-xl border border-[color:color-mix(in_srgb,var(--accent-red)_20%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_5%,transparent)] p-4">
         <p className="text-sm text-[color:color-mix(in_srgb,var(--accent-red)_90%,transparent)] break-words leading-relaxed">{result.error}</p>
       </div>

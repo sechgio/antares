@@ -11,7 +11,6 @@ import { createEmptyDocument, type CanvasDocument, type CanvasLayer } from '../t
 const { exportPagePng } = vi.hoisted(() => ({ exportPagePng: vi.fn(async () => undefined) }));
 vi.mock('../ops/exportPng', () => ({ exportPagePng, PAGE_PNG_SCALE: 2 }));
 
-
 function makeDoc(layers: CanvasLayer[]): CanvasDocument {
   const doc = createEmptyDocument('test');
   return { ...doc, layers: [...doc.layers, ...layers] };

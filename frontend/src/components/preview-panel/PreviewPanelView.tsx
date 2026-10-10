@@ -545,30 +545,16 @@ export default function PreviewPanelView() {
     [headers],
   );
 
-  // El selector construía el array de N opciones en cada render, incluida cada
-  // tecla del buscador. Se memoiza y se topa para no asignar miles de objetos.
-  const rowOptions = useMemo(() => {
-    const MAX_ROW_OPTIONS = 500;
-    const labelFor = (row: Record<string, unknown>, idx: number) =>
-      `${idx + 1}. ${idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}`;
-    if (data.length <= MAX_ROW_OPTIONS) {
-      return data.map((row, idx) => ({ value: String(idx), label: labelFor(row, idx) }));
-    }
-    const kept = data
-      .slice(0, MAX_ROW_OPTIONS)
-      .map((row, idx) => ({ value: String(idx), label: labelFor(row, idx) }));
-    const selected = Number(selectedIndex);
-    if (
-      selectedIndex !== "" &&
-      Number.isInteger(selected) &&
-      selected >= MAX_ROW_OPTIONS &&
-      selected < data.length
-    ) {
-      const row = data[selected];
-      if (row) kept.push({ value: selectedIndex, label: labelFor(row, selected) });
-    }
-    return kept;
-  }, [data, idColumn, selectedIndex]);
+  // El selector reconstruía las N opciones en cada render, incluida cada tecla
+  // del buscador: se memoiza (sin recortar la lista) para no asignarlas de nuevo.
+  const rowOptions = useMemo(
+    () =>
+      data.map((row, idx) => ({
+        value: String(idx),
+        label: `${idx + 1}. ${idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}`,
+      })),
+    [data, idColumn],
+  );
 
   const canPrevRow = selectedIndex !== "" && parseInt(selectedIndex) > 0;
   const canNextRow =
