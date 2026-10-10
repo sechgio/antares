@@ -21,6 +21,8 @@ import { assignUniqueLogoSides } from '../ops/logoSide';
 import { applyAppearanceVars, extractAppearanceVars } from '../ops/clipboardLayers';
 import { clearGuides } from '../ops/guides';
 import { exportPagePng, PAGE_PNG_SCALE } from '../ops/exportPng';
+import { reportFrontendError } from '../../../utils/observability';
+import { errorMessage } from '@/utils/errors';
 import { invertSelectableIds } from '../ops/selectSame';
 import { getPageCount } from '../ops/pages';
 import { nextZoomPreset } from '../ops/viewportNav';
@@ -32,8 +34,17 @@ import type {
   LayerCssVars,
 } from '../types';
 
-export interface CanvasPaletteInput {
-  paletteOpen: boolean;
+/** La paleta no tiene superficie de estado: los fallos van a observabilidad. */
+function reportExportError(err: unknown): void {
+  reportFrontendError({
+    kind: 'app_error',
+    view: 'canvas.export',
+    name: err instanceof Error ? err.name : 'CanvasExportError',
+    message: errorMessage(err, 'No se pudo exportar el PNG'),
+  });
+}
+
+export interface CanvasPaletteInput {  paletteOpen: boolean;
   document: CanvasDocument;
   canUndo: boolean;
   canRedo: boolean;
@@ -533,7 +544,7 @@ export function useCanvasCommandPalette(
             PAGE_PNG_SCALE,
             doc,
             pageIndex,
-          ),
+          ).catch(reportExportError),
       },
       {
         id: 'export:documentPng',
@@ -550,7 +561,7 @@ export function useCanvasCommandPalette(
                 page,
               );
             }
-          })();
+          })().catch(reportExportError);
         },
       },
     );
