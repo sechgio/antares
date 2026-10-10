@@ -133,6 +133,7 @@ export function Column({
   const BoardVirtualRow = useMemo(
     () =>
       function BoardVirtualRowInner({
+        ariaAttributes,
         index,
         style,
         taskIds: ids,
@@ -151,7 +152,7 @@ export function Column({
         const tarea = id ? byId.get(id) : undefined;
         if (!tarea) return <div style={style} />;
         return (
-          <div style={style} className="px-0.5 pb-2" data-virtual-row>
+          <div style={style} className="overflow-hidden px-0.5 pb-2" data-virtual-row {...ariaAttributes}>
             <SortableTaskCard
               tarea={tarea}
               members={mems}
@@ -230,6 +231,8 @@ export function Column({
                   rowComponent={BoardVirtualRow as never}
                   rowProps={boardRowProps}
                   style={{ height: listHeight, width: '100%' }}
+                  role="list"
+                  aria-label={`Tareas en ${column.name}`}
                 />
               )}
             </div>
