@@ -4,6 +4,10 @@ import { getReportConfig } from '../constants';
 import { createEmptyPanel, useCampoPanels } from '../hooks/useCampoPanels';
 import { derivePanelLabel } from '../utils/panelLabel';
 
+vi.mock('../../../hooks/useToast', () => ({
+    useToast: () => ({ addToast: vi.fn() }),
+}));
+
 describe('derivePanelLabel', () => {
     it('combines centro and fecha when available', () => {
         const config = getReportConfig('panel-fotografico');
