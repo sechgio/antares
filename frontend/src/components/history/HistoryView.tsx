@@ -80,11 +80,11 @@ export default function HistoryView() {
       const page = rawRuns.slice(0, HISTORY_PAGE_SIZE);
 
       setHasMoreRuns(rawRuns.length > HISTORY_PAGE_SIZE);
-      setRuns((prev) => {
-        const nextRuns = reset ? page : [...prev, ...page];
-        if (selected && !nextRuns.some((run) => run.id === selected.id)) setSelected(null);
-        return nextRuns;
-      });
+      // Sin efecto dentro del actualizador: en StrictMode puede invocarse dos
+      // veces y el setSelected quedaría duplicado.
+      const nextRuns = reset ? page : [...runsRef.current, ...page];
+      setRuns(nextRuns);
+      if (selected && !nextRuns.some((run) => run.id === selected.id)) setSelected(null);
     } catch {
       if (id === reqId.current) addToast({ message: t('history.errors.load', { defaultValue: 'Error al cargar el historial' }), type: 'error' });
     } finally {
@@ -141,31 +141,21 @@ export default function HistoryView() {
 
 
 
-  const toggleSelected = (id: number) => {
-
+  const toggleSelected = useCallback((id: number) => {
+    // Estable: MemoizedRunListItem es React.memo y cada tecla del buscador
+    // re-renderizaba todas las filas al cambiar la identidad del handler.
     setSelectedIds((prev) => {
-
       const next = new Set(prev);
-
       if (next.has(id)) {
-
         next.delete(id);
-
       } else {
-
         next.add(id);
-
       }
-
       return next;
-
     });
+  }, []);
 
-  };
-
-
-
-  const clearSelection = () => setSelectedIds(new Set());
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
 
 

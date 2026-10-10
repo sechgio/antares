@@ -137,4 +137,20 @@ describe('CropEditor', () => {
     fireEvent.click(screen.getByText('Aplicar'));
     expect(onSave).toHaveBeenCalledWith('img-1', { x: 0.25, y: 0.75 });
   });
+
+  it('cierra al pulsar el fondo pero no al soltar un arrastre sobre él', () => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <CropEditor image={makeImage()} aspectRatio="1:1" cropOrigin="bottom" onClose={onClose} onSave={vi.fn()} />,
+    );
+    const overlay = container.firstElementChild!;
+
+    fireEvent.mouseDown(container.querySelector('.cursor-grab')!);
+    fireEvent.mouseUp(overlay);
+    fireEvent.click(overlay);
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.mouseDown(overlay);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

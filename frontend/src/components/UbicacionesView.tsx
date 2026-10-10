@@ -17,6 +17,7 @@ import { api } from '../api';
 import { useToast } from '../hooks/useToast';
 import { useLocalStorageState } from '../hooks/useLocalStorageState';
 import { stageFileForIpc } from '../utils/stageFile';
+import { errorMessage } from '../utils/errors';
 import { parseCombinedCoords, isValidCoord } from '../utils/coords';
 import { DesignPanel } from './ubicaciones/DesignPanel';
 import { ManualEntryForm } from './ubicaciones/ManualEntryForm';
@@ -269,7 +270,7 @@ export const UbicacionesView: React.FC = () => {
         setOutputDir(result.paths[0]);
       }
     } catch (err) {
-      console.error('Error selecting directory:', err);
+      addToast({ message: errorMessage(err, 'No se pudo seleccionar la carpeta de salida'), type: 'error' });
     }
   };
 
@@ -328,7 +329,7 @@ export const UbicacionesView: React.FC = () => {
       });
       setResult({ success: true, data: response });
     } catch (err: unknown) {
-      setResult({ success: false, error: err instanceof Error ? err.message : 'Error desconocido' });
+      setResult({ success: false, error: errorMessage(err, 'Error desconocido') });
     } finally {
       setIsProcessing(false);
     }

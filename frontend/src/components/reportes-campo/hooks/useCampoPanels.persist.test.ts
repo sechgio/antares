@@ -5,9 +5,16 @@ import { useCampoPanels } from './useCampoPanels';
 import { TITULO_COLOR_KEY, TITULO_SIZE_KEY } from '../utils/tituloStyle';
 import type { StoredPanel } from '../types';
 
+const toastMocks = vi.hoisted(() => ({ addToast: vi.fn() }));
+
+vi.mock('../../../hooks/useToast', () => ({
+    useToast: () => ({ addToast: toastMocks.addToast }),
+}));
+
 const savePanel = vi.fn(async () => undefined);
 const loadPanelsByType = vi.fn(async () => [] as StoredPanel[]);
 const deleteStoredPanel = vi.fn(async () => undefined);
+const addToast = toastMocks.addToast;
 
 vi.mock('../utils/storage', async () => {
     const actual = await vi.importActual<typeof import('../utils/storage')>('../utils/storage');
@@ -41,6 +48,7 @@ describe('useCampoPanels persistence', () => {
         savePanel.mockClear();
         loadPanelsByType.mockClear();
         deleteStoredPanel.mockClear();
+        addToast.mockClear();
         loadPanelsByType.mockResolvedValue([]);
         vi.stubGlobal('URL', {
             createObjectURL: vi.fn(() => 'blob:mock'),
@@ -334,5 +342,21 @@ describe('useCampoPanels persistence', () => {
                 expect(stored.header[field.key], `${typeId}.${field.key}`).toBe(`${typeId}-${field.key}`);
             }
         }
+    });
+
+    it('avisa cuando falla la carga de paneles en lugar de quedarse en silencio', async () => {
+        loadPanelsByType.mockRejectedValue(new Error('idb bloqueado'));
+        const { result } = renderHook(() => useCampoPanels(config));
+
+        await act(async () => {
+            await vi.runAllTimersAsync();
+        });
+
+        expect(addToast).toHaveBeenCalledWith({
+            message: 'No se pudieron cargar los paneles guardados',
+            type: 'error',
+        });
+        // Se conserva el panel vacío local: el usuario puede seguir trabajando.
+        expect(result.current.panels).toHaveLength(1);
     });
 });

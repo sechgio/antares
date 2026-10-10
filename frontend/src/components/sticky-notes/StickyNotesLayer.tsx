@@ -194,6 +194,29 @@ export default function StickyNotesLayer() {
   const free = freeBreakouts();
   const piles = uniquePileIds();
 
+  // Una sola lista ordenada por zRank: antes se renderizaban primero todas las
+  // libres y luego todas las pilas, así que el orden DOM (y el apilado)
+  // ignoraba el z global y enfocar una libre no la traía al frente.
+  const orderedFloaters = [
+    ...free.map((n) => ({
+      key: `float-${n.id}`,
+      z: n.zRank || 0,
+      created: n.createdAt,
+      pileId: null as string | null,
+      note: n,
+    })),
+    ...piles.map((pid) => {
+      const top = pileTopNote(pid);
+      return {
+        key: `pile-${pid}`,
+        z: top?.zRank || 0,
+        created: top?.createdAt ?? 0,
+        pileId: pid,
+        note: top,
+      };
+    }),
+  ].sort((a, b) => a.z - b.z || a.created - b.created);
+
   return (
     <div className="pointer-events-none fixed inset-0 z-[80]">
       <FloatingCard
@@ -206,25 +229,29 @@ export default function StickyNotesLayer() {
       >
         <StackCard ready={ready} />
       </FloatingCard>
-      {free.map((n) => (
-        <FloatingCard
-          key={n.id}
-          paneId={`float-${n.id}`}
-          anchor={n.anchor || 'top-left'}
-          width={248}
-          height={200}
-          chrome={noteTopic(n, 36)}
-          onFocus={() => focusBreakout(n.id)}
-        >
-          <BreakoutCard noteId={n.id} />
-        </FloatingCard>
-      ))}
-      {piles.map((pid) => {
-        const top = pileTopNote(pid);
+      {orderedFloaters.map((entry) => {
+        if (entry.pileId === null && entry.note) {
+          const n = entry.note;
+          return (
+            <FloatingCard
+              key={entry.key}
+              paneId={`float-${n.id}`}
+              anchor={n.anchor || 'top-left'}
+              width={248}
+              height={200}
+              chrome={noteTopic(n, 36)}
+              onFocus={() => focusBreakout(n.id)}
+            >
+              <BreakoutCard noteId={n.id} />
+            </FloatingCard>
+          );
+        }
+        const pid = entry.pileId ?? '';
+        const top = entry.note;
         const mem = notesInPile(pid);
         return (
           <FloatingCard
-            key={pid}
+            key={entry.key}
             paneId={`pile-${pid}`}
             anchor={top?.anchor || 'top-left'}
             width={280}

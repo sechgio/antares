@@ -68,7 +68,9 @@ export function storedToPanel(stored: StoredPanel): CampoPanel {
         id: stored.id,
         label: stored.label,
         header: { ...stored.header } as HeaderMap,
-        photos: stored.photos.map(storedToPhotoFile),
+        // Sin onupgradeneeded entre DB_VERSION 1 y 2, un registro con forma
+        // vieja llegaba aquí y stored.photos.map lanzaba.
+        photos: Array.isArray(stored.photos) ? stored.photos.map(storedToPhotoFile) : [],
         createdAt: stored.createdAt,
     };
 }

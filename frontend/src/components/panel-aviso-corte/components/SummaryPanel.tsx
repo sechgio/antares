@@ -14,11 +14,15 @@ interface StatProps {
 }
 
 function Stat({ label, value, warn }: StatProps) {
-  const valueClass = warn && value > 0 ? 'pac-stat__value pac-stat__value--warn' : 'pac-stat__value';
+  const isWarn = warn && value > 0;
+  const valueClass = isWarn ? 'pac-stat__value pac-stat__value--warn' : 'pac-stat__value';
   return (
     <div className="pac-stat">
       <span className="pac-stat__label">{label}</span>
-      <span className={valueClass}>{value}</span>
+      <span className={valueClass} aria-label={isWarn ? `${label}: ${value}, requiere atención` : undefined}>
+        {value}
+        {isWarn ? ' ⚠' : null}
+      </span>
     </div>
   );
 }

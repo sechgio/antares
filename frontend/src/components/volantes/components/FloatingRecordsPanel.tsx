@@ -83,7 +83,7 @@ export default function FloatingRecordsPanel({
       <div className="vgen-floating-panel-content vgen-records-content">
         <div className="vgen-actions-row">
           <div className="vgen-search">
-            <input className="vgen-input" onChange={(e) => onFilterChange(e.target.value)} placeholder="Buscar reservorio..." type="text" value={filterText} />
+            <input className="vgen-input" onChange={(e) => onFilterChange(e.target.value)} placeholder="Buscar reservorio..." aria-label="Buscar reservorio" type="text" value={filterText} />
           </div>
           <Button variant="none" size="none" className="v-btn v-btn-outline vgen-new-btn" onClick={onAddRecord}>
             + Nuevo
@@ -98,8 +98,18 @@ export default function FloatingRecordsPanel({
           {filteredRecords.map((record) => (
             <div
               key={record.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`Seleccionar ${record.reservorio}`}
+              aria-pressed={record.id === selectedRecordId}
               className={`vgen-record-item ${record.id === selectedRecordId ? "active" : ""}`}
               onClick={() => onSelectRecord(record.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectRecord(record.id);
+                }
+              }}
             >
               <div className="vgen-record-info">
                 <h4>{record.reservorio}</h4>

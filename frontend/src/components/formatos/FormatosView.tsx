@@ -400,6 +400,7 @@ function MappingEditor({
               step={step}
               value={mapping[key] as number}
               onChange={(e) => set(key, parseFloat(e.target.value) || 0)}
+              aria-label={label}
               className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)] rounded px-2 py-1.5 text-[var(--text-primary)] text-[11px] focus:outline-none transition-colors"
               style={{ fontFamily: "'Roboto Mono', monospace" }}
             />

@@ -39,6 +39,8 @@ function RunGraph({ graph, steps }: Props) {
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
+        // Grafo de solo lectura: sin esto cada nodo es un tab stop sin nombre.
+        nodesFocusable={false}
         zoomOnScroll
         panOnDrag
         fitView

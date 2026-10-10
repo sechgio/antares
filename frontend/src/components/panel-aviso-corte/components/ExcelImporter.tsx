@@ -76,7 +76,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
         </Button>
       )}
       <input ref={inputRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
-      {error && <span className="text-[11px] text-[var(--accent-red)] px-1">{error}</span>}
+      {error && <span role="alert" className="text-[11px] text-[var(--accent-red)] px-1">{error}</span>}
       {source && source.columns.length > 0 && (
         <div className="flex flex-wrap gap-1 px-0.5">
           {source.columns.map((col) => (

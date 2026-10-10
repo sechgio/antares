@@ -104,7 +104,7 @@ export default function BrandMark({
       ) : (
         <div
           role="img"
-          aria-label="Antares logo"
+          aria-label="Logotipo de Antares"
           style={{ width: markPx, height: markPx }}
           className="shrink-0 flex items-center justify-center overflow-hidden rounded-md"
         >

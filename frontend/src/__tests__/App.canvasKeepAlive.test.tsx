@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 import { findSidebarTab } from './sidebarNav';
+import { registerCanvasFlushOwner } from '../utils/ackCanvasFlush';
 
 const { mockSupabase } = vi.hoisted(() => {
   const empty = { data: [] as unknown[], error: null };
@@ -74,6 +75,33 @@ describe('App Canvas keep-alive', () => {
       });
       expect(canvasFlushAck).toHaveBeenCalledTimes(1);
     } finally {
+      window.electronAPI = previousApi;
+    }
+  });
+
+  it('leaves the quit flush ack to Canvas while it owns the flush', async () => {
+    const previousApi = window.electronAPI;
+    let notifyHandler: ((method: string, params: unknown) => void | Promise<void>) | undefined;
+    const canvasFlushAck = vi.fn(async () => ({ ok: true }));
+    window.electronAPI = {
+      ...previousApi!,
+      onNotify: (callback) => {
+        notifyHandler = callback;
+        return () => {};
+      },
+      canvasFlushAck,
+    };
+    const release = registerCanvasFlushOwner();
+
+    try {
+      render(<App />);
+      await waitFor(() => expect(notifyHandler).toBeDefined());
+      await act(async () => {
+        await notifyHandler?.('app.flush-canvas-before-quit', {});
+      });
+      expect(canvasFlushAck).not.toHaveBeenCalled();
+    } finally {
+      release();
       window.electronAPI = previousApi;
     }
   });

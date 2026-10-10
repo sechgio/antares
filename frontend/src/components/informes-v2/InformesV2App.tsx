@@ -169,6 +169,9 @@ export default function InformesV2App() {
         if (!savedPath && pdf.pdf_base64) {
           downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
         }
+        if (!savedPath && !pdf.pdf_base64) {
+          throw new Error('No se recibió el contenido del PDF generado.');
+        }
         await saveFeatureHistory('informe_v2', pdf.filename, { type: 'individual', reportId: reportForRender.id });
         addToast({
           message: hasChanges
@@ -249,6 +252,9 @@ export default function InformesV2App() {
         const savedPath = 'saved_path' in pdf ? pdf.saved_path : undefined;
         if (!savedPath && pdf.pdf_base64) {
           downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
+        }
+        if (!savedPath && !pdf.pdf_base64) {
+          throw new Error('No se recibió el contenido del PDF generado.');
         }
         await saveFeatureHistory('informe_v2', pdf.filename, { type: 'consolidado', count: rendered.count }, rendered.count);
         addToast({

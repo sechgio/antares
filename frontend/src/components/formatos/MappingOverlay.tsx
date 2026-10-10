@@ -158,6 +158,20 @@ export default function MappingOverlay({
     };
   }, [dragMode, handleMouseMove, handleMouseUp]);
 
+  const nudgeBox = useCallback((dx: number, dy: number) => {
+    const origin = liveRectRef.current;
+    emitRect({ ...origin, x: origin.x + dx, y: origin.y + dy });
+  }, [emitRect]);
+
+  const nudgeSize = useCallback((dw: number, dh: number) => {
+    const origin = liveRectRef.current;
+    emitRect({
+      ...origin,
+      width: Math.max(20, origin.width + dw),
+      height: Math.max(12, origin.height + dh),
+    });
+  }, [emitRect]);
+
   const startMove = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -222,10 +236,23 @@ export default function MappingOverlay({
 
       <div
         data-testid="mapping-overlay"
+        role="button"
+        tabIndex={0}
+        aria-label="Mover mapping (flechas para ajustar)"
         className={`absolute z-20 touch-none ${dragMode === 'move' ? 'cursor-grabbing' : 'cursor-grab'}`}
         style={hitBoxStyle}
         onClick={(event) => event.stopPropagation()}
         onMouseDown={startMove}
+        onKeyDown={(event) => {
+          // Las flechas del asa de redimensionar burbujean hasta aquí: sin esta
+          // guarda también moverían el recuadro y pisarían el redimensionado.
+          if (event.target !== event.currentTarget) return;
+          const step = event.shiftKey ? 10 : 1;
+          if (event.key === 'ArrowLeft') { event.preventDefault(); nudgeBox(-step, 0); }
+          else if (event.key === 'ArrowRight') { event.preventDefault(); nudgeBox(step, 0); }
+          else if (event.key === 'ArrowUp') { event.preventDefault(); nudgeBox(0, -step); }
+          else if (event.key === 'ArrowDown') { event.preventDefault(); nudgeBox(0, step); }
+        }}
       >
         <div
           className={`pointer-events-none absolute inset-0 rounded transition-opacity ${
@@ -234,12 +261,20 @@ export default function MappingOverlay({
               : 'border border-[color:color-mix(in_srgb,var(--accent-primary)_25%,transparent)] opacity-0 hover:opacity-100'
           }`}
         />
-        <div
-          aria-label="Redimensionar mapping"
+        <button
+          type="button"
+          aria-label="Redimensionar mapping (flechas para ajustar)"
           className={`absolute -bottom-2 -right-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-[var(--text-on-accent)] bg-[var(--accent-primary)] shadow transition-opacity ${
             showEditChrome ? 'opacity-100' : 'opacity-0 hover:opacity-100'
           }`}
           onMouseDown={startResize}
+          onKeyDown={(event) => {
+            const step = event.shiftKey ? 10 : 1;
+            if (event.key === 'ArrowLeft') { event.preventDefault(); nudgeSize(-step, 0); }
+            else if (event.key === 'ArrowRight') { event.preventDefault(); nudgeSize(step, 0); }
+            else if (event.key === 'ArrowUp') { event.preventDefault(); nudgeSize(0, -step); }
+            else if (event.key === 'ArrowDown') { event.preventDefault(); nudgeSize(0, step); }
+          }}
         />
       </div>
 

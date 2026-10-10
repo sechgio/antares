@@ -27,6 +27,7 @@ type VirtualRowProps = {
 } & VirtualRowData;
 
 const PreviewVirtualRow = React.memo(function PreviewVirtualRowInner({
+  ariaAttributes,
   index,
   style,
   rows,
@@ -47,8 +48,14 @@ const PreviewVirtualRow = React.memo(function PreviewVirtualRowInner({
   return (
     <div
       style={style}
+      {...ariaAttributes}
+      tabIndex={0}
+      aria-label={`Fila ${originalIndex + 1}`}
       onClick={() => onSetFocused(originalIndex)}
       onDoubleClick={() => onHandleRowClick(originalIndex)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onHandleRowClick(originalIndex);
+      }}
       className={`flex items-center border-b border-[var(--border-subtle)] cursor-pointer transition-colors ${
         isSelected
           ? 'bg-[color-mix(in_srgb,var(--accent-primary)_15%,transparent)] font-medium'

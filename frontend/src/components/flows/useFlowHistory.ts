@@ -40,6 +40,10 @@ export function useFlowHistory(
 
   const restore = useCallback(
     (snapshot: Snapshot) => {
+      // Los refs solo se sincronizaban por efecto: dos undos en la misma tarea
+      // leían el mismo snapshot previo y corrompían la pila de redo.
+      nodesRef.current = snapshot.nodes;
+      edgesRef.current = snapshot.edges;
       setNodes(snapshot.nodes);
       setEdges(snapshot.edges);
       onRestore();

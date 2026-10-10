@@ -137,7 +137,7 @@ export default function CalendarView({
     scheduled: scheduledCount,
     unscheduled: unscheduledCount,
     overdue: overdueCount,
-  } = computeTaskStats(tareas, columns);
+  } = useMemo(() => computeTaskStats(tareas, columns), [tareas, columns]);
 
   const openCreateForDate = useOpenCreateForDate(onAddTask, onAddTaskOnDate);
 

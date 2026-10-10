@@ -29,6 +29,7 @@ import { useDocumentLifecycle } from './hooks/useDocumentLifecycle';
 import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useLiveRef } from '../../hooks/useLiveRef';
+import { claimShellShortcuts } from '../../hooks/useKeyboardShortcut';
 import { useInlineEdit } from './hooks/useInlineEdit';
 import { useCanvasQuitFlush } from './hooks/useCanvasQuitFlush';
 import { useCanvasCommandPalette } from './hooks/useCanvasCommandPalette';
@@ -140,6 +141,9 @@ import Button from '@/components/ui/Button';
 const GeneratePanel = lazy(() => import('./editor/GeneratePanel'));
 
 type PlaceableTool = Exclude<CanvasTool, 'select' | 'hand'>;
+
+// Chords de Canvas que el shell también registra en App (ver claimShellShortcuts).
+const CANVAS_OWNED_SHELL_CHORDS = ['ctrl+0', 'ctrl+shift+i', 'ctrl+shift+v'] as const;
 
 const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = {
   rect: { w: 50, h: 40 },
@@ -788,6 +792,14 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   );
 
   const onKeyDownRef = useRef<(e: KeyboardEvent) => void>(() => {});
+
+  useEffect(() => {
+    if (!active) return;
+    // Canvas posee Ctrl+0, Ctrl+Shift+I y Ctrl+Shift+V: mientras está activo el
+    // shell debe ceder esos chords en lugar de navegar a otra pestaña.
+    claimShellShortcuts('canvas', CANVAS_OWNED_SHELL_CHORDS);
+    return () => claimShellShortcuts('canvas', null);
+  }, [active]);
 
   useEffect(() => {
     if (!active) return;

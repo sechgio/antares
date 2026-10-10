@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardColumn, Tarea } from '../types';
+import { toLocalDateString } from '../utils/dates';
 import {
   applyGanttDragDelta,
   buildDays,
@@ -53,6 +54,13 @@ describe('resolveTaskRange', () => {
       due_date: '2026-07-05',
     });
     expect(resolveTaskRange(t)).toEqual({ start: '2026-07-10', end: '2026-07-10' });
+  });
+
+  it('anchors undated tasks on the local creation day, not UTC', () => {
+    // 2026-07-02T02:00:00Z es 1 de julio en UTC-5: el slice UTC caía un día mal.
+    const t = makeTarea({ id: '1', title: 'A', created_at: '2026-07-02T02:00:00.000Z' });
+    const expected = toLocalDateString(new Date('2026-07-02T02:00:00.000Z'));
+    expect(resolveTaskRange(t)).toEqual({ start: expected, end: expected });
   });
 });
 

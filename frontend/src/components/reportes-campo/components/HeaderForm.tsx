@@ -15,6 +15,7 @@ import {
     stepTituloSize,
 } from '../utils/tituloStyle';
 import Button from '@/components/ui/Button';
+import { FileImportInput } from '@/components/ui/FileImportInput';
 
 interface HeaderFormProps {
     config: ReportTypeConfig;
@@ -86,13 +87,15 @@ export default function HeaderForm({
 
     const renderField = (field: FieldDef) => {
         const hasValue = !!(header[field.key] ?? '').trim();
+        const fieldId = `rcampo-${field.key}`;
         return (
             <div className={`rcampo-field ${hasValue ? 'has-value' : ''}`} key={field.key}>
-                <label className="rcampo-field-label">
+                <label className="rcampo-field-label" htmlFor={fieldId}>
                     {field.label}
                 </label>
                 {field.multiline && field.rows ? (
                     <textarea
+                        id={fieldId}
                         className="rcampo-textarea"
                         rows={field.rows}
                         value={header[field.key] ?? ''}
@@ -109,6 +112,7 @@ export default function HeaderForm({
                     />
                 ) : (
                     <input
+                        id={fieldId}
                         type={field.type ?? 'text'}
                         className="rcampo-input"
                         value={header[field.key] ?? ''}
@@ -274,7 +278,7 @@ export default function HeaderForm({
                                                 </Button>
                                             )}
                                         </div>
-                                        <input ref={logoLeftRef} type="file" accept="image/*" className="hidden" onChange={(e) => onLogoChange('left', e.target.files)} />
+                                        <FileImportInput ref={logoLeftRef} accept="image/*" className="hidden" onFiles={(files) => onLogoChange('left', files)} />
                                     </div>
                                     <div className="rcampo-logo-slot">
                                         <span className="rcampo-logo-label">
@@ -312,7 +316,7 @@ export default function HeaderForm({
                                                 </Button>
                                             )}
                                         </div>
-                                        <input ref={logoRightRef} type="file" accept="image/*" className="hidden" onChange={(e) => onLogoChange('right', e.target.files)} />
+                                        <FileImportInput ref={logoRightRef} accept="image/*" className="hidden" onFiles={(files) => onLogoChange('right', files)} />
                                     </div>
                                 </div>
 

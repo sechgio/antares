@@ -170,4 +170,46 @@ describe("useEvidenciaSession", () => {
     const lastSession = saveSession.mock.calls.at(-1)?.[0] as { title: string };
     expect(lastSession.title).toBe("Nuevo título");
   });
+
+  it("un fallo de lectura no desactiva el autoguardado pero no sobrescribe antes de editar", async () => {
+    loadSession.mockRejectedValue(new Error("idb bloqueado"));
+    const { result } = renderHook(() => useEvidenciaSession());
+    await waitFor(() => expect(result.current.restoreFailed).toBe(true));
+    // Sin ediciones no se guarda: la sesión vacía pisaría la que sigue en disco.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(saveSession).not.toHaveBeenCalled();
+
+    // El guardado solo se programa cuando isLoaded es true: tras editar, el
+    // autoguardado sigue vivo.
+    act(() => result.current.setTitle("Editado tras el fallo"));
+    await waitFor(() => expect(result.current.persistenceStatus).toBe("saved"), {
+      timeout: 2000,
+    });
+    expect(saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Editado tras el fallo" }),
+    );
+  });
+
+  it("vuelca el guardado pendiente al desmontar", async () => {
+    const { result, unmount } = renderHook(() => useEvidenciaSession());
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1));
+    saveSession.mockClear();
+    act(() => result.current.setTitle("Ultima edición"));
+    unmount();
+    await waitFor(() =>
+      expect(saveSession).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Ultima edición" }),
+      ),
+    );
+  });
+
+  it("marca error cuando falla el guardado", async () => {
+    const { result } = renderHook(() => useEvidenciaSession());
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1));
+    saveSession.mockRejectedValue(new Error("cuota"));
+    act(() => result.current.setTitle("Otro título"));
+    await waitFor(() => expect(result.current.persistenceStatus).toBe("error"), {
+      timeout: 2000,
+    });
+  });
 });

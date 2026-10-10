@@ -116,6 +116,7 @@ export default function TimePicker({
         className={`vgen-time-picker-trigger${isOpen ? " is-open" : ""}`}
         onClick={toggle}
         aria-expanded={isOpen}
+        aria-label={label ? `${label}: ${formatDisplayTime(value)}` : formatDisplayTime(value)}
       >
         <Clock className="vgen-time-picker-trigger-icon" size={13} />
         <span className="vgen-time-picker-trigger-value">
