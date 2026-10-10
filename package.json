@@ -34,7 +34,7 @@
     "lint:fix": "uv run --project . --locked --extra dev ruff check backend tests scripts --fix",
     "typecheck:backend": "uv run --project . --locked --extra dev mypy backend",
     "typecheck:frontend": "cd frontend && npx tsc --noEmit",
-    "audit:python": "uv run --project . --locked --extra dev pip-audit .",
+    "audit:python": "uv run --project . --locked --extra dev python scripts/audit_python.py",
     "audit:node": "npm audit --omit=dev --audit-level=high && npm audit --prefix frontend --omit=dev --audit-level=high",
     "check:budgets": "node scripts/check-budgets.js",
     "check:any": "uv run --project . --locked --extra dev python scripts/check_any_guard.py",

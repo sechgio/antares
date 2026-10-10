@@ -11,3 +11,9 @@ if (Test-Path 'C:\msys64\mingw64\bin\python.exe') {
 
 'C:\msys64\mingw64\bin' | Out-File -LiteralPath $env:GITHUB_PATH -Append
 'WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin' | Out-File -LiteralPath $env:GITHUB_ENV -Append
+
+$env:WEASYPRINT_DLL_DIRECTORIES = 'C:\msys64\mingw64\bin'
+uv run --project . --locked --extra dev python -c "from weasyprint import HTML; pdf = HTML(string='<p>Pango CI smoke</p>').write_pdf(); assert pdf.startswith(b'%PDF-')"
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
