@@ -238,7 +238,7 @@ export function createArtboardTransformGestures(deps: ArtboardTransformGestureDe
     const startX = e.clientX;
     const startY = e.clientY;
     gestureDirtyRef.current = false;
-    setRadiusDrag({ label: `Radius ${Math.round(startRadius)}`, corner });
+    setRadiusDrag({ label: `Radio ${Math.round(startRadius)}`, corner });
 
     const raf = createGestureRaf((ev: PointerEvent) => {
       const z = zoomRef.current;
@@ -256,7 +256,7 @@ export function createArtboardTransformGestures(deps: ArtboardTransformGestureDe
       applyGestureLayers(
         layersWithCornerRadius(snapshot, id, corner, nextR, { independent: ev.altKey }),
       );
-      setRadiusDrag({ label: `Radius ${Math.round(nextR)}`, corner });
+      setRadiusDrag({ label: `Radio ${Math.round(nextR)}`, corner });
     });
     let session: PointerGestureSession;
     session = pointerGestures.start({

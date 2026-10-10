@@ -46,8 +46,10 @@ export function useTaskActivity(tareaId: string, userId: string) {
         fetchTaskActivity(tareaId),
       ]);
       if (request !== requestRef.current) return;
-      setComments((current) => mergeById(nextComments, current));
-      setActivity((current) => mergeById(nextActivity, current));
+      // El servidor manda: en la recarga los entrantes ganan, igual que en el
+      // resto de llamadas (mergeById pisa con su segundo argumento).
+      setComments((current) => mergeById(current, nextComments));
+      setActivity((current) => mergeById(current, nextActivity));
     } catch (loadError) {
       if (request === requestRef.current) setError(message(loadError, 'No se pudo cargar la actividad'));
     } finally {

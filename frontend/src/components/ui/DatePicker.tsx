@@ -167,7 +167,7 @@ export default function DatePicker({
         aria-label={ariaLabel}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
-        aria-controls={popupId}
+        aria-controls={isOpen ? popupId : undefined}
       >
         <Calendar
           className="app-date-picker-trigger-icon"

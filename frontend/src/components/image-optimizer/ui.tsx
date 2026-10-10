@@ -128,7 +128,14 @@ export function ThemeSelect({
 export function ProgressBar({ current, total }: { current: number; total: number }) {
   const percentage = total > 0 ? (current / total) * 100 : 0;
   return (
-    <div className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--bg-input)]">
+    <div
+      className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--bg-input)]"
+      role="progressbar"
+      aria-valuenow={current}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-label="Progreso del procesamiento"
+    >
       <div
         className="h-full rounded-full bg-[var(--accent-primary)] transition-[width] duration-200 ease-out motion-reduce:transition-none"
         style={{ width: `${percentage}%` }}
