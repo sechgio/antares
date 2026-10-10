@@ -1069,11 +1069,14 @@ class FlowRunner:
             if receipt is not None:
                 result = receipt["output"]
                 saved_path = result.get("saved_path")
-                if not isinstance(saved_path, str) or Path(saved_path).is_file():
+                saved_paths = result.get("saved_paths") or ([saved_path] if isinstance(saved_path, str) else [])
+                if all(Path(path).is_file() for path in saved_paths):
                     if isinstance(saved_path, str):
                         with ctx["lock"]:
                             memory.setdefault("read_paths", set()).add(saved_path)
                             memory.setdefault("produced_paths", set()).add(saved_path)
+                            memory["read_paths"].update(saved_paths)
+                            memory["produced_paths"].update(saved_paths)
                     return {"json": result}
                 # El archivo producido fue borrado o movido: se re-ejecuta para regenerarlo.
         result = fn(dict(resolved))
@@ -1119,6 +1122,8 @@ class FlowRunner:
                 if result.get("report_batch"):
                     shared["report_template"] = result["template_name"]
             result["output_path"] = expected[0]
+            if result.get("guided_pdf"):
+                result["pdf_args"]["output_path"] = expected[0]
             result["stamped_output_path"] = str(Path(result["output_folder"]) / f"paneles-{fingerprint[:16]}-sellado.pdf")
         if method in _EFFECT_METHODS and isinstance(result.get("saved_path"), str):
             saved = Path(result["saved_path"])
@@ -1126,6 +1131,10 @@ class FlowRunner:
                 with ctx["lock"]:
                     memory.setdefault("read_paths", set()).add(str(saved))
                     memory.setdefault("produced_paths", set()).add(str(saved))
+                    for path in result.get("saved_paths") or []:
+                        if Path(path).is_file():
+                            memory["read_paths"].add(path)
+                            memory["produced_paths"].add(path)
         return {"json": result}
 
     def _run_http_request(self, node: JsonObject, memory: JsonObject, token: _CancelEvent | None = None) -> JsonObject:
@@ -1284,6 +1293,8 @@ def _source_fingerprint(graph: JsonObject, sources: list[str]) -> str:
 
 def _expected_output_paths(source_result: JsonObject, fingerprint: str) -> list[str]:
     """Ruta canónica del PDF que el lote dejaría en ``output_folder``."""
+    if source_result.get("guided_pdf"):
+        return list(source_result["planned_paths"])
     prefix = "reportes" if source_result.get("report_batch") else "paneles"
     return [str(Path(source_result["output_folder"]) / f"{prefix}-{fingerprint[:16]}.pdf")]
 

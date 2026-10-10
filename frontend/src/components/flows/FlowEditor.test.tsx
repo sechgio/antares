@@ -8,6 +8,7 @@ import { mcpApi } from '../../api/mcpApi';
 import type { FlowNodeData } from './graphAdapter';
 import type { Flow, FlowNodeKind } from './types';
 import FlowEditor from './FlowEditor';
+import { toolsApi } from '../../api/toolsApi';
 
 const { addToast, confirm } = vi.hoisted(() => ({ addToast: vi.fn(), confirm: vi.fn() }));
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
@@ -41,6 +42,24 @@ beforeEach(() => {
   vi.spyOn(connectionsApi, 'connectionsProviders').mockResolvedValue({ providers: [] });
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [] });
   vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({ servers: [] });
+});
+
+it('abre la guía de un PDF y guarda sus cambios en el grafo del editor', async () => {
+  const initial = flow('tool_call', { method: 'flows_read_images', args: { guided_pdf: true, template_kind: 'html', template_id: 'report.html', output_folder: '' } });
+  vi.spyOn(toolsApi, 'templatesList').mockResolvedValue({ templates: [] });
+  vi.spyOn(flowsApi, 'flowsGet').mockResolvedValue({ flow: initial });
+  const update = vi.spyOn(flowsApi, 'flowsUpdate').mockImplementation(async (params) => ({ flow: { ...initial, graph: params.graph! } }));
+  render(<FlowEditor flowId="f1" onBack={vi.fn()} onRunStarted={vi.fn()} />);
+  expect(await screen.findByLabelText('Guía de PDF personalizado')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '4. Salida' }));
+  fireEvent.change(screen.getByLabelText('Nombre del PDF'), { target: { value: 'Personalizado_{OT}' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(update).toHaveBeenCalledOnce());
+  expect(update.mock.calls[0][0].graph?.nodes[0].config.args).toMatchObject({ filename_pattern: 'Personalizado_{OT}' });
+  fireEvent.click(screen.getByRole('button', { name: 'Editor de nodos' }));
+  expect(screen.getByText('Seleccionar n1')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Guía de PDF' }));
+  expect(screen.getByLabelText('Guía de PDF personalizado')).toBeInTheDocument();
 });
 
 it('permite seguir editando al cancelar la salida y guarda antes de volver', async () => {

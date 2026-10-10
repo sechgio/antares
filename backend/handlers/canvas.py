@@ -330,6 +330,8 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
         }
 
     if len(pdf_bytes) > _MAX_INLINE_PDF_BYTES:
+        if params.get("_inline_only") is True:
+            raise ValueError("El PDF supera 40 MiB; reduce las imágenes o usa salida individual")
         out_dir = user_data_path("canvas/out")
         out_dir.mkdir(parents=True, exist_ok=True)
         safe_filename = sanitizar_nombre(Path(filename).name) or "canvas_cmyk.pdf"
