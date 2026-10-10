@@ -1,6 +1,8 @@
+import { useEffect, useRef } from "react";
 import { CheckCircle, FileSpreadsheet, Upload, X } from "lucide-react";
 import type React from "react";
 import Button from "@/components/ui/Button";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import ThemedSelect from "../../ui/ThemedSelect";
 import type { ExcelRecord } from "../data";
 
@@ -25,6 +27,17 @@ export default function ExcelImportModal({
   onRecordSelect,
   onClose,
 }: ExcelImportModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, true);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div
       className="vpad-excel-modal-overlay"
@@ -32,9 +45,15 @@ export default function ExcelImportModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="vpad-excel-modal">
+      <div
+        ref={dialogRef}
+        className="vpad-excel-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="vpad-excel-modal-title"
+      >
         <div className="vpad-excel-modal-header">
-          <h3 className="vpad-excel-modal-title">
+          <h3 className="vpad-excel-modal-title" id="vpad-excel-modal-title">
             <FileSpreadsheet
               size={18}
               style={{ color: "var(--vpad-accent)" }}
@@ -46,6 +65,7 @@ export default function ExcelImportModal({
             size="none"
             className="vpad-excel-modal-close"
             onClick={onClose}
+            aria-label="Cerrar"
           >
             <X size={18} />
           </Button>

@@ -781,6 +781,7 @@ export default function PadronView() {
         <DatePicker
           value={toISODate(value)}
           onChange={(isoValue) => onChange(toDisplayDate(isoValue))}
+          aria-label={field.label}
         />
       );
     }
@@ -792,6 +793,7 @@ export default function PadronView() {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          aria-label={field.label}
         />
       );
     }
@@ -802,6 +804,7 @@ export default function PadronView() {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={field.label}
       />
     );
   };
