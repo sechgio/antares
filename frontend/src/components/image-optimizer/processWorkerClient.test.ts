@@ -143,7 +143,7 @@ describe('process worker lifecycle', () => {
     expect(HangingWorker.instances[0].terminated).toBe(true);
   });
 
-  it('rejects without retiring the worker when processing is aborted', async () => {
+  it('rejects and retires an active worker when processing is aborted', async () => {
     vi.stubGlobal('Worker', HangingWorker);
     vi.stubGlobal('OffscreenCanvas', class {});
     vi.stubGlobal('createImageBitmap', vi.fn());
@@ -163,11 +163,7 @@ describe('process worker lifecycle', () => {
       name: 'AbortError',
       message: 'Image processing cancelled',
     });
-    // Cancelar recicla el worker en lugar de terminarlo: regenerarlo por cada
-    // ítem dejaba la cola parada re-descargando el módulo. El pool sigue con
-    // sus 2 workers (antes se creaba un tercero de reemplazo).
-    expect(HangingWorker.instances[0].terminated).toBe(false);
-    expect(HangingWorker.instances).toHaveLength(2);
+    expect(HangingWorker.instances[0].terminated).toBe(true);
   });
 
   it('bounds the worker wait queue and releases aborted waiters', async () => {
