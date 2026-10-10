@@ -154,18 +154,19 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
           setImages(restored.images);
         }
       } catch {
-        // Un fallo de lectura no puede dejar el autoguardado desactivado durante
-        // el resto de la sesión: se conserva la sesión local y se avisa.
+        // Un fallo de lectura no deja la sesión inutilizable: se sigue con la
+        // sesión local y se avisa. El autoguardado espera a la primera edición
+        // para no sobrescribir con una sesión vacía lo que sigue en disco.
         if (!cancelled) {
-            setRestoreFailed(true);
-            reportFrontendError({
-              kind: 'storage_error',
-              view: 'evidencia-volanteo.load',
-              name: 'EvidenciaSessionLoadError',
-              message: 'No se pudo restaurar la sesión guardada de evidencia de volanteo',
-            });
-          }
-        } finally {
+          setRestoreFailed(true);
+          reportFrontendError({
+            kind: 'storage_error',
+            view: 'evidencia-volanteo.load',
+            name: 'EvidenciaSessionLoadError',
+            message: 'No se pudo restaurar la sesión guardada de evidencia de volanteo',
+          });
+        }
+      } finally {
         if (!cancelled) setIsLoaded(true);
       }
     })();
@@ -177,8 +178,9 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
 
   useEffect(() => {
     if (!isLoaded) return;
+    if (restoreFailed && !dirtyRef.current) return;
     scheduleSave(buildSession());
-  }, [isLoaded, buildSession, scheduleSave]);
+  }, [isLoaded, restoreFailed, buildSession, scheduleSave]);
 
   useEffect(() => () => {
     revokeImages(imagesRef.current);

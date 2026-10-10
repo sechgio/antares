@@ -171,17 +171,23 @@ describe("useEvidenciaSession", () => {
     expect(lastSession.title).toBe("Nuevo título");
   });
 
-  it("un fallo de lectura no desactiva el autoguardado", async () => {
+  it("un fallo de lectura no desactiva el autoguardado pero no sobrescribe antes de editar", async () => {
     loadSession.mockRejectedValue(new Error("idb bloqueado"));
     const { result } = renderHook(() => useEvidenciaSession());
-    // El guardado solo se programa cuando isLoaded es true: si la lectura
-    // fallaba sin marcarlo, el autoguardado quedaba muerto para la sesión.
-    // Se espera al estado y no al conteo de llamadas: temporizadores de otros
-    // tests pueden disparar el mock antes que el timer propio.
+    await waitFor(() => expect(result.current.restoreFailed).toBe(true));
+    // Sin ediciones no se guarda: la sesión vacía pisaría la que sigue en disco.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(saveSession).not.toHaveBeenCalled();
+
+    // El guardado solo se programa cuando isLoaded es true: tras editar, el
+    // autoguardado sigue vivo.
+    act(() => result.current.setTitle("Editado tras el fallo"));
     await waitFor(() => expect(result.current.persistenceStatus).toBe("saved"), {
       timeout: 2000,
     });
-    expect(result.current.restoreFailed).toBe(true);
+    expect(saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Editado tras el fallo" }),
+    );
   });
 
   it("vuelca el guardado pendiente al desmontar", async () => {
