@@ -170,4 +170,37 @@ describe("useEvidenciaSession", () => {
     const lastSession = saveSession.mock.calls.at(-1)?.[0] as { title: string };
     expect(lastSession.title).toBe("Nuevo título");
   });
+
+  it("un fallo de lectura no desactiva el autoguardado", async () => {
+    loadSession.mockRejectedValue(new Error("idb bloqueado"));
+    const { result } = renderHook(() => useEvidenciaSession());
+    // El guardado solo se programa cuando isLoaded es true: si la lectura
+    // fallaba sin marcarlo, el autoguardado quedaba muerto para la sesión.
+    await waitFor(() => expect(saveSession).toHaveBeenCalled());
+    expect(result.current.restoreFailed).toBe(true);
+    expect(result.current.persistenceStatus).toBe("saved");
+  });
+
+  it("vuelca el guardado pendiente al desmontar", async () => {
+    const { result, unmount } = renderHook(() => useEvidenciaSession());
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1));
+    saveSession.mockClear();
+    act(() => result.current.setTitle("Ultima edición"));
+    unmount();
+    await waitFor(() =>
+      expect(saveSession).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Ultima edición" }),
+      ),
+    );
+  });
+
+  it("marca error cuando falla el guardado", async () => {
+    const { result } = renderHook(() => useEvidenciaSession());
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1));
+    saveSession.mockRejectedValue(new Error("cuota"));
+    act(() => result.current.setTitle("Otro título"));
+    await waitFor(() => expect(result.current.persistenceStatus).toBe("error"), {
+      timeout: 2000,
+    });
+  });
 });

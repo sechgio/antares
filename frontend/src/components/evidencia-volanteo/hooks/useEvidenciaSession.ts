@@ -20,9 +20,12 @@ import {
   resolveCuadranteForPage,
 } from '../utils/cuadranteRanges';
 import { loadSession, saveSession, storedToSession } from '../utils/storage';
+import { reportFrontendError } from '../../../utils/observability';
 
 interface EvidenciaSessionHookResult {
   isExporting: boolean;
+  persistenceStatus: EvidenciaPersistenceStatus;
+  restoreFailed: boolean;
 
   title: string;
   cuadranteLabel: string;
@@ -52,6 +55,8 @@ interface EvidenciaSessionHookResult {
 
 const SAVE_DEBOUNCE_MS = 400;
 
+type EvidenciaPersistenceStatus = 'loading' | 'saving' | 'saved' | 'error';
+
 function revokeImages(images: LocalImage[]) {
   images.forEach((img) => URL.revokeObjectURL(img.objectUrl));
 }
@@ -71,8 +76,11 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-
+  const [persistenceStatus, setPersistenceStatus] = useState<EvidenciaPersistenceStatus>('loading');
+  const [restoreFailed, setRestoreFailed] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<EvidenciaSession | null>(null);
+  const mountedRef = useRef(true);
   const dirtyRef = useRef(false);
   const imagesRef = useRef(images);
   const logoLeftRef = useRef(logoLeft);
@@ -89,9 +97,20 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
 
   const scheduleSave = useCallback((session: EvidenciaSession) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    pendingSaveRef.current = session;
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
-      void saveSession(session);
+      pendingSaveRef.current = null;
+      setPersistenceStatus('saving');
+      void saveSession(session)
+        .then(() => {
+          if (mountedRef.current) setPersistenceStatus('saved');
+        })
+        .catch(() => {
+          // saveSession ya reporta el fallo a observabilidad; aquí solo se evita
+          // la promesa rechazada sin manejar y se avisa en la interfaz.
+          if (mountedRef.current) setPersistenceStatus('error');
+        });
     }, SAVE_DEBOUNCE_MS);
   }, []);
 
@@ -107,21 +126,48 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
   }), [title, cuadranteLabel, showCuadranteLabel, cuadranteRanges, logoLeft, logoRight, images]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      const pending = pendingSaveRef.current;
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      // El guardado con debounce se descartaba al desmontar: la última edición
+      // se perdía. Aquí se vuelca lo pendiente antes de salir.
+      if (pending) void saveSession(pending).catch(() => {});
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const stored = await loadSession();
-      if (cancelled) return;
-      if (stored && !dirtyRef.current) {
-        const restored = storedToSession(stored);
-        setTitleState(restored.title);
-        setCuadranteLabelState(restored.cuadranteLabel);
-        setShowCuadranteLabelState(restored.showCuadranteLabel);
-        setCuadranteRangesState(restored.cuadranteRanges);
-        setLogoLeftState(restored.logoLeft);
-        setLogoRightState(restored.logoRight);
-        setImages(restored.images);
+      try {
+        const stored = await loadSession();
+        if (cancelled) return;
+        if (stored && !dirtyRef.current) {
+          const restored = storedToSession(stored);
+          setTitleState(restored.title);
+          setCuadranteLabelState(restored.cuadranteLabel);
+          setShowCuadranteLabelState(restored.showCuadranteLabel);
+          setCuadranteRangesState(restored.cuadranteRanges);
+          setLogoLeftState(restored.logoLeft);
+          setLogoRightState(restored.logoRight);
+          setImages(restored.images);
+        }
+      } catch {
+        // Un fallo de lectura no puede dejar el autoguardado desactivado durante
+        // el resto de la sesión: se conserva la sesión local y se avisa.
+        if (!cancelled) {
+            setRestoreFailed(true);
+            reportFrontendError({
+              kind: 'storage_error',
+              view: 'evidencia-volanteo.load',
+              name: 'EvidenciaSessionLoadError',
+              message: 'No se pudo restaurar la sesión guardada de evidencia de volanteo',
+            });
+          }
+        } finally {
+        if (!cancelled) setIsLoaded(true);
       }
-      setIsLoaded(true);
     })();
     return () => {
       cancelled = true;
@@ -256,6 +302,8 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
 
   return {
     isExporting,
+    persistenceStatus,
+    restoreFailed,
     title,
     cuadranteLabel,
     showCuadranteLabel,
