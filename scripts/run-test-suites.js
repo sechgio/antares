@@ -58,7 +58,7 @@ function runNodeTests(testNames) {
 function runFrontendSuite(shard) {
   const frontend = path.join(ROOT, 'frontend');
   if (shard) {
-    run(npmCommand, ['run', 'test:shard', '--', `--shard=${shard}`], frontend);
+    run(npmCommand, ['run', 'test', '--', `--shard=${shard}`], frontend);
     if (shard.split('/')[0] === '1') run(npmCommand, ['run', 'test:static'], frontend);
     return;
   }

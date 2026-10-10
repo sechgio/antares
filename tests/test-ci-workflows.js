@@ -97,7 +97,7 @@ function run() {
     'Windows CI runs the frontend suite exactly once per shard',
   );
   assert(
-    runner.includes("run(npmCommand, ['run', 'test:shard', '--', `--shard=${shard}`], frontend)"),
+    runner.includes("run(npmCommand, ['run', 'test', '--', `--shard=${shard}`], frontend)"),
     'The test runner forwards the shard to Vitest',
   );
   assert(
