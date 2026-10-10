@@ -370,8 +370,8 @@ describe('AppearanceView', () => {
 
     expect(await screen.findByTestId('appearance-view')).toBeInTheDocument();
     await waitFor(() => {
-      expect(document.documentElement.style.getPropertyValue('--bg-base')).toBe('#000000');
-      expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#00FF88');
+      expect(document.documentElement.style.getPropertyValue('--bg-base')).toBe('#0F172A');
+      expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#3B82F6');
     });
   });
 

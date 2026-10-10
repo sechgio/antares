@@ -75,7 +75,27 @@ def test_all_presets_define_required_theme_keys() -> None:
 
 def test_preset_list_includes_varied_appearance_styles() -> None:
     names = set(config_theme.PRESETS)
-    assert {"Porcelain Light", "Graphite Focus", "Olive Operations", "Copper Night", "Forest Zen", "Royal Purple", "Arctic Frost"}.issubset(names)
+    assert {"Slate Modern", "Copper Night", "Bosque Operativo", "Twilight Lavender", "Stealth Black"}.issubset(names)
+    assert not {"Vanta Black", "Porcelain Light", "Graphite Focus", "Royal Purple", "Arctic Frost"} & names
+
+
+def _contrast(a: str, b: str) -> float:
+    def lum(hex_color: str) -> float:
+        channels = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    high, low = sorted((lum(a), lum(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_presets_meet_contrast_floors() -> None:
+    for name, preset in config_theme.PRESETS.items():
+        bg = preset["bg"]
+        assert _contrast(preset["fg"], bg) >= 7, name
+        assert _contrast(preset["fg_muted"], bg) >= 4.5, name
+        assert _contrast(preset["fg_tertiary"], bg) >= 3, name
+        assert _contrast(preset["accent"], bg) >= 3, name
 
 
 def test_default_theme_strictly_matches_shared_default_theme_json() -> None:
@@ -84,7 +104,7 @@ def test_default_theme_strictly_matches_shared_default_theme_json() -> None:
     shared_theme = json.loads(shared_path.read_text(encoding="utf-8"))
 
     assert shared_theme == DEFAULT_THEME
-    assert shared_theme == load_preset("Vanta Black")
+    assert shared_theme == load_preset("Slate Modern")
 
 
 def test_frontend_theme_contract_parity() -> None:

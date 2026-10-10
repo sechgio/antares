@@ -47,10 +47,10 @@ function run() {
   assertActionsPinned(ci, 'CI');
   const ciJobs = ci.split(/^jobs:\s*$/m)[1] || '';
   const job = (name) => ciJobs.match(new RegExp(`^  ${name}:\\s*\\r?\\n([\\s\\S]*?)(?=^  [\\w-]+:|$(?![\\s\\S]))`, 'm'))?.[1] || '';
-  assert((ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === 4, 'CI has three independent workers and one required aggregate');
+  assert((ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === 5, 'CI has four independent workers and one required aggregate');
   assert(!/^\s+(?:strategy|matrix):/m.test(ci), 'CI does not accidentally multiply suites through a matrix');
   assert(!ci.includes('ubuntu-latest'), 'PR CI runs only on Windows');
-  for (const name of ['frontend', 'backend', 'quality', 'verify']) {
+  for (const name of ['frontend', 'frontend-shard-2', 'backend', 'quality', 'verify']) {
     assert(job(name).includes('runs-on: windows-latest'), `${name} runs on Windows`);
   }
   const qualityStep = job('quality').match(/- name: Run quality checks\r?\n\s+shell: bash\r?\n\s+run: >-\r?\n([\s\S]*?)(?=\r?\n\s+- name:)/)?.[1].replace(/\s+/g, ' ').trim() || '';
@@ -65,6 +65,12 @@ function run() {
   assert(
     job('frontend').includes('node scripts/run-test-suites.js frontend') && !job('frontend').includes('needs:'),
     'The frontend suite runs independently of backend setup and quality checks',
+  );
+  assert(
+    job('frontend').includes('node scripts/run-test-suites.js frontend 1/2') &&
+      job('frontend-shard-2').includes('node scripts/run-test-suites.js frontend 2/2') &&
+      !job('frontend-shard-2').includes('needs:'),
+    'The frontend suite is split into two independent shards instead of one long job',
   );
   assert(
     qualityStep === [...qualityCommands, ...['contracts', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
@@ -82,17 +88,32 @@ function run() {
   assert(job('backend').indexOf('Install and validate Pango') < job('backend').indexOf('Run backend tests'), 'Pango validation precedes backend tests');
   assert(ci.includes('C:\\msys64\\mingw64') && ci.includes('C:\\msys64\\var\\lib\\pacman\\local'), 'Pango cache preserves runtime files together with the installed package database');
   assert(ci.includes('$env:ImageOS-$env:ImageVersion') && ci.includes('steps.runner-image.outputs.version') && ci.includes("hashFiles('scripts/install-ci-pango.ps1')") && !job('backend').includes('restore-keys:'), 'Pango cache cannot cross runner images or installer versions');
-  for (const suite of ['contracts', 'backend', 'electron', 'frontend']) {
+  for (const suite of ['contracts', 'backend', 'electron']) {
     const calls = ciJobs.match(new RegExp(`node scripts/run-test-suites\\.js ${suite}\\b`, 'g')) || [];
     assert(calls.length === 1, `Windows CI runs the ${suite} suite exactly once`);
   }
-  assert(!/run: node scripts\/run-test-suites\.js\s*$/m.test(ci), 'CI does not repeat the full suite alongside parallel suites');
   assert(
-    job('verify').includes('name: Lint, audit, and test (Windows)') && job('verify').includes('if: always()') && job('verify').includes('needs: [frontend, backend, quality]'),
-    'The existing required check always evaluates all three independent jobs',
+    (ciJobs.match(/node scripts\/run-test-suites\.js frontend\b/g) || []).length === 2,
+    'Windows CI runs the frontend suite exactly once per shard',
   );
   assert(
-    ['frontend', 'backend', 'quality'].every((name) => job('verify').includes(`needs.${name}.result`)) && job('verify').includes("if ($result -ne 'success') { throw"),
+    runner.includes("run(npmCommand, ['run', 'test', '--', `--shard=${shard}`], frontend)"),
+    'The test runner forwards the shard to Vitest',
+  );
+  assert(
+    runner.includes("shard.split('/')[0] === '1'") && runner.includes("run(npmCommand, ['run', 'test:static'], frontend)"),
+    'The single-worker static suite runs exactly once, in the first shard',
+  );
+  assert(runner.includes("run(npmCommand, ['run', 'test:all'], frontend)"), 'The unsharded frontend suite still runs every frontend test');
+  assert(!/run: node scripts\/run-test-suites\.js\s*$/m.test(ci), 'CI does not repeat the full suite alongside parallel suites');
+  assert(
+    job('verify').includes('name: Lint, audit, and test (Windows)') && job('verify').includes('if: always()') &&
+      job('verify').includes('needs: [frontend, frontend-shard-2, backend, quality]'),
+    'The existing required check always evaluates all four independent jobs',
+  );
+  assert(
+    ['frontend', 'frontend-shard-2', 'backend', 'quality'].every((name) => job('verify').includes(`needs.${name}.result`)) &&
+      job('verify').includes("if ($result -ne 'success') { throw"),
     'The required check rejects failed, cancelled and skipped workers',
   );
   assert(job('backend').includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
@@ -100,7 +121,7 @@ function run() {
     const gate = job('verify').split('        run: |')[1].trim();
     const result = spawnSync('pwsh', ['-NoProfile', '-Command', `
       function Invoke-Gate { ${gate} }
-      $names = @('FRONTEND_RESULT', 'BACKEND_RESULT', 'QUALITY_RESULT')
+      $names = @('FRONTEND_RESULT', 'FRONTEND_SHARD_2_RESULT', 'BACKEND_RESULT', 'QUALITY_RESULT')
       foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, 'success') }
       Invoke-Gate
       foreach ($name in $names) {

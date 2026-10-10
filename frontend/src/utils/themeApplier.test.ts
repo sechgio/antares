@@ -160,6 +160,13 @@ describe('applyThemeToCSS', () => {
     expect(localStorage.getItem(THEME_DENSITY_CACHE_KEY)).toBe('compact');
   });
 
+  it('deepens a low-contrast accent in CSS without persisting it', () => {
+    applyThemeToCSS({ ...backendTheme, accent: '#84CC16' }, 'light', 'custom');
+
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).not.toBe('#84CC16');
+    expect(JSON.parse(localStorage.getItem(THEME_ACTIVE_CACHE_KEY) || '{}').accent).toBe('#84CC16');
+  });
+
   it('marks a light custom theme for legacy module selectors', () => {
     applyThemeToCSS({ ...backendTheme, bg: '#FFFFFF', bg_secondary: '#F8FAFC' }, 'dark', 'custom');
 
@@ -170,15 +177,15 @@ describe('applyThemeToCSS', () => {
 });
 
 describe('DEFAULT_THEME', () => {
-  it('matches the canonical Vanta Black identity and defines all required theme tokens', () => {
-    expect(DEFAULT_THEME.name).toBe('Vanta Black');
-    expect(DEFAULT_THEME.bg).toBe('#000000');
-    expect(DEFAULT_THEME.bg_secondary).toBe('#050505');
-    expect(DEFAULT_THEME.fg).toBe('#FFFFFF');
-    expect(DEFAULT_THEME.accent).toBe('#00FF88');
-    expect(DEFAULT_THEME.border).toBe('#111111');
-    expect(DEFAULT_THEME.error).toBe('#FF2222');
-    expect(DEFAULT_THEME.warning).toBe('#FFBB00');
-    expect(DEFAULT_THEME.success).toBe('#00FF66');
+  it('matches the canonical Slate Modern identity and defines all required theme tokens', () => {
+    expect(DEFAULT_THEME.name).toBe('Slate Modern');
+    expect(DEFAULT_THEME.bg).toBe('#0F172A');
+    expect(DEFAULT_THEME.bg_secondary).toBe('#1E293B');
+    expect(DEFAULT_THEME.fg).toBe('#F8FAFC');
+    expect(DEFAULT_THEME.accent).toBe('#3B82F6');
+    expect(DEFAULT_THEME.border).toBe('#334155');
+    expect(DEFAULT_THEME.error).toBe('#EF4444');
+    expect(DEFAULT_THEME.warning).toBe('#F59E0B');
+    expect(DEFAULT_THEME.success).toBe('#10B981');
   });
 });

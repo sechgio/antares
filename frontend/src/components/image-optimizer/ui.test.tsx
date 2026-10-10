@@ -7,8 +7,6 @@ describe('OperationSection', () => {
     render(
       <OperationSection
         title="Recorte"
-        icon={<span aria-hidden="true">Icon</span>}
-        accentColor="#8B5CF6"
         enabled
         onToggle={vi.fn()}
       >

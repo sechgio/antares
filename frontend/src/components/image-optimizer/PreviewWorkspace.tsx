@@ -44,7 +44,7 @@ interface PreviewWorkspaceProps {
 }
 
 const chromeBtn =
-  'inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-secondary)] transition-[color,background-color,transform] duration-100 hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] active:scale-[0.96] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-40';
+  'inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-[var(--text-secondary)] transition-[color,background-color,transform] duration-150 hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] active:scale-[0.97] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-40';
 
 const GRID_VIRTUALIZATION_THRESHOLD = 100;
 const GRID_CARD_MIN_WIDTH = 160;
@@ -89,7 +89,7 @@ export default function PreviewWorkspace({
 }: PreviewWorkspaceProps) {
   const { t } = useTranslation();
   const previewStageClass = 'flex min-h-0 flex-1 items-center justify-center overflow-hidden';
-  const previewImageClass = 'block max-h-full max-w-full object-contain';
+  const previewImageClass = 'block max-h-full max-w-full rounded-md object-contain';
   const gridIsVirtualized = viewMode === 'grid' && items.length >= GRID_VIRTUALIZATION_THRESHOLD;
   const [gridScrollTop, setGridScrollTop] = useState(0);
   const [gridViewport, setGridViewport] = useState({ width: 640, height: 480 });
@@ -169,7 +169,7 @@ export default function PreviewWorkspace({
         role="button"
         tabIndex={0}
         aria-label={`Ver ${item.originalName}`}
-        className="group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] transition-[transform,background-color,border-color] duration-100 hover:bg-[var(--bg-elevated)] active:scale-[0.98] motion-reduce:active:scale-100"
+        className="group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-transparent transition-[transform,background-color] duration-150 hover:bg-[var(--bg-input)] active:scale-[0.98] motion-reduce:active:scale-100"
         style={gridIsVirtualized ? { height: gridCardHeight } : undefined}
         onClick={() => {
           onSetActiveItem(item.id);
@@ -183,12 +183,12 @@ export default function PreviewWorkspace({
           }
         }}
       >
-        <div className="relative aspect-[3/4] w-full overflow-hidden bg-[var(--bg-surface)]">
+        <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[7px] bg-[var(--bg-input)]">
           {thumb ? (
             <img src={thumb} alt={item.originalName} loading="lazy" decoding="async" className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center">
-              <Sparkles size={14} className="text-[var(--text-muted)]" />
+              <Sparkles size={16} className="text-[var(--text-muted)]" />
             </div>
           )}
 
@@ -200,30 +200,30 @@ export default function PreviewWorkspace({
                   e.stopPropagation();
                   onOpenCropEditor(item.id);
                 }}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-primary)] backdrop-blur-md transition-[transform,background-color] duration-100 hover:bg-[var(--accent-green)] hover:text-[var(--text-on-accent)] active:scale-[0.96]"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-primary)] transition-[transform,background-color] duration-150 hover:bg-[var(--bg-elevated)] active:scale-[0.97]"
                 style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }}
               >
-                <Crop size={12} />
+                <Crop size={14} />
               </Button>
             </WithHoverTooltip>
           </div>
 
           {item.status === 'processing' && (
             <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 50%, transparent)' }}>
-              <Loader2 size={14} className="animate-spin text-[var(--text-primary)]" />
+              <Loader2 size={16} className="animate-spin text-[var(--text-primary)]" />
             </div>
           )}
         </div>
 
-        <div className="flex h-10 shrink-0 items-center gap-1.5 px-2 py-1.5">
+        <div className="flex h-10 shrink-0 items-center gap-2 px-1.5">
           <div className="min-w-0 flex-1 overflow-hidden">
             <p
-              className={`truncate text-[10px] font-medium leading-tight text-[var(--text-primary)] ${item.excluded ? 'line-through opacity-50' : ''}`}
+              className={`truncate text-[12px] leading-tight text-[var(--text-primary)] ${item.excluded ? 'line-through opacity-50' : ''}`}
               title={outputName !== item.originalName ? item.originalName : undefined}
             >
               {outputName}
             </p>
-            <p className="mt-0.5 truncate whitespace-nowrap font-mono text-[9px] tabular-nums leading-tight text-[var(--text-secondary)]">
+            <p className="mt-0.5 truncate whitespace-nowrap font-mono text-[11px] tabular-nums leading-tight text-[var(--text-secondary)]">
               {item.sourceWidth && item.sourceHeight ? `${item.sourceWidth}×${item.sourceHeight} · ` : ''}
               {formatBytes(item.originalSize)}
               {item.resultSize != null ? <span className="text-[var(--accent-green)]"> → {formatBytes(item.resultSize)}</span> : null}
@@ -245,7 +245,7 @@ export default function PreviewWorkspace({
         data-surface-part="preview"
         className={`relative flex h-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl px-6 text-center transition-[border-color,background-color,box-shadow] duration-150 ${
           isDragActive
-            ? 'border border-dashed border-[var(--accent-blue)] bg-[var(--bg-elevated)]'
+            ? 'border border-dashed border-[var(--accent-blue)] bg-[var(--bg-surface)]'
             : previewStageShellClass
         }`}
         onClick={onAddClick}
@@ -261,19 +261,17 @@ export default function PreviewWorkspace({
         aria-label={t('optimizer.preview.addImages')}
       >
         <div
-          className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl border bg-[var(--bg-input)] transition-colors ${
-            isDragActive ? 'border-[var(--accent-blue)]' : 'border-[var(--border-medium)]'
-          }`}
+          className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--bg-input)]"
         >
           <Sparkles
-            size={18}
+            size={20}
             className={isDragActive ? 'text-[var(--accent-blue)]' : 'text-[var(--text-secondary)]'}
           />
         </div>
-        <p className="text-[13px] font-semibold tracking-tight text-[var(--text-primary)] text-balance">
+        <p className="text-[15px] font-medium tracking-tight text-[var(--text-primary)] text-balance">
           {isDragActive ? t('optimizer.preview.dropHere') : t('optimizer.preview.selectImage')}
         </p>
-        <p className="mt-1 max-w-[16rem] text-[11px] leading-snug text-[var(--text-secondary)] text-pretty">
+        <p className="mt-1.5 max-w-[18rem] text-[13px] leading-snug text-[var(--text-secondary)] text-pretty">
           {isDragActive ? t('optimizer.preview.dropHint') : t('optimizer.preview.clickOrDrop')}
         </p>
       </section>
@@ -336,36 +334,36 @@ export default function PreviewWorkspace({
 
   return (
     <section data-surface-part="preview" className="flex h-full flex-col overflow-hidden">
-      <div className={`relative flex flex-1 flex-col gap-1.5 overflow-hidden p-2 ${previewStageShellClass}`}>
-        <div className="flex shrink-0 items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1.5">
+      <div className={`relative flex flex-1 flex-col gap-3 overflow-hidden p-3 ${previewStageShellClass}`}>
+        <div className="flex shrink-0 items-center justify-between gap-3 pl-2">
+          <div className="flex min-w-0 items-center gap-2">
             <div className="min-w-0">
-              <p className="truncate text-[12px] font-semibold tracking-tight text-[var(--text-primary)]">{activeItemOutputName}</p>
+              <p className="truncate text-[14px] font-medium text-[var(--text-primary)]">{activeItemOutputName}</p>
               {activeItemOutputName !== activeItem.originalName && (
-                <p className="truncate text-[9px] text-[var(--text-secondary)]">{activeItem.originalName}</p>
+                <p className="truncate text-[12px] text-[var(--text-secondary)]">{activeItem.originalName}</p>
               )}
             </div>
-            {activeItem.status === 'completed' && !activeItem.stale ? <CheckCircle2 size={11} className="shrink-0 text-[var(--accent-green)]" /> : null}
-            {activeItem.excluded && <span className="shrink-0 text-[9px] font-medium text-[var(--accent-red)]">{t('optimizer.status.excluded')}</span>}
-            {activeItem.stale && <span className="shrink-0 text-[9px] font-medium text-[var(--accent-yellow)]">{t('optimizer.status.stale')}</span>}
-            {activeItem.overrides.skipCompression && <span className="shrink-0 text-[9px] font-medium text-[var(--text-secondary)]">{t('optimizer.item.skipCompression')}</span>}
-            {activeItem.overrides.presetId && <span className="shrink-0 text-[9px] font-medium text-[var(--text-secondary)]">{t('optimizer.item.localPreset')}</span>}
+            {activeItem.status === 'completed' && !activeItem.stale ? <CheckCircle2 size={14} className="shrink-0 text-[var(--accent-green)]" /> : null}
+            {activeItem.excluded && <span className="shrink-0 text-[12px] text-[var(--accent-red)]">{t('optimizer.status.excluded')}</span>}
+            {activeItem.stale && <span className="shrink-0 text-[12px] text-[var(--accent-yellow)]">{t('optimizer.status.stale')}</span>}
+            {activeItem.overrides.skipCompression && <span className="shrink-0 text-[12px] text-[var(--text-secondary)]">{t('optimizer.item.skipCompression')}</span>}
+            {activeItem.overrides.presetId && <span className="shrink-0 text-[12px] text-[var(--text-secondary)]">{t('optimizer.item.localPreset')}</span>}
           </div>
           <div className="flex shrink-0 items-center">
             <Button variant="none" size="none" onClick={() => onViewModeChange('grid')} className={chromeBtn}>{t('optimizer.preview.backToGrid')}</Button>
             <Button variant="none" size="none" onClick={() => onDownloadSingle(activeItem)} disabled={!activeItemDownloadable} className={chromeBtn}>
-              <Download size={11} />
+              <Download size={14} />
               {t('optimizer.preview.download')}
             </Button>
             <Button variant="none" size="none" onClick={() => onRemoveItem(activeItem.id)} className={`${chromeBtn} hover:text-[var(--accent-red)]`}>
-              <Trash2 size={11} />
+              <Trash2 size={14} />
               {t('optimizer.preview.remove')}
             </Button>
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <div className="inline-flex items-center gap-0.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] p-0.5">
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="inline-flex items-center gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5">
             {([
               { value: 'original', label: t('optimizer.preview.original') },
               { value: 'crop', label: t('optimizer.preview.crop') },
@@ -375,8 +373,8 @@ export default function PreviewWorkspace({
               <Button variant="none" size="none"
                 key={tab.value}
                 onClick={() => onChangePreviewTab(tab.value)}
-                className={`h-6 rounded-md px-2 text-[10px] font-medium transition-[color,background-color,transform] duration-100 active:scale-[0.96] motion-reduce:active:scale-100 ${previewTab === tab.value
-                  ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-sm'
+                className={`h-7 rounded-md px-3 text-[12px] font-medium transition-[color,background-color,transform] duration-150 active:scale-[0.97] motion-reduce:active:scale-100 ${previewTab === tab.value
+                  ? 'bg-[var(--border-medium)] text-[var(--text-primary)]'
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                   }`}
               >
@@ -388,13 +386,13 @@ export default function PreviewWorkspace({
             <div className="min-w-[10rem] flex-1">
               <ProgressBar current={processingProgress.current} total={processingProgress.total} />
               {processingMessage && (
-                <p className="mt-0.5 truncate font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{processingMessage}</p>
+                <p className="mt-1 truncate font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">{processingMessage}</p>
               )}
             </div>
           )}
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-[var(--bg-base)] p-4">
           {previewTab === 'original' ? (
             <div className={previewStageClass}>
               <img src={activeItem.preview} alt={activeItem.originalName} className={previewImageClass} />
@@ -403,7 +401,7 @@ export default function PreviewWorkspace({
 
           {previewTab === 'crop' ? (
             activeCropPreview && activeItemSettings.operations.cropEnabled && activeItemSettings.crop.aspectRatio !== 'original' ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+              <div className="flex min-h-0 flex-1 flex-col gap-3">
                 <div className={previewStageClass}>
                   <div className="relative inline-block max-h-full max-w-full">
                     <img src={activeItem.preview} alt={activeItem.originalName} className={previewImageClass} />
@@ -421,22 +419,22 @@ export default function PreviewWorkspace({
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center justify-between gap-2">
-                  <p className="font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">
+                  <p className="font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">
                     {t('optimizer.preview.cropSize', { width: activeCropPreview.width, height: activeCropPreview.height })}
                   </p>
                   <Button variant="none" size="none"
                     onClick={() => onOpenCropEditor()}
-                    className="text-[10px] font-medium text-[var(--accent-primary)] transition-colors hover:text-[var(--accent-primary-hover)]"
+                    className="text-[12px] font-medium text-[var(--accent-primary-hover)] transition-colors hover:text-[var(--text-primary)]"
                   >
                     {t('optimizer.preview.adjust')}
                   </Button>
                 </div>
               </div>
             ) : (
-              <div className={`${previewStageClass} flex-col gap-1.5 text-center`}>
-                <Crop size={16} className="text-[var(--text-secondary)]" />
-                <p className="text-[11px] font-medium text-[var(--text-primary)]">{t('optimizer.preview.noActiveCrop')}</p>
-                <p className="max-w-[240px] text-[10px] leading-snug text-[var(--text-secondary)] text-pretty">
+              <div className={`${previewStageClass} flex-col gap-2 text-center`}>
+                <Crop size={20} className="text-[var(--text-muted)]" />
+                <p className="text-[14px] font-medium text-[var(--text-primary)]">{t('optimizer.preview.noActiveCrop')}</p>
+                <p className="max-w-[280px] text-[13px] leading-snug text-[var(--text-secondary)] text-pretty">
                   {t('optimizer.preview.enableCrop')}
                 </p>
               </div>
@@ -445,7 +443,7 @@ export default function PreviewWorkspace({
 
           {previewTab === 'result' ? (
             activeItemDownloadable ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+              <div className="flex min-h-0 flex-1 flex-col gap-3">
                 <div className={previewStageClass}>
                   <img
                     src={activeIsDirect ? activeItem.preview : activeItem.resultPreview || activeItem.preview}
@@ -453,17 +451,17 @@ export default function PreviewWorkspace({
                     className={previewImageClass}
                   />
                 </div>
-                <p className="shrink-0 text-center text-[10px] text-[var(--text-secondary)]">
+                <p className="shrink-0 text-center text-[12px] text-[var(--text-secondary)]">
                   {activeIsDirect
                     ? t('optimizer.preview.directMode')
                     : t('optimizer.preview.readyForDownload')}
                 </p>
               </div>
             ) : (
-              <div className={`${previewStageClass} flex-col gap-1.5 text-center`}>
-                <Sparkles size={16} className="text-[var(--text-secondary)]" />
-                <p className="text-[11px] font-medium text-[var(--text-primary)]">{t('optimizer.preview.noResult')}</p>
-                <p className="max-w-[240px] text-[10px] leading-snug text-[var(--text-secondary)] text-pretty">
+              <div className={`${previewStageClass} flex-col gap-2 text-center`}>
+                <Sparkles size={20} className="text-[var(--text-muted)]" />
+                <p className="text-[14px] font-medium text-[var(--text-primary)]">{t('optimizer.preview.noResult')}</p>
+                <p className="max-w-[280px] text-[13px] leading-snug text-[var(--text-secondary)] text-pretty">
                   {t('optimizer.preview.processToPreview')}
                 </p>
               </div>
@@ -476,10 +474,10 @@ export default function PreviewWorkspace({
                 <BeforeAfterSlider before={activeItem.preview} after={activeItem.resultPreview} alt={activeItem.originalName} />
               </div>
             ) : (
-              <div className={`${previewStageClass} flex-col gap-1.5 text-center`}>
-                <Eye size={16} className="text-[var(--text-secondary)]" />
-                <p className="text-[11px] font-medium text-[var(--text-primary)]">{t('optimizer.preview.compareUnavailable')}</p>
-                <p className="max-w-[240px] text-[10px] leading-snug text-[var(--text-secondary)] text-pretty">
+              <div className={`${previewStageClass} flex-col gap-2 text-center`}>
+                <Eye size={20} className="text-[var(--text-muted)]" />
+                <p className="text-[14px] font-medium text-[var(--text-primary)]">{t('optimizer.preview.compareUnavailable')}</p>
+                <p className="max-w-[280px] text-[13px] leading-snug text-[var(--text-secondary)] text-pretty">
                   {t('optimizer.preview.compareHint')}
                 </p>
               </div>
@@ -487,7 +485,7 @@ export default function PreviewWorkspace({
           ) : null}
         </div>
 
-        <div className="shrink-0 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] px-2">
+        <div className="shrink-0 space-y-3 px-2 pb-1">
           <ItemSummary item={activeItem} />
           <ItemOverridesPanel
             item={activeItem}

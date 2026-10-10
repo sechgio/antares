@@ -9,21 +9,16 @@ import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import { useRovingListbox } from '../../hooks/useRovingListbox';
 import Button from '@/components/ui/Button';
 
-export const glassPanelClass =
-  'rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]';
+export const glassPanelClass = 'rounded-xl bg-[var(--bg-surface)]';
 
-export const glassToolbarClass =
-  'rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]';
-
-export const previewStageShellClass =
-  'rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)]';
+export const previewStageShellClass = 'rounded-xl bg-[var(--bg-surface)]';
 
 const pressable =
   'active:scale-[0.96] transition-transform duration-100 ease-out motion-reduce:transition-none motion-reduce:active:scale-100';
 
 type ThemeSelectOption = { value: string; label: string };
 
-const MENU_ROW_H = 28;
+const MENU_ROW_H = 32;
 const MENU_PAD_Y = 8;
 
 export function ThemeSelect({
@@ -75,11 +70,11 @@ export function ThemeSelect({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         onClick={toggle}
-        className={`flex h-8 w-full items-center gap-2 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 text-left text-[11px] font-medium text-[var(--text-primary)] outline-none transition-[border-color] duration-100 hover:border-[color:color-mix(in_srgb,var(--accent-primary)_45%,transparent)] focus:border-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-40 ${open ? 'border-[var(--accent-primary)]' : ''}`}
+        className={`flex h-9 w-full items-center gap-2 rounded-lg border bg-[var(--bg-input)] px-3 text-left text-[13px] text-[var(--text-primary)] outline-none transition-[border-color] duration-150 focus-visible:border-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-40 ${open ? 'border-[var(--accent-primary)]' : 'border-transparent'}`}
       >
         <span className="min-w-0 flex-1 truncate">{selected?.label ?? '—'}</span>
         <ChevronDown
-          size={13}
+          size={14}
           className={`shrink-0 text-[var(--text-secondary)] transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
           aria-hidden
         />
@@ -111,10 +106,10 @@ export function ThemeSelect({
                   onChange(opt.value);
                   close();
                 }}
-                className={`flex h-7 w-full shrink-0 items-center gap-2 px-2.5 text-left text-[11px] transition-colors ${
+                className={`flex h-8 w-full shrink-0 items-center gap-2 px-3 text-left text-[13px] transition-colors ${
                   active
-                    ? 'bg-[var(--bg-input)] font-medium text-[var(--text-primary)]'
-                    : 'font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'
+                    ? 'bg-[var(--bg-input)] text-[var(--text-primary)]'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 <span className="min-w-0 flex-1 truncate">{opt.label}</span>
@@ -138,7 +133,7 @@ export function ProgressBar({ current, total }: { current: number; total: number
   const percentage = total > 0 ? (current / total) * 100 : 0;
   return (
     <div
-      className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--bg-input)]"
+      className="h-1 w-full overflow-hidden rounded-full bg-[var(--bg-input)]"
       role="progressbar"
       aria-valuenow={current}
       aria-valuemin={0}
@@ -159,7 +154,7 @@ export function BeforeAfterSlider({ before, after, alt }: { before: string; afte
   const { t } = useTranslation();
   const [position, setPosition] = useState(50);
   return (
-    <div className="flex h-full max-h-full w-full max-w-full flex-col gap-1.5">
+    <div className="flex h-full max-h-full w-full max-w-full flex-col gap-3">
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg">
         <img src={before} alt={`${alt} ${t('optimizer.preview.original')}`} className="absolute inset-0 h-full w-full object-contain" />
         <div className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${position}%` }}>
@@ -168,10 +163,10 @@ export function BeforeAfterSlider({ before, after, alt }: { before: string; afte
         <div className="absolute inset-y-0" style={{ left: `calc(${position}% - 0.5px)` }}>
           <div className="h-full w-px bg-[color:color-mix(in_srgb,var(--text-primary)_70%,transparent)]" />
         </div>
-        <div className="absolute left-2 top-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-primary)]">
+        <div className="absolute left-3 top-3 rounded-md bg-[color:color-mix(in_srgb,var(--bg-base)_80%,transparent)] px-2 py-1 text-[12px] text-[var(--text-primary)]">
           {t('optimizer.preview.original')}
         </div>
-        <div className="absolute right-2 top-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-primary)]">
+        <div className="absolute right-3 top-3 rounded-md bg-[color:color-mix(in_srgb,var(--bg-base)_80%,transparent)] px-2 py-1 text-[12px] text-[var(--text-primary)]">
           {t('optimizer.preview.result')}
         </div>
       </div>
@@ -181,7 +176,7 @@ export function BeforeAfterSlider({ before, after, alt }: { before: string; afte
         max="100"
         value={position}
         onChange={(e) => setPosition(Number(e.target.value))}
-        className="w-full shrink-0 accent-[var(--text-primary)]"
+        className="w-full shrink-0 accent-[var(--accent-primary)]"
         aria-label={t('optimizer.preview.compare')}
       />
     </div>
@@ -223,11 +218,11 @@ export function ItemSummary({ item }: { item: ImageItem }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-x-3 gap-y-1 py-1 sm:grid-cols-4 sm:gap-x-0 sm:divide-x sm:divide-[color:color-mix(in_srgb,var(--border-medium)_20%,transparent)]">
+    <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
       {stats.map((stat) => (
-        <div key={stat.label} className="min-w-0 sm:px-3 first:sm:pl-0 last:sm:pr-0">
-          <p className="text-[9px] font-medium text-[var(--text-secondary)]">{stat.label}</p>
-          <p className="truncate font-mono text-[10px] tabular-nums text-[var(--text-primary)]" title={String(stat.value)}>
+        <div key={stat.label} className="min-w-0">
+          <p className="text-[12px] text-[var(--text-secondary)]">{stat.label}</p>
+          <p className="mt-0.5 truncate font-mono text-[13px] tabular-nums text-[var(--text-primary)]" title={String(stat.value)}>
             {stat.value}
           </p>
         </div>
@@ -237,7 +232,7 @@ export function ItemSummary({ item }: { item: ImageItem }) {
 }
 
 const formControlClassName =
-  'w-full h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 text-[11px] font-medium text-[var(--text-primary)] outline-none transition-[border-color] duration-100 placeholder:text-[var(--text-secondary)] focus:border-[var(--accent-primary)]';
+  'w-full h-9 rounded-lg border border-transparent bg-[var(--bg-input)] px-3 text-[13px] text-[var(--text-primary)] outline-none transition-[border-color] duration-150 placeholder:text-[var(--text-muted)] focus:border-[var(--accent-primary)]';
 
 export function FormField({
   label,
@@ -247,8 +242,8 @@ export function FormField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="block space-y-1">
-      <span className="text-[10px] font-medium text-[var(--text-secondary)]">{label}</span>
+    <div className="block space-y-1.5">
+      <span className="text-[12px] text-[var(--text-secondary)]">{label}</span>
       {children}
     </div>
   );
@@ -274,11 +269,11 @@ export function SettingSwitch({
       aria-checked={checked}
       aria-label={ariaLabel}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-150 ease-out ${pressable}`}
+      className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors duration-150 ease-out ${pressable}`}
       style={checked ? { backgroundColor: accentColor } : { backgroundColor: 'var(--border-medium)' }}
     >
       <span
-        className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-150 ease-out ${checked ? 'translate-x-3' : 'translate-x-0.5'}`}
+        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none ${checked ? 'translate-x-4' : 'translate-x-0.5'}`}
       />
     </Button>
   );
@@ -300,10 +295,10 @@ export function SettingSwitchRow({
   switchId: string;
 }) {
   return (
-    <div className="flex items-center gap-2 py-0.5">
+    <div className="flex items-center gap-2.5">
       <label
         htmlFor={switchId}
-        className={`cursor-pointer text-[10px] font-medium ${labelClassName ?? 'text-[var(--text-secondary)]'}`}
+        className={`cursor-pointer text-[13px] ${labelClassName ?? 'text-[var(--text-secondary)]'}`}
       >
         {label}
       </label>
@@ -322,16 +317,12 @@ export { formControlClassName };
 
 export function OperationSection({
   title,
-  icon,
-  accentColor,
   enabled,
   onToggle,
   disabled,
   children,
 }: {
   title: string;
-  icon: React.ReactNode;
-  accentColor: string;
   enabled: boolean;
   onToggle?: (value: boolean) => void;
   disabled?: boolean;
@@ -342,19 +333,16 @@ export function OperationSection({
 
   const headerContent = (
     <>
-      <span style={{ color: enabled ? accentColor : 'var(--text-muted)' }} className="shrink-0 transition-colors duration-150">
-        {icon}
-      </span>
-      <span className="flex-1 text-[11px] font-semibold text-[var(--text-primary)]">
+      <span className={`flex-1 text-[14px] font-medium transition-colors duration-150 ${enabled ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
         {title}
       </span>
       {isCollapsible && (
         <span
-          className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-150"
-          style={enabled ? { backgroundColor: accentColor } : { backgroundColor: 'var(--bg-input)' }}
+          className="relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors duration-150"
+          style={{ backgroundColor: enabled ? 'var(--accent-primary)' : 'var(--border-medium)' }}
         >
           <span
-            className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform duration-150 ${enabled ? 'translate-x-3' : 'translate-x-0.5'}`}
+            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`}
           />
         </span>
       )}
@@ -363,26 +351,27 @@ export function OperationSection({
 
   return (
     <div
-      className={`relative shrink-0 overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] transition-opacity duration-150 ${disabled ? 'pointer-events-none opacity-45' : ''}`}
-      style={{ borderLeftWidth: 3, borderLeftColor: enabled ? accentColor : 'var(--border-medium)' }}
+      className={`relative shrink-0 border-b border-[var(--border-subtle)] py-4 transition-opacity duration-150 last:border-b-0 ${disabled ? 'pointer-events-none opacity-45' : ''}`}
     >
       {isCollapsible ? (
         <Button variant="none" size="none"
           onClick={() => onToggle?.(!enabled)}
-          className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--bg-input)] ${pressable}`}
+          className="flex w-full items-center gap-3 text-left"
         >
           {headerContent}
         </Button>
       ) : (
-        <div className="flex w-full items-center gap-2 px-3 py-2">
+        <div className="flex w-full items-center gap-3">
           {headerContent}
         </div>
       )}
       <div
-        className={`overflow-hidden transition-[max-height,opacity] duration-150 ease-out motion-reduce:transition-none ${isOpen ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}
+        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
       >
-        <div className="space-y-2 border-t border-[var(--border-medium)] px-3 pb-3 pt-2">
-          {children}
+        <div className="min-h-0 overflow-hidden">
+          <div className="space-y-3 pt-3">
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -391,21 +380,20 @@ export function OperationSection({
 
 export function PillPreset({
   label,
-  accentClassName,
   active,
   onClick,
 }: {
   label: string;
-  accentClassName: string;
   active: boolean;
   onClick: () => void;
 }) {
   return (
     <Button variant="none" size="none"
       onClick={onClick}
-      className={`flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[10px] font-medium transition-[color,background-color,border-color,transform] duration-100 ${pressable} ${active
-        ? accentClassName
-        : 'border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+      aria-pressed={active}
+      className={`flex h-8 shrink-0 items-center rounded-lg px-3.5 text-[13px] transition-[color,background-color,transform] duration-150 ${pressable} ${active
+        ? 'bg-[var(--bg-input)] font-medium text-[var(--text-primary)]'
+        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
         }`}
     >
       {label}
