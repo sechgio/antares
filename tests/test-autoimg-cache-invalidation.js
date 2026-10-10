@@ -71,11 +71,6 @@ async function main() {
     cachedAfterAdd.folders.length >= 1,
     `tras addFolder, listFolders(force:false) no debe devolver vacío (got ${cachedAfterAdd.folders.length}, cached=${cachedAfterAdd.cached})`,
   );
-  assert(
-    cachedAfterAdd.folders.some((f) => f.folder_id === 'folder-pedro')
-      || cachedAfterAdd.folders.length === 0 === false,
-    'tras addFolder, cache no debe fingir lista vacía fresca',
-  );
 
   const logsFresh = await engine.listLogs({ force: true });
   assert(logsFresh.values.length >= 2, 'listLogs force carga header+fila');

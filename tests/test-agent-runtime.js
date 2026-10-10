@@ -314,7 +314,7 @@ async function main() {
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
     const port = server.address().port;
 
-    const { bridge, state } = makeBridge();
+    const { bridge } = makeBridge();
     const wiredBridge = async (method, params) => {
       if (method === 'agent_internal_provider') {
         return { provider: 'openai', style: 'openai_chat', base_url: `http://127.0.0.1:${port}/v1`, api_key: 'sk-wire', auth_type: 'api_key', extra_headers: {}, default_model: 'gpt-mock' };

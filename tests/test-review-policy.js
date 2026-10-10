@@ -1,19 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
+const { assert, eq, finish, stubModule, evictModule } = require('./helpers/harness');
 
 const ROOT = path.join(__dirname, '..');
 const policy = require(path.join(ROOT, 'scripts', 'review-policy-check.js'));
 const audit = require(path.join(ROOT, 'scripts', 'lib', 'pr-audit.js'));
 const metrics = require(path.join(ROOT, 'scripts', 'review-metrics.js'));
-
-function eq(actual, expected, message) {
-  assert(
-    actual === expected,
-    `${message} (esperado: ${JSON.stringify(expected)}, actual: ${JSON.stringify(actual)})`,
-  );
-}
 
 function testArtifacts() {
   console.log('\nArtefactos:');

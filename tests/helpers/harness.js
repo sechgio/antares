@@ -33,6 +33,13 @@ function assertOrExit(condition, message) {
   }
 }
 
+function eq(actual, expected, message) {
+  assert(
+    actual === expected,
+    `${message} (esperado: ${JSON.stringify(expected)}, actual: ${JSON.stringify(actual)})`,
+  );
+}
+
 function finish() {
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${counters.passed} passed, ${counters.failed} failed`);
@@ -180,6 +187,7 @@ module.exports = {
   assert,
   assertActionsPinned,
   assertOrExit,
+  eq,
   counters,
   finish,
   flushAsyncTurns,

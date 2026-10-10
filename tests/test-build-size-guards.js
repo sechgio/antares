@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { assert, counters } = require('./helpers/harness');
+const { assert, finish } = require('./helpers/harness');
 
 function readProjectFile(...parts) {
   return fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
@@ -95,10 +95,4 @@ for (const stalePath of ['win-unpacked', 'frontend', 'backend']) {
 }
 assert(afterPackageClean.includes('removeInsideProject'), 'post-package cleanup should verify paths before deleting');
 
-console.log(`\n${'='.repeat(50)}`);
-console.log(`Results: ${counters.passed} passed, ${counters.failed} failed`);
-console.log('='.repeat(50));
-
-if (counters.failed > 0) {
-  process.exit(1);
-}
+finish();

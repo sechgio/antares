@@ -1,11 +1,11 @@
 const path = require('path');
 
-const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
+const { assert, finish, stubBackendCommand, evictModule } = require('./helpers/harness');
 
 async function run() {
   console.log('Testing backend spawner PATH fallback...\n');
 
-  stubModule('electron/backend-command.js', {
+  stubBackendCommand({
     getBackendCommand: () => ({
       cmd: 'python',
       args: [path.join(__dirname, '..', 'backend', 'main.py')],
