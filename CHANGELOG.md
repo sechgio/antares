@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **PDFs personalizados en Flujos**: guía para conectar Excel/CSV, registros guardados y carpetas de fotos con las plantillas HTML, documentos de Canvas y formatos numerados. Permite mapear campos, aplicar valores fijos y correcciones por registro, ordenar fotos y revisar un PDF real antes de generar un consolidado o archivos individuales. Valida el lote completo, conserva las entregas anteriores mediante nombres versionados y permite automatizar la revisión únicamente con Antares abierto.
 - **Plugins de la barra de título**: Spotify (con OAuth), Audius, Jamendo y Archive se pueden activar y ordenar desde Ajustes.
 - **Notas adhesivas**: se pueden crear y organizar notas locales desde la barra de título.
 - **Flujos**: nueva herramienta de automatización con editor visual de grafos (arrastrar y soltar nodos), ejecución manual sobre los métodos de la app marcados como orquestables y vista de ejecuciones con el resultado de cada nodo. Los flujos admiten disparo programado (intervalo en minutos, mientras la app está abierta) y la vista de ejecuciones muestra el grafo coloreado por el estado de cada nodo, con filtros por flujo y estado.

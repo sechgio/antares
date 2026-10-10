@@ -161,7 +161,7 @@ function maybeResolveFileTokens(params, win, method, options = {}) {
       return { ...node, config };
     }) } };
   }
-  if (method === 'flows_read_images') {
+  if (method === 'flows_read_images' || method === 'flows_pdf_preview') {
     const { _isUnderRegisteredWriteRoot } = require('./write-roots');
     const { hasSymlinkAncestor } = require('./path-allowlist');
     const folders = [];
@@ -177,8 +177,14 @@ function maybeResolveFileTokens(params, win, method, options = {}) {
       }
       folders.push(value);
     }
-    const next = maybeResolveFileTokens({ ...params, source_folder: undefined, output_folder: undefined, _flow_file_grants: undefined }, win, '_flows_read_images_files');
-    if (params.spreadsheet_path) next.spreadsheet_path = resolveReadPathValue(params.spreadsheet_path, 'spreadsheet_path', win?.webContents?.id ?? null, { allowRegistered: true });
+    const next = maybeResolveFileTokens({ ...params, source_folder: undefined, output_folder: undefined, spreadsheet_path: undefined, _flow_file_grants: undefined }, win, '_flows_read_images_files');
+    if (params.spreadsheet_path) {
+      const webContentsId = win?.webContents?.id ?? null;
+      const value = options.verifiedGrants?.read?.includes(params.spreadsheet_path)
+        ? require('./file-capabilities').createFileCapability({ filePath: params.spreadsheet_path, mode: 'read', webContentsId }).token
+        : params.spreadsheet_path;
+      next.spreadsheet_path = resolveReadPathValue(value, 'spreadsheet_path', webContentsId, { allowRegistered: true });
+    }
     return { ...next, source_folder: params.source_folder, output_folder: params.output_folder,
       _flow_file_grants: { folders, read: next.spreadsheet_path ? [next.spreadsheet_path] : [], write: params.output_folder ? [params.output_folder] : [] } };
   }
