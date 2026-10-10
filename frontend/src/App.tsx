@@ -13,6 +13,8 @@ import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthS
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
 import { api, onNotify } from './api';
 import { acknowledgeCanvasFlush } from './utils/ackCanvasFlush';
+import { reportFrontendError } from './utils/observability';
+import { errorMessage } from '@/utils/errors';
 import { bootThemeFromBackend } from './utils/themeApplier';
 import { usePluginEnabled } from './plugins';
 
@@ -178,14 +180,24 @@ function AppContent() {
   }, [activeTab, canvasMounted]);
 
   useEffect(() => {
-    if (canvasMounted) return undefined;
+    // El ack debe estar suscrito siempre: al abrir la pestaña Canvas el chunk
+    // lazy tarda en registrar su propio handler, y en esa ventana un cierre
+    // quedaba sin ack y detenía el quit 310 s. El doble ack es seguro porque
+    // el settle del proceso principal es idempotente.
     return onNotify(async (method) => {
       if (method !== 'app.flush-canvas-before-quit') return;
       try {
         await acknowledgeCanvasFlush();
-      } catch {}
+      } catch (err) {
+        reportFrontendError({
+          kind: 'app_error',
+          view: 'app:canvas-quit-flush',
+          name: err instanceof Error ? err.name : 'CanvasFlushAckError',
+          message: errorMessage(err, String(err)),
+        });
+      }
     });
-  }, [canvasMounted]);
+  }, []);
 
   useEffect(() => {
     if (import.meta.env.MODE === 'test') return;
