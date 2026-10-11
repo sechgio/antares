@@ -84,9 +84,15 @@ def test_probe_reports_rational_fps() -> None:
     assert video["r_frame_rate"] == "25/1"
 
 
-def test_missing_toolchain_raises_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_toolchain_raises_clear_error(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    # Escenario determinista: sin override y con media/ vacío, la
+    # resolución debe fallar con el mensaje que remite al script.
     monkeypatch.delenv("ANTARES_FFMPEG_DIR", raising=False)
     monkeypatch.delenv("ANTARES_FFMPEG_ALLOW_PATH", raising=False)
+    monkeypatch.setattr(
+        "backend.core.editor.toolchain.resource_path",
+        lambda relative: tmp_path / relative,
+    )
     with pytest.raises(ToolchainError, match="prepare-editor-media"):
         resolve_toolchain()
 

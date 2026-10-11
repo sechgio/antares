@@ -6,6 +6,7 @@ import { resetCanvasHistoryTransportForTests } from './api/canvasHistoryTranspor
 import { canvasApi } from './api/canvasApi';
 import { catalogApi } from './api/catalogApi';
 import { conversionApi } from './api/conversionApi';
+import { editorApi } from './api/editorApi';
 import { _invoke } from './api/core';
 import { evidenciaVolanteoApi } from './api/evidenciaVolanteoApi';
 import { flowsApi } from './api/flowsApi';
@@ -76,6 +77,7 @@ export function _resetCanvasHistoryTransportForTests(): void {
 export const api = {
   ...systemApi,
   ...conversionApi,
+  ...editorApi,
   ...catalogApi,
   ...historyApi,
   ...formatosApi,

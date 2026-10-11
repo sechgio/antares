@@ -134,6 +134,27 @@ def probe_json(toolchain: Toolchain, path: Path) -> dict[str, Any]:  # allowlist
     return json.loads(out)  # type: ignore[no-any-return]
 
 
+def verify_decodable(toolchain: Toolchain, path: Path) -> None:
+    """Verifica que el archivo se decodifica completo sin errores.
+
+    ffprobe tolera archivos truncados cuando el índice sigue íntegro
+    (p. ej. MP4 con ``faststart``): la única prueba real de integridad
+    es decodificar. Lanza ``ToolchainError`` si ffmpeg reporta errores.
+    """
+    proc = subprocess.run(  # nosec B603 - argv con listas, sin shell
+        [str(toolchain.ffmpeg), "-v", "error", "-xerror", "-i", str(path), "-f", "null", "-"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+        check=False,
+    )
+    if proc.returncode != 0 or proc.stderr.strip():
+        detail = proc.stderr.strip()[:300] or f"código {proc.returncode}"
+        raise ToolchainError(f"el archivo no se decodifica limpio: {detail}")
+
+
 def synthesize_test_clip(toolchain: Toolchain, output: Path) -> Path:
     """Clip sintético breve (video con contador de cuadros + tono + silencio).
 
