@@ -1,0 +1,54 @@
+{
+  "documentVersion": 1,
+  "layouts": [
+    "title",
+    "section",
+    "bullets",
+    "twoColumn",
+    "stat",
+    "quote",
+    "blank"
+  ],
+  "pagePresets": {
+    "a4": { "widthMm": 210, "heightMm": 297 },
+    "a4-landscape": { "widthMm": 297, "heightMm": 210 },
+    "16x9": { "widthMm": 338.667, "heightMm": 190.5 },
+    "16x10": { "widthMm": 338.667, "heightMm": 211.667 },
+    "4x3": { "widthMm": 254, "heightMm": 190.5 }
+  },
+  "fonts": [
+    "Arial",
+    "Calibri",
+    "Cambria",
+    "Century Schoolbook",
+    "Bookman Old Style",
+    "Courier New",
+    "Georgia",
+    "Segoe UI",
+    "Tahoma",
+    "Times New Roman",
+    "Trebuchet MS",
+    "Verdana"
+  ],
+  "theme": {
+    "background": "#FFFFFF",
+    "surface": "#F3F4F6",
+    "text": "#111827",
+    "muted": "#6B7280",
+    "accent": "#2563EB",
+    "accentAlt": "#0F172A",
+    "headFont": "Cambria",
+    "bodyFont": "Calibri"
+  },
+  "limits": {
+    "maxSlides": 40,
+    "maxTitleChars": 200,
+    "maxSubtitleChars": 400,
+    "maxBodyChars": 4000,
+    "maxBullets": 12,
+    "maxBulletChars": 400,
+    "maxColumns": 2,
+    "maxNotesChars": 2000,
+    "maxNameChars": 120
+  }
+}

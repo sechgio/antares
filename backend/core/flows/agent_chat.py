@@ -378,6 +378,7 @@ def _chat_openai(
     with_tools: bool,
     system: str | None,
     on_delta: Callable[[str], None] | None = None,
+    extra_tools: list[JsonObject] | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
         "model": model,
@@ -394,7 +395,7 @@ def _chat_openai(
                     "parameters": s["inputSchema"],
                 },
             }
-            for s in tool_specs()
+            for s in (*tool_specs(), *(extra_tools or []))
         ]
         payload["tool_choice"] = "auto"
     data = _post_json(url, headers, payload, on_delta)
@@ -481,11 +482,13 @@ def _chat_anthropic(
     with_tools: bool,
     system: str | None,
     on_delta: Callable[[str], None] | None = None,
+    extra_tools: list[JsonObject] | None = None,
+    max_tokens: int | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
         "model": model,
         "stream": True,
-        "max_tokens": 2048,
+        "max_tokens": max_tokens or 2048,
         "system": system or _SYSTEM_PROMPT,
         "messages": _anthropic_wire(messages),
     }
@@ -496,7 +499,7 @@ def _chat_anthropic(
                 "description": s["description"],
                 "input_schema": s["inputSchema"],
             }
-            for s in tool_specs()
+            for s in (*tool_specs(), *(extra_tools or []))
         ]
     data = _post_json(url, headers, payload, on_delta)
     if not isinstance(data, dict) or not isinstance(data.get("content"), list):
@@ -531,6 +534,8 @@ def chat(
     with_tools: bool = True,
     system: str | None = None,
     on_delta: Callable[[str], None] | None = None,
+    extra_tools: list[JsonObject] | None = None,
+    max_tokens: int | None = None,
 ) -> JsonObject:
     """Un turno LLM; `messages` es el historial persistido en formato neutro.
 
@@ -538,6 +543,10 @@ def chat(
     una sola respuesta de texto, sin tool-calling interactivo).
     ``on_delta`` recibe el texto parcial acumulado cuando el proveedor hace
     streaming (opcional; el chat del agente lo usa para mostrar progreso).
+    ``extra_tools`` añade specs propias del llamante a las de Antares, para
+    que el modelo devuelva una estructura en vez de prosa. ``max_tokens`` solo
+    aplica al estilo Anthropic y sube el techo cuando la respuesta es un
+    documento largo.
     """
     spec = ai_providers.get_provider(provider)
     config = ai_providers.get_config(provider) or {}
@@ -552,7 +561,7 @@ def chat(
     url = ai_providers.endpoint_url(base, path)
     headers = _auth_headers(spec, config)
     if style == "openai_chat":
-        return _chat_openai(url, headers, model, messages, with_tools, system, on_delta)
+        return _chat_openai(url, headers, model, messages, with_tools, system, on_delta, extra_tools)
     if style == "anthropic_messages":
-        return _chat_anthropic(url, headers, model, messages, with_tools, system, on_delta)
+        return _chat_anthropic(url, headers, model, messages, with_tools, system, on_delta, extra_tools, max_tokens)
     raise ValueError(f"Estilo de chat no soportado: {style}")

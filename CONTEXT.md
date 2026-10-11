@@ -19,6 +19,16 @@ _Avoid_: Sheet, Slide
 **Guide**: Regla de alineación persistida por documento (`CanvasGuide`), no una capa.
 _Avoid_: Ruler, Grid line
 
+## Design
+
+**Design**: Presentación generada por un modelo IA propio, con diapositivas de layout semántico y tema. Persistido en `%LOCALAPPDATA%/Antares/design/documents/<id>.json` con `DOCUMENT_VERSION`.
+_Avoid_: Deck (como tipo de dato), Canvas Document, PPTX
+
+**Slide**: Hoja de un Design. Su tamaño sale del preset de página (`16x9`, `a4`, …), no del A4 fijo del Canvas.
+_Avoid_: Página (sin calificar), Canvas Page
+
+Un Design **no** es un Canvas Document: el Canvas posiciona capas en milímetros y el usuario las compone; el Design decide estructura, orden y tema y el render los traduce a HTML paginado. No se convierten entre sí en la v1.
+
 ## Procesamiento
 
 **Conversión**: Transformación batch de imágenes (JPEG/PNG/WebP/BMP/TIFF/GIF/ICO→formato destino) con cola IPC heavy.
