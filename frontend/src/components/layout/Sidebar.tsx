@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState, type Componen
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
+  Bot,
   Camera,
   ClipboardList,
   ClipboardPen,
@@ -73,6 +74,7 @@ const ICONS: Record<TabId, IconComponent> = {
   previewPanel: LayoutDashboard,
   canvas: Paintbrush,
   flows: Workflow,
+  agent: Bot,
   panelAvisoCorte: FileStack,
   ubicaciones: MapPin,
   evidenciaVolanteo: Grid2X2,
@@ -108,6 +110,12 @@ const NAV_GROUPS: { id: string; label: string; icon: IconComponent; tabs: TabId[
     label: 'Herramientas',
     icon: Wrench,
     tabs: ['imageOptimizer', 'ubicaciones', 'autoimg', 'flows'],
+  },
+  {
+    id: 'agent',
+    label: 'Agent',
+    icon: Bot,
+    tabs: ['agent'],
   },
 ];
 
