@@ -240,7 +240,7 @@ async function dispatchNative(spec, request, context) {
   }
   let text;
   try {
-    const result = await nativeTools().runNativeTool(spec.name, request.params);
+    const result = await nativeTools().runNativeTool(spec.name, request.params, { sessionId: request.session_id });
     text = JSON.stringify(result === undefined ? null : result);
   } catch (err) {
     text = JSON.stringify({ error: String((err && err.message) || err).slice(0, 500) });

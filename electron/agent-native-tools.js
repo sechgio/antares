@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
+
 // Herramientas del agente que se ejecutan en el proceso principal (métodos
 // native:* del catálogo). Python sigue siendo dueño de la reserva, la
 // aprobación y el comprobante de cada operación; aquí solo se declara qué
@@ -75,6 +78,33 @@ const AUTOIMG_EFFECTS = {
   autoimg_cancel_operation: ['Cancelar la operación en curso de AutoIMG', OBJECT],
 };
 
+// Exportación a PDF de los informes que el backend renderiza en HTML: el
+// HTML no pasa por el modelo; se imprime con el mismo motor que la pantalla
+// (html_to_pdf) y el PDF queda en los borradores de la conversación.
+const REPORT_EXPORTS = {
+  technical_reports_export_pdf: {
+    module: 'technicalReports', label: 'Informes técnicos', single: 'technical_reports_render_html',
+    consolidated: 'technical_reports_render_consolidated_html', idsKey: 'report_ids',
+  },
+  informes_v2_export_pdf: {
+    module: 'informesV2', label: 'Informes v2', single: 'informes_v2_render_html',
+    consolidated: 'informes_v2_render_consolidated_html', idsKey: 'report_ids',
+  },
+  fichas_tecnicas_export_pdf: {
+    module: 'fichasTecnicas', label: 'Fichas Técnicas', single: 'fichas_tecnicas_render_html',
+    consolidated: 'fichas_tecnicas_render_consolidated_html', idsKey: 'ficha_ids',
+  },
+};
+const EXPORT_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'Registro a exportar en un PDF individual' },
+    ids: { type: 'array', items: { type: 'string' }, description: 'Registros del consolidado; vacío = todos' },
+    filename: { type: 'string', description: 'Nombre del PDF en los borradores' },
+  },
+  required: ['filename'],
+};
+
 function spec(name, [label, schema], gated) {
   return {
     name,
@@ -90,18 +120,61 @@ function spec(name, [label, schema], gated) {
 const SPECS = [
   ...Object.entries(AUTOIMG_READS).map(([name, def]) => spec(name, def, false)),
   ...Object.entries(AUTOIMG_EFFECTS).map(([name, def]) => spec(name, def, true)),
+  ...Object.entries(REPORT_EXPORTS).map(([name, def]) => ({
+    name,
+    description: `${def.label} · ${name} (borrador sin aprobación): genera el PDF con el mismo motor de la pantalla`,
+    gated: false,
+    kind: 'native',
+    module: def.module,
+    label: `Generar el PDF de ${def.label}`,
+    inputSchema: EXPORT_SCHEMA,
+  })),
 ];
 
 function nativeToolSpecs() {
   return SPECS.map((s) => ({ ...s }));
 }
 
-async function runNativeTool(name, params) {
+function draftsDir(sessionId) {
+  const safe = String(sessionId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+  if (!safe) throw new Error('Los borradores requieren una conversación');
+  const { antaresUserData } = require('./canvas-assets');
+  return antaresUserData('ai-agent', 'drafts', safe);
+}
+
+function draftName(value) {
+  const name = String(value || '').trim();
+  if (!name || name !== path.basename(name) || /[<>:"/\\|?*\x00]/.test(name) || name === '.' || name === '..') {
+    throw new Error(`Nombre de archivo no válido: ${value}`);
+  }
+  return name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`;
+}
+
+async function exportReportPdf(def, params, sessionId) {
+  const { _callBackend } = require('./ipc-router');
+  const ids = Array.isArray(params.ids) ? params.ids.map(String) : [];
+  const rendered = params.id
+    ? await _callBackend(def.single, { id: String(params.id) })
+    : await _callBackend(def.consolidated, ids.length ? { [def.idsKey]: ids } : {});
+  const { BrowserWindow, session } = require('electron');
+  const { renderHtmlToPdf } = require('./pdf-render');
+  const filename = draftName(params.filename);
+  const out = await renderHtmlToPdf({ html: rendered.html, filename }, { BrowserWindow, session }, null);
+  const dir = draftsDir(sessionId);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const target = path.join(dir, filename);
+  await fs.promises.copyFile(out.saved_path, target);
+  await fs.promises.rm(out.saved_path, { force: true });
+  return { saved_path: target, filename, ...(rendered.count !== undefined ? { count: rendered.count } : {}) };
+}
+
+async function runNativeTool(name, params, { sessionId } = {}) {
   if (!SPECS.some((s) => s.name === name)) throw new Error(`Herramienta nativa no disponible: ${name}`);
+  if (REPORT_EXPORTS[name]) return exportReportPdf(REPORT_EXPORTS[name], params || {}, sessionId);
   const { handleAutoimgCall } = require('./autoimg-handlers');
   const out = await handleAutoimgCall(name, params || {});
   if (!out || !out.handled) throw new Error(`Herramienta nativa no disponible: ${name}`);
   return out.result;
 }
 
-module.exports = { nativeToolSpecs, runNativeTool, AUTOIMG_READS, AUTOIMG_EFFECTS };
+module.exports = { nativeToolSpecs, runNativeTool, draftName, AUTOIMG_READS, AUTOIMG_EFFECTS, REPORT_EXPORTS };

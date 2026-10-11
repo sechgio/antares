@@ -39,17 +39,20 @@
     "technicalReports": {
       "label": "Informes técnicos",
       "aliases": ["informes-tecnicos", "informes-técnicos", "informe-tecnico", "informe-técnico"],
-      "handlers": ["technical_reports"]
+      "handlers": ["technical_reports"],
+      "methods": ["technical_reports_export_pdf"]
     },
     "informesV2": {
       "label": "Informes v2",
       "aliases": ["informes-v2", "informev2", "informe-v2"],
-      "handlers": ["informes_v2"]
+      "handlers": ["informes_v2"],
+      "methods": ["informes_v2_export_pdf"]
     },
     "fichasTecnicas": {
       "label": "Fichas Técnicas",
       "aliases": ["fichas", "fichas-tecnicas", "fichas-técnicas", "ficha"],
-      "handlers": ["fichas_tecnicas"]
+      "handlers": ["fichas_tecnicas"],
+      "methods": ["fichas_tecnicas_export_pdf"]
     },
     "previewPanel": {
       "label": "Generador Reportes",

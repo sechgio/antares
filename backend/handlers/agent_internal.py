@@ -38,7 +38,7 @@ def _store() -> _agent.AgentStore:
 _inflight: dict[str, _CancelEvent] = {}
 _inflight_lock = threading.Lock()
 _resource_locks: dict[str, threading.Lock] = {}
-_NATIVE_PREFIXES = ("autoimg_",)
+_NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf")
 
 
 def _resource_keys(params: JsonObject) -> list[str]:
