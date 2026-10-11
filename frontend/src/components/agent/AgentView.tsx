@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Search, Send, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
+import { FolderOpen, Paperclip, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { agentApi, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
@@ -102,7 +102,8 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
   const [deciding, setDeciding] = useState(false);
-  const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; failed?: boolean }[]>(() => {
+  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean }[]>(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
       return Array.isArray(saved) ? saved.filter((item) => item && typeof item.session === 'string' && typeof item.text === 'string')
@@ -110,6 +111,7 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
           session: item.session,
           text: item.text,
           requestId: typeof item.requestId === 'string' ? item.requestId : newRequestId(),
+          attachments: Array.isArray(item.attachments) ? item.attachments.filter((a: unknown) => typeof a === 'string') : [],
           failed: true,
         })) : [];
     } catch { return []; }
@@ -320,14 +322,14 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
     }
   };
 
-  const sendToSession = async (id: string, content: string, requestId: string): Promise<boolean> => {
+  const sendToSession = async (id: string, content: string, requestId: string, attachmentIds: string[] = []): Promise<boolean> => {
     const state = messagesVersionRef.current.get(id) ?? { version: 0, pending: 0 };
     messagesVersionRef.current.set(id, state);
     state.version += 1;
     state.pending += 1;
     if (id === sessionIdRef.current) setRunning(true);
     try {
-      const res = await agentApi.agentMessageSend(id, content, requestId).finally(() => { state.pending -= 1; });
+      const res = await agentApi.agentMessageSend(id, content, requestId, attachmentIds).finally(() => { state.pending -= 1; });
       for (const file of res.files?.rejected ?? []) {
         addToast({ message: `No se autorizó ${file.path}: ${file.reason}`, type: 'warning' });
       }
@@ -354,12 +356,15 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
     setDraft('');
     const failed = failedSendRef.current;
     const requestId = failed && failed.session === sessionId && failed.text === content ? failed.requestId : newRequestId();
+    const attachmentIds = attachments.map((a) => a.id);
     if (running || pending.length > 0) {
-      setQueued((q) => [...q, { session: sessionId, text: content, requestId }]);
+      setQueued((q) => [...q, { session: sessionId, text: content, requestId, attachments: attachmentIds }]);
+      setAttachments([]);
       return;
     }
-    const ok = await sendToSession(sessionId, content, requestId);
+    const ok = await sendToSession(sessionId, content, requestId, attachmentIds);
     failedSendRef.current = ok ? null : { session: sessionId, text: content, requestId };
+    if (ok) setAttachments([]);
     if (!ok) setDraft((prev) => (prev.trim() ? prev : content));
   };
 
@@ -371,12 +376,21 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
     const sending = { ...next, failed: true };
     setQueued((q) => q.map((i) => i === next ? sending : i));
     void (async () => {
-      const ok = await sendToSession(sessionId, next.text, next.requestId);
+      const ok = await sendToSession(sessionId, next.text, next.requestId, next.attachments ?? []);
       if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
     // Sin config ESLint en el repo esta directiva es inerte; las dependencias
     // están completas a propósito (queued dispara el reintento).
   }, [sessionId, running, stopping, pending.length, queued]);
+
+  const attach = async (kind: 'files' | 'folder') => {
+    try {
+      const res = await agentApi.agentAttach(kind);
+      setAttachments((prev) => [...prev, ...res.attachments]);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo adjuntar'), type: 'error' });
+    }
+  };
 
   const sendSuggestion = async (text: string) => {
     const id = sessionId || (await newSession());
@@ -631,6 +645,27 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
             </div>
           )}
           <div className="rounded-[22px] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.02),0_4px_2px_rgba(0,0,0,0.02)] transition-colors focus-within:border-[var(--border-medium)]">
+            {attachments.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap gap-1.5 px-1" aria-label="Adjuntos">
+                {attachments.map((item) => (
+                  <span
+                    key={item.id}
+                    className="flex max-w-[60%] items-center gap-1 rounded-full bg-[var(--bg-input)] py-0.5 pl-2 pr-1 text-[11px] text-[var(--text-secondary)]"
+                  >
+                    {item.kind === 'folder' ? <FolderOpen size={11} /> : <Paperclip size={11} />}
+                    <span className="truncate">{item.name}</span>
+                    <button
+                      type="button"
+                      className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                      aria-label={`Quitar ${item.name}`}
+                      onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== item.id))}
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <textarea
               ref={draftRef}
               rows={1}
@@ -655,6 +690,26 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
             />
             <div className="mt-1.5 flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  onClick={() => void attach('files')}
+                  disabled={!sessionId}
+                  aria-label="Adjuntar archivos"
+                  title="Adjuntar archivos (solo lectura para el agente)"
+                >
+                  <Paperclip size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  onClick={() => void attach('folder')}
+                  disabled={!sessionId}
+                  aria-label="Adjuntar carpeta"
+                  title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
+                >
+                  <FolderOpen size={13} />
+                </button>
                 {session && (
                   <span
                     className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-input)] px-2.5 text-[11px] text-[var(--text-secondary)]"

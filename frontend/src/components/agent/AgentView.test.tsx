@@ -52,7 +52,7 @@ it('descarta la lectura previa al envío y drena la actualización pendiente de 
   vi.useFakeTimers();
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Mensaje nuevo', expect.any(String));
+  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Mensaje nuevo', expect.any(String), []);
   await act(async () => { initial.resolve(empty); });
   expect(list).toHaveBeenCalledTimes(2);
   expect(screen.getByText('El agente está trabajando')).toBeInTheDocument();
@@ -121,6 +121,25 @@ it('un envío pendiente en otra sesión no descarta los mensajes de la sesión s
   expect(screen.getByText('Mensaje de segunda')).toBeInTheDocument();
 });
 
+it('adjunta archivos y carpetas y los envía por id con el mensaje', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const attach = vi.spyOn(agentApi, 'agentAttach')
+    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'clientes.xlsx', kind: 'files' }] })
+    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'fotos', kind: 'folder' }] });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar carpeta')); });
+  expect(attach.mock.calls).toEqual([['files'], ['folder']]);
+  expect(screen.getByText('clientes.xlsx')).toBeInTheDocument();
+  expect(screen.getByText('fotos')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Genera el informe' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1', 'a2']);
+  expect(screen.queryByText('clientes.xlsx')).not.toBeInTheDocument();
+});
+
 it('avisa de las rutas escritas que no se autorizaron', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentMessageSend).mockResolvedValue({
@@ -173,7 +192,7 @@ it('restaura la conversación y la cola sin enviar tareas automáticamente tras 
   expect(screen.getByText('Tarea pendiente')).toHaveAttribute('title', 'Mensaje pendiente — clic para enviar');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByText('Tarea pendiente')); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Tarea pendiente', 'req-guardado');
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Tarea pendiente', 'req-guardado', []);
 });
 
 it('muestra respuestas progresivas y estados de herramientas durante el sondeo', async () => {
@@ -217,7 +236,7 @@ it('detener pausa la cola y conserva las tareas pendientes para un envío explí
   expect(agentApi.agentTurnCancel).toHaveBeenCalledWith(session.id);
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
-    { session: session.id, text: 'Siguiente tarea', requestId: expect.any(String), failed: true },
+    { session: session.id, text: 'Siguiente tarea', requestId: expect.any(String), attachments: [], failed: true },
   ]);
 });
 

@@ -176,3 +176,38 @@ def test_file_read_returns_content_with_provenance(store, sheet, tmp_path):
     other = tmp_path / "secreto.csv"
     other.write_text("a\n1\n", encoding="utf-8")
     assert "no está autorizado" in _tool("file_read", {"path": str(other)})["error"]
+
+
+def test_folder_chosen_in_the_dialog_grants_its_files_and_feeds_photos(store, templates_dir, tmp_path):
+    from PIL import Image
+
+    photos = tmp_path / "fotos"
+    (photos / "sub").mkdir(parents=True)
+    for name in ("Uno.png", "sub/Dos.png"):
+        Image.new("RGB", (8, 8), "blue").save(photos / name)
+        os.utime(photos / name, (time.time() - 60, time.time() - 60))
+    (templates_dir / "fotos.html").write_text(
+        "<html><body>{% for r in reports %}<h1>{{ r.data.cliente }}</h1>"
+        "{% for i in r.images[:1] %}<img src='{{ i.path }}'>{% endfor %}{% endfor %}</body></html>",
+        encoding="utf-8",
+    )
+    as_text = agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [str(photos)]})
+    assert as_text["granted"] == [] and "carpeta" in as_text["rejected"][0]["reason"]
+    chosen = agent_internal.HANDLERS["agent_internal_grants_add"](
+        {"session_id": "s1", "paths": [], "folders": [str(photos)]}
+    )
+    assert chosen["granted"] == [os.path.realpath(photos)]
+    assert _tool("file_read", {"path": str(photos / "sub" / "Dos.png")})["kind"] == "image"
+    outside = tmp_path / "otra.png"
+    Image.new("RGB", (2, 2)).save(outside)
+    assert "no está autorizado" in _tool("file_read", {"path": str(outside)})["error"]
+
+    result = _tool("document_generate", {
+        "family": "html", "template_id": "fotos.html", "rows": [{"cliente": "Uno"}, {"cliente": "Dos"}],
+        "photos_folder": str(photos), "match_key": "cliente", "images_per_panel": 1, "filename_pattern": "Fotos",
+    })
+    assert result["generated"] is True, result
+    assert {"kind": "photos_folder", "path": os.path.realpath(photos)} in result["artifact"]["sources"]
+    assert "no está autorizada" in _tool("document_prepare", {
+        "family": "html", "template_id": "fotos.html", "rows": [{}], "photos_folder": str(tmp_path / "datos"),
+    }, session_id="s2").get("error", "")

@@ -35,7 +35,11 @@ _DATA_PROPERTIES: dict[str, Any] = {  # allowlist: dict[str, Any]
     "field_mappings": {"type": "object", "description": "Campo de la plantilla → columna de la hoja"},
     "field_values": {"type": "object", "description": "Valores comunes a todos los registros"},
     "row_values": {"type": "object", "description": "Correcciones por registro (record_key → campos)"},
-    "match_key": {"type": "string"},
+    "match_key": {"type": "string", "description": "Columna que identifica las fotos de cada registro"},
+    "match_date": {"type": "string", "description": "Columna de fecha para distinguir fotos"},
+    "photos_folder": {"type": "string", "description": "Carpeta de fotos que el usuario adjuntó"},
+    "images_per_panel": {"type": "integer", "description": "Fotos obligatorias por registro"},
+    "photo_selections": {"type": "object", "description": "record_key → nombres de fotos elegidas"},
     "number_from": {"type": "integer"},
     "number_to": {"type": "integer"},
     "output_mode": {"type": "string", "enum": ["consolidado", "individual"]},
@@ -235,19 +239,27 @@ def _workflow_params(params: JsonObject, grants: dict[str, JsonObject], root: Pa
     if params.get("rows") is not None:
         sources.append({"kind": "rows", "count": len(params["rows"]) if isinstance(params["rows"], list) else 0})
     root.mkdir(parents=True, exist_ok=True)
+    folders: list[str] = []
+    if params.get("photos_folder"):
+        folder = resource_grants.check_folder(str(params["photos_folder"]), grants)
+        folders.append(folder)
+        sources.append({"kind": "photos_folder", "path": folder})
     workflow: JsonObject = {
         key: params[key] for key in ("rows", "records_source", "field_mappings", "field_values", "row_values",
-                                     "match_key", "number_from", "number_to", "output_mode", "filename_pattern")
+                                     "match_key", "match_date", "photo_selections", "number_from", "number_to",
+                                     "output_mode", "filename_pattern")
         if key in params
     }
     workflow.update({
         "template_kind": family,
         "template_id": template_id,
-        "images_per_panel": 0,
+        "images_per_panel": params.get("images_per_panel", 0) if folders else 0,
         "output_folder": str(root),
-        "_flow_file_grants": path_grants.authorize_paths({"read": read, "write": [str(root)], "folders": []}),
+        "_flow_file_grants": path_grants.authorize_paths({"read": read, "write": [str(root)], "folders": folders}),
         "preview_pdf": False,
     })
+    if folders:
+        workflow["source_folder"] = folders[0]
     if sheet:
         workflow["spreadsheet_path"] = sheet
     return workflow, sources
@@ -268,7 +280,8 @@ def _public(result: JsonObject) -> JsonObject:
     public["pending"] = list(result.get("pending") or [])[:_MAX_PENDING]
     public["records"] = len(result.get("preview") or [])
     public["preview"] = [
-        {"record_key": row.get("record_key"), "data": row.get("data"), "errors": row.get("errors")}
+        {"record_key": row.get("record_key"), "data": row.get("data"), "photos": row.get("images"),
+         "errors": row.get("errors")}
         for row in (result.get("preview") or [])[:_MAX_PREVIEW_ROWS]
     ]
     return public

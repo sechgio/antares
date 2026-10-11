@@ -20,6 +20,7 @@
     "agent_turn_cancel": { "handler": "native:agent" },
     "agent_approve": { "handler": "native:agent", "timeout": "long" },
     "agent_deny": { "handler": "native:agent" },
+    "agent_attach": { "handler": "native:agent", "timeout": "long" },
     "agent_internal_tools": { "handler": "backend:agent_internal", "internal": true, "timeout": "long" },
     "agent_internal_provider": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_approval_ensure": { "handler": "backend:agent_internal", "internal": true },

@@ -135,21 +135,25 @@ def _intent_fingerprint(session_id: str, method: str, params: JsonObject) -> str
 @with_locale
 @validate_params("session_id", "paths")
 def _grants_add(params: JsonObject) -> JsonObject:
-    """Concede lectura de los archivos que el humano escribió en su mensaje.
+    """Concede lectura de los archivos que el humano escribió o adjuntó, y de las
+    carpetas que eligió en el diálogo de adjuntos.
 
-    Solo lo llama Electron con rutas extraídas del texto del usuario; el modelo
-    no tiene acceso a este método (``agent_`` está denegado y es ``internal``)."""
+    Solo lo llama Electron con rutas del texto del usuario o de su diálogo; el
+    modelo no tiene acceso a este método (``agent_`` está denegado e ``internal``)."""
     session_id = str(params["session_id"])
     paths = params["paths"]
-    if not isinstance(paths, list):
-        raise ValidationError("paths debe ser una lista")
+    folders = params.get("folders") or []
+    if not isinstance(paths, list) or not isinstance(folders, list):
+        raise ValidationError("paths y folders deben ser listas")
     request_id = params.get("request_id")
     granted: list[str] = []
     rejected: list[JsonObject] = []
     records: list[JsonObject] = []
-    for raw in paths[: resource_grants.MAX_GRANTS_PER_MESSAGE]:
+    items = [(raw, False) for raw in paths] + [(raw, True) for raw in folders]
+    for raw, is_folder in items[: resource_grants.MAX_GRANTS_PER_MESSAGE]:
         try:
-            record = resource_grants.grant_record(str(raw), str(request_id) if request_id else None)
+            make = resource_grants.folder_record if is_folder else resource_grants.grant_record
+            record = make(str(raw), str(request_id) if request_id else None)
         except ValueError as err:
             rejected.append({"path": str(raw), "reason": str(err)})
             continue

@@ -29,6 +29,8 @@ const MAX_MESSAGE_CHARS = 12_000;
 const MAX_SESSIONS = 50;
 const MAX_REQUEST_ID_CHARS = 100;
 const MAX_MESSAGE_PATHS = 20;
+const ATTACHMENT_TTL_MS = 60 * 60 * 1000;
+const MAX_ATTACHMENTS = 20;
 // Rutas absolutas de Windows escritas por el usuario: entre comillas (pueden
 // llevar espacios) o sin ellas hasta el primer espacio.
 const QUOTED_PATH_RE = /["'`\u201c\u201d]([A-Za-z]:\\[^"'`\u201c\u201d\r\n]+)["'`\u201c\u201d]/g;
@@ -249,14 +251,20 @@ async function messageSend(params) {
   await execution.ensureProvider(session.provider, session.model);
   const conv = await conversation(sessionId);
   await projection.ensureWatcher(session);
-  const paths = extractPaths(content);
-  const files = paths.length
-    ? await bridge('agent_internal_grants_add', { session_id: sessionId, request_id: requestId || null, paths })
+  const attached = _takeAttachments(params.attachments);
+  const paths = [...extractPaths(content), ...attached.filter((a) => a.kind === 'files').map((a) => a.path)];
+  const folders = attached.filter((a) => a.kind === 'folder').map((a) => a.path);
+  const files = paths.length || folders.length
+    ? await bridge('agent_internal_grants_add', { session_id: sessionId, request_id: requestId || null, paths, folders })
     : { granted: [], rejected: [] };
   const nativeNames = [...shared.toolSpecs.values()].filter((t) => t.kind === 'native').map((t) => t.name);
   const mentions = await bridge('agent_internal_mentions', { text: content, native_tools: nativeNames });
-  const input = mentions.context
-    ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${mentions.context}` }]
+  const attachedNote = attached.length
+    ? `Archivos adjuntos por el usuario:\n${attached.map((a) => `- ${a.path} (${a.kind === 'folder' ? 'carpeta' : 'archivo'})`).join('\n')}`
+    : '';
+  const context = [mentions.context, attachedNote].filter(Boolean).join('\n\n');
+  const input = context
+    ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }]
     : content;
   shared.rounds.delete(session.conversationId);
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -278,11 +286,48 @@ async function messageSend(params) {
       if (s.title === 'Conversación') s.title = content.trim().slice(0, 60) || 'Conversación';
     }
   });
+  for (const id of Array.isArray(params.attachments) ? params.attachments : []) shared.attachments.delete(String(id));
   return {
     accepted: true,
     files,
     mentions: { modules: mentions.modules, unknown: mentions.unknown, ambiguous: mentions.ambiguous },
   };
+}
+
+// Adjuntos: el diálogo lo abre el proceso principal y la ruta real nunca se
+// confía al renderer, que solo recibe un id y un nombre.
+async function attach(params) {
+  const kind = params && params.kind === 'folder' ? 'folder' : 'files';
+  const dialog = shared.dialog || require('electron').dialog;
+  const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
+  const response = await dialog.showOpenDialog(win || undefined, {
+    title: kind === 'folder' ? 'Adjuntar carpeta para el agente' : 'Adjuntar archivos para el agente',
+    properties: kind === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
+  });
+  if (!response || response.canceled || !Array.isArray(response.filePaths)) return { attachments: [] };
+  const now = Date.now();
+  for (const [id, item] of shared.attachments) {
+    if (now - item.created > ATTACHMENT_TTL_MS) shared.attachments.delete(id);
+  }
+  const attachments = response.filePaths.slice(0, MAX_ATTACHMENTS).map((filePath) => {
+    const id = crypto.randomBytes(9).toString('hex');
+    shared.attachments.set(id, { path: filePath, kind, created: now });
+    return { id, name: path.basename(filePath), kind };
+  });
+  return { attachments };
+}
+
+function _takeAttachments(ids) {
+  if (!Array.isArray(ids)) return [];
+  const taken = [];
+  for (const id of ids.slice(0, MAX_ATTACHMENTS)) {
+    const item = shared.attachments.get(String(id));
+    if (!item || Date.now() - item.created > ATTACHMENT_TTL_MS) {
+      throw validation('Un adjunto ya no está disponible; vuelve a adjuntarlo');
+    }
+    taken.push(item);
+  }
+  return taken;
 }
 
 async function _admittedRequest(session, requestId) {
@@ -438,6 +483,7 @@ module.exports = {
     agent_tools_list: toolsList,
     agent_turn_status: turnStatus,
     agent_turn_cancel: turnCancel,
+    agent_attach: attach,
     agent_approve: (p) => approve(p, true),
     agent_deny: (p) => approve(p, false),
   },

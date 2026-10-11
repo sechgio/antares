@@ -27,6 +27,8 @@ const shared = {
   providers: new Map(), // providerId -> {info, modelIds:Set}
   providerOverrides: new Map(), // providerId -> Provider (tests)
   nativeTools: null, // sustituto de agent-native-tools (tests)
+  attachments: new Map(), // id -> {path, kind, created}: elegidos por el humano en el diálogo
+  dialog: null, // sustituto del diálogo nativo (tests)
   INTERRUPTED_RESULT,
   NOTICE_KIND,
   CONTEXT_MARKER,

@@ -35,6 +35,13 @@ export interface AgentMessageFiles {
   rejected: { path: string; reason: string }[];
 }
 
+// Adjunto elegido en el diálogo nativo: el renderer solo conoce su id y nombre.
+export interface AgentAttachment {
+  id: string;
+  name: string;
+  kind: 'files' | 'folder';
+}
+
 export interface AgentMessageMentions {
   modules: string[];
   unknown: string[];
@@ -76,11 +83,14 @@ export const agentApi = {
     }>('agent_messages_list', { session_id }),
 
   // request_id identifica el envío: un reintento con el mismo id no crea otro encargo.
-  agentMessageSend: (session_id: string, content: string, request_id: string) =>
+  agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = []) =>
     _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles; mentions?: AgentMessageMentions }>(
       'agent_message_send',
-      { session_id, content, request_id },
+      { session_id, content, request_id, ...(attachments.length ? { attachments } : {}) },
     ),
+
+  agentAttach: (kind: 'files' | 'folder') =>
+    _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind }),
 
   agentToolsList: () => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list'),
 

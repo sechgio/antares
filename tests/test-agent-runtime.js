@@ -20,7 +20,7 @@ const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('
 const PUBLIC_METHODS = [
   'agent_sessions_list', 'agent_session_create', 'agent_session_delete',
   'agent_messages_list', 'agent_message_send', 'agent_tools_list',
-  'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny',
+  'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -296,6 +296,42 @@ async function main() {
     assert(JSON.stringify(executed) === JSON.stringify(['autoimg_status', 'autoimg_sync_to_sheet']), 'cada herramienta nativa se ejecuta una vez');
     assert(state.dispatches.every((d) => d.status === 'succeeded'), 'Electron registra el comprobante en Python');
     runtime._internal.shared.nativeTools = null;
+    await runtime.shutdown();
+  }
+
+  // --- adjuntos: diálogo del proceso principal, ids opacos y concesión al enviar ---
+  {
+    const { bridge, state } = makeBridge();
+    const seen = [];
+    await openFaux([(context) => { seen.push(JSON.stringify(context.messages)); return fauxAssistantMessage('ok'); }], bridge);
+    const picks = [
+      { canceled: false, filePaths: [String.raw`C:\datos\clientes.xlsx`, String.raw`C:\datos\informe.pdf`] },
+      { canceled: false, filePaths: [String.raw`C:\fotos`] },
+      { canceled: true, filePaths: [] },
+    ];
+    const titles = [];
+    runtime._internal.shared.dialog = { showOpenDialog: async (_win, options) => { titles.push(options.properties); return picks.shift(); } };
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const files = await runtime.handlers.agent_attach({ kind: 'files' });
+    const folder = await runtime.handlers.agent_attach({ kind: 'folder' });
+    const none = await runtime.handlers.agent_attach({ kind: 'files' });
+    assert(files.attachments.length === 2 && files.attachments.every((a) => a.id && !a.path && a.kind === 'files'),
+      'el renderer recibe ids y nombres, no rutas');
+    assert(folder.attachments[0].kind === 'folder' && none.attachments.length === 0, 'carpeta adjunta y diálogo cancelado');
+    assert(titles[1].includes('openDirectory'), 'la carpeta se elige con un diálogo de carpeta');
+    const ids = [...files.attachments, ...folder.attachments].map((a) => a.id);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'usa los adjuntos', attachments: ids });
+    const grant = state.grants.at(-1);
+    assert(JSON.stringify(grant.paths) === JSON.stringify([String.raw`C:\datos\clientes.xlsx`, String.raw`C:\datos\informe.pdf`])
+      && JSON.stringify(grant.folders) === JSON.stringify([String.raw`C:\fotos`]), 'los adjuntos se conceden como archivos y carpeta');
+    assert(await waitIdle(session.id), 'el turno termina');
+    assert(seen[0].includes('Archivos adjuntos por el usuario') && seen[0].includes('(carpeta)'), 'el modelo conoce los adjuntos');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(messages[0].content === 'usa los adjuntos', 'el transcript no muestra el bloque de adjuntos');
+    let reused = null;
+    try { await runtime.handlers.agent_message_send({ session_id: session.id, content: 'otra vez', attachments: ids }); } catch (err) { reused = err; }
+    assert(reused && /ya no está disponible/.test(reused.message), 'un adjunto se usa una sola vez');
+    runtime._internal.shared.dialog = null;
     await runtime.shutdown();
   }
 

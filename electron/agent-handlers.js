@@ -14,6 +14,7 @@ const AGENT_METHODS = new Set([
   'agent_turn_cancel',
   'agent_approve',
   'agent_deny',
+  'agent_attach',
 ]);
 
 async function handleAgentCall(method, params) {
