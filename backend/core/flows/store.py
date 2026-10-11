@@ -21,7 +21,7 @@ from typing import Any
 
 from backend.core.flows.os_tasks import HEADLESS_MUTEX, STORE_MUTEX, ProcessLock, mutex_held
 from backend.core.flows.schema import normalize_graph, validate_graph
-from backend.core.flows.types import JsonObject
+from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import user_data_path
 

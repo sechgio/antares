@@ -13,7 +13,7 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from backend.core.flows.types import JsonObject
+from backend.core.integrations.types import JsonObject
 
 logger = logging.getLogger(__name__)
 

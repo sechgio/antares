@@ -11,10 +11,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from backend.core.flows import mcp_client, mcp_servers, vault
 from backend.core.flows.runner import FlowRunner
 from backend.core.flows.schema import normalize_graph, validate_graph
 from backend.core.flows.store import FlowStore
+from backend.core.integrations import mcp_client, mcp_servers, vault
 
 
 @pytest.fixture()

@@ -19,9 +19,9 @@ import time
 import urllib.parse
 from pathlib import Path
 
-from backend.core.flows import http_guard, mcp_client, vault
 from backend.core.flows.expr import resolve
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import http_guard, mcp_client, vault
+from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import user_data_path
 

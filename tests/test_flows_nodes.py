@@ -306,7 +306,7 @@ def test_runner_retries_transient_http_status(store, monkeypatch):
 
 @pytest.mark.parametrize("with_tools", [False, True])
 def test_runner_agent_node(store, monkeypatch, with_tools):
-    from backend.core.flows import agent_chat
+    from backend.core.agent import agent_chat
 
     seen = {}
 
@@ -364,7 +364,7 @@ def test_runner_agent_node(store, monkeypatch, with_tools):
 
 @pytest.mark.parametrize("with_tools", [False, True])
 def test_runner_agent_node_fails_on_unresolved_interpolation(store, monkeypatch, with_tools):
-    from backend.core.flows import agent_chat
+    from backend.core.agent import agent_chat
 
     calls = []
     monkeypatch.setattr(agent_chat, "chat", lambda *a, **k: calls.append(a) or {"text": "", "calls": []})
@@ -413,7 +413,7 @@ def test_validate_rejects_agent_without_prompt():
 
 def test_agent_decide_never_runs_denied_method(tmp_path, monkeypatch):
     """Una aprobación manipulada para un método denegado no debe ejecutarse."""
-    from backend.core.flows.agent import AgentRunner, AgentStore
+    from backend.core.agent.agent import AgentRunner, AgentStore
 
     store = AgentStore(tmp_path)
     session = store.create_session("provider-x", "model", "t")
@@ -434,8 +434,8 @@ def test_agent_decide_never_runs_denied_method(tmp_path, monkeypatch):
 
 def test_agent_decide_runs_approved_mcp_tool(tmp_path, monkeypatch):
     """Una aprobación de tool MCP (mcp__srv__tool) sí debe ejecutarse al aprobar."""
-    from backend.core.flows import mcp_servers
-    from backend.core.flows.agent import AgentRunner, AgentStore
+    from backend.core.agent.agent import AgentRunner, AgentStore
+    from backend.core.integrations import mcp_servers
 
     store = AgentStore(tmp_path)
     session = store.create_session("provider-x", "model", "t")

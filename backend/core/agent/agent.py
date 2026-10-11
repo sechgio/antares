@@ -23,11 +23,11 @@ from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
-from backend.core.flows import mcp_servers
-from backend.core.flows.agent_chat import chat, gated_methods, scrub_secrets
-from backend.core.flows.cancel import RunCancelled, await_or_cancel
+from backend.core.agent.agent_chat import chat, gated_methods, scrub_secrets
+from backend.core.agent.cancel import RunCancelled, await_or_cancel
 from backend.core.flows.runner import _CancelEvent, _validate_action_paths
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import mcp_servers
+from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, lane_for, timeout_ms_for
 from backend.core.scheduler import get_scheduler
 from backend.utils.atomic_write import atomic_write_json

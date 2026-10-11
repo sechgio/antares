@@ -22,8 +22,8 @@ import time
 import urllib.error
 import urllib.request
 
-from backend.core.flows import http_guard
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import http_guard
+from backend.core.integrations.types import JsonObject
 
 _PROTOCOL_VERSION = "2024-11-05"
 _CLIENT_INFO = {"name": "antares-flujos", "version": "1.0"}

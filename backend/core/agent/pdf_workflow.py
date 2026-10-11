@@ -12,7 +12,7 @@ import unicodedata
 from datetime import date
 from pathlib import Path
 
-from backend.core.flows.types import JsonObject
+from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_output_file
 from backend.utils.validators import sanitizar_nombre
 

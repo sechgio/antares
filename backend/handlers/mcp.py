@@ -7,8 +7,8 @@
 from __future__ import annotations
 
 from backend.core.exceptions import ValidationError
-from backend.core.flows import mcp_servers
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import mcp_servers
+from backend.core.integrations.types import JsonObject
 from backend.handlers.common import validate_params, with_locale
 
 

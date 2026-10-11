@@ -9,7 +9,7 @@ vi.mock('./FlowEditor', () => ({ default: () => {
   const [value, setValue] = useState('');
   return <input aria-label="Borrador del paso" value={value} onChange={(e) => setValue(e.target.value)} />;
 } }));
-vi.mock('./ProvidersView', () => ({ default: () => <p>Configurar proveedores</p> }));
+vi.mock('../connections/ProvidersView', () => ({ default: () => <p>Configurar proveedores</p> }));
 
 it('mantiene el borrador al visitar otra sección y regresar al editor', () => {
   render(<ToastProvider><FlowsView /></ToastProvider>);

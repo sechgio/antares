@@ -7,7 +7,8 @@ import time
 
 import pytest
 
-from backend.core.flows import agent_chat, agent_node
+from backend.core.agent import agent_chat
+from backend.core.flows import agent_node
 from backend.core.flows.runner import FlowRunner
 from backend.core.flows.store import FlowStore
 

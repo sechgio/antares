@@ -9,8 +9,8 @@ import fitz
 import pytest
 from PIL import Image
 
+from backend.core.agent import agent_chat
 from backend.core.canvas.models import create_empty_document
-from backend.core.flows import agent_chat
 from backend.core.flows.runner import FlowRunner, _CancelEvent, _retry_config
 from backend.core.flows.scheduler import FlowScheduler
 from backend.core.flows.store import FlowStore
@@ -844,9 +844,9 @@ def test_report_batch_render_blocks_changed_photos_and_does_not_publish_wrong_pa
 
 @pytest.mark.parametrize("target", ["https://other.example/end", "https://api.github.com:8443/end", "http://api.github.com/end"])
 def test_redirect_removes_custom_credentials_when_origin_changes(monkeypatch, target):
-    from backend.core.flows.http_guard import FlowRedirectHandler
+    from backend.core.integrations.http_guard import FlowRedirectHandler
 
-    monkeypatch.setattr("backend.core.flows.http_guard.assert_allowed_url", lambda url: None)
+    monkeypatch.setattr("backend.core.integrations.http_guard.assert_allowed_url", lambda url: None)
     req = urllib.request.Request("https://api.github.com/start", headers={
         "X-Api-Key": "secret", "Cookie": "session=secret", "X-Custom-Credential": "secret", "Accept": "application/json",
     })
@@ -858,9 +858,9 @@ def test_redirect_removes_custom_credentials_when_origin_changes(monkeypatch, ta
 
 
 def test_redirect_does_not_send_bearer_to_another_port_or_allowed_host(monkeypatch):
-    from backend.core.flows.http_guard import FlowRedirectHandler
+    from backend.core.integrations.http_guard import FlowRedirectHandler
 
-    monkeypatch.setattr("backend.core.flows.http_guard.assert_allowed_url", lambda url: None)
+    monkeypatch.setattr("backend.core.integrations.http_guard.assert_allowed_url", lambda url: None)
     req = urllib.request.Request("https://api.github.com/start", headers={"Authorization": "Bearer secret"})
     handler = FlowRedirectHandler(frozenset({"api.github.com", "other.example"}))
     for target in ("https://api.github.com:8443/end", "https://other.example/end"):
@@ -869,9 +869,9 @@ def test_redirect_does_not_send_bearer_to_another_port_or_allowed_host(monkeypat
 
 
 def test_redirect_preserves_custom_headers_on_same_origin(monkeypatch):
-    from backend.core.flows.http_guard import FlowRedirectHandler
+    from backend.core.integrations.http_guard import FlowRedirectHandler
 
-    monkeypatch.setattr("backend.core.flows.http_guard.assert_allowed_url", lambda url: None)
+    monkeypatch.setattr("backend.core.integrations.http_guard.assert_allowed_url", lambda url: None)
     req = urllib.request.Request("https://api.github.com/start", headers={"X-Api-Key": "secret"})
     redirected = FlowRedirectHandler(frozenset({"api.github.com"})).redirect_request(
         req, None, 302, "Found", {}, "https://api.github.com:443/end",

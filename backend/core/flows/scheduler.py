@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from backend.core.flows.schema import normalize_graph
 from backend.core.flows.store import FlowStore, _utc_now
-from backend.core.flows.types import JsonObject
+from backend.core.integrations.types import JsonObject
 
 if TYPE_CHECKING:
     from backend.core.flows.runner import FlowRunner

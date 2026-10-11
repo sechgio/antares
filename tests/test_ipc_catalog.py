@@ -13,7 +13,8 @@ def _catalog() -> dict:
 
 
 def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_secrets(monkeypatch):
-    from backend.core.flows import agent_chat, connections
+    from backend.core.agent import agent_chat
+    from backend.core.integrations import connections
     from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, input_schema_for
     from backend.handlers import flows
 

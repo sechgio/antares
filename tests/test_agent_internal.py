@@ -11,8 +11,9 @@ import time
 
 import pytest
 
+from backend.core.agent import agent
 from backend.core.exceptions import NotFoundError, ValidationError
-from backend.core.flows import agent, ai_providers, mcp_servers
+from backend.core.integrations import ai_providers, mcp_servers
 from backend.handlers import agent_internal
 
 

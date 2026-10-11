@@ -15,11 +15,12 @@ import ntpath
 from collections.abc import Callable
 from typing import Any
 
-from backend.core.flows import agent_chat, mcp_servers
-from backend.core.flows.agent_chat import gated_methods
-from backend.core.flows.cancel import await_or_cancel
+from backend.core.agent import agent_chat
+from backend.core.agent.agent_chat import gated_methods
+from backend.core.agent.cancel import await_or_cancel
 from backend.core.flows.expr import interpolate_text, resolve
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import mcp_servers
+from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, lane_for
 
 _MAX_TOOL_RESULT_CHARS = 4000

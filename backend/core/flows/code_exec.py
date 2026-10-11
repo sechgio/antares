@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 
-from backend.core.flows.types import JsonObject
+from backend.core.integrations.types import JsonObject
 
 _MAX_OUTPUT_CHARS = 8000
 

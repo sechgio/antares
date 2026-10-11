@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol, cast
 
-from backend.core.flows.types import JsonObject
+from backend.core.integrations.types import JsonObject
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)

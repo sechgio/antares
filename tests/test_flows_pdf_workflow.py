@@ -11,8 +11,8 @@ import fitz
 import pytest
 from PIL import Image
 
+from backend.core.agent import pdf_workflow
 from backend.core.canvas.models import create_empty_document
-from backend.core.flows import pdf_workflow
 from backend.core.flows.runner import FlowRunner, _CancelEvent
 from backend.core.flows.store import FlowStore
 from backend.handlers import flows

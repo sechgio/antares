@@ -17,8 +17,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from backend.core.flows import http_guard, vault
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import http_guard, vault
+from backend.core.integrations.types import JsonObject
 from backend.utils.paths import resource_path, user_data_path
 
 logger = logging.getLogger(__name__)

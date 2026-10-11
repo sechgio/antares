@@ -11,9 +11,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from backend.core.flows import connections, vault
 from backend.core.flows.runner import FlowRunner
 from backend.core.flows.store import FlowStore
+from backend.core.integrations import connections, vault
 
 
 def test_vault_roundtrip(tmp_path):
@@ -250,7 +250,7 @@ def test_http_request_connection_ref_sends_bearer(monkeypatch, store):
 
     _public_dns(monkeypatch)
     monkeypatch.setattr("urllib.request.OpenerDirector.open", fake_open)
-    monkeypatch.setattr("backend.core.flows.connections.fresh_access_token", lambda p: "tok-9")
+    monkeypatch.setattr("backend.core.integrations.connections.fresh_access_token", lambda p: "tok-9")
 
     flow = store.create(
         "HttpConn",
@@ -289,7 +289,7 @@ def test_http_request_connection_ref_rejects_foreign_host(monkeypatch, store):
 
     _public_dns(monkeypatch)
     monkeypatch.setattr("urllib.request.OpenerDirector.open", fake_open)
-    monkeypatch.setattr("backend.core.flows.connections.fresh_access_token", lambda p: "tok-9")
+    monkeypatch.setattr("backend.core.integrations.connections.fresh_access_token", lambda p: "tok-9")
 
     flow = store.create(
         "HttpForeign",
@@ -314,8 +314,8 @@ def test_http_request_connection_ref_denies_empty_token_hosts(monkeypatch, store
 
     _public_dns(monkeypatch)
     monkeypatch.setattr("urllib.request.OpenerDirector.open", fake_open)
-    monkeypatch.setattr("backend.core.flows.connections.get_provider", lambda p: {})
-    monkeypatch.setattr("backend.core.flows.connections.fresh_access_token", lambda p: "tok-9")
+    monkeypatch.setattr("backend.core.integrations.connections.get_provider", lambda p: {})
+    monkeypatch.setattr("backend.core.integrations.connections.fresh_access_token", lambda p: "tok-9")
 
     flow = store.create(
         "HttpNoHosts",
@@ -410,7 +410,7 @@ def test_http_request_private_host_with_opt_out(monkeypatch, store):
 
 
 def test_redirect_strips_authorization_off_allowlist(monkeypatch):
-    from backend.core.flows.http_guard import FlowRedirectHandler
+    from backend.core.integrations.http_guard import FlowRedirectHandler
 
     _public_dns(monkeypatch)
     req = urllib.request.Request(
@@ -429,7 +429,7 @@ def test_redirect_strips_authorization_off_allowlist(monkeypatch):
 
 @pytest.mark.parametrize("target", ["http://api.github.com/user", "http://other.example/user"])
 def test_redirect_rejects_http_with_authorization(monkeypatch, target):
-    from backend.core.flows.http_guard import FlowRedirectHandler
+    from backend.core.integrations.http_guard import FlowRedirectHandler
 
     _public_dns(monkeypatch)
     req = urllib.request.Request("https://api.github.com/user")
@@ -440,7 +440,7 @@ def test_redirect_rejects_http_with_authorization(monkeypatch, target):
 
 
 def test_redirect_rejects_private_target():
-    from backend.core.flows.http_guard import FlowRedirectHandler
+    from backend.core.integrations.http_guard import FlowRedirectHandler
 
     req = urllib.request.Request("https://api.github.com/x")
     handler = FlowRedirectHandler(frozenset({"api.github.com"}))
@@ -482,7 +482,7 @@ def test_validate_http_request_requires_url(store):
 def test_https_preserves_hostname_for_tls(monkeypatch):
     from unittest.mock import Mock
 
-    from backend.core.flows.http_guard import _PublicHTTPSConnection
+    from backend.core.integrations.http_guard import _PublicHTTPSConnection
 
     _public_dns(monkeypatch)
     sock = Mock()

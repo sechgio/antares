@@ -11,7 +11,7 @@ import json
 import re
 from typing import Any
 
-from backend.core.flows.types import JsonObject
+from backend.core.integrations.types import JsonObject
 
 _EXPR_PREFIX = "="
 _SEGMENT_RE = re.compile(r"\.([A-Za-z_][A-Za-z0-9_]*)|\[(\d+|\"[^\"]*\"|'[^']*')\]")

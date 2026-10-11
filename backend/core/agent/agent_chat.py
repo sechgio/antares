@@ -17,8 +17,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from backend.core.flows import ai_providers, http_guard, mcp_servers
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import ai_providers, http_guard, mcp_servers
+from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods, input_schema_for
 
 MAX_MESSAGE_CHARS = 12_000

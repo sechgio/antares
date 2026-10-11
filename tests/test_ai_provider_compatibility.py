@@ -4,8 +4,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from backend.core.flows import agent, agent_chat, ai_providers, vault
+from backend.core.agent import agent, agent_chat
 from backend.core.flows.runner import FlowRunner
+from backend.core.integrations import ai_providers, vault
 from backend.handlers import agent as agent_handlers
 from backend.handlers import flows as flow_handlers
 

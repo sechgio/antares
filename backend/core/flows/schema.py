@@ -12,7 +12,7 @@ import json
 import re
 from typing import Any
 
-from backend.core.flows.types import JsonObject
+from backend.core.integrations.types import JsonObject
 from backend.utils.paths import resource_path
 
 IMPLEMENTED_NODE_KINDS = frozenset(

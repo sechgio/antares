@@ -28,14 +28,16 @@ from concurrent import futures
 from pathlib import Path
 from typing import Any
 
-from backend.core.flows import agent_chat, agent_node, code_exec, connections, events, mcp_servers
-from backend.core.flows.cancel import RunCancelled as _RunCancelled
-from backend.core.flows.cancel import await_or_cancel as _await_or_cancel
+from backend.core.agent import agent_chat
+from backend.core.agent.cancel import RunCancelled as _RunCancelled
+from backend.core.agent.cancel import await_or_cancel as _await_or_cancel
+from backend.core.flows import agent_node, code_exec, events
 from backend.core.flows.expr import resolve
-from backend.core.flows.http_guard import assert_allowed_url, build_flow_opener
 from backend.core.flows.schema import IMPLEMENTED_NODE_KINDS, loop_body_regions, normalize_graph, validate_graph
 from backend.core.flows.store import MAX_TOTAL_RUNS, FlowStore, _utc_now
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import connections, mcp_servers
+from backend.core.integrations.http_guard import assert_allowed_url, build_flow_opener
+from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import (
     FLOW_ACTION_METHODS,
     ORCHESTRATABLE_METHODS,

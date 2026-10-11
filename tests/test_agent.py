@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from backend.core.flows import agent, agent_chat
+from backend.core.agent import agent, agent_chat
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods
 
 
@@ -46,7 +46,7 @@ def test_tool_specs_cover_readonly_and_gated():
 
 @pytest.mark.parametrize("style", ["openai", "anthropic"])
 def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style):
-    from backend.core.flows import mcp_servers
+    from backend.core.integrations import mcp_servers
 
     schema = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
     monkeypatch.setattr(mcp_servers, "list_servers", lambda: [{"id": "demo", "name": "Demo"}])

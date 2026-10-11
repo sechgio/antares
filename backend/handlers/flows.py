@@ -10,14 +10,14 @@ from pathlib import Path
 
 from backend.core import flows as _flows_core
 from backend.core.exceptions import NotFoundError, ValidationError
-from backend.core.flows import ai_providers as _ai_providers
-from backend.core.flows import connections as _connections
 from backend.core.flows import os_tasks as _os_tasks
 from backend.core.flows import webhooks as _webhooks
 from backend.core.flows.events import APP_EVENTS
 from backend.core.flows.runner import FlowRunner, cancel_run
 from backend.core.flows.store import FlowStore, _utc_now, approval_expired
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import ai_providers as _ai_providers
+from backend.core.integrations import connections as _connections
+from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import FLOW_ACTION_METHODS, ORCHESTRATABLE_METHODS
 from backend.handlers import HANDLERS as _REGISTRY
 from backend.handlers.common import get_item_id, validate_params, with_locale
@@ -260,7 +260,7 @@ def _orchestratable_methods(params: JsonObject) -> JsonObject:
 def _read_images(params: JsonObject) -> JsonObject:
     """Entrada local de un flujo; solo carpetas autorizadas por el bridge."""
     if params.get("guided_pdf") is True:
-        from backend.core.flows.pdf_workflow import prepare
+        from backend.core.agent.pdf_workflow import prepare
 
         return prepare({**params, "preview_pdf": False})
     folder = str(params.get("source_folder") or "").strip()
@@ -546,7 +546,7 @@ def _batch_template_profile(name: str) -> JsonObject:
 @with_locale
 def _render_pdf(params: JsonObject) -> JsonObject:
     if params.get("guided_pdf") is True:
-        from backend.core.flows.pdf_workflow import export_pdf
+        from backend.core.agent.pdf_workflow import export_pdf
 
         return export_pdf(params)
     from backend.utils.atomic_write import atomic_output_file
@@ -717,7 +717,7 @@ def _render_pdf(params: JsonObject) -> JsonObject:
 
 @with_locale
 def _pdf_preview(params: JsonObject) -> JsonObject:
-    from backend.core.flows.pdf_workflow import prepare
+    from backend.core.agent.pdf_workflow import prepare
 
     return prepare({**params, "guided_pdf": True, "preview_pdf": True})
 
