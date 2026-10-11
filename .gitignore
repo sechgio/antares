@@ -90,6 +90,12 @@ docs/*
 !docs/adr/
 !docs/adr/**
 
+# Cadena multimedia del editor: binarios preparados ignorados,
+# manifest y avisos de licencia versionables
+media/*
+!media/manifest.json
+!media/LICENSE-THIRD-PARTY.txt
+
 # Ruff cache
 .ruff_cache/
 .mypy_cache/

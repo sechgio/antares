@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "description": "Cadena de herramientas multimedia del editor. Build nativo Windows x64 preparado para desarrollo; los binarios no se commitean (.gitignore) y se reconstruyen con scripts/prepare-editor-media.js.",
+  "build": {
+    "name": "ffmpeg-9.0.1-win32-x64 (BtbN-style full build, GPL v3)",
+    "version": "n9.0.1-11-ge47273f4d9-20260831",
+    "source": "https://github.com/BtbN/FFmpeg-Builds",
+    "configurationFlags": [
+      "--enable-gpl",
+      "--enable-version3",
+      "--enable-libx264",
+      "--enable-libx265",
+      "--enable-libvpx",
+      "--enable-libopus",
+      "--enable-libmp3lame",
+      "--enable-libvidstab",
+      "--enable-librubberband",
+      "--enable-libwebp",
+      "--enable-libfreetype",
+      "--enable-fontconfig",
+      "--enable-libass",
+      "--enable-libfribidi"
+    ],
+    "license": "GPL-3.0-or-later",
+    "licenseNotes": "Incluye filtros GPL (delogo), vid.stab y rubberband. La distribución del producto debe acompañar el instalador con los avisos de licencia y la oferta de código fuente de los componentes GPL/LGPL. Ver media/LICENSE-THIRD-PARTY.md.",
+    "capabilities": {
+      "filters": ["delogo", "vidstabdetect", "vidstabtransform", "rubberband", "atempo", "boxblur", "chromakey", "colorkey", "ebur128", "colorchannelmixer", "drawtext"],
+      "videoEncoders": ["libx264", "libx265", "libvpx-vp9", "libwebp", "apng", "png", "mjpeg"],
+      "audioEncoders": ["aac", "libopus", "libmp3lame"]
+    }
+  },
+  "binaries": [
+    {
+      "path": "ffmpeg.exe",
+      "sha256": "daeea959fd6a400eec29bf1ede560962e92546ec31fe5f60ccdc076a4c3db3fa",
+      "byteSize": 144862208
+    },
+    {
+      "path": "ffprobe.exe",
+      "sha256": "fe3a94d2b2899191234870d95e85fd2bcc9c0cee830e7d8d78fcea8a2375155f",
+      "byteSize": 144658944
+    }
+  ]
+}
