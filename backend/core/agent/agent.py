@@ -25,12 +25,11 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 from backend.core.agent import resource_grants
-from backend.core.agent.agent_chat import chat, gated_methods, scrub_secrets
+from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, scrub_secrets
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import (
-    ORCHESTRATABLE_METHODS,
     allows_raw_output_path,
     file_tokens_for,
     lane_for,
@@ -624,7 +623,7 @@ class AgentRunner:
             invocable = (
                 mcp_servers.parse_agent_tool(method) is not None
                 or method in gated_methods()
-                or method in ORCHESTRATABLE_METHODS
+                or method in readonly_methods()
             )
             if invocable:
                 result = self._execute_call(
@@ -800,7 +799,7 @@ class AgentRunner:
                     name = str(call.get("name") or "")
                     is_mcp = mcp_servers.parse_agent_tool(name) is not None
                     call["gated"] = is_mcp or name in gated
-                    call["allowed"] = call["gated"] or name in ORCHESTRATABLE_METHODS
+                    call["allowed"] = call["gated"] or name in readonly_methods()
                     call["status"] = "queued"
                     call["result"] = None
                 self._store.append_message(

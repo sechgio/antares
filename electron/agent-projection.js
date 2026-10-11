@@ -122,6 +122,15 @@ function textOf(message) {
     .join('');
 }
 
+// Texto del humano sin el bloque de contexto de sus @menciones.
+function userTextOf(message) {
+  if (!message || typeof message.content === 'string') return textOf(message);
+  return (message.content || [])
+    .filter((block) => block && block.type === 'text' && !String(block.text || '').startsWith(shared.CONTEXT_MARKER))
+    .map((block) => block.text || '')
+    .join('');
+}
+
 function entryTs(entry, message) {
   if (message && typeof message.timestamp === 'number') return message.timestamp;
   if (entry.data && typeof entry.data.ts === 'number') return entry.data.ts;
@@ -158,7 +167,7 @@ async function projectMessages(conv, session) {
   for (const entry of entries) {
     const msg = entry.model && entry.model[0];
     if (entry.kind === 'pi.user') {
-      messages.push({ role: 'user', content: textOf(msg), ts: entryTs(entry, msg) });
+      messages.push({ role: 'user', content: userTextOf(msg), ts: entryTs(entry, msg) });
       continue;
     }
     if (entry.kind === NOTICE_KIND) {

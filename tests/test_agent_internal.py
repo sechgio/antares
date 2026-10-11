@@ -126,7 +126,7 @@ def test_dispatch_dedup_never_reexecutes(store, monkeypatch):
     executed = []
     runner = agent.AgentRunner(store, lambda name: lambda params: executed.append(name) or {"ok": 1})
     monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
-    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"flows_list"})
+    monkeypatch.setattr(agent_internal._agent_chat, "readonly_methods", lambda: ["flows_list"])
 
     params = {"session_id": "s1", "call_id": "c1", "name": "flows_list", "params": {}}
     assert _dispatch(**params)["result"] is None  # arranca en segundo plano
@@ -176,7 +176,7 @@ def test_dispatch_rejects_forged_file_grants(store, monkeypatch):
     executed = []
     runner = agent.AgentRunner(store, lambda name: lambda params: executed.append(params) or {"ok": 1})
     monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
-    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"flows_list"})
+    monkeypatch.setattr(agent_internal._agent_chat, "readonly_methods", lambda: ["flows_list"])
 
     _dispatch(session_id="s1", call_id="c1", name="flows_list",
               params={"_file_grants": {"write": ["C:/otra"]}})
@@ -212,7 +212,7 @@ def test_concurrent_dispatches_start_a_single_worker(store, monkeypatch):
         return {"ok": 1}
 
     monkeypatch.setattr(agent, "get_agent_runner", lambda: agent.AgentRunner(store, lambda name: slow))
-    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"lectura"})
+    monkeypatch.setattr(agent_internal._agent_chat, "readonly_methods", lambda: ["lectura"])
     barrier = threading.Barrier(8)
     outcomes = []
 
@@ -236,7 +236,7 @@ def test_same_call_id_with_other_intent_is_a_conflict(store, monkeypatch):
     executed = []
     runner = agent.AgentRunner(store, lambda name: lambda params: executed.append(params) or {"ok": 1})
     monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
-    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"lectura"})
+    monkeypatch.setattr(agent_internal._agent_chat, "readonly_methods", lambda: ["lectura"])
     _dispatch(session_id="s1", call_id="c1", name="lectura", params={"a": 1})
     _wait_result("c1")
     conflict = _dispatch(session_id="s1", call_id="c1", name="lectura", params={"a": 2})
@@ -248,7 +248,7 @@ def test_repeated_call_id_in_another_conversation_is_independent(store, monkeypa
     executed = []
     runner = agent.AgentRunner(store, lambda name: lambda params: executed.append(params) or {"n": params["n"]})
     monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
-    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"lectura"})
+    monkeypatch.setattr(agent_internal._agent_chat, "readonly_methods", lambda: ["lectura"])
     _dispatch(session_id="s1", call_id="call-1", name="lectura", params={"n": 1})
     _dispatch(session_id="s2", call_id="call-1", name="lectura", params={"n": 2})
     assert json.loads(_wait_result("call-1", session_id="s1")["result"]) == {"n": 1}
@@ -299,7 +299,7 @@ def test_large_result_keeps_full_receipt_and_summarizes_for_the_model(store, mon
     big = {"rows": ["x" * 100] * 500, "error": "fallo estructurado"}
     runner = agent.AgentRunner(store, lambda name: lambda params: big)
     monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
-    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"lectura"})
+    monkeypatch.setattr(agent_internal._agent_chat, "readonly_methods", lambda: ["lectura"])
     _dispatch(session_id="s1", call_id="c1", name="lectura", params={})
     summary = json.loads(_wait_result("c1")["result"])
     assert summary["truncated"] is True and summary["total_chars"] > 6_000

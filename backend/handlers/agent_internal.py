@@ -21,13 +21,13 @@ import threading
 
 from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
+from backend.core.agent import modules as _agent_modules
 from backend.core.agent import resource_grants
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.integrations import ai_providers as _ai_providers
 from backend.core.integrations import mcp_servers as _mcp_servers
 from backend.core.integrations.types import JsonObject
-from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 from backend.handlers.common import validate_params, with_locale
 
 
@@ -159,6 +159,18 @@ def _grants_add(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("text")
+def _mentions(params: JsonObject) -> JsonObject:
+    """Resuelve las ``@menciones`` del texto del humano a módulos de Antares y
+    prepara el contexto que acompaña su mensaje al modelo."""
+    result = _agent_modules.resolve_mentions(str(params["text"]))
+    if result["modules"]:
+        names = [str(spec["name"]) for spec in _agent_chat.tool_specs()]
+        result["context"] = _agent_modules.mention_context(result["modules"], names)
+    return result
+
+
+@with_locale
 @validate_params("session_id")
 def _grants_revoke(params: JsonObject) -> JsonObject:
     return {"revoked": _store().revoke_grants(str(params["session_id"]))}
@@ -239,7 +251,7 @@ def _dispatch(params: JsonObject) -> JsonObject:
 
     is_mcp = _mcp_servers.parse_agent_tool(name) is not None
     gated = is_mcp or name in _agent_chat.gated_methods()
-    if not gated and name not in ORCHESTRATABLE_METHODS:
+    if not gated and name not in _agent_chat.readonly_methods():
         return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
     approval_id = params.get("approval_id")
     if gated and not isinstance(approval_id, str):
@@ -333,4 +345,5 @@ HANDLERS = {
     "agent_internal_dispatch_cancel": _dispatch_cancel,
     "agent_internal_grants_add": _grants_add,
     "agent_internal_grants_revoke": _grants_revoke,
+    "agent_internal_mentions": _mentions,
 }

@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "description": "Módulos de Antares que el agente puede usar y sus menciones. Las herramientas salen de los handlers del catálogo IPC; aquí solo se agrupan, se nombran y se declara su disponibilidad.",
+  "modules": {
+    "conversion": {
+      "label": "Conversión y renombrado",
+      "aliases": ["conversion", "conversión", "convertir", "renombrado", "renombrar"],
+      "handlers": ["conversion"],
+      "methods": ["rename_patterns_get", "rename_patterns_update", "rename_patterns_reset"]
+    },
+    "formatos": {
+      "label": "Formatos PDF",
+      "aliases": ["formatos", "formato", "formatos-pdf"],
+      "handlers": ["formatos"]
+    },
+    "sellador": {
+      "label": "Sellador",
+      "aliases": ["sellador", "sello", "sellar"],
+      "handlers": ["sellador"]
+    },
+    "padron": {
+      "label": "Generar Padrones",
+      "aliases": ["padron", "padrón", "padrones"],
+      "handlers": [],
+      "unavailable": "El PDF de Padrones se genera solo en su pantalla; el agente aún no tiene un adaptador para él."
+    },
+    "volantes": {
+      "label": "Generar Volantes",
+      "aliases": ["volantes", "volante"],
+      "handlers": ["spreadsheet"],
+      "unavailable": "El PDF de Volantes se genera solo en su pantalla; el agente puede leer hojas de cálculo pero aún no generar el documento."
+    },
+    "reportesCampo": {
+      "label": "Reportes de Campo",
+      "aliases": ["reportes-campo", "reportes", "catalogo", "catálogo"],
+      "handlers": ["database"],
+      "methods": ["history_list", "history_get"]
+    },
+    "technicalReports": {
+      "label": "Informes técnicos",
+      "aliases": ["informes-tecnicos", "informes-técnicos", "informe-tecnico", "informe-técnico"],
+      "handlers": ["technical_reports"]
+    },
+    "informesV2": {
+      "label": "Informes v2",
+      "aliases": ["informes-v2", "informev2", "informe-v2"],
+      "handlers": ["informes_v2"]
+    },
+    "fichasTecnicas": {
+      "label": "Fichas Técnicas",
+      "aliases": ["fichas", "fichas-tecnicas", "fichas-técnicas", "ficha"],
+      "handlers": ["fichas_tecnicas"]
+    },
+    "previewPanel": {
+      "label": "Generador Reportes",
+      "aliases": ["generador", "plantillas", "plantilla", "reportes-html"],
+      "handlers": ["templates"]
+    },
+    "canvas": {
+      "label": "Canvas",
+      "aliases": ["canvas", "lienzo"],
+      "handlers": ["canvas"]
+    },
+    "imageOptimizer": {
+      "label": "Optimizador",
+      "aliases": ["optimizador", "optimizar"],
+      "handlers": ["optimizer"]
+    },
+    "panelAvisoCorte": {
+      "label": "Aviso de Corte",
+      "aliases": ["aviso-de-corte", "aviso", "corte"],
+      "handlers": ["panel_aviso_corte"]
+    },
+    "ubicaciones": {
+      "label": "Ubicaciones",
+      "aliases": ["ubicaciones", "ubicacion", "ubicación", "mapas"],
+      "handlers": ["ubicaciones"]
+    },
+    "evidenciaVolanteo": {
+      "label": "Evidencia Volanteo",
+      "aliases": ["evidencia", "evidencia-volanteo"],
+      "handlers": ["evidencia_volanteo"]
+    },
+    "printing": {
+      "label": "Impresión",
+      "aliases": ["imprimir", "impresora", "impresion", "impresión"],
+      "handlers": ["printing"]
+    },
+    "history": {
+      "label": "Historial",
+      "aliases": ["historial"],
+      "handlers": ["history"]
+    },
+    "autoimg": {
+      "label": "AutoIMG",
+      "aliases": ["autoimg"],
+      "handlers": [],
+      "unavailable": "AutoIMG opera con su cuenta de Google desde Electron; el agente aún no tiene un adaptador para sus funciones."
+    },
+    "espacios": {
+      "label": "Espacios",
+      "aliases": ["espacios", "espacio"],
+      "handlers": [],
+      "unavailable": "Espacios depende de la sesión cloud del usuario; el agente aún no tiene un adaptador para sus datos."
+    },
+    "app": {
+      "label": "Antares",
+      "aliases": ["antares", "app"],
+      "handlers": ["info", "diagnostics", "theme"]
+    }
+  }
+}

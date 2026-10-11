@@ -28,7 +28,7 @@ const INTERNAL_RPCS = [
   'agent_internal_approval_decide', 'agent_internal_approvals_pending',
   'agent_internal_approvals_deny_session', 'agent_internal_dispatch',
   'agent_internal_dispatch_result', 'agent_internal_dispatch_cancel',
-  'agent_internal_grants_add', 'agent_internal_grants_revoke',
+  'agent_internal_grants_add', 'agent_internal_grants_revoke', 'agent_internal_mentions',
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -96,6 +96,13 @@ function makeBridge() {
       case 'agent_internal_grants_add':
         state.grants.push(params);
         return { granted: params.paths.filter((p) => p.endsWith('.pdf')), rejected: params.paths.filter((p) => !p.endsWith('.pdf')).map((path) => ({ path, reason: 'una carpeta requiere seleccionar los archivos concretos' })) };
+      case 'agent_internal_mentions': {
+        const modules = /@sellador\b/.test(params.text) ? ['sellador'] : [];
+        const unknown = /@nada\b/.test(params.text) ? ['nada'] : [];
+        return modules.length
+          ? { modules, unknown, ambiguous: [], context: 'El usuario mencionó estos módulos de Antares:\n- Sellador: herramientas sellador_apply' }
+          : { modules, unknown, ambiguous: [] };
+      }
       case 'agent_internal_grants_revoke':
         state.revoked.push(params.session_id);
         return { revoked: 1 };
@@ -222,6 +229,27 @@ async function main() {
     assert(await waitIdle(session.id), 'el segundo turno termina');
     await runtime.handlers.agent_session_delete({ id: session.id });
     assert(state.revoked.includes(session.id), 'borrar la conversación revoca sus archivos');
+    await runtime.shutdown();
+  }
+
+  // --- @menciones: el modelo recibe el contexto y el transcript no lo muestra ---
+  {
+    const { bridge } = makeBridge();
+    const seen = [];
+    const capture = (context) => {
+      seen.push(JSON.stringify(context.messages));
+      return fauxAssistantMessage('entendido');
+    };
+    await openFaux([capture], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const sent = await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Usa @sellador y @nada' });
+    assert(JSON.stringify(sent.mentions) === JSON.stringify({ modules: ['sellador'], unknown: ['nada'], ambiguous: [] }),
+      'el envío informa módulos resueltos y menciones desconocidas');
+    assert(await waitIdle(session.id), 'el turno termina');
+    assert(seen.length === 1 && seen[0].includes('[Contexto de Antares]') && seen[0].includes('sellador_apply'),
+      'el modelo recibe el contexto de la mención');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(messages[0].role === 'user' && messages[0].content === 'Usa @sellador y @nada', 'el transcript muestra solo el texto del usuario');
     await runtime.shutdown();
   }
 

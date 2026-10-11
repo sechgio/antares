@@ -9,6 +9,9 @@ const INTERRUPTED_RESULT = JSON.stringify({
   error: 'Acción interrumpida: el resultado puede ser incierto. Compruébalo antes de repetirla.',
 });
 const NOTICE_KIND = 'antares.notice';
+// Bloque añadido al mensaje del usuario con el contexto de sus @menciones:
+// lo lee el modelo y la proyección lo oculta del transcript.
+const CONTEXT_MARKER = '[Contexto de Antares]';
 
 const shared = {
   deps: null, // {pi, chord, aiOpenai, aiAnthropic, bridge}
@@ -25,6 +28,7 @@ const shared = {
   providerOverrides: new Map(), // providerId -> Provider (tests)
   INTERRUPTED_RESULT,
   NOTICE_KIND,
+  CONTEXT_MARKER,
 };
 
 function bridge(method, params) {

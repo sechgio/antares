@@ -251,10 +251,14 @@ async function messageSend(params) {
   const files = paths.length
     ? await bridge('agent_internal_grants_add', { session_id: sessionId, request_id: requestId || null, paths })
     : { granted: [], rejected: [] };
+  const mentions = await bridge('agent_internal_mentions', { text: content });
+  const input = mentions.context
+    ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${mentions.context}` }]
+    : content;
   shared.rounds.delete(session.conversationId);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      await conv.submit({ type: 'input', content, whenBusy: 'reject', ...(requestId ? { requestId } : {}) }, ctx());
+      await conv.submit({ type: 'input', content: input, whenBusy: 'reject', ...(requestId ? { requestId } : {}) }, ctx());
       break;
     } catch (err) {
       if (!(err && (err.name === 'ConversationBusy' || /busy/i.test(err.message || '')))) throw err;
@@ -271,7 +275,11 @@ async function messageSend(params) {
       if (s.title === 'Conversación') s.title = content.trim().slice(0, 60) || 'Conversación';
     }
   });
-  return { accepted: true, files };
+  return {
+    accepted: true,
+    files,
+    mentions: { modules: mentions.modules, unknown: mentions.unknown, ambiguous: mentions.ambiguous },
+  };
 }
 
 async function _admittedRequest(session, requestId) {
@@ -285,7 +293,9 @@ async function _admittedRequest(session, requestId) {
 async function toolsList() {
   const { tools } = await bridge('agent_internal_tools', {});
   return {
-    tools: tools.map((t) => ({ name: t.name, gated: !!t.gated, kind: t.kind === 'mcp' ? 'mcp' : 'backend' })),
+    tools: tools.map((t) => ({
+      name: t.name, gated: !!t.gated, kind: t.kind === 'mcp' ? 'mcp' : 'backend', module: t.module || null,
+    })),
   };
 }
 

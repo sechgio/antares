@@ -32,11 +32,19 @@ _ERR_BODY_MAX_BYTES = 4_096
 _ERR_MSG_MAX_CHARS = 300
 
 # Métodos backend que el agente nunca debe invocar (ni siquiera con aprobación):
-# vault/claves, el propio canal del agente y borrados destructivos.
-_DENIED_PREFIXES = ("ai_provider_", "connections_token_", "agent_")
-_DENIED_METHODS = frozenset({
-    "db_clear", "mcp_server_add", "mcp_server_delete", "mcp_tool_call",
-})
+# vault/claves, configuración de proveedores y MCP, canales internos y el propio
+# canal del agente, y borrados destructivos.
+_DENIED_PREFIXES = ("ai_provider_", "ai_providers_", "connections_token_", "agent_", "mcp_server")
+_DENIED_METHODS = frozenset({"db_clear", "mcp_tool_call", "telemetry"})
+
+
+def _denied(method: str) -> bool:
+    return method in _DENIED_METHODS or method.startswith(_DENIED_PREFIXES)
+
+
+def readonly_methods() -> list[str]:
+    """Lecturas que el agente ejecuta sin aprobación."""
+    return sorted(m for m in ORCHESTRATABLE_METHODS if not _denied(m))
 
 
 # Claves cuyo valor nunca viaja al LLM: credenciales de nodos (webhook, headers
@@ -72,26 +80,30 @@ def gated_methods() -> list[str]:
     return sorted(
         m
         for m in backend_methods()
-        if m not in ORCHESTRATABLE_METHODS and m not in _DENIED_METHODS and not m.startswith(_DENIED_PREFIXES)
+        if m not in ORCHESTRATABLE_METHODS and not _denied(m)
     )
 
 
 def tool_specs() -> list[JsonObject]:
     """Specs de herramientas para el modelo (formato neutro, se adapta al proveedor)."""
+    from backend.core.agent import modules
+
     specs: list[JsonObject] = [
         {
             "name": m,
-            "description": f"Antares · {m} (solo lectura)",
+            "description": f"{modules.label_for(modules.module_for(m))} · {m} (solo lectura)",
             "gated": False,
+            "module": modules.module_for(m),
             "inputSchema": input_schema_for(m),
         }
-        for m in sorted(ORCHESTRATABLE_METHODS)
+        for m in readonly_methods()
     ]
     specs += [
         {
             "name": m,
-            "description": f"Antares · {m} (efecto: requiere aprobación del usuario)",
+            "description": f"{modules.label_for(modules.module_for(m))} · {m} (efecto: requiere aprobación del usuario)",
             "gated": True,
+            "module": modules.module_for(m),
             "inputSchema": input_schema_for(m),
         }
         for m in gated_methods()

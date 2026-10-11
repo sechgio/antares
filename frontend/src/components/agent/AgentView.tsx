@@ -331,6 +331,12 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
       for (const file of res.files?.rejected ?? []) {
         addToast({ message: `No se autorizó ${file.path}: ${file.reason}`, type: 'warning' });
       }
+      for (const mention of res.mentions?.unknown ?? []) {
+        addToast({ message: `@${mention} no corresponde a ningún módulo de Antares`, type: 'warning' });
+      }
+      for (const mention of res.mentions?.ambiguous ?? []) {
+        addToast({ message: `@${mention.mention} es ambiguo; escribe el nombre completo del módulo`, type: 'warning' });
+      }
       state.version += 1;
       void refreshSessions();
       await loadMessages(id);

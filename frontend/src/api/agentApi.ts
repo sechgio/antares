@@ -35,10 +35,17 @@ export interface AgentMessageFiles {
   rejected: { path: string; reason: string }[];
 }
 
+export interface AgentMessageMentions {
+  modules: string[];
+  unknown: string[];
+  ambiguous: { mention: string; modules: string[] }[];
+}
+
 export interface AgentToolSpec {
   name: string;
   gated: boolean;
   kind: 'backend' | 'mcp';
+  module?: string | null;
 }
 
 export interface AgentApproval {
@@ -70,7 +77,7 @@ export const agentApi = {
 
   // request_id identifica el envío: un reintento con el mismo id no crea otro encargo.
   agentMessageSend: (session_id: string, content: string, request_id: string) =>
-    _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles }>(
+    _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles; mentions?: AgentMessageMentions }>(
       'agent_message_send',
       { session_id, content, request_id },
     ),
