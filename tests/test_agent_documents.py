@@ -152,3 +152,27 @@ def test_numbered_formats_generate_one_pdf_per_number(store, monkeypatch):
     assert result["generated"] is True
     assert [f["pages"] for f in result["artifact"]["files"]] == [1, 1, 1]
     assert result["artifact"]["records"] == 3
+
+
+def test_file_read_returns_content_with_provenance(store, sheet, tmp_path):
+    read = _tool("file_read", {"path": str(sheet)})
+    assert read["kind"] == "spreadsheet" and read["columns"] == ["Cliente", "Total"] and read["total_rows"] == 2
+    assert read["source"]["path"] == os.path.realpath(sheet)
+
+    pdf = tmp_path / "datos" / "informe.pdf"
+    pdf.write_bytes(pdf_bytes("Texto del informe", pages=2))
+    agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [str(pdf)]})
+    read_pdf = _tool("file_read", {"path": str(pdf)})
+    assert read_pdf["pages"] == 2 and "Texto del informe" in read_pdf["content"][0]["text"]
+
+    image = tmp_path / "datos" / "foto.png"
+    from PIL import Image
+
+    Image.new("RGB", (8, 4), "red").save(image)
+    agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [str(image)]})
+    read_image = _tool("file_read", {"path": str(image)})
+    assert (read_image["width"], read_image["height"]) == (8, 4) and "no interpreta" in read_image["note"]
+
+    other = tmp_path / "secreto.csv"
+    other.write_text("a\n1\n", encoding="utf-8")
+    assert "no está autorizado" in _tool("file_read", {"path": str(other)})["error"]

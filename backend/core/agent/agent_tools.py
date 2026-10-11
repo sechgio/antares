@@ -40,6 +40,8 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str) -> Json
         if artifact is not None:
             result["artifact"] = store.add_artifact(session_id, artifact)
         return result
+    if name == "file_read":
+        return documents.read_file(args, store.grants_for(session_id), root)
     if name == "artifacts_list":
         return {"artifacts": store.artifacts_for(session_id)}
     raise ValueError(f"Herramienta no disponible para el agente: {name}")

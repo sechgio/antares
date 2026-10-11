@@ -76,6 +76,22 @@ TOOL_SPECS: list[JsonObject] = [
                         "required": ["family", "template_id", "filename_pattern"]},
     },
     {
+        "name": "file_read",
+        "gated": False,
+        "description": (
+            "Documentos · file_read (solo lectura): lee un archivo que el usuario nombró o un borrador: texto de "
+            "PDF por página, columnas y filas de Excel/CSV, o datos básicos de una imagen"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "max_rows": {"type": "integer", "description": "Filas a devolver (máx. 200)"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
         "name": "artifacts_list",
         "gated": False,
         "description": "Documentos · artifacts_list (solo lectura): documentos generados en esta conversación",
@@ -83,6 +99,70 @@ TOOL_SPECS: list[JsonObject] = [
     },
 ]
 READ_TOOLS = frozenset(spec["name"] for spec in TOOL_SPECS)
+
+
+_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+_MAX_PDF_PAGES = 30
+_MAX_PAGE_CHARS = 4_000
+_MAX_FILE_BYTES = 100 * 1024 * 1024
+
+
+def read_file(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonObject:
+    """Contenido de un archivo concedido o borrador, con su procedencia (ruta y revisión)."""
+    value = params.get("path")
+    if not isinstance(value, str) or not value:
+        raise ValueError("Indica la ruta del archivo")
+    draft = drafts.inside(root, value)
+    if draft is not None and draft.is_file():
+        stat = draft.stat()
+        source: JsonObject = {"path": str(draft), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+    else:
+        source = resource_grants.check(value, grants)
+    path = Path(str(source["path"]))
+    if int(source["size"]) > _MAX_FILE_BYTES:
+        raise ValueError("El archivo excede 100 MiB")
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        import pymupdf
+
+        with pymupdf.open(path) as document:
+            pages = [
+                {"page": i + 1, "text": page.get_text()[:_MAX_PAGE_CHARS]}
+                for i, page in enumerate(document) if i < _MAX_PDF_PAGES
+            ]
+            total = len(document)
+        empty = not any(p["text"].strip() for p in pages)
+        return {"source": source, "kind": "pdf", "pages": total, "content": pages,
+                **({"note": "El PDF no tiene texto extraíble (posible escaneo); pide los datos al usuario"} if empty else {})}
+    if suffix in {".csv", ".xlsx", ".xlsm", ".xls"}:
+        limit = params.get("max_rows", 50)
+        limit = max(1, min(200, limit if isinstance(limit, int) and not isinstance(limit, bool) else 50))
+        rows = _sheet_rows(path)
+        columns = list(dict.fromkeys(key for row in rows for key in row))
+        return {"source": source, "kind": "spreadsheet", "columns": columns, "total_rows": len(rows),
+                "rows": rows[:limit]}
+    if suffix in _IMAGE_SUFFIXES:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            width, height = image.size
+        return {"source": source, "kind": "image", "width": width, "height": height,
+                "note": "El agente no interpreta el contenido de la imagen; pide al usuario los datos que necesites"}
+    raise ValueError("Formato no admitido: usa PDF, Excel/CSV o imágenes")
+
+
+def _sheet_rows(path: Path) -> list[JsonObject]:
+    if path.suffix.lower() == ".csv":
+        import csv
+
+        from backend.handlers.spreadsheet import _sniff_csv
+
+        encoding, delimiter = _sniff_csv(path)
+        with path.open("r", encoding=encoding, newline="") as handle:
+            return [dict(row) for row in csv.DictReader(handle, delimiter=delimiter) if any(row.values())][:5000]
+    from backend.core.panel_aviso_corte import parse_excel_bytes
+
+    return [dict(row) for row in parse_excel_bytes(path.read_bytes(), path.name).rows][:5000]
 
 
 def catalog(family: str | None = None) -> JsonObject:

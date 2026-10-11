@@ -93,7 +93,7 @@
       "label": "Documentos",
       "aliases": ["documentos", "documento"],
       "handlers": [],
-      "methods": ["templates_catalog", "template_describe", "document_prepare", "document_generate", "artifacts_list"]
+      "methods": ["templates_catalog", "template_describe", "document_prepare", "document_generate", "file_read", "artifacts_list"]
     },
     "drafts": {
       "label": "Borradores",
