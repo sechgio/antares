@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from backend.core.agent import documents, drafts
+from backend.core.agent import canvas_edit, documents, drafts
 from backend.core.integrations.types import JsonObject
 
 if TYPE_CHECKING:
@@ -16,7 +16,8 @@ if TYPE_CHECKING:
 
 SPECS: dict[str, JsonObject] = {
     spec["name"]: spec
-    for spec in (*drafts.TOOL_SPECS, *({**s, "module": "documents"} for s in documents.TOOL_SPECS))
+    for spec in (*drafts.TOOL_SPECS, *({**s, "module": "documents"} for s in documents.TOOL_SPECS),
+                 *canvas_edit.TOOL_SPECS)
 }
 READ_TOOLS = frozenset(name for name, spec in SPECS.items() if not spec["gated"])
 EFFECT_TOOLS = frozenset(name for name, spec in SPECS.items() if spec["gated"])
@@ -42,6 +43,8 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str) -> Json
         return result
     if name == "file_read":
         return documents.read_file(args, store.grants_for(session_id), root)
+    if name == "canvas_fill_fields":
+        return canvas_edit.fill_fields(args)
     if name == "artifacts_list":
         return {"artifacts": store.artifacts_for(session_id)}
     raise ValueError(f"Herramienta no disponible para el agente: {name}")

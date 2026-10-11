@@ -62,7 +62,8 @@
     "canvas": {
       "label": "Canvas",
       "aliases": ["canvas", "lienzo"],
-      "handlers": ["canvas"]
+      "handlers": ["canvas"],
+      "methods": ["canvas_fill_fields"]
     },
     "imageOptimizer": {
       "label": "Optimizador",

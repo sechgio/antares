@@ -30,7 +30,9 @@ def test_gated_methods_exclude_readonly_and_denied():
     gated = set(agent_chat.gated_methods())
     safe = set(ORCHESTRATABLE_METHODS)
     assert gated.isdisjoint(safe)
-    assert gated <= set(backend_methods()) | {"drafts_save"}
+    from backend.core.agent import agent_tools
+
+    assert gated <= set(backend_methods()) | set(agent_tools.SPECS)
     for banned in ("ai_provider_save", "connections_token_put", "db_clear"):
         assert banned not in gated
     # hay métodos con efectos en el catálogo que sí quedan tras la puerta
@@ -62,7 +64,7 @@ def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style)
         s["name"]: s["input_schema"] for s in seen["tools"]}
     assert wire[mcp_servers.agent_tool_name("demo", "search")] == schema
     assert wire["canvas_get"]["required"] == ["id"]
-    assert "document" in wire["canvas_save"]["properties"]
+    assert "canvas_save" not in wire and wire["canvas_fill_fields"]["required"] == ["id", "expected_updated_at", "values"]
     assert wire["informes_v2_update"]["required"] == ["id", "report"]
     assert {"files", "destino"} <= wire["process_start"]["properties"].keys()
     assert {"formato", "calidad", "conversion_enabled", "mapping_path", "sequence_mode"} <= wire["process_start"]["properties"].keys()

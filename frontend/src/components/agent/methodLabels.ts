@@ -64,6 +64,7 @@ export const METHOD_LABELS: Record<string, string> = {
   document_prepare: 'Validar los datos de un documento',
   document_generate: 'Generar un documento en borradores',
   file_read: 'Leer un archivo autorizado',
+  canvas_fill_fields: 'Rellenar campos de un documento de Canvas',
   artifacts_list: 'Consultar los documentos generados',
   drafts_list: 'Consultar los borradores de la conversación',
   drafts_save: 'Guardar un borrador en una carpeta',
