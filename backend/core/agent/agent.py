@@ -24,7 +24,7 @@ from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
-from backend.core.agent import drafts, resource_grants
+from backend.core.agent import agent_tools, drafts, resource_grants
 from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, scrub_secrets
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
@@ -153,6 +153,8 @@ class AgentStore:
         self._sessions: dict[str, JsonObject] = self._read(self._sessions_path)
         self._approvals: dict[str, JsonObject] = self._read(self._approvals_path)
         self._grants: dict[str, JsonObject] = self._read(self._grants_path)
+        self._artifacts_path = base / "artifacts.json"
+        self._artifacts: dict[str, JsonObject] = self._read(self._artifacts_path)
         loaded = self._read(self._dispatches_path)
         # Registros antiguos indexados solo por call_id: se reindexan por sesión.
         self._dispatches: dict[str, JsonObject] = {
@@ -267,6 +269,8 @@ class AgentStore:
             self._approvals = {k: a for k, a in self._approvals.items() if a.get("session_id") != session_id}
             self._write_approvals()
             self.revoke_grants(session_id)
+            if self._artifacts.pop(session_id, None) is not None:
+                atomic_write_json(self._artifacts_path, self._artifacts)
             self._messages_path(session_id).unlink(missing_ok=True)
         return removed
 
@@ -379,6 +383,20 @@ class AgentStore:
             if removed is not None:
                 self._write_grants()
             return len(removed or {})
+
+    # ---- artefactos generados ----
+
+    def add_artifact(self, session_id: str, artifact: JsonObject) -> JsonObject:
+        record = {**artifact, "session_id": session_id, "created_at": _now_ms()}
+        with self._lock:
+            entry = self._artifacts.setdefault(session_id, {"items": []})
+            entry["items"].append(record)
+            atomic_write_json(self._artifacts_path, self._artifacts)
+        return dict(record)
+
+    def artifacts_for(self, session_id: str) -> list[JsonObject]:
+        with self._lock:
+            return [dict(item) for item in (self._artifacts.get(session_id) or {}).get("items", [])]
 
     def create_approval(self, session_id: str, call: JsonObject) -> JsonObject:
         approval = {
@@ -742,15 +760,14 @@ class AgentRunner:
             except Exception as err:
                 return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
         session_id = call.get("session_id")
-        if name in drafts.READ_TOOLS | drafts.EFFECT_TOOLS:
+        if name in agent_tools.SPECS:
             try:
                 if not session_id:
-                    raise ValueError("Los borradores requieren una conversación")
-                root = self._store.drafts_dir(str(session_id))
+                    raise ValueError("Esta herramienta requiere una conversación")
                 raw_params = call.get("params")
-                draft_args: JsonObject = dict(raw_params) if isinstance(raw_params, dict) else {}
-                result = drafts.list_drafts(root) if name == "drafts_list" else drafts.save_draft(root, draft_args)
-                return json.dumps(result, ensure_ascii=False)
+                tool_args: JsonObject = dict(raw_params) if isinstance(raw_params, dict) else {}
+                result = agent_tools.run(name, tool_args, self._store, str(session_id))
+                return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
             except Exception as err:
                 return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
         fn = self._handler_getter(name)

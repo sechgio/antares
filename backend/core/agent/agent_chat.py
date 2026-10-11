@@ -44,9 +44,9 @@ def _denied(method: str) -> bool:
 
 def readonly_methods() -> list[str]:
     """Lecturas que el agente ejecuta sin aprobación."""
-    from backend.core.agent import drafts
+    from backend.core.agent import agent_tools
 
-    return sorted({m for m in ORCHESTRATABLE_METHODS if not _denied(m)} | drafts.READ_TOOLS)
+    return sorted({m for m in ORCHESTRATABLE_METHODS if not _denied(m)} | agent_tools.READ_TOOLS)
 
 
 # Claves cuyo valor nunca viaja al LLM: credenciales de nodos (webhook, headers
@@ -79,20 +79,21 @@ _SYSTEM_PROMPT = (
 
 
 def gated_methods() -> list[str]:
-    from backend.core.agent import drafts
+    from backend.core.agent import agent_tools
 
     return sorted(
-        {m for m in backend_methods() if m not in ORCHESTRATABLE_METHODS and not _denied(m)} | drafts.EFFECT_TOOLS
+        {m for m in backend_methods() if m not in ORCHESTRATABLE_METHODS and not _denied(m)} | agent_tools.EFFECT_TOOLS
     )
 
 
 def tool_specs() -> list[JsonObject]:
     """Specs de herramientas para el modelo (formato neutro, se adapta al proveedor)."""
-    from backend.core.agent import drafts, modules
+    from backend.core.agent import agent_tools as _agent_tools
+    from backend.core.agent import modules
 
-    agent_tools = {spec["name"]: spec for spec in drafts.TOOL_SPECS}
+    agent_tools = _agent_tools.SPECS
     specs: list[JsonObject] = [
-        {**agent_tools[m], "module": "drafts"} if m in agent_tools else
+        dict(agent_tools[m]) if m in agent_tools else
         {
             "name": m,
             "description": f"{modules.label_for(modules.module_for(m))} · {m} (solo lectura)",
@@ -110,7 +111,7 @@ def tool_specs() -> list[JsonObject]:
             "module": modules.module_for(m),
             "inputSchema": input_schema_for(m),
         }
-        if m not in agent_tools else {**agent_tools[m], "module": "drafts"}
+        if m not in agent_tools else dict(agent_tools[m])
         for m in gated_methods()
     ]
     for server in mcp_servers.list_servers():

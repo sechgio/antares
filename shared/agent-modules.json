@@ -89,6 +89,12 @@
       "aliases": ["imprimir", "impresora", "impresion", "impresión"],
       "handlers": ["printing"]
     },
+    "documents": {
+      "label": "Documentos",
+      "aliases": ["documentos", "documento"],
+      "handlers": [],
+      "methods": ["templates_catalog", "template_describe", "document_prepare", "document_generate", "artifacts_list"]
+    },
     "drafts": {
       "label": "Borradores",
       "aliases": ["borradores", "borrador"],

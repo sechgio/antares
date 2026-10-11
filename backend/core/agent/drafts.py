@@ -24,12 +24,14 @@ TOOL_SPECS: list[JsonObject] = [
     {
         "name": "drafts_list",
         "gated": False,
+        "module": "drafts",
         "description": "Borradores · drafts_list (solo lectura): archivos generados en esta conversación",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "drafts_save",
         "gated": True,
+        "module": "drafts",
         "description": (
             "Borradores · drafts_save (efecto: requiere aprobación del usuario): copia un borrador de esta "
             "conversación a una carpeta del usuario"
