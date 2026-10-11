@@ -38,6 +38,7 @@ def _store() -> _agent.AgentStore:
 _inflight: dict[str, _CancelEvent] = {}
 _inflight_lock = threading.Lock()
 _resource_locks: dict[str, threading.Lock] = {}
+_NATIVE_PREFIXES = ("autoimg_",)
 
 
 def _resource_keys(params: JsonObject) -> list[str]:
@@ -166,7 +167,9 @@ def _mentions(params: JsonObject) -> JsonObject:
     prepara el contexto que acompaña su mensaje al modelo."""
     result = _agent_modules.resolve_mentions(str(params["text"]))
     if result["modules"]:
+        native = params.get("native_tools")
         names = [str(spec["name"]) for spec in _agent_chat.tool_specs()]
+        names += [str(n) for n in native if isinstance(n, str)] if isinstance(native, list) else []
         result["context"] = _agent_modules.mention_context(result["modules"], names)
     return result
 
@@ -250,10 +253,19 @@ def _dispatch(params: JsonObject) -> JsonObject:
     if not isinstance(call_params, dict):
         call_params = {}
 
-    is_mcp = _mcp_servers.parse_agent_tool(name) is not None
-    gated = is_mcp or name in _agent_chat.gated_methods()
-    if not gated and name not in _agent_chat.readonly_methods():
-        return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
+    native = params.get("native") is True
+    if native:
+        # Herramientas que Electron ejecuta en el proceso principal: Python solo
+        # reserva la operación y consume la aprobación; Electron registra el
+        # resultado con agent_internal_dispatch_finish.
+        if not name.startswith(_NATIVE_PREFIXES):
+            return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
+        gated = params.get("gated") is not False
+    else:
+        is_mcp = _mcp_servers.parse_agent_tool(name) is not None
+        gated = is_mcp or name in _agent_chat.gated_methods()
+        if not gated and name not in _agent_chat.readonly_methods():
+            return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
     approval_id = params.get("approval_id")
     if gated and not isinstance(approval_id, str):
         return _dispatch_error("La herramienta requiere una aprobación aprobada para esta llamada")
@@ -278,6 +290,8 @@ def _dispatch(params: JsonObject) -> JsonObject:
                 "dispatch": record}
 
     op_id = str(record["op_id"])
+    if native:
+        return {"result": None, "dispatch": record, "execute": "native"}
     token = _CancelEvent()
     with _inflight_lock:
         _inflight[op_id] = token
@@ -322,6 +336,20 @@ def _dispatch_result(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id", "call_id", "op_id", "result")
+def _dispatch_finish(params: JsonObject) -> JsonObject:
+    """Registra el resultado de una herramienta nativa ejecutada por Electron."""
+    session_id, call_id = str(params["session_id"]), str(params["call_id"])
+    result = str(params["result"])
+    status = "failed" if _agent.result_failed(result) else "succeeded"
+    _store().dispatch_finish(session_id, call_id, str(params["op_id"]), status, result)
+    record = _store().get_dispatch(session_id, call_id)
+    if record is None or record.get("op_id") != params["op_id"]:
+        raise NotFoundError(f"Dispatch no encontrado: {call_id}")
+    return {"result": (record.get("summary") or record.get("result")) if record.get("status") != "running" else None}
+
+
+@with_locale
 @validate_params("session_id", "call_id")
 def _dispatch_cancel(params: JsonObject) -> JsonObject:
     record = _store().get_dispatch(str(params["session_id"]), str(params["call_id"]))
@@ -344,6 +372,7 @@ HANDLERS = {
     "agent_internal_dispatch": _dispatch,
     "agent_internal_dispatch_result": _dispatch_result,
     "agent_internal_dispatch_cancel": _dispatch_cancel,
+    "agent_internal_dispatch_finish": _dispatch_finish,
     "agent_internal_grants_add": _grants_add,
     "agent_internal_grants_revoke": _grants_revoke,
     "agent_internal_mentions": _mentions,

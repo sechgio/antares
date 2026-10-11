@@ -39,10 +39,13 @@ def test_mentions_resolve_aliases_accents_and_ignore_emails():
 
 
 def test_mention_context_lists_tools_and_unavailable_reasons():
-    out = agent_internal.HANDLERS["agent_internal_mentions"]({"text": "Usa @sellador y @autoimg"})
-    assert out["modules"] == ["sellador", "autoimg"]
+    out = agent_internal.HANDLERS["agent_internal_mentions"](
+        {"text": "Usa @sellador, @autoimg y @espacios", "native_tools": ["autoimg_status"]}
+    )
+    assert out["modules"] == ["sellador", "autoimg", "espacios"]
     assert "sellador_apply" in out["context"] and "sellador_inspect_pdf" in out["context"]
-    assert "AutoIMG: no disponible" in out["context"]
+    assert "AutoIMG: herramientas autoimg_status" in out["context"]
+    assert "Espacios: no disponible" in out["context"]
     assert "context" not in agent_internal.HANDLERS["agent_internal_mentions"]({"text": "hola"})
 
 

@@ -253,7 +253,8 @@ async function messageSend(params) {
   const files = paths.length
     ? await bridge('agent_internal_grants_add', { session_id: sessionId, request_id: requestId || null, paths })
     : { granted: [], rejected: [] };
-  const mentions = await bridge('agent_internal_mentions', { text: content });
+  const nativeNames = [...shared.toolSpecs.values()].filter((t) => t.kind === 'native').map((t) => t.name);
+  const mentions = await bridge('agent_internal_mentions', { text: content, native_tools: nativeNames });
   const input = mentions.context
     ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${mentions.context}` }]
     : content;
@@ -293,10 +294,10 @@ async function _admittedRequest(session, requestId) {
 }
 
 async function toolsList() {
-  const { tools } = await bridge('agent_internal_tools', {});
+  const tools = await execution.allToolSpecs();
   return {
     tools: tools.map((t) => ({
-      name: t.name, gated: !!t.gated, kind: t.kind === 'mcp' ? 'mcp' : 'backend', module: t.module || null,
+      name: t.name, gated: !!t.gated, kind: ['mcp', 'native'].includes(t.kind) ? t.kind : 'backend', module: t.module || null,
     })),
   };
 }
@@ -442,6 +443,7 @@ module.exports = {
   },
   _internal: {
     state: () => shared.state,
+    shared,
     _toolSpecs: shared.toolSpecs,
     _live: shared.live,
     _convToSession: shared.convToSession,

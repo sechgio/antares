@@ -29,6 +29,7 @@ const INTERNAL_RPCS = [
   'agent_internal_approvals_deny_session', 'agent_internal_dispatch',
   'agent_internal_dispatch_result', 'agent_internal_dispatch_cancel',
   'agent_internal_grants_add', 'agent_internal_grants_revoke', 'agent_internal_mentions',
+  'agent_internal_dispatch_finish',
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -80,6 +81,14 @@ function makeBridge() {
       }
       case 'agent_internal_dispatch': {
         state.dispatchLog.push(params.call_id);
+        if (params.native) {
+          const known = state.dispatches.find((d) => d.session_id === params.session_id && d.call_id === params.call_id);
+          if (known) return { result: known.result, dispatch: known };
+          if (params.gated && !params.approval_id) return { result: JSON.stringify({ error: 'requiere aprobación' }) };
+          const record = { session_id: params.session_id, call_id: params.call_id, op_id: `op-${params.call_id}`, status: 'running', result: null };
+          state.dispatches.push(record);
+          return { result: null, dispatch: record, execute: 'native' };
+        }
         const existing = state.dispatches.find((d) => d.session_id === params.session_id && d.call_id === params.call_id);
         if (existing) return { result: existing.result, dispatch: existing };
         const record = { session_id: params.session_id, call_id: params.call_id, status: 'succeeded', result: JSON.stringify({ ok: true, tool: params.name }) };
@@ -96,6 +105,12 @@ function makeBridge() {
       case 'agent_internal_grants_add':
         state.grants.push(params);
         return { granted: params.paths.filter((p) => p.endsWith('.pdf')), rejected: params.paths.filter((p) => !p.endsWith('.pdf')).map((path) => ({ path, reason: 'una carpeta requiere seleccionar los archivos concretos' })) };
+      case 'agent_internal_dispatch_finish': {
+        const record = state.dispatches.find((d) => d.op_id === params.op_id);
+        record.status = 'succeeded';
+        record.result = params.result;
+        return { result: params.result };
+      }
       case 'agent_internal_mentions': {
         const modules = /@sellador\b/.test(params.text) ? ['sellador'] : [];
         const unknown = /@nada\b/.test(params.text) ? ['nada'] : [];
@@ -250,6 +265,37 @@ async function main() {
       'el modelo recibe el contexto de la mención');
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(messages[0].role === 'user' && messages[0].content === 'Usa @sellador y @nada', 'el transcript muestra solo el texto del usuario');
+    await runtime.shutdown();
+  }
+
+  // --- herramientas nativas: reserva en Python, ejecución única en Electron ---
+  {
+    const { bridge, state } = makeBridge();
+    const executed = [];
+    runtime._internal.shared.nativeTools = {
+      nativeToolSpecs: () => [
+        { name: 'autoimg_status', description: 'AutoIMG estado', gated: false, kind: 'native', module: 'autoimg', inputSchema: { type: 'object', properties: {} } },
+        { name: 'autoimg_sync_to_sheet', description: 'AutoIMG sync', gated: true, kind: 'native', module: 'autoimg', inputSchema: { type: 'object', properties: {} } },
+      ],
+      runNativeTool: async (name) => { executed.push(name); return { ok: name }; },
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('autoimg_status', {}), fauxToolCall('autoimg_sync_to_sheet', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('sincronizado'),
+    ], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const { tools } = await runtime.handlers.agent_tools_list({});
+    assert(tools.some((t) => t.name === 'autoimg_status' && t.kind === 'native' && t.module === 'autoimg'), 'tools_list incluye herramientas nativas');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sincroniza autoimg' });
+    assert(await waitFor(async () =>
+      (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals.length > 0), 'el efecto nativo pide aprobación');
+    assert(JSON.stringify(executed) === JSON.stringify(['autoimg_status']), 'la lectura nativa se ejecuta sin aprobación');
+    const ap = (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals[0];
+    await runtime.handlers.agent_approve({ approval_id: ap.id });
+    assert(await waitIdle(session.id), 'el turno termina tras aprobar el efecto nativo');
+    assert(JSON.stringify(executed) === JSON.stringify(['autoimg_status', 'autoimg_sync_to_sheet']), 'cada herramienta nativa se ejecuta una vez');
+    assert(state.dispatches.every((d) => d.status === 'succeeded'), 'Electron registra el comprobante en Python');
+    runtime._internal.shared.nativeTools = null;
     await runtime.shutdown();
   }
 

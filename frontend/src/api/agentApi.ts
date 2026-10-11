@@ -44,7 +44,7 @@ export interface AgentMessageMentions {
 export interface AgentToolSpec {
   name: string;
   gated: boolean;
-  kind: 'backend' | 'mcp';
+  kind: 'backend' | 'mcp' | 'native';
   module?: string | null;
 }
 

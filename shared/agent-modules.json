@@ -101,7 +101,7 @@
       "label": "AutoIMG",
       "aliases": ["autoimg"],
       "handlers": [],
-      "unavailable": "AutoIMG opera con su cuenta de Google desde Electron; el agente aún no tiene un adaptador para sus funciones."
+      "native": true
     },
     "espacios": {
       "label": "Espacios",

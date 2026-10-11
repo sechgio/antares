@@ -26,6 +26,7 @@ const shared = {
   rounds: new Map(), // conversationId -> rondas de herramientas del run
   providers: new Map(), // providerId -> {info, modelIds:Set}
   providerOverrides: new Map(), // providerId -> Provider (tests)
+  nativeTools: null, // sustituto de agent-native-tools (tests)
   INTERRUPTED_RESULT,
   NOTICE_KIND,
   CONTEXT_MARKER,

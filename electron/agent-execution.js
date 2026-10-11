@@ -84,9 +84,18 @@ async function buildProvider(record) {
 
 // ---------- herramientas (registry pi-durable) ----------
 
+async function allToolSpecs() {
+  const { tools } = await bridge('agent_internal_tools', {});
+  return [...tools, ...nativeTools().nativeToolSpecs()];
+}
+
+function nativeTools() {
+  return shared.nativeTools || require('./agent-native-tools');
+}
+
 async function refreshTools() {
   const { pi } = shared.deps;
-  const { tools } = await bridge('agent_internal_tools', {});
+  const tools = await allToolSpecs();
   shared.toolSpecs.clear();
   const registrations = tools.map((spec) => {
     shared.toolSpecs.set(spec.name, spec);
@@ -202,17 +211,47 @@ async function executeTool(spec, args, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const callId = api.callId;
   const approvalId = spec.gated ? shared.approvalsByCall.get(callKey(sessionId, callId)) : undefined;
-  const text = await dispatchAndWait({
+  const request = {
     session_id: sessionId,
     call_id: callId,
     name: spec.name,
     params: args || {},
     approval_id: approvalId,
-  }, context);
+  };
+  const text = spec.kind === 'native'
+    ? await dispatchNative(spec, request, context)
+    : await dispatchAndWait(request, context);
   let parsed = null;
   try { parsed = JSON.parse(text); } catch { /* texto plano */ }
   const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
   return { content: [{ type: 'text', text }], isError };
+}
+
+// Herramienta nativa: Python reserva la operación (y consume la aprobación);
+// solo el ganador de la reserva la ejecuta aquí y registra el comprobante.
+async function dispatchNative(spec, request, context) {
+  const first = await bridge('agent_internal_dispatch', { ...request, native: true, gated: !!spec.gated });
+  if (first.execute !== 'native') {
+    let result = first.result;
+    while (result === null || result === undefined) {
+      result = await pollDispatch(request.session_id, request.call_id, context);
+    }
+    return String(result);
+  }
+  let text;
+  try {
+    const result = await nativeTools().runNativeTool(spec.name, request.params);
+    text = JSON.stringify(result === undefined ? null : result);
+  } catch (err) {
+    text = JSON.stringify({ error: String((err && err.message) || err).slice(0, 500) });
+  }
+  const finished = await bridge('agent_internal_dispatch_finish', {
+    session_id: request.session_id,
+    call_id: request.call_id,
+    op_id: first.dispatch.op_id,
+    result: text,
+  });
+  return String(finished.result);
 }
 
 function pollDispatch(sessionId, callId, context) {
@@ -238,6 +277,7 @@ function pollDispatch(sessionId, callId, context) {
 }
 
 module.exports = {
+  allToolSpecs,
   callKey,
   providerInfo,
   ensureProvider,

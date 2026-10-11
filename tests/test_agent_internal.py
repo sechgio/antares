@@ -331,3 +331,31 @@ def test_effects_on_the_same_resource_run_one_after_another(store, monkeypatch):
     _wait_result("c1")
     _wait_result("c2", session_id="s2")
     assert max(overlap) == 1
+
+
+def test_native_tools_are_claimed_in_python_and_finished_by_electron(store):
+    first = _dispatch(session_id="s1", call_id="n1", name="autoimg_status", params={}, native=True, gated=False)
+    assert first["execute"] == "native" and first["result"] is None
+    again = _dispatch(session_id="s1", call_id="n1", name="autoimg_status", params={}, native=True, gated=False)
+    assert "execute" not in again and again["result"] is None  # sigue en vuelo: no se ejecuta dos veces
+    finished = agent_internal.HANDLERS["agent_internal_dispatch_finish"]({
+        "session_id": "s1", "call_id": "n1", "op_id": first["dispatch"]["op_id"], "result": '{"ok": true}',
+    })
+    assert json.loads(finished["result"]) == {"ok": True}
+    assert store.get_dispatch("s1", "n1")["status"] == "succeeded"
+    assert json.loads(_dispatch(session_id="s1", call_id="n1", name="autoimg_status", params={},
+                                native=True, gated=False)["result"]) == {"ok": True}
+
+
+def test_native_effects_need_approval_and_unknown_native_names_are_rejected(store):
+    blocked = _dispatch(session_id="s1", call_id="n1", name="autoimg_sync_to_sheet", params={}, native=True, gated=True)
+    assert json.loads(blocked["result"]).get("error")
+    approval = agent_internal.HANDLERS["agent_internal_approval_ensure"](
+        {"session_id": "s1", "call_id": "n1", "method": "autoimg_sync_to_sheet", "params": {}}
+    )["approval"]
+    agent_internal.HANDLERS["agent_internal_approval_decide"]({"approval_id": approval["id"], "approve": True})
+    allowed = _dispatch(session_id="s1", call_id="n1", name="autoimg_sync_to_sheet", params={},
+                        native=True, gated=True, approval_id=approval["id"])
+    assert allowed["execute"] == "native"
+    other = _dispatch(session_id="s1", call_id="n2", name="spotify_playback", params={}, native=True, gated=False)
+    assert "no disponible" in json.loads(other["result"])["error"]
