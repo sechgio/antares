@@ -53,11 +53,22 @@ try {
   }, win, 'flows_read_images');
   assert.strictEqual(direct.spreadsheet_path, externalSheet);
   assert.deepStrictEqual(direct._flow_file_grants, { folders: [source, output], read: [externalSheet], write: [output] });
+  const preview = _maybeResolveFileTokens({ guided_pdf: true, template_kind: 'html', template_id: 'report.html',
+    source_folder: source, output_folder: output, spreadsheet_path: externalCapability.token,
+    _flow_file_grants: { signature: 'forged', folders: ['C:\\forged'] },
+  }, win, 'flows_pdf_preview');
+  assert.strictEqual(preview.spreadsheet_path, externalSheet);
+  assert.deepStrictEqual(preview._flow_file_grants.folders, [source, output]);
+  assert(!preview._flow_file_grants.signature);
   const savedGrants = {
     folders: [source, output], read: [sheet], write: [output], signature: 'backend-verified',
   };
   clearAllowedReadPaths();
   _clearAllowedWriteRoots();
+  const restoredPreview = _maybeResolveFileTokens({ source_folder: source, output_folder: output, spreadsheet_path: sheet },
+    win, 'flows_pdf_preview', { verifiedGrants: savedGrants });
+  assert.strictEqual(restoredPreview.spreadsheet_path, sheet);
+  assert.throws(() => _maybeResolveFileTokens({ source_folder: source, output_folder: output }, win, 'flows_pdf_preview'), /diálogo/);
   const restored = _maybeResolveFileTokens(
     graph('flows_read_images', {
       source_folder: source, output_folder: output, spreadsheet_path: sheet,

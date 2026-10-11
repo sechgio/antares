@@ -200,6 +200,15 @@ export default function QueuePanel({
               : 'hover:bg-[var(--bg-input)]'
           } ${dropTargetId === item.id ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)]' : ''} ${draggedItemId === item.id ? 'opacity-55' : item.excluded ? 'opacity-45' : ''}`}
           onClick={() => onSetActiveItem(item.id)}
+          role="button"
+          tabIndex={0}
+          aria-label={`Ver ${item.originalName}`}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSetActiveItem(item.id);
+            }
+          }}
         >
           <GripVertical size={14} className="-mx-1 shrink-0 text-[var(--text-muted)] opacity-0 transition-opacity group-hover:opacity-100" />
 
@@ -273,6 +282,7 @@ export default function QueuePanel({
             <span
               className={`ml-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.status === 'processing' ? 'animate-pulse' : ''}`}
               style={{ backgroundColor: color }}
+              title={item.status === 'error' ? (item.error ?? undefined) : undefined}
             />
           </div>
         </div>

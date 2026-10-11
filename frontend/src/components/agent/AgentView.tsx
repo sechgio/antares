@@ -355,7 +355,8 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { activ
       const ok = await sendToSession(sessionId, next.text);
       if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Sin config ESLint en el repo esta directiva es inerte; las dependencias
+    // están completas a propósito (queued dispara el reintento).
   }, [sessionId, running, stopping, pending.length, queued]);
 
   const sendSuggestion = async (text: string) => {

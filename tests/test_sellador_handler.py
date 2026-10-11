@@ -181,6 +181,10 @@ def test_apply_sellador_respects_per_stamp_positions() -> None:
     assert len(PdfReader(BytesIO(result_bytes)).pages) == 2
 
 
+def _is_red(pixel: tuple[int, ...]) -> bool:
+    return pixel[0] > 200 and pixel[1] < 80 and pixel[2] < 80
+
+
 @pytest.mark.parametrize('rotation', [0, 90, 180, 270])
 def test_apply_sellador_uses_visible_cropbox_coordinates_for_rotated_pages(rotation: int) -> None:
     fitz = pytest.importorskip('fitz')
@@ -219,7 +223,7 @@ def test_apply_sellador_uses_visible_cropbox_coordinates_for_rotated_pages(rotat
             (x, y)
             for y in range(image.height)
             for x in range(image.width)
-            if (lambda pixel: pixel[0] > 200 and pixel[1] < 80 and pixel[2] < 80)(image.getpixel((x, y)))
+            if _is_red(image.getpixel((x, y)))
         ]
 
     assert red_pixels

@@ -672,8 +672,6 @@ def test_migrate_legacy_copies_missing_json_only(tmp_path: Path) -> None:
 def test_store_migrates_legacy_when_using_default_dir(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import json
-
     user_docs = tmp_path / "user" / "canvas" / "documents"
     legacy = tmp_path / "legacy" / "data" / "canvas" / "documents"
     legacy.mkdir(parents=True)
@@ -750,7 +748,7 @@ def test_store_concurrent_saves_distinct_docs(tmp_path: Path) -> None:
     docs = [store.create(name=f"Doc {i}") for i in range(8)]
     errors: list[BaseException] = []
 
-    def hammer(doc: dict[str, Any]) -> None:  # allowlist: dict[str, Any]
+    def hammer(doc: dict[str, Any]) -> None:
         try:
             for round_no in range(10):
                 doc["name"] = f"{doc['name']} r{round_no}"
@@ -948,8 +946,6 @@ def test_path_traversal_rejected(tmp_path: Path) -> None:
 
 
 def test_list_uses_stem_when_body_id_mismatches(tmp_path: Path) -> None:
-    import json
-
     store = CanvasStore(tmp_path)
     body = create_empty_document(name="Mismatch")
     body["id"] = "inner-id"
@@ -986,8 +982,6 @@ def test_corrupt_document_is_logged_and_skipped(tmp_path: Path, caplog: pytest.L
 
 
 def test_list_large_document_uses_extract_doc_meta(tmp_path: Path) -> None:
-    import json
-
     store = CanvasStore(tmp_path)
     body = create_empty_document(name="Large Doc")
     body["id"] = "inner-large"
@@ -1630,8 +1624,6 @@ def test_store_index_preserves_alias_precedence_and_retries_unreadable_metadata(
 
 
 def test_store_index_detects_external_file_changes(tmp_path: Path) -> None:
-    import json
-
     store = CanvasStore(tmp_path)
     store.create(name="Original")
     store.list_documents()
@@ -1694,8 +1686,6 @@ def test_save_history_drops_oversized_entries(tmp_path: Path) -> None:
 
 
 def test_get_history_skips_oversized_entries_on_disk(tmp_path: Path) -> None:
-    import json
-
     store = CanvasStore(tmp_path)
     created = store.create(name="Hist")
     doc_id = created["id"]
@@ -2077,6 +2067,20 @@ def _count_document_serializations(monkeypatch: pytest.MonkeyPatch, doc_id: str)
     return calls
 
 
+def _count_history_payload_serializations(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Cuenta serializaciones del payload agregado de historial ({"past", "future"})."""
+    real_dumps = canvas_store_mod.json.dumps
+    calls: list[int] = []
+
+    def counting_dumps(obj: object, *args: object, **kwargs: object) -> str:
+        if isinstance(obj, dict) and set(obj) == {"past", "future"}:
+            calls.append(1)
+        return real_dumps(obj, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_store_mod.json, "dumps", counting_dumps)
+    return calls
+
+
 def test_store_save_serializes_the_document_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2145,15 +2149,7 @@ def test_store_save_history_assembles_payload_from_entry_encodings(
     entry = {"type": "diff", "ops": [{"v": "y" * 50_000}]}
     expected = encode_canvas_json({"past": [entry], "future": [entry]})
 
-    real_dumps = canvas_store_mod.json.dumps
-    calls: list[int] = []
-
-    def counting_dumps(obj: object, *args: object, **kwargs: object) -> str:
-        if isinstance(obj, dict) and set(obj) == {"past", "future"}:
-            calls.append(1)
-        return real_dumps(obj, *args, **kwargs)
-
-    monkeypatch.setattr(canvas_store_mod.json, "dumps", counting_dumps)
+    calls = _count_history_payload_serializations(monkeypatch)
 
     store.save_history(doc_id, [entry], [entry])
 
@@ -2173,15 +2169,7 @@ def test_canvas_save_handler_assembles_history_payload_from_entry_encodings(
     entry = {"type": "diff", "ops": [{"v": "z" * 50_000}]}
     expected = encode_canvas_json({"past": [entry], "future": [entry]})
 
-    real_dumps = canvas_store_mod.json.dumps
-    calls: list[int] = []
-
-    def counting_dumps(obj: object, *args: object, **kwargs: object) -> str:
-        if isinstance(obj, dict) and set(obj) == {"past", "future"}:
-            calls.append(1)
-        return real_dumps(obj, *args, **kwargs)
-
-    monkeypatch.setattr(canvas_store_mod.json, "dumps", counting_dumps)
+    calls = _count_history_payload_serializations(monkeypatch)
 
     canvas_handlers.canvas_save_history({"id": doc_id, "past": [entry], "future": [entry]})
 

@@ -47,7 +47,6 @@ def test_manual_preview_cache_differs_by_text_fields() -> None:
     assert second["cod_componente"] == "COD-B"
     assert str(first["image"]).startswith("data:image/jpeg;base64,")
     assert Path(first["image_path"]).is_file()
-    assert "base64," in str(first["image"])
 
 
 def test_manual_preview_cache_differs_by_coordinates() -> None:

@@ -62,7 +62,6 @@ def test_recovery_prunes_orphans_without_changing_terminal_runs(tmp_path):
     assert restored.get(flow["id"])["last_run_status"] == "queued"
 
 
-
 def test_path_authorization_can_verify_saved_grants_without_resigning(tmp_path, monkeypatch):
     store = FlowStore(tmp_path / "flows.json", tmp_path / "flow_runs.json")
     monkeypatch.setattr(flow_handlers, "_store", lambda: store)

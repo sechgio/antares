@@ -34,9 +34,6 @@ class TestEmitHeartbeat:
             ("job.default.heartbeat", {"running": True, "job_id": "default"}),
             ("process.heartbeat", {"running": True, "job_id": "default"}),
         ]
-        for _method, params in calls:
-            assert "progress" not in params
-            assert "ok_count" not in params
 
     def test_emit_heartbeat_non_default_job_skips_process_channel(self, monkeypatch) -> None:
         calls: list[tuple[str, dict]] = []

@@ -2,17 +2,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, eq, finish } = require('./helpers/harness');
 
 const ROOT = path.join(__dirname, '..');
 const ratchet = require(path.join(ROOT, 'scripts', 'quality-ratchet.js'));
-
-function eq(actual, expected, message) {
-  assert(
-    actual === expected,
-    `${message} (esperado: ${JSON.stringify(expected)}, actual: ${JSON.stringify(actual)})`,
-  );
-}
 
 const tmpDirs = [];
 

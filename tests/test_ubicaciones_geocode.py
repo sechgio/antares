@@ -5,6 +5,7 @@ from pathlib import Path
 from threading import Event
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 from PIL import Image, ImageFont
 
@@ -250,8 +251,6 @@ def test_generar_ubicaciones_manual_without_geocode_keeps_error(tmp_path: Path) 
 
 
 def test_generar_ubicaciones_excel_without_coord_columns_geocodes(tmp_path: Path) -> None:
-    import pandas as pd
-
     excel_path = tmp_path / "solo_direcciones.xlsx"
     pd.DataFrame({
         "cod_componente": ["UBI-1", "UBI-2"],
@@ -276,8 +275,6 @@ def test_generar_ubicaciones_excel_without_coord_columns_geocodes(tmp_path: Path
 
 
 def test_generar_ubicaciones_excel_preserves_numeric_code_without_iterrows(tmp_path: Path) -> None:
-    import pandas as pd
-
     excel_path = tmp_path / "numericos.xlsx"
     pd.DataFrame({
         "cod_componente": [1],
@@ -300,8 +297,6 @@ def test_generar_ubicaciones_excel_preserves_numeric_code_without_iterrows(tmp_p
 
 
 def test_generar_ubicaciones_excel_reuses_geocode_for_repeated_address(tmp_path: Path) -> None:
-    import pandas as pd
-
     excel_path = tmp_path / "repetidas.xlsx"
     pd.DataFrame({
         "cod_componente": ["UBI-1", "UBI-2"],
@@ -324,8 +319,6 @@ def test_generar_ubicaciones_excel_reuses_geocode_for_repeated_address(tmp_path:
 
 
 def test_generar_ubicaciones_excel_without_coords_keeps_error(tmp_path: Path) -> None:
-    import pandas as pd
-
     excel_path = tmp_path / "solo_direcciones.xlsx"
     pd.DataFrame({"direccion": ["Av A 100"], "distrito": ["Lima"]}).to_excel(excel_path, index=False)
 
@@ -338,8 +331,6 @@ def test_generar_ubicaciones_excel_without_coords_keeps_error(tmp_path: Path) ->
 
 
 def test_generar_ubicaciones_skips_rows_geocode_fails(tmp_path: Path) -> None:
-    import pandas as pd
-
     excel_path = tmp_path / "mixto.xlsx"
     pd.DataFrame({
         "cod_componente": ["UBI-1", "UBI-2", "UBI-3"],
@@ -364,8 +355,6 @@ def test_generar_ubicaciones_skips_rows_geocode_fails(tmp_path: Path) -> None:
 
 
 def test_generar_ubicaciones_reports_each_unresolved_row(tmp_path: Path) -> None:
-    import pandas as pd
-
     excel_path = tmp_path / "fallidas.xlsx"
     pd.DataFrame({
         "cod_componente": ["UBI-1", "UBI-2", "UBI-3"],
@@ -409,7 +398,7 @@ def test_generar_ubicaciones_returns_geocoding_failure_when_all_rows_fail(tmp_pa
     assert resp["geocodeFailures"] == [{"cod_componente": "UBI-1", "motivo": "not_found"}]
 
 
-def test_preview_ubicacion_manual_geocodes_when_enabled(tmp_path: Path) -> None:
+def test_preview_ubicacion_manual_geocodes_when_enabled() -> None:
     cap_w, cap_h = ubi._map_capture_size("horizontal", preview=True)
     fake_map = _fake_map_png(cap_w, cap_h)
 
@@ -437,8 +426,6 @@ def test_preview_ubicacion_manual_geocodes_when_enabled(tmp_path: Path) -> None:
 
 
 def test_excel_preview_cache_changes_when_geocoded_coordinates_change(tmp_path: Path) -> None:
-    import pandas as pd
-
     excel_path = tmp_path / "preview.xlsx"
     pd.DataFrame({"direccion": ["Av X 123"], "distrito": ["Lima"]}).to_excel(excel_path, index=False)
     preview_path = tmp_path / "preview.jpg"

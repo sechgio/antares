@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **PDFs personalizados en Flujos**: guía para conectar Excel/CSV, registros guardados y carpetas de fotos con las plantillas HTML, documentos de Canvas y formatos numerados. Permite mapear campos, aplicar valores fijos y correcciones por registro, ordenar fotos y revisar un PDF real antes de generar un consolidado o archivos individuales. Valida el lote completo, conserva las entregas anteriores mediante nombres versionados y permite automatizar la revisión únicamente con Antares abierto.
 - **Plugins de la barra de título**: Spotify (con OAuth), Audius, Jamendo y Archive se pueden activar y ordenar desde Ajustes.
 - **Notas adhesivas**: se pueden crear y organizar notas locales desde la barra de título.
 - **Flujos**: nueva herramienta de automatización con editor visual de grafos (arrastrar y soltar nodos), ejecución manual sobre los métodos de la app marcados como orquestables y vista de ejecuciones con el resultado de cada nodo. Los flujos admiten disparo programado (intervalo en minutos, mientras la app está abierta) y la vista de ejecuciones muestra el grafo coloreado por el estado de cada nodo, con filtros por flujo y estado.
@@ -53,6 +54,20 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Preview de reportes**: un `{%` literal dentro del texto borraba todo el contenido hasta la etiqueta siguiente.
 - **Staging de archivos**: `file_staged_abort` cancelaba la sesión de otra ventana; el token queda ligado a la ventana que lo creó.
 - **Canvas / PDF**: la importación rechaza documentos con más de 500.000 operadores acumulados, aunque cada página permanezca bajo su límite individual.
+- **Espacios / tablero**: arrastrar una tarjeta hacia abajo dentro de su propia columna no cambiaba el orden persistido y la tarjeta volvía a su sitio; el valor se calcula ahora con la misma convención que aplica el tablero. La recarga de la actividad de una tarea deja prevalecer los datos del servidor.
+- **Diálogos**: cerrar con `Escape` o clic en el fondo dejaba colgada la promesa de `confirm`, de modo que la acción que la esperaba (por ejemplo, salir de Flujos con cambios) no volvía a responder; toda salida resuelve ahora la espera.
+- **Atajos**: `Ctrl+0`, `Ctrl+Shift+I` y `Ctrl+Shift+V` ejecutaban a la vez su acción de Canvas y la navegación del shell; Canvas reclama solo esos chords mientras está activo (el resto de atajos del shell siguen funcionando) y el shell deja de disparar atajos con un modal abierto.
+- **Cierre de la app**: el acuse del flush de Canvas podía quedar sin suscribir mientras cargaba su chunk y detenía el cierre; ahora solo acusa App cuando Canvas no es dueño del flush, para que el acuse llegue después de guardar.
+- **Evidencia de volanteo**: un fallo de lectura de IndexedDB desactivaba el autoguardado durante el resto de la sesión y la última edición se descartaba al desmontar; ahora se conserva el trabajo y el estado se muestra junto a exportar.
+- **Padrón**: la exportación PDF no capturaba errores (el botón volvía a su estado sin avisar) y los campos de fecha no tenían nombre accesible; el modal de importación gana diálogo, foco y `Escape`.
+- **Informes v2 / Preview de reportes**: la exportación de una sola fila saneaba el HTML de la plantilla igual que la consolidada, y generar un PDF sin contenido deja de reportar éxito sin archivo.
+- **Reportes de campo**: los campos usaban la etiqueta como único nombre accesible, la carga de paneles fallaba en silencio y el derivado de esquema antiguo rompía la restauración.
+- **Optimizador**: `ThemeSelect` anunciaba un listbox sin teclado y el recorte gana diálogo, `Escape` y ajuste con flechas.
+- **Notas adhesivas**: los controles por nota no eran alcanzables por teclado, el guardado podía perderse al cerrar y las pilas se apilaban siempre por encima de las notas libres.
+- **Sellador**: mover y redimensionar el sello solo era posible con ratón; el panel gana campos numéricos de posición y tamaño.
+- **Volantes**: la selección de registros y los controles de formato no eran operables por teclado ni anunciaban su estado.
+- **Gantt / Historial**: las tareas sin fecha se anclaban al día UTC de creación y la búsqueda del historial solo filtraba las páginas ya cargadas.
+- **Exportación PNG de Canvas**: los tres caminos de exportación fallaban en silencio; ahora el panel y la selección muestran el error y la paleta de comandos lo registra en observabilidad.
 
 ### Security
 - **Flujos / webhook**: un webhook sin `secret` configurado aceptaba cualquier llamada local; ahora el secreto es obligatorio y toda llamada sin clave válida recibe 403.

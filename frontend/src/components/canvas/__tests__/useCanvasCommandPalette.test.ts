@@ -8,7 +8,7 @@ import { createLayer } from '../constants';
 import { createGuide } from '../ops/guides';
 import { createEmptyDocument, type CanvasDocument, type CanvasLayer } from '../types';
 
-const { exportPagePng } = vi.hoisted(() => ({ exportPagePng: vi.fn() }));
+const { exportPagePng } = vi.hoisted(() => ({ exportPagePng: vi.fn(async () => undefined) }));
 vi.mock('../ops/exportPng', () => ({ exportPagePng, PAGE_PNG_SCALE: 2 }));
 
 function makeDoc(layers: CanvasLayer[]): CanvasDocument {

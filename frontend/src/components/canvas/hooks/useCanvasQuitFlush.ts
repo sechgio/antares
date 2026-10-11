@@ -1,6 +1,6 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import { api, onNotify } from '../../../api';
-import { acknowledgeCanvasFlush } from '../../../utils/ackCanvasFlush';
+import { acknowledgeCanvasFlush, registerCanvasFlushOwner } from '../../../utils/ackCanvasFlush';
 import { reportFrontendEvent } from '../../../utils/observability';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 import type { CanvasDocument } from '../types';
@@ -46,16 +46,33 @@ export function useCanvasQuitFlush({
   useEffect(() => {
     flushRef.current = async () => {
       const startedAt = Date.now();
-      let flushFailed: 'onSave_failed' | 'canvas_save_failed' | undefined;
+      type FlushFailure =
+        | 'onSave_failed'
+        | 'canvas_save_failed'
+        | 'panel_commit_failed'
+        | 'gesture_commit_failed'
+        | 'inline_edit_failed'
+        | 'rename_commit_failed';
+      let flushFailed: FlushFailure | undefined;
+      // Los cuatro commits previos se intentan aunque fallen, pero cada fallo
+      // deja un reason distinto: sin él, un flush incompleto se reportaba como
+      // éxito y no había forma de saber qué paso se quedó atrás.
+      let commitFailed: FlushFailure | undefined;
       try {
         if (panelBaselineRef.current) onPanelCommitLive();
-      } catch {}
+      } catch {
+        commitFailed = 'panel_commit_failed';
+      }
       try {
         if (gestureBaselineRef.current) commitPageLayersGesture();
-      } catch {}
+      } catch {
+        commitFailed ??= 'gesture_commit_failed';
+      }
       try {
         if (editingLayerId) commitInlineEdit();
-      } catch {}
+      } catch {
+        commitFailed ??= 'inline_edit_failed';
+      }
       try {
         const baseline = renameBaselineRef.current;
         if (baseline) {
@@ -64,7 +81,10 @@ export function useCanvasQuitFlush({
             history.commitFromBaseline(baseline);
           }
         }
-      } catch {}
+      } catch {
+        commitFailed ??= 'rename_commit_failed';
+      }
+      flushFailed = commitFailed;
 
       if (isOpenDirtyRef.current()) {
         try {
@@ -119,14 +139,21 @@ export function useCanvasQuitFlush({
     renameBaselineRef,
   ]);
 
-  useEffect(() => onNotify(async (method) => {
-    if (method !== 'app.flush-canvas-before-quit') return;
-    try {
-      await flushRef.current();
-    } finally {
+  useEffect(() => {
+    const release = registerCanvasFlushOwner();
+    const unsubscribe = onNotify(async (method) => {
+      if (method !== 'app.flush-canvas-before-quit') return;
       try {
-        await acknowledgeCanvasFlush();
-      } catch {}
-    }
-  }), []);
+        await flushRef.current();
+      } finally {
+        try {
+          await acknowledgeCanvasFlush();
+        } catch {}
+      }
+    });
+    return () => {
+      unsubscribe();
+      release();
+    };
+  }, []);
 }

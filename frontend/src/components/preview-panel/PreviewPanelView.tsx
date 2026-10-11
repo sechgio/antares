@@ -23,6 +23,7 @@ import { useBackendStatus } from "../../hooks/useBackendStatus";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useLocalStorageState } from "../../hooks/useLocalStorageState";
 import { mapWithConcurrencyLimit } from "../../utils/mapWithConcurrencyLimit";
+import { sanitizeHtmlForPdf } from "../../../../shared/html-sanitizer.js";
 import PreviewPanel, { renderPreviewHtml } from "./PreviewPanel";
 import TemplatePicker from "./TemplatePicker";
 import { REPORT_FIELDS } from "./constants";
@@ -544,6 +545,17 @@ export default function PreviewPanelView() {
     [headers],
   );
 
+  // El selector reconstruía las N opciones en cada render, incluida cada tecla
+  // del buscador: se memoiza (sin recortar la lista) para no asignarlas de nuevo.
+  const rowOptions = useMemo(
+    () =>
+      data.map((row, idx) => ({
+        value: String(idx),
+        label: `${idx + 1}. ${idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}`,
+      })),
+    [data, idColumn],
+  );
+
   const canPrevRow = selectedIndex !== "" && parseInt(selectedIndex) > 0;
   const canNextRow =
     selectedIndex !== "" && parseInt(selectedIndex) < data.length - 1;
@@ -658,7 +670,9 @@ export default function PreviewPanelView() {
       );
 
       const html =
-        exportScope === "all" ? mergeHtmlDocuments(documents) : documents[0];
+        exportScope === "all"
+          ? mergeHtmlDocuments(documents)
+          : sanitizeHtmlForPdf(documents[0]);
       const res = await api.htmlToPdf({
         html,
         filename,
@@ -738,16 +752,24 @@ export default function PreviewPanelView() {
               <input
                 id="logoLeftInput"
                 type="file"
-                hidden
+                className="sr-only"
                 accept="image/*"
-                onChange={(e) => handleLogoUpload(e, "left")}
+                aria-label="Subir logo izquierdo"
+                onChange={(e) => {
+                  handleLogoUpload(e, "left");
+                  e.target.value = "";
+                }}
               />
               <input
                 id="logoRightInput"
                 type="file"
-                hidden
+                className="sr-only"
                 accept="image/*"
-                onChange={(e) => handleLogoUpload(e, "right")}
+                aria-label="Subir logo derecho"
+                onChange={(e) => {
+                  handleLogoUpload(e, "right");
+                  e.target.value = "";
+                }}
               />
             </div>
           </Step>
@@ -777,9 +799,13 @@ export default function PreviewPanelView() {
                 <input
                   id="templateInput"
                   type="file"
-                  hidden
+                  className="sr-only"
                   accept=".html"
-                  onChange={handleTemplateUpload}
+                  aria-label="Subir plantilla HTML"
+                  onChange={(e) => {
+                    handleTemplateUpload(e);
+                    e.target.value = "";
+                  }}
                 />
               </label>
 
@@ -1128,10 +1154,14 @@ export default function PreviewPanelView() {
                 </div>
                 <input
                   type="file"
-                  hidden
+                  className="sr-only"
                   multiple
                   accept="image/*"
-                  onChange={handleImageUpload}
+                  aria-label="Subir fotos"
+                  onChange={(e) => {
+                    handleImageUpload(e);
+                    e.target.value = "";
+                  }}
                 />
               </label>
             ) : (
@@ -1159,6 +1189,7 @@ export default function PreviewPanelView() {
                 <input
                   type="text"
                   placeholder="Buscar orden..."
+                  aria-label="Buscar orden"
                   value={searchOrder}
                   onChange={(e) => {
                     const term = e.target.value;
@@ -1183,10 +1214,7 @@ export default function PreviewPanelView() {
                 aria-label="Seleccionar fila"
                 placeholder="-- Seleccionar Fila --"
                 value={selectedIndex}
-                options={data.map((row, idx) => ({
-                  value: String(idx),
-                  label: `${idx + 1}. ${idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}`,
-                }))}
+                options={rowOptions}
                 onChange={setSelectedIndex}
                 disabled={exportScope === "all"}
                 maxMenuHeight={280}

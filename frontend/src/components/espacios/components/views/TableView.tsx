@@ -105,6 +105,7 @@ export default function TableView({
   const TableVirtualRow = useMemo(
     () =>
       React.memo(function TableVirtualRowInner({
+        ariaAttributes,
         index,
         style,
         sorted: rows,
@@ -141,6 +142,7 @@ export default function TableView({
           <div
             style={style}
             data-virtual-row
+            {...ariaAttributes}
             className={`grid min-w-[920px] grid-cols-[40px_40px_40px_minmax(220px,2fr)_minmax(160px,1fr)_minmax(140px,1fr)_minmax(120px,0.8fr)_minmax(110px,0.7fr)_96px] items-center gap-1 border-b border-[var(--border-subtle)] px-2 text-sm transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_60%,transparent)] ${
               overdue && !done ? 'bg-[var(--accent-red)]/[0.03]' : ''
             } ${isSelected ? 'bg-[var(--accent-primary)]/[0.06]' : ''}`}
@@ -349,6 +351,8 @@ export default function TableView({
                   rowComponent={TableVirtualRow as never}
                   rowProps={tableRowProps}
                   style={{ height: listHeight, width: '100%' }}
+                  role="list"
+                  aria-label="Tareas"
                 />
               )}
             </div>

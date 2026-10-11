@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import ThemedSelect from '../ui/ThemedSelect';
-import type { PositionAssignmentMode, StampPosition } from './utils';
+import type { PositionAssignmentMode, StampPosition, StampRect } from './utils';
 import { MAX_STAMP_POSITIONS_LIMIT } from './utils';
 import Button from '@/components/ui/Button';
 
@@ -15,6 +16,50 @@ interface PositionPanelProps {
   onRemovePosition: (index: number) => void;
   onAssignmentModeChange: (mode: PositionAssignmentMode) => void;
   onSlotChange: (stampIndex: number, positionIndex: number) => void;
+  onRectChange: (index: number, rect: StampRect) => void;
+}
+
+const RECT_FIELDS = [
+  { key: 'x', label: 'X' },
+  { key: 'y', label: 'Y' },
+  { key: 'width', label: 'Ancho' },
+  { key: 'height', label: 'Alto' },
+] as const;
+
+// El rect llega limitado y redondeado desde el padre: mientras se teclea se
+// muestra el borrador, o cada pulsación intermedia (p. ej. "5" camino a "50")
+// se reescribiría con el valor limitado.
+function RectField({
+  label,
+  ariaLabel,
+  value,
+  onCommit,
+}: {
+  label: string;
+  ariaLabel: string;
+  value: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+      <span className="w-10 shrink-0 text-[var(--text-muted)]">{label}</span>
+      <input
+        type="number"
+        value={draft ?? Math.round(value)}
+        min={0}
+        step={1}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          const next = Number(event.target.value);
+          if (event.target.value !== '' && Number.isFinite(next)) onCommit(next);
+        }}
+        onBlur={() => setDraft(null)}
+        aria-label={ariaLabel}
+        className="w-full min-w-0 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-input)] px-2 py-1 font-mono text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
+      />
+    </label>
+  );
 }
 
 export default function PositionPanel({
@@ -28,8 +73,10 @@ export default function PositionPanel({
   onRemovePosition,
   onAssignmentModeChange,
   onSlotChange,
+  onRectChange,
 }: PositionPanelProps) {
   const canAdd = positions.length < MAX_STAMP_POSITIONS_LIMIT;
+  const active = positions[activeIndex] ?? positions[0] ?? null;
 
   return (
     <div className="space-y-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3">
@@ -83,6 +130,25 @@ export default function PositionPanel({
           </Button>
         ))}
       </div>
+
+      {active ? (
+        <div className="space-y-1.5 border-t border-[var(--border-subtle)] pt-2">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">
+            {active.name} (pt)
+          </span>
+          <div className="grid grid-cols-2 gap-1.5">
+            {RECT_FIELDS.map((field) => (
+              <RectField
+                key={field.key}
+                label={field.label}
+                ariaLabel={`${active.name}: ${field.label} en puntos`}
+                value={active.rect[field.key]}
+                onCommit={(value) => onRectChange(activeIndex, { ...active.rect, [field.key]: value })}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {positions.length > 1 ? (
         <div className="space-y-2 border-t border-[var(--border-subtle)] pt-2">

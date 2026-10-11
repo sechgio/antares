@@ -34,6 +34,7 @@ import { renderOtherPagesPreview } from "./previewRender";
 import {
   buildResolvedPlacements,
   buildStampPlacement,
+  clampStampRect,
   countAssignments,
   createStampPosition,
   defaultStampRect,
@@ -366,7 +367,6 @@ export default function SelladorView() {
         return;
       }
       try {
-        if (stampPreviewUrl) URL.revokeObjectURL(stampPreviewUrl);
         const previewUrl = URL.createObjectURL(file);
         setStampFile(file);
         setStampPreviewUrl(previewUrl);
@@ -384,7 +384,7 @@ export default function SelladorView() {
         });
       }
     },
-    [addToast, initializePositions, pageSize, stampPreviewUrl],
+    [addToast, initializePositions, pageSize],
   );
 
   useEffect(
@@ -498,10 +498,13 @@ export default function SelladorView() {
   ]);
 
   const updatePositionRect = useCallback((index: number, rect: StampRect) => {
+    // El editor ya manda el rect limitado, pero la entrada numérica del panel
+    // no: limitar aquí cubre ambos caminos.
+    const next = pageSize ? clampStampRect(rect, pageSize) : rect;
     setPositions((current) =>
-      current.map((pos, i) => (i === index ? { ...pos, rect } : pos)),
+      current.map((pos, i) => (i === index ? { ...pos, rect: next } : pos)),
     );
-  }, []);
+  }, [pageSize]);
 
   const handleAddPosition = useCallback(() => {
     if (!pageSize || !primaryRect) return;
@@ -560,7 +563,8 @@ export default function SelladorView() {
   };
 
   const clearStamp = () => {
-    if (stampPreviewUrl) URL.revokeObjectURL(stampPreviewUrl);
+    // La URL anterior la revoca el efecto sobre stampPreviewUrl (cambio y
+    // unmount); revocarla aquí también era un doble revoke latente.
     setStampFile(null);
     setStampPreviewUrl(null);
     setPositions([]);
@@ -591,6 +595,7 @@ export default function SelladorView() {
                     variant="none"
                     size="none"
                     onClick={clearPdf}
+                    aria-label="Quitar PDF"
                     className="text-[var(--text-muted)] hover:text-[var(--accent-red)]"
                   >
                     <X size={14} />
@@ -643,6 +648,7 @@ export default function SelladorView() {
                       variant="none"
                       size="none"
                       onClick={clearStamp}
+                      aria-label="Quitar sello"
                       className="text-[var(--text-muted)] hover:text-[var(--accent-red)]"
                     >
                       <X size={14} />
@@ -719,6 +725,7 @@ export default function SelladorView() {
               onAddPosition={handleAddPosition}
               onRemovePosition={handleRemovePosition}
               onAssignmentModeChange={setAssignmentMode}
+              onRectChange={updatePositionRect}
               onSlotChange={(stampIndex, positionIndex) => {
                 setAssignmentMode("manual");
                 setSlotIndices((prev) => {

@@ -312,7 +312,6 @@ def test_render_pdf_html_from_preview_markup() -> None:
 
 def test_build_image_uris_embeds_disk_paths_as_data_uri(tmp_path: Path) -> None:
     import base64
-    from pathlib import Path
 
     png = base64.b64decode(_tiny_png(), validate=True)
     image_path = Path(tmp_path) / "foto.png"
@@ -327,7 +326,6 @@ def test_build_image_uris_embeds_disk_paths_as_data_uri(tmp_path: Path) -> None:
 @requires_weasyprint
 def test_render_pdf_disk_backed_images_embed(tmp_path: Path) -> None:
     import base64
-    from pathlib import Path
 
     png = base64.b64decode(_tiny_png(), validate=True)
     image_path = Path(tmp_path) / "img1.png"
@@ -437,7 +435,7 @@ def test_pdf_html_has_horizontal_photo_gaps() -> None:
     })
     assert f'colspan="{PHOTO_TABLE_COLS}"' in html
     assert "col-gap" in html
-    assert f"width: {PHOTO_GAP_CM}cm" in html or f"width: {PHOTO_GAP_CM}cm;" in html
+    assert f"width: {PHOTO_GAP_CM}cm" in html
 
 
 def test_docx_photos_table_has_gap_columns() -> None:
@@ -459,12 +457,8 @@ def test_docx_photos_table_has_gap_columns() -> None:
 
 @requires_weasyprint
 def test_render_pdf_six_images_per_page() -> None:
-    images = {}
-    refs = []
-    for i in range(1, 7):
-        name = f"img{i}.jpg"
-        images[name] = _tiny_png()
-        refs.append(ImageRef(filename=name, position=i))
+    images = {f"img{i}.jpg": _tiny_png() for i in range(1, 7)}
+    refs = [ImageRef(filename=name, position=i) for i, name in enumerate(images, 1)]
     doc = EvidenciaDocument(
         title="TEST",
         cuadrante="ZONA",

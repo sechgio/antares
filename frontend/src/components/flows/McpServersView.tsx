@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Plus, Terminal, Trash2, Wrench } from 'lucid
 import { mcpApi, type McpServer, type McpTool } from '../../api/mcpApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
+import { useDialog } from '../../hooks/useDialog';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
@@ -21,6 +22,7 @@ function parseSecretLines(text: string): Record<string, string> {
 
 function ServerCard({ server, onDeleted }: { server: McpServer; onDeleted: () => void }) {
   const { addToast } = useToast();
+  const { confirm } = useDialog();
   const [expanded, setExpanded] = useState(false);
   const [tools, setTools] = useState<McpTool[] | null>(null);
   const [loadingTools, setLoadingTools] = useState(false);
@@ -43,6 +45,14 @@ function ServerCard({ server, onDeleted }: { server: McpServer; onDeleted: () =>
   };
 
   const remove = async () => {
+    const ok = await confirm({
+      title: 'Eliminar servidor',
+      description: `¿Eliminar «${server.name}»? Esta acción no se puede deshacer.`,
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      type: 'destructive',
+    });
+    if (!ok) return;
     try {
       await mcpApi.mcpServerDelete(server.id);
       addToast({ message: `Servidor ${server.name} eliminado`, type: 'success' });

@@ -21,6 +21,8 @@ export function graphToReactFlow(graph: WorkflowGraph): { nodes: Node<FlowNodeDa
     type: 'flowNode',
     position: { x: n.position.x, y: n.position.y },
     data: { flowNode: n },
+    // Sin esto cada nodo es un tab stop que solo anuncia su id interno.
+    ariaLabel: n.name,
   }));
   const edges: Edge[] = graph.edges.map((e) => ({
     id: edgeId(e),

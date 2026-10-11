@@ -116,6 +116,21 @@ export default function EvidenciaVolanteoApp() {
             }} 
           />
           <div className="relative pointer-events-auto flex flex-col gap-3 w-full px-4 pt-8 pb-4">
+            <span
+              className={`text-[10px] font-medium uppercase tracking-wider ${session.persistenceStatus === 'error' || session.restoreFailed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`}
+              role="status"
+              aria-live="polite"
+            >
+              {session.restoreFailed
+                ? 'No se pudo restaurar la sesión'
+                : session.persistenceStatus === 'loading'
+                  ? 'Restaurando...'
+                  : session.persistenceStatus === 'saving'
+                    ? 'Guardando...'
+                    : session.persistenceStatus === 'error'
+                      ? 'No se pudo guardar'
+                      : 'Guardado local'}
+            </span>
             <ExportBar format={exportFormat} onFormatChange={setExportFormat} />
             <Button variant="none" size="none"
               onClick={handleExport}

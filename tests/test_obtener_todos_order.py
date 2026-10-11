@@ -5,7 +5,7 @@ from backend.core import database as db
 from backend.core.config_fields import save_fields
 
 
-def _setup(db_path, config_path) -> None:
+def _setup(db_path) -> None:
     save_fields([{"name": "codigo", "type": "TEXT", "required": True}])
     db.init_db()
     conn = sqlite3.connect(str(db_path))
@@ -25,7 +25,7 @@ class TestObtenerTodosOrder:
             "backend.core.config_fields._config_file",
             lambda: tmp_path / "fields_config.json",
         )
-        _setup(db_file, tmp_path / "fields_config.json")
+        _setup(db_file)
 
         full = [r["codigo"] for r in db.obtener_todos()]
         chunked = [

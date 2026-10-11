@@ -163,10 +163,27 @@ function persistNow(list: StickyNote[]): void {
 }
 
 function schedulePersist(): void {
+  ensureUnloadFlush();
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
+    persistTimer = null;
     persistNow($notes.get());
   }, 200);
+}
+
+function flushPersist(): void {
+  if (!persistTimer) return;
+  clearTimeout(persistTimer);
+  persistTimer = null;
+  persistNow($notes.get());
+}
+
+let unloadFlushRegistered = false;
+function ensureUnloadFlush(): void {
+  // Sin esto, cerrar antes de 200 ms tras la última tecla perdía la edición.
+  if (unloadFlushRegistered || typeof window === 'undefined') return;
+  unloadFlushRegistered = true;
+  window.addEventListener('pagehide', flushPersist);
 }
 
 export function getNote(id: string): StickyNote | null {

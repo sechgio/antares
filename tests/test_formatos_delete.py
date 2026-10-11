@@ -28,7 +28,6 @@ def test_delete_format_disables_builtin_without_removing_b64_file(monkeypatch, t
     monkeypatch.setattr(formatos, "_formats", {"builtin-test": dict(entry)})
 
     removed_paths: list[str] = []
-    real_remove = formatos.os.remove
 
     def spy_remove(path):
         removed_paths.append(str(path))
@@ -41,7 +40,6 @@ def test_delete_format_disables_builtin_without_removing_b64_file(monkeypatch, t
     assert builtin_b64.exists()
     assert removed_paths == []
     assert formatos._formats["builtin-test"]["enabled"] is False
-    monkeypatch.setattr(formatos.os, "remove", real_remove)
 
 
 def test_delete_format_removes_uploaded_file_and_drops_entry(monkeypatch, tmp_path) -> None:

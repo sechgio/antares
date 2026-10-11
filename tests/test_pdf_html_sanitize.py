@@ -102,7 +102,7 @@ def test_write_pdf_sanitized_cache_miss_on_different_html(monkeypatch) -> None:
 
     class FakeHTML:
         def __init__(self, *args, **kwargs) -> None:
-            self.kwargs = kwargs
+            pass
 
         def write_pdf(self, target, **kwargs) -> None:
             calls["n"] += 1

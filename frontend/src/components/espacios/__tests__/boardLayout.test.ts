@@ -77,4 +77,41 @@ describe('computeInsertSortOrder', () => {
     const order = computeInsertSortOrder(items, map, 'todo', 'moving', 'b');
     expect(order).toBe(20);
   });
+
+  it('inserts after the over task when dragging down within the column', () => {
+    const tareas = [
+      makeTarea({ id: 'a', status: 'todo', sort_order: 10 }),
+      makeTarea({ id: 'moving', status: 'todo', sort_order: 20 }),
+      makeTarea({ id: 'b', status: 'todo', sort_order: 30 }),
+    ];
+    const map = new Map(tareas.map((t) => [t.id, t]));
+    const items = { todo: ['a', 'moving', 'b'] };
+    const order = computeInsertSortOrder(items, map, 'todo', 'moving', 'b');
+    expect(order).toBeGreaterThan(30);
+  });
+
+  it('inserts before the over task when dragging up within the column', () => {
+    const tareas = [
+      makeTarea({ id: 'a', status: 'todo', sort_order: 10 }),
+      makeTarea({ id: 'moving', status: 'todo', sort_order: 20 }),
+      makeTarea({ id: 'b', status: 'todo', sort_order: 30 }),
+    ];
+    const map = new Map(tareas.map((t) => [t.id, t]));
+    const items = { todo: ['a', 'moving', 'b'] };
+    const order = computeInsertSortOrder(items, map, 'todo', 'b', 'a');
+    expect(order).toBeLessThan(10);
+  });
+
+  it('keeps a move across several tasks inside the column', () => {
+    const tareas = [
+      makeTarea({ id: 'a', status: 'todo', sort_order: 10 }),
+      makeTarea({ id: 'b', status: 'todo', sort_order: 20 }),
+      makeTarea({ id: 'moving', status: 'todo', sort_order: 30 }),
+      makeTarea({ id: 'c', status: 'todo', sort_order: 40 }),
+    ];
+    const map = new Map(tareas.map((t) => [t.id, t]));
+    const items = { todo: ['a', 'b', 'moving', 'c'] };
+    const order = computeInsertSortOrder(items, map, 'todo', 'moving', 'c');
+    expect(order).toBeGreaterThan(40);
+  });
 });

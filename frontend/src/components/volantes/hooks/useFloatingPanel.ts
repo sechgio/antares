@@ -13,6 +13,27 @@ interface UseFloatingPanelOptions {
   ignoreSelector: string;
 }
 
+function isValidPosition(value: unknown): value is Position {
+  if (!value || typeof value !== 'object') return false;
+  const pos = value as Record<string, unknown>;
+  return Number.isFinite(pos.x) && Number.isFinite(pos.y);
+}
+
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Cuota o modo privado: la posición no persiste, pero el panel sigue.
+  }
+}
+
+function safeRemoveItem(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+  }
+}
+
 function defaultPosition(panelWidth: number): Position {
   const fabRight = 24;
   const fabWidth = 52;
@@ -44,7 +65,10 @@ export function useFloatingPanel({
     const savedPosition = localStorage.getItem(storageKeyPosition);
     if (savedPosition) {
       try {
-        setPosition(JSON.parse(savedPosition));
+        const parsed: unknown = JSON.parse(savedPosition);
+        // El try solo cubría sintaxis: {"x":"a","y":null} parseaba bien y
+        // dejaba NaN en style.left/top.
+        setPosition(isValidPosition(parsed) ? parsed : defaultPosition(panelWidth));
       } catch {
         setPosition(defaultPosition(panelWidth));
       }
@@ -57,8 +81,8 @@ export function useFloatingPanel({
 
   useEffect(() => {
     if (isOpen && isPinned) {
-      localStorage.setItem(storageKeyPosition, JSON.stringify(position));
-      localStorage.setItem(storageKeyPinned, 'true');
+      safeSetItem(storageKeyPosition, JSON.stringify(position));
+      safeSetItem(storageKeyPinned, 'true');
     }
   }, [position, isPinned, isOpen, storageKeyPinned, storageKeyPosition]);
 
@@ -107,11 +131,11 @@ export function useFloatingPanel({
     setIsPinned((prev) => {
       const next = !prev;
       if (next) {
-        localStorage.setItem(storageKeyPosition, JSON.stringify(position));
-        localStorage.setItem(storageKeyPinned, 'true');
+        safeSetItem(storageKeyPosition, JSON.stringify(position));
+        safeSetItem(storageKeyPinned, 'true');
       } else {
-        localStorage.removeItem(storageKeyPosition);
-        localStorage.removeItem(storageKeyPinned);
+        safeRemoveItem(storageKeyPosition);
+        safeRemoveItem(storageKeyPinned);
       }
       return next;
     });
@@ -119,7 +143,7 @@ export function useFloatingPanel({
 
   const handleResetPosition = () => {
     setPosition(defaultPosition(panelWidth));
-    localStorage.removeItem(storageKeyPosition);
+    safeRemoveItem(storageKeyPosition);
   };
 
   return {

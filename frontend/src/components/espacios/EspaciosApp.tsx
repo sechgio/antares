@@ -458,6 +458,54 @@ export default function EspaciosApp() {
     });
   }, []);
 
+  // Las vistas virtualizadas memoizan sus filas: estos handlers se pasan como
+  // props estables en lugar de flechas inline, para no invalidar cada fila en
+  // cada render (p. ej. al escribir en el buscador).
+  const handleViewStatusChange = useCallback(
+    (id: string, status: TareaStatus) =>
+      patchTareaToast(id, { status }, 'No se pudo actualizar el estado'),
+    [patchTareaToast],
+  );
+  const handleBoardStatusChange = useCallback(
+    (id: string, status: TareaStatus, sortOrder: number) =>
+      patchTareaToast(id, { status, sort_order: sortOrder }, 'No se pudo mover la tarea'),
+    [patchTareaToast],
+  );
+  const handleCalendarDateChange = useCallback(
+    (id: string, dueDate: string | null) =>
+      patchTareaToast(id, { due_date: dueDate }, 'No se pudo actualizar la fecha'),
+    [patchTareaToast],
+  );
+  const handleViewDatesChange = useCallback(
+    (id: string, startDate: string | null, dueDate: string | null) =>
+      patchTareaToast(
+        id,
+        { start_date: startDate, due_date: dueDate },
+        'No se pudo actualizar la fecha',
+      ),
+    [patchTareaToast],
+  );
+  const handleDeleteTaskById = useCallback(
+    (id: string) => {
+      const tarea = sync.tareas.find((t) => t.id === id);
+      if (tarea) void handleDeleteTask(tarea);
+    },
+    [sync.tareas, handleDeleteTask],
+  );
+  const handleDeleteTaskVoid = useCallback(
+    (tarea: Tarea) => void handleDeleteTask(tarea),
+    [handleDeleteTask],
+  );
+  const handleOpenCreateTask = useCallback(() => openTaskForm(), [openTaskForm]);
+  const handleOpenCreateTaskWithStatus = useCallback(
+    (status?: TareaStatus) => openTaskForm({ status }),
+    [openTaskForm],
+  );
+  const handleOpenCreateTaskOnDate = useCallback(
+    (dueDate: string) => openTaskForm({ dueDate }),
+    [openTaskForm],
+  );
+
   const handleToggleSelectAll = useCallback(() => {
     setSelectedIds((prev) => {
       const visible = filteredTareas;
@@ -914,15 +962,10 @@ export default function EspaciosApp() {
                     selectedIds={selectedIds}
                     onToggleSelect={handleToggleSelect}
                     onToggleSelectAll={handleToggleSelectAll}
-                    onStatusChange={(id, status) =>
-                      patchTareaToast(id, { status }, 'No se pudo actualizar el estado')
-                    }
+                    onStatusChange={handleViewStatusChange}
                     onEdit={openEditTask}
-                    onDelete={(id) => {
-                      const tarea = sync.tareas.find((t) => t.id === id);
-                      if (tarea) void handleDeleteTask(tarea);
-                    }}
-                    onAddTask={() => openTaskForm()}
+                    onDelete={handleDeleteTaskById}
+                    onAddTask={handleOpenCreateTask}
                   />
                 ) : activeView === 'board' ? (
                   <BoardView
@@ -931,13 +974,11 @@ export default function EspaciosApp() {
                     columns={sync.boardColumns}
                     showClosed={filters.showClosed}
                     projectName={sync.activeProyecto?.name}
-                    onStatusChange={(id, status, sortOrder) =>
-                      patchTareaToast(id, { status, sort_order: sortOrder }, 'No se pudo mover la tarea')
-                    }
+                    onStatusChange={handleBoardStatusChange}
                     onEditTask={openEditTask}
                     onCompleteTask={handleCompleteTask}
-                    onDeleteTask={(tarea) => void handleDeleteTask(tarea)}
-                    onAddTask={(status) => openTaskForm({ status })}
+                    onDeleteTask={handleDeleteTaskVoid}
+                    onAddTask={handleOpenCreateTaskWithStatus}
                     onAddColumn={handleAddBoardColumn}
                     onRenameColumn={handleRenameBoardColumn}
                     onDeleteColumn={handleDeleteBoardColumn}
@@ -950,16 +991,11 @@ export default function EspaciosApp() {
                     selectedIds={selectedIds}
                     onToggleSelect={handleToggleSelect}
                     onToggleSelectAll={handleToggleSelectAll}
-                    onStatusChange={(id, status) =>
-                      patchTareaToast(id, { status }, 'No se pudo actualizar el estado')
-                    }
+                    onStatusChange={handleViewStatusChange}
                     onComplete={handleCompleteTask}
                     onEdit={openEditTask}
-                    onDelete={(id) => {
-                      const tarea = sync.tareas.find((t) => t.id === id);
-                      if (tarea) void handleDeleteTask(tarea);
-                    }}
-                    onAddTask={() => openTaskForm()}
+                    onDelete={handleDeleteTaskById}
+                    onAddTask={handleOpenCreateTask}
                   />
                 ) : activeView === 'calendar' ? (
                   <Suspense
@@ -973,18 +1009,10 @@ export default function EspaciosApp() {
                     <CalendarView
                       tareas={filteredTareas}
                       columns={sync.boardColumns}
-                      onDateChange={(id, dueDate) =>
-                        patchTareaToast(id, { due_date: dueDate }, 'No se pudo actualizar la fecha')
-                      }
-                      onDatesChange={(id, startDate, dueDate) =>
-                        patchTareaToast(
-                          id,
-                          { start_date: startDate, due_date: dueDate },
-                          'No se pudo actualizar la fecha',
-                        )
-                      }
-                      onAddTask={() => openTaskForm()}
-                      onAddTaskOnDate={(dueDate) => openTaskForm({ dueDate })}
+                      onDateChange={handleCalendarDateChange}
+                      onDatesChange={handleViewDatesChange}
+                      onAddTask={handleOpenCreateTask}
+                      onAddTaskOnDate={handleOpenCreateTaskOnDate}
                       onEditTask={openEditTask}
                     />
                   </Suspense>
@@ -992,15 +1020,9 @@ export default function EspaciosApp() {
                   <GanttView
                     tareas={filteredTareas}
                     columns={sync.boardColumns}
-                    onDatesChange={(id, startDate, dueDate) =>
-                      patchTareaToast(
-                        id,
-                        { start_date: startDate, due_date: dueDate },
-                        'No se pudo actualizar la fecha',
-                      )
-                    }
-                    onAddTask={() => openTaskForm()}
-                    onAddTaskOnDate={(dueDate) => openTaskForm({ dueDate })}
+                    onDatesChange={handleViewDatesChange}
+                    onAddTask={handleOpenCreateTask}
+                    onAddTaskOnDate={handleOpenCreateTaskOnDate}
                     onEditTask={openEditTask}
                   />
                 )}

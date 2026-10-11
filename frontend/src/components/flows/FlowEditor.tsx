@@ -26,6 +26,7 @@ import Input from '../ui/Input';
 import Toggle from '../ui/Toggle';
 import FlowNodeView from './FlowNodeView';
 import EmptyCanvasHint from './EmptyCanvasHint';
+import FlowGuide from './FlowGuide';
 import NodeConfigDrawer from './NodeConfigDrawer';
 import NodePalette, { NODE_DRAG_MIME } from './NodePalette';
 import { FLOW_EDGE_STYLE, edgeConnectionValid, graphToReactFlow, makeNodeId, reactFlowToGraph, reconnectEdge, type FlowNodeData } from './graphAdapter';
@@ -58,6 +59,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
   const [nameDraft, setNameDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(true);
   const canvasRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   // Guardado imperativo (Ctrl+S) necesita el grafo más reciente aunque React
@@ -246,10 +248,10 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
       const fields = n.kind === 'agent' ? ['text'] : n.kind === 'http_request' ? ['ok', 'status', 'text', 'json']
         : n.kind === 'transform' && n.config.output && typeof n.config.output === 'object' ? Object.keys(n.config.output)
         : n.kind === 'tool_call' ? ({ formats: ['formats'], canvas_get: ['document'],
-          flows_read_images: ['contexts', 'files', 'image_names', 'image_paths', 'localImagePaths', 'rows', 'key_column', 'output_path', 'stamped_output_path', 'output_folder'],
+          flows_read_images: ['contexts', 'files', 'image_names', 'image_paths', 'localImagePaths', 'rows', 'key_column', 'output_path', 'stamped_output_path', 'output_folder', 'pdf_args', 'planned_paths', 'output_names'],
           panel_aviso_corte_compute_match: ['panels', 'summary'],
           technical_reports_render_html: ['html', 'filename'], informes_v2_render_html: ['html', 'filename'], fichas_tecnicas_render_html: ['html', 'filename'],
-          flows_render_pdf: ['saved_path', 'filename'], canvas_export_cmyk_pdf: ['saved_path', 'filename'],
+          flows_render_pdf: ['saved_path', 'filename', 'saved_paths', 'count'], canvas_export_cmyk_pdf: ['saved_path', 'filename'],
           sellador_apply: ['saved_path', 'filename'], formatos_generate: ['saved_path', 'filename'],
           flows_print_pdf: ['queued', 'job_id', 'printer_name'],
         } as Record<string, string[]>)[String(n.config.method)] ?? [] : [];
@@ -445,6 +447,9 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
     return () => window.removeEventListener('keydown', onKey);
   }, [save, undo, redo, active, changeSelection]);
 
+  const guideSource = nodes.map((node) => node.data.flowNode).find((node) => node.kind === 'tool_call' && node.config.method === 'flows_read_images' && node.config.args !== null && typeof node.config.args === 'object' && 'guided_pdf' in node.config.args && node.config.args.guided_pdf === true);
+  const guideTrigger = nodes.map((node) => node.data.flowNode).find((node) => node.kind === 'trigger');
+
   return (
     <div ref={editorRef} className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-[var(--border-medium)] px-4 py-2.5">
@@ -462,6 +467,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
           placeholder="Nombre del flujo"
         />
         <div className="flex-1" />
+        {guideSource && <Button variant="secondary" size="sm" onClick={() => { if (changeSelection(null)) setGuideOpen((open) => !open); }}>{guideOpen ? 'Editor de nodos' : 'Guía de PDF'}</Button>}
         <Button
           variant="ghost"
           size="sm"
@@ -534,7 +540,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
         </Button>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      {guideOpen && guideSource ? <FlowGuide key={guideSource.id} node={guideSource} trigger={guideTrigger} onChange={updateNode} /> : <div className="flex min-h-0 flex-1">
         <NodePalette onAdd={addNodeAtCenter} />
         <div ref={canvasRef} className="relative flex-1" onDrop={onDrop} onDragOver={onDragOver}>
           <ReactFlow
@@ -578,7 +584,7 @@ function FlowEditorInner({ flowId, onBack, onRunStarted, onAskAgent, active = tr
           onDraftChange={() => setDirty(true)}
           sources={dataSources}
         />
-      </div>
+      </div>}
     </div>
   );
 }

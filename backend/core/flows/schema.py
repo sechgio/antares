@@ -130,6 +130,8 @@ def validate_graph(graph: JsonObject) -> None:
             trigger_kind = node["config"].get("trigger_kind", "manual")
             if trigger_kind not in TRIGGER_KINDS:
                 raise ValueError(f"trigger_kind inválido en {node_id}: {trigger_kind}")
+            if node["config"].get("runtime", "any") not in {"any", "app_open"}:
+                raise ValueError(f"runtime inválido en {node_id}")
             if trigger_kind == "schedule":
                 interval = node["config"].get("interval_minutes", 60)
                 if not isinstance(interval, int) or isinstance(interval, bool):

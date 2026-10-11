@@ -804,7 +804,7 @@ describe('Artboard drag gestures', () => {
     fireEvent.pointerDown(handle, { button: 0, clientX: 100, clientY: 100 });
     fireEvent.pointerMove(window, { clientX: 140, clientY: 140 });
     act(() => tick());
-    expect(screen.getByTestId('canvas-radius-badge').textContent).toMatch(/^Radius \d+$/);
+    expect(screen.getByTestId('canvas-radius-badge').textContent).toMatch(/^Radio \d+$/);
     fireEvent.pointerUp(window, { clientX: 140, clientY: 140 });
 
     expect(onChangeLayers).toHaveBeenCalledTimes(1);

@@ -259,6 +259,10 @@ def _orchestratable_methods(params: JsonObject) -> JsonObject:
 @with_locale
 def _read_images(params: JsonObject) -> JsonObject:
     """Entrada local de un flujo; solo carpetas autorizadas por el bridge."""
+    if params.get("guided_pdf") is True:
+        from backend.core.flows.pdf_workflow import prepare
+
+        return prepare({**params, "preview_pdf": False})
     folder = str(params.get("source_folder") or "").strip()
     output = str(params.get("output_folder") or "").strip()
     if not folder or not output:
@@ -541,6 +545,10 @@ def _batch_template_profile(name: str) -> JsonObject:
 
 @with_locale
 def _render_pdf(params: JsonObject) -> JsonObject:
+    if params.get("guided_pdf") is True:
+        from backend.core.flows.pdf_workflow import export_pdf
+
+        return export_pdf(params)
     from backend.utils.atomic_write import atomic_output_file
     from backend.utils.pdf_html import write_pdf_sanitized
 
@@ -553,8 +561,8 @@ def _render_pdf(params: JsonObject) -> JsonObject:
         profile = _batch_template_profile(str(template_name))
         contexts = params.get("contexts")
         if not isinstance(contexts, list) or len(contexts) != expected_pages or any(
-            not isinstance(item, dict) or not (1 if profile["image_limit"] else 0) <= len(item.get("images") or []) <= profile["image_limit"]
-            or any(not (item.get("data") or {}).get(key) for key in ("OT", "FECHA_TRABAJO")) for item in contexts
+            not isinstance(item, dict) or not (0 if params.get("_guided_contexts") else 1 if profile["image_limit"] else 0) <= len(item.get("images") or []) <= profile["image_limit"]
+            or (not params.get("_guided_contexts") and any(not (item.get("data") or {}).get(key) for key in ("OT", "FECHA_TRABAJO"))) for item in contexts
         ):
             return {"ready": False, "reason": "Resuelve todas las filas antes de exportar"}
     if template_name:
@@ -615,7 +623,7 @@ def _render_pdf(params: JsonObject) -> JsonObject:
                         header.setdefault("sgio", data["OT"])
                         if template_name.startswith("informes_v2/"):
                             header.setdefault("fecha_ejecucion", data["FECHA_TRABAJO"])
-                        else:
+                        elif data.get("FECHA_TRABAJO"):
                             work_date = date.fromisoformat(data["FECHA_TRABAJO"])
                             metadata = nested.setdefault("metadata", {})
                             metadata.setdefault("dia", work_date.day)
@@ -681,6 +689,10 @@ def _render_pdf(params: JsonObject) -> JsonObject:
                 return {"ready": False, "reason": f"Faltan datos de la plantilla: {exc}"}
     if not isinstance(html, str) or not html.strip():
         return {"ready": False, "reason": "Esperando el contenido del documento"}
+    if params.get("_preview_pdf") is True:
+        import base64
+
+        return {"pdf_base64": base64.b64encode(write_pdf_sanitized(html)).decode("ascii")}
     output = str(params.get("output_path") or "").strip()
     if not output:
         return {"ready": False, "reason": "Selecciona un archivo de salida"}
@@ -701,6 +713,13 @@ def _render_pdf(params: JsonObject) -> JsonObject:
     with atomic_output_file(output, extension=".pdf") as target:
         target.tmp_path.write_bytes(pdf)
     return {"saved_path": str(target.destination), "filename": target.destination.name}
+
+
+@with_locale
+def _pdf_preview(params: JsonObject) -> JsonObject:
+    from backend.core.flows.pdf_workflow import prepare
+
+    return prepare({**params, "guided_pdf": True, "preview_pdf": True})
 
 
 @with_locale
@@ -837,6 +856,7 @@ HANDLERS = {
     "flows_orchestratable_methods": _orchestratable_methods,
     "flows_read_images": _read_images,
     "flows_render_pdf": _render_pdf,
+    "flows_pdf_preview": _pdf_preview,
     "flows_printers_list": _printers_list,
     "flows_print_pdf": _print_pdf,
     "flows_path_authorize": _authorize_paths,

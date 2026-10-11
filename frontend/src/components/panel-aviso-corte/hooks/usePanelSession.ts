@@ -28,7 +28,6 @@ import { errorMessage } from '@/utils/errors';
 
 interface PanelSession {
   headerForm: HeaderFormState;
-  logoLeft: LogoAsset | null;
   logoRight: LogoAsset | null;
   images: LocalImage[];
   excelSource: ExcelSource | null;
@@ -41,7 +40,6 @@ interface PanelSession {
   isMatching: boolean;
   errors: string[];
   setHeaderForm: (v: HeaderFormState) => void;
-  setLogoLeft: (file: File | null) => string | null;
   setLogoRight: (file: File | null) => string | null;
   addImages: (files: File[]) => string[] | Promise<string[]>;
   removeImage: (index: number) => void;
@@ -77,7 +75,6 @@ export function usePanelSession(): PanelSession {
     fechaCorte: '',
     motivo: '',
   });
-  const [logoLeft, setLogoLeftState] = useState<LogoAsset | null>(null);
   const [logoRight, setLogoRightState] = useState<LogoAsset | null>(null);
   const [images, setImages] = useState<LocalImage[]>([]);
   const [excelSource, setExcelSourceState] = useState<ExcelSource | null>(null);
@@ -104,8 +101,6 @@ export function usePanelSession(): PanelSession {
   const exportModeRef = useRef(exportMode);
   exportModeRef.current = exportMode;
 
-  const logoLeftRef = useRef(logoLeft);
-  logoLeftRef.current = logoLeft;
   const logoRightRef = useRef(logoRight);
   logoRightRef.current = logoRight;
 
@@ -114,18 +109,6 @@ export function usePanelSession(): PanelSession {
     if (file.size > MAX_LOGO_BYTES) return MSG_LOGO_TOO_LARGE;
     return null;
   }, []);
-
-  const setLogoLeft = useCallback((file: File | null): string | null => {
-    if (logoLeft) URL.revokeObjectURL(logoLeft.objectUrl);
-    if (!file) {
-      setLogoLeftState(null);
-      return null;
-    }
-    const err = validateLogo(file);
-    if (err) return err;
-    setLogoLeftState({ file, objectUrl: URL.createObjectURL(file) });
-    return null;
-  }, [logoLeft, validateLogo]);
 
   const setLogoRight = useCallback((file: File | null): string | null => {
     if (logoRight) URL.revokeObjectURL(logoRight.objectUrl);
@@ -143,7 +126,10 @@ export function usePanelSession(): PanelSession {
     const newErrors: string[] = [];
     const accepted: LocalImage[] = [];
     for (const file of files) {
-      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) continue;
+      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+        newErrors.push(`Formato no admitido: ${file.name}`);
+        continue;
+      }
       if (file.size > MAX_IMAGE_BYTES) {
         newErrors.push(MSG_IMAGE_TOO_LARGE(file.name));
         continue;
@@ -281,9 +267,6 @@ export function usePanelSession(): PanelSession {
 
   useEffect(() => {
     return () => {
-      if (logoLeftRef.current) {
-        URL.revokeObjectURL(logoLeftRef.current.objectUrl);
-      }
       if (logoRightRef.current) {
         URL.revokeObjectURL(logoRightRef.current.objectUrl);
       }
@@ -317,7 +300,6 @@ export function usePanelSession(): PanelSession {
 
   return {
     headerForm,
-    logoLeft,
     logoRight,
     images,
     excelSource,
@@ -330,7 +312,6 @@ export function usePanelSession(): PanelSession {
     isMatching,
     errors,
     setHeaderForm: setHeaderFormState,
-    setLogoLeft,
     setLogoRight,
     addImages,
     removeImage,

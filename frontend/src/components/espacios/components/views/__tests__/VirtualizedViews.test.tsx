@@ -57,6 +57,40 @@ describe('Virtualized TableView & ListView Components', () => {
       expect(screen.queryByRole('table')).not.toBeInTheDocument();
     });
 
+    it('exposes list semantics in virtualized rows', () => {
+      // jsdom no calcula layout: la lista solo se monta con altura medida.
+      const rectSpy = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 600,
+          top: 0,
+          left: 0,
+          bottom: 600,
+          right: 800,
+          toJSON: () => {},
+        });
+      try {
+        const tareas = createMockTareas(55);
+        render(
+          <TableView
+            tareas={tareas}
+            members={mockMembers}
+            onStatusChange={vi.fn()}
+            onComplete={vi.fn()}
+            onDelete={vi.fn()}
+          />
+        );
+
+        expect(screen.getByRole('list', { name: 'Tareas' })).toBeInTheDocument();
+        expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0);
+      } finally {
+        rectSpy.mockRestore();
+      }
+    });
+
     it('handles selection toggle callbacks correctly', () => {
       const tareas = createMockTareas(5);
       const onToggleSelect = vi.fn();
@@ -108,6 +142,39 @@ describe('Virtualized TableView & ListView Components', () => {
       );
 
       expect(container.querySelector('[data-virtualized-list]')).toBeTruthy();
+    });
+
+    it('exposes list semantics in virtualized rows', () => {
+      // jsdom no calcula layout: la lista solo se monta con altura medida.
+      const rectSpy = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 600,
+          top: 0,
+          left: 0,
+          bottom: 600,
+          right: 800,
+          toJSON: () => {},
+        });
+      try {
+        const tareas = createMockTareas(60);
+        render(
+          <ListView
+            tareas={tareas}
+            members={mockMembers}
+            onStatusChange={vi.fn()}
+            onDelete={vi.fn()}
+          />
+        );
+
+        expect(screen.getByRole('list', { name: 'Tareas' })).toBeInTheDocument();
+        expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0);
+      } finally {
+        rectSpy.mockRestore();
+      }
     });
 
     it('handles item delete callback', () => {

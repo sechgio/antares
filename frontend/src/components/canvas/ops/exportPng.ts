@@ -72,8 +72,6 @@ export async function exportLayerPng(layerId: string, name: string, scale: numbe
       cacheBust: needsImageCacheBust(wrap),
     });
     await downloadDataUrl(dataUrl, name || 'layer');
-  } catch (err) {
-    console.error('Error exporting layer PNG:', err);
   } finally {
     wrap.remove();
   }
@@ -143,8 +141,6 @@ export async function exportSelectionPng(
       cacheBust: needsImageCacheBust(wrap),
     });
     await downloadDataUrl(dataUrl, name || 'seleccion');
-  } catch (err) {
-    console.error('Error exporting selection PNG:', err);
   } finally {
     wrap.remove();
   }
@@ -186,8 +182,6 @@ export async function exportPagePng(
       cacheBust: needsImageCacheBust(wrap),
     });
     await downloadDataUrl(dataUrl, name || 'pagina');
-  } catch (err) {
-    console.error('Error exporting page PNG:', err);
   } finally {
     root.unmount();
     wrap.remove();

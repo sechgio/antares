@@ -144,7 +144,7 @@ def _schedule_trigger(flow: JsonObject) -> JsonObject | None:
         return None
     trigger = next((n for n in flow["graph"]["nodes"] if n.get("kind") == "trigger"), None)
     config = (trigger or {}).get("config") or {}
-    if config.get("trigger_kind") != "schedule":
+    if config.get("trigger_kind") != "schedule" or config.get("runtime") == "app_open":
         return None
     interval = config.get("interval_minutes", 60)
     if not isinstance(interval, int) or not 1 <= interval <= 10080:

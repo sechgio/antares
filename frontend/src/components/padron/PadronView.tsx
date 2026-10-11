@@ -150,6 +150,7 @@ export default function PadronView() {
   const [importStatus, setImportStatus] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState("");
   const [isPrinting, setIsPrinting] = useState(false);
   const [logosBase64, setLogosBase64] = useState<{
     acciona: string | null;
@@ -524,14 +525,15 @@ export default function PadronView() {
     if (!logosLoaded) return;
 
     setIsGeneratingPdf(true);
+    setPdfError("");
     setPdfProgress("Preparando...");
-
-    const { toCanvas, getFontEmbedCSS } = await import("html-to-image");
 
     let wrapper: HTMLDivElement | null = null;
     let root: ReturnType<typeof createRoot> | null = null;
 
     try {
+      const { toCanvas, getFontEmbedCSS } = await import("html-to-image");
+
       if (document.fonts?.ready) await document.fonts.ready;
 
       const isLandscape = !isWaterCutNotice && orientation === "landscape";
@@ -710,6 +712,10 @@ export default function PadronView() {
             },
         isWaterCutNotice ? waterCutVisibleItems.length : visibleItems.length,
       );
+    } catch (err) {
+      // Sin este catch la promesa quedaba rechazada sin manejar: el spinner
+      // paraba y el botón volvía a "Descargar PDF" sin decir nada.
+      setPdfError(errorMessage(err, "No se pudo generar el PDF."));
     } finally {
       if (root) {
         root.unmount();
@@ -775,6 +781,7 @@ export default function PadronView() {
         <DatePicker
           value={toISODate(value)}
           onChange={(isoValue) => onChange(toDisplayDate(isoValue))}
+          aria-label={field.label}
         />
       );
     }
@@ -786,6 +793,7 @@ export default function PadronView() {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          aria-label={field.label}
         />
       );
     }
@@ -796,6 +804,7 @@ export default function PadronView() {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={field.label}
       />
     );
   };
@@ -958,13 +967,18 @@ export default function PadronView() {
                 size="none"
                 className="vpad-btn vpad-btn-primary vpad-btn-download"
                 onClick={handleGeneratePdf}
-                disabled={isGeneratingPdf}
+                disabled={isGeneratingPdf || !logosLoaded}
               >
                 <Download size={15} strokeWidth={2.25} />
                 {isGeneratingPdf
                   ? pdfProgress || "Generando..."
                   : "Descargar PDF"}
               </Button>
+              {pdfError && (
+                <p role="alert" className="mt-2 text-[11px] font-medium text-[var(--accent-red)]">
+                  {pdfError}
+                </p>
+              )}
               <div className="vpad-actions-row">
                 <Button
                   variant="none"

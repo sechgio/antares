@@ -72,9 +72,10 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
     void load();
   }, [load, refreshKey]);
 
-  const createFlow = async () => {
+  const createFlow = async (guided = false) => {
     try {
-      const res = await flowsApi.flowsCreate({ name: 'Nuevo flujo' });
+      const template = FLOW_TEMPLATES.find((item) => item.id === 'pdf-personalizado');
+      const res = await flowsApi.flowsCreate({ name: guided ? 'PDF personalizado' : 'Nuevo flujo', ...(guided && template ? { graph: template.graph } : {}) });
       addToast({ message: 'Flujo creado', type: 'success' });
       onOpen(res.flow.id);
     } catch (err) {
@@ -228,6 +229,7 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
             <LayoutTemplate size={15} className="mr-1" />
             Plantillas
           </Button>
+          <Button variant="secondary" size="sm" onClick={() => void createFlow(true)}>Crear PDF con guía</Button>
           <Button variant="primary" size="sm" onClick={() => void createFlow()}>
             <Plus size={15} className="mr-1" />
             Nuevo flujo
@@ -258,7 +260,7 @@ export default function FlowList({ onOpen, onRun, onShowRuns, refreshKey }: Prop
             <p className="text-sm text-[var(--text-secondary)]">
               Empieza con un ejemplo que funciona en este equipo. Después podrás conectar pasos para crear tu propio flujo.
             </p>
-            <Button variant="primary" size="sm" onClick={() => void createFromTemplate(FLOW_TEMPLATES[0])}>
+            <Button variant="primary" size="sm" onClick={() => void createFromTemplate(FLOW_TEMPLATES.find((template) => template.id === 'formatos-locales')!)}>
               <Plus size={15} className="mr-1" />
               Probar un ejemplo local
             </Button>

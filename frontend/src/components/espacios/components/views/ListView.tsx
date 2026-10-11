@@ -42,6 +42,7 @@ type RowComponentProps = {
 } & RowData;
 
 const ListVirtualRow = React.memo(function ListVirtualRow({
+  ariaAttributes,
   index,
   style,
   tareas,
@@ -62,6 +63,7 @@ const ListVirtualRow = React.memo(function ListVirtualRow({
   return (
     <div
       style={style}
+      {...ariaAttributes}
       className={`${ROW_GRID} border-b border-[var(--border-subtle)] px-3 transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_50%,transparent)] ${
         overdue ? 'bg-[var(--accent-red)]/[0.03]' : ''
       } ${selected ? 'bg-[var(--accent-primary)]/[0.06]' : ''}`}
@@ -281,6 +283,8 @@ export default function ListView({
             rowComponent={ListVirtualRow as (props: RowComponentProps) => React.ReactElement | null}
             rowProps={rowProps}
             style={{ height: listHeight, width: '100%' }}
+            role="list"
+            aria-label="Tareas"
           />
         )}
       </div>

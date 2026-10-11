@@ -10,6 +10,22 @@ export interface FlowTemplate {
 
 export const FLOW_TEMPLATES: FlowTemplate[] = [
   {
+    id: 'pdf-personalizado', name: 'PDF personalizado con guía',
+    description: 'Conecta Excel, fotos o datos de Antares con una plantilla HTML, de Canvas o un formato PDF. Revisa el documento y elige salida consolidada o individual.',
+    requirements: 'Configura las entradas y revisa el lote en la guía. La automatización se ejecuta con Antares abierto.',
+    graph: {
+      nodes: [
+        { id: 'trigger', kind: 'trigger', name: 'Inicio manual', config: { trigger_kind: 'manual', runtime: 'app_open' }, position: { x: 0, y: 0 } },
+        { id: 'entradas', kind: 'tool_call', name: 'Preparar datos y fotos', config: { method: 'flows_read_images', args: { guided_pdf: true, template_kind: 'html', template_id: '', output_folder: '', output_mode: 'consolidado', filename_pattern: 'Documento.pdf' }, required_args: ['template_id', 'output_folder'] }, position: { x: 300, y: 0 } },
+        { id: 'generar', kind: 'tool_call', name: 'Generar PDFs personalizados', config: { method: 'flows_render_pdf', args: '=nodes.entradas.json.pdf_args' }, position: { x: 600, y: 0 } },
+      ],
+      edges: [
+        { from_node: 'trigger', to_node: 'entradas', from_port: 'main', to_port: 'main' },
+        { from_node: 'entradas', to_node: 'generar', from_port: 'main', to_port: 'main' },
+      ],
+    },
+  },
+  {
     id: 'formatos-locales',
     name: 'Ver formatos disponibles',
     description: 'Pulsa Ejecutar para consultar los formatos que admite Antares y ver el resultado en Ejecuciones.',

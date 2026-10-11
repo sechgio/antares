@@ -40,6 +40,23 @@ def test_schedule_accepts_the_full_configured_range():
     assert os_tasks._schedule_trigger(_flow(10081)) is None
 
 
+def test_app_open_runtime_keeps_schedule_in_gui_and_validates_contract():
+    from backend.core.flows.scheduler import _schedule_interval_minutes
+    from backend.core.flows.schema import normalize_graph, validate_graph
+
+    flow = _flow(3)
+    trigger = flow["graph"]["nodes"][0]
+    trigger["id"] = "trigger"
+    trigger["config"]["runtime"] = "app_open"
+    graph = normalize_graph(flow["graph"])
+    validate_graph(graph)
+    assert _schedule_interval_minutes(flow) == 3
+    assert os_tasks._schedule_trigger(flow) is None
+    trigger["config"]["runtime"] = "invalid"
+    with pytest.raises(ValueError, match="runtime"):
+        validate_graph(normalize_graph(flow["graph"]))
+
+
 def test_task_registration_uses_xml_and_reports_schtasks_failure(monkeypatch):
     captured = {}
 

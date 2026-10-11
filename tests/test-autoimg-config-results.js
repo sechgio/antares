@@ -1,24 +1,15 @@
 const assert = require('assert/strict');
 
-const { evictModule } = require('./helpers/harness');
-
-function installMock(resolvedPath, exports) {
-  require.cache[resolvedPath] = {
-    id: resolvedPath,
-    filename: resolvedPath,
-    loaded: true,
-    exports,
-  };
-}
+const { evictModule, stubModule } = require('./helpers/harness');
 
 async function main() {
   const sheetsPath = require.resolve('../electron/google-sheets-service');
   const drivePath = require.resolve('../electron/google-drive-service');
   const windowManagerPath = require.resolve('../electron/window-manager');
-    const originalSetInterval = global.setInterval;
+  const originalSetInterval = global.setInterval;
   const originalClearInterval = global.clearInterval;
 
-  installMock(sheetsPath, {
+  stubModule(sheetsPath, {
     getSheetId: () => 'sheet-1',
     getStoredSheetConfig: () => ({ sheet_id: 'sheet-1', name: 'AutoIMG', linked: true }),
     getAuthStatus: async () => ({ authenticated: true, email: 'user@example.com' }),
@@ -26,8 +17,8 @@ async function main() {
     readRanges: async () => { throw new Error('estado remoto no disponible'); },
     writeRange: async () => { throw new Error('configuración de solo lectura'); },
   });
-  installMock(drivePath, {});
-  installMock(windowManagerPath, { getMainWindow: () => null });
+  stubModule(drivePath, {});
+  stubModule(windowManagerPath, { getMainWindow: () => null });
   evictModule('electron/autoimg-sync-engine');
 
   global.setInterval = () => ({ fake: true });

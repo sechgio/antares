@@ -76,6 +76,10 @@ def stop_backend(proc: subprocess.Popen) -> None:
     proc.wait()
 
 
+def patch_field_names(monkeypatch, *names: str) -> None:
+    monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: list(names))
+
+
 @pytest.fixture
 def backend_process():
     proc, stderr_lines = spawn_backend()

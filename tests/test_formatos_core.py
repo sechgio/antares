@@ -80,7 +80,7 @@ def test_resolve_path_rejects_traversal_in_uploaded(catalog_env) -> None:
         formatos._resolve_path(_entry(storage_path="../evil.pdf"))
 
 
-def test_resolve_path_prefers_builtin_then_data_dir(catalog_env, tmp_path) -> None:
+def test_resolve_path_prefers_builtin_then_data_dir(catalog_env) -> None:
     builtin_dir = formatos._BUILTIN_DIR
     builtin_dir.mkdir()
     (builtin_dir / "t.b64").write_text("eQ==", encoding="ascii")
@@ -127,7 +127,7 @@ def test_load_catalog_tolerates_corrupt_json_and_backfills(catalog_env, tmp_path
     catalog = tmp_path / "catalog.json"
     catalog.write_text("{corrupt", encoding="utf-8")
     formatos._load_catalog()
-    assert "formato1" in formatos._formats or len(formatos._formats) >= 1  # builtins cargados
+    assert len(formatos._formats) >= 1  # builtins cargados
 
     without_flag = _entry("up1")
     del without_flag["has_mapping"]
@@ -146,7 +146,7 @@ def test_load_catalog_downgrades_visual_overlay_without_mapping(catalog_env, tmp
     assert formatos._formats["up2"]["strategy"] == formatos.SIMPLE_OVERLAY
 
 
-def test_load_catalog_keeps_deleted_builtin_disabled(catalog_env, tmp_path) -> None:
+def test_load_catalog_keeps_deleted_builtin_disabled(catalog_env) -> None:
     builtin_id = formatos._BUILTIN_FORMATS[0]["id"]
     formatos._load_catalog()
     assert formatos.delete_format(builtin_id) is True
@@ -168,7 +168,7 @@ def test_add_uploaded_format_validates_name_size_and_pdf(catalog_env, monkeypatc
         formatos.add_uploaded_format("n", "a.pdf", b"not a pdf at all")
 
 
-def test_add_uploaded_format_happy_path_registers_entry(catalog_env, monkeypatch) -> None:
+def test_add_uploaded_format_happy_path_registers_entry(catalog_env) -> None:
     entry = formatos.add_uploaded_format("Mi Formato", "doc.pdf", _minimal_pdf(), persisted=False)
     assert entry["id"].startswith("upload-")
     assert formatos._formats[entry["id"]]["origen"] == "uploaded"

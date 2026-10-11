@@ -1,6 +1,30 @@
 import { _invoke } from './core';
 import type { Flow, FlowMeta, FlowRun, PendingApproval, PendingEffect, WorkflowGraph } from '../components/flows/types';
 
+export interface GuidedPdfInput {
+  guided_pdf: true;
+  source_folder?: string;
+  output_folder: string;
+  spreadsheet_path?: string;
+  records_source?: string;
+  template_kind: 'html' | 'canvas' | 'formato';
+  template_id: string;
+  match_key?: string;
+  match_date?: string;
+  images_per_panel?: number;
+  field_mappings?: Record<string, string>;
+  field_values?: Record<string, string>;
+  row_values?: Record<string, Record<string, string>>;
+  photo_selections?: Record<string, string[]>;
+  required_fields?: string[];
+  output_mode?: 'consolidado' | 'individual';
+  filename_pattern?: string;
+  number_from?: number;
+  number_to?: number;
+  preview_index?: number;
+  _flow_file_grants?: Record<string, unknown>;
+}
+
 export interface ReportBatchPreview {
   ready?: boolean;
   reason?: string;
@@ -12,7 +36,11 @@ export interface ReportBatchPreview {
   image_limit?: number;
   required_fields?: string[];
   field_labels?: Record<string, string>;
-  preview?: { row_index: number; ot: string; date: string; data: Record<string, string>; images: string[]; candidates: string[]; errors: string[] }[];
+  match_key?: string;
+  output_names?: string[];
+  pdf_base64?: string;
+  preview_pages?: number;
+  preview?: { row_index: number; record_key?: string; ot: string; date: string; data: Record<string, string>; images: string[]; candidates: string[]; errors: string[] }[];
 }
 
 export const flowsApi = {
@@ -58,10 +86,12 @@ export const flowsApi = {
     _invoke<{ running: boolean; port: number; url_template: string }>('flows_webhook_info'),
   flowsOrchestratableMethods: () =>
     _invoke<{ methods: string[]; actions?: string[] }>('flows_orchestratable_methods'),
-  flowsReadImages: (params: { source_folder: string; output_folder: string; expected_images?: number; images_per_panel?: number; spreadsheet_path?: string; report_template?: string; field_mappings?: Record<string, string>; photo_selections?: Record<string, string[]> }) =>
+  flowsReadImages: (params: GuidedPdfInput | { source_folder: string; output_folder: string; expected_images?: number; images_per_panel?: number; spreadsheet_path?: string; report_template?: string; field_mappings?: Record<string, string>; photo_selections?: Record<string, string[]> }) =>
     _invoke<Record<string, unknown> & ReportBatchPreview>('flows_read_images', params),
+  flowsPdfPreview: (params: GuidedPdfInput) =>
+    _invoke<ReportBatchPreview>('flows_pdf_preview', params),
   flowsRenderPdf: (params: { html?: string; template_name?: string; context?: Record<string, unknown>; contexts?: Record<string, unknown>[]; localImagePaths?: Record<string, string>; photo_digests?: Record<string, string>; expected_pages?: number; output_path: string }) =>
-    _invoke<{ ready?: boolean; reason?: string; saved_path?: string; filename?: string }>('flows_render_pdf', params),
+    _invoke<{ ready?: boolean; reason?: string; saved_path?: string; saved_paths?: string[]; filename?: string; count?: number }>('flows_render_pdf', params),
   flowsPrintersList: () => _invoke<{ printers: { name: string; default: boolean }[] }>('flows_printers_list'),
   flowsPrintPdf: (params: { pdf_path: string; printer_name: string; copies?: number; pages?: string; duplex?: 'none' | 'long_edge' | 'short_edge'; quality?: 'draft' | 'normal' | 'high' }) =>
     _invoke<{ ready?: boolean; reason?: string; queued?: boolean; job_id?: number; printer_name?: string }>('flows_print_pdf', params),

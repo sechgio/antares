@@ -352,7 +352,6 @@ def test_save_run_receives_duration_ms(monkeypatch, tmp_path) -> None:
         completes.append((ok, err))
 
     monkeypatch.setattr(conversion_job, "_notify_complete", fake_notify)
-    monkeypatch.setattr(conversion_job, "es_video", lambda _path: False)
     monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 1)
 
     def boom(*_args, **_kwargs):  # type: ignore[no-untyped-def]

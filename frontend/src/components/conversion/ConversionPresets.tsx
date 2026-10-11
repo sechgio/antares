@@ -114,10 +114,26 @@ const DEFAULT_PRESETS: SavedPreset[] = [
 
 const STORAGE_KEY = 'antares_conversion_presets';
 
+function isSavedPreset(value: unknown): value is SavedPreset {
+  if (!value || typeof value !== 'object') return false;
+  const preset = value as Record<string, unknown>;
+  return (
+    typeof preset.id === 'string' &&
+    typeof preset.name === 'string' &&
+    Boolean(preset.config) &&
+    typeof preset.config === 'object'
+  );
+}
+
 function loadPresets(): SavedPreset[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    // El try solo cubría sintaxis: un array con otra forma se esparcía al
+    // cargar sin validar.
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isSavedPreset);
   } catch {}
   return [];
 }

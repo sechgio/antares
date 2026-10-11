@@ -79,6 +79,12 @@ function main() {
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'autoimg_scan_all']);
   const allowed = catalog.METHOD_NAMES;
+  if (!apiMethods.has('flows_pdf_preview') || !catalog.isIdempotent('flows_pdf_preview')
+      || catalog.METHODS.flows_pdf_preview.lane !== 'heavy'
+      || catalog.METHODS.flows_pdf_preview.flowCallable === true
+      || JSON.stringify(catalog.READ_FILE_TOKEN_SCHEMAS.get('flows_pdf_preview')) !== JSON.stringify([['spreadsheet_path']])) {
+    throw new Error('La vista previa guiada debe conservar capacidades y ser una lectura heavy del renderer.');
+  }
 
   const refreshMethod = 'flows_connection_token_refresh';
   if (!catalog.INTERNAL_METHODS.has(refreshMethod) || knownUsedMethods.has(refreshMethod)) {
@@ -116,11 +122,6 @@ function main() {
     }
   }
 
-  const allowlistDrift = [
-    ...[...catalog.METHOD_NAMES].filter((m) => !allowed.has(m)),
-    ...[...allowed].filter((m) => !catalog.METHOD_NAMES.has(m)),
-  ];
-
   const heavyNotLongRunning = [...catalog.HEAVY_TIMEOUT_METHODS].filter((m) => !catalog.LONG_RUNNING_METHODS.has(m));
 
   const timeoutDrift = [
@@ -129,6 +130,7 @@ function main() {
     ['process_start', 900_000],
     ['canvas_export_cmyk_pdf', 900_000],
     ['flows_print_pdf', 900_000],
+    ['flows_pdf_preview', 900_000],
     ['html_to_pdf', 900_000],
   ].filter(([m, ms]) => catalog.timeoutMsFor(m) !== ms);
 
@@ -144,13 +146,6 @@ function main() {
   if (missingFromAllowlist.length > 0) {
     console.error(
       `[FAIL] Métodos usados en api.ts/api/*.ts pero no en ALLOWED_RENDERER_METHODS:\n  - ${missingFromAllowlist.join('\n  - ')}`
-    );
-    failed = true;
-  }
-
-  if (allowlistDrift.length > 0) {
-    console.error(
-      `[FAIL] ALLOWED_RENDERER_METHODS no coincide con las claves del catálogo:\n  - ${allowlistDrift.join('\n  - ')}`
     );
     failed = true;
   }

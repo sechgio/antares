@@ -33,6 +33,13 @@ function assertOrExit(condition, message) {
   }
 }
 
+function eq(actual, expected, message) {
+  assert(
+    actual === expected,
+    `${message} (esperado: ${JSON.stringify(expected)}, actual: ${JSON.stringify(actual)})`,
+  );
+}
+
 function finish() {
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${counters.passed} passed, ${counters.failed} failed`);
@@ -72,6 +79,15 @@ function stubModule(spec, exports) {
 
 function evictModule(spec) {
   delete require.cache[_resolveRepoModule(spec)];
+}
+
+// Los módulos autoimg comparten estado en require.cache; se purgan por prefijo.
+function clearAutoimgModules() {
+  for (const key of Object.keys(require.cache)) {
+    if (key.includes(`${path.sep}electron${path.sep}autoimg-`)) {
+      delete require.cache[key];
+    }
+  }
 }
 
 function stubBackendCommand(exports = {}) {
@@ -171,12 +187,14 @@ module.exports = {
   assert,
   assertActionsPinned,
   assertOrExit,
+  eq,
   counters,
   finish,
   flushAsyncTurns,
   waitFor,
   stubModule,
   evictModule,
+  clearAutoimgModules,
   stubBackendCommand,
   emitBackendReady,
   makeFakeProc,

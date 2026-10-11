@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useToast } from '../../../hooks/useToast';
+import { reportFrontendError } from '../../../utils/observability';
+import { errorMessage } from '../../../utils/errors';
 import { CHUNK_SIZE, chunkArray, getDefaultHeader } from '../constants';
 import type { CampoPanel, CampoPanelListItem, PhotoFile, ReportTypeConfig } from '../types';
 import { derivePanelLabel } from '../utils/panelLabel';
@@ -71,6 +74,7 @@ interface CampoPanelsHookResult {
 }
 
 export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult {
+    const { addToast } = useToast();
     const [panels, setPanels] = useState<CampoPanel[]>(() => [createEmptyPanel(config)]);
     const [selectedPanelId, setSelectedPanelId] = useState<string | null>(() => panels[0]?.id ?? null);
 
@@ -173,28 +177,41 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
 
         let cancelled = false;
         void (async () => {
-            const stored = await loadPanelsByType(type);
-            if (cancelled) return;
+            try {
+                const stored = await loadPanelsByType(type);
+                if (cancelled) return;
 
-            if (stored.length === 0) {
-                if (firstRun) return;
+                if (stored.length === 0) {
+                    if (firstRun) return;
+                    panelsRef.current.forEach((panel) => revokePhotos(panel.photos));
+                    const fresh = createEmptyPanel(config);
+                    setPanels([fresh]);
+                    setSelectedPanelId(fresh.id);
+                    return;
+                }
+
+                const restored = stored.map(storedToPanel);
                 panelsRef.current.forEach((panel) => revokePhotos(panel.photos));
-                const fresh = createEmptyPanel(config);
-                setPanels([fresh]);
-                setSelectedPanelId(fresh.id);
-                return;
+                setPanels(restored);
+                setSelectedPanelId(restored[0]?.id ?? null);
+            } catch (err) {
+                // Antes era una promesa rechazada sin manejar y el usuario se
+                // quedaba en un panel vacío sin saber que sus paneles fallaron.
+                if (cancelled) return;
+                reportFrontendError({
+                    kind: 'storage_error',
+                    view: 'reportes-campo.load',
+                    name: err instanceof Error ? err.name : 'StorageError',
+                    message: errorMessage(err, String(err)),
+                });
+                addToast({ message: 'No se pudieron cargar los paneles guardados', type: 'error' });
             }
-
-            const restored = stored.map(storedToPanel);
-            panelsRef.current.forEach((panel) => revokePhotos(panel.photos));
-            setPanels(restored);
-            setSelectedPanelId(restored[0]?.id ?? null);
         })();
 
         return () => {
             cancelled = true;
         };
-    }, [reportType, config, flushPendingSaves]);
+    }, [reportType, config, flushPendingSaves, addToast]);
 
     useEffect(() => {
         return () => {

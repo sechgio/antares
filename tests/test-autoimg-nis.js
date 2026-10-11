@@ -1,6 +1,6 @@
 
 
-const { assertOrExit:assert } = require('./helpers/harness');
+const { assertOrExit: assert } = require('./helpers/harness');
 
 const {
   extractNis,

@@ -84,8 +84,7 @@ def test_get_many_copies_only_requested_documents(tmp_path) -> None:
     db.insert({"id": "doc-1", "title": "one"})
     db.insert({"id": "doc-2", "title": "two"})
 
-    get_many = getattr(db, "get_many", lambda _ids: None)
-    selected = get_many(["doc-2", "missing"])
+    selected = db.get_many(["doc-2", "missing"])
 
     assert selected == [{"id": "doc-2", "title": "two"}]
 
@@ -94,8 +93,7 @@ def test_project_all_returns_detached_projections(tmp_path) -> None:
     db = JsonDocumentStore(tmp_path / "docs.json", _normalize)
     db.insert({"id": "doc-1", "title": "one", "nested": {"flag": True}})
 
-    project_all = getattr(db, "project_all", lambda _projector: None)
-    projected = project_all(lambda item: {"id": item["id"], "flag": item["nested"]["flag"]})
+    projected = db.project_all(lambda item: {"id": item["id"], "flag": item["nested"]["flag"]})
 
     assert projected == [{"id": "doc-1", "flag": True}]
 

@@ -65,13 +65,23 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   const closeDialog = useCallback(() => {
     setIsOpen(false);
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    // Toda salida del diálogo debe resolver la promesa pendiente. Escape, el
+    // clic en el overlay y openDialog llegaban aquí sin pasar por onCancel, así
+    // que el resolver se descartaba sin llamarse y el `await confirm(...)` del
+    // llamador quedaba colgado para siempre (en el peor caso, sin poder salir
+    // de la vista). Las promesas ya resueltas por onConfirm/onCancel ignoran
+    // esta segunda llamada, así que el camino normal no cambia.
+    if (resolverRef.current) {
+      resolverRef.current(false);
+      resolverRef.current = null;
+    }
+    if (alertResolverRef.current) {
+      alertResolverRef.current();
+      alertResolverRef.current = null;
+    }
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
-      if (mountedRef.current) {
-        setOptions(null);
-        resolverRef.current = null;
-        alertResolverRef.current = null;
-      }
+      if (mountedRef.current) setOptions(null);
     }, 200);
   }, []);
 

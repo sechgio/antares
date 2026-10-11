@@ -1,6 +1,6 @@
 
 
-const { assertOrExit:assert } = require('./helpers/harness');
+const { assertOrExit: assert } = require('./helpers/harness');
 
 function main() {
   const { AUTOIMG_SHEET_TABS, listMissingAutoImgTabs } = require('../electron/autoimg-sheet-rows');

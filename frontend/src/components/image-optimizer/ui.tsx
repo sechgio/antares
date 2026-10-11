@@ -6,6 +6,7 @@ import '../../i18n';
 import { ImageItem } from './types';
 import { formatBytes } from '../../utils/format';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
+import { useRovingListbox } from '../../hooks/useRovingListbox';
 import Button from '@/components/ui/Button';
 
 export const glassPanelClass = 'rounded-xl bg-[var(--bg-surface)]';
@@ -53,6 +54,12 @@ export function ThemeSelect({
     lockSize: true,
   });
 
+  const pick = (next: string) => {
+    onChange(next);
+    close();
+  };
+  const onListKeyDown = useRovingListbox(menuRef, open, pick, { focusFallback: true });
+
   return (
     <>
       <Button variant="none" size="none"
@@ -78,6 +85,7 @@ export function ThemeSelect({
           id={listId}
           role="listbox"
           aria-label={ariaLabel}
+          onKeyDown={onListKeyDown}
           style={{
             top: menuBox.top,
             left: menuBox.left,
@@ -92,6 +100,7 @@ export function ThemeSelect({
               <Button variant="none" size="none"
                 key={opt.value}
                 role="option"
+                data-value={opt.value}
                 aria-selected={active}
                 onClick={() => {
                   onChange(opt.value);
@@ -123,7 +132,14 @@ export function ThemeSelect({
 export function ProgressBar({ current, total }: { current: number; total: number }) {
   const percentage = total > 0 ? (current / total) * 100 : 0;
   return (
-    <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--bg-input)]">
+    <div
+      className="h-1 w-full overflow-hidden rounded-full bg-[var(--bg-input)]"
+      role="progressbar"
+      aria-valuenow={current}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-label="Progreso del procesamiento"
+    >
       <div
         className="h-full rounded-full bg-[var(--accent-primary)] transition-[width] duration-200 ease-out motion-reduce:transition-none"
         style={{ width: `${percentage}%` }}

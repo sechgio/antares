@@ -23,6 +23,7 @@ import {
   STROKE_WEIGHT_MIN_PX,
 } from '../ops/layerStyle';
 import { exportSelectionPng } from '../ops/exportPng';
+import { errorMessage } from '@/utils/errors';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import StylesSection from './StylesSection';
 import { AlignmentButtons, BulkOpacityField, SectionHeader, ZOrderButtons } from './panels/shared';
@@ -167,6 +168,7 @@ export default memo(function RightPanel({
 }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<'properties' | 'versions'>('properties');
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [exportScale, setExportScale] = useState(1);
   const inspectorScrollRef = useRef<HTMLDivElement>(null);
 
@@ -613,16 +615,24 @@ export default memo(function RightPanel({
                   disabled={exporting || selectedIds.length === 0}
                   onClick={() => {
                     setExporting(true);
+                    setExportError(null);
                     void exportSelectionPng(
                       selectedIds,
                       `seleccion-${selectedIds.length}`,
                       exportScale,
-                    ).finally(() => setExporting(false));
+                    )
+                      .catch((err: unknown) => setExportError(errorMessage(err, 'No se pudo exportar el PNG')))
+                      .finally(() => setExporting(false));
                   }}
                 >
                   Exportar PNG
                 </Button>
               </div>
+              {exportError ? (
+                <p role="alert" className="mt-1 text-[10px] text-[var(--accent-red)]">
+                  {exportError}
+                </p>
+              ) : null}
             </div>
           </InspectorGroup>
         </div>

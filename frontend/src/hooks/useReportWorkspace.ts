@@ -375,6 +375,17 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
   }, [addToast, dialog, formatError, labels, markClean, options.draftKey, reportApi, runOperation]);
 
   const importFile = useCallback(async (file: File, extra?: Record<string, unknown>) => {
+    // selectReport pide confirmación con cambios sin guardar; importar también
+    // reemplaza el formulario, así que aplica la misma guarda.
+    if (hasChanges) {
+      const proceed = await dialog.confirm({
+        title: labels.dirtyTitle,
+        description: labels.dirtyDescription,
+        confirmLabel: labels.dirtyConfirmLabel,
+        cancelLabel: labels.dirtyCancelLabel,
+      });
+      if (!proceed) return;
+    }
     const gen = ++sessionGenRef.current;
     await runOperation(async () => {
       try {
@@ -393,7 +404,7 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
         addToast({ message: formatError(error, labels.importError), type: 'error' });
       }
     });
-  }, [addToast, formatError, labels, markClean, refreshReports, reportApi, runOperation]);
+  }, [addToast, dialog, formatError, hasChanges, labels, markClean, refreshReports, reportApi, runOperation]);
 
   return {
     reports,

@@ -850,6 +850,11 @@ function registerIpcHandlers() {
     const flowGraphSave = method === 'flows_create' || method === 'flows_update';
     try {
       const verifiedFlowGrants = Object.create(null);
+      let verifiedGrants;
+      if ((method === 'flows_pdf_preview' || (method === 'flows_read_images' && params.guided_pdf === true)) && params._flow_file_grants?.signature) {
+        const verification = await _callBackend('flows_path_authorize', { ...params._flow_file_grants, _verify: true });
+        if (verification?.valid === true) verifiedGrants = params._flow_file_grants;
+      }
       if (flowGraphSave && params.graph?.nodes) {
         for (const node of params.graph.nodes) {
           const grants = node.config?._file_grants;
@@ -858,7 +863,7 @@ function registerIpcHandlers() {
           if (verification?.valid === true) verifiedFlowGrants[node.id] = grants;
         }
       }
-      backendParams = _maybeResolveFileTokens(params, win, method, { verifiedFlowGrants });
+      backendParams = _maybeResolveFileTokens(params, win, method, { verifiedFlowGrants, verifiedGrants });
       backendParams = _validateAndResolveWriteParams(backendParams, win, method);
     } catch (err) {
       _tagValidationError(err, method);
@@ -880,7 +885,7 @@ function registerIpcHandlers() {
             node.config._file_grants = authorization.grants;
           }
         }
-      } else if (method === 'flows_read_images') {
+      } else if (method === 'flows_read_images' || method === 'flows_pdf_preview') {
         const authorization = await _callBackend('flows_path_authorize', backendParams._flow_file_grants);
         backendParams._flow_file_grants = authorization.grants;
       }

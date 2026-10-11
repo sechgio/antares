@@ -169,7 +169,7 @@ def test_loop_body_error_does_not_emit_done_outputs(store):
     assert steps["l1"]["output"] is None
 
 
-def test_loop_and_code_validate(store):
+def test_loop_and_code_validate():
     graph = normalize_graph(_loop_flow())
     validate_graph(graph)
 

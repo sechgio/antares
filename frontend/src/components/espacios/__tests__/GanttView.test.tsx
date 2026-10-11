@@ -28,6 +28,31 @@ describe('GanttView', () => {
     expect(onAddTask).toHaveBeenCalled();
   });
 
+  it('observes the chart viewport once tasks appear after an empty state', () => {
+    const observe = vi.fn();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = observe;
+        disconnect = vi.fn();
+      },
+    );
+    try {
+      const { rerender, container } = render(<GanttView tareas={[]} onDatesChange={vi.fn()} />);
+      expect(observe).not.toHaveBeenCalled();
+
+      rerender(
+        <GanttView
+          tareas={[makeTarea({ id: 't1', title: 'Tarea 1', start_date: '2026-07-05', due_date: '2026-07-05' })]}
+          onDatesChange={vi.fn()}
+        />,
+      );
+      expect(observe).toHaveBeenCalledWith(container.querySelector('.gantt-scroll'));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('renders non-overlapping task bars and creates from day header', () => {
     const onAddTaskOnDate = vi.fn();
     const onEditTask = vi.fn();

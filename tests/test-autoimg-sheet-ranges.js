@@ -1,5 +1,5 @@
 
-const { assertOrExit:assert } = require('./helpers/harness');
+const { assertOrExit: assert } = require('./helpers/harness');
 
 function assertThrows(fn, message) {
   try {

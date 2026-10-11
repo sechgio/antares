@@ -1,9 +1,9 @@
-const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
+const { assert, finish, stubBackendCommand, evictModule } = require('./helpers/harness');
 
 function run() {
   console.log('Testing backend child env whitelist...\n');
 
-  stubModule('electron/backend-command.js', { getBackendCommand: () => ({ cmd: 'python', args: [] }) });
+  stubBackendCommand();
 
   evictModule('electron/backend-spawner.js');
   const { _buildChildEnv } = require('../electron/backend-spawner.js');

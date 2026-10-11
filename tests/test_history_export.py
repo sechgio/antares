@@ -43,11 +43,10 @@ def seeded_db(tmp_path, monkeypatch):
             run_type=run_type,
             duration_ms=dur,
         )
-    return db_file, runs
+    return db_file
 
 
 def test_history_list_filters_by_date_range(seeded_db) -> None:
-    _db_file, _runs = seeded_db
     result = HANDLERS["history_list"]({"date_from": "2026-01-10T00:00:00", "date_to": "2026-01-31T23:59:59"})
     timestamps = [r["timestamp"] for r in result["runs"]]
     assert any("2026-01-15" in ts for ts in timestamps)
@@ -56,7 +55,6 @@ def test_history_list_filters_by_date_range(seeded_db) -> None:
 
 
 def test_history_list_combines_type_and_date(seeded_db) -> None:
-    _db_file, _runs = seeded_db
     result = HANDLERS["history_list"]({
         "run_type": "formato",
         "date_from": "2026-01-01T00:00:00",
@@ -67,7 +65,6 @@ def test_history_list_combines_type_and_date(seeded_db) -> None:
 
 
 def test_history_export_csv_with_filter(seeded_db) -> None:
-    _db_file, _runs = seeded_db
     result = HANDLERS["history_export"]({
         "run_type": "conversion",
         "date_from": "2026-01-01T00:00:00",
@@ -84,7 +81,7 @@ def test_history_export_csv_with_filter(seeded_db) -> None:
 
 
 def test_history_export_csv_by_ids(seeded_db) -> None:
-    db_file, _runs = seeded_db
+    db_file = seeded_db
     import sqlite3
     with sqlite3.connect(str(db_file)) as conn:
         ids = [row[0] for row in conn.execute("SELECT id FROM historial ORDER BY id LIMIT 2").fetchall()]
@@ -99,13 +96,11 @@ def test_history_export_csv_by_ids(seeded_db) -> None:
 
 
 def test_history_export_csv_skips_missing_ids(seeded_db) -> None:
-    _db_file, _runs = seeded_db
     result = HANDLERS["history_export"]({"ids": [1, 999, 2]})
     assert result["count"] == 2
 
 
 def test_history_delete_many(seeded_db) -> None:
-    _db_file, _runs = seeded_db
     result = HANDLERS["history_delete_many"]({"ids": [1, 2]})
     assert result == {"deleted_count": 2, "requested": 2}
     remaining = HANDLERS["history_list"]({})["runs"]
@@ -113,7 +108,6 @@ def test_history_delete_many(seeded_db) -> None:
 
 
 def test_history_export_csv_drops_missing_gracefully(seeded_db) -> None:
-    _db_file, _runs = seeded_db
     result = HANDLERS["history_export"]({"ids": [998, 999]})
     assert result["count"] == 0
     text = base64.b64decode(result["csv"]).decode("utf-8")
@@ -122,7 +116,6 @@ def test_history_export_csv_drops_missing_gracefully(seeded_db) -> None:
 
 
 def test_history_get_returns_run_with_parsed_json(seeded_db) -> None:
-    _db_file, _runs = seeded_db
     result = HANDLERS["history_get"]({"id": 1})
     run = result["run"]
     assert run["id"] == 1
@@ -131,12 +124,10 @@ def test_history_get_returns_run_with_parsed_json(seeded_db) -> None:
 
 
 def test_history_get_raises_for_missing_id(seeded_db) -> None:
-    _db_file, _runs = seeded_db
     with pytest.raises(ValueError, match="Run not found: 999999"):
         HANDLERS["history_get"]({"id": 999999})
 
 
 def test_history_get_rejects_invalid_id(seeded_db) -> None:
-    _db_file, _runs = seeded_db
     with pytest.raises(ValueError, match="id inválido"):
         HANDLERS["history_get"]({})

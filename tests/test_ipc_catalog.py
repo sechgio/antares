@@ -86,6 +86,20 @@ def test_lane_and_handler_projections() -> None:
     assert SYNC_METHODS.isdisjoint(HEAVY_METHODS)
 
 
+def test_guided_pdf_preview_is_readonly_heavy_and_keeps_file_capabilities():
+    from backend.core.ipc_catalog import FLOW_ACTION_METHODS, handler_module_for, lane_for, timeout_ms_for
+
+    entry = _catalog()["methods"]["flows_pdf_preview"]
+    assert handler_module_for("flows_pdf_preview") == "backend.handlers.flows"
+    assert lane_for("flows_pdf_preview") == "heavy"
+    assert timeout_ms_for("flows_pdf_preview") == 900_000
+    assert entry["idempotent"] is True
+    assert entry["fileTokens"] == [["spreadsheet_path"]]
+    assert entry["writePathKeys"] == ["output_folder"]
+    assert "flows_pdf_preview" not in FLOW_ACTION_METHODS
+    assert entry["inputSchema"]["properties"]["template_kind"]["enum"] == ["html", "canvas", "formato"]
+
+
 def test_catalog_declares_only_known_timeout_tiers() -> None:
     catalog = _catalog()
     tiers = set(catalog["timeouts"])

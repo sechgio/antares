@@ -681,18 +681,18 @@ def test_print_step_requires_printer_before_scheduled_flow_starts(setup):
     assert not _runner(setup).ready_to_start(flow)
 
 
-def _report_args(setup, rows, *, headers=("OT", "Fecha", "Dirección"), **extra):
+def _report_args(setup, rows, **extra):
     from openpyxl import Workbook
 
     workbook = Workbook()
-    workbook.active.append(headers)
+    workbook.active.append(("OT", "Fecha", "Dirección"))
     for row in rows:
         workbook.active.append(row)
     path = setup[1] / "lote.xlsx"
     workbook.save(path)
     os.utime(path, (time.time() - 30, time.time() - 30))
     return _args(setup, spreadsheet_path=str(path), report_template="report.html", images_per_panel=1,
-                 field_mappings={"OT": headers[0], "FECHA_TRABAJO": headers[1], "DIRECCION": headers[2]}, **extra)
+                 field_mappings={"OT": "OT", "FECHA_TRABAJO": "Fecha", "DIRECCION": "Dirección"}, **extra)
 
 
 def _report_graph(setup, args):

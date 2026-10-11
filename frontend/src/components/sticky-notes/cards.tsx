@@ -163,6 +163,8 @@ export function StackCard({ ready }: { ready: boolean }) {
                     <WithHoverTooltip label="Separar" placement="left">
                       <span
                         role="button"
+                        tabIndex={0}
+                        aria-label={`Separar ${topic}`}
                         className="shrink-0 px-1 pt-0.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                         onMouseDown={(e) => {
                           e.preventDefault();
@@ -173,6 +175,13 @@ export function StackCard({ ready }: { ready: boolean }) {
                           e.stopPropagation();
                           breakOut(n.id);
                         }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            breakOut(n.id);
+                          }
+                        }}
                       >
                         ↗
                       </span>
@@ -180,10 +189,19 @@ export function StackCard({ ready }: { ready: boolean }) {
                     <WithHoverTooltip label="Eliminar" placement="left">
                       <span
                         role="button"
+                        tabIndex={0}
+                        aria-label={`Eliminar ${topic}`}
                         className="shrink-0 px-1 pt-0.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                         onClick={(e) => {
                           e.stopPropagation();
                           removeNote(n.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeNote(n.id);
+                          }
                         }}
                       >
                         ×
@@ -355,10 +373,19 @@ export function PileCard({ pileId }: { pileId: string }) {
               <WithHoverTooltip label="Separar de la pila" placement="left">
                 <span
                   role="button"
+                  tabIndex={0}
+                  aria-label={`Separar ${noteTopic(m, 36)} de la pila`}
                   className="px-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                   onClick={(e) => {
                     e.stopPropagation();
                     splitFromPile(m.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      splitFromPile(m.id);
+                    }
                   }}
                 >
                   ↗
@@ -367,10 +394,19 @@ export function PileCard({ pileId }: { pileId: string }) {
               <WithHoverTooltip label="Volver a la bandeja" placement="left">
                 <span
                   role="button"
+                  tabIndex={0}
+                  aria-label={`Devolver ${noteTopic(m, 36)} a la bandeja`}
                   className="px-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                   onClick={(e) => {
                     e.stopPropagation();
                     returnToStack(m.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      returnToStack(m.id);
+                    }
                   }}
                 >
                   ↙

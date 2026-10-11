@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createBoardColumn,
   createEspacio,
@@ -720,7 +720,10 @@ export function useEspaciosSync(userId: string | undefined) {
   const activeEspacio = espacios.find((e) => e.id === activeEspacioId) ?? null;
   const activeProyecto = proyectos.find((p) => p.id === activeProyectoId) ?? null;
 
-  return {
+  // El objeto se devuelve memoizado: sin esto, cada render de EspaciosApp
+  // cambiaba la identidad de todos los handlers que dependen de `sync` y
+  // invalidaba las filas memoizadas de las vistas virtualizadas.
+  return useMemo(() => ({
     espacios,
     proyectos,
     tareas,
@@ -759,5 +762,44 @@ export function useEspaciosSync(userId: string | undefined) {
     patchProyecto,
     removeEspacio,
     removeProyecto,
-  };
+  }), [
+    espacios,
+    proyectos,
+    tareas,
+    boardColumns,
+    activeEspacio,
+    activeProyecto,
+    activeEspacioId,
+    activeProyectoId,
+    setActiveEspacioId,
+    setActiveProyectoId,
+    loading,
+    refreshing,
+    proyectosLoading,
+    tareasLoading,
+    error,
+    espaciosError,
+    proyectosError,
+    tareasError,
+    columnsError,
+    warning,
+    clearWarning,
+    realtimeStatus,
+    reloadAll,
+    addEspacio,
+    addProyecto,
+    addTarea,
+    addBoardColumn,
+    patchBoardColumn,
+    removeBoardColumn,
+    patchTarea,
+    removeTarea,
+    softRemoveTarea,
+    restoreTarea,
+    commitDeleteTarea,
+    patchEspacio,
+    patchProyecto,
+    removeEspacio,
+    removeProyecto,
+  ]);
 }
