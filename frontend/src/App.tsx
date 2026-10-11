@@ -43,6 +43,7 @@ const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
 const FlowsView = React.lazy(() => import('./components/flows'));
 const AgentView = React.lazy(() => import('./components/agent'));
+const EditorView = React.lazy(() => import('./components/editor/EditorView').then((m) => ({ default: m.EditorView })));
 
 const CANVAS_KEEPALIVE_MS = 60 * 1000;
 function prefetchSettingsModal() {
@@ -81,6 +82,7 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   evidenciaVolanteo: EvidenciaVolanteoView,
   autoimg: AutoIMGView,
   fichasTecnicas: FichasTecnicasView,
+  editor: EditorView,
 };
 
 function isElectronRenderer(): boolean {
