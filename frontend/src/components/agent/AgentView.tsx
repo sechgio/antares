@@ -17,6 +17,10 @@ const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
 
+function newRequestId(): string {
+  return crypto.randomUUID();
+}
+
 const SUGGESTIONS = [
   '¿Qué plantillas de reportes tengo disponibles?',
   'Resume el estado de mis conexiones externas.',
@@ -98,13 +102,20 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
   const [deciding, setDeciding] = useState(false);
-  const [queued, setQueued] = useState<{ session: string; text: string; failed?: boolean }[]>(() => {
+  const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; failed?: boolean }[]>(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
       return Array.isArray(saved) ? saved.filter((item) => item && typeof item.session === 'string' && typeof item.text === 'string')
-        .map((item) => ({ session: item.session, text: item.text, failed: true })) : [];
+        .map((item) => ({
+          session: item.session,
+          text: item.text,
+          requestId: typeof item.requestId === 'string' ? item.requestId : newRequestId(),
+          failed: true,
+        })) : [];
     } catch { return []; }
   });
+  // Último envío directo fallido: reenviar el mismo texto reutiliza su request_id.
+  const failedSendRef = useRef<{ session: string; text: string; requestId: string } | null>(null);
   const [stopping, setStopping] = useState(false);
   const [runningSince, setRunningSince] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -309,14 +320,14 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
     }
   };
 
-  const sendToSession = async (id: string, content: string): Promise<boolean> => {
+  const sendToSession = async (id: string, content: string, requestId: string): Promise<boolean> => {
     const state = messagesVersionRef.current.get(id) ?? { version: 0, pending: 0 };
     messagesVersionRef.current.set(id, state);
     state.version += 1;
     state.pending += 1;
     if (id === sessionIdRef.current) setRunning(true);
     try {
-      await agentApi.agentMessageSend(id, content).finally(() => { state.pending -= 1; });
+      await agentApi.agentMessageSend(id, content, requestId).finally(() => { state.pending -= 1; });
       state.version += 1;
       void refreshSessions();
       await loadMessages(id);
@@ -332,11 +343,14 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
     const content = draft.trim();
     if (!content || !sessionId) return;
     setDraft('');
+    const failed = failedSendRef.current;
+    const requestId = failed && failed.session === sessionId && failed.text === content ? failed.requestId : newRequestId();
     if (running || pending.length > 0) {
-      setQueued((q) => [...q, { session: sessionId, text: content }]);
+      setQueued((q) => [...q, { session: sessionId, text: content, requestId }]);
       return;
     }
-    const ok = await sendToSession(sessionId, content);
+    const ok = await sendToSession(sessionId, content, requestId);
+    failedSendRef.current = ok ? null : { session: sessionId, text: content, requestId };
     if (!ok) setDraft((prev) => (prev.trim() ? prev : content));
   };
 
@@ -348,7 +362,7 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
     const sending = { ...next, failed: true };
     setQueued((q) => q.map((i) => i === next ? sending : i));
     void (async () => {
-      const ok = await sendToSession(sessionId, next.text);
+      const ok = await sendToSession(sessionId, next.text, next.requestId);
       if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
     // Sin config ESLint en el repo esta directiva es inerte; las dependencias
@@ -357,7 +371,7 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
 
   const sendSuggestion = async (text: string) => {
     const id = sessionId || (await newSession());
-    if (id) void sendToSession(id, text);
+    if (id) void sendToSession(id, text, newRequestId());
   };
 
   const cancelTurn = async () => {

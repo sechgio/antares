@@ -17,7 +17,7 @@ const shared = {
   convToSession: new Map(), // conversationId -> sessionId público
   watchers: new Map(), // conversationId -> AgentEventStream
   toolSpecs: new Map(), // name -> {gated, kind}
-  approvalsByCall: new Map(), // callId -> approvalId
+  approvalsByCall: new Map(), // `${sessionId}:${callId}` -> approvalId
   liveApprovals: new Set(), // approvalId con espera beforeTool activa
   decisionWaiters: new Map(), // approvalId -> Set<resolve>
   rounds: new Map(), // conversationId -> rondas de herramientas del run

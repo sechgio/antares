@@ -79,14 +79,15 @@ function makeBridge() {
       }
       case 'agent_internal_dispatch': {
         state.dispatchLog.push(params.call_id);
-        const existing = state.dispatches.find((d) => d.call_id === params.call_id);
+        const existing = state.dispatches.find((d) => d.session_id === params.session_id && d.call_id === params.call_id);
         if (existing) return { result: existing.result, dispatch: existing };
-        const record = { call_id: params.call_id, status: 'done', result: JSON.stringify({ ok: true, tool: params.name }) };
+        const record = { session_id: params.session_id, call_id: params.call_id, status: 'succeeded', result: JSON.stringify({ ok: true, tool: params.name }) };
         state.dispatches.push(record);
         return { result: record.result, dispatch: record };
       }
       case 'agent_internal_dispatch_result': {
-        const record = state.dispatches.find((d) => d.call_id === params.call_id);
+        assert(params.session_id, 'dispatch_result identifica la conversación');
+        const record = state.dispatches.find((d) => d.session_id === params.session_id && d.call_id === params.call_id);
         return { result: record ? record.result : null };
       }
       case 'agent_internal_dispatch_cancel':
@@ -171,6 +172,24 @@ async function main() {
 
     const idle = await runtime.handlers.agent_turn_cancel({ session_id: session.id });
     assert(idle.cancelled === false, 'turn_cancel sobre idle informa cancelled:false');
+    await runtime.shutdown();
+  }
+
+  // --- reenvío con el mismo request_id: un único encargo admitido ---
+  {
+    const { bridge } = makeBridge();
+    await openFaux([fauxAssistantMessage('una vez')], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const first = await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hola', request_id: 'req-1' });
+    assert(first.accepted === true && !first.duplicate, 'el primer envío se admite');
+    const again = await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hola', request_id: 'req-1' });
+    assert(again.accepted === true && again.duplicate === true, 'el reenvío con el mismo request_id es un duplicado');
+    assert(await waitIdle(session.id), 'el turno termina');
+    const afterIdle = await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hola', request_id: 'req-1' });
+    assert(afterIdle.duplicate === true, 'el duplicado se reconoce también tras terminar el turno');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(messages.filter((m) => m.role === 'user').length === 1, 'un solo mensaje de usuario en la conversación');
+    assert(messages.filter((m) => m.role === 'assistant').length === 1, 'una sola respuesta del modelo');
     await runtime.shutdown();
   }
 

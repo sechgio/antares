@@ -6,9 +6,12 @@ proveedores, allowlist y dispatch por lanes del scheduler, validación de rutas,
 servidores MCP y aprobaciones. El catálogo los marca ``internal: true``: el
 router los rechaza antes de aceptar una llamada del renderer.
 
-El dispatch se deduplica por ``call_id`` (``AgentStore.dispatches``): una
-repetición sirve el resultado guardado y nunca reejecuta un efecto cuyo
-resultado quedó incierto (replay unsafe por defecto).
+El dispatch se reserva de forma atómica por ``(session_id, call_id)``
+(``AgentStore.dispatch_claim``): solo el ganador arranca el worker, una
+repetición con la misma intención sirve el comprobante guardado, otra intención
+con el mismo ``call_id`` es un conflicto y nunca se reejecuta un efecto cuyo
+resultado quedó incierto (replay unsafe por defecto). Los efectos sobre el mismo
+recurso se serializan.
 """
 
 from __future__ import annotations
@@ -33,6 +36,26 @@ def _store() -> _agent.AgentStore:
 
 _inflight: dict[str, _CancelEvent] = {}
 _inflight_lock = threading.Lock()
+_resource_locks: dict[str, threading.Lock] = {}
+
+
+def _resource_keys(params: JsonObject) -> list[str]:
+    """Claves de recurso de un efecto: documento/registro por ``id`` y archivos de salida."""
+    keys: set[str] = set()
+    document = params.get("document")
+    for value in (params.get("id"), document.get("id") if isinstance(document, dict) else None):
+        if isinstance(value, (str, int)) and str(value):
+            keys.add(f"id:{value}")
+    for name in ("output_path", "outputPath", "pdf_path", "path"):
+        value = params.get(name)
+        if isinstance(value, str) and value:
+            keys.add(f"path:{value.casefold()}")
+    return sorted(keys)
+
+
+def _locks_for(keys: list[str]) -> list[threading.Lock]:
+    with _inflight_lock:
+        return [_resource_locks.setdefault(key, threading.Lock()) for key in keys]
 
 
 @with_locale
@@ -105,13 +128,16 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
     espera sobre la misma aprobación en lugar de crear un duplicado."""
     session_id = str(params["session_id"])
     call_id = str(params["call_id"])
+    method = str(params["method"])
+    call_params = params.get("params") or {}
     store = _store()
     approval = store.approval_for_call(session_id, call_id)
     if approval is None:
-        approval = store.create_approval(
-            session_id,
-            {"id": call_id, "name": str(params["method"]), "params": params.get("params") or {}},
-        )
+        approval = store.create_approval(session_id, {"id": call_id, "name": method, "params": call_params})
+    elif (approval.get("method") != method
+          or (approval.get("fingerprint") or _agent.fingerprint(method, approval.get("params") or {}))
+          != _agent.fingerprint(method, call_params)):
+        raise ValidationError("Esta llamada ya tiene una aprobación con otros parámetros")
     return {"approval": approval}
 
 
@@ -150,9 +176,10 @@ def _dispatch_error(message: str) -> JsonObject:
 @with_locale
 @validate_params("session_id", "call_id", "name")
 def _dispatch(params: JsonObject) -> JsonObject:
-    """Arranca la ejecución de una herramienta en un hilo daemon; el resultado
-    se sondea con ``agent_internal_dispatch_result``. Los efectos ``gated``
-    exigen una aprobación ``approved`` vinculada al ``call_id``."""
+    """Reserva y arranca la ejecución de una herramienta en un hilo daemon; el
+    resultado se sondea con ``agent_internal_dispatch_result``. Los efectos
+    ``gated`` consumen en la reserva una aprobación ``approved`` vinculada a la
+    llamada y con la misma huella de parámetros."""
     session_id = str(params["session_id"])
     call_id = str(params["call_id"])
     name = str(params["name"])
@@ -160,77 +187,79 @@ def _dispatch(params: JsonObject) -> JsonObject:
     if not isinstance(call_params, dict):
         call_params = {}
 
-    store = _store()
-    existing = store.get_dispatch(call_id)
-    if existing is not None:
-        # Deduplicación: una repetición sirve lo persistido; un "running" sigue
-        # en vuelo (o quedará "interrupted" al reabrir el store tras un crash).
-        return {
-            "result": existing.get("result") if existing.get("status") != "running" else None,
-            "dispatch": existing,
-        }
-
     is_mcp = _mcp_servers.parse_agent_tool(name) is not None
     gated = is_mcp or name in _agent_chat.gated_methods()
     if not gated and name not in ORCHESTRATABLE_METHODS:
         return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
-    if gated:
-        approval_id = params.get("approval_id")
-        approval = store.get_approval(str(approval_id)) if isinstance(approval_id, str) else None
-        bound = (
-            approval is not None
-            and approval.get("status") == "approved"
-            and approval.get("call_id") == call_id
-            and approval.get("session_id") == session_id
-            and approval.get("method") == name
-        )
-        if not bound:
-            return _dispatch_error("La herramienta requiere una aprobación aprobada para esta llamada")
+    approval_id = params.get("approval_id")
+    if gated and not isinstance(approval_id, str):
+        return _dispatch_error("La herramienta requiere una aprobación aprobada para esta llamada")
 
-    record = store.dispatch_begin(call_id, session_id, name)
-    if record.get("status") != "running" or record.get("result") is not None:
-        return {"result": record.get("result") or _agent._INTERRUPTED_RESULT, "dispatch": record}
+    store = _store()
+    outcome, record = store.dispatch_claim(
+        session_id, call_id, name, call_params, str(approval_id) if gated else None,
+    )
+    if outcome == "rejected":
+        return _dispatch_error(str(record["error"]))
+    if outcome == "conflict":
+        return {**_dispatch_error("El identificador de la llamada ya se usó con otra intención en esta conversación"),
+                "dispatch": record}
+    if outcome == "existing":
+        # Deduplicación: una repetición sirve lo persistido; un "running" sigue
+        # en vuelo (o quedará "uncertain" al reabrir el store tras un crash).
+        return {"result": (record.get("summary") or record.get("result")) if record.get("status") != "running" else None,
+                "dispatch": record}
 
+    op_id = str(record["op_id"])
     token = _CancelEvent()
     with _inflight_lock:
-        _inflight[call_id] = token
+        _inflight[op_id] = token
+    locks = _locks_for(_resource_keys(call_params)) if gated else []
 
     def _run() -> None:
+        acquired: list[threading.Lock] = []
         try:
+            for lock in locks:
+                lock.acquire()
+                acquired.append(lock)
             result = _agent.get_agent_runner()._execute(
                 {"id": call_id, "name": name, "params": call_params}, token
             )
-            status = "done"
+            status = "failed" if _agent.result_failed(result) else "succeeded"
         except RunCancelled:
             result = _agent._INTERRUPTED_RESULT
-            status = "interrupted"
+            status = "uncertain"
         except Exception as err:  # nunca pierdas el resultado: queda registrado
             result = json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
-            status = "done"
-        store.dispatch_finish(call_id, status, str(result))
+            status = "failed"
+        finally:
+            for lock in reversed(acquired):
+                lock.release()
+        store.dispatch_finish(session_id, call_id, op_id, status, str(result))
         with _inflight_lock:
-            _inflight.pop(call_id, None)
+            _inflight.pop(op_id, None)
 
-    threading.Thread(target=_run, name=f"agent-dispatch-{call_id}", daemon=True).start()
+    threading.Thread(target=_run, name=f"agent-dispatch-{op_id}", daemon=True).start()
     return {"result": None, "dispatch": record}
 
 
 @with_locale
-@validate_params("call_id")
+@validate_params("session_id", "call_id")
 def _dispatch_result(params: JsonObject) -> JsonObject:
-    call_id = str(params["call_id"])
-    record = _store().get_dispatch(call_id)
+    session_id, call_id = str(params["session_id"]), str(params["call_id"])
+    record = _store().get_dispatch(session_id, call_id)
     if record is None:
         raise NotFoundError(f"Dispatch no encontrado: {call_id}")
-    return {"dispatch": record, "result": record.get("result")}
+    result = (record.get("summary") or record.get("result")) if record.get("status") != "running" else None
+    return {"dispatch": {k: v for k, v in record.items() if k != "result"}, "result": result}
 
 
 @with_locale
-@validate_params("call_id")
+@validate_params("session_id", "call_id")
 def _dispatch_cancel(params: JsonObject) -> JsonObject:
-    call_id = str(params["call_id"])
+    record = _store().get_dispatch(str(params["session_id"]), str(params["call_id"]))
     with _inflight_lock:
-        token = _inflight.get(call_id)
+        token = _inflight.get(str(record.get("op_id"))) if record else None
     if token is None:
         return {"cancelled": False}
     token.cancel()

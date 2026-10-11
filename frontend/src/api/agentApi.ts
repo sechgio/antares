@@ -62,8 +62,9 @@ export const agentApi = {
       pending_approvals: AgentApproval[];
     }>('agent_messages_list', { session_id }),
 
-  agentMessageSend: (session_id: string, content: string) =>
-    _invoke<{ accepted: boolean }>('agent_message_send', { session_id, content }),
+  // request_id identifica el envío: un reintento con el mismo id no crea otro encargo.
+  agentMessageSend: (session_id: string, content: string, request_id: string) =>
+    _invoke<{ accepted: boolean; duplicate?: boolean }>('agent_message_send', { session_id, content, request_id }),
 
   agentToolsList: () => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list'),
 

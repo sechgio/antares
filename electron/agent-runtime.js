@@ -27,6 +27,7 @@ const projection = require('./agent-projection');
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_SESSIONS = 50;
+const MAX_REQUEST_ID_CHARS = 100;
 const SYSTEM_PROMPT =
   'Eres el agente de Antares, una app de escritorio de documentos e imágenes. ' +
   'Responde en español. Tienes herramientas para consultar el estado de la app ' +
@@ -96,6 +97,9 @@ async function _open(options = {}) {
     if (!options.skipImport) {
       await require('./agent-import').importLegacySessions(shared.state, options.importSourceDir);
     }
+    // Un run reanudado necesita su registro de herramientas y su proveedor:
+    // se restauran antes de resume() para no fallar al primer paso.
+    await _restoreExecutionContext();
     harness.resume();
     return shared.state;
   })();
@@ -103,6 +107,18 @@ async function _open(options = {}) {
     return await _opening;
   } finally {
     _opening = null;
+  }
+}
+
+async function _restoreExecutionContext() {
+  try {
+    await execution.refreshTools();
+  } catch { /* sin backend aún: el siguiente envío vuelve a registrarlas */ }
+  for (const session of Object.values(await sessions())) {
+    if (session.deleted) continue;
+    try {
+      await execution.ensureProvider(session.provider, session.model);
+    } catch { /* proveedor sin clave o retirado: el turno informará el error */ }
   }
 }
 
@@ -198,6 +214,12 @@ async function messageSend(params) {
   const session = await requireSession(sessionId);
   const content = String(params.content || '').trim().slice(0, MAX_MESSAGE_CHARS);
   if (!content) throw validation('El mensaje está vacío');
+  // request_id identifica el envío del usuario: un reintento por fallo de
+  // transporte con el mismo id no admite un segundo encargo.
+  const requestId = typeof params.request_id === 'string' && params.request_id
+    ? params.request_id.slice(0, MAX_REQUEST_ID_CHARS)
+    : undefined;
+  if (requestId && await _admittedRequest(session, requestId)) return { accepted: true, duplicate: true };
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
   if (pending.length) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
   await execution.refreshTools();
@@ -207,7 +229,7 @@ async function messageSend(params) {
   shared.rounds.delete(session.conversationId);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      await conv.submit({ type: 'input', content, whenBusy: 'reject' }, ctx());
+      await conv.submit({ type: 'input', content, whenBusy: 'reject', ...(requestId ? { requestId } : {}) }, ctx());
       break;
     } catch (err) {
       if (!(err && (err.name === 'ConversationBusy' || /busy/i.test(err.message || '')))) throw err;
@@ -225,6 +247,14 @@ async function messageSend(params) {
     }
   });
   return { accepted: true };
+}
+
+async function _admittedRequest(session, requestId) {
+  const found = await shared.state.harness.commit(
+    (tx) => tx.submissionByRequest(session.conversationId, requestId),
+    ctx(),
+  );
+  return found !== undefined;
 }
 
 async function toolsList() {
@@ -272,17 +302,20 @@ async function approve(params, approved) {
   // consume; ejecutamos/negamos una sola vez vía dispatch deduplicado y
   // dejamos constancia en la transcripción. Una espera viva para esa llamada
   // o un tool task en curso la gestionan ellos.
+  const approvalCall = approval && execution.callKey(String(approval.session_id), String(approval.call_id));
+  const approvalSession = approval && (await sessions())[String(approval.session_id)];
+  const approvalLive = approvalSession && shared.live.get(approvalSession.conversationId);
   const liveWait = approval && (
     shared.liveApprovals.has(approval.id)
-    || shared.approvalsByCall.has(String(approval.call_id))
-    || [...shared.live.values()].some((l) => (l.tools || []).some(
-      (t) => t.callId === approval.call_id && t.status !== 'done'))
+    || shared.approvalsByCall.has(approvalCall)
+    || ((approvalLive && approvalLive.tools) || []).some(
+      (t) => t.callId === approval.call_id && t.status !== 'done')
   );
   if (approval && !liveWait) {
     // Pequeña pausa: una espera recién reanudada puede registrar su marca
     // un instante después de decidirse la aprobación.
     await new Promise((r) => setTimeout(r, 150));
-    const stillLive = shared.liveApprovals.has(approval.id) || shared.approvalsByCall.has(String(approval.call_id));
+    const stillLive = shared.liveApprovals.has(approval.id) || shared.approvalsByCall.has(approvalCall);
     // Igual que el runner antiguo: la decisión responde ya y el efecto corre
     // en segundo plano; el resultado aparece vía messages_list.
     if (!stillLive) void _settleRecoveredApproval(approval).catch(() => {});

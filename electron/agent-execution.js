@@ -2,7 +2,8 @@
 
 // Ejecución del runtime del agente: proveedores pi-ai (con auth/base URL que
 // resuelve el vault de Python) y herramientas pi-durable con aprobaciones,
-// dispatch deduplicado por call_id y sondeo de resultados hacia Python.
+// dispatch reservado por (session_id, call_id) y sondeo de resultados hacia
+// Python. El call_id del proveedor solo es único dentro de su conversación.
 
 const {
   shared,
@@ -128,7 +129,7 @@ async function beforeTool(call, api, context) {
     method: call.name,
     params: call.arguments || {},
   });
-  shared.approvalsByCall.set(call.id, approval.id);
+  shared.approvalsByCall.set(callKey(sessionId, call.id), approval.id);
   shared.liveApprovals.add(approval.id);
   try {
     let current = approval;
@@ -144,6 +145,10 @@ async function beforeTool(call, api, context) {
   } finally {
     shared.liveApprovals.delete(approval.id);
   }
+}
+
+function callKey(sessionId, callId) {
+  return `${sessionId}:${callId}`;
 }
 
 function waitForDecision(approvalId, context) {
@@ -182,7 +187,7 @@ async function dispatchAndWait(request, context) {
   const first = await bridge('agent_internal_dispatch', request);
   let result = first.result;
   while (result === null || result === undefined) {
-    result = await pollDispatch(request.call_id, context);
+    result = await pollDispatch(request.session_id, request.call_id, context);
   }
   return String(result);
 }
@@ -190,7 +195,7 @@ async function dispatchAndWait(request, context) {
 async function executeTool(spec, args, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const callId = api.callId;
-  const approvalId = spec.gated ? shared.approvalsByCall.get(callId) : undefined;
+  const approvalId = spec.gated ? shared.approvalsByCall.get(callKey(sessionId, callId)) : undefined;
   const text = await dispatchAndWait({
     session_id: sessionId,
     call_id: callId,
@@ -204,13 +209,13 @@ async function executeTool(spec, args, api, context) {
   return { content: [{ type: 'text', text }], isError };
 }
 
-function pollDispatch(callId, context) {
+function pollDispatch(sessionId, callId, context) {
   const signal = context && context.abortSignal;
   return new Promise((resolve, reject) => {
     if (signal && signal.aborted) return reject(aborted());
     const timer = setTimeout(async () => {
       try {
-        const next = await bridge('agent_internal_dispatch_result', { call_id: callId });
+        const next = await bridge('agent_internal_dispatch_result', { session_id: sessionId, call_id: callId });
         resolve(next.result === undefined ? null : next.result);
       } catch (err) {
         resolve(INTERRUPTED_RESULT);
@@ -219,7 +224,7 @@ function pollDispatch(callId, context) {
     if (signal) {
       signal.addEventListener('abort', () => {
         clearTimeout(timer);
-        bridge('agent_internal_dispatch_cancel', { call_id: callId }).catch(() => {});
+        bridge('agent_internal_dispatch_cancel', { session_id: sessionId, call_id: callId }).catch(() => {});
         reject(aborted());
       }, { once: true });
     }
@@ -227,6 +232,7 @@ function pollDispatch(callId, context) {
 }
 
 module.exports = {
+  callKey,
   providerInfo,
   ensureProvider,
   refreshTools,

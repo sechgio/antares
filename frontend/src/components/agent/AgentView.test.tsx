@@ -52,7 +52,7 @@ it('descarta la lectura previa al envío y drena la actualización pendiente de 
   vi.useFakeTimers();
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Mensaje nuevo');
+  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Mensaje nuevo', expect.any(String));
   await act(async () => { initial.resolve(empty); });
   expect(list).toHaveBeenCalledTimes(2);
   expect(screen.getByText('El agente está trabajando')).toBeInTheDocument();
@@ -132,11 +132,21 @@ it('un envío fallido conserva el borrador y termina el indicador de ejecución'
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Reintentar');
   expect(screen.queryByText('El agente está trabajando')).not.toBeInTheDocument();
   expect(addToast).toHaveBeenCalledWith({ message: 'Sin conexión', type: 'error' });
+
+  // Reenviar el mismo texto tras el fallo reutiliza el request_id: el backend
+  // reconoce el duplicado si el primer intento sí llegó a admitirse.
+  vi.mocked(agentApi.agentMessageSend).mockResolvedValue({ accepted: true });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
+  expect(second[2]).toBe(first[2]);
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Otro mensaje' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(vi.mocked(agentApi.agentMessageSend).mock.calls[2][2]).not.toBe(first[2]);
 });
 
 it('restaura la conversación y la cola sin enviar tareas automáticamente tras reiniciar', async () => {
   localStorage.setItem('antares-agent-session', session.id);
-  localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: session.id, text: 'Tarea pendiente' }]));
+  localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: session.id, text: 'Tarea pendiente', requestId: 'req-guardado' }]));
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
     ...empty, messages: [{ role: 'assistant', content: 'Progreso recuperado', ts: 2 }],
   });
@@ -146,7 +156,7 @@ it('restaura la conversación y la cola sin enviar tareas automáticamente tras 
   expect(screen.getByText('Tarea pendiente')).toHaveAttribute('title', 'Mensaje pendiente — clic para enviar');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByText('Tarea pendiente')); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Tarea pendiente');
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Tarea pendiente', 'req-guardado');
 });
 
 it('muestra respuestas progresivas y estados de herramientas durante el sondeo', async () => {
@@ -190,7 +200,7 @@ it('detener pausa la cola y conserva las tareas pendientes para un envío explí
   expect(agentApi.agentTurnCancel).toHaveBeenCalledWith(session.id);
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
-    { session: session.id, text: 'Siguiente tarea', failed: true },
+    { session: session.id, text: 'Siguiente tarea', requestId: expect.any(String), failed: true },
   ]);
 });
 

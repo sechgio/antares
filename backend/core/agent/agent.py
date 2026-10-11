@@ -13,6 +13,7 @@ El cliente LLM y las specs de herramientas viven en ``agent_chat``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import ntpath
@@ -71,6 +72,7 @@ def _validate_action_paths(method: str, args: JsonObject) -> None:
 
 _MAX_TOOL_STEPS = 12
 _MAX_TOOL_RESULT_CHARS = 6_000
+_MAX_RECEIPT_CHARS = 2 * 1024 * 1024
 _MAX_SESSIONS = 50
 _APPROVAL_TTL_MS = 24 * 3600 * 1000
 _INTERRUPTED_RESULT = json.dumps(
@@ -81,6 +83,34 @@ _INTERRUPTED_RESULT = json.dumps(
 
 def _now_ms() -> float:
     return time.time() * 1000
+
+
+def fingerprint(method: str, params: object) -> str:
+    """Huella determinista de la intención: método y parámetros normalizados."""
+    canonical = json.dumps({"method": method, "params": params}, sort_keys=True, ensure_ascii=False,
+                           separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def dispatch_key(session_id: str, call_id: str) -> str:
+    """El ``call_id`` del proveedor solo es único dentro de su conversación."""
+    return f"{session_id}:{call_id}"
+
+
+def summarize_result(full: str) -> str:
+    """Resumen para el modelo: el comprobante completo se guarda aparte."""
+    if len(full) <= _MAX_TOOL_RESULT_CHARS:
+        return full
+    preview = full[: _MAX_TOOL_RESULT_CHARS - 200]
+    return json.dumps({"truncated": True, "total_chars": len(full), "preview": preview}, ensure_ascii=False)
+
+
+def result_failed(full: str) -> bool:
+    try:
+        data = json.loads(full)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(data, dict) and ("error" in data or data.get("isError") is True)
 
 
 class AgentStore:
@@ -97,17 +127,34 @@ class AgentStore:
         self._lock = threading.RLock()
         self._sessions: dict[str, JsonObject] = self._read(self._sessions_path)
         self._approvals: dict[str, JsonObject] = self._read(self._approvals_path)
-        self._dispatches: dict[str, JsonObject] = self._read(self._dispatches_path)
+        loaded = self._read(self._dispatches_path)
+        # Registros antiguos indexados solo por call_id: se reindexan por sesión.
+        self._dispatches: dict[str, JsonObject] = {
+            (key if ":" in key or not isinstance(rec, dict) or not rec.get("session_id")
+             else dispatch_key(str(rec["session_id"]), str(rec.get("call_id") or key))): rec
+            for key, rec in loaded.items()
+        }
         # Un dispatch "running" al cargar quedó interrumpido: su resultado es
         # incierto y no debe reejecutarse ni servirse como éxito.
-        dirty = False
+        dirty = self._dispatches.keys() != loaded.keys()
         for record in self._dispatches.values():
             if record.get("status") == "running":
-                record["status"] = "interrupted"
+                record["status"] = "uncertain"
                 record["result"] = _INTERRUPTED_RESULT
+                record["summary"] = _INTERRUPTED_RESULT
                 dirty = True
         if dirty:
             self._write_dispatches()
+        # La reserva es la fuente de verdad del consumo de una aprobación: si el
+        # proceso cayó entre ambas escrituras, se completa aquí.
+        consumed = False
+        for record in self._dispatches.values():
+            approval = self._approvals.get(str(record.get("approval_id") or ""))
+            if approval is not None and not approval.get("consumed_by"):
+                approval["consumed_by"] = record.get("op_id") or record.get("call_id")
+                consumed = True
+        if consumed:
+            self._write_approvals()
 
     @staticmethod
     def _read(path: Path) -> dict[str, JsonObject]:
@@ -284,6 +331,7 @@ class AgentStore:
             "call_id": call["id"],
             "method": call["name"],
             "params": call.get("params") or {},
+            "fingerprint": fingerprint(str(call["name"]), call.get("params") or {}),
             "status": "pending",
             "created_at": _now_ms(),
             "decided_at": None,
@@ -361,37 +409,74 @@ class AgentStore:
 
     # ---- ejecuciones deduplicadas (replay unsafe) ----
 
-    def get_dispatch(self, call_id: str) -> JsonObject | None:
+    def get_dispatch(self, session_id: str, call_id: str) -> JsonObject | None:
         with self._lock:
-            record = self._dispatches.get(call_id)
+            record = self._dispatches.get(dispatch_key(session_id, call_id))
             return dict(record) if isinstance(record, dict) else None
 
-    def dispatch_begin(self, call_id: str, session_id: str, method: str) -> JsonObject:
-        """Registra el inicio; si ya existe devuelve el registro previo para que
-        el llamador sirva el resultado guardado en vez de repetir el efecto."""
+    def dispatch_claim(
+        self, session_id: str, call_id: str, method: str, params: JsonObject, approval_id: str | None,
+    ) -> tuple[str, JsonObject]:
+        """Reserva atómica de una operación.
+
+        Devuelve ``("new", registro)`` solo al ganador, que debe iniciar el
+        worker; ``("existing", registro)`` a quien repite la misma intención y
+        ``("conflict", registro)`` si el ``call_id`` ya se usó con otra intención
+        en esta conversación. Con ``approval_id`` la reserva exige una aprobación
+        aprobada, vinculada a la llamada, con la misma huella y sin consumir, y la
+        consume en la misma operación (``("rejected", {"error": ...})`` si no)."""
+        intent = fingerprint(method, params)
+        key = dispatch_key(session_id, call_id)
         with self._lock:
-            existing = self._dispatches.get(call_id)
+            existing = self._dispatches.get(key)
             if isinstance(existing, dict):
-                return dict(existing)
+                same = existing.get("method") == method and existing.get("fingerprint") in (None, intent)
+                return ("existing" if same else "conflict"), dict(existing)
+            approval = None
+            if approval_id is not None:
+                self._expire_stale_approvals()
+                approval = self._approvals.get(approval_id)
+                error = None
+                if (approval is None or approval.get("status") != "approved"
+                        or approval.get("session_id") != session_id or approval.get("call_id") != call_id
+                        or approval.get("method") != method):
+                    error = "La herramienta requiere una aprobación aprobada para esta llamada"
+                elif (approval.get("fingerprint")
+                      or fingerprint(str(approval.get("method")), approval.get("params") or {})) != intent:
+                    error = "Los parámetros no coinciden con los aprobados; vuelve a pedir aprobación"
+                elif approval.get("consumed_by"):
+                    error = "Esta aprobación ya se usó en otra ejecución"
+                if error:
+                    return "rejected", {"error": error}
             record: JsonObject = {
+                "op_id": uuid.uuid4().hex,
                 "call_id": call_id,
                 "session_id": session_id,
                 "method": method,
+                "fingerprint": intent,
+                "approval_id": approval_id,
                 "status": "running",
                 "started_at": _now_ms(),
                 "result": None,
+                "summary": None,
             }
-            self._dispatches[call_id] = record
+            self._dispatches[key] = record
+            # Primero la reserva (journal) y después el consumo: al reabrir, el
+            # store completa el consumo a partir de las reservas.
             self._write_dispatches()
-            return dict(record)
+            if approval is not None:
+                approval["consumed_by"] = record["op_id"]
+                self._write_approvals()
+            return "new", dict(record)
 
-    def dispatch_finish(self, call_id: str, status: str, result: str) -> None:
+    def dispatch_finish(self, session_id: str, call_id: str, op_id: str, status: str, result: str) -> None:
         with self._lock:
-            record = self._dispatches.get(call_id)
-            if record is None or record.get("status") != "running":
+            record = self._dispatches.get(dispatch_key(session_id, call_id))
+            if record is None or record.get("status") != "running" or record.get("op_id") != op_id:
                 return
             record["status"] = status
-            record["result"] = result
+            record["result"] = result[:_MAX_RECEIPT_CHARS]
+            record["summary"] = summarize_result(result)
             record["finished_at"] = _now_ms()
             self._write_dispatches()
 
@@ -597,7 +682,7 @@ class AgentRunner:
             params = call.get("params")
             try:
                 result = mcp_servers.call_tool(mcp_ref[0], name, params if isinstance(params, dict) else {}, advertised=True)
-                return json.dumps(result, ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
+                return json.dumps(result, ensure_ascii=False, default=str)
             except Exception as err:
                 return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
         fn = self._handler_getter(name)
@@ -637,7 +722,7 @@ class AgentRunner:
                 except FutureTimeoutError:
                     future.cancel()
                     raise ValueError("La herramienta excedió su tiempo; puede seguir ejecutándose, comprueba el resultado antes de repetirla") from None
-            return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
+            return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
         except RunCancelled:
             raise
         except Exception as err:  # el error vuelve al modelo como resultado de la tool
