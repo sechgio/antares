@@ -9,10 +9,12 @@ las lecturas de archivos llegan como ``file_token`` validados.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from backend.core.editor.jobs import (
     cancel_editor_job,
+    start_export_job,
     start_import_job,
 )
 from backend.core.editor.jobs import (
@@ -134,6 +136,19 @@ def editor_job_cancel(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: d
         raise ValueError(f"job ajeno al editor: {job_id}") from exc
 
 
+def editor_export_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    """Arranca el render determinista del snapshot como job."""
+    document = _require(params, "document")
+    output_path = params.get("outputPath")
+    request_id = params.get("requestId")
+    return start_export_job(
+        get_job_manager(),
+        document,
+        output_path=Path(output_path) if output_path else None,
+        request_id=str(request_id) if request_id else None,
+    )
+
+
 HANDLERS = {
     "editor_bootstrap": editor_bootstrap,
     "editor_project_create": editor_project_create,
@@ -142,6 +157,7 @@ HANDLERS = {
     "editor_project_duplicate": editor_project_duplicate,
     "editor_project_delete": editor_project_delete,
     "editor_assets_import_start": editor_assets_import_start,
-    "editor_job_status": editor_job_status,
+    "editor_export_start": editor_export_start,
     "editor_job_cancel": editor_job_cancel,
+    "editor_job_status": editor_job_status,
 }

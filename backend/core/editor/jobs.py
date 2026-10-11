@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.editor.assets import AssetImportError, import_file
+from backend.core.editor.toolchain import ToolchainError
 from backend.core.observability import log_event
 from backend.utils.paths import user_data_path
 
@@ -228,6 +229,64 @@ def cancel_editor_job(job_id: str, job_manager: Any) -> dict[str, Any]:  # allow
         record = _read_job_record(job_id) or {"jobId": job_id}
         _persist_job_record(job_id, {**record, "state": "cancelling"})
     return outcome
+
+
+EXPORT_STAGES: tuple[str, ...] = ("validando", "rendering", "verificando", "publicando")
+
+
+def run_export_job(job: Any, *, output: Path | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    """Render determinista del snapshot por etapas con cancelación."""
+    from backend.core.editor.render import execute_render
+
+    document = job.params.get("document") or {}
+    if output is None:
+        raise ValueError("el export requiere una ruta de salida")
+    _set_stage(job, EXPORT_STAGES[0], 5)
+    if _check_cancelled(job):
+        raise ToolchainError("render cancelado")
+    _set_stage(job, EXPORT_STAGES[1], 20)
+    result = execute_render(
+        document,
+        output,
+        cancel_check=_check_cancelled,
+    )
+    _set_stage(job, EXPORT_STAGES[2], 85)
+    _set_stage(job, EXPORT_STAGES[3], 95)
+    with job.state._lock:
+        job.state.progress = 100
+        if job.result is None:
+            job.result = result
+    log_event(logger, logging.INFO, "editor.job.export_finished", job_id=job.id, output=str(output))
+    return result
+
+
+def start_export_job(
+    job_manager: Any,
+    document: dict[str, Any],  # allowlist: dict[str, Any]
+    *,
+    output: Path | None = None,
+    request_id: str | None = None,
+    job_id: str | None = None,
+) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    jid = job_id or f"editor_export_{uuid.uuid4().hex[:12]}"
+    record = {
+        "jobId": jid,
+        "type": "editor_export",
+        "requestId": request_id,
+        "stages": list(EXPORT_STAGES),
+        "state": "queued",
+    }
+    _persist_job_record(jid, record)
+    started = job_manager.create_job(
+        "editor_export",
+        {"document": document, "requestId": request_id},
+        lambda job: run_export_job(job, output=output),
+        job_id=jid,
+    )
+    if not started.get("started"):
+        _persist_job_record(jid, {**record, "state": "rejected", "reason": started.get("reason")})
+        return started
+    return {"started": True, "jobId": jid}
 
 
 _lock = threading.Lock()

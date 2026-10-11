@@ -65,6 +65,12 @@ export const editorApi = {
     _invoke<{ paths: string[]; file_tokens: string[] }>('editor_import_files', {
       ...(title ? { title } : {}),
     }),
+  editorExportStart: (document: EditorProject, outputPath?: string, requestId?: string) =>
+    _invoke<EditorImportResult>('editor_export_start', {
+      document,
+      ...(outputPath ? { outputPath } : {}),
+      ...(requestId ? { requestId } : {}),
+    }),
   editorAssetsImportStart: (files: string[], requestId?: string) =>
     _invoke<EditorImportResult>('editor_assets_import_start', {
       files,
