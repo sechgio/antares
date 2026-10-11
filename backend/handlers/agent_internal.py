@@ -21,6 +21,7 @@ import threading
 
 from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
+from backend.core.agent import resource_grants
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.integrations import ai_providers as _ai_providers
@@ -115,6 +116,54 @@ def _provider(params: JsonObject) -> JsonObject:
     }
 
 
+def _intent(session_id: str, method: str, params: JsonObject) -> JsonObject:
+    """Intención que firma una aprobación: parámetros y revisión de cada archivo
+    concedido que lee. Cambiar el archivo después de aprobar invalida la aprobación."""
+    try:
+        resources = _agent.read_resources(method, params, _store().grants_for(session_id))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+    return {"params": params, "resources": resources}
+
+
+def _intent_fingerprint(session_id: str, method: str, params: JsonObject) -> str:
+    return _agent.fingerprint(method, _intent(session_id, method, params))
+
+
+@with_locale
+@validate_params("session_id", "paths")
+def _grants_add(params: JsonObject) -> JsonObject:
+    """Concede lectura de los archivos que el humano escribió en su mensaje.
+
+    Solo lo llama Electron con rutas extraídas del texto del usuario; el modelo
+    no tiene acceso a este método (``agent_`` está denegado y es ``internal``)."""
+    session_id = str(params["session_id"])
+    paths = params["paths"]
+    if not isinstance(paths, list):
+        raise ValidationError("paths debe ser una lista")
+    request_id = params.get("request_id")
+    granted: list[str] = []
+    rejected: list[JsonObject] = []
+    records: list[JsonObject] = []
+    for raw in paths[: resource_grants.MAX_GRANTS_PER_MESSAGE]:
+        try:
+            record = resource_grants.grant_record(str(raw), str(request_id) if request_id else None)
+        except ValueError as err:
+            rejected.append({"path": str(raw), "reason": str(err)})
+            continue
+        records.append(record)
+        granted.append(str(record["path"]))
+    if records:
+        _store().add_grants(session_id, records)
+    return {"granted": granted, "rejected": rejected}
+
+
+@with_locale
+@validate_params("session_id")
+def _grants_revoke(params: JsonObject) -> JsonObject:
+    return {"revoked": _store().revoke_grants(str(params["session_id"]))}
+
+
 def _approval_error(approval: JsonObject | None) -> ValidationError:
     if approval is not None and approval.get("status") == "expired":
         return ValidationError("La aprobación expiró; vuelve a pedírselo al agente")
@@ -131,13 +180,14 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
     method = str(params["method"])
     call_params = params.get("params") or {}
     store = _store()
+    intent = _intent_fingerprint(session_id, method, call_params)
     approval = store.approval_for_call(session_id, call_id)
     if approval is None:
-        approval = store.create_approval(session_id, {"id": call_id, "name": method, "params": call_params})
-    elif (approval.get("method") != method
-          or (approval.get("fingerprint") or _agent.fingerprint(method, approval.get("params") or {}))
-          != _agent.fingerprint(method, call_params)):
-        raise ValidationError("Esta llamada ya tiene una aprobación con otros parámetros")
+        approval = store.create_approval(
+            session_id, {"id": call_id, "name": method, "params": call_params, "fingerprint": intent},
+        )
+    elif approval.get("method") != method or approval.get("fingerprint") != intent:
+        raise ValidationError("Esta llamada ya tiene una aprobación con otros parámetros o archivos")
     return {"approval": approval}
 
 
@@ -196,8 +246,12 @@ def _dispatch(params: JsonObject) -> JsonObject:
         return _dispatch_error("La herramienta requiere una aprobación aprobada para esta llamada")
 
     store = _store()
+    try:
+        intent = _intent(session_id, name, call_params)
+    except ValidationError as err:
+        return _dispatch_error(str(err))
     outcome, record = store.dispatch_claim(
-        session_id, call_id, name, call_params, str(approval_id) if gated else None,
+        session_id, call_id, name, intent, str(approval_id) if gated else None,
     )
     if outcome == "rejected":
         return _dispatch_error(str(record["error"]))
@@ -223,7 +277,7 @@ def _dispatch(params: JsonObject) -> JsonObject:
                 lock.acquire()
                 acquired.append(lock)
             result = _agent.get_agent_runner()._execute(
-                {"id": call_id, "name": name, "params": call_params}, token
+                {"id": call_id, "name": name, "params": call_params, "session_id": session_id}, token
             )
             status = "failed" if _agent.result_failed(result) else "succeeded"
         except RunCancelled:
@@ -277,4 +331,6 @@ HANDLERS = {
     "agent_internal_dispatch": _dispatch,
     "agent_internal_dispatch_result": _dispatch_result,
     "agent_internal_dispatch_cancel": _dispatch_cancel,
+    "agent_internal_grants_add": _grants_add,
+    "agent_internal_grants_revoke": _grants_revoke,
 }

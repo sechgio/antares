@@ -327,7 +327,10 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
     state.pending += 1;
     if (id === sessionIdRef.current) setRunning(true);
     try {
-      await agentApi.agentMessageSend(id, content, requestId).finally(() => { state.pending -= 1; });
+      const res = await agentApi.agentMessageSend(id, content, requestId).finally(() => { state.pending -= 1; });
+      for (const file of res.files?.rejected ?? []) {
+        addToast({ message: `No se autorizó ${file.path}: ${file.reason}`, type: 'warning' });
+      }
       state.version += 1;
       void refreshSessions();
       await loadMessages(id);

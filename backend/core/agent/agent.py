@@ -24,6 +24,7 @@ from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
+from backend.core.agent import resource_grants
 from backend.core.agent.agent_chat import chat, gated_methods, scrub_secrets
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
@@ -43,20 +44,33 @@ from backend.utils.paths import user_data_path
 logger = logging.getLogger(__name__)
 
 
-def _validate_action_paths(method: str, args: JsonObject) -> None:
-    """El agente no tiene grants de archivos: rechaza rutas de lectura y salida."""
-    def values(value: object, segments: tuple[str, ...]) -> list[object]:
-        if not segments:
-            return [value]
-        if segments[0] == "*":
-            children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
-            return [item for child in children for item in values(child, segments[1:])]
-        return values(value[segments[0]], segments[1:]) if isinstance(value, dict) and segments[0] in value else []
+def _schema_values(value: object, segments: tuple[str, ...]) -> list[object]:
+    if not segments:
+        return [value]
+    if segments[0] == "*":
+        children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
+        return [item for child in children for item in _schema_values(child, segments[1:])]
+    return _schema_values(value[segments[0]], segments[1:]) if isinstance(value, dict) and segments[0] in value else []
 
-    for schema in (*file_tokens_for(method), ("_resolved_file_token_path",)):
-        for value in values(args, schema):
+
+def read_resources(method: str, args: JsonObject, grants: dict[str, JsonObject]) -> list[JsonObject]:
+    """Revisión de cada archivo de lectura del método; solo admite archivos concedidos."""
+    revisions: list[JsonObject] = []
+    for schema in file_tokens_for(method):
+        for value in _schema_values(args, schema):
             if not value or (isinstance(value, str) and value.startswith(("data:", "canvas-asset:"))):
                 continue
+            if not isinstance(value, str):
+                raise ValueError("El archivo del paso no está autorizado; elígelo o usa la entrada de imágenes")
+            revisions.append({**resource_grants.check(value, grants), "value": value})
+    return sorted(revisions, key=lambda r: str(r["path"]))
+
+
+def _validate_action_paths(method: str, args: JsonObject, grants: dict[str, JsonObject] | None = None) -> None:
+    """Las lecturas solo usan archivos concedidos; las salidas siguen sin autorizar."""
+    read_resources(method, args, grants or {})
+    for value in _schema_values(args, ("_resolved_file_token_path",)):
+        if value:
             raise ValueError("El archivo del paso no está autorizado; elígelo o usa la entrada de imágenes")
     keys = write_path_keys_for(method) | {"outputPath", "output_path", "output_dir", "outputDir", "output_folder", "destino", "_resolved_output_path"}
     if allows_raw_output_path(method):
@@ -121,12 +135,14 @@ class AgentStore:
         base.mkdir(parents=True, exist_ok=True)
         self._sessions_path = base / "sessions.json"
         self._approvals_path = base / "approvals.json"
+        self._grants_path = base / "grants.json"
         self._dispatches_path = base / "dispatches.json"
         self._messages_dir = base / "messages"
         self._messages_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._sessions: dict[str, JsonObject] = self._read(self._sessions_path)
         self._approvals: dict[str, JsonObject] = self._read(self._approvals_path)
+        self._grants: dict[str, JsonObject] = self._read(self._grants_path)
         loaded = self._read(self._dispatches_path)
         # Registros antiguos indexados solo por call_id: se reindexan por sesión.
         self._dispatches: dict[str, JsonObject] = {
@@ -169,6 +185,9 @@ class AgentStore:
 
     def _write_approvals(self) -> None:
         atomic_write_json(self._approvals_path, self._approvals)
+
+    def _write_grants(self) -> None:
+        atomic_write_json(self._grants_path, self._grants)
 
     def _write_dispatches(self) -> None:
         atomic_write_json(self._dispatches_path, self._dispatches)
@@ -237,6 +256,7 @@ class AgentStore:
                 self._write_sessions()
             self._approvals = {k: a for k, a in self._approvals.items() if a.get("session_id") != session_id}
             self._write_approvals()
+            self.revoke_grants(session_id)
             self._messages_path(session_id).unlink(missing_ok=True)
         return removed
 
@@ -324,6 +344,26 @@ class AgentStore:
 
     # ---- aprobaciones ----
 
+    # ---- archivos concedidos por el humano ----
+
+    def add_grants(self, session_id: str, records: list[JsonObject]) -> None:
+        with self._lock:
+            session_grants = self._grants.setdefault(session_id, {})
+            for record in records:
+                session_grants[resource_grants.grant_key(record)] = record
+            self._write_grants()
+
+    def grants_for(self, session_id: str) -> dict[str, JsonObject]:
+        with self._lock:
+            return {key: dict(value) for key, value in (self._grants.get(session_id) or {}).items()}
+
+    def revoke_grants(self, session_id: str) -> int:
+        with self._lock:
+            removed = self._grants.pop(session_id, None)
+            if removed is not None:
+                self._write_grants()
+            return len(removed or {})
+
     def create_approval(self, session_id: str, call: JsonObject) -> JsonObject:
         approval = {
             "id": uuid.uuid4().hex[:12],
@@ -331,7 +371,7 @@ class AgentStore:
             "call_id": call["id"],
             "method": call["name"],
             "params": call.get("params") or {},
-            "fingerprint": fingerprint(str(call["name"]), call.get("params") or {}),
+            "fingerprint": call.get("fingerprint") or fingerprint(str(call["name"]), call.get("params") or {}),
             "status": "pending",
             "created_at": _now_ms(),
             "decided_at": None,
@@ -691,6 +731,9 @@ class AgentRunner:
         params = call.get("params")
         try:
             args = dict(params) if isinstance(params, dict) else {}
+            session_id = call.get("session_id")
+            grants = self._store.grants_for(str(session_id)) if session_id else {}
+            granted = {str(r["value"]) for r in read_resources(name, args, grants)}
 
             def check_paths(value: object) -> None:
                 if isinstance(value, dict):
@@ -701,11 +744,11 @@ class AgentRunner:
                 elif isinstance(value, list):
                     for child in value:
                         check_paths(child)
-                elif isinstance(value, str) and ntpath.isabs(value):
+                elif isinstance(value, str) and ntpath.isabs(value) and value not in granted:
                     raise ValueError("Usa los diálogos de Antares para autorizar archivos; la aprobación no autoriza rutas")
 
             check_paths(args)
-            _validate_action_paths(name, args)
+            _validate_action_paths(name, args, grants)
             lane = lane_for(name)
             if lane == "sync":
                 result = fn(args)

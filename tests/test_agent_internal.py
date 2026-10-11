@@ -279,18 +279,19 @@ def test_approval_from_another_conversation_or_with_other_params_is_rejected(sto
 def test_approval_is_consumed_once_and_survives_a_crash_between_writes(store, tmp_path, monkeypatch):
     monkeypatch.setattr(agent_internal._agent_chat, "gated_methods", lambda: ["db_export"])
     approval_id = _approve("s1", "c1", "db_export", {})
+    intent = agent_internal._intent("s1", "db_export", {})
     real_write = store._write_approvals
     monkeypatch.setattr(store, "_write_approvals", lambda: None)  # caída tras la reserva
-    outcome, record = store.dispatch_claim("s1", "c1", "db_export", {}, approval_id)
+    outcome, record = store.dispatch_claim("s1", "c1", "db_export", intent, approval_id)
     assert outcome == "new"
     monkeypatch.setattr(store, "_write_approvals", real_write)
 
     reloaded = agent.AgentStore(tmp_path)
     assert reloaded.get_approval(approval_id)["consumed_by"] == record["op_id"]
     assert reloaded.get_dispatch("s1", "c1")["status"] == "uncertain"
-    outcome, again = reloaded.dispatch_claim("s1", "c1", "db_export", {}, approval_id)
+    outcome, again = reloaded.dispatch_claim("s1", "c1", "db_export", intent, approval_id)
     assert outcome == "existing" and again["op_id"] == record["op_id"]
-    outcome, _ = reloaded.dispatch_claim("s1", "c2", "db_export", {}, approval_id)
+    outcome, _ = reloaded.dispatch_claim("s1", "c2", "db_export", intent, approval_id)
     assert outcome == "rejected"
 
 

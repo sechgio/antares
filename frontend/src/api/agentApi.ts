@@ -29,6 +29,12 @@ export interface AgentMessage {
   partial?: boolean;
 }
 
+// Archivos cuya ruta escribió el usuario: concedidos (solo lectura) o rechazados.
+export interface AgentMessageFiles {
+  granted: string[];
+  rejected: { path: string; reason: string }[];
+}
+
 export interface AgentToolSpec {
   name: string;
   gated: boolean;
@@ -64,7 +70,10 @@ export const agentApi = {
 
   // request_id identifica el envío: un reintento con el mismo id no crea otro encargo.
   agentMessageSend: (session_id: string, content: string, request_id: string) =>
-    _invoke<{ accepted: boolean; duplicate?: boolean }>('agent_message_send', { session_id, content, request_id }),
+    _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles }>(
+      'agent_message_send',
+      { session_id, content, request_id },
+    ),
 
   agentToolsList: () => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list'),
 

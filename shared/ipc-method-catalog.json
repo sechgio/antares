@@ -30,6 +30,8 @@
     "agent_internal_dispatch": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_dispatch_result": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_dispatch_cancel": { "handler": "backend:agent_internal", "internal": true },
+    "agent_internal_grants_add": { "handler": "backend:agent_internal", "internal": true },
+    "agent_internal_grants_revoke": { "handler": "backend:agent_internal", "internal": true },
     "autoimg_arrastre_list": { "handler": "native:autoimg" },
     "autoimg_auto_sync_toggle": { "handler": "native:autoimg" },
     "autoimg_bootstrap": { "handler": "native:autoimg", "timeout": "long" },

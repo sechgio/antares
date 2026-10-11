@@ -28,6 +28,26 @@ const projection = require('./agent-projection');
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_SESSIONS = 50;
 const MAX_REQUEST_ID_CHARS = 100;
+const MAX_MESSAGE_PATHS = 20;
+// Rutas absolutas de Windows escritas por el usuario: entre comillas (pueden
+// llevar espacios) o sin ellas hasta el primer espacio.
+const QUOTED_PATH_RE = /["'`\u201c\u201d]([A-Za-z]:\\[^"'`\u201c\u201d\r\n]+)["'`\u201c\u201d]/g;
+const BARE_PATH_RE = /(?:^|[\s(\[])([A-Za-z]:\\[^\s"'`<>|*?]+)/g;
+
+// Solo el texto del humano concede acceso: la ruta se valida y autoriza en
+// Python para esta conversación; nada que diga el modelo o una herramienta
+// pasa por aquí.
+function extractPaths(content) {
+  const found = [];
+  const push = (raw) => {
+    const value = raw.replace(/[.,;:!?)\]]+$/, '');
+    if (value && !found.includes(value)) found.push(value);
+  };
+  for (const match of content.matchAll(QUOTED_PATH_RE)) push(match[1]);
+  const unquoted = content.replace(QUOTED_PATH_RE, ' ');
+  for (const match of unquoted.matchAll(BARE_PATH_RE)) push(match[1]);
+  return found.slice(0, MAX_MESSAGE_PATHS);
+}
 const SYSTEM_PROMPT =
   'Eres el agente de Antares, una app de escritorio de documentos e imágenes. ' +
   'Responde en español. Tienes herramientas para consultar el estado de la app ' +
@@ -183,6 +203,7 @@ async function sessionDelete(params) {
   const conv = await conversation(sessionId);
   await conv.abort(ctx(), { background: true }).catch(() => {});
   await bridge('agent_internal_approvals_deny_session', { session_id: sessionId }).catch(() => {});
+  await bridge('agent_internal_grants_revoke', { session_id: sessionId }).catch(() => {});
   await commitSessions((map) => { delete map[sessionId]; });
   const watcher = shared.watchers.get(session.conversationId);
   if (watcher) {
@@ -226,6 +247,10 @@ async function messageSend(params) {
   await execution.ensureProvider(session.provider, session.model);
   const conv = await conversation(sessionId);
   await projection.ensureWatcher(session);
+  const paths = extractPaths(content);
+  const files = paths.length
+    ? await bridge('agent_internal_grants_add', { session_id: sessionId, request_id: requestId || null, paths })
+    : { granted: [], rejected: [] };
   shared.rounds.delete(session.conversationId);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -246,7 +271,7 @@ async function messageSend(params) {
       if (s.title === 'Conversación') s.title = content.trim().slice(0, 60) || 'Conversación';
     }
   });
-  return { accepted: true };
+  return { accepted: true, files };
 }
 
 async function _admittedRequest(session, requestId) {
@@ -413,5 +438,6 @@ module.exports = {
     _approvalsByCall: shared.approvalsByCall,
     INTERRUPTED_RESULT: shared.INTERRUPTED_RESULT,
     SYSTEM_PROMPT,
+    extractPaths,
   },
 };

@@ -121,6 +121,23 @@ it('un envío pendiente en otra sesión no descarta los mensajes de la sesión s
   expect(screen.getByText('Mensaje de segunda')).toBeInTheDocument();
 });
 
+it('avisa de las rutas escritas que no se autorizaron', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentMessageSend).mockResolvedValue({
+    accepted: true,
+    files: { granted: [], rejected: [{ path: 'C:\datos', reason: 'una carpeta requiere seleccionar los archivos concretos' }] },
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa C:\datos' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(addToast).toHaveBeenCalledWith({
+    message: 'No se autorizó C:\datos: una carpeta requiere seleccionar los archivos concretos',
+    type: 'warning',
+  });
+});
+
 it('un envío fallido conserva el borrador y termina el indicador de ejecución', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentMessageSend).mockRejectedValue(new Error('Sin conexión'));

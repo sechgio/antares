@@ -28,12 +28,13 @@ const INTERNAL_RPCS = [
   'agent_internal_approval_decide', 'agent_internal_approvals_pending',
   'agent_internal_approvals_deny_session', 'agent_internal_dispatch',
   'agent_internal_dispatch_result', 'agent_internal_dispatch_cancel',
+  'agent_internal_grants_add', 'agent_internal_grants_revoke',
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function makeBridge() {
-  const state = { approvals: new Map(), seq: 0, dispatches: [], dispatchLog: [] };
+  const state = { approvals: new Map(), seq: 0, dispatches: [], dispatchLog: [], grants: [], revoked: [] };
   const bridge = async (method, params) => {
     switch (method) {
       case 'agent_internal_tools':
@@ -92,6 +93,12 @@ function makeBridge() {
       }
       case 'agent_internal_dispatch_cancel':
         return { cancelled: false };
+      case 'agent_internal_grants_add':
+        state.grants.push(params);
+        return { granted: params.paths.filter((p) => p.endsWith('.pdf')), rejected: params.paths.filter((p) => !p.endsWith('.pdf')).map((path) => ({ path, reason: 'una carpeta requiere seleccionar los archivos concretos' })) };
+      case 'agent_internal_grants_revoke':
+        state.revoked.push(params.session_id);
+        return { revoked: 1 };
       default:
         throw new Error(`bridge desconocido: ${method}`);
     }
@@ -190,6 +197,31 @@ async function main() {
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(messages.filter((m) => m.role === 'user').length === 1, 'un solo mensaje de usuario en la conversación');
     assert(messages.filter((m) => m.role === 'assistant').length === 1, 'una sola respuesta del modelo');
+    await runtime.shutdown();
+  }
+
+  // --- rutas escritas por el humano: concesión antes de admitir el mensaje ---
+  {
+    const extract = runtime._internal.extractPaths;
+    const text = String.raw`Usa @sellador con C:\trabajos\informe.pdf, "C:\Mis docs\plan v2.pdf" y (D:\datos).`;
+    const paths = extract(text);
+    assert(JSON.stringify(paths) === JSON.stringify(['C:\\Mis docs\\plan v2.pdf', 'C:\\trabajos\\informe.pdf', 'D:\\datos']),
+      'extrae rutas absolutas con y sin comillas, sin puntuación final');
+    assert(extract(String.raw`relativa\x.pdf C:relativo \\srv\share\x.pdf http://x`).length === 0, 'ignora rutas relativas y de red');
+
+    const { bridge, state } = makeBridge();
+    await openFaux([fauxAssistantMessage('listo')], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const sent = await runtime.handlers.agent_message_send({ session_id: session.id, content: text, request_id: 'r-files' });
+    assert(state.grants.length === 1 && state.grants[0].session_id === session.id && state.grants[0].request_id === 'r-files',
+      'la concesión queda atribuida a la conversación y al envío del humano');
+    assert(sent.files.granted.length === 2 && sent.files.rejected[0].path === 'D:\\datos', 'el envío informa archivos concedidos y rechazados');
+    assert(await waitIdle(session.id), 'el turno termina');
+    const plain = await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sin rutas' });
+    assert(state.grants.length === 1 && plain.files.granted.length === 0, 'un mensaje sin rutas no concede nada');
+    assert(await waitIdle(session.id), 'el segundo turno termina');
+    await runtime.handlers.agent_session_delete({ id: session.id });
+    assert(state.revoked.includes(session.id), 'borrar la conversación revoca sus archivos');
     await runtime.shutdown();
   }
 

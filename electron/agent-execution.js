@@ -123,12 +123,18 @@ async function beforeTool(call, api, context) {
   if (!spec.gated) return undefined;
 
   const sessionId = await sessionForConversation(api.conversationId, api, context);
-  const { approval } = await bridge('agent_internal_approval_ensure', {
-    session_id: sessionId,
-    call_id: call.id,
-    method: call.name,
-    params: call.arguments || {},
-  });
+  let approval;
+  try {
+    ({ approval } = await bridge('agent_internal_approval_ensure', {
+      session_id: sessionId,
+      call_id: call.id,
+      method: call.name,
+      params: call.arguments || {},
+    }));
+  } catch (err) {
+    // Archivo no autorizado o intención distinta: no se pide aprobación.
+    return { block: String((err && err.message) || err) };
+  }
   shared.approvalsByCall.set(callKey(sessionId, call.id), approval.id);
   shared.liveApprovals.add(approval.id);
   try {
