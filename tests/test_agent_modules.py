@@ -19,7 +19,7 @@ def test_module_ids_match_navigation_or_known_groups():
         "informesV2", "imageOptimizer", "previewPanel", "canvas", "agent", "panelAvisoCorte", "ubicaciones",
         "evidenciaVolanteo", "autoimg", "fichasTecnicas", "espacios", "connections",
     }
-    extra = {"conversion", "printing", "history", "app"}
+    extra = {"conversion", "printing", "history", "app", "drafts"}
     assert set(modules.catalog()) <= navigation | extra
 
 

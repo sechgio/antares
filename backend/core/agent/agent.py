@@ -24,7 +24,7 @@ from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
-from backend.core.agent import resource_grants
+from backend.core.agent import drafts, resource_grants
 from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, scrub_secrets
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
@@ -52,8 +52,11 @@ def _schema_values(value: object, segments: tuple[str, ...]) -> list[object]:
     return _schema_values(value[segments[0]], segments[1:]) if isinstance(value, dict) and segments[0] in value else []
 
 
-def read_resources(method: str, args: JsonObject, grants: dict[str, JsonObject]) -> list[JsonObject]:
-    """Revisión de cada archivo de lectura del método; solo admite archivos concedidos."""
+def read_resources(
+    method: str, args: JsonObject, grants: dict[str, JsonObject], drafts_root: Path | None = None,
+) -> list[JsonObject]:
+    """Revisión de cada archivo de lectura del método: archivos concedidos por el
+    humano o borradores de la propia conversación."""
     revisions: list[JsonObject] = []
     for schema in file_tokens_for(method):
         for value in _schema_values(args, schema):
@@ -61,27 +64,34 @@ def read_resources(method: str, args: JsonObject, grants: dict[str, JsonObject])
                 continue
             if not isinstance(value, str):
                 raise ValueError("El archivo del paso no está autorizado; elígelo o usa la entrada de imágenes")
+            draft = drafts.inside(drafts_root, value) if drafts_root is not None else None
+            if draft is not None and draft.is_file():
+                stat = draft.stat()
+                revisions.append({"path": str(draft), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "value": value})
+                continue
             revisions.append({**resource_grants.check(value, grants), "value": value})
     return sorted(revisions, key=lambda r: str(r["path"]))
 
 
-def _validate_action_paths(method: str, args: JsonObject, grants: dict[str, JsonObject] | None = None) -> None:
-    """Las lecturas solo usan archivos concedidos; las salidas siguen sin autorizar."""
-    read_resources(method, args, grants or {})
-    for value in _schema_values(args, ("_resolved_file_token_path",)):
-        if value:
-            raise ValueError("El archivo del paso no está autorizado; elígelo o usa la entrada de imágenes")
-    keys = write_path_keys_for(method) | {"outputPath", "output_path", "output_dir", "outputDir", "output_folder", "destino", "_resolved_output_path"}
-    if allows_raw_output_path(method):
-        keys |= {"path"}
-    for key in keys:
+def _write_keys(method: str) -> frozenset[str]:
+    keys = write_path_keys_for(method) | {"outputPath", "output_path", "output_dir", "outputDir", "output_folder", "destino"}
+    return keys | {"path"} if allows_raw_output_path(method) else keys
+
+
+def _validate_action_paths(
+    method: str, args: JsonObject, grants: dict[str, JsonObject] | None = None, drafts_root: Path | None = None,
+) -> None:
+    """Lecturas de archivos concedidos o borradores; salidas solo dentro de los borradores."""
+    read_resources(method, args, grants or {}, drafts_root)
+    for key in ("_resolved_file_token_path", "_resolved_output_path"):
+        if args.get(key):
+            raise ValueError("El agente no puede concederse permisos de archivos")
+    for key in _write_keys(method):
         value = args.get(key)
         if not value:
             continue
-        p = Path(value)
-        if not p.is_absolute() or p.is_symlink() or any(parent.is_symlink() for parent in p.parents):
-            raise ValueError("Ruta de salida inválida")
-        raise ValueError("El destino del paso no está autorizado; elige una carpeta de salida")
+        if not isinstance(value, str) or drafts_root is None or drafts.inside(drafts_root, value) is None:
+            raise ValueError("El destino del paso no está autorizado; el agente escribe en sus borradores")
 
 _MAX_TOOL_STEPS = 12
 _MAX_TOOL_RESULT_CHARS = 6_000
@@ -135,6 +145,7 @@ class AgentStore:
         self._sessions_path = base / "sessions.json"
         self._approvals_path = base / "approvals.json"
         self._grants_path = base / "grants.json"
+        self._drafts_root = base / "drafts"
         self._dispatches_path = base / "dispatches.json"
         self._messages_dir = base / "messages"
         self._messages_dir.mkdir(parents=True, exist_ok=True)
@@ -351,6 +362,12 @@ class AgentStore:
             for record in records:
                 session_grants[resource_grants.grant_key(record)] = record
             self._write_grants()
+
+    def drafts_dir(self, session_id: str) -> Path:
+        safe = "".join(ch for ch in session_id if ch.isalnum() or ch in "-_")[:64]
+        if not safe:
+            raise ValueError("Sesión de agente no válida")
+        return self._drafts_root / safe
 
     def grants_for(self, session_id: str) -> dict[str, JsonObject]:
         with self._lock:
@@ -724,15 +741,30 @@ class AgentRunner:
                 return json.dumps(result, ensure_ascii=False, default=str)
             except Exception as err:
                 return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
+        session_id = call.get("session_id")
+        if name in drafts.READ_TOOLS | drafts.EFFECT_TOOLS:
+            try:
+                if not session_id:
+                    raise ValueError("Los borradores requieren una conversación")
+                root = self._store.drafts_dir(str(session_id))
+                raw_params = call.get("params")
+                draft_args: JsonObject = dict(raw_params) if isinstance(raw_params, dict) else {}
+                result = drafts.list_drafts(root) if name == "drafts_list" else drafts.save_draft(root, draft_args)
+                return json.dumps(result, ensure_ascii=False)
+            except Exception as err:
+                return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
         fn = self._handler_getter(name)
         if fn is None:
             return json.dumps({"error": f"Método desconocido: {name}"})
         params = call.get("params")
         try:
             args = dict(params) if isinstance(params, dict) else {}
-            session_id = call.get("session_id")
             grants = self._store.grants_for(str(session_id)) if session_id else {}
-            granted = {str(r["value"]) for r in read_resources(name, args, grants)}
+            drafts_root = self._store.drafts_dir(str(session_id)) if session_id else None
+            if drafts_root is not None:
+                args = drafts.bind_outputs(args, _write_keys(name), drafts_root)
+            granted = {str(r["value"]) for r in read_resources(name, args, grants, drafts_root)}
+            granted |= {str(args[k]) for k in _write_keys(name) if isinstance(args.get(k), str) and args[k]}
 
             def check_paths(value: object) -> None:
                 if isinstance(value, dict):
@@ -747,7 +779,7 @@ class AgentRunner:
                     raise ValueError("Usa los diálogos de Antares para autorizar archivos; la aprobación no autoriza rutas")
 
             check_paths(args)
-            _validate_action_paths(name, args, grants)
+            _validate_action_paths(name, args, grants, drafts_root)
             lane = lane_for(name)
             if lane == "sync":
                 result = fn(args)

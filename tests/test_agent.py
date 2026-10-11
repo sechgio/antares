@@ -30,7 +30,7 @@ def test_gated_methods_exclude_readonly_and_denied():
     gated = set(agent_chat.gated_methods())
     safe = set(ORCHESTRATABLE_METHODS)
     assert gated.isdisjoint(safe)
-    assert gated <= set(backend_methods())
+    assert gated <= set(backend_methods()) | {"drafts_save"}
     for banned in ("ai_provider_save", "connections_token_put", "db_clear"):
         assert banned not in gated
     # hay métodos con efectos en el catálogo que sí quedan tras la puerta

@@ -120,7 +120,8 @@ def _intent(session_id: str, method: str, params: JsonObject) -> JsonObject:
     """Intención que firma una aprobación: parámetros y revisión de cada archivo
     concedido que lee. Cambiar el archivo después de aprobar invalida la aprobación."""
     try:
-        resources = _agent.read_resources(method, params, _store().grants_for(session_id))
+        store = _store()
+        resources = _agent.read_resources(method, params, store.grants_for(session_id), store.drafts_dir(session_id))
     except ValueError as err:
         raise ValidationError(str(err)) from err
     return {"params": params, "resources": resources}

@@ -53,7 +53,9 @@ const SYSTEM_PROMPT =
   'Responde en español. Tienes herramientas para consultar el estado de la app ' +
   '(métodos de solo lectura) y herramientas con efectos que el usuario aprueba ' +
   'una a una. Usa herramientas cuando la respuesta dependa de datos reales de la ' +
-  'app; si una herramienta requiere aprobación explícale al usuario qué hará.';
+  'app; si una herramienta requiere aprobación explícale al usuario qué hará. ' +
+  'Para archivos de salida indica solo un nombre: se generan en los borradores de la ' +
+  'conversación; para entregarlos en una carpeta del usuario usa drafts_save.';
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';

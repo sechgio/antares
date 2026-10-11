@@ -86,6 +86,12 @@
       "aliases": ["imprimir", "impresora", "impresion", "impresión"],
       "handlers": ["printing"]
     },
+    "drafts": {
+      "label": "Borradores",
+      "aliases": ["borradores", "borrador"],
+      "handlers": [],
+      "methods": ["drafts_list", "drafts_save"]
+    },
     "history": {
       "label": "Historial",
       "aliases": ["historial"],

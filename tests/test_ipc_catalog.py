@@ -19,7 +19,7 @@ def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_s
     from backend.handlers import integrations
 
     methods = _catalog()["methods"]
-    for method in ORCHESTRATABLE_METHODS | set(agent_chat.gated_methods()):
+    for method in (ORCHESTRATABLE_METHODS | set(agent_chat.gated_methods())) - {"drafts_list", "drafts_save"}:
         schema = input_schema_for(method)
         assert schema == methods[method]["inputSchema"]
         assert schema["type"] == "object"
