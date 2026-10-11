@@ -33,31 +33,10 @@ _ERR_MSG_MAX_CHARS = 300
 
 # Métodos backend que el agente nunca debe invocar (ni siquiera con aprobación):
 # vault/claves, el propio canal del agente y borrados destructivos.
-_DENIED_PREFIXES = ("ai_provider_", "flows_connection_", "flows_path_", "agent_")
+_DENIED_PREFIXES = ("ai_provider_", "connections_token_", "agent_")
 _DENIED_METHODS = frozenset({
     "db_clear", "mcp_server_add", "mcp_server_delete", "mcp_tool_call",
-    "flows_approval_decide", "flows_approvals_list", "flows_effects_pending",
-    "flows_effect_resolve", "flows_run_resume", "flows_events_list", "flows_webhook_info",
 })
-
-# Efectos que ``auto_approve`` nunca cubre: destructivos, control de procesos,
-# exportaciones masivas y escritura de flujos (el modelo no puede otorgarse
-# nuevas primitivas). Las tools MCP tampoco: son código de terceros.
-_AUTO_APPROVE_DENIED_PARTS = ("delete", "clear", "reset", "cancel")
-_AUTO_APPROVE_DENIED = frozenset({
-    "db_export", "db_import", "formatos_upload", "process_start",
-    "flows_create", "flows_update", "flows_duplicate", "flows_run",
-})
-
-
-def auto_approve_allowed(name: str) -> bool:
-    """False si la herramienta siempre exige aprobación humana, aunque el nodo
-    active ``auto_approve``."""
-    if name.startswith(("mcp__", "mcp2__")):
-        return False
-    if name in _AUTO_APPROVE_DENIED:
-        return False
-    return not any(part in name for part in _AUTO_APPROVE_DENIED_PARTS)
 
 
 # Claves cuyo valor nunca viaja al LLM: credenciales de nodos (webhook, headers

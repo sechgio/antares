@@ -137,7 +137,7 @@ export default function ConnectionsView() {
   const disconnect = async (p: ConnectionProviderSpec) => {
     const ok = await confirm({
       title: `Desconectar ${p.label}`,
-      description: `Se eliminarán los tokens de ${p.label} guardados en este equipo. Los flujos que usan esta conexión dejarán de firmarse.`,
+      description: `Se eliminarán los tokens de ${p.label} guardados en este equipo.`,
       confirmLabel: 'Desconectar',
       type: 'destructive',
     });
@@ -247,7 +247,7 @@ export default function ConnectionsView() {
             <div>
               <h2 className="text-sm font-semibold text-[var(--text-primary)]">Conexiones</h2>
               <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                Autoriza apps externas vía OAuth; tus flujos firman sus llamadas con estas cuentas.
+                Autoriza apps externas vía OAuth para usarlas desde Antares.
               </p>
             </div>
             <div className="relative w-60 shrink-0">

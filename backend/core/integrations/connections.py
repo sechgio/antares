@@ -157,7 +157,7 @@ def fresh_tokens(provider: str) -> JsonObject:
             tokens = get_tokens(provider)
             generation = _generations.get(provider, 0)
         if not tokens or not isinstance(tokens.get("access_token"), str) or not tokens["access_token"]:
-            raise ValueError(f"Sin conexión activa para {provider}; conéctalo desde Flujos → Conexiones")
+            raise ValueError(f"Sin conexión activa para {provider}; conéctalo desde Conexiones")
         expiry = tokens.get("expiry_date")
         # Sin expiry declarada (tokens OAuth no caducables, p. ej. GitHub) el token se usa tal cual.
         expired = isinstance(expiry, (int, float)) and expiry < time.time() * 1000 + _TOKEN_EXPIRY_SKEW_MS
@@ -169,7 +169,3 @@ def fresh_tokens(provider: str) -> JsonObject:
                     f"La conexión con {provider} caducó y no se pudo refrescar; reconéctala en Conexiones"
                 ) from err
         return dict(tokens)
-
-
-def fresh_access_token(provider: str) -> str:
-    return str(fresh_tokens(provider)["access_token"])

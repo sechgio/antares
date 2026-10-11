@@ -18,6 +18,21 @@ class RunCancelled(Exception):
     """El run se canceló: la operación en curso se abandona de inmediato."""
 
 
+class _CancelEvent:
+    def __init__(self) -> None:
+        self._event = threading.Event()
+
+    def cancel(self) -> None:
+        self._event.set()
+
+    def wait(self, timeout: float) -> bool:
+        return self._event.wait(timeout)
+
+    @property
+    def cancelled(self) -> bool:
+        return self._event.is_set()
+
+
 def await_or_cancel(fn: Callable[[], Any], token: Any, poll_s: float = 0.1) -> Any:
     box: JsonObject = {}
 

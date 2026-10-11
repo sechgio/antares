@@ -31,7 +31,7 @@ def test_gated_methods_exclude_readonly_and_denied():
     safe = set(ORCHESTRATABLE_METHODS)
     assert gated.isdisjoint(safe)
     assert gated <= set(backend_methods())
-    for banned in ("ai_provider_save", "flows_connection_token_put", "db_clear"):
+    for banned in ("ai_provider_save", "connections_token_put", "db_clear"):
         assert banned not in gated
     # hay métodos con efectos en el catálogo que sí quedan tras la puerta
     assert len(gated) > 0
@@ -67,7 +67,7 @@ def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style)
     assert {"files", "destino"} <= wire["process_start"]["properties"].keys()
     assert {"formato", "calidad", "conversion_enabled", "mapping_path", "sequence_mode"} <= wire["process_start"]["properties"].keys()
     assert all(not k.startswith("_") for s in wire.values() for k in s.get("properties", {}))
-    assert "flows_connection_token_refresh" not in wire
+    assert "connections_token_refresh" not in wire
 
 
 def test_tools_list_projection(monkeypatch):
@@ -103,10 +103,10 @@ def test_approval_flow(tmp_path):
 
 @pytest.mark.parametrize("name,params", [
     ("db_export", {"path": "C:/unauthorized/export.xlsx"}),
-    ("flows_print_pdf", {"pdf_path": "C:/unauthorized/document.pdf"}),
+    ("print_pdf", {"pdf_path": "C:/unauthorized/document.pdf"}),
     ("sellador_apply", {"pdf_path": "document.pdf"}),
-    ("flows_update", {"graph": {"nodes": [{"config": {"args": {"output_path": "C:/unauthorized/out.pdf"}}}]}}),
-    ("flows_update", {"graph": {"nodes": [{"config": {"_file_grants": {"write": ["C:/unauthorized"]}}}]}}),
+    ("canvas_save", {"document": {"layers": [{"meta": {"output_path": "C:/unauthorized/out.pdf"}}]}}),
+    ("canvas_save", {"document": {"layers": [{"meta": {"_file_grants": {"write": ["C:/unauthorized"]}}}]}}),
     ("canvas_save", {"_resolved_output_path": "relative.pdf"}),
 ])
 def test_agent_rejects_ungranted_paths_and_forged_grants_before_dispatch(tmp_path, name, params):
@@ -729,3 +729,54 @@ def test_cancel_removes_a_tool_still_queued_in_the_scheduler(tmp_path, monkeypat
     assert cancelled.wait(3)
     assert future.cancelled()
     assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == "interrupted"
+
+
+def test_tool_results_scrub_secrets():
+    """Los resultados de tools que viajan al LLM no llevan secretos ni grants."""
+    scrubbed = agent_chat.scrub_secrets({"config": {
+        "secret": "s3cr3t",
+        "headers": {"Authorization": "Bearer x"},
+        "_file_grants": {"signature": "abc", "read": ["C:\tmp"]},
+        "name": "visible",
+    }})
+    assert scrubbed["config"] == {"secret": "…", "headers": "…", "_file_grants": "…", "name": "visible"}
+
+
+def test_agent_decide_never_runs_denied_method(tmp_path, monkeypatch):
+    """Una aprobación manipulada para un método denegado no debe ejecutarse."""
+    store = _store(tmp_path)
+    session = store.create_session("provider-x", "model", "t")
+    calls: list = []
+    runner = agent.AgentRunner(store, lambda m: calls.append(m) or (lambda p: {}))
+    monkeypatch.setattr(runner, "_run_loop", lambda sid: None)
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
+
+    approval = store.create_approval(session["id"], {"id": "c1", "name": "db_clear", "params": {}})
+    runner.decide(approval["id"], True)
+
+    assert calls == []
+    last = store.messages(session["id"])[-1]
+    assert last["role"] == "tool_result"
+    assert "no disponible" in last["content"]
+
+
+def test_agent_decide_runs_approved_mcp_tool(tmp_path, monkeypatch):
+    """Una aprobación de tool MCP (mcp__srv__tool) sí debe ejecutarse al aprobar."""
+    from backend.core.integrations import mcp_servers
+
+    store = _store(tmp_path)
+    session = store.create_session("provider-x", "model", "t")
+    runner = agent.AgentRunner(store, lambda m: None)
+    monkeypatch.setattr(runner, "_run_loop", lambda sid: None)
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
+    seen: dict = {}
+    monkeypatch.setattr(
+        mcp_servers,
+        "call_tool",
+        lambda srv, tool, args, **kw: seen.update(srv=srv, tool=tool, args=args, **kw) or {"ok": True},
+    )
+
+    approval = store.create_approval(session["id"], {"id": "c2", "name": "mcp__srv__do", "params": {"a": 1}})
+    runner.decide(approval["id"], True)
+
+    assert seen == {"srv": "srv", "tool": "mcp__srv__do", "args": {"a": 1}, "advertised": True}

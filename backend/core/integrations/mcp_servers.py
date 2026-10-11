@@ -1,8 +1,8 @@
-"""Registro de servidores MCP del usuario para Flujos.
+"""Registro de servidores MCP del usuario para el agente.
 
 Los servidores se guardan en ``mcp_servers.json`` dentro de datos de usuario;
 los secretos (cabeceras HTTP, env de procesos stdio) viven en el vault sellado
-de ``core.flows.vault`` y nunca salen del backend — el listado público solo
+de ``core.integrations.vault`` y nunca salen del backend — el listado público solo
 expone los nombres de las claves.
 """
 
@@ -19,7 +19,6 @@ import time
 import urllib.parse
 from pathlib import Path
 
-from backend.core.flows.expr import resolve
 from backend.core.integrations import http_guard, mcp_client, vault
 from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
@@ -230,20 +229,6 @@ def call_tool(server_id: str, tool: str, args: JsonObject, *, advertised: bool =
             args,
         )
     return mcp_client.normalize_result(result)
-
-
-def run_mcp_call_node(node: JsonObject, memory: JsonObject) -> JsonObject:
-    """Ejecuta el nodo de flujo ``mcp_call`` y devuelve ``{"json": resultado}``."""
-    config = node.get("config") or {}
-    server = str(config.get("server") or "").strip()
-    tool = str(config.get("tool") or "").strip()
-    if not server or not tool:
-        raise ValueError("mcp_call requiere config.server y config.tool")
-    args = resolve(config.get("args"), memory)
-    result = call_tool(server, tool, args if isinstance(args, dict) else {})
-    if result.get("isError"):
-        raise ValueError(f"La tool MCP {server}/{tool} devolvió error: {result.get('text', '')[:200]}")
-    return {"json": result}
 
 
 def agent_tool_name(server_id: str, tool: str) -> str:

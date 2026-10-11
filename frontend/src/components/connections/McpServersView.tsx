@@ -183,8 +183,7 @@ export default function McpServersView() {
       </div>
       <p className="mb-4 mt-1 text-xs text-[var(--text-secondary)]">
         Servidores Model Context Protocol: tools externas que el agente puede usar tras tu
-        aprobación y que el nodo «Llamada MCP» puede invocar en flujos. Las claves se guardan
-        cifradas en el vault.
+        aprobación. Las claves se guardan cifradas en el vault.
       </p>
 
       {showForm && (

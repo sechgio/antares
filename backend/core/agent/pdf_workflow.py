@@ -1,4 +1,4 @@
-"""Preparación y exportación de los PDFs configurados con la guía de Flujos."""
+"""Preparación y exportación de lotes PDF con plantillas HTML, Canvas y Formatos PDF."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import unicodedata
 from datetime import date
 from pathlib import Path
 
+from backend.core.agent import path_grants
 from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_output_file
 from backend.utils.validators import sanitizar_nombre
@@ -32,11 +33,220 @@ def _flatten(value: JsonObject, prefix: str = "") -> JsonObject:
     return result
 
 
+def _batch_template_profile(name: str) -> JsonObject:
+    from jinja2 import Environment, nodes
+
+    from backend.handlers.templates import template_get, templates_list
+
+    if name not in {t["name"] for t in templates_list({"recursive": True})["templates"]}:
+        raise ValueError("Selecciona una plantilla HTML de Antares")
+    ast = Environment().parse(template_get({"name": name})["content"])
+    fields = ["OT", "FECHA_TRABAJO"]
+    if name == "report.html":
+        fields = ["CENTRO", "NIS", "OT", "FECHA_TRABAJO", "DIRECCION", "LOCALIDAD", "DISTRITO",
+                  "ESTADO", "TIPO RED", "SECTOR", "ACTIVIDAD", "CONTRATA", "SUBACTIVIDAD",
+                  "CUADRILLA", "OBSERVACION SEDAPAL", "OBSERVACION CONTRATA"]
+    else:
+        for call in ast.find_all(nodes.Call):
+            if (isinstance(call.node, nodes.Getattr) and call.node.attr == "get" and call.args
+                    and isinstance(call.args[0], nodes.Const) and isinstance(call.args[0].value, str)
+                    and ((isinstance(call.node.node, nodes.Getattr) and call.node.node.attr == "data")
+                         or (isinstance(call.node.node, nodes.Name) and call.node.node.name in {"row", "data"}))):
+                fields.append(call.args[0].value)
+    defaults: JsonObject = {}
+    if name == "technical_reports/informe_tecnico.html":
+        from backend.core.technical_reports.models import create_empty_report
+
+        defaults = create_empty_report(1)
+    elif name.startswith("informes_v2/"):
+        from backend.core.informes_v2.models import create_empty_report as empty_informe
+
+        defaults = empty_informe(1)
+        sections = {"header", "reservorios2"} if name.endswith("reservorios_2.html") else {"header", "valvulas", "linea", "medidas"}
+        defaults = {key: value for key, value in defaults.items() if key in sections}
+    elif name == "fichas_tecnicas/ficha_tecnica.html":
+        from backend.core.fichas_tecnicas.models import create_empty_ficha
+
+        defaults = create_empty_ficha(1)
+
+    def add_fields(value: JsonObject, prefix: str = "") -> None:
+        for key, item in value.items():
+            if not prefix and key in {"id", "status", "last_modified", "plantilla"}:
+                continue
+            field = f"{prefix}.{key}" if prefix else key
+            if isinstance(item, dict):
+                add_fields(item, field)
+            else:
+                fields.append(field)
+
+    add_fields(defaults)
+    required = ["cuadrante", "fecha_corte", "motivo"] if name == "panel-aviso-corte.html" else []
+    if name == "evidencia-volanteo.html":
+        fields.append("cuadrante")
+    fields.extend(required)
+    photos = any(n.attr in {"images", "_photos", "image_uris"} for n in ast.find_all(nodes.Getattr))
+    photos = photos or name == "evidencia-volanteo.html"
+    limits = [n.arg.stop.value for n in ast.find_all(nodes.Getitem)
+              if isinstance(n.node, nodes.Getattr) and n.node.attr == "images" and isinstance(n.arg, nodes.Slice)
+              and isinstance(n.arg.stop, nodes.Const) and isinstance(n.arg.stop.value, int)]
+    labels = {"header": "Encabezado", "metadata": "Datos del informe", "inspeccion": "Inspección",
+              "valvulas": "Válvulas", "canastillas": "Canastillas", "medidas": "Medidas",
+              "reservorios2": "Reservorio", "linea": "Línea", "obs_rec": "Observaciones",
+              "cs": "Centro de servicios", "estacion": "Estación", "sgio": "OT"}
+    return {"fields": list(dict.fromkeys(fields)), "required_fields": required,
+            "field_labels": {field: " · ".join(labels.get(part, part.replace("_", " ")) for part in field.split("."))
+                             for field in fields},
+            "image_limit": min(6, max(limits, default=6)) if photos else 0}
+
+
+def _render_html_pdf(params: JsonObject) -> JsonObject:
+    """Renderiza la plantilla HTML con los contextos del lote; devuelve el PDF en base64."""
+    from backend.utils.pdf_html import write_pdf_sanitized
+
+    html = params.get("html")
+    template_name = params.get("template_name")
+    expected_pages = params.get("expected_pages")
+    if expected_pages is not None:
+        if not template_name or not isinstance(expected_pages, int) or isinstance(expected_pages, bool) or expected_pages < 1:
+            raise ValueError("Revisa la cantidad de filas del reporte consolidado")
+        profile = _batch_template_profile(str(template_name))
+        contexts = params.get("contexts")
+        if not isinstance(contexts, list) or len(contexts) != expected_pages or any(
+            not isinstance(item, dict) or not (0 if params.get("_guided_contexts") else 1 if profile["image_limit"] else 0) <= len(item.get("images") or []) <= profile["image_limit"]
+            or (not params.get("_guided_contexts") and any(not (item.get("data") or {}).get(key) for key in ("OT", "FECHA_TRABAJO"))) for item in contexts
+        ):
+            return {"ready": False, "reason": "Resuelve todas las filas antes de exportar"}
+    if template_name:
+        from jinja2 import StrictUndefined, UndefinedError
+        from jinja2.sandbox import SandboxedEnvironment
+
+        from backend.handlers.templates import template_get, templates_list
+
+        if not isinstance(template_name, str) or template_name not in {t["name"] for t in templates_list({"recursive": True})["templates"]}:
+            raise ValueError("Selecciona una plantilla HTML de Antares")
+        content = template_get({"name": template_name})["content"]
+        if expected_pages is not None:
+            content = re.sub(r"(?i)@import\s+(?:url\([^)]*\)|[\"'][^\"']*[\"'])[^;]*;", "", content)
+        context = params.get("context") or {}
+        if not isinstance(context, dict):
+            raise ValueError("Los datos de la plantilla deben ser un objeto")
+        context = dict(context)
+        contexts = params.get("contexts")
+        if contexts is not None:
+            if not isinstance(contexts, list) or not contexts:
+                return {"ready": False, "reason": "Esperando datos e imágenes de los paneles"}
+            from backend.utils.image_data import build_image_uris
+
+            paths = params.get("localImagePaths") or {}
+            if not isinstance(paths, dict) or sum(Path(p).stat().st_size for p in paths.values()) > 100 * 1024 * 1024:
+                raise ValueError("Las imágenes del lote exceden el máximo de 100 MiB")
+            if expected_pages is not None:
+                digests = params.get("photo_digests") or {}
+                if any(hashlib.sha256(Path(p).read_bytes()).hexdigest() != digests.get(ref) for ref, p in paths.items()):
+                    return {"ready": False, "reason": "Las fotos cambiaron; vuelve a preparar el lote"}
+            uris = build_image_uris({}, paths)
+            reports: list[JsonObject] = []
+            for item in contexts:
+                images = item.get("images") or []
+                if any(ref not in uris for ref in images):
+                    return {"ready": False, "reason": "Esperando imágenes válidas para la plantilla"}
+                data = item.get("data") or {}
+                if expected_pages is not None and template_name.startswith(("technical_reports/", "informes_v2/", "fichas_tecnicas/")):
+                    nested: JsonObject = {}
+                    for field, value in data.items():
+                        nested_target = nested
+                        parts = field.split(".")
+                        for part in parts[:-1]:
+                            nested_target = nested_target.setdefault(part, {})
+                        if template_name == "fichas_tecnicas/ficha_tecnica.html" and field in {"productos", "personal_tecnico"} and value:
+                            try:
+                                value = json.loads(value) if isinstance(value, str) else value
+                            except json.JSONDecodeError as exc:
+                                raise ValueError(f"Revisa el contenido JSON del campo {field}") from exc
+                            if not isinstance(value, list):
+                                raise ValueError(f"El campo {field} debe contener una lista JSON")
+                        nested_target[parts[-1]] = value
+                    if template_name == "fichas_tecnicas/ficha_tecnica.html":
+                        nested.setdefault("os_numero", data["OT"])
+                        nested.setdefault("fecha", data["FECHA_TRABAJO"])
+                    else:
+                        header = nested.setdefault("header", {})
+                        header.setdefault("sgio", data["OT"])
+                        if template_name.startswith("informes_v2/"):
+                            header.setdefault("fecha_ejecucion", data["FECHA_TRABAJO"])
+                        elif data.get("FECHA_TRABAJO"):
+                            work_date = date.fromisoformat(data["FECHA_TRABAJO"])
+                            metadata = nested.setdefault("metadata", {})
+                            metadata.setdefault("dia", work_date.day)
+                            metadata.setdefault("anio", work_date.year)
+                            metadata.setdefault("mes", ("ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+                                                        "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE")[work_date.month - 1])
+                    data = nested
+                reports.append({"data": data, "images": [
+                    {"path": uris[ref], "name": ref.removeprefix("flow-image:"), "coords": "",
+                     "date": time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(Path(paths[ref]).stat().st_mtime))}
+                    for ref in images
+                ]})
+            context = {"title": Path(template_name).stem, "logo_left": None, "logo_right": None,
+                       "logo_center": None, "reports": reports, **context}
+            if template_name == "evidencia-volanteo.html":
+                from backend.core.evidencia_volanteo.layout import layout_context
+
+                pages = [{"cuadrante": r["data"].get("cuadrante", "—"), "slots": [
+                    {"filename": i["name"], "uri": i["path"]} for i in r["images"][start:start + 6]
+                ] + [None] * (6 - len(r["images"][start:start + 6]))}
+                    for r in reports for start in range(0, max(1, len(r["images"])), 6)]
+                context = {**layout_context(), "pages": pages, **context}
+            elif template_name == "panel-aviso-corte.html":
+                if any(any(r["data"].get(k) in (None, "") for k in ("cuadrante", "fecha_corte", "motivo")) for r in reports):
+                    return {"ready": False, "reason": "Completa cuadrante, fecha_corte y motivo de los avisos"}
+                context.setdefault("panels", [{**r["data"], "imagenes": [
+                    {"position": index + 1, "filename": i["name"], "caption": i["name"]}
+                    for index, i in enumerate(r["images"])
+                ], "image_uris": {i["name"]: i["path"] for i in r["images"]}} for r in reports])
+            elif template_name in {"technical_reports/informe_tecnico.html", "informes_v2/informe_v2.html",
+                                   "informes_v2/reservorios_2.html", "fichas_tecnicas/ficha_tecnica.html"}:
+                key = "fichas" if template_name.startswith("fichas_tecnicas/") else "reports"
+                context[key] = (params.get("context") or {}).get(key, [r["data"] for r in reports])
+        if template_name == "technical_reports/informe_tecnico.html":
+            from backend.core.technical_reports.rendering import render_consolidated_html as render_technical_reports
+
+            if not context.get("reports"):
+                return {"ready": False, "reason": "Esperando informes técnicos"}
+            html = render_technical_reports(context["reports"], context.get("logo_left"), context.get("logo_right"))
+        elif template_name in {"informes_v2/informe_v2.html", "informes_v2/reservorios_2.html"}:
+            from backend.core.informes_v2.rendering import render_consolidated_html as render_informes_v2
+
+            if not context.get("reports"):
+                return {"ready": False, "reason": "Esperando informes v2"}
+            reports = [{**r, "id": str(r.get("id") or index),
+                        "plantilla": "reservorios2" if template_name.endswith("reservorios_2.html") else "clasica"}
+                       for index, r in enumerate(context["reports"])]
+            images_by_id = context.get("images_by_id") or {}
+            if contexts and not context.get("images_by_id"):
+                images_by_id = {r["id"]: [{"path": uris[ref], "name": ref.removeprefix("flow-image:")}
+                                         for ref in item.get("images") or []] for r, item in zip(reports, contexts, strict=True)}
+            html = render_informes_v2(reports, context.get("logo_left"), context.get("logo_right"), images_by_id)
+        elif template_name == "fichas_tecnicas/ficha_tecnica.html":
+            from backend.core.fichas_tecnicas.rendering import render_consolidated_html as render_fichas
+
+            if not context.get("fichas"):
+                return {"ready": False, "reason": "Esperando fichas técnicas"}
+            html = render_fichas(context["fichas"], context.get("logo_left"), context.get("logo_right"))
+        else:
+            try:
+                html = SandboxedEnvironment(autoescape=True, undefined=StrictUndefined).from_string(content).render(context)
+            except UndefinedError as exc:
+                return {"ready": False, "reason": f"Faltan datos de la plantilla: {exc}"}
+    if not isinstance(html, str) or not html.strip():
+        return {"ready": False, "reason": "Esperando el contenido del documento"}
+    return {"pdf_base64": base64.b64encode(write_pdf_sanitized(html)).decode("ascii")}
+
+
 def template_profile(kind: str, template_id: str) -> JsonObject:
     if kind == "html":
         from jinja2 import Environment, nodes
 
-        from backend.handlers.flows import _batch_template_profile
         from backend.handlers.templates import template_get
 
         profile = _batch_template_profile(template_id)
@@ -134,10 +344,9 @@ def prepare(params: JsonObject) -> JsonObject:
     from backend.core.panel_aviso_corte import parse_excel_bytes
     from backend.core.panel_aviso_corte.matcher import _normalize_date_str
     from backend.handlers import HANDLERS
-    from backend.handlers.flows import _store
 
     grants = params.get("_flow_file_grants") or {}
-    if not _store().verify_paths(grants):
+    if not path_grants.verify_paths(grants):
         raise ValueError("Vuelve a seleccionar las carpetas y archivos del flujo")
     output = _folder(params.get("output_folder"), grants, "write")
     source = _folder(params.get("source_folder"), grants, "folders")
@@ -312,8 +521,6 @@ def _render(params: JsonObject) -> bytes:
     refs = {ref for item in contexts for ref in item.get("images") or []}
     paths = {ref: path for ref, path in params["localImagePaths"].items() if ref in refs}
     if kind == "html":
-        from backend.handlers.flows import _render_pdf
-
         root_fields = template_profile("html", params["template_id"])["root_fields"]
         if root_fields and len(contexts) > 1:
             import pymupdf
@@ -329,7 +536,7 @@ def _render(params: JsonObject) -> bytes:
                         merged.insert_pdf(part)
                 return bytes(merged.tobytes())
         data = contexts[0]["data"]
-        result = _render_pdf({"template_name": params["template_id"], "contexts": contexts,
+        result = _render_html_pdf({"template_name": params["template_id"], "contexts": contexts,
                               "context": {"data": data, "row": data, **{field: data[field] for field in root_fields if field in data}},
                               "localImagePaths": paths, "photo_digests": params["photo_digests"], "_preview_pdf": True,
                               "_guided_contexts": True, "expected_pages": len(contexts)})

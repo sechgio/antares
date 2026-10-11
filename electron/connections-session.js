@@ -1,15 +1,15 @@
 'use strict';
 
 /**
- * Sesión OAuth genérica por proveedor de conexión (Flujos → Conexiones).
+ * Sesión OAuth genérica por proveedor de conexión (Conexiones).
  *
  * Generaliza el patrón de spotify-session/google-session: config y tokens por
  * proveedor en secure-storage, loopback 127.0.0.1 + state (+ PKCE si el spec lo
  * pide) y canje de código según `auth.type` del catálogo compartido.
  *
  * Tras cada alta/refresco se espeja el token al vault del backend
- * (`flows_connection_token_*`) para que los nodos http_request puedan firmar
- * con `connection_ref`; las claves nunca salen de los vaults cifrados.
+ * (`connections_token_*`), que es quien renueva los tokens; las claves nunca
+ * salen de los vaults cifrados.
  */
 
 const crypto = require('crypto');
@@ -57,7 +57,7 @@ function _enqueueMirror(provider, task, onError) {
 
 function _mirrorToBackend(provider, tokens, cfg) {
   if (!tokens || !tokens.access_token) return;
-  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('flows_connection_token_put', {
+  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connections_token_put', {
     provider,
     tokens: {
       access_token: tokens.access_token,
@@ -77,7 +77,7 @@ function _mirrorToBackend(provider, tokens, cfg) {
 }
 
 function _mirrorDelete(provider) {
-  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('flows_connection_token_delete', { provider }), () => {});
+  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connections_token_delete', { provider }), () => {});
 }
 
 function loadOAuthConfig(provider) {
@@ -123,7 +123,7 @@ function requireOAuthConfig(provider) {
   const cfg = loadOAuthConfig(provider);
   if (!cfg.clientId) {
     throw new Error(
-      `Credenciales de ${spec.label} no configuradas. En Flujos → Conexiones guarda el Client ID de tu app.`,
+      `Credenciales de ${spec.label} no configuradas. En Conexiones guarda el Client ID de tu app.`,
     );
   }
   return cfg;
@@ -204,7 +204,7 @@ async function _refreshTokens(provider, tokens) {
   if (!tokens) return null;
   const generation = _tokenGenerations.get(provider) || 0;
   await _mirrorPromises.get(provider);
-  const result = await require('./ipc-router')._callBackend('flows_connection_token_refresh', { provider });
+  const result = await require('./ipc-router')._callBackend('connections_token_refresh', { provider });
   if ((_tokenGenerations.get(provider) || 0) !== generation) return null;
   if (!result || !result.tokens || !result.tokens.access_token) return null;
   return _saveTokens(provider, { ...result.tokens, account: tokens.account || result.tokens.account }, false);

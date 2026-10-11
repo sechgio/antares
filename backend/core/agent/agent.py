@@ -24,16 +24,50 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 from backend.core.agent.agent_chat import chat, gated_methods, scrub_secrets
-from backend.core.agent.cancel import RunCancelled, await_or_cancel
-from backend.core.flows.runner import _CancelEvent, _validate_action_paths
+from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
-from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, lane_for, timeout_ms_for
+from backend.core.ipc_catalog import (
+    ORCHESTRATABLE_METHODS,
+    allows_raw_output_path,
+    file_tokens_for,
+    lane_for,
+    timeout_ms_for,
+    write_path_keys_for,
+)
 from backend.core.scheduler import get_scheduler
 from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_action_paths(method: str, args: JsonObject) -> None:
+    """El agente no tiene grants de archivos: rechaza rutas de lectura y salida."""
+    def values(value: object, segments: tuple[str, ...]) -> list[object]:
+        if not segments:
+            return [value]
+        if segments[0] == "*":
+            children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
+            return [item for child in children for item in values(child, segments[1:])]
+        return values(value[segments[0]], segments[1:]) if isinstance(value, dict) and segments[0] in value else []
+
+    for schema in (*file_tokens_for(method), ("_resolved_file_token_path",)):
+        for value in values(args, schema):
+            if not value or (isinstance(value, str) and value.startswith(("data:", "canvas-asset:"))):
+                continue
+            raise ValueError("El archivo del paso no está autorizado; elígelo o usa la entrada de imágenes")
+    keys = write_path_keys_for(method) | {"outputPath", "output_path", "output_dir", "outputDir", "output_folder", "destino", "_resolved_output_path"}
+    if allows_raw_output_path(method):
+        keys |= {"path"}
+    for key in keys:
+        value = args.get(key)
+        if not value:
+            continue
+        p = Path(value)
+        if not p.is_absolute() or p.is_symlink() or any(parent.is_symlink() for parent in p.parents):
+            raise ValueError("Ruta de salida inválida")
+        raise ValueError("El destino del paso no está autorizado; elige una carpeta de salida")
 
 _MAX_TOOL_STEPS = 12
 _MAX_TOOL_RESULT_CHARS = 6_000
@@ -586,7 +620,7 @@ class AgentRunner:
                     raise ValueError("Usa los diálogos de Antares para autorizar archivos; la aprobación no autoriza rutas")
 
             check_paths(args)
-            _validate_action_paths(name, args, {})
+            _validate_action_paths(name, args)
             lane = lane_for(name)
             if lane == "sync":
                 result = fn(args)

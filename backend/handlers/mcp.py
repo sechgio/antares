@@ -1,4 +1,4 @@
-"""Handlers IPC de servidores MCP (Flujos → Conexiones).
+"""Handlers IPC de servidores MCP (Conexiones).
 
 `mcp_tool_call` es interno: lo usan el runner y el agente, nunca el renderer
 (marca ``internal`` del catálogo).

@@ -1,4 +1,4 @@
-"""Pruebas del subsistema MCP: registro de servidores, cliente stdio/HTTP y nodo mcp_call."""
+"""Pruebas del subsistema MCP: registro de servidores, cliente stdio/HTTP y ejecución de herramientas."""
 
 from __future__ import annotations
 
@@ -11,9 +11,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from backend.core.flows.runner import FlowRunner
-from backend.core.flows.schema import normalize_graph, validate_graph
-from backend.core.flows.store import FlowStore
 from backend.core.integrations import mcp_client, mcp_servers, vault
 
 
@@ -22,11 +19,6 @@ def mcp_root(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_servers, "user_data_path", lambda rel: tmp_path / rel)
     monkeypatch.setattr(vault, "user_data_path", lambda rel: tmp_path / rel)
     return tmp_path
-
-
-@pytest.fixture()
-def store(tmp_path):
-    return FlowStore(tmp_path / "flows.json", tmp_path / "flow_runs.json")
 
 
 _FAKE_SERVER = """
@@ -348,8 +340,8 @@ def test_mcp_retains_argument_schema_and_structured_results(mcp_root, monkeypatc
     monkeypatch.setattr(mcp_client, "list_tools_stdio", lambda *args: [{"name": "find", "inputSchema": schema}])
     assert mcp_servers.list_tools(server["id"])[0]["inputSchema"] == schema
     monkeypatch.setattr(mcp_client, "call_tool_stdio", lambda *args: {"structuredContent": {"rows": [{"id": 1}]}})
-    result = mcp_servers.run_mcp_call_node({"config": {"server": server["id"], "tool": "find", "args": {}}}, {})
-    assert result["json"]["structuredContent"] == {"rows": [{"id": 1}]}
+    result = mcp_servers.call_tool(server["id"], "find", {})
+    assert result["structuredContent"] == {"rows": [{"id": 1}]}
 
 
 @pytest.mark.parametrize("mode", ["oversize", "flood", "notifications"])
@@ -367,108 +359,3 @@ def test_stdio_bounds_frames_pending_messages_and_notification_timeout(mcp_root,
         mcp_client.list_tools_stdio(sys.executable, [str(script)], dict(os.environ))
     assert time.monotonic() - started < 3
 
-
-def _wait(run_id: str, store: FlowStore, timeout: float = 10.0):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        run = store.get_run(run_id)
-        if run is not None and run["status"] not in ("queued", "running"):
-            return run
-        time.sleep(0.05)
-    raise AssertionError("run did not finish")
-
-
-def _wait_done(run_id: str, store: FlowStore, timeout: float = 10.0):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        run = store.get_run(run_id)
-        if run is not None and run["status"] not in ("queued", "running", "waiting"):
-            return run
-        time.sleep(0.05)
-    raise AssertionError("run did not finish")
-
-
-def test_validate_graph_mcp_call():
-    graph = normalize_graph(
-        {
-            "nodes": [
-                {"id": "t", "kind": "trigger", "config": {}},
-                {"id": "m", "kind": "mcp_call", "config": {"server": "s", "tool": "t"}},
-            ],
-            "edges": [{"from_node": "t", "to_node": "m"}],
-        }
-    )
-    validate_graph(graph)
-    bad = normalize_graph(
-        {
-            "nodes": [
-                {"id": "t", "kind": "trigger", "config": {}},
-                {"id": "m", "kind": "mcp_call", "config": {"server": "s"}},
-            ],
-            "edges": [{"from_node": "t", "to_node": "m"}],
-        }
-    )
-    with pytest.raises(ValueError, match=r"config\.tool"):
-        validate_graph(bad)
-    bad_flag = normalize_graph(
-        {
-            "nodes": [
-                {"id": "t", "kind": "trigger", "config": {}},
-                {"id": "m", "kind": "mcp_call", "config": {"server": "s", "tool": "t", "auto_approve": "sí"}},
-            ],
-            "edges": [{"from_node": "t", "to_node": "m"}],
-        }
-    )
-    with pytest.raises(ValueError, match="auto_approve"):
-        validate_graph(bad_flag)
-
-
-def _mcp_flow(store, server_id: str, **config_extra):
-    return store.create(
-        "MCP",
-        graph={
-            "nodes": [
-                {"id": "t", "kind": "trigger", "config": {}},
-                {
-                    "id": "m",
-                    "kind": "mcp_call",
-                    "config": {"server": server_id, "tool": "echo", "args": {"valor": "=run.trigger.n"}, **config_extra},
-                },
-            ],
-            "edges": [{"from_node": "t", "to_node": "m"}],
-        },
-    )
-
-
-def test_runner_mcp_call_node(mcp_root, store):
-    """mcp_call corre código de terceros: pausa en aprobación como el nodo code."""
-    command, args = _fake_stdio(mcp_root)
-    server = mcp_servers.add_server("Fake", "stdio", command=command, args=args)
-    flow = _mcp_flow(store, server["id"])
-    runner = FlowRunner(store, lambda m: lambda p: {})
-    run = runner.start(flow["id"], {"n": 7})
-    waiting = _wait(run["id"], store)
-
-    assert waiting["status"] == "waiting"
-    approval = next(iter((waiting["checkpoint"]["approvals"] or {}).values()))
-    assert approval["method"] == "mcp_call"
-    assert approval["params"] == {"server": server["id"], "tool": "echo", "args": {"valor": 7}}
-
-    runner.decide_approval(run["id"], approval["id"], True)
-    finished = _wait_done(run["id"], store)
-    assert finished["status"] == "success"
-    steps = {s["node_id"]: s for s in finished["steps"]}
-    assert steps["m"]["status"] == "success"
-    assert json.loads(steps["m"]["output"]["text"]) == {"valor": 7}
-
-
-def test_runner_mcp_call_node_auto_approve(mcp_root, store):
-    command, args = _fake_stdio(mcp_root)
-    server = mcp_servers.add_server("Fake", "stdio", command=command, args=args)
-    flow = _mcp_flow(store, server["id"], auto_approve=True)
-    runner = FlowRunner(store, lambda m: lambda p: {})
-    finished = _wait(runner.start(flow["id"], {"n": 7})["id"], store)
-
-    assert finished["status"] == "success"
-    steps = {s["node_id"]: s for s in finished["steps"]}
-    assert steps["m"]["status"] == "success"

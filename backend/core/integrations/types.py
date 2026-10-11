@@ -1,4 +1,4 @@
-"""Alias compartidos para documentos JSON del subsistema de flujos."""
+"""Alias compartidos para documentos JSON de agente e integraciones."""
 
 from __future__ import annotations
 

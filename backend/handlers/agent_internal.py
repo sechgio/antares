@@ -18,9 +18,8 @@ import threading
 
 from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
-from backend.core.agent.cancel import RunCancelled
+from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.core.exceptions import NotFoundError, ValidationError
-from backend.core.flows.runner import _CancelEvent
 from backend.core.integrations import ai_providers as _ai_providers
 from backend.core.integrations import mcp_servers as _mcp_servers
 from backend.core.integrations.types import JsonObject

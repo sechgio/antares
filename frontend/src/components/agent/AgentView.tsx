@@ -18,7 +18,7 @@ const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
 
 const SUGGESTIONS = [
-  '¿Qué flujos tengo configurados y cuáles están activos?',
+  '¿Qué plantillas de reportes tengo disponibles?',
   'Resume el estado de mis conexiones externas.',
   '¿Qué ejecuciones recientes fallaron y por qué?',
 ];
@@ -83,7 +83,7 @@ function SessionRow({
   );
 }
 
-export default function AgentView({ initialDraft, onConfigureProvider }: { active?: boolean; initialDraft?: string; onConfigureProvider?: () => void }) {
+export default function AgentView({ onConfigureProvider }: { active?: boolean; onConfigureProvider?: () => void }) {
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
@@ -122,10 +122,6 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { activ
     maxHeightCap: 400,
     stopEscapePropagation: true,
   });
-
-  useEffect(() => {
-    if (initialDraft) setDraft(initialDraft);
-  }, [initialDraft]);
 
   useEffect(() => {
     localStorage.setItem(QUEUE_KEY, JSON.stringify(queued));

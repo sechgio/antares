@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * IPC nativo de Conexiones (Flujos → Conexiones): providers del catálogo
+ * IPC nativo de Conexiones: providers del catálogo
  * compartido + sesión OAuth genérica por proveedor.
  */
 

@@ -1,5 +1,5 @@
 """Proveedores de modelos IA (BYOK): claves y base URL selladas en el
-mismo vault que las conexiones OAuth (``core/flows/vault.py``).
+mismo vault que las conexiones OAuth (``core/integrations/vault.py``).
 
 Los specs viven en ``shared/ai-providers-catalog.json``. La API key nunca
 sale del backend: al renderer solo se expone una versión enmascarada.

@@ -1,4 +1,4 @@
-"""Cliente MCP (Model Context Protocol) mínimo para los servidores de Flujos.
+"""Cliente MCP (Model Context Protocol) mínimo para los servidores del agente.
 
 Dos transportes:
 - ``http``: Streamable HTTP — un POST JSON-RPC por llamada; si el servidor
