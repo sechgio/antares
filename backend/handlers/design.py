@@ -164,7 +164,10 @@ def design_export_pdf(params: JsonObject) -> JsonObject:
     output_path = params.get("output_path")
     output_path = output_path.strip() if isinstance(output_path, str) and output_path.strip() else None
 
-    pdf = write_pdf_sanitized(render_html(document))
+    # `notes=True` imprime además las notas del ponente bajo cada diapositiva,
+    # que es lo que convierte el PDF en un guion que se puede usar en la sala.
+    render = render_html(document, notes=True) if params.get("notes") is True else render_html(document)
+    pdf = write_pdf_sanitized(render)
     filename = _filename_for(document, output_path)
 
     if output_path is None:

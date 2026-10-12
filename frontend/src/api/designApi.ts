@@ -62,7 +62,7 @@ export interface DesignMemoryResponse {
 }
 
 export interface DesignFinding {
-  kind: 'overflow' | 'collision' | 'tiny-text' | 'empty-slide' | 'contrast';
+  kind: 'overflow' | 'collision' | 'tiny-text' | 'empty-slide' | 'contrast' | 'layout-monotony';
   severity: 'error' | 'warning';
   slide: number;
   message: string;
@@ -114,7 +114,7 @@ export const designApi = {
 
   designMemoryClear: () => _invoke<DesignMemoryResponse>('design_memory_clear'),
 
-  designExportPdf: (body: { id?: string; document?: DesignDocument; outputPath?: string; overwrite?: boolean }) =>
+  designExportPdf: (body: { id?: string; document?: DesignDocument; outputPath?: string; overwrite?: boolean; notes?: boolean }) =>
     _invoke<
       | { pdf_base64: string; filename: string; saved_path?: undefined }
       | { pdf_base64?: undefined; filename: string; saved_path: string }

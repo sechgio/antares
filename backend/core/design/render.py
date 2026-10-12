@@ -58,6 +58,9 @@ li::before {{ content: ""; position: absolute; left: 0; top: {bullet_top}em;
   line-height: 1.3; font-style: italic; color: {text}; }}
 .quote-author {{ font-size: {fs_caption}pt; color: {muted}; margin-top: {stat_gap}mm; }}
 .notes {{ display: none; }}
+.notes-on .notes {{ display: block; margin-top: 3mm; padding-top: 2mm;
+  border-top: 0.4mm solid {accent}; font-size: {fs_caption}pt;
+  line-height: 1.35; color: {muted}; white-space: pre-wrap; }}
 """
 
 
@@ -80,25 +83,28 @@ def _bullets_html(items: list[str]) -> str:
     return f"<ul>{''.join(parts)}</ul>" if parts else ""
 
 
-def _slide_html(slide: JsonObject, theme: dict[str, str]) -> str:
+def _slide_html(slide: JsonObject, theme: JsonObject, *, notes: bool = False) -> str:
     layout = str(slide.get("layout") or "")
     if layout not in LAYOUTS:
         layout = "bullets"
     title = escape(str(slide.get("title") or ""))
     subtitle = escape(str(slide.get("subtitle") or ""))
     body = escape(str(slide.get("body") or ""))
+    notes_html = ""
+    if notes and str(slide.get("notes") or "").strip():
+        notes_html = f'<div class="notes">{escape(str(slide.get("notes") or "").strip())}</div>'
 
     if layout == "title":
         parts = [f'<div class="title hero-title">{title}</div>'] if title else []
         if subtitle:
             parts.append(f'<div class="subtitle" style="margin-top:6mm">{subtitle}</div>')
-        return f'<section class="slide hero">{"".join(parts)}</section>'
+        return f'<section class="slide hero">{"".join(parts)}{notes_html}</section>'
 
     if layout == "section":
         parts = [f'<div class="title">{title}</div>'] if title else []
         if subtitle:
             parts.append(f'<div class="subtitle" style="margin-top:4mm">{subtitle}</div>')
-        return f'<section class="slide center">{"".join(parts)}</section>'
+        return f'<section class="slide center">{"".join(parts)}{notes_html}</section>'
 
     if layout == "stat":
         value = escape(str(slide.get("statValue") or title))
@@ -108,7 +114,7 @@ def _slide_html(slide: JsonObject, theme: dict[str, str]) -> str:
             parts.append(f'<div class="stat-label">{label}</div>')
         if body:
             parts.append(f'<div class="body muted" style="margin-top:10mm">{body}</div>')
-        return f'<section class="slide hero">{"".join(parts)}</section>'
+        return f'<section class="slide hero">{"".join(parts)}{notes_html}</section>'
 
     if layout == "quote":
         text = escape(str(slide.get("quoteText") or body))
@@ -116,7 +122,7 @@ def _slide_html(slide: JsonObject, theme: dict[str, str]) -> str:
         parts = [f'<div class="quote-text">{text}</div>'] if text else []
         if author:
             parts.append(f'<div class="quote-author">{author}</div>')
-        return f'<section class="slide center">{"".join(parts)}</section>'
+        return f'<section class="slide center">{"".join(parts)}{notes_html}</section>'
 
     if layout == "twoColumn":
         left = _bullets_html(list(slide.get("left") or []))
@@ -131,11 +137,11 @@ def _slide_html(slide: JsonObject, theme: dict[str, str]) -> str:
             )
         head = f'<div class="title">{title}</div><div style="height:5mm"></div>' if title else ""
         tail = f'<div class="body" style="margin-top:5mm">{body}</div>' if body else ""
-        return f'<section class="slide">{head}{columns}{tail}</section>'
+        return f'<section class="slide">{head}{columns}{tail}{notes_html}</section>'
 
     if layout == "blank":
         inner = f'<div class="body">{body}</div>' if body else ""
-        return f'<section class="slide">{inner}</section>'
+        return f'<section class="slide">{inner}{notes_html}</section>'
 
     head = f'<div class="title">{title}</div><div style="height:5mm"></div>' if title else ""
     items = list(slide.get("bullets") or [])
@@ -145,11 +151,15 @@ def _slide_html(slide: JsonObject, theme: dict[str, str]) -> str:
         items = [body]
     bullets = _bullets_html(items)
     tail = f'<div class="body" style="margin-top:5mm">{body}</div>' if body and not bullets else ""
-    return f'<section class="slide">{head}{bullets}{tail}</section>'
+    return f'<section class="slide">{head}{bullets}{tail}{notes_html}</section>'
 
 
-def render_html(document: JsonObject) -> str:
-    """Devuelve el HTML completo del Design, listo para sanitizer o para PDF."""
+def render_html(document: JsonObject, *, notes: bool = False) -> str:
+    """HTML completo del Design, listo para sanitizer o para PDF.
+
+    Con ``notes=True`` cada diapositiva se acompaña de su nota del ponente bajo
+    el lienzo, para imprimir un guion. Sin ellas queda oculta por CSS.
+    """
     page_raw = document.get("page")
     theme_raw = document.get("theme")
     page: JsonObject = page_raw if isinstance(page_raw, dict) else {}
@@ -192,9 +202,12 @@ def render_html(document: JsonObject) -> str:
 
     slides_raw = document.get("slides")
     slides = slides_raw if isinstance(slides_raw, list) else []
-    rendered = "".join(_slide_html(dict(slide), theme) for slide in slides if isinstance(slide, dict))
+    body_class = "notes-on" if notes else ""
+    rendered = "".join(
+        _slide_html(dict(slide), theme, notes=notes) for slide in slides if isinstance(slide, dict)
+    )
     return (
         "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\">"
         f"<title>{title}</title><style>{style}</style></head>"
-        f'<body data-slides="{slide_count}">{rendered}</body></html>'
+        f'<body data-slides="{slide_count}" class="{body_class}">{rendered}</body></html>'
     )

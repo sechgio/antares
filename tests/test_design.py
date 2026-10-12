@@ -9,7 +9,7 @@ from backend.core.design import models
 from backend.core.design.memory import MAX_NOTES, DesignMemory, default_memory, normalize_memory, render_block
 from backend.core.design.models import create_empty_document, normalize_document
 from backend.core.design.prompt import SYSTEM_PROMPT, tool_spec
-from backend.core.design.qa import contrast_ratio, run_preflight
+from backend.core.design.qa import check_layout_monotony, contrast_ratio, run_preflight
 from backend.core.design.render import render_html
 from backend.core.design.store import DesignStore
 from backend.handlers import design as design_handlers
@@ -390,9 +390,8 @@ def test_slide_images_rasterizes_every_page(tmp_path):
             "slides": [{"layout": "title", "title": f"Diapositiva {n}"} for n in range(3)],
         }
     )
-    from backend.utils.pdf_html import write_pdf_sanitized
-
     from backend.core.design.render import render_html
+    from backend.utils.pdf_html import write_pdf_sanitized
 
     images = generate_module._slide_images(write_pdf_sanitized(render_html(document)), 8)
     assert len(images) == 3
@@ -403,7 +402,6 @@ def test_slide_images_rasterizes_every_page(tmp_path):
 
 def test_slide_images_respects_the_cap():
     import backend.core.design.generate as generate_module
-
     from backend.core.design.render import render_html
     from backend.utils.pdf_html import write_pdf_sanitized
 
@@ -412,3 +410,77 @@ def test_slide_images_respects_the_cap():
     )
     images = generate_module._slide_images(write_pdf_sanitized(render_html(document)), 3)
     assert len(images) == 3
+
+# --- Notas del ponente y monotonía de maquetación ---
+
+def test_render_hides_notes_by_default_and_shows_them_on_demand() -> None:
+    document = normalize_document(
+        {
+            "page": {"preset": "16x9"},
+            "slides": [{"layout": "title", "title": "P", "notes": "Abrir con la anécdota del cliente."}],
+        }
+    )
+    assert 'class="notes"' not in render_html(document)
+    with_notes = render_html(document, notes=True)
+    assert "Abrir con la anécdota del cliente." in with_notes
+    assert 'class="notes-on"' in with_notes
+
+
+def test_render_escapes_notes() -> None:
+    document = normalize_document({"slides": [{"layout": "title", "notes": "<script>x</script>"}]})
+    html = render_html(document, notes=True)
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_consecutive_run_lengths_groups_repeats() -> None:
+    runs = check_layout_monotony({"slides": [{"layout": "bullets"}] * 4 + [{"layout": "title"}]})
+    assert len(runs) == 1
+    assert runs[0]["detail"]["runLength"] == 4
+    assert runs[0]["slide"] == 1
+
+
+def test_layout_monotony_ignores_alternating_layouts() -> None:
+    document = {
+        "slides": [
+            {"layout": "title"},
+            {"layout": "bullets"},
+            {"layout": "stat"},
+            {"layout": "quote"},
+            {"layout": "twoColumn"},
+        ]
+    }
+    assert check_layout_monotony(document) == []
+
+
+def test_preflight_reports_monotony_as_warning_not_error() -> None:
+    report = run_preflight(
+        normalize_document(
+            {"page": {"preset": "16x9"}, "slides": [{"layout": "bullets", "title": "t"}] * 4}
+        )
+    )
+    kinds = {f["kind"] for f in report["findings"]}
+    assert "layout-monotony" in kinds
+    # La monotonía es gusto, no defecto objetivo: no debe marcar el diseño como inválido.
+    assert all(f["severity"] == "warning" for f in report["findings"] if f["kind"] == "layout-monotony")
+
+
+def test_export_pdf_with_notes_adds_pages(tmp_path, monkeypatch):
+    store = DesignStore(tmp_path)
+    monkeypatch.setattr(design_handlers, "get_design_store", lambda: store)
+    created = store.create_empty()
+    created["slides"] = [
+        {"id": "s1", "layout": "title", "title": "Portada", "subtitle": "", "body": "", "bullets": [],
+         "left": [], "right": [], "statValue": "", "statLabel": "", "quoteText": "", "quoteAuthor": "",
+         "notes": "Nota para el ponente."}
+    ]
+    saved = store.save_document(created)
+    target = tmp_path / "con-notas.pdf"
+    result = design_handlers.design_export_pdf(
+        {"document": saved, "output_path": str(target), "notes": True}
+    )
+    assert Path(result["saved_path"]).is_file()
+    import fitz
+
+    with fitz.open(str(target)) as pdf:
+        assert "Nota para el ponente." in "".join(p.get_text() for p in pdf)

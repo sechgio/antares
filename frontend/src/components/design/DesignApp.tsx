@@ -46,6 +46,7 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
   const [items, setItems] = useState<DesignListItem[]>([]);
   const [slideIndex, setSlideIndex] = useState(0);
   const [findings, setFindings] = useState<DesignFinding[]>([]);
+  const [withNotes, setWithNotes] = useState(false);
   const [memory, setMemory] = useState<DesignMemoryResponse['memory']>({ version: 1, notes: [] });
   const [memoryDraft, setMemoryDraft] = useState('');
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -182,7 +183,7 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
     try {
       const outputPath = await askPdfSavePath(`${document.name || 'diseno'}.pdf`, 'Guardar presentación');
       if (!outputPath) return;
-      const res = await api.designExportPdf({ document, outputPath, overwrite: true });
+      const res = await api.designExportPdf({ document, outputPath, overwrite: true, notes: withNotes });
       await saveFeatureHistory('design', res.filename, {
         slides: document.slides.length,
         page: document.page?.preset,
@@ -379,6 +380,15 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
                     {findings.length}
                   </span>
                 )}
+                <label className="flex items-center gap-1 text-xs text-[var(--text-muted)]" title="Incluir las notas del ponente bajo cada diapositiva">
+                  <input
+                    type="checkbox"
+                    checked={withNotes}
+                    onChange={(e) => setWithNotes(e.target.checked)}
+                    className="h-3.5 w-3.5"
+                  />
+                  Notas
+                </label>
                 <Button size="sm" onClick={() => void handleExport()} disabled={exporting}>
                   {exporting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
                   Exportar PDF

@@ -79,6 +79,51 @@ def _overlap_ratio(a: tuple[float, float, float, float], b: tuple[float, float, 
     return intersection / min(area_a, area_b)
 
 
+def layouts_for(document: JsonObject) -> list[str]:
+    """Layouts en orden de aparición, para detectar monotonía sin tocar el render."""
+    slides = document.get("slides")
+    if not isinstance(slides, list):
+        return []
+    return [str(s.get("layout") or "") for s in slides if isinstance(s, dict)]
+
+
+def consecutive_run_lengths(items: list[str]) -> list[tuple[str, int, int]]:
+    """``(valor, longitud, posicion)`` por cada repetición consecutiva."""
+    if not items:
+        return []
+    runs: list[tuple[str, int, int]] = []
+    start = 0
+    for index in range(1, len(items) + 1):
+        if index == len(items) or items[index] != items[start]:
+            runs.append((items[start], index - start, start))
+            start = index
+    return runs
+
+
+def check_layout_monotony(document: JsonObject, max_run: int = 3) -> list[Finding]:
+    """Avisa cuando la misma maquetación se repite sin variedad.
+
+    El prompt del sistema pide al modelo variar; aquí se comprueba sobre el
+    documento, que es el único sitio donde se verifica de verdad.
+    """
+    findings: list[Finding] = []
+    for layout, length, start in consecutive_run_lengths(layouts_for(document)):
+        if length >= max_run:
+            findings.append(
+                {
+                    "kind": "layout-monotony",
+                    "severity": "warning",
+                    "slide": start + 1,
+                    "message": (
+                        f"La maquetación `{layout}` se repite {length} veces seguidas "
+                        f"(diapositivas {start + 1} a {start + length}). Alterna con otra."
+                    ),
+                    "detail": {"layout": layout, "runLength": length, "fromSlide": start + 1},
+                }
+            )
+    return findings
+
+
 def check_theme_contrast(theme: JsonObject) -> list[Finding]:
     background = str(theme.get("background") or "#FFFFFF")
     findings: list[Finding] = []
@@ -181,6 +226,7 @@ def run_preflight(document: JsonObject, pdf: bytes | None = None) -> Preflight:
     theme: JsonObject = theme_raw if isinstance(theme_raw, dict) else {}
     page: JsonObject = page_raw if isinstance(page_raw, dict) else {}
     findings = check_theme_contrast(theme)
+    findings.extend(check_layout_monotony(document))
 
     if pdf is None:
         from backend.utils.pdf_html import write_pdf_sanitized
