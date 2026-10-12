@@ -7,9 +7,6 @@ import { setPluginEnabled, TITLEBAR_PLUGINS } from '../../plugins';
 vi.mock('./TitleBarPlugins', () => ({
   default: () => <div data-testid="titlebar-plugins" />,
 }));
-vi.mock('./TaskNotificationsBell', () => ({
-  default: () => null,
-}));
 
 function renderTitleBar() {
   return render(
@@ -36,11 +33,12 @@ describe('TitleBar', () => {
     }
   });
 
-  it('renders the themed titlebar container', () => {
+  it('renders the controls bar inside the content card', () => {
     renderTitleBar();
 
     const titlebar = screen.getByTestId('app-titlebar');
-    expect(titlebar).toHaveClass('bg-[var(--bg-surface)]');
+    expect(titlebar).toHaveClass('app-titlebar', 'h-11');
+    expect(titlebar).not.toHaveClass('border-b');
     expect(titlebar).toHaveClass('text-[var(--text-secondary)]');
   });
 
@@ -66,19 +64,6 @@ describe('TitleBar', () => {
     expect(minimizeWindow).toHaveBeenCalledTimes(1);
     expect(maximizeWindow).toHaveBeenCalledTimes(1);
     expect(closeWindow).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders settings with hover tooltip and no native title', () => {
-    render(
-      <DialogProvider>
-        <TitleBar onOpenSettings={vi.fn()} />
-      </DialogProvider>,
-    );
-
-    const settings = screen.getByTestId('titlebar-settings-button');
-    expect(settings).not.toHaveAttribute('title');
-    fireEvent.focus(settings);
-    expect(screen.getByText('Configuración')).toBeInTheDocument();
   });
 
   it('renders window control hover tooltips without native titles', () => {

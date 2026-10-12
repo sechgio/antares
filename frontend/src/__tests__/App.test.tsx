@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
+import { findSidebarTab } from './sidebarNav';
 import { TAB_DEFINITIONS } from '../navigation';
 
 const { mockSupabase } = vi.hoisted(() => {
@@ -77,13 +78,13 @@ describe('App', () => {
   it('renders without crashing', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getAllByText('Conversión').length).toBeGreaterThan(0);
+      expect(screen.getByRole('button', { name: 'Producción' })).toBeInTheDocument();
     });
   });
 
   it('can open Espacios tab', async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Espacios' }, { timeout: 5000 }));
+    fireEvent.click(await findSidebarTab('Espacios'));
     await waitFor(
       () => {
         expect(screen.queryByText(/Cargando espacios/i)).not.toBeInTheDocument();
@@ -97,7 +98,7 @@ describe('App', () => {
 
   it('keeps conversion empty-state actions visible before files are selected', async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Conversión' }, { timeout: 5000 }));
+    fireEvent.click(await findSidebarTab('Conversión'));
     await waitFor(() => {
       expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
     }, { timeout: 8000 });
@@ -112,21 +113,21 @@ describe('App', () => {
 
   it('opens Reportes de Campo from the sidebar', async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: /Reportes de Campo/i }, { timeout: 5000 }));
+    fireEvent.click(await findSidebarTab(/Reportes de Campo/i));
 
     expect(await screen.findByRole('heading', { name: /Paneles/i }, { timeout: 10000 })).toBeInTheDocument();
   }, 15000);
 
   it('opens Informes tecnicos from the sidebar', async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Informes técnicos|Informes tecnicos/i }));
+    fireEvent.click(await findSidebarTab(/Informes técnicos|Informes tecnicos/i));
 
     expect(await screen.findByRole('heading', { name: /Informes técnicos|Informes tecnicos/i }, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it('renders the image optimizer without its title in a full-height workspace', async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: /Optimizador/i }, { timeout: 5000 }));
+    fireEvent.click(await findSidebarTab(/Optimizador/i));
 
     const preset = await screen.findByRole('button', { name: /Optimizar web/i }, { timeout: 15000 });
     const routeViewport = preset.closest('main')?.firstElementChild;
@@ -139,10 +140,10 @@ describe('App', () => {
 
   it('does not render the removed shared header for any tool', async () => {
     render(<App />);
-    await screen.findByRole('button', { name: 'Conversión' }, { timeout: 5000 });
+    await findSidebarTab('Conversión');
 
     for (const tab of TAB_DEFINITIONS) {
-      fireEvent.click(screen.getByRole('button', { name: tab.label }));
+      fireEvent.click(await findSidebarTab(tab.label));
       await waitFor(
         () => {
           expect(screen.queryByTestId('app-header')).not.toBeInTheDocument();
@@ -157,13 +158,14 @@ describe('App', () => {
     }
   }, 90000);
 
-  it('opens settings lazily from the title bar', async () => {
+  it('opens settings lazily from the account menu', async () => {
     render(<App />);
-    await screen.findByRole('button', { name: 'Conversión' }, { timeout: 5000 });
+    await findSidebarTab('Conversión');
 
     expect(screen.queryByTestId('settings-modal')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('titlebar-settings-button'));
+    fireEvent.click(screen.getByTestId('sidebar-account-button'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Configuración' }));
     expect(await screen.findByTestId('settings-modal', {}, { timeout: 8000 })).toBeInTheDocument();
   });
 });
