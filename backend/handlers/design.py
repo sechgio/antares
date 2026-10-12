@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from backend.core.design import generate as design_generate_module
 from backend.core.design import models
+from backend.core.design.memory import get_design_memory
 from backend.core.design.qa import run_preflight
 from backend.core.design.render import render_html
 from backend.core.design.store import get_design_store
@@ -186,6 +187,47 @@ def design_preflight(params: JsonObject) -> JsonObject:
     return run_preflight(document)
 
 
+@with_locale
+@validate_params()
+def design_memory_get(params: JsonObject) -> JsonObject:
+    return {"memory": get_design_memory().load()}
+
+
+@with_locale
+@validate_params("text")
+def design_memory_add(params: JsonObject) -> JsonObject:
+    memory = get_design_memory().add(str(params.get("text") or ""))
+    return {"memory": memory, "noteCount": len(memory["notes"])}
+
+
+@with_locale
+@validate_params("id")
+def design_memory_update(params: JsonObject) -> JsonObject:
+    try:
+        memory = get_design_memory().update(
+            str(params.get("id") or ""), str(params.get("text") or "")
+        )
+    except LookupError as exc:
+        raise NotFoundError(str(exc)) from exc
+    return {"memory": memory}
+
+
+@with_locale
+@validate_params("id")
+def design_memory_delete(params: JsonObject) -> JsonObject:
+    try:
+        memory = get_design_memory().delete(str(params.get("id") or ""))
+    except LookupError as exc:
+        raise NotFoundError(str(exc)) from exc
+    return {"memory": memory}
+
+
+@with_locale
+@validate_params()
+def design_memory_clear(params: JsonObject) -> JsonObject:
+    return {"memory": get_design_memory().clear()}
+
+
 HANDLERS = {
     "design_list": design_list,
     "design_get": design_get,
@@ -195,4 +237,9 @@ HANDLERS = {
     "design_render_html": design_render_html,
     "design_export_pdf": design_export_pdf,
     "design_preflight": design_preflight,
+    "design_memory_get": design_memory_get,
+    "design_memory_add": design_memory_add,
+    "design_memory_update": design_memory_update,
+    "design_memory_delete": design_memory_delete,
+    "design_memory_clear": design_memory_clear,
 }

@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { sanitizeHtmlForPreview } from '../../../../shared/html-sanitizer.js';
-import { api, type DesignDocument, type DesignFinding, type DesignListItem, type DesignPagePreset } from '@/api';
+import {
+  api,
+  type DesignDocument,
+  type DesignFinding,
+  type DesignListItem,
+  type DesignMemoryResponse,
+  type DesignPagePreset,
+} from '@/api';
 import { aiProvidersApi, type AiProviderSpec } from '@/api/aiProvidersApi';
 import Button from '@/components/ui/Button';
 import ThemedSelect from '@/components/ui/ThemedSelect';
@@ -39,7 +46,37 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
   const [items, setItems] = useState<DesignListItem[]>([]);
   const [slideIndex, setSlideIndex] = useState(0);
   const [findings, setFindings] = useState<DesignFinding[]>([]);
+  const [memory, setMemory] = useState<DesignMemoryResponse['memory']>({ version: 1, notes: [] });
+  const [memoryDraft, setMemoryDraft] = useState('');
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+
+  const refreshMemory = useCallback(async () => {
+    try {
+      setMemory((await api.designMemoryGet()).memory);
+    } catch {
+      // La memoria accesoria no debe bloquear el panel.
+    }
+  }, []);
+
+  const handleMemoryAdd = useCallback(async () => {
+    const text = memoryDraft.trim();
+    if (!text) return;
+    try {
+      setMemory((await api.designMemoryAdd(text)).memory);
+      setMemoryDraft('');
+    } catch (err) {
+      setError(errorMessage(err, 'No se pudo guardar la preferencia'));
+    }
+  }, [memoryDraft]);
+
+  const handleMemoryDelete = useCallback(async (id: string) => {
+    try {
+      setMemory((await api.designMemoryDelete(id)).memory);
+    } catch (err) {
+      setError(errorMessage(err, 'No se pudo borrar la preferencia'));
+    }
+  }, []);
 
   const refreshList = useCallback(async () => {
     try {
@@ -63,8 +100,9 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
         setError(errorMessage(err, 'No se pudieron cargar los proveedores'));
       }
       void refreshList();
+      void refreshMemory();
     })();
-  }, [active, refreshList]);
+  }, [active, refreshList, refreshMemory]);
 
   const slideCount = document?.slides?.length ?? 0;
   const currentSlide = document?.slides?.[slideIndex];
@@ -224,6 +262,56 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
         </Button>
 
         {error && <p className="text-xs text-red-400">{error}</p>}
+
+        {/* Memoria de diseño: preferencias que el modelo respeta en cada
+            generación. Equivale a memory_write de Claude Design. */}
+        <div className="flex flex-col gap-1 border-t border-[var(--border-subtle)] pt-3">
+          <button
+            onClick={() => setMemoryOpen((open) => !open)}
+            aria-expanded={memoryOpen}
+            className="flex items-center justify-between text-xs text-[var(--text-muted)]"
+          >
+            <span>Preferencias de diseño</span>
+            <span>{memory.notes.length > 0 ? `${memory.notes.length}` : ''}</span>
+          </button>
+          {memoryOpen && (
+            <>
+              <div className="flex gap-1">
+                <input
+                  value={memoryDraft}
+                  onChange={(e) => setMemoryDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleMemoryAdd();
+                  }}
+                  placeholder="p.ej. nada de degradados"
+                  className="flex-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-1 text-xs"
+                />
+                <Button variant="ghost" size="sm" onClick={() => void handleMemoryAdd()} disabled={!memoryDraft.trim()}>
+                  Añadir
+                </Button>
+              </div>
+              <ul className="flex flex-col gap-1">
+                {memory.notes.map((note) => (
+                  <li key={note.id} className="group flex items-center gap-1 text-xs">
+                    <span className="flex-1 text-[var(--text-muted)]">{note.text}</span>
+                    <button
+                      onClick={() => void handleMemoryDelete(note.id)}
+                      aria-label={`Borrar preferencia: ${note.text}`}
+                      className="rounded-md p-1 text-[var(--text-muted)] opacity-0 hover:text-red-400 group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </li>
+                ))}
+                {memory.notes.length === 0 && (
+                  <li className="text-xs text-[var(--text-muted)]">
+                    Aún no hay preferencias. Se aplican a todas las generaciones.
+                  </li>
+                )}
+              </ul>
+            </>
+          )}
+        </div>
 
         {items.length > 0 && (
           <div className="flex flex-col gap-1 border-t border-[var(--border-subtle)] pt-3">

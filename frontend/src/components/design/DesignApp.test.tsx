@@ -9,6 +9,10 @@ const designGet = vi.fn();
 const designGenerate = vi.fn();
 const designRenderHtml = vi.fn();
 const designPreflight = vi.fn();
+const designMemoryGet = vi.fn();
+const designMemoryAdd = vi.fn();
+const designMemoryDelete = vi.fn();
+const designMemoryClear = vi.fn();
 const designExportPdf = vi.fn();
 const designDelete = vi.fn();
 const aiProvidersList = vi.fn();
@@ -20,8 +24,12 @@ vi.mock('@/api', () => ({
     designList: () => designList(),
     designGet: (id: string) => designGet(id),
     designGenerate: (body: unknown) => designGenerate(body),
-    designRenderHtml: (body: unknown) => designRenderHtml(body),
+        designRenderHtml: (body: unknown) => designRenderHtml(body),
     designPreflight: (body: unknown) => designPreflight(body),
+    designMemoryGet: () => designMemoryGet(),
+    designMemoryAdd: (text: string) => designMemoryAdd(text),
+    designMemoryDelete: (id: string) => designMemoryDelete(id),
+    designMemoryClear: () => designMemoryClear(),
     designExportPdf: (body: unknown) => designExportPdf(body),
     designDelete: (id: string) => designDelete(id),
   },
@@ -58,7 +66,11 @@ describe('DesignApp', () => {
     vi.clearAllMocks();
     designList.mockResolvedValue({ designs: [] });
     designRenderHtml.mockResolvedValue({ html: '<p>ok</p>', slideCount: 2, page: document_.page });
-    designPreflight.mockResolvedValue({ ok: true, slideCount: 2, findings: [], errorCount: 0, warningCount: 0 });
+        designPreflight.mockResolvedValue({ ok: true, slideCount: 2, findings: [], errorCount: 0, warningCount: 0 });
+    designMemoryGet.mockResolvedValue({ memory: { version: 1, notes: [] } });
+    designMemoryAdd.mockResolvedValue({ memory: { version: 1, notes: [] }, noteCount: 1 });
+    designMemoryDelete.mockResolvedValue({ memory: { version: 1, notes: [] } });
+    designMemoryClear.mockResolvedValue({ memory: { version: 1, notes: [] } });
     aiProvidersList.mockResolvedValue({
       providers: [
         { provider: 'openai', label: 'OpenAI', configured: true, default_model: 'gpt-4o-mini', has_key: true, key_masked: '••••1234', base_url: '', needs_key: true, description: '', docs: '', editable_base_url: true },
@@ -171,5 +183,33 @@ describe('DesignApp', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Recargar vista previa/i }));
     await waitFor(() => expect(designRenderHtml).toHaveBeenCalledTimes(2));
+  });
+
+  it('aplica la memoria en cada generacion y permite borrarla', async () => {
+    designGenerate.mockResolvedValue({ document: document_ });
+    designMemoryGet.mockResolvedValue({
+      memory: { version: 1, notes: [{ id: 'n1', text: 'nada de degradados', createdAt: '' }] },
+    });
+    render(<DesignApp />);
+    await waitFor(() => expect(designMemoryGet).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /Preferencias de diseño/i }));
+    expect(screen.getByText('nada de degradados')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Borrar preferencia/i }));
+    await waitFor(() => expect(designMemoryDelete).toHaveBeenCalledWith('n1'));
+  });
+
+  it('guarda una preferencia nueva con Enter', async () => {
+    designGenerate.mockResolvedValue({ document: document_ });
+    render(<DesignApp />);
+    await waitFor(() => expect(designMemoryGet).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /Preferencias de diseño/i }));
+
+    const field = screen.getByPlaceholderText(/nada de degradados/i);
+    fireEvent.change(field, { target: { value: 'español formal' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(designMemoryAdd).toHaveBeenCalledWith('español formal'));
   });
 });

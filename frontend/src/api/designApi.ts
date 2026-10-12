@@ -56,6 +56,11 @@ export interface DesignListItem {
   page: Partial<DesignPage>;
 }
 
+export interface DesignMemoryResponse {
+  memory: DesignMemory;
+  noteCount?: number;
+}
+
 export interface DesignFinding {
   kind: 'overflow' | 'collision' | 'tiny-text' | 'empty-slide' | 'contrast';
   severity: 'error' | 'warning';
@@ -70,6 +75,17 @@ export interface DesignPreflight {
   findings: DesignFinding[];
   errorCount: number;
   warningCount: number;
+}
+
+export interface DesignNote {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface DesignMemory {
+  version: number;
+  notes: DesignNote[];
 }
 
 export const designApi = {
@@ -89,6 +105,14 @@ export const designApi = {
 
   designPreflight: (body: { id?: string; document?: DesignDocument }) =>
     _invoke<DesignPreflight>('design_preflight', body),
+
+  designMemoryGet: () => _invoke<DesignMemoryResponse>('design_memory_get'),
+
+  designMemoryAdd: (text: string) => _invoke<DesignMemoryResponse>('design_memory_add', { text }),
+
+  designMemoryDelete: (id: string) => _invoke<DesignMemoryResponse>('design_memory_delete', { id }),
+
+  designMemoryClear: () => _invoke<DesignMemoryResponse>('design_memory_clear'),
 
   designExportPdf: (body: { id?: string; document?: DesignDocument; outputPath?: string; overwrite?: boolean }) =>
     _invoke<

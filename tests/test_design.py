@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from backend.core.design import models
+from backend.core.design.memory import MAX_NOTES, DesignMemory, default_memory, normalize_memory, render_block
 from backend.core.design.models import create_empty_document, normalize_document
 from backend.core.design.prompt import SYSTEM_PROMPT, tool_spec
 from backend.core.design.qa import contrast_ratio, run_preflight
@@ -238,3 +239,176 @@ def test_preflight_flags_an_empty_slide() -> None:
         normalize_document({"page": {"preset": "a4"}, "slides": [{"layout": "blank", "body": ""}]})
     )
     assert any(f["kind"] == "empty-slide" for f in report["findings"])
+
+
+# --- Memoria de diseño ---
+
+def test_render_block_is_empty_without_notes() -> None:
+    assert render_block(default_memory()) == ""
+
+
+def test_render_block_passes_notes_through_as_plain_prompt_text() -> None:
+    """El bloque lo lee el modelo, no un navegador: escaparlo lo corromperia."""
+    block = render_block({"notes": [{"id": "1", "text": "odio los degradados & el azul"}]})
+    assert "- odio los degradados & el azul" in block
+    assert "&amp;" not in block
+    assert "<" not in block
+    assert "para todas sus presentaciones" in block
+
+
+def test_normalize_memory_drops_blanks_duplicates_and_oversized() -> None:
+    raw = {
+        "notes": [
+            {"text": "  vale  "},
+            {"text": "   "},
+            {"text": "x" * 5000},
+            "no soy un dict",
+            {"text": "vale"},
+        ]
+    }
+    memory = normalize_memory(raw)
+    assert [n["text"] for n in memory["notes"]] == ["vale", "x" * 600]
+
+
+def test_memory_add_is_idempotent_case_insensitive(tmp_path):
+    memory = DesignMemory(tmp_path / "memory.json")
+    first = memory.add("Paletas claras")
+    assert len(first["notes"]) == 1
+    again = memory.add("paletas   CLARAS")
+    assert len(again["notes"]) == 1
+    assert memory.load()["notes"][0]["text"] == "Paletas claras"
+
+
+def test_memory_update_delete_and_clear(tmp_path):
+    memory = DesignMemory(tmp_path / "memory.json")
+    added = memory.add("Español formal")
+    note_id = added["notes"][0]["id"]
+
+    memory.update(note_id, "Español formal, sin jerga")
+    assert memory.load()["notes"][0]["text"] == "Español formal, sin jerga"
+
+    memory.delete(note_id)
+    assert memory.load()["notes"] == []
+
+    memory.add("Otra cosa")
+    assert len(memory.clear()["notes"]) == 0
+
+
+def test_memory_rejects_missing_ids(tmp_path):
+    memory = DesignMemory(tmp_path / "memory.json")
+    for call in (lambda: memory.update("nope", "x"), lambda: memory.delete("nope")):
+        with pytest.raises(LookupError):
+            call()
+
+
+def test_memory_survives_corrupt_file(tmp_path):
+    path = tmp_path / "memory.json"
+    path.write_text("{roto", encoding="utf-8")
+    assert DesignMemory(path).load() == default_memory()
+
+
+def test_memory_caps_notes(tmp_path):
+    memory = DesignMemory(tmp_path / "memory.json")
+    for index in range(MAX_NOTES + 12):
+        memory.add(f"nota {index}")
+    assert len(memory.load()["notes"]) == MAX_NOTES
+
+
+def test_memory_handlers_roundtrip(tmp_path, monkeypatch):
+    import backend.handlers.design as handlers
+
+    monkeypatch.setattr(handlers, "get_design_memory", lambda: DesignMemory(tmp_path / "m.json"))
+    handlers.design_memory_add({"text": "Nada de emojis"})
+    stored = handlers.design_memory_get({})["memory"]
+    assert stored["notes"][0]["text"] == "Nada de emojis"
+
+    note_id = stored["notes"][0]["id"]
+    handlers.design_memory_update({"id": note_id, "text": "Nada de emojis ni iconos"})
+    assert handlers.design_memory_get({})["memory"]["notes"][0]["text"] == "Nada de emojis ni iconos"
+
+    handlers.design_memory_delete({"id": note_id})
+    assert handlers.design_memory_get({})["memory"]["notes"] == []
+    handlers.design_memory_add({"text": "x"})
+    handlers.design_memory_clear({})
+    assert handlers.design_memory_get({})["memory"]["notes"] == []
+
+
+def test_memory_handler_rejects_unknown_note(tmp_path, monkeypatch):
+    import backend.handlers.design as handlers
+
+    monkeypatch.setattr(handlers, "get_design_memory", lambda: DesignMemory(tmp_path / "m.json"))
+    with pytest.raises(Exception) as excinfo:
+        handlers.design_memory_delete({"id": "nope"})
+    assert "No existe" in str(excinfo.value)
+
+
+# --- Bucle de revision multimodal ---
+
+
+def test_review_turn_returns_empty_without_critique(monkeypatch):
+    """Si el modelo no ve defectos, el documento original se conserva."""
+    import backend.core.design.generate as generate_module
+
+    monkeypatch.setattr(
+        generate_module.agent_chat, "chat", lambda *a, **k: {"text": "SIN_OBSERVACIONES", "calls": []}
+    )
+    document = normalize_document({"page": {"preset": "16x9"}, "slides": [{"layout": "title", "title": "P"}]})
+    assert generate_module._review_turn("openai", "gpt-4o", document, "system") == ""
+
+
+def test_review_turn_survives_a_provider_without_vision(monkeypatch):
+    """Un proveedor sin visión no debe tumbar la generación."""
+    import backend.core.design.generate as generate_module
+
+    def boom(*args, **kwargs):
+        raise ValueError("este modelo no acepta imágenes")
+
+    monkeypatch.setattr(generate_module.agent_chat, "chat", boom)
+    document = normalize_document({"page": {"preset": "16x9"}, "slides": [{"layout": "title", "title": "P"}]})
+    assert generate_module._review_turn("ollama", "llava", document, "system") == ""
+
+
+def test_review_turn_returns_the_critique_when_there_are_defects(monkeypatch):
+    import backend.core.design.generate as generate_module
+
+    monkeypatch.setattr(
+        generate_module.agent_chat,
+        "chat",
+        lambda *a, **k: {"text": "3: el título se sale por la derecha\n5: contraste bajo", "calls": []},
+    )
+    document = normalize_document({"page": {"preset": "16x9"}, "slides": [{"layout": "title", "title": "P"}]})
+    critique = generate_module._review_turn("openai", "gpt-4o", document, "system")
+    assert "el título se sale" in critique
+
+
+def test_slide_images_rasterizes_every_page(tmp_path):
+    import backend.core.design.generate as generate_module
+
+    document = normalize_document(
+        {
+            "page": {"preset": "16x9"},
+            "slides": [{"layout": "title", "title": f"Diapositiva {n}"} for n in range(3)],
+        }
+    )
+    from backend.utils.pdf_html import write_pdf_sanitized
+
+    from backend.core.design.render import render_html
+
+    images = generate_module._slide_images(write_pdf_sanitized(render_html(document)), 8)
+    assert len(images) == 3
+    assert all(img["media_type"] == "image/png" for img in images)
+    assert all(img["data_b64"] for img in images)
+    assert images[0]["data_b64"].startswith("iVBORw0KGgo")  # firma PNG
+
+
+def test_slide_images_respects_the_cap():
+    import backend.core.design.generate as generate_module
+
+    from backend.core.design.render import render_html
+    from backend.utils.pdf_html import write_pdf_sanitized
+
+    document = normalize_document(
+        {"page": {"preset": "16x9"}, "slides": [{"layout": "title", "title": f"S{n}"} for n in range(6)]}
+    )
+    images = generate_module._slide_images(write_pdf_sanitized(render_html(document)), 3)
+    assert len(images) == 3
