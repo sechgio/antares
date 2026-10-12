@@ -173,7 +173,6 @@ export function EditorView() {
       if (!dialog.file_tokens.length) return;
       const job = await api.editorAssetsImportStart(dialog.file_tokens);
       if (!job.started || !job.jobId) return;
-      // Poll acotado: el job reporta progreso por etapas.
       for (let attempt = 0; attempt < 60; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const status = await api.editorJobStatus(job.jobId);

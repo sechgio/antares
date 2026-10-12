@@ -14,9 +14,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-# Filtros candidatos verificados contra el build preparado (L0):
-# trim/setpts, atrim/asetpts, crop, scale, pad, transpose/rotate,
-# hflip/vflip, overlay, colorchannelmixer, boxblur, atempo.
+# FPS y velocidad racionales; durationUs = round((sourceOutUs -
+# sourceInUs) * speed.den / speed.num). Intervalos semiabiertos.
 
 
 def _num(value: Any) -> str:
@@ -157,10 +156,8 @@ def fit_canvas(
     h = _even(max(2, round(src_h * scale)))
     parts = [f"scale={w}:{h}"]
     if fit == "fill":
-        # Recorta el exceso centrado tras escalar.
         parts.append(f"crop={canvas_w}:{canvas_h}")
     else:
-        # Contiene: píxeles pares y centrado explícito.
         parts.append(
             f"pad={canvas_w}:{canvas_h}:(ow-iw)/2:(oh-ih)/2:color=black"
         )

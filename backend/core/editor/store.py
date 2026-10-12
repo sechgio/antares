@@ -92,7 +92,6 @@ class EditorStore:
         self._request_results: dict[str, dict[str, Any]] = {}  # allowlist: dict[str, Any]
         self._request_order: list[str] = []
 
-    # -- infraestructura ----------------------------------------------------
 
     def _project_lock(self, project_id: str) -> threading.RLock:
         with self._locks_guard:
@@ -137,7 +136,6 @@ class EditorStore:
         with self._project_lock(project_id):
             yield
 
-    # -- lectura --------------------------------------------------------------
 
     def list_projects(self) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
         out: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
@@ -169,7 +167,6 @@ class EditorStore:
             validate_document(doc)
             return cast_doc(doc)
 
-    # -- escritura ---------------------------------------------------------------
 
     def create(self, name: str, *, request_id: str | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
         if request_id:

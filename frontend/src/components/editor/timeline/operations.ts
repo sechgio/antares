@@ -52,8 +52,6 @@ export function applyOperation(project: EditorProject, op: TimelineOperation): O
       if (op.atTimelineUs <= start || op.atTimelineUs >= end) {
         return { clips, changed: false };
       }
-      // Límite compartido: el instante de timeline se traslada al
-      // tiempo fuente con la misma velocidad racional.
       const atSourceUs = timelineToSourceUs(source, op.atTimelineUs);
       const left = clone(source);
       left.sourceOutUs = atSourceUs;

@@ -51,7 +51,6 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
     assets_by_id = {asset["id"]: asset for asset in doc["assets"]}
     tracks_by_id = {track["id"]: track for track in doc["tracks"]}
 
-    # Orden de capas visual: por orden de pista (mayor order = encima).
     visual_clips = [c for c in doc["clips"] if c["kind"] in ("video", "image", "text")]
     audio_clips = [c for c in doc["clips"] if c["kind"] in ("video", "audio")]
     if len(visual_clips) > MAX_CLIPS_IN_GRAPH:
@@ -75,7 +74,6 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
         timeline_end_us = 1_000_000
 
     inputs: list[dict[str, str]] = []
-    # Base sólida del color de fondo (o negro si es blur sin color).
     bg_color = canvas["background"].get("color", "#000000") if canvas["background"]["type"] == "solid" else "#000000"
     inputs.append({"kind": "lavfi", "value": f"color=c={bg_color}:s={canvas_w}x{canvas_h}:r={fps_num}/{fps_den}:d={_s(timeline_end_us)}"})
 
@@ -107,7 +105,6 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
         chains.append(chain)
         labels_a.append(label)
 
-    # Composición de video: base + overlays en orden.
     compose = ""
     if labels_v:
         current = "base"
@@ -125,7 +122,6 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
         mix_inputs = "".join(f"[{label}]" for label in labels_a)
         audio_compose = f"{mix_inputs}amix=inputs={len(labels_a)}:duration=longest:normalize=0[aout]"
     else:
-        # Sin audio: silencio explícito de la duración total.
         sample_rate = int(export["audioSampleRate"])
         channels = int(export["audioChannels"])
         audio_compose = (
@@ -249,7 +245,6 @@ def _asset_dimensions(asset: dict[str, Any]) -> tuple[int, int]:  # allowlist: d
     for stream in asset["streams"]:
         if stream["kind"] == "video":
             return int(stream["width"]), int(stream["height"])
-    # Imágenes: dimensiones del stream de video (único).
     return 1280, 720
 
 
@@ -338,7 +333,6 @@ def execute_render(
             raise ToolchainError("render cancelado")
         raise ToolchainError(f"ffmpeg falló: {with_stderr}")
 
-    # Validación de la salida antes de publicarla.
     meta = probe_json(toolchain, tmp)
     duration = float(meta.get("format", {}).get("duration", 0) or 0)
     expected = plan["duration_us"] / 1_000_000
