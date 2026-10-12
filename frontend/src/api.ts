@@ -7,6 +7,7 @@ import { canvasApi } from './api/canvasApi';
 import { catalogApi } from './api/catalogApi';
 import { conversionApi } from './api/conversionApi';
 import { _invoke } from './api/core';
+import { designApi } from './api/designApi';
 import { evidenciaVolanteoApi } from './api/evidenciaVolanteoApi';
 import { flowsApi } from './api/flowsApi';
 import { formatosApi } from './api/formatosApi';
@@ -36,6 +37,20 @@ export type { FileDialogResult } from './api/systemApi';
 export type { PreviewBody, PreviewResult, ProcessBody, SequenceMode } from './api/conversionApi';
 export type { FormatosGenerateResponse } from './api/formatosApi';
 export type { CanvasExportCmykPdfBody } from './api/canvasApi';
+export type {
+  DesignDocument,
+  DesignFinding,
+  DesignLayout,
+  DesignListItem,
+  DesignMemory,
+  DesignMemoryResponse,
+  DesignNote,
+  DesignPage,
+  DesignPagePreset,
+  DesignPreflight,
+  DesignSlide,
+  DesignTheme,
+} from './api/designApi';
 export type {
   FichasTecnicasImportBody,
   FichasTecnicasListBody,
@@ -88,6 +103,7 @@ export const api = {
   ...ubicacionesApi,
   ...panelAvisoCorteApi,
   ...evidenciaVolanteoApi,
+  ...designApi,
   ...createAutoimgApi(_invoke),
   ...createSpotifyApi(_invoke),
 };

@@ -43,6 +43,7 @@ const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
 const FlowsView = React.lazy(() => import('./components/flows'));
 const AgentView = React.lazy(() => import('./components/agent'));
+const DesignView = React.lazy(() => import('./components/design'));
 
 const CANVAS_KEEPALIVE_MS = 60 * 1000;
 function prefetchSettingsModal() {
@@ -81,6 +82,7 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   evidenciaVolanteo: EvidenciaVolanteoView,
   autoimg: AutoIMGView,
   fichasTecnicas: FichasTecnicasView,
+  design: DesignView,
 };
 
 function isElectronRenderer(): boolean {
@@ -275,6 +277,7 @@ function AppContent() {
   useKeyboardShortcut('f', () => handleTabChange('fichasTecnicas'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('i', () => handleTabChange('technicalReports'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('j', () => handleTabChange('informesV2'), { ctrl: true, shift: true, preventDefault: true });
+  useKeyboardShortcut('g', () => handleTabChange('design'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('d', () => openSettings('petdex'), { ctrl: true, shift: true, preventDefault: true });
 
   useEffect(() => {

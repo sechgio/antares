@@ -17,6 +17,7 @@ import {
   Megaphone,
   Paintbrush,
   PanelLeft,
+  Presentation,
   RefreshCw,
   ScrollText,
   Stamp,
@@ -64,6 +65,7 @@ const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
   evidenciaVolanteo: Grid2X2,
   autoimg: RefreshCw,
   fichasTecnicas: FileText,
+  design: Presentation,
 };
 
 const NAV_GROUPS: { id: string; tabs: TabId[] }[] = [
@@ -83,6 +85,7 @@ const NAV_GROUPS: { id: string; tabs: TabId[] }[] = [
       'panelAvisoCorte',
       'evidenciaVolanteo',
       'fichasTecnicas',
+      'design',
     ],
   },
   {
