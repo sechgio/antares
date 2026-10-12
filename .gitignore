@@ -164,3 +164,6 @@ PERFORMANCE_AUDIT_*.md
 
 # Salida de benchmarks
 scripts/benchmark_*_results.json
+
+# vid.stab transforms del editor
+*.trf
