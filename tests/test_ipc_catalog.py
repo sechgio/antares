@@ -78,7 +78,6 @@ def test_lane_and_handler_projections() -> None:
 
     assert handler_module_for("canvas_get") == "backend.handlers.canvas"
     assert handler_module_for("html_to_pdf") is None
-    assert handler_module_for("autoimg_scan_all") is None
 
     assert "process_start" not in HEAVY_METHODS
     assert "canvas_export_cmyk_pdf" in HEAVY_METHODS

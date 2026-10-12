@@ -205,18 +205,6 @@ def design_memory_add(params: JsonObject) -> JsonObject:
 
 @with_locale
 @validate_params("id")
-def design_memory_update(params: JsonObject) -> JsonObject:
-    try:
-        memory = get_design_memory().update(
-            str(params.get("id") or ""), str(params.get("text") or "")
-        )
-    except LookupError as exc:
-        raise NotFoundError(str(exc)) from exc
-    return {"memory": memory}
-
-
-@with_locale
-@validate_params("id")
 def design_memory_delete(params: JsonObject) -> JsonObject:
     try:
         memory = get_design_memory().delete(str(params.get("id") or ""))
@@ -242,7 +230,6 @@ HANDLERS = {
     "design_preflight": design_preflight,
     "design_memory_get": design_memory_get,
     "design_memory_add": design_memory_add,
-    "design_memory_update": design_memory_update,
     "design_memory_delete": design_memory_delete,
     "design_memory_clear": design_memory_clear,
 }

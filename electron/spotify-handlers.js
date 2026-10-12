@@ -237,14 +237,6 @@ const _PLAYLISTS_ACTIONS = {
   }),
 };
 
-const _albumPath = (params, suffix = '') =>
-  `/albums/${client.normalizeSpotifyId(String(params.album_id || params.id || ''), 'album')}${suffix}`;
-
-const _ALBUMS_ACTIONS = {
-  get: (params) => client.request('GET', _albumPath(params), { params: { market: params.market } }),
-  tracks: (params) => client.request('GET', _albumPath(params, '/tracks'), { params: _pageParams(params) }),
-};
-
 function _libRemoveUris(params, itemType) {
   const ids = _asList(params.ids ?? params.items).map((item) => client.normalizeSpotifyId(item, itemType));
   _required(ids.length ? ids : null, "ids/items es requerido para action='remove'");
@@ -331,9 +323,6 @@ async function handleSpotifyCall(method, params = {}) {
 
       case 'spotify_playlists':
         return { handled: true, result: await _dispatch(_PLAYLISTS_ACTIONS, 'list')(params) };
-
-      case 'spotify_albums':
-        return { handled: true, result: await _dispatch(_ALBUMS_ACTIONS, 'get')(params) };
 
       case 'spotify_library':
         return { handled: true, result: await _library(params) };
