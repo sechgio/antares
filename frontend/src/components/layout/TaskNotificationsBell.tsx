@@ -12,13 +12,6 @@ import Button from '@/components/ui/Button';
 
 interface TaskNotificationsBellProps {
   onOpenEspacios?: () => void;
-  triggerClassName?: string;
-}
-
-function placeBesideTrigger(trigger: DOMRect, popup: HTMLElement | null) {
-  const height = popup?.offsetHeight ?? 360;
-  const top = Math.max(8, Math.min(trigger.bottom - height, window.innerHeight - height - 8));
-  return { top, left: trigger.right + 12, width: 320 };
 }
 
 const URGENCY_DOT: Record<DueUrgency, string> = {
@@ -33,7 +26,7 @@ const URGENCY_LABEL: Record<DueUrgency, string> = {
   soon: 'Próxima',
 };
 
-export default function TaskNotificationsBell({ onOpenEspacios, triggerClassName }: TaskNotificationsBellProps) {
+export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificationsBellProps) {
   const { user } = useAuth();
   const [scope, setScope] = useState('team');
   const { items, count, loading, error, refresh } = useDueNotifications(
@@ -46,7 +39,12 @@ export default function TaskNotificationsBell({ onOpenEspacios, triggerClassName
     popupRef: panelRef,
     close,
     toggle,
-  } = useAnchoredPopover({ positioner: placeBesideTrigger });
+  } = useAnchoredPopover({
+    estimatedHeight: 360,
+    estimatedWidth: 320,
+    align: 'end',
+    direction: 'down',
+  });
   const panelId = useId();
 
   useLayoutEffect(() => {
@@ -68,7 +66,7 @@ export default function TaskNotificationsBell({ onOpenEspacios, triggerClassName
 
   return (
     <>
-      <div className="relative">
+      <div className="relative flex h-full">
         <Button variant="none" size="none"
           ref={triggerRef}
           data-testid="titlebar-notifications-button"
@@ -77,12 +75,12 @@ export default function TaskNotificationsBell({ onOpenEspacios, triggerClassName
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
           onClick={toggle}
-          className={`relative ${triggerClassName ?? ''}`}
+          className="app-titlebar-button relative flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
         >
-          <Bell size={18} strokeWidth={1.75} />
+          <Bell size={14} strokeWidth={1.8} />
           {count > 0 && (
             <span
-              className="absolute right-1 top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--accent-red)] px-0.5 text-[9px] font-semibold leading-none text-[var(--text-on-accent)]"
+              className="absolute right-1.5 top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--accent-red)] px-0.5 text-[9px] font-semibold leading-none text-[var(--text-on-accent)]"
               aria-hidden
             >
               {badgeLabel}
@@ -90,7 +88,7 @@ export default function TaskNotificationsBell({ onOpenEspacios, triggerClassName
           )}
         </Button>
         {!open && (
-          <HoverTooltip label={tooltipLabel} />
+          <HoverTooltip label={tooltipLabel} placement="bottom" />
         )}
       </div>
 
