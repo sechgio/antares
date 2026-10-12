@@ -31,6 +31,11 @@ pytestmark = pytest.mark.skipif(
 SCRATCH = Path(os.environ.get("TMPDIR", ".")) / "editor-render-tests"
 
 
+@pytest.fixture(autouse=True)
+def _allow_system_fonts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTARES_EDITOR_ALLOW_SYSTEM_FONTS", "1")
+
+
 @pytest.fixture(scope="module")
 def toolchain() -> Any:
     from backend.core.editor.toolchain import resolve_toolchain
@@ -170,7 +175,7 @@ def test_plan_is_deterministic(tmp_path: Path, assets_dir: Path) -> None:
     assert plan_a["filter_complex"] == plan_b["filter_complex"]
 
 
-def test_plan_rejects_missing_asset() -> None:
+def test_plan_rejects_missing_asset(assets_dir: Path) -> None:
     snapshot = _snapshot([], [_clip("fantasma", 0, 0, 1_000_000)])
     with pytest.raises(RenderPlanError, match="no encontrado"):
         build_render_plan(snapshot, assets_dir=assets_dir)
@@ -283,3 +288,86 @@ def test_cancel_stops_render_and_leaves_no_output(tmp_path: Path, assets_dir: Pa
             assets_dir=assets_dir,
         )
     assert not out.exists()
+
+
+# --- Títulos rasterizados (L4) -----------------------------------------------------
+
+
+def _text_clip(start_us: int, content: str = "Título de prueba", duration_us: int = 2_000_000) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    return {
+        "id": f"text-{start_us}",
+        "trackId": "track-v",
+        "kind": "text",
+        "timelineStartUs": start_us,
+        "sourceInUs": 0,
+        "sourceOutUs": duration_us,
+        "speed": {"num": 1, "den": 1},
+        "transform": {
+            "crop": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0},
+            "canvasX": 0.0,
+            "canvasY": 0.0,
+            "canvasW": 1.0,
+            "canvasH": 1.0,
+            "rotationDeg": 0.0,
+            "flipX": False,
+            "flipY": False,
+            "opacity": 1.0,
+            "fit": "fit",
+        },
+        "audio": {"streamIndex": 0, "embeddedEnabled": False, "gainDb": 0.0, "fadeInUs": 0, "fadeOutUs": 0, "effects": []},
+        "delogo": {"rects": []},
+        "text": {
+            "content": content,
+            "fontId": "dejavu-sans",
+            "fontSizePx": 48,
+            "color": "#FFFFFF",
+            "align": "center",
+            "box": {"x": 0.0, "y": 0.4, "width": 1.0, "height": 0.2},
+            "style": {"bold": False, "italic": False, "underline": False, "strokeWidthPx": 0},
+            "entryPreset": {"type": "none", "durationUs": 0},
+            "exitPreset": {"type": "none", "durationUs": 0},
+        },
+        "effects": [],
+    }
+
+
+def test_text_only_project_renders(tmp_path: Path, assets_dir: Path) -> None:
+    """Un proyecto de solo título produce video válido."""
+    snapshot = _snapshot([], [_text_clip(0)])
+    out = tmp_path / "texto.mp4"
+    result = execute_render(snapshot, out, assets_dir=assets_dir)
+    assert out.is_file()
+    assert 1.9 <= result["durationUs"] / 1_000_000 <= 2.1
+    from backend.core.editor.toolchain import probe_json, resolve_toolchain
+
+    meta = probe_json(resolve_toolchain(), out)
+    assert meta["streams"][0]["width"] == 320
+
+
+def test_two_titles_render(tmp_path: Path, assets_dir: Path) -> None:
+    clips = [
+        _text_clip(0, "Primero", 2_000_000),
+        _text_clip(2_000_000, "Segundo", 2_000_000),
+    ]
+    out = tmp_path / "dos_titulos.mp4"
+    result = execute_render(_snapshot([], clips), out, assets_dir=assets_dir)
+    assert 3.9 <= result["durationUs"] / 1_000_000 <= 4.1
+
+
+def test_text_over_video_composes(tmp_path: Path, assets_dir: Path) -> None:
+    """Título sobre video: la composición respeta ambas capas."""
+    asset = _import_clip(tmp_path, assets_dir, "a")
+    clips = [
+        _clip(asset["id"], 0, 0, 4_000_000),
+        _text_clip(1_000_000, "Sobre video", 2_000_000),
+    ]
+    out = tmp_path / "texto_sobre_video.mp4"
+    result = execute_render(_snapshot([asset], clips), out, assets_dir=assets_dir)
+    assert out.is_file()
+    assert 3.9 <= result["durationUs"] / 1_000_000 <= 4.1
+
+
+def test_unicode_title_renders(tmp_path: Path, assets_dir: Path) -> None:
+    out = tmp_path / "unicode.mp4"
+    execute_render(_snapshot([], [_text_clip(0, "Canción ñandú 🎬")]), out, assets_dir=assets_dir)
+    assert out.is_file()

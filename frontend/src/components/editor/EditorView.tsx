@@ -1,8 +1,10 @@
 import { useCallback, useState } from 'react';
 import { api } from '../../api';
 import Button from '../ui/Button';
-import type { EditorProject } from './types';
+import type { Clip, EditorProject } from './types';
 import { useEditorProject, type SaveState } from './hooks/useEditorProject';
+import { TextPanel } from './panels/TextPanel';
+import { AudioPanel } from './panels/AudioPanel';
 
 const SAVE_LABEL: Record<SaveState, string> = {
   idle: 'Sin cambios',
@@ -90,33 +92,77 @@ function EditorPreview({ projectName }: { projectName: string }) {
   );
 }
 
-function EditorTimeline({ clipCount }: { clipCount: number }) {
+function EditorTimeline({
+  clips,
+  selectedClipId,
+  onSelectClip,
+}: {
+  clips: Clip[];
+  selectedClipId: string | null;
+  onSelectClip: (clipId: string | null) => void;
+}) {
   return (
     <section
       className="h-48 border-t border-[var(--border-medium)] bg-[var(--bg-elevated)] p-3"
       aria-label="Línea de tiempo"
     >
       <div className="text-xs text-[var(--text-muted)]">
-        Línea de tiempo · {clipCount} {clipCount === 1 ? 'clip' : 'clips'}
+        Línea de tiempo · {clips.length} {clips.length === 1 ? 'clip' : 'clips'}
       </div>
-      <div
-        className="mt-2 h-28 rounded border border-dashed border-[var(--border-medium)]"
-        data-testid="editor-timeline"
-      />
+      <div className="mt-2 flex h-28 flex-col gap-1 overflow-y-auto" data-testid="editor-timeline">
+        {clips.length === 0 && (
+          <div className="rounded border border-dashed border-[var(--border-medium)]" />
+        )}
+        {clips.map((clip) => (
+          <button
+            key={clip.id}
+            type="button"
+            aria-pressed={clip.id === selectedClipId}
+            className={`rounded border px-2 py-1 text-left text-xs ${
+              clip.id === selectedClipId
+                ? 'border-[var(--accent-primary)] text-[var(--text-primary)]'
+                : 'border-[var(--border-medium)] text-[var(--text-secondary)]'
+            }`}
+            onClick={() => onSelectClip(clip.id === selectedClipId ? null : clip.id)}
+          >
+            {clip.kind === 'text' ? clip.text?.content || 'Texto' : `Clip ${clip.assetId?.slice(0, 6) ?? ''}`}
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
 
-function EditorProperties() {
+function EditorProperties({
+  clip,
+  onChange,
+}: {
+  clip: Clip | null;
+  onChange: (mutate: (draft: EditorProject) => void) => void;
+}) {
+  const update = useCallback(
+    (mutate: (draft: Clip) => void) => {
+      onChange((draft) => {
+        const index = draft.clips.findIndex((c) => c.id === clip?.id);
+        if (index >= 0) mutate(draft.clips[index]);
+      });
+    },
+    [clip, onChange],
+  );
+
   return (
     <aside
-      className="w-64 shrink-0 border-l border-[var(--border-medium)] bg-[var(--bg-surface)] p-3"
+      className="w-64 shrink-0 overflow-y-auto border-l border-[var(--border-medium)] bg-[var(--bg-surface)]"
       aria-label="Propiedades"
     >
-      <div className="text-xs font-medium text-[var(--text-primary)]">Propiedades</div>
-      <p className="mt-2 text-xs text-[var(--text-muted)]">
-        Selecciona un clip para editar sus propiedades.
-      </p>
+      <div className="border-b border-[var(--border-medium)] p-3 text-xs font-medium text-[var(--text-primary)]">
+        Propiedades
+      </div>
+      {clip?.kind === 'text' ? (
+        <TextPanel clip={clip} onChange={update} />
+      ) : (
+        <AudioPanel clip={clip} onChange={update} />
+      )}
     </aside>
   );
 }
@@ -164,6 +210,7 @@ export function EditorView() {
   } = useEditorProject();
   const [imported, setImported] = useState<EditorProject['assets']>([]);
   const [importing, setImporting] = useState(false);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
   const handleImport = useCallback(async () => {
     if (!project) return;
@@ -231,9 +278,16 @@ export function EditorView() {
         <EditorMediaLibrary assets={imported} />
         <div className="flex min-h-0 flex-1 flex-col">
           <EditorPreview projectName={project.name} />
-          <EditorTimeline clipCount={project.clips.length} />
+          <EditorTimeline
+            clips={project.clips}
+            selectedClipId={selectedClipId}
+            onSelectClip={setSelectedClipId}
+          />
         </div>
-        <EditorProperties />
+        <EditorProperties
+          clip={project.clips.find((c) => c.id === selectedClipId) ?? null}
+          onChange={updateProject}
+        />
       </div>
       {importing && (
         <div className="border-t border-[var(--border-medium)] px-4 py-1 text-xs text-[var(--text-muted)]">

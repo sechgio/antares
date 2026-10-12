@@ -78,10 +78,22 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
     inputs.append({"kind": "lavfi", "value": f"color=c={bg_color}:s={canvas_w}x{canvas_h}:r={fps_num}/{fps_den}:d={_s(timeline_end_us)}"})
 
     # Un input de archivo por asset usado (video, imagen o audio). El
-    # render siempre exporta desde los originales gestionados.
+    # render siempre exporta desde los originales gestionados. Los
+    # títulos se rasterizan aquí (L4): su bitmap RGBA es la entrada.
     input_index_of_asset: dict[str, int] = {}
+    text_inputs: dict[str, int] = {}
+    text_cache = assets_dir.parent / "cache" / "text" if assets_dir is not None else None
     for clip in [*visual_clips, *audio_clips]:
         asset_id = str(clip.get("assetId", ""))
+        if clip["kind"] == "text" and not asset_id:
+            # Título sin asset: rasterizar a la resolución de export.
+            from backend.core.editor.text import render_text_bitmap
+
+            bitmap = render_text_bitmap(clip, canvas_w, canvas_h, cache_dir=text_cache)
+            if clip["id"] not in text_inputs:
+                text_inputs[clip["id"]] = len(inputs)
+                inputs.append({"kind": "file", "value": str(bitmap)})
+            continue
         asset = assets_by_id.get(asset_id)
         if asset is None:
             raise RenderPlanError(f"clip {clip['id']}: asset {asset_id} no encontrado")
@@ -93,8 +105,11 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
     labels_v: list[str] = []
     labels_a: list[str] = []
     for chain_index, clip in enumerate(visual_clips):
-        asset = assets_by_id[str(clip["assetId"])]
-        input_index = input_index_of_asset[str(asset["id"])]
+        if clip["kind"] == "text" and not str(clip.get("assetId", "")):
+            input_index = text_inputs[clip["id"]]
+        else:
+            asset = assets_by_id[str(clip["assetId"])]
+            input_index = input_index_of_asset[str(asset["id"])]
         chain, label = _visual_chain(clip, input_index, assets_by_id, canvas_w, canvas_h, fps_num, fps_den, chain_index)
         chains.append(chain)
         labels_v.append(label)
@@ -154,12 +169,20 @@ def _visual_chain(
     fps_den: int,
     chain_index: int,
 ) -> tuple[str, str]:
-    asset = assets_by_id.get(str(clip.get("assetId", "")))
-    if asset is None:
-        raise RenderPlanError(f"clip {clip['id']}: asset {clip.get('assetId')} no encontrado")
+    is_text = clip["kind"] == "text" and not str(clip.get("assetId", ""))
+    if not is_text:
+        asset = assets_by_id.get(str(clip.get("assetId", "")))
+        if asset is None:
+            raise RenderPlanError(f"clip {clip['id']}: asset {clip.get('assetId')} no encontrado")
 
     parts: list[str] = []
-    parts.append(filters.trim_video(int(clip["sourceInUs"]), int(clip["sourceOutUs"]), fps_num, fps_den))
+    if is_text:
+        # El bitmap del título es un fotograma único: se convierte en
+        # stream de la duración del clip en el timeline.
+        duration_s = _s(clip_duration_us(clip))
+        parts.append(f"loop=loop=-1:size=1,trim=duration={duration_s},setpts=PTS-STARTPTS")
+    else:
+        parts.append(filters.trim_video(int(clip["sourceInUs"]), int(clip["sourceOutUs"]), fps_num, fps_den))
     speed = filters.speed(int(clip["speed"]["num"]), int(clip["speed"]["den"]), has_audio=False)
     if speed:
         parts.append(speed)
@@ -168,7 +191,7 @@ def _visual_chain(
         parts.append(shift)
 
     transform = clip["transform"]
-    src_w, src_h = _asset_dimensions(asset)
+    src_w, src_h = (canvas_w, canvas_h) if is_text else _asset_dimensions(asset)
     crop = filters.crop(
         float(transform["crop"]["x"]),
         float(transform["crop"]["y"]),
@@ -191,7 +214,9 @@ def _visual_chain(
     op = filters.opacity(float(transform["opacity"]))
     if op:
         parts.append(op)
-    parts.append("format=yuva420p")
+    if not is_text:
+        # El título llega como RGBA; forzar yuva destruiría su alfa.
+        parts.append("format=yuva420p")
 
     label = f"v{chain_index}"
     chain = f"[{input_index}:v]{','.join(parts)}[{label}]"
