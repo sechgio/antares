@@ -6,6 +6,7 @@ import { useEditorProject, type SaveState } from './hooks/useEditorProject';
 import { TextPanel } from './panels/TextPanel';
 import { AudioPanel } from './panels/AudioPanel';
 import { RemoveLogoPanel } from './panels/RemoveLogoPanel';
+import { RecordPanel } from './panels/RecordPanel';
 
 const SAVE_LABEL: Record<SaveState, string> = {
   idle: 'Sin cambios',
@@ -181,30 +182,62 @@ function EditorProperties({
 
 function EditorMediaLibrary({
   assets,
+  onRecorded,
 }: {
   assets: Array<{ id: string; displayName: string; type: string; durationUs?: number }>;
+  onRecorded: (fileToken: string) => void;
 }) {
+  const [tab, setTab] = useState<'media' | 'grabar'>('media');
+
   return (
-    <section className="w-56 shrink-0 border-r border-[var(--border-medium)] bg-[var(--bg-surface)] p-3" aria-label="Biblioteca de medios">
-      <div className="text-xs font-medium text-[var(--text-primary)]">Medios</div>
-      {assets.length === 0 ? (
-        <p className="mt-2 text-xs text-[var(--text-muted)]">
-          Importa archivos para verlos aquí.
-        </p>
+    <section className="w-56 shrink-0 border-r border-[var(--border-medium)] bg-[var(--bg-surface)]" aria-label="Biblioteca de medios">
+      <div className="flex border-b border-[var(--border-medium)]">
+        <button
+          type="button"
+          className={`flex-1 px-3 py-2 text-xs ${
+            tab === 'media' ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'
+          }`}
+          aria-pressed={tab === 'media'}
+          onClick={() => setTab('media')}
+        >
+          Medios
+        </button>
+        <button
+          type="button"
+          className={`flex-1 px-3 py-2 text-xs ${
+            tab === 'grabar' ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'
+          }`}
+          aria-pressed={tab === 'grabar'}
+          data-testid="record-tab"
+          onClick={() => setTab('grabar')}
+        >
+          Grabar
+        </button>
+      </div>
+      {tab === 'grabar' ? (
+        <RecordPanel onImported={onRecorded} />
       ) : (
-        <ul className="mt-2 space-y-1">
-          {assets.map((asset) => (
-            <li
-              key={asset.id}
-              className="rounded px-2 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
-            >
-              <span className="block truncate">{asset.displayName}</span>
-              <span className="text-[var(--text-muted)]">
-                {asset.type} · {formatDuration(asset.durationUs)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div className="p-3">
+          {assets.length === 0 ? (
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              Importa archivos para verlos aquí.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1">
+              {assets.map((asset) => (
+                <li
+                  key={asset.id}
+                  className="rounded px-2 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                >
+                  <span className="block truncate">{asset.displayName}</span>
+                  <span className="text-[var(--text-muted)]">
+                    {asset.type} · {formatDuration(asset.durationUs)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </section>
   );
@@ -257,6 +290,36 @@ export function EditorView() {
     await createProject(`Proyecto ${projects.length + 1}`);
   }, [createProject, projects.length]);
 
+  const handleRecorded = useCallback(
+    async (fileToken: string) => {
+      if (!project) return;
+      setImporting(true);
+      try {
+        const job = await api.editorAssetsImportStart([fileToken]);
+        if (!job.started || !job.jobId) return;
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          const status = await api.editorJobStatus(job.jobId);
+          if (!status.running) {
+            if (status.imported.length > 0) {
+              const assets = status.imported as typeof imported;
+              setImported((prev) => [...prev, ...assets]);
+              updateProject((draft) => {
+                draft.assets = [...draft.assets, ...assets];
+              });
+            }
+            break;
+          }
+        }
+      } catch {
+        // El error de importación se refleja en el estado del proyecto.
+      } finally {
+        setImporting(false);
+      }
+    },
+    [project, updateProject],
+  );
+
   if (!project) {
     return (
       <main className="flex h-full w-full flex-col bg-[var(--bg-base)]" data-testid="editor-view">
@@ -287,7 +350,7 @@ export function EditorView() {
     <main className="flex h-full w-full flex-col bg-[var(--bg-base)]" data-testid="editor-view">
       <EditorToolbar saveState={saveState} error={error} onImport={() => void handleImport()} />
       <div className="flex min-h-0 flex-1">
-        <EditorMediaLibrary assets={imported} />
+        <EditorMediaLibrary assets={imported} onRecorded={(token) => void handleRecorded(token)} />
         <div className="flex min-h-0 flex-1 flex-col">
           <EditorPreview projectName={project.name} />
           <EditorTimeline

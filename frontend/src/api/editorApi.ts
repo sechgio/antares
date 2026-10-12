@@ -65,6 +65,24 @@ export const editorApi = {
     _invoke<{ paths: string[]; file_tokens: string[] }>('editor_import_files', {
       ...(title ? { title } : {}),
     }),
+  editorRecordingCreate: (sessionId: string, mimeType?: string, quotaBytes?: number) =>
+    _invoke<{ sessionId: string; maxInFlightBytes: number }>('editor_recording_create', {
+      sessionId,
+      ...(mimeType ? { mimeType } : {}),
+      ...(quotaBytes ? { quotaBytes } : {}),
+    }),
+  editorRecordingAppend: (sessionId: string, seq: number, chunkB64: string) =>
+    _invoke<{ sessionId: string; seq: number; writtenBytes: number }>(
+      'editor_recording_append',
+      { sessionId, seq, chunkB64 },
+    ),
+  editorRecordingFinish: (sessionId: string) =>
+    _invoke<{ sessionId: string; path: string; writtenBytes: number; file_token: string }>(
+      'editor_recording_finish',
+      { sessionId },
+    ),
+  editorRecordingAbort: (sessionId: string) =>
+    _invoke<{ sessionId: string; aborted: boolean }>('editor_recording_abort', { sessionId }),
   editorExportStart: (document: EditorProject, outputPath?: string, requestId?: string) =>
     _invoke<EditorImportResult>('editor_export_start', {
       document,

@@ -150,11 +150,17 @@ def import_file(token: str, *, assets_dir: Path | None = None) -> dict[str, Any]
     base.mkdir(parents=True, exist_ok=True)
 
     size = source.stat().st_size
-    if size > 0 and free_disk_bytes(base) < size:
+    if size == 0:
+        raise AssetImportError("la grabación está vacía")
+    if free_disk_bytes(base) < size:
         raise AssetImportError("espacio en disco insuficiente para importar el archivo")
 
-    duration_us, streams = _probe_streams(source)
+    from backend.core.editor.toolchain import ToolchainError
 
+    try:
+        duration_us, streams = _probe_streams(source)
+    except ToolchainError as exc:
+        raise AssetImportError(f"el archivo no es un medio válido: {str(exc)[:120]}") from exc
     asset_id = uuid.uuid4().hex
     suffix = source.suffix.lower()
     target = base / f"{asset_id}{suffix}"
