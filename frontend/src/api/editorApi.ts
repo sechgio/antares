@@ -71,6 +71,20 @@ export const editorApi = {
       ...(outputPath ? { outputPath } : {}),
       ...(requestId ? { requestId } : {}),
     }),
+  editorEffectStart: (
+    document: EditorProject,
+    effectType: 'stabilize' | 'chromakey',
+    clipId?: string,
+    params?: Record<string, unknown>,
+    requestId?: string,
+  ) =>
+    _invoke<EditorImportResult>('editor_effect_start', {
+      document,
+      effectType,
+      ...(clipId ? { clipId } : {}),
+      ...(params ? { params } : {}),
+      ...(requestId ? { requestId } : {}),
+    }),
   editorAssetsImportStart: (files: string[], requestId?: string) =>
     _invoke<EditorImportResult>('editor_assets_import_start', {
       files,

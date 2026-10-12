@@ -289,4 +289,99 @@ def start_export_job(
     return {"started": True, "jobId": jid}
 
 
+EXPORT_STAGES: tuple[str, ...] = ("validando", "rendering", "verificando", "publicando")
+
+EFFECT_STAGES: tuple[str, ...] = ("analizando", "procesando", "verificando", "cacheando")
+EFFECT_TYPES: frozenset[str] = frozenset({"stabilize", "chromakey"})
+
+
+def run_effect_job(job: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    """Aplica un efecto pesado sobre el asset del clip, por etapas.
+
+    El derivado se cachea por identidad del asset y parámetros: el
+    original se conserva intacto y el efecto es reversible.
+    """
+    from backend.core.editor.effects import apply_chromakey, apply_stabilize
+    from backend.core.editor.render import asset_path
+    from backend.core.editor.toolchain import resolve_toolchain
+
+    document = job.params.get("document") or {}
+    effect_type = str(job.params.get("effectType", ""))
+    clip_id = job.params.get("clipId")
+    if effect_type not in EFFECT_TYPES:
+        raise ValueError(f"efecto desconocido: {effect_type}")
+
+    clips = document.get("clips", [])
+    clip = next((c for c in clips if c.get("id") == clip_id), None)
+    if clip is None:
+        raise ValueError("clip no encontrado en el snapshot")
+
+    assets_by_id = {a["id"]: a for a in document.get("assets", [])}
+    asset = assets_by_id.get(str(clip.get("assetId", "")))
+    if asset is None:
+        raise ValueError("el clip no tiene asset gestionado")
+
+    toolchain = resolve_toolchain()
+    source = asset_path(asset)
+    cache_dir = user_data_path("editor") / "cache" / "effects"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    params_key = str(job.params.get("params", {}))
+    target = cache_dir / f"{asset['id']}-{effect_type}-{abs(hash(params_key)) % 10**8}.out"
+
+    _set_stage(job, EFFECT_STAGES[0], 10)
+    if effect_type == "stabilize":
+        shakiness = int(job.params.get("params", {}).get("shakiness", 6))
+        _set_stage(job, EFFECT_STAGES[1], 30)
+        apply_stabilize(toolchain, source, target, shakiness, transforms_file=target.with_suffix(".trf"), cancel_check=_check_cancelled)
+    else:
+        params = job.params.get("params", {})
+        color = str(params.get("color", "#00FF00"))
+        similarity = float(params.get("similarity", 0.3))
+        blend = float(params.get("blend", 0.1))
+        _set_stage(job, EFFECT_STAGES[1], 30)
+        apply_chromakey(toolchain, source, target, color, similarity, blend)
+
+    _set_stage(job, EFFECT_STAGES[2], 80)
+    _set_stage(job, EFFECT_STAGES[3], 95)
+    with job.state._lock:
+        job.state.progress = 100
+        if job.result is None:
+            job.result = {"output": str(target), "effectType": effect_type}
+    log_event(logger, logging.INFO, "editor.job.effect_finished", job_id=job.id, effect=effect_type)
+    return {"output": str(target), "effectType": effect_type}
+
+
+def start_effect_job(
+    job_manager: Any,
+    document: dict[str, Any],  # allowlist: dict[str, Any]
+    effect_type: str,
+    *,
+    clip_id: str | None = None,
+    request_id: str | None = None,
+    job_id: str | None = None,
+) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    if effect_type not in EFFECT_TYPES:
+        raise ValueError(f"efecto desconocido: {effect_type}")
+    jid = job_id or f"editor_effect_{uuid.uuid4().hex[:12]}"
+    record = {
+        "jobId": jid,
+        "type": "editor_effect",
+        "effectType": effect_type,
+        "requestId": request_id,
+        "stages": list(EFFECT_STAGES),
+        "state": "queued",
+    }
+    _persist_job_record(jid, record)
+    started = job_manager.create_job(
+        "editor_effect",
+        {"document": document, "effectType": effect_type, "clipId": clip_id, "requestId": request_id},
+        run_effect_job,
+        job_id=jid,
+    )
+    if not started.get("started"):
+        _persist_job_record(jid, {**record, "state": "rejected", "reason": started.get("reason")})
+        return started
+    return {"started": True, "jobId": jid}
+
+
 _lock = threading.Lock()

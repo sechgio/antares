@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.core.editor.jobs import (
     cancel_editor_job,
+    start_effect_job,
     start_export_job,
     start_import_job,
 )
@@ -149,6 +150,21 @@ def editor_export_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist:
     )
 
 
+def editor_effect_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    """Arranca un efecto pesado (estabilización o chroma key) como job."""
+    document = _require(params, "document")
+    effect_type = str(_require(params, "effectType"))
+    clip_id = params.get("clipId")
+    request_id = params.get("requestId")
+    return start_effect_job(
+        get_job_manager(),
+        document,
+        effect_type,
+        clip_id=str(clip_id) if clip_id else None,
+        request_id=str(request_id) if request_id else None,
+    )
+
+
 HANDLERS = {
     "editor_bootstrap": editor_bootstrap,
     "editor_project_create": editor_project_create,
@@ -157,6 +173,7 @@ HANDLERS = {
     "editor_project_duplicate": editor_project_duplicate,
     "editor_project_delete": editor_project_delete,
     "editor_assets_import_start": editor_assets_import_start,
+    "editor_effect_start": editor_effect_start,
     "editor_export_start": editor_export_start,
     "editor_job_cancel": editor_job_cancel,
     "editor_job_status": editor_job_status,
