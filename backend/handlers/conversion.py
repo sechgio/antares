@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 from backend.core import conversion_probe, out_path_dedupe
-from backend.core.converter import es_video
 from backend.core.jobs import (
     Job,
     get_job_manager,
@@ -213,15 +212,9 @@ def process_cancel(params: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-@with_locale
-def is_video(params: dict[str, Any]) -> dict[str, bool]:
-    return {"is_video": es_video(params.get("path", ""))}
-
-
 HANDLERS = {
     "preview": preview,
     "process_start": process_start,
     "process_status": process_status,
     "process_cancel": process_cancel,
-    "is_video": is_video,
 }
