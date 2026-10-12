@@ -5,6 +5,7 @@ import type { Clip, EditorProject } from './types';
 import { useEditorProject, type SaveState } from './hooks/useEditorProject';
 import { TextPanel } from './panels/TextPanel';
 import { AudioPanel } from './panels/AudioPanel';
+import { RemoveLogoPanel } from './panels/RemoveLogoPanel';
 
 const SAVE_LABEL: Record<SaveState, string> = {
   idle: 'Sin cambios',
@@ -160,6 +161,17 @@ function EditorProperties({
       </div>
       {clip?.kind === 'text' ? (
         <TextPanel clip={clip} onChange={update} />
+      ) : clip?.kind === 'video' ? (
+        <RemoveLogoPanel
+          clipId={clip.id}
+          rects={clip.delogo.rects}
+          onApply={(next) =>
+            onChange((draft) => {
+              const target = draft.clips.find((c) => c.id === clip.id);
+              if (target) target.delogo = { rects: next };
+            })
+          }
+        />
       ) : (
         <AudioPanel clip={clip} onChange={update} />
       )}

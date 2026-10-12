@@ -196,6 +196,13 @@ def delogo_rects(rects: list[dict[str, Any]], width_px: int, height_px: int) -> 
             raise ValueError(
                 "la máscara delogo excede el fotograma; acércala a la región visible"
             )
+        # El filtro delogo del build rechaza rectángulos que toquen el
+        # borde exacto ("Logo area is outside of the frame" cuando y+h o
+        # x+w igualan la dimensión): se exige un píxel de margen.
+        if x + w >= width_px or y + h >= height_px:
+            raise ValueError(
+                "la máscara delogo toca el borde del fotograma; deja al menos un píxel de margen"
+            )
         filters.append(f"delogo=x={x}:y={y}:w={w}:h={h}")
     return filters
 
