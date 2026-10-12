@@ -16,6 +16,7 @@ import json
 import logging
 import threading
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +62,41 @@ def _read_job_record(job_id: str) -> dict[str, Any] | None:  # allowlist: dict[s
         return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _history_dir() -> Path:
+    directory = user_data_path("editor") / "exports"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _persist_export_history(job_id: str, entry: dict[str, Any]) -> None:  # allowlist: dict[str, Any]
+    """Registra una exportación terminada en el historial local.
+
+    Una entrada por exportación con su destino real: permite mostrar
+    resultados anteriores, reintentar con un destino nuevo y abrir la
+    salida autorizada sin volver a renderizar.
+    """
+    path = _history_dir() / f"{job_id}.json"
+    tmp = path.with_name(f".{job_id}.json.tmp")
+    try:
+        tmp.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        logger.debug("No se pudo persistir el historial de exportación %s", job_id, exc_info=True)
+
+
+def list_export_history(limit: int = 50) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
+    """Historial de exportaciones, más recientes primero."""
+    entries: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
+    for path in _history_dir().glob("*.json"):
+        try:
+            entry = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        entries.append(entry)
+    entries.sort(key=lambda e: str(e.get("finishedAt", "")), reverse=True)
+    return entries[:limit]
 
 
 def _set_stage(job: Any, stage: str, progress: int) -> None:
@@ -256,6 +292,17 @@ def run_export_job(job: Any, *, output: Path | None = None) -> dict[str, Any]:  
         job.state.progress = 100
         if job.result is None:
             job.result = result
+    _persist_export_history(
+        job.id,
+        {
+            "jobId": job.id,
+            "type": "editor_export",
+            "output": str(output),
+            "state": "done",
+            "finishedAt": datetime.now(timezone.utc).isoformat(),
+            "byteSize": output.stat().st_size if output.is_file() else 0,
+        },
+    )
     log_event(logger, logging.INFO, "editor.job.export_finished", job_id=job.id, output=str(output))
     return result
 

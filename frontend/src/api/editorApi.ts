@@ -61,6 +61,10 @@ export const editorApi = {
     }),
   editorProjectDelete: (projectId: string) =>
     _invoke<{ deleted_id: string; trash: boolean }>('editor_project_delete', { projectId }),
+  editorExportsHistory: (limit?: number) =>
+    _invoke<{
+      exports: Array<{ jobId: string; output: string; state: string; finishedAt: string; byteSize: number }>;
+    }>('editor_exports_history', { ...(limit ? { limit } : {}) }),
   editorImportFiles: (title?: string) =>
     _invoke<{ paths: string[]; file_tokens: string[] }>('editor_import_files', {
       ...(title ? { title } : {}),

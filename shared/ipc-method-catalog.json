@@ -1077,6 +1077,19 @@
         ]
       }
     },
+    "editor_exports_history": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "normal",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer"
+          }
+        }
+      }
+    },
     "editor_import_files": {
       "handler": "native:editor",
       "timeout": "long",

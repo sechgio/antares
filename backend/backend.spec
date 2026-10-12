@@ -65,6 +65,9 @@ _datas = [
     (str(project_dir / 'shared' / 'workflow-schema.json'), 'shared'),
     (str(project_dir / 'shared' / 'connections-catalog.json'), 'shared'),
     (str(project_dir / 'shared' / 'ai-providers-catalog.json'), 'shared'),
+    (str(project_dir / 'shared' / 'editor-schema.json'), 'shared'),
+    (str(project_dir / 'media' / 'manifest.json'), 'media'),
+    (str(project_dir / 'media' / 'LICENSE-THIRD-PARTY.txt'), 'media'),
 ]
 _datas += collect_data_files('weasyprint')
 

@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.core.editor.jobs import (
     cancel_editor_job,
+    list_export_history,
     start_effect_job,
     start_export_job,
     start_import_job,
@@ -165,6 +166,12 @@ def editor_effect_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist:
     )
 
 
+def editor_exports_history(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
+    """Historial local de exportaciones, más recientes primero."""
+    limit = int(params.get("limit", 50))
+    return {"exports": list_export_history(limit)}
+
+
 HANDLERS = {
     "editor_bootstrap": editor_bootstrap,
     "editor_project_create": editor_project_create,
@@ -175,6 +182,7 @@ HANDLERS = {
     "editor_assets_import_start": editor_assets_import_start,
     "editor_effect_start": editor_effect_start,
     "editor_export_start": editor_export_start,
+    "editor_exports_history": editor_exports_history,
     "editor_job_cancel": editor_job_cancel,
     "editor_job_status": editor_job_status,
 }
