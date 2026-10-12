@@ -8,6 +8,7 @@ import pytest
 from backend.core.design import models
 from backend.core.design.models import create_empty_document, normalize_document
 from backend.core.design.prompt import SYSTEM_PROMPT, tool_spec
+from backend.core.design.qa import contrast_ratio, run_preflight
 from backend.core.design.render import render_html
 from backend.core.design.store import DesignStore
 from backend.handlers import design as design_handlers
@@ -171,3 +172,69 @@ def test_handler_export_pdf_returns_base64_without_output_path(
     result = design_handlers.design_export_pdf({"id": created["id"]})
     assert result["pdf_base64"]
     assert result["filename"] == "Informe Q3.pdf"
+
+# --- Control de calidad determinista ---
+
+def test_contrast_ratio_matches_wcag_reference_values() -> None:
+    assert contrast_ratio("#000000", "#FFFFFF") == pytest.approx(21.0, abs=0.01)
+    assert contrast_ratio("#FFFFFF", "#FFFFFF") == pytest.approx(1.0, abs=0.01)
+    # #767676 es el gris exacto en el umbral 4.5:1 de WCAG.
+    assert contrast_ratio("#767676", "#FFFFFF") == pytest.approx(4.54, abs=0.01)
+    # Shorthand de 3 dígitos.
+    assert contrast_ratio("#000", "#FFF") == pytest.approx(21.0, abs=0.01)
+
+
+def test_preflight_passes_a_healthy_deck() -> None:
+    report = run_preflight(
+        normalize_document(
+            {
+                "name": "Sano",
+                "page": {"preset": "16x9"},
+                "theme": {"background": "#FFFFFF", "text": "#111827", "muted": "#6B7280", "accent": "#2563EB"},
+                "slides": [
+                    {"layout": "title", "title": "Plan Q3", "subtitle": "Resumen"},
+                    {"layout": "bullets", "title": "Cifras", "bullets": ["Ingresos +12%", "Margen 41%"]},
+                ],
+            }
+        )
+    )
+    assert report["ok"] is True
+    assert report["errorCount"] == 0
+    assert report["slideCount"] == 2
+
+
+def test_preflight_flags_low_contrast_with_the_real_ratio() -> None:
+    report = run_preflight(
+        normalize_document(
+            {
+                "page": {"preset": "16x9"},
+                "theme": {"background": "#FFFFFF", "text": "#BBBBBB", "muted": "#BBBBBB", "accent": "#BBBBBB"},
+                "slides": [{"layout": "title", "title": "Poco legible"}],
+            }
+        )
+    )
+    assert report["ok"] is False
+    contrast = [f for f in report["findings"] if f["kind"] == "contrast"]
+    assert len(contrast) == 3
+    assert all(f["slide"] == 0 for f in contrast)
+    assert "1.9:1" in contrast[0]["message"]
+
+
+def test_preflight_flags_text_overflowing_the_safe_area() -> None:
+    report = run_preflight(
+        normalize_document(
+            {
+                "page": {"preset": "16x9"},
+                "slides": [{"layout": "bullets", "title": "T", "bullets": [("palabra " * 120)] * 8}],
+            }
+        )
+    )
+    assert report["ok"] is False
+    assert any(f["kind"] == "overflow" for f in report["findings"])
+
+
+def test_preflight_flags_an_empty_slide() -> None:
+    report = run_preflight(
+        normalize_document({"page": {"preset": "a4"}, "slides": [{"layout": "blank", "body": ""}]})
+    )
+    assert any(f["kind"] == "empty-slide" for f in report["findings"])

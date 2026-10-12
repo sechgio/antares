@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Download, Loader2, Sparkles, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { sanitizeHtmlForPreview } from '../../../../shared/html-sanitizer.js';
-import { api, type DesignDocument, type DesignListItem, type DesignPagePreset } from '@/api';
+import { api, type DesignDocument, type DesignFinding, type DesignListItem, type DesignPagePreset } from '@/api';
 import { aiProvidersApi, type AiProviderSpec } from '@/api/aiProvidersApi';
 import Button from '@/components/ui/Button';
 import ThemedSelect from '@/components/ui/ThemedSelect';
@@ -38,6 +38,7 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
   const [previewHtml, setPreviewHtml] = useState('');
   const [items, setItems] = useState<DesignListItem[]>([]);
   const [slideIndex, setSlideIndex] = useState(0);
+  const [findings, setFindings] = useState<DesignFinding[]>([]);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
 
   const refreshList = useCallback(async () => {
@@ -72,6 +73,15 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
     const res = await api.designRenderHtml({ document: doc });
     setPreviewHtml(sanitizeHtmlForPreview(res.html));
     setSlideIndex(0);
+    // El control de calidad corre siempre, no bajo demanda: es barato y es
+    // donde se atrapan los defectos que la vista previa no enseña a ojo
+    // (texto que se sale del área segura, bloques que se solapan).
+    try {
+      const report = await api.designPreflight({ document: doc });
+      setFindings(report.findings ?? []);
+    } catch {
+      setFindings([]);
+    }
   }, []);
 
   const handleGenerate = useCallback(async () => {
@@ -155,6 +165,11 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
   const presetOptions = useMemo(() => [...PAGE_PRESET_OPTIONS], []);
 
   const selectedProvider = providers.find((p) => p.provider === provider);
+
+  const handleReload = useCallback(() => {
+    if (!document) return;
+    void loadPreview(document);
+  }, [document, loadPreview]);
 
   return (
     <div data-surface="design" className="flex h-full min-h-0 gap-4 p-4 text-[var(--text-primary)]">
@@ -258,12 +273,42 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
+                <Button variant="ghost" size="sm" onClick={handleReload} aria-label="Recargar vista previa">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </Button>
               </div>
-              <Button size="sm" onClick={() => void handleExport()} disabled={exporting}>
-                {exporting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
-                Exportar PDF
-              </Button>
+              <div className="flex items-center gap-2">
+                {findings.length > 0 && (
+                  <span
+                    className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+                    style={{
+                      color: findings.some((f) => f.severity === 'error') ? '#F87171' : 'var(--text-muted)',
+                      background: 'var(--bg-base)',
+                    }}
+                    title={findings.map((f) => `· ${f.message}`).join('\n')}
+                  >
+                    <AlertTriangle className="h-3 w-3" />
+                    {findings.length}
+                  </span>
+                )}
+                <Button size="sm" onClick={() => void handleExport()} disabled={exporting}>
+                  {exporting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
+                  Exportar PDF
+                </Button>
+              </div>
             </div>
+            {findings.length > 0 && (
+              <ul className="max-h-24 overflow-y-auto border-b border-[var(--border-subtle)] px-3 py-2 text-xs">
+                {findings.slice(0, 8).map((finding, index) => (
+                  <li key={`${finding.kind}-${finding.slide}-${index}`} className="flex gap-2 py-0.5">
+                    <span style={{ color: finding.severity === 'error' ? '#F87171' : 'var(--text-muted)' }}>
+                      {finding.slide > 0 ? `Dia. ${finding.slide}` : 'Tema'}
+                    </span>
+                    <span className="text-[var(--text-muted)]">{finding.message}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="min-h-0 flex-1 overflow-auto p-3">
               <iframe
                 ref={frameRef}
@@ -272,6 +317,30 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
                 title={`Vista previa del diseño: ${document?.name ?? ''}`}
                 className="h-full min-h-[420px] w-full rounded border border-[var(--border-subtle)] bg-white"
               />
+            </div>
+            {/* Tira de diapositivas: el salto rápido que en Claude Design
+                resuelve el canvas remoto y aquí se resuelve con el IR. */}
+            <div className="flex gap-1 overflow-x-auto border-t border-[var(--border-subtle)] px-3 py-2">
+              {(document?.slides ?? []).map((slide, index) => {
+                const slideIssues = findings.filter((f) => f.slide === index + 1 && f.severity === 'error').length;
+                return (
+                  <button
+                    key={slide.id || index}
+                    onClick={() => setSlideIndex(index)}
+                    aria-current={index === slideIndex}
+                    aria-label={`Diapositiva ${index + 1}${slide.title ? `: ${slide.title}` : ''}`}
+                    className="flex h-9 min-w-[72px] shrink-0 items-center justify-center gap-1 rounded border px-2 text-[11px]"
+                    style={{
+                      borderColor: index === slideIndex ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                      background: index === slideIndex ? 'var(--bg-elevated)' : 'transparent',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    {slideIssues > 0 && <span className="h-1.5 w-1.5 rounded-full bg-red-400" aria-hidden />}
+                    {index + 1}
+                  </button>
+                );
+              })}
             </div>
           </>
         ) : (

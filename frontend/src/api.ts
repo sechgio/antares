@@ -39,10 +39,12 @@ export type { FormatosGenerateResponse } from './api/formatosApi';
 export type { CanvasExportCmykPdfBody } from './api/canvasApi';
 export type {
   DesignDocument,
+  DesignFinding,
   DesignLayout,
   DesignListItem,
   DesignPage,
   DesignPagePreset,
+  DesignPreflight,
   DesignSlide,
   DesignTheme,
 } from './api/designApi';

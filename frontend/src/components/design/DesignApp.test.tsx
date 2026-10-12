@@ -8,6 +8,7 @@ const designList = vi.fn();
 const designGet = vi.fn();
 const designGenerate = vi.fn();
 const designRenderHtml = vi.fn();
+const designPreflight = vi.fn();
 const designExportPdf = vi.fn();
 const designDelete = vi.fn();
 const aiProvidersList = vi.fn();
@@ -20,6 +21,7 @@ vi.mock('@/api', () => ({
     designGet: (id: string) => designGet(id),
     designGenerate: (body: unknown) => designGenerate(body),
     designRenderHtml: (body: unknown) => designRenderHtml(body),
+    designPreflight: (body: unknown) => designPreflight(body),
     designExportPdf: (body: unknown) => designExportPdf(body),
     designDelete: (id: string) => designDelete(id),
   },
@@ -56,6 +58,7 @@ describe('DesignApp', () => {
     vi.clearAllMocks();
     designList.mockResolvedValue({ designs: [] });
     designRenderHtml.mockResolvedValue({ html: '<p>ok</p>', slideCount: 2, page: document_.page });
+    designPreflight.mockResolvedValue({ ok: true, slideCount: 2, findings: [], errorCount: 0, warningCount: 0 });
     aiProvidersList.mockResolvedValue({
       providers: [
         { provider: 'openai', label: 'OpenAI', configured: true, default_model: 'gpt-4o-mini', has_key: true, key_masked: '••••1234', base_url: '', needs_key: true, description: '', docs: '', editable_base_url: true },
@@ -131,5 +134,42 @@ describe('DesignApp', () => {
     fireEvent.click(screen.getByRole('button', { name: /Generar diseño/i }));
     await waitFor(() => expect(screen.getByText(/no tiene API key/i)).toBeInTheDocument());
     expect((screen.getByPlaceholderText(/Ej\.: resultados/i) as HTMLTextAreaElement).value).toBe('x');
+  });
+
+  it('pasa el control de calidad al previsualizar y lista los hallazgos', async () => {
+    designGenerate.mockResolvedValue({ document: document_ });
+    designPreflight.mockResolvedValue({
+      ok: false,
+      slideCount: 2,
+      errorCount: 1,
+      warningCount: 0,
+      findings: [
+        { kind: 'overflow', severity: 'error', slide: 2, message: 'El texto se sale del área segura.', detail: {} },
+      ],
+    });
+    render(<DesignApp />);
+    await waitFor(() => expect(aiProvidersList).toHaveBeenCalled());
+    fireEvent.change(screen.getByPlaceholderText(/Ej\.: resultados/i), { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: /Generar diseño/i }));
+
+    await waitFor(() => expect(designPreflight).toHaveBeenCalled());
+    expect(await screen.findByText(/se sale del área segura/i)).toBeInTheDocument();
+    expect(screen.getByText('Dia. 2')).toBeInTheDocument();
+  });
+
+  it('navega con la tira de diapositivas y recarga bajo demanda', async () => {
+    designGenerate.mockResolvedValue({ document: document_ });
+    render(<DesignApp />);
+    await waitFor(() => expect(aiProvidersList).toHaveBeenCalled());
+    fireEvent.change(screen.getByPlaceholderText(/Ej\.: resultados/i), { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: /Generar diseño/i }));
+    await screen.findByTitle('Vista previa del diseño: Plan Q3');
+    await waitFor(() => expect(designRenderHtml).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /Diapositiva 2/i }));
+    expect(screen.getByText(/2 \/ 2/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Recargar vista previa/i }));
+    await waitFor(() => expect(designRenderHtml).toHaveBeenCalledTimes(2));
   });
 });

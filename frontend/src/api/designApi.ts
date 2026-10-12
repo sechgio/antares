@@ -56,6 +56,22 @@ export interface DesignListItem {
   page: Partial<DesignPage>;
 }
 
+export interface DesignFinding {
+  kind: 'overflow' | 'collision' | 'tiny-text' | 'empty-slide' | 'contrast';
+  severity: 'error' | 'warning';
+  slide: number;
+  message: string;
+  detail: Record<string, unknown>;
+}
+
+export interface DesignPreflight {
+  ok: boolean;
+  slideCount: number;
+  findings: DesignFinding[];
+  errorCount: number;
+  warningCount: number;
+}
+
 export const designApi = {
   designList: () => _invoke<{ designs: DesignListItem[] }>('design_list'),
 
@@ -70,6 +86,9 @@ export const designApi = {
 
   designRenderHtml: (body: { id?: string; document?: DesignDocument }) =>
     _invoke<{ html: string; slideCount: number; page: DesignPage }>('design_render_html', body),
+
+  designPreflight: (body: { id?: string; document?: DesignDocument }) =>
+    _invoke<DesignPreflight>('design_preflight', body),
 
   designExportPdf: (body: { id?: string; document?: DesignDocument; outputPath?: string; overwrite?: boolean }) =>
     _invoke<

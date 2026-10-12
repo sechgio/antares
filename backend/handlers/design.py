@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from backend.core.design import generate as design_generate_module
 from backend.core.design import models
+from backend.core.design.qa import run_preflight
 from backend.core.design.render import render_html
 from backend.core.design.store import get_design_store
 from backend.core.design.types import JsonObject
@@ -177,6 +178,14 @@ def design_export_pdf(params: JsonObject) -> JsonObject:
     return {"filename": filename, "saved_path": saved_path}
 
 
+@with_locale
+@validate_params()
+def design_preflight(params: JsonObject) -> JsonObject:
+    """Mide el Design sobre su PDF: desbordamiento, colisión, contraste, vacías."""
+    document = _document_from_params(params)
+    return run_preflight(document)
+
+
 HANDLERS = {
     "design_list": design_list,
     "design_get": design_get,
@@ -185,4 +194,5 @@ HANDLERS = {
     "design_generate": design_generate,
     "design_render_html": design_render_html,
     "design_export_pdf": design_export_pdf,
+    "design_preflight": design_preflight,
 }

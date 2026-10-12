@@ -97,6 +97,7 @@
     "design_generate": { "handler": "backend:design", "lane": "heavy", "timeout": "heavy", "inputSchema": {"type":"object","properties":{"prompt":{"type":"string"},"provider":{"type":"string"},"model":{"type":"string"},"page_preset":{"type":"string","enum":["a4","a4-landscape","16x9","16x10","4x3"]}},"required":["prompt","provider"]} },
     "design_get": { "handler": "backend:design", "idempotent": true, "inputSchema": {"type":"object","properties":{"id":{"type":"string"}},"required":["id"]} },
     "design_list": { "handler": "backend:design", "idempotent": true, "inputSchema": {"type":"object","properties":{}} },
+    "design_preflight": { "handler": "backend:design", "lane": "heavy", "timeout": "heavy", "idempotent": true, "inputSchema": {"type":"object","properties":{"document":{"type":"object"},"id":{"type":"string"}},"required":["id"]} },
     "design_render_html": { "handler": "backend:design", "idempotent": true, "inputSchema": {"type":"object","properties":{"document":{"type":"object"},"id":{"type":"string"}}} },
     "diagnostics_export": { "handler": "native:dialog", "timeout": "long" },
     "diagnostics_snapshot": { "handler": "backend:diagnostics", "lane": "light", "orchestratable": true, "inputSchema": {"type":"object","properties":{}} },
