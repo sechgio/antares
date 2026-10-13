@@ -22,6 +22,7 @@ import {
   PanelLeft,
   Pin,
   Plug,
+  Presentation,
   RefreshCw,
   ScrollText,
   Settings,
@@ -80,6 +81,7 @@ const ICONS: Record<TabId, IconComponent> = {
   evidenciaVolanteo: Grid2X2,
   autoimg: RefreshCw,
   fichasTecnicas: FileText,
+  design: Presentation,
 };
 
 const NAV_GROUPS: { id: string; label: string; icon: IconComponent; tabs: TabId[] }[] = [
@@ -103,6 +105,7 @@ const NAV_GROUPS: { id: string; label: string; icon: IconComponent; tabs: TabId[
       'panelAvisoCorte',
       'evidenciaVolanteo',
       'fichasTecnicas',
+      'design',
     ],
   },
   {

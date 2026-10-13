@@ -25,6 +25,12 @@ MAX_MESSAGE_CHARS = 12_000
 _MAX_TOOL_RESULT_CHARS = 6_000
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _CHAT_TIMEOUT_S = 120.0
+# Tipos de imagen aceptados en un mensaje multimodal. La lista es cerrada a
+# propósito: un media type arbitrario se inyecta tal cual en el JSON de la
+# request, y algunos proveedores lo reenvian como nombre de fichero.
+_ALLOWED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
+_MAX_IMAGES_PER_MESSAGE = 8
+_MAX_IMAGE_B64_CHARS = 4 * 1024 * 1024
 _RETRYABLE_HTTP = frozenset({429, 500, 502, 503, 529})
 _RETRY_DELAYS_S = (1.0, 4.0)
 _RETRY_AFTER_CAP_S = 15.0
@@ -334,13 +340,51 @@ def _with_synthetic_results(messages: list[JsonObject]) -> list[JsonObject]:
     return out
 
 
+def _sanitize_images(raw: Any) -> list[JsonObject]:
+    """Normaliza los adjuntos de imagen de un mensaje a ``{media_type, data_b64}``.
+
+    Descarta todo lo que no encaje: un media type fuera de la lista, un b64
+    vacío, o más imágenes del tope. Devuelve lista vacía en cualquier otro
+    caso, para que un adjunto dudoso nunca rompa el turno.
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[JsonObject] = []
+    for item in raw:
+        if len(out) >= _MAX_IMAGES_PER_MESSAGE:
+            break
+        if not isinstance(item, dict):
+            continue
+        media_type = item.get("media_type")
+        data = item.get("data_b64")
+        if media_type not in _ALLOWED_IMAGE_TYPES or not isinstance(data, str) or not data:
+            continue
+        if len(data) > _MAX_IMAGE_B64_CHARS:
+            continue
+        out.append({"media_type": str(media_type), "data_b64": data[: _MAX_IMAGE_B64_CHARS]})
+    return out
+
+
 def _openai_wire(messages: list[JsonObject], system: str | None) -> list[JsonObject]:
-    """Historial persistido → formato OpenAI chat completions."""
+    """Historial persistido -> formato OpenAI chat completions."""
     wire: list[JsonObject] = [{"role": "system", "content": system or _SYSTEM_PROMPT}]
     for msg in _with_synthetic_results(messages):
         role = msg.get("role")
         if role == "user":
-            wire.append({"role": "user", "content": str(msg.get("content") or "")[:MAX_MESSAGE_CHARS]})
+            text = str(msg.get("content") or "")[:MAX_MESSAGE_CHARS]
+            images = _sanitize_images(msg.get("images"))
+            if images:
+                parts: list[JsonObject] = [{"type": "text", "text": text}] if text else []
+                parts.extend(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{img['media_type']};base64,{img['data_b64']}"},
+                    }
+                    for img in images
+                )
+                wire.append({"role": "user", "content": parts})
+            else:
+                wire.append({"role": "user", "content": text})
         elif role == "assistant":
             entry: JsonObject = {
                 "role": "assistant",
@@ -379,6 +423,7 @@ def _chat_openai(
     with_tools: bool,
     system: str | None,
     on_delta: Callable[[str], None] | None = None,
+    extra_tools: list[JsonObject] | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
         "model": model,
@@ -395,7 +440,7 @@ def _chat_openai(
                     "parameters": s["inputSchema"],
                 },
             }
-            for s in tool_specs()
+            for s in (*tool_specs(), *(extra_tools or []))
         ]
         payload["tool_choice"] = "auto"
     data = _post_json(url, headers, payload, on_delta)
@@ -453,7 +498,24 @@ def _anthropic_wire(messages: list[JsonObject]) -> list[JsonObject]:
             wire.append({"role": "user", "content": pending_results})
             pending_results = []
         if role == "user":
-            wire.append({"role": "user", "content": str(msg.get("content") or "")[:MAX_MESSAGE_CHARS]})
+            text = str(msg.get("content") or "")[:MAX_MESSAGE_CHARS]
+            images = _sanitize_images(msg.get("images"))
+            if images:
+                blocks: list[JsonObject] = [{"type": "text", "text": text}] if text else []
+                blocks.extend(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": img["media_type"],
+                            "data": img["data_b64"],
+                        },
+                    }
+                    for img in images
+                )
+                wire.append({"role": "user", "content": blocks})
+            else:
+                wire.append({"role": "user", "content": text})
         elif role == "assistant":
             content: list[JsonObject] = []
             if msg.get("content"):
@@ -482,11 +544,13 @@ def _chat_anthropic(
     with_tools: bool,
     system: str | None,
     on_delta: Callable[[str], None] | None = None,
+    extra_tools: list[JsonObject] | None = None,
+    max_tokens: int | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
         "model": model,
         "stream": True,
-        "max_tokens": 2048,
+        "max_tokens": max_tokens or 2048,
         "system": system or _SYSTEM_PROMPT,
         "messages": _anthropic_wire(messages),
     }
@@ -497,7 +561,7 @@ def _chat_anthropic(
                 "description": s["description"],
                 "input_schema": s["inputSchema"],
             }
-            for s in tool_specs()
+            for s in (*tool_specs(), *(extra_tools or []))
         ]
     data = _post_json(url, headers, payload, on_delta)
     if not isinstance(data, dict) or not isinstance(data.get("content"), list):
@@ -532,6 +596,8 @@ def chat(
     with_tools: bool = True,
     system: str | None = None,
     on_delta: Callable[[str], None] | None = None,
+    extra_tools: list[JsonObject] | None = None,
+    max_tokens: int | None = None,
 ) -> JsonObject:
     """Un turno LLM; `messages` es el historial persistido en formato neutro.
 
@@ -539,6 +605,10 @@ def chat(
     una sola respuesta de texto, sin tool-calling interactivo).
     ``on_delta`` recibe el texto parcial acumulado cuando el proveedor hace
     streaming (opcional; el chat del agente lo usa para mostrar progreso).
+    ``extra_tools`` añade specs propias del llamante a las de Antares, para
+    que el modelo devuelva una estructura en vez de prosa. ``max_tokens`` solo
+    aplica al estilo Anthropic y sube el techo cuando la respuesta es un
+    documento largo.
     """
     spec = ai_providers.get_provider(provider)
     config = ai_providers.get_config(provider) or {}
@@ -553,7 +623,7 @@ def chat(
     url = ai_providers.endpoint_url(base, path)
     headers = _auth_headers(spec, config)
     if style == "openai_chat":
-        return _chat_openai(url, headers, model, messages, with_tools, system, on_delta)
+        return _chat_openai(url, headers, model, messages, with_tools, system, on_delta, extra_tools)
     if style == "anthropic_messages":
-        return _chat_anthropic(url, headers, model, messages, with_tools, system, on_delta)
+        return _chat_anthropic(url, headers, model, messages, with_tools, system, on_delta, extra_tools, max_tokens)
     raise ValueError(f"Estilo de chat no soportado: {style}")
