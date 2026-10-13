@@ -81,7 +81,7 @@ function applyEvent(convId, event) {
       if (sessionId) {
         commitSessions((sessions) => {
           const session = sessions[sessionId];
-          if (session) session.last_error = String(event.message || '').slice(0, 300) || session.last_error;
+          if (session) session.last_error = require('./agent-execution').sanitizeProviderError(event.message).slice(0, 300) || session.last_error;
         }).catch(() => {});
       }
       break;
@@ -226,6 +226,11 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
     const diagnostics = (result.entry.data && result.entry.data.diagnostics) || [];
     const blocked = result.msg.isError && diagnostics.some((d) => d && (d.code === 'blocked' || d.code === 'tool_unavailable'));
     base.status = !result.msg.isError ? 'done' : blocked ? 'denied' : 'failed';
+    try {
+      const receipt = JSON.parse(base.result);
+      if (receipt.queued === true || receipt.submitted === true) base.status = 'submitted';
+      else if (receipt.uncertain === true || receipt.interrupted === true) base.status = 'interrupted';
+    } catch { /* La herramienta también puede devolver texto. */ }
     return base;
   }
   if (pendingByCall.has(call.id)) {

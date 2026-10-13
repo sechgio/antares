@@ -54,6 +54,7 @@ const WORKSPACE_OPTIONS: ReportWorkspaceOptions<FichaTecnica> = {
   draftKey: DRAFT_KEY,
   initialMobileTab: "preview",
   focusPreviewOnOpen: true,
+  agentModule: 'fichasTecnicas',
 };
 
 export default function FichasTecnicasApp() {

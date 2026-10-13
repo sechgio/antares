@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FolderOpen, Paperclip, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
+import { agentApi, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
@@ -11,6 +11,8 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
 import AgentAvatar from './AgentAvatar';
+import ArtifactCard from './ArtifactCard';
+import QuestionCard from './QuestionCard';
 import { ApprovalCard, MessageRow, ThinkingRow, ToolGroup } from './AgentTimeline';
 
 const POLL_MS = 1500;
@@ -87,14 +89,18 @@ function SessionRow({
   );
 }
 
-export default function AgentView({ onConfigureProvider }: { active?: boolean; onConfigureProvider?: () => void }) {
+export default function AgentView({ onConfigureProvider, onOpenModule }: { active?: boolean; onConfigureProvider?: () => void; onOpenModule?: (module: string, id?: string) => void }) {
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
   const [tools, setTools] = useState<AgentToolSpec[]>([]);
+  const [toolsBusy, setToolsBusy] = useState(false);
+  const toolsVersionRef = useRef(0);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionId, setSessionId] = useState('');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
+  const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
   const [provider, setProvider] = useState('');
@@ -152,6 +158,8 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
         const current = messagesVersionRef.current.get(id);
         if (id === sessionIdRef.current && version === (current?.version ?? 0) && !current?.pending) {
           setMessages(res.messages);
+          setArtifacts(res.artifacts ?? []);
+          setQuestions(res.questions ?? []);
           setPending(res.pending_approvals);
           setRunning(res.running);
         }
@@ -192,12 +200,6 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
       } catch (err) {
         addToast({ message: errorMessage(err, 'No se pudieron cargar los proveedores'), type: 'error' });
       }
-      try {
-        const res = await agentApi.agentToolsList();
-        setTools(res.tools);
-      } catch {
-        setTools([]); // la tarjeta de herramientas es informativa; no bloquea el chat
-      }
       const restored = await refreshSessions();
       const saved = localStorage.getItem(SESSION_KEY);
       if (restored.some((s) => s.id === saved)) setSessionId(saved || '');
@@ -205,9 +207,26 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
   }, [addToast, refreshSessions]);
 
   useEffect(() => {
+    const version = ++toolsVersionRef.current;
+    let cancelled = false;
+    setTools([]);
+    setToolsBusy(true);
+    void agentApi.agentToolsList(sessionId || undefined).then((res) => {
+      if (!cancelled && version === toolsVersionRef.current) setTools(res.tools);
+    }).catch((err) => {
+      if (!cancelled && sessionId) addToast({ message: errorMessage(err, 'No se pudieron cargar las herramientas'), type: 'error' });
+    }).finally(() => {
+      if (!cancelled && version === toolsVersionRef.current) setToolsBusy(false);
+    });
+    return () => { cancelled = true; };
+  }, [sessionId, addToast]);
+
+  useEffect(() => {
     sessionIdRef.current = sessionId;
     if (sessionId) localStorage.setItem(SESSION_KEY, sessionId);
     setMessages([]);
+    setArtifacts([]);
+    setQuestions([]);
     setPending([]);
     if (sessionId) void loadMessages(sessionId, false);
     else setRunning(false);
@@ -270,13 +289,33 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
     : '';
   const toolGroups = useMemo(
     () => ({
-      direct: tools.filter((t) => !t.gated).map((t) => t.name),
+      direct: tools.filter((t) => !t.gated && t.kind !== 'mcp').map((t) => t.name),
       gated: tools.filter((t) => t.gated && t.kind !== 'mcp').map((t) => t.name),
       mcp: tools.filter((t) => t.kind === 'mcp').map((t) => t.name),
     }),
     [tools],
   );
-  const toolCount = toolGroups.direct.length + toolGroups.gated.length + toolGroups.mcp.length;
+  const enabledNames = new Set(tools.filter((tool) => tool.enabled !== false).map((tool) => tool.name));
+  const toolCount = enabledNames.size;
+  const saveTools = async (names: string[] | null) => {
+    if (!sessionId || toolsBusy) return;
+    const version = toolsVersionRef.current;
+    setToolsBusy(true);
+    try {
+      const res = await agentApi.agentToolsSet(sessionId, names);
+      if (version === toolsVersionRef.current) setTools(res.tools);
+    } catch (err) {
+      if (version === toolsVersionRef.current) addToast({ message: errorMessage(err, 'No se pudo guardar la selección de herramientas'), type: 'error' });
+    } finally {
+      if (version === toolsVersionRef.current) setToolsBusy(false);
+    }
+  };
+  const toggleTool = (name: string, enabled: boolean) => {
+    const names = new Set(enabledNames);
+    if (enabled) names.add(name);
+    else names.delete(name);
+    void saveTools([...names]);
+  };
   const visibleSessions = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return sessions;
@@ -428,7 +467,7 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
 
   return (
     <div className="flex h-full min-h-0 gap-2.5 bg-[var(--bg-base)] p-2.5">
-      <aside className="flex h-full w-[252px] shrink-0 flex-col rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2">
+      <aside className="hidden h-full w-[252px] shrink-0 flex-col rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2 md:flex">
         <div className="flex shrink-0 items-center gap-1.5 px-0.5 pt-0.5">
           <Button
             variant="primary"
@@ -499,6 +538,14 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+        <nav aria-label="Conversaciones" className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] p-3 md:hidden">
+          <ThemedSelect value={sessionId} onChange={setSessionId} placeholder="Elegir conversación"
+            options={sessions.map((item) => ({ value: item.id, label: item.title || 'Conversación' }))}
+            aria-label="Conversación activa" className="min-w-0 flex-1" />
+          <Button size="sm" variant="secondary" aria-label="Crear conversación" onClick={() => void newSession()}><Plus size={14} /></Button>
+          {sessionId && <Button size="sm" variant="secondary" aria-label="Borrar conversación activa" onClick={() => void removeSession(sessionId)}><X size={14} /></Button>}
+          {onConfigureProvider && <Button size="sm" variant="secondary" aria-label="Configurar proveedor" onClick={onConfigureProvider}><Settings2 size={14} /></Button>}
+        </nav>
         {session && (
           <header className="flex shrink-0 items-center gap-2 px-3 pt-3">
             <div className="flex h-[31px] min-w-0 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] pl-1 pr-3">
@@ -603,7 +650,10 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
           {pending.map((a) => (
             <ApprovalCard key={a.id} approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
           ))}
-          {running && <ThinkingRow elapsedSeconds={elapsed} />}
+          {artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} sessionId={sessionId}
+            onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />)}
+          {questions.map((question) => <QuestionCard key={question.id} question={question} onAnswered={() => void loadMessages(sessionId, false)} />)}
+          {running && !questions.length && !pending.length && <ThinkingRow elapsedSeconds={elapsed} />}
         </div>
 
         <div className="shrink-0 p-3">
@@ -774,17 +824,20 @@ export default function AgentView({ onConfigureProvider }: { active?: boolean; o
             Herramientas del agente
           </p>
           <div className="custom-scrollbar min-h-0 space-y-2 overflow-y-auto">
-            <ToolGroup label="Lectura directa" names={toolGroups.direct} />
-            <ToolGroup label="Con aprobación" names={toolGroups.gated} />
-            <ToolGroup label="MCP" names={toolGroups.mcp} />
-            {toolCount === 0 && (
+            <ToolGroup label="Lectura directa" names={toolGroups.direct} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} />
+            <ToolGroup label="Con aprobación" names={toolGroups.gated} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} />
+            <ToolGroup label="MCP" names={toolGroups.mcp} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} />
+            {tools.length === 0 && (
               <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-                Las herramientas disponibles aparecen al cargar la vista.
+                {toolsBusy ? 'Cargando herramientas…' : 'No hay herramientas disponibles.'}
               </p>
             )}
           </div>
+          <Button variant="ghost" size="sm" disabled={!sessionId || toolsBusy} onClick={() => void saveTools(null)}>
+            Restablecer herramientas
+          </Button>
           <p className="shrink-0 text-[10px] leading-relaxed text-[var(--text-muted)]">
-            Las acciones que modifican datos se pausan hasta que las apruebes.
+            {sessionId ? 'La selección se guarda para esta conversación. Las acciones que modifican datos requieren tu aprobación.' : 'Selecciona una conversación para configurar sus herramientas.'}
           </p>
         </div>,
         document.body,

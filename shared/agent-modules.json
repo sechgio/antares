@@ -22,13 +22,15 @@
       "label": "Generar Padrones",
       "aliases": ["padron", "padrón", "padrones"],
       "handlers": [],
-      "unavailable": "El PDF de Padrones se genera solo en su pantalla; el agente aún no tiene un adaptador para él."
+      "methods": ["padron_describe", "padron_export_pdf"],
+      "native": true
     },
     "volantes": {
       "label": "Generar Volantes",
       "aliases": ["volantes", "volante"],
       "handlers": ["spreadsheet"],
-      "unavailable": "El PDF de Volantes se genera solo en su pantalla; el agente puede leer hojas de cálculo pero aún no generar el documento."
+      "methods": ["volantes_describe", "volantes_export_pdf"],
+      "native": true
     },
     "reportesCampo": {
       "label": "Reportes de Campo",
@@ -88,13 +90,14 @@
     "printing": {
       "label": "Impresión",
       "aliases": ["imprimir", "impresora", "impresion", "impresión"],
-      "handlers": ["printing"]
+      "handlers": ["printing"],
+      "methods": ["artifact_print"]
     },
     "documents": {
       "label": "Documentos",
       "aliases": ["documentos", "documento"],
       "handlers": [],
-      "methods": ["templates_catalog", "template_describe", "document_prepare", "document_generate", "file_read", "artifacts_list"]
+      "methods": ["templates_catalog", "template_describe", "document_prepare", "document_generate", "file_read", "artifacts_list", "ask_user"]
     },
     "drafts": {
       "label": "Borradores",
@@ -117,7 +120,7 @@
       "label": "Espacios",
       "aliases": ["espacios", "espacio"],
       "handlers": [],
-      "unavailable": "Espacios depende de la sesión cloud del usuario; el agente aún no tiene un adaptador para sus datos."
+      "native": true
     },
     "app": {
       "label": "Antares",

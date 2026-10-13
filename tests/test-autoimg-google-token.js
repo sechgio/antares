@@ -93,7 +93,7 @@ async function main() {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ access_token: 'fresh-token', expires_in: 3600 }),
+        json: async () => ({ access_token: 'fresh-token', expires_in: 3600, scope: 'verified-sheets-scope' }),
       };
     };
 
@@ -106,6 +106,7 @@ async function main() {
     assert(refreshCalls === 1, 'refresh concurrente se deduplica en una sola llamada');
     assert(tokens.every((value) => value?.access_token === 'fresh-token'), 'todos reciben el token nuevo');
     assert(savedScopes.length === 1 && savedScopes[0].userKey === 'user-key', 'refresh guarda en el scope capturado');
+    assert(tokens.every((value) => value?.scope === 'verified-sheets-scope'), 'refresh conserva los scopes devueltos por Google');
 
     currentTokens = { access_token: 'expired-a', refresh_token: 'refresh-a', expiry_date: 0 };
     savedScopes.length = 0;

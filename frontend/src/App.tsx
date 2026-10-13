@@ -7,11 +7,12 @@ import { useKeyboardShortcut } from './hooks/useKeyboardShortcut';
 import ToastContainer from './components/ui/Toast';
 import Dialog from './components/ui/Dialog';
 import ErrorBoundary from './components/ui/ErrorBoundary';
-import { DEFAULT_TAB, FULL_BLEED_TABS, type TabId, type ConfigSectionId } from './navigation';
+import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, type TabId, type ConfigSectionId } from './navigation';
 import type { ConnectionsSection } from './components/connections';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthSkeleton';
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
+import { agentApi } from './api/agentApi';
 import { api, onNotify } from './api';
 import { acknowledgeCanvasFlush, hasCanvasFlushOwner } from './utils/ackCanvasFlush';
 import { reportFrontendError } from './utils/observability';
@@ -176,6 +177,13 @@ function AppContent() {
     setConnectionsSection('providers');
     setActiveTab('connections');
   }, []);
+  const openAgentModule = useCallback((module: string, id?: string) => {
+    const tab = module === 'conversion' ? 'convert' : module;
+    if (!TAB_DEFINITIONS.some((item) => item.id === tab)) return;
+    if (id) sessionStorage.setItem(`agent:open:${tab}`, id);
+    handleTabChange(tab as TabId);
+    window.dispatchEvent(new CustomEvent('agent:open-module', { detail: { module: tab, id } }));
+  }, [handleTabChange]);
 
   useEffect(() => {
     if (!canvasMounted || activeTab === 'canvas') return;
@@ -189,7 +197,20 @@ function AppContent() {
     // quedaba sin ack y detenía el quit 310 s. Si Canvas ya es dueño del flush,
     // App se abstiene: el proceso principal acepta el primer ack, y el de App
     // llegaría antes de que Canvas termine de guardar.
-    return onNotify(async (method) => {
+    return onNotify(async (method, params) => {
+      if (method === 'agent.renderer-tool' && params && typeof params === 'object') {
+        const request = params as Record<string, unknown>;
+        if (typeof request.id !== 'string' || typeof request.method !== 'string') return;
+        try {
+          const { executeRendererTool } = await import('./components/agent/rendererTools');
+          const result = await executeRendererTool(request.method, (request.params || {}) as Record<string, unknown>);
+          await agentApi.agentRendererResult(request.id, result);
+        } catch (err) {
+          await agentApi.agentRendererResult(request.id, undefined, errorMessage(err, 'No se pudo ejecutar la función'),
+            err instanceof Error && err.name === 'AgentEffectUncertainError').catch(() => {});
+        }
+        return;
+      }
       if (method !== 'app.flush-canvas-before-quit') return;
       if (hasCanvasFlushOwner()) return;
       try {
@@ -323,7 +344,7 @@ function AppContent() {
                       {activeTab === 'connections' ? (
                         <ConnectionsHub initialSection={connectionsSection ?? undefined} />
                       ) : activeTab === 'agent' ? (
-                        <AgentView onConfigureProvider={openProvidersSection} />
+                        <AgentView onConfigureProvider={openProvidersSection} onOpenModule={openAgentModule} />
                       ) : (
                         <ActiveView />
                       )}

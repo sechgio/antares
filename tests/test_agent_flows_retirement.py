@@ -86,3 +86,87 @@ def test_missing_flows_folder_completes_without_effects(tmp_path):
                                            lambda name: pytest.fail("sin tareas"), lambda: False)
     assert result["status"] == "completed"
     assert result["deleted"] == [] and result["pending"] == [] and result["tasks"] == []
+
+
+def test_manifest_failure_preserves_the_source_state(profile, monkeypatch):
+    root, flows_dir, _, edited, untracked, _ = profile
+    marker = root / "marker.json"
+    write = flows_retirement.atomic_write_json
+    monkeypatch.setattr(flows_retirement, "atomic_write_json", lambda *args: (_ for _ in ()).throw(OSError("Sin espacio")))
+    with pytest.raises(OSError, match="Sin espacio"):
+        flows_retirement.retire_flows(flows_dir, marker, lambda name: None, lambda: False)
+    assert flows_dir.exists()
+    monkeypatch.setattr(flows_retirement, "atomic_write_json", write)
+    result = flows_retirement.retire_flows(flows_dir, marker, lambda name: None, lambda: False)
+    assert result["runs"] == 1
+    assert {p["path"] for p in result["pending"]} == {str(edited), str(untracked)}
+
+
+def test_crash_after_state_deletion_recovers_the_saved_manifest(profile, monkeypatch):
+    root, flows_dir, proven, edited, untracked, _ = profile
+    marker = root / "marker.json"
+    write = flows_retirement.atomic_write_json
+
+    def fail_completion(path, value):
+        if value["status"] == "completed":
+            raise OSError("fallo del marcador final")
+        write(path, value)
+
+    monkeypatch.setattr(flows_retirement, "atomic_write_json", fail_completion)
+    with pytest.raises(OSError, match="marcador final"):
+        flows_retirement.retire_flows(flows_dir, marker, lambda name: None, lambda: False)
+    assert not flows_dir.exists()
+    monkeypatch.setattr(flows_retirement, "atomic_write_json", write)
+    result = flows_retirement.retire_flows(flows_dir, marker, lambda name: pytest.fail("no repetir tareas"), lambda: False)
+    assert result["runs"] == 1 and result["deleted"] == [str(proven)]
+    assert {p["path"] for p in result["pending"]} == {str(edited), str(untracked)}
+    assert result["status"] == "completed"
+
+
+def test_failed_os_task_keeps_state_and_is_retried(profile):
+    root, flows_dir, proven, *_ = profile
+    marker = root / "marker.json"
+
+    def fail_task(name):
+        raise OSError("acceso denegado")
+
+    result = flows_retirement.retire_flows(flows_dir, marker, fail_task, lambda: False)
+    assert result["status"] == "deferred"
+    assert flows_dir.exists() and proven.exists()
+    assert result["pending_tasks"] == ["AntaresFlow-f1"]
+    result = flows_retirement.retire_flows(flows_dir, marker, lambda name: None, lambda: False)
+    assert result["status"] == "completed" and not flows_dir.exists()
+
+
+def test_crash_after_an_output_delete_keeps_its_identity_in_the_journal(profile, monkeypatch):
+    root, flows_dir, proven, edited, untracked, _ = profile
+    marker = root / "marker.json"
+    write = flows_retirement.atomic_write_json
+
+    def fail_output_checkpoint(path, value):
+        if value["deleted"]:
+            raise OSError("fallo después del primer PDF")
+        write(path, value)
+
+    monkeypatch.setattr(flows_retirement, "atomic_write_json", fail_output_checkpoint)
+    with pytest.raises(OSError, match="primer PDF"):
+        flows_retirement.retire_flows(flows_dir, marker, lambda name: None, lambda: False)
+    assert flows_dir.exists() and not proven.exists()
+    monkeypatch.setattr(flows_retirement, "atomic_write_json", write)
+    result = flows_retirement.retire_flows(flows_dir, marker, lambda name: None, lambda: False)
+    assert result["deleted"] == [str(proven)]
+    assert {p["path"] for p in result["pending"]} == {str(edited), str(untracked)}
+
+
+def test_retirement_preserves_other_stores_and_documents(profile):
+    root, flows_dir, *_ = profile
+    siblings = {"ai-providers.json": b'{"provider":"configured"}',
+                "mcp/servers.json": b'{"server":"kept"}', "connections/vault.bin": b"sealed-synthetic",
+                "canvas/document.json": b'{"name":"kept"}'}
+    for relative, content in siblings.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    result = flows_retirement.retire_flows(flows_dir, root / "marker.json", lambda name: None, lambda: False)
+    assert result["status"] == "completed"
+    assert all((root / relative).read_bytes() == content for relative, content in siblings.items())

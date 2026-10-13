@@ -64,7 +64,8 @@ function Row({
       ) : (
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors duration-150 group-hover:border-[var(--accent-primary)] group-hover:text-[var(--text-primary)]">
           <Plug size={11} />
-          Conectar
+          {p.state === 'missing_scopes' ? 'Faltan permisos' : p.state === 'reauth_required' ? 'Volver a conectar'
+            : p.state === 'unavailable' ? 'Sin verificar' : p.state === 'connecting' ? 'Conectando…' : 'Conectar'}
         </span>
       )}
     </button>

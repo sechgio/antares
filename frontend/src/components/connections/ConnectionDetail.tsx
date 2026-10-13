@@ -30,7 +30,8 @@ function StatusPill({ p }: { p: ConnectionProviderSpec }) {
   if (p.configured) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-yellow)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--accent-yellow)]">
-        Lista para conectar
+        {p.state === 'missing_scopes' ? 'Faltan permisos' : p.state === 'reauth_required' ? 'Autorización vencida'
+          : p.state === 'unavailable' ? 'Sin verificar' : p.state === 'connecting' ? 'Conectando…' : 'Lista para conectar'}
       </span>
     );
   }
@@ -118,6 +119,11 @@ export default function ConnectionDetail({
       </header>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
+        {p.status_message && <p role="status" className="text-xs text-[var(--text-secondary)]">{p.status_message}</p>}
+        {!!p.missing_scopes?.length && <p className="break-words text-xs text-[var(--text-secondary)]">Permisos pendientes: {p.missing_scopes.join(', ')}</p>}
+        {!p.configured && ['google', 'microsoft'].includes(p.id) && <p className="text-xs text-[var(--text-secondary)]">
+          La aplicación pública de Antares para este proveedor aún no está registrada. Esta conexión queda pendiente de ese registro.
+        </p>}
         {!p.connected && (
           <div className="space-y-2 text-xs leading-relaxed text-[var(--text-secondary)]">
             <p className="font-medium text-[var(--text-primary)]">1. Prepara la conexión</p>

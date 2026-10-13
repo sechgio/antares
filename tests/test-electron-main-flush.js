@@ -27,6 +27,7 @@ async function run() {
   let killedPython = 0;
   const app = new EventEmitter();
   app.isPackaged = false;
+  app.requestSingleInstanceLock = () => true;
   app.getVersion = () => '0.0.0-test';
   app.whenReady = () => new Promise(() => {});
   app.quit = () => { quitCalls += 1; };

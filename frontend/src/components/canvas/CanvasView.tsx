@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api';
+import { registerAgentCanvasEditor } from '../agent/canvasEditor';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import './canvas.css';
 import { createLayer } from './constants';
@@ -1121,6 +1122,34 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const onOpenDocRef = useRef(onOpenDoc);
   onOpenDocRef.current = onOpenDoc;
+  useEffect(() => {
+    const openRequested = () => {
+      const id = sessionStorage.getItem('agent:open:canvas');
+      if (!id) return;
+      sessionStorage.removeItem('agent:open:canvas');
+      void onOpenDocRef.current(id);
+    };
+    openRequested();
+    window.addEventListener('agent:open-module', openRequested);
+    return () => window.removeEventListener('agent:open-module', openRequested);
+  }, []);
+  useEffect(() => registerAgentCanvasEditor({
+    get: () => history.documentRef.current,
+    dirty: isOpenDirty,
+    open: (id) => { void onOpenDocRef.current(id); },
+    apply: async (values, expected) => {
+      const current = history.documentRef.current;
+      if (isOpenDirty()) throw new Error('Canvas tiene cambios sin guardar');
+      if (current.updatedAt !== expected) throw new Error('El documento cambió; vuelve a consultar su revisión');
+      const keys = new Set(current.layers.filter((layer) => layer.type === 'field').map((layer) => layer.meta?.key));
+      if (Object.keys(values).some((key) => !keys.has(key))) throw new Error('El documento no contiene todos los campos solicitados');
+      const next = { ...current, layers: current.layers.map((layer) => layer.type === 'field' && layer.meta?.key && Object.prototype.hasOwnProperty.call(values, layer.meta.key)
+        ? { ...layer, value: values[layer.meta.key] == null ? '' : String(values[layer.meta.key]) } : layer) };
+      history.setDocument(next);
+      if (!await onSave({ silent: true })) throw new Error('No se pudo guardar Canvas; la edición se conserva para revisarla');
+      return { id: current.id, updatedAt: history.documentRef.current.updatedAt, fields_changed: Object.keys(values).length };
+    },
+  }), [history, isOpenDirty, onSave]);
   const onNewRef = useRef(onNew);
   onNewRef.current = onNew;
   onDeleteDocRef.current = onDeleteDoc;

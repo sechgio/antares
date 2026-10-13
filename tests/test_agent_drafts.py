@@ -6,9 +6,11 @@ import json
 import time
 from pathlib import Path
 
+import pymupdf
 import pytest
 
 from backend.core.agent import agent
+from backend.core.exceptions import ValidationError
 from backend.handlers import agent_internal
 
 
@@ -28,7 +30,9 @@ def calls(store, monkeypatch):
             seen.append((name, params))
             output = params.get("output_path")
             if output:
-                Path(output).write_bytes(b"%PDF sellado")
+                with pymupdf.open() as document:
+                    document.new_page().insert_text((40, 40), "PDF sellado")
+                    document.save(output)
                 return {"saved_path": output}
             return {"ok": True}
         return handler
@@ -77,11 +81,13 @@ def pdf(tmp_path, store):
 def test_output_name_is_written_in_the_conversation_drafts(store, calls, pdf):
     result = _approved_run("c1", "sellador_apply", {"pdf_path": str(pdf), "output_path": "informe-sellado.pdf"})
     draft = store.drafts_dir("s1") / "informe-sellado.pdf"
-    assert result == {"saved_path": str(draft)}
-    assert draft.read_bytes() == b"%PDF sellado"
+    assert result["saved_path"] == str(draft)
+    file = result["artifact"]["files"][0]
+    assert file["pages"] == 1 and Path(file["path"]).read_bytes() == draft.read_bytes()
+    assert file["path"] != str(draft)
     assert pdf.read_bytes() == b"%PDF original"
     listed = _read("c2", "drafts_list", {})
-    assert [d["name"] for d in listed["drafts"]] == ["informe-sellado.pdf"]
+    assert {d["name"] for d in listed["drafts"]} == {"informe-sellado.pdf", file["name"]}
 
 
 @pytest.mark.parametrize("output", ["C:/Users/Public/fuera.pdf", "..\\fuera.pdf", "sub/fuera.pdf", "CON.pdf"])
@@ -94,11 +100,12 @@ def test_outputs_outside_the_drafts_are_rejected(store, calls, pdf, output):
 def test_a_draft_can_feed_another_tool(store, calls, pdf):
     _approved_run("c1", "sellador_apply", {"pdf_path": str(pdf), "output_path": "sellado.pdf"})
     draft = store.drafts_dir("s1") / "sellado.pdf"
-    result = _approved_run("c2", "print_pdf", {"pdf_path": str(draft), "printer_name": "Prueba"})
+    result = _read("c2", "sellador_inspect_pdf", {"pdf_path": str(draft)})
     assert result == {"ok": True}
-    assert calls[-1] == ("print_pdf", {"pdf_path": str(draft), "printer_name": "Prueba"})
-    with pytest.raises(Exception, match="no está autorizado"):
-        _approved_run("c3", "print_pdf", {"pdf_path": str(draft), "printer_name": "Prueba"}, session_id="s2")
+    assert calls[-1] == ("sellador_inspect_pdf", {"pdf_path": str(draft)})
+    result = _read("c3", "sellador_inspect_pdf", {"pdf_path": str(draft)}, session_id="s2")
+    assert "no está autorizado" in result["error"]
+    assert len(calls) == 2
 
 
 def test_save_draft_needs_approval_and_never_overwrites_implicitly(store, calls, pdf, tmp_path):
@@ -117,5 +124,5 @@ def test_save_draft_needs_approval_and_never_overwrites_implicitly(store, calls,
     assert replaced["replaced"] is True
     missing = _approved_run("c6", "drafts_save", {"name": "sellado.pdf", "destination_folder": str(tmp_path / "no")})
     assert "no existe" in missing["error"]
-    escape = _approved_run("c7", "drafts_save", {"name": "..\\..\\grants.json", "destination_folder": str(destination)})
-    assert escape.get("error")
+    with pytest.raises(ValidationError, match="no está autorizado"):
+        _approved_run("c7", "drafts_save", {"name": "..\\..\\grants.json", "destination_folder": str(destination)})

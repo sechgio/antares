@@ -28,6 +28,18 @@ def test_fills_existing_fields_against_the_read_revision(store):
     assert result["fields_changed"] == 1
     layers = {layer["id"]: layer for layer in instance.get(saved["id"])["layers"]}
     assert layers["nombre"]["value"] == "Ana" and layers["titulo"]["value"] == "Certificado"
+    history = instance.get_history(saved["id"])
+    assert history["past"][-1]["layers"][0]["value"] == ""
+    assert history["future"] == []
+
+
+def test_preserves_existing_undo_history_and_clears_redo(store):
+    instance, saved = store
+    instance.save_history(saved["id"], [saved], [saved])
+    canvas_edit.fill_fields({"id": saved["id"], "expected_updated_at": saved["updatedAt"], "values": {"NOMBRE": "Ana"}})
+    history = instance.get_history(saved["id"])
+    assert len(history["past"]) == 2 and history["past"][0] == saved
+    assert history["future"] == []
 
 
 def test_rejects_stale_revisions_and_unknown_fields(store):

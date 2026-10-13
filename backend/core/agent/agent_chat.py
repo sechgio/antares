@@ -37,7 +37,7 @@ _ERR_MSG_MAX_CHARS = 300
 _DENIED_PREFIXES = ("ai_provider_", "ai_providers_", "connections_token_", "agent_", "mcp_server")
 # canvas_save/canvas_save_history reciben un documento completo: el agente
 # edita Canvas solo con canvas_fill_fields, contra la revisión leída.
-_DENIED_METHODS = frozenset({"db_clear", "mcp_tool_call", "telemetry", "canvas_save", "canvas_save_history"})
+_DENIED_METHODS = frozenset({"db_clear", "mcp_tool_call", "telemetry", "canvas_save", "canvas_save_history", "print_pdf"})
 
 
 def _denied(method: str) -> bool:
@@ -122,6 +122,8 @@ def tool_specs() -> list[JsonObject]:
         except Exception:
             continue  # un servidor caído no bloquea el chat
         for tool in tools:
+            if not tool.get("enabled", True):
+                continue
             specs.append(
                 {
                     "name": mcp_servers.agent_tool_name(str(server["id"]), str(tool["name"])),

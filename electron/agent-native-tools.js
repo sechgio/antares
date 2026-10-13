@@ -105,6 +105,55 @@ const EXPORT_SCHEMA = {
   required: ['filename'],
 };
 
+const ID_SCHEMA = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
+const RENDERER_TOOLS = {
+  padron_describe: ['padron', 'Consultar campos y formatos de Padrones', OBJECT, false],
+  padron_export_pdf: ['padron', 'Generar un PDF de Padrones con sus posiciones y folios', {
+    type: 'object', properties: { filename: { type: 'string' }, header: { type: 'object' },
+      rows: { type: 'array', maxItems: 10000, items: { type: 'object' } },
+      format: { type: 'string', enum: ['service-interruption', 'volante-lurigancho', 'volanteo-lurigancho-v2', 'water-cut-notice'] },
+      orientation: { type: 'string', enum: ['landscape', 'portrait'] }, folio_start: { type: 'integer', minimum: 1 } },
+    required: ['filename', 'header', 'rows'],
+  }, false],
+  volantes_describe: ['volantes', 'Consultar campos y formatos de Volantes', OBJECT, false],
+  volantes_export_pdf: ['volantes', 'Generar un PDF de Volantes con su motor actual', {
+    type: 'object', properties: { filename: { type: 'string' }, rows: { type: 'array', maxItems: 200, items: { type: 'object' } },
+      layout: { type: 'string', enum: ['2-up', '3-up'] } }, required: ['filename', 'rows'],
+  }, false],
+  document_generate: ['documents', 'Generar un PDF con la plantilla y su motor RGB o CMYK', null, false],
+  canvas_fill_fields: ['canvas', 'Completar campos de Canvas comprobando el editor y la revisión', null, true],
+  espacios_list: ['espacios', 'Listar Espacios accesibles en la sesión actual', OBJECT, false],
+  espacios_projects: ['espacios', 'Listar proyectos de un Espacio', ID_SCHEMA, false],
+  espacios_tasks: ['espacios', 'Listar tareas de un proyecto', ID_SCHEMA, false],
+  espacios_task_get: ['espacios', 'Consultar una tarea', ID_SCHEMA, false],
+  espacios_task_comments: ['espacios', 'Consultar comentarios de una tarea', ID_SCHEMA, false],
+  espacios_task_activity: ['espacios', 'Consultar actividad de una tarea', ID_SCHEMA, false],
+  espacios_members: ['espacios', 'Consultar miembros del equipo', OBJECT, false],
+  espacios_columns: ['espacios', 'Consultar columnas de un proyecto e inicializarlas si faltan', ID_SCHEMA, true],
+  espacios_my_tasks: ['espacios', 'Consultar mis tareas', OBJECT, false],
+  espacios_my_task_origins: ['espacios', 'Consultar los proyectos de mis tareas', OBJECT, false],
+};
+const SPACE_INPUTS = {
+  espacio: { name: { type: 'string' }, color: { type: ['string', 'null'] } },
+  proyecto: { name: { type: 'string' }, color: { type: ['string', 'null'] }, is_favorite: { type: 'boolean' } },
+  column: { name: { type: 'string' }, color: { type: 'string' }, sort_order: { type: 'number' }, is_done: { type: 'boolean' } },
+  tarea: { title: { type: 'string' }, description: { type: ['string', 'null'] }, status: { type: 'string' },
+    priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, assignee_id: { type: ['string', 'null'] },
+    start_date: { type: ['string', 'null'] }, due_date: { type: ['string', 'null'] }, sort_order: { type: 'number' } },
+};
+for (const [kind, properties] of Object.entries(SPACE_INPUTS)) {
+  for (const action of ['create', 'update', 'delete']) {
+    RENDERER_TOOLS[`espacios_${kind}_${action}`] = ['espacios', `${action === 'create' ? 'Crear' : action === 'update' ? 'Actualizar' : 'Eliminar'} ${kind}`, {
+      type: 'object', properties: { id: { type: 'string' }, expected_updated_at: { type: 'string' },
+        input: { type: 'object', properties, additionalProperties: false, required: action === 'create' ? [kind === 'tarea' ? 'title' : 'name'] : [] } },
+      required: action === 'delete' ? ['id'] : action === 'create' && kind === 'espacio' ? ['input'] : ['id', 'input'],
+    }, true];
+  }
+}
+RENDERER_TOOLS.espacios_comment_create = ['espacios', 'Añadir un comentario a una tarea', {
+  type: 'object', properties: { id: { type: 'string' }, body: { type: 'string' } }, required: ['id', 'body'],
+}, true];
+
 function spec(name, [label, schema], gated) {
   return {
     name,
@@ -129,10 +178,51 @@ const SPECS = [
     label: `Generar el PDF de ${def.label}`,
     inputSchema: EXPORT_SCHEMA,
   })),
+  ...Object.entries(RENDERER_TOOLS).map(([name, [module, label, schema, gated]]) => ({
+    name, module, label, gated, kind: 'native', description: `${label} (${gated ? 'requiere aprobación' : 'lectura o borrador interno'})`,
+    inputSchema: schema || OBJECT, inheritSchema: !schema,
+  })),
 ];
 
 function nativeToolSpecs() {
   return SPECS.map((s) => ({ ...s }));
+}
+
+async function nativeToolContext(name) {
+  const selected = SPECS.find((item) => item.name === name);
+  if (!selected) throw new Error(`Herramienta nativa no disponible: ${name}`);
+  const { createHash } = require('node:crypto');
+  const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const context = { tool_version: hash({ policy: 1, spec: selected }) };
+  if (selected.module === 'espacios') {
+    Object.assign(context, await require('./agent-renderer-tools').runRendererTool('espacios_context'));
+    return context;
+  }
+  if (selected.module !== 'autoimg' || !selected.gated) return context;
+  const auth = require('./google-session');
+  const scope = require('./autoimg-user-scope');
+  const store = require('./autoimg-user-store');
+  const session = auth.captureAuthSession();
+  context.account = scope.getActiveEmail() || 'Sin cuenta conectada';
+  context.account_id = session.userKey;
+  if (name === 'autoimg_cancel_operation') return context;
+  const tokens = await auth.getValidTokens(session);
+  auth.assertAuthSessionCurrent(session);
+  if (!tokens || !session.userKey) throw new Error('Conecta tu cuenta de Google antes de pedir esta acción');
+  const scopes = [...new Set(String(tokens.scope || '').split(/\s+/).filter(Boolean))].sort();
+  const prefix = 'https://www.googleapis.com/auth/';
+  if (!scopes.includes(`${prefix}spreadsheets`)) {
+    throw new Error('No hay permiso verificado para modificar la hoja; vuelve a conectar Google en AutoIMG');
+  }
+  if (['autoimg_scan_all', 'autoimg_scan_and_sync', 'autoimg_rename_export'].includes(name)
+    && !scopes.includes(`${prefix}drive`)) {
+    throw new Error('No hay permiso verificado para esta operación de Drive; vuelve a conectar Google en AutoIMG');
+  }
+  const sheets = require('./google-sheets-service');
+  context.sheet_id = sheets.getSheetId() || store.loadSheetConfig().sheet_id;
+  context.scopes = scopes;
+  context.auth_identity = hash({ refresh: tokens.refresh_token, client: auth.getOAuthConfig().clientId });
+  return context;
 }
 
 function draftsDir(sessionId) {
@@ -162,19 +252,67 @@ async function exportReportPdf(def, params, sessionId) {
   const out = await renderHtmlToPdf({ html: rendered.html, filename }, { BrowserWindow, session }, null);
   const dir = draftsDir(sessionId);
   await fs.promises.mkdir(dir, { recursive: true });
-  const target = path.join(dir, filename);
-  await fs.promises.copyFile(out.saved_path, target);
+  const target = path.join(dir, `${require('node:crypto').randomUUID().slice(0, 8)}-${filename}`);
+  await fs.promises.copyFile(out.saved_path, target, fs.constants.COPYFILE_EXCL);
   await fs.promises.rm(out.saved_path, { force: true });
-  return { saved_path: target, filename, ...(rendered.count !== undefined ? { count: rendered.count } : {}) };
+  return { saved_path: target, filename, artifact_metadata: { family: 'html', template_id: def.single,
+    template_revision: require('node:crypto').createHash('sha256').update(rendered.html).digest('hex'),
+    module: def.module, sources: [{ kind: 'records', ids: params.id ? [String(params.id)] : ids }],
+  }, ...(rendered.count !== undefined ? { count: rendered.count } : {}) };
 }
 
-async function runNativeTool(name, params, { sessionId } = {}) {
+async function saveNativePdf(params, sessionId, data) {
+  const filename = draftName(params.filename);
+  const dir = draftsDir(sessionId);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const target = path.join(dir, `${require('node:crypto').randomUUID().slice(0, 8)}-${filename}`);
+  await fs.promises.writeFile(target, Buffer.from(data.pdf_base64, 'base64'), { flag: 'wx' });
+  return { saved_path: target, filename, count: data.count, artifact_metadata: { family: 'html',
+    template_id: params.format || params.layout || 'default', module: data.module,
+    sources: [{ kind: 'rows', count: params.rows.length }], template_revision: data.template_revision } };
+}
+
+async function generateDocument(params, sessionId) {
+  const { _callBackend } = require('./ipc-router');
+  const plan = await _callBackend('agent_internal_document_plan', { session_id: sessionId, params });
+  if (plan.complete) return plan.result;
+  const { runRendererTool } = require('./agent-renderer-tools');
+  const { BrowserWindow, session } = require('electron');
+  const saved = [];
+  for (const item of plan.items) {
+    const { html } = await runRendererTool('document_render', item);
+    const out = await require('./pdf-render').renderHtmlToPdf({ html, filename: item.filename }, { BrowserWindow, session }, null);
+    const dir = draftsDir(sessionId);
+    await fs.promises.mkdir(dir, { recursive: true });
+    const target = path.join(dir, `${require('node:crypto').randomUUID().slice(0, 8)}-${draftName(item.filename)}`);
+    await fs.promises.copyFile(out.saved_path, target, fs.constants.COPYFILE_EXCL);
+    await fs.promises.rm(out.saved_path, { force: true });
+    saved.push(target);
+  }
+  return { generated: true, saved_paths: saved, artifact_metadata: plan.metadata };
+}
+
+async function runNativeTool(name, params, { sessionId, approvedContext } = {}) {
   if (!SPECS.some((s) => s.name === name)) throw new Error(`Herramienta nativa no disponible: ${name}`);
   if (REPORT_EXPORTS[name]) return exportReportPdf(REPORT_EXPORTS[name], params || {}, sessionId);
+  if (SPECS.find((s) => s.name === name).gated) {
+    const current = await nativeToolContext(name);
+    if (!approvedContext || JSON.stringify(current) !== JSON.stringify(approvedContext)) {
+      throw new Error('La cuenta, los permisos o la hoja cambiaron después de aprobar; solicita una nueva aprobación');
+    }
+  }
+  if (name === 'document_generate') return generateDocument(params, sessionId);
+  if (RENDERER_TOOLS[name]) {
+    const result = await require('./agent-renderer-tools').runRendererTool(name,
+      { ...params, ...(approvedContext?.account_id ? { _expected_account_id: approvedContext.account_id } : {}) },
+      { gated: !!RENDERER_TOOLS[name][3] });
+    return name === 'padron_export_pdf' || name === 'volantes_export_pdf' ? saveNativePdf(params, sessionId, result) : result;
+  }
   const { handleAutoimgCall } = require('./autoimg-handlers');
   const out = await handleAutoimgCall(name, params || {});
   if (!out || !out.handled) throw new Error(`Herramienta nativa no disponible: ${name}`);
+  require('./autoimg-security').assertNoSecretInObject(out.result);
   return out.result;
 }
 
-module.exports = { nativeToolSpecs, runNativeTool, draftName, AUTOIMG_READS, AUTOIMG_EFFECTS, REPORT_EXPORTS };
+module.exports = { nativeToolSpecs, nativeToolContext, runNativeTool, draftName, AUTOIMG_READS, AUTOIMG_EFFECTS, REPORT_EXPORTS };

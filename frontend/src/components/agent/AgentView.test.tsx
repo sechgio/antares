@@ -20,6 +20,10 @@ const session: AgentSession = {
   created_at: 1, updated_at: 1, last_error: null,
 };
 const empty: Snapshot = { messages: [], running: false, pending_approvals: [] };
+const availableTools = [
+  { name: 'flows_list', kind: 'backend' as const, gated: false, enabled: true },
+  { name: 'db_clear', kind: 'backend' as const, gated: true, enabled: true },
+];
 const scrollToDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
 
 beforeEach(() => {
@@ -37,6 +41,65 @@ afterEach(() => {
   vi.useRealTimers();
   if (scrollToDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollTo', scrollToDescriptor);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
+});
+
+it('guarda las herramientas de la conversación y conserva la selección si falla', async () => {
+  vi.mocked(agentApi.agentToolsList).mockResolvedValue({ tools: availableTools });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const set = vi.spyOn(agentApi, 'agentToolsSet')
+    .mockResolvedValueOnce({ tools: availableTools.map((tool) => ({ ...tool, enabled: tool.name !== 'db_clear' })) })
+    .mockRejectedValueOnce(new Error('No se pudo guardar'))
+    .mockResolvedValueOnce({ tools: availableTools });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  expect(agentApi.agentToolsList).toHaveBeenLastCalledWith('s1');
+  fireEvent.click(screen.getByLabelText('Herramientas del agente'));
+  fireEvent.click(screen.getByText('Con aprobación', { selector: 'summary' }));
+  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' })); });
+  expect(set).toHaveBeenLastCalledWith('s1', ['flows_list']);
+  expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'false');
+  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' })); });
+  expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: 'No se pudo guardar' }));
+  expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'false');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Restablecer herramientas' })); });
+  expect(set).toHaveBeenLastCalledWith('s1', null);
+  expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'true');
+});
+
+it('descarta una selección guardada tarde al cambiar de conversación', async () => {
+  const second = { ...session, id: 's2', title: 'Segunda' };
+  const save = deferred<{ tools: typeof availableTools }>();
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, second] });
+  vi.mocked(agentApi.agentToolsList).mockResolvedValue({ tools: availableTools });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentToolsSet').mockReturnValue(save.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  fireEvent.click(screen.getByLabelText('Herramientas del agente'));
+  fireEvent.click(screen.getByText('Con aprobación', { selector: 'summary' }));
+  fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' }));
+  expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  await act(async () => { save.resolve({ tools: availableTools.map((tool) => ({ ...tool, enabled: false })) }); });
+  expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).not.toBeDisabled();
+});
+
+it('descarta la carga de herramientas de una conversación anterior', async () => {
+  const first = deferred<{ tools: typeof availableTools }>();
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, { ...session, id: 's2', title: 'Segunda' }] });
+  vi.mocked(agentApi.agentToolsList).mockImplementation((id) => id === 's1' ? first.promise : Promise.resolve({ tools: availableTools }));
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByText('Primera'));
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  await act(async () => { first.resolve({ tools: availableTools.map((tool) => ({ ...tool, enabled: false })) }); });
+  fireEvent.click(screen.getByLabelText('Herramientas del agente'));
+  fireEvent.click(screen.getByText('Con aprobación', { selector: 'summary' }));
+  expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'true');
 });
 
 it('descarta la lectura previa al envío y drena la actualización pendiente de la misma sesión', async () => {

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from backend.core.agent import canvas_edit, documents, drafts
+from backend.core.agent import artifacts, canvas_edit, documents, drafts, questions
 from backend.core.integrations.types import JsonObject
 
 if TYPE_CHECKING:
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 SPECS: dict[str, JsonObject] = {
     spec["name"]: spec
     for spec in (*drafts.TOOL_SPECS, *({**s, "module": "documents"} for s in documents.TOOL_SPECS),
-                 *canvas_edit.TOOL_SPECS)
+                 *canvas_edit.TOOL_SPECS, *artifacts.TOOL_SPECS, *questions.TOOL_SPECS)
 }
 READ_TOOLS = frozenset(name for name, spec in SPECS.items() if not spec["gated"])
 EFFECT_TOOLS = frozenset(name for name, spec in SPECS.items() if spec["gated"])

@@ -12,6 +12,13 @@ def _catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
+def test_approval_context_is_declared_only_on_private_agent_calls():
+    methods = _catalog()["methods"]
+    for method in ("agent_internal_approval_ensure", "agent_internal_dispatch"):
+        assert methods[method]["internal"] is True
+        assert methods[method]["inputSchema"]["properties"]["context"] == {"type": "object"}
+
+
 def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_secrets(monkeypatch):
     from backend.core.agent import agent_chat
     from backend.core.integrations import connections
@@ -116,6 +123,20 @@ def test_catalog_timeout_tiers(method: str, expected_ms: int) -> None:
     entry = catalog["methods"][method]
     tier = entry.get("timeout", "normal")
     assert catalog["timeouts"][tier] == expected_ms
+
+
+def test_agent_conversation_tool_selection_contract() -> None:
+    methods = _catalog()["methods"]
+    entry = methods["agent_tools_set"]
+    assert entry["handler"] == "native:agent"
+    assert not entry.get("orchestratable")
+    assert entry["inputSchema"]["required"] == ["session_id", "names"]
+    assert entry["inputSchema"]["properties"]["names"] == {
+        "type": ["array", "null"], "items": {"type": "string"}
+    }
+    assert methods["agent_tools_list"]["inputSchema"]["properties"]["session_id"] == {
+        "type": "string"
+    }
 
 
 def test_catalog_full_projection_matches_json() -> None:

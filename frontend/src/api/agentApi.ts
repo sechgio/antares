@@ -15,7 +15,7 @@ export interface AgentToolCall {
   name: string;
   params: Record<string, unknown>;
   gated: boolean;
-  status: 'queued' | 'pending' | 'running' | 'done' | 'denied' | 'failed' | 'interrupted';
+  status: 'queued' | 'pending' | 'running' | 'done' | 'denied' | 'failed' | 'interrupted' | 'submitted';
   result?: string | null;
 }
 
@@ -50,6 +50,7 @@ export interface AgentMessageMentions {
 
 export interface AgentToolSpec {
   name: string;
+  enabled?: boolean;
   gated: boolean;
   kind: 'backend' | 'mcp' | 'native';
   module?: string | null;
@@ -64,6 +65,25 @@ export interface AgentApproval {
   status: 'pending' | 'approved' | 'denied' | 'expired';
   created_at: number;
   decided_at: number | null;
+  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string };
+  resources?: { path: string; sha256?: string }[];
+}
+
+export interface AgentArtifact {
+  id: string;
+  family: string;
+  template_id: string;
+  template_revision: string;
+  module?: string;
+  sources?: { ids?: string[]; kind: string }[];
+  reviewed?: Record<string, string>;
+  files: { name: string; sha256: string; pages: number; mime: string; size: number }[];
+}
+
+export interface AgentQuestion {
+  id: string;
+  session_id: string;
+  questions: { id: string; prompt: string; options?: string[] }[];
 }
 
 export const agentApi = {
@@ -80,6 +100,8 @@ export const agentApi = {
       messages: AgentMessage[];
       running: boolean;
       pending_approvals: AgentApproval[];
+      artifacts?: AgentArtifact[];
+      questions?: AgentQuestion[];
     }>('agent_messages_list', { session_id }),
 
   // request_id identifica el envío: un reintento con el mismo id no crea otro encargo.
@@ -92,7 +114,10 @@ export const agentApi = {
   agentAttach: (kind: 'files' | 'folder') =>
     _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind }),
 
-  agentToolsList: () => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list'),
+  agentToolsList: (session_id?: string) => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list', session_id ? { session_id } : {}),
+
+  agentToolsSet: (session_id: string, names: string[] | null) =>
+    _invoke<{ tools: AgentToolSpec[] }>('agent_tools_set', { session_id, names }),
 
   agentTurnStatus: (session_id: string) =>
     _invoke<{
@@ -109,4 +134,19 @@ export const agentApi = {
 
   agentDeny: (approval_id: string) =>
     _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id }),
+
+  agentRendererResult: (id: string, result?: unknown, error?: string, uncertain = false) =>
+    _invoke<{ accepted: boolean }>('agent_renderer_result', { id, result, error, ...(uncertain ? { uncertain: true } : {}) }),
+
+  agentCanvasFill: (params: Record<string, unknown>) =>
+    _invoke<Record<string, unknown>>('agent_canvas_fill', params),
+
+  agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'review' | 'open' | 'save' | 'print';
+    request_id?: string; sha256?: string; page?: number; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string }) =>
+    _invoke<{ png_base64?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean }>('agent_artifact_action', params),
+
+  agentPrintersList: () => _invoke<{ printers: { name: string; default: boolean }[] }>('printers_list'),
+
+  agentQuestionAnswer: (session_id: string, question_id: string, answers: Record<string, string>) =>
+    _invoke<{ question: AgentQuestion }>('agent_question_answer', { session_id, question_id, answers }),
 };

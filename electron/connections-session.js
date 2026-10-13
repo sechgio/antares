@@ -277,10 +277,10 @@ async function beginConnect(provider, onComplete, onError) {
     callbackPath: spec.auth.callback_path,
     onCode: async (code) => {
       try {
-        const tokens = await _exchangeCode(provider, code);
+        await _exchangeCode(provider, code);
         await probeAccount(provider);
         const status = await getStatus(provider);
-        onComplete({ ...status, connected: Boolean(tokens) });
+        onComplete(status);
       } catch (err) {
         onError(err);
       } finally {
@@ -376,14 +376,29 @@ async function probeAccount(provider) {
 async function getStatus(provider) {
   const spec = getProvider(provider);
   const cfg = oauthConfigStatus(provider);
-  const tokens = loadTokens(provider);
-  const connected = Boolean(tokens && tokens.access_token);
+  let tokens = loadTokens(provider);
+  const expired = !!tokens?.expiry_date && tokens.expiry_date <= Date.now();
+  if (expired && tokens.refresh_token) tokens = await getValidTokens(provider);
+  const granted = new Set(String(tokens?.scope || '').split(/[\s,]+/).filter(Boolean));
+  const missingScopes = (spec.auth.scopes || []).filter((scope) => !granted.has(scope));
+  const current = !!tokens?.access_token && (!tokens.expiry_date || tokens.expiry_date > Date.now());
+  const state = _pending.has(provider) ? 'connecting' : !cfg.configured ? 'unconfigured'
+    : expired && !tokens ? 'unavailable' : !tokens?.access_token ? 'disconnected'
+      : !current ? 'reauth_required' : missingScopes.length ? 'missing_scopes' : 'connected';
+  const connected = state === 'connected';
+  const messages = { connecting: 'Completa la autorización en el navegador', unconfigured: 'Falta registrar y configurar una aplicación OAuth',
+    unavailable: 'No se pudo renovar la autorización; comprueba la conexión y vuelve a conectar si continúa',
+    disconnected: 'Cuenta desconectada', reauth_required: 'La autorización venció; vuelve a conectar la cuenta',
+    missing_scopes: 'Faltan permisos; vuelve a autorizar la cuenta', connected: 'Autorización vigente' };
   return {
     provider,
     configured: cfg.configured,
     client_id_masked: cfg.client_id_masked,
     connected,
-    account: connected ? (tokens.account || null) : null,
+    state,
+    status_message: messages[state],
+    missing_scopes: missingScopes,
+    account: tokens?.account || null,
     expiry_date: tokens ? tokens.expiry_date || null : null,
     scope: tokens ? tokens.scope || null : null,
     auth_type: spec.auth.type,

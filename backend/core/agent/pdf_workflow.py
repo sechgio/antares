@@ -101,8 +101,6 @@ def _batch_template_profile(name: str) -> JsonObject:
 
 def _render_html_pdf(params: JsonObject) -> JsonObject:
     """Renderiza la plantilla HTML con los contextos del lote; devuelve el PDF en base64."""
-    from backend.utils.pdf_html import write_pdf_sanitized
-
     html = params.get("html")
     template_name = params.get("template_name")
     expected_pages = params.get("expected_pages")
@@ -240,6 +238,10 @@ def _render_html_pdf(params: JsonObject) -> JsonObject:
                 return {"ready": False, "reason": f"Faltan datos de la plantilla: {exc}"}
     if not isinstance(html, str) or not html.strip():
         return {"ready": False, "reason": "Esperando el contenido del documento"}
+    if params.get("_html_only"):
+        return {"html": html}
+    from backend.utils.pdf_html import write_pdf_sanitized
+
     return {"pdf_base64": base64.b64encode(write_pdf_sanitized(html)).decode("ascii")}
 
 
@@ -522,7 +524,7 @@ def _render(params: JsonObject) -> bytes:
     paths = {ref: path for ref, path in params["localImagePaths"].items() if ref in refs}
     if kind == "html":
         root_fields = template_profile("html", params["template_id"])["root_fields"]
-        if root_fields and len(contexts) > 1:
+        if root_fields and len(contexts) > 1 and not params.get("_html_only"):
             import pymupdf
 
             with pymupdf.open() as merged:
@@ -539,7 +541,12 @@ def _render(params: JsonObject) -> bytes:
         result = _render_html_pdf({"template_name": params["template_id"], "contexts": contexts,
                               "context": {"data": data, "row": data, **{field: data[field] for field in root_fields if field in data}},
                               "localImagePaths": paths, "photo_digests": params["photo_digests"], "_preview_pdf": True,
-                              "_guided_contexts": True, "expected_pages": len(contexts)})
+                              "_guided_contexts": True, "expected_pages": len(contexts),
+                              "_html_only": bool(params.get("_html_only"))})
+        if params.get("_html_only"):
+            if not result.get("html"):
+                raise ValueError(result.get("reason") or "No se pudo preparar el documento")
+            return str(result["html"]).encode("utf-8")
         if not result.get("pdf_base64"):
             raise ValueError(result.get("reason") or "No se pudo preparar el PDF")
         return base64.b64decode(result["pdf_base64"])

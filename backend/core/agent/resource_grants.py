@@ -6,12 +6,13 @@ enlaces simbólicos ni puntos de reparse) y se concede solo la lectura de ese
 archivo concreto. Una carpeta solo se concede cuando el usuario la elige en el
 diálogo (alcance explícito): entonces se leen los archivos que contiene. Al usar
 la concesión se revalida la identidad del archivo o carpeta, de modo que uno
-sustituido después se rechaza, y la revisión (tamaño y fecha) del archivo entra
-en la huella de las aprobaciones.
+sustituido después se rechaza, y su revisión con identidad y hash del contenido
+entra en la huella de las aprobaciones.
 """
 
 from __future__ import annotations
 
+import hashlib
 import ntpath
 import os
 from pathlib import Path
@@ -64,6 +65,22 @@ def grant_record(raw: str, request_id: str | None) -> JsonObject:
         "mtime_ns": stat.st_mtime_ns,
         "request_id": request_id,
     }
+
+
+def revision(raw: str) -> JsonObject:
+    """Identidad y contenido de un archivo que participa en una aprobación."""
+    real, stat = _resolve(raw)
+    digest = hashlib.sha256()
+    with open(real, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+        after = os.fstat(handle.fileno())
+    current = os.stat(real)
+    identities = {(value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns) for value in (stat, after, current)}
+    if len(identities) != 1:
+        raise ValueError("El archivo cambió mientras se preparaba la aprobación; vuelve a consultarlo")
+    return {"path": real, "dev": stat.st_dev, "ino": stat.st_ino, "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns, "sha256": digest.hexdigest()}
 
 
 def folder_record(raw: str, request_id: str | None) -> JsonObject:

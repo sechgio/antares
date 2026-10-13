@@ -218,7 +218,7 @@ def test_turn_runs_safe_tool_then_answers(tmp_path, monkeypatch):
 
 
 def test_turn_pauses_on_gated_tool_and_decide_resumes(tmp_path, monkeypatch):
-    gated = agent_chat.gated_methods()[0]
+    gated = "canvas_duplicate"
     store, runner, executed = _fake_runner(
         tmp_path,
         monkeypatch,
@@ -578,7 +578,7 @@ def test_recovery_never_replays_a_tool_or_a_decided_approval(tmp_path, status):
 def test_pending_approval_recovers_and_still_requires_one_explicit_decision(tmp_path, monkeypatch):
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "Tarea")
-    method = agent_chat.gated_methods()[0]
+    method = "canvas_duplicate"
     call = {"id": "effect", "name": method, "params": {}, "status": "pending"}
     store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
     approval = store.create_approval(session["id"], call)

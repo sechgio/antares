@@ -155,6 +155,12 @@ class AgentStore:
         self._grants: dict[str, JsonObject] = self._read(self._grants_path)
         self._artifacts_path = base / "artifacts.json"
         self._artifacts: dict[str, JsonObject] = self._read(self._artifacts_path)
+        self._questions_path = base / "questions.json"
+        self._questions: dict[str, JsonObject] = self._read(self._questions_path)
+        for question in self._questions.values():
+            if question.get("status") == "pending":
+                question["status"] = "interrupted"
+        atomic_write_json(self._questions_path, self._questions)
         loaded = self._read(self._dispatches_path)
         # Registros antiguos indexados solo por call_id: se reindexan por sesión.
         self._dispatches: dict[str, JsonObject] = {
@@ -170,6 +176,18 @@ class AgentStore:
                 record["status"] = "uncertain"
                 record["result"] = _INTERRUPTED_RESULT
                 record["summary"] = _INTERRUPTED_RESULT
+                if record.get("method") == "artifact_print":
+                    from backend.core.printing import printer_job_status
+
+                    print_approval = self._approvals.get(str(record.get("approval_id"))) or {}
+                    printer = record.get("printer_name") or (print_approval.get("params") or {}).get("printer_name")
+                    try:
+                        receipt = printer_job_status(str(printer or ""), f"Antares-{record['op_id']}")
+                        record["status"] = "submitted" if receipt.get("submitted") else "uncertain"
+                        record["result"] = json.dumps({**receipt, "recovered": True, "interrupted": not receipt.get("submitted")}, ensure_ascii=False)
+                        record["summary"] = record["result"]
+                    except Exception:
+                        pass  # Conserva uncertain: nunca repite automáticamente la impresión.
                 dirty = True
         if dirty:
             self._write_dispatches()
@@ -271,6 +289,8 @@ class AgentStore:
             self.revoke_grants(session_id)
             if self._artifacts.pop(session_id, None) is not None:
                 atomic_write_json(self._artifacts_path, self._artifacts)
+            self._questions = {key: item for key, item in self._questions.items() if item["session_id"] != session_id}
+            atomic_write_json(self._questions_path, self._questions)
             self._messages_path(session_id).unlink(missing_ok=True)
         return removed
 
@@ -390,6 +410,9 @@ class AgentStore:
         record = {**artifact, "session_id": session_id, "created_at": _now_ms()}
         with self._lock:
             entry = self._artifacts.setdefault(session_id, {"items": []})
+            existing = next((item for item in entry["items"] if item["id"] == record["id"]), None)
+            if existing is not None:
+                return dict(existing)
             entry["items"].append(record)
             atomic_write_json(self._artifacts_path, self._artifacts)
         return dict(record)
@@ -397,6 +420,57 @@ class AgentStore:
     def artifacts_for(self, session_id: str) -> list[JsonObject]:
         with self._lock:
             return [dict(item) for item in (self._artifacts.get(session_id) or {}).get("items", [])]
+
+    def review_artifact(self, session_id: str, artifact_id: str, index: int, sha256: str) -> None:
+        with self._lock:
+            for item in (self._artifacts.get(session_id) or {}).get("items", []):
+                if item["id"] == artifact_id:
+                    item.setdefault("reviewed", {})[str(index)] = sha256
+                    atomic_write_json(self._artifacts_path, self._artifacts)
+                    return
+            raise ValueError("Artefacto no encontrado")
+
+    def dispatch_note(self, session_id: str, op_id: str, note: JsonObject) -> None:
+        with self._lock:
+            for record in self._dispatches.values():
+                if record.get("op_id") == op_id and record.get("session_id") == session_id:
+                    record.update(note)
+                    self._write_dispatches()
+                    return
+            raise ValueError("La operación de impresión no está reservada")
+
+    def add_question(self, session_id: str, op_id: str, params: JsonObject) -> JsonObject:
+        from backend.core.agent.questions import validate
+
+        items = validate(params)
+        with self._lock:
+            question = {"id": op_id, "session_id": session_id, "questions": items, "status": "pending", "answers": {}}
+            self._questions[op_id] = question
+            atomic_write_json(self._questions_path, self._questions)
+            return dict(question)
+
+    def questions_for(self, session_id: str) -> list[JsonObject]:
+        with self._lock:
+            return [dict(item) for item in self._questions.values() if item.get("session_id") == session_id and item.get("status") == "pending"]
+
+    def answer_question(self, session_id: str, question_id: str, answers: JsonObject) -> JsonObject:
+        with self._lock:
+            item = self._questions.get(question_id)
+            if item is None or item.get("session_id") != session_id or item.get("status") != "pending":
+                raise ValueError("La pregunta ya no está activa en esta conversación")
+            keys = {question["id"] for question in item["questions"]}
+            if not isinstance(answers, dict) or set(answers) != keys or any(not isinstance(value, str) or not value.strip() or len(value) > 12000 for value in answers.values()):
+                raise ValueError("Responde todos los datos solicitados")
+            item.update({"answers": answers, "status": "answered"})
+            atomic_write_json(self._questions_path, self._questions)
+            return dict(item)
+
+    def attention(self) -> JsonObject:
+        with self._lock:
+            states = {str(record["session_id"]): "uncertain" for record in self._dispatches.values() if record["status"] == "uncertain"}
+            states.update({str(item["session_id"]): "waiting_approval" for item in self.pending_approvals()})
+            states.update({str(item["session_id"]): "waiting_input" for item in self._questions.values() if item["status"] == "pending"})
+            return states
 
     def create_approval(self, session_id: str, call: JsonObject) -> JsonObject:
         approval = {
@@ -409,6 +483,8 @@ class AgentStore:
             "status": "pending",
             "created_at": _now_ms(),
             "decided_at": None,
+            "context": call.get("context") or {},
+            "resources": call.get("resources") or [],
         }
         with self._lock:
             self._approvals[approval["id"]] = approval
@@ -422,7 +498,7 @@ class AgentStore:
             now = _now_ms()
             stale = [
                 a for a in self._approvals.values()
-                if a.get("status") == "pending"
+                if a.get("status") in {"pending", "approved"} and not a.get("consumed_by")
                 and now - float(a.get("created_at") or now) > _APPROVAL_TTL_MS
             ]
             if not stale:
@@ -467,6 +543,11 @@ class AgentStore:
                 if approval.get("session_id") == session_id and approval.get("call_id") == call_id:
                     return dict(approval)
             return None
+
+    def ensure_approval(self, session_id: str, call: JsonObject) -> JsonObject:
+        """Consulta y creación en una sola sección crítica, también entre callers."""
+        with self._lock:
+            return self.approval_for_call(session_id, str(call["id"])) or self.create_approval(session_id, call)
 
     def deny_pending_approvals(self, session_id: str) -> list[str]:
         self._expire_stale_approvals()
@@ -546,10 +627,16 @@ class AgentStore:
     def dispatch_finish(self, session_id: str, call_id: str, op_id: str, status: str, result: str) -> None:
         with self._lock:
             record = self._dispatches.get(dispatch_key(session_id, call_id))
-            if record is None or record.get("status") != "running" or record.get("op_id") != op_id:
+            if record is None or record.get("status") not in {"running", "uncertain"} or record.get("op_id") != op_id:
                 return
             record["status"] = status
-            record["result"] = result[:_MAX_RECEIPT_CHARS]
+            if len(result) > _MAX_RECEIPT_CHARS:
+                receipt = self._dispatches_path.parent / "receipts" / f"{op_id}.json"
+                atomic_write_json(receipt, {"result": result})
+                record["result_ref"] = str(receipt)
+                record["result"] = summarize_result(result)
+            else:
+                record["result"] = result
             record["summary"] = summarize_result(result)
             record["finished_at"] = _now_ms()
             self._write_dispatches()
@@ -751,12 +838,46 @@ class AgentRunner:
         if token is not None and token.cancelled:
             raise RunCancelled()
         name = str(call.get("name") or "")
+        if name == "ask_user":
+            question = self._store.add_question(str(call["session_id"]), str(call["op_id"]), call["params"])
+            while True:
+                with self._store._lock:
+                    current = dict(self._store._questions.get(question["id"]) or {"status": "cancelled"})
+                if current["status"] == "cancelled":
+                    raise RunCancelled()
+                if current["status"] == "answered":
+                    return json.dumps({"answers": current["answers"]}, ensure_ascii=False)
+                if token and token.wait(0.1):
+                    with self._store._lock:
+                        if question["id"] in self._store._questions:
+                            self._store._questions[question["id"]]["status"] = "cancelled"
+                        atomic_write_json(self._store._questions_path, self._store._questions)
+                    raise RunCancelled()
+                if token is None:
+                    time.sleep(0.1)
+        if name == "artifact_print":
+            from backend.core.agent.artifacts import print_artifact
+
+            try:
+                return json.dumps(print_artifact(self._store, str(call["session_id"]), call["params"], str(call["op_id"]),
+                                                cancelled=(lambda: token.cancelled) if token else None), ensure_ascii=False)
+            except Exception:
+                record = self._store.get_dispatch(str(call["session_id"]), str(call["id"]))
+                if record and record.get("job_id"):
+                    raise RunCancelled() from None
+                raise
         mcp_ref = mcp_servers.parse_agent_tool(name)
         if mcp_ref is not None:
             params = call.get("params")
             try:
-                result = mcp_servers.call_tool(mcp_ref[0], name, params if isinstance(params, dict) else {}, advertised=True)
-                return json.dumps(result, ensure_ascii=False, default=str)
+                options = {"approved_context": call["approved_context"]} if "approved_context" in call else {}
+                if token:
+                    options["cancelled"] = lambda: token.cancelled
+                result = mcp_servers.call_tool(mcp_ref[0], name, params if isinstance(params, dict) else {}, advertised=True,
+                                               **options)
+                return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
+            except (mcp_servers.mcp_client.McpCancelled, mcp_servers.mcp_client.McpUncertain):
+                raise RunCancelled() from None
             except Exception as err:
                 return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
         session_id = call.get("session_id")
@@ -813,6 +934,10 @@ class AgentRunner:
                 except FutureTimeoutError:
                     future.cancel()
                     raise ValueError("La herramienta excedió su tiempo; puede seguir ejecutándose, comprueba el resultado antes de repetirla") from None
+            if session_id and isinstance(result, dict):
+                from backend.core.agent.artifacts import backend_pdf
+
+                result = backend_pdf(self._store, str(session_id), name, result, str(call.get("op_id") or uuid.uuid4().hex))
             return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
         except RunCancelled:
             raise

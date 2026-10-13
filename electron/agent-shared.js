@@ -24,6 +24,7 @@ const shared = {
   liveApprovals: new Set(), // approvalId con espera beforeTool activa
   decisionWaiters: new Map(), // approvalId -> Set<resolve>
   rounds: new Map(), // conversationId -> rondas de herramientas del run
+  waitingInput: new Set(),
   providers: new Map(), // providerId -> {info, modelIds:Set}
   providerOverrides: new Map(), // providerId -> Provider (tests)
   nativeTools: null, // sustituto de agent-native-tools (tests)

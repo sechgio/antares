@@ -44,6 +44,7 @@ _DATA_PROPERTIES: dict[str, Any] = {  # allowlist: dict[str, Any]
     "number_to": {"type": "integer"},
     "output_mode": {"type": "string", "enum": ["consolidado", "individual"]},
     "filename_pattern": {"type": "string", "description": "Nombre del PDF, admite {CAMPO}"},
+    "color_mode": {"type": "string", "enum": ["rgb", "cmyk"], "description": "Canvas: RGB conserva la fidelidad de la pantalla; CMYK usa el motor de impresión"},
 }
 
 TOOL_SPECS: list[JsonObject] = [
@@ -215,6 +216,10 @@ def _template(params: JsonObject) -> tuple[str, str]:
 
 def _workflow_params(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> tuple[JsonObject, list[JsonObject]]:
     family, template_id = _template(params)
+    if params.get("rows") is not None and (not isinstance(params["rows"], list) or any(not isinstance(row, dict) for row in params["rows"])):
+        raise ValueError("Las filas del documento deben ser una lista de registros")
+    if params.get("color_mode") == "cmyk" and family != "canvas":
+        raise ValueError("El modo CMYK está disponible para plantillas de Canvas")
     sources: list[JsonObject] = []
     read: list[str] = []
     sheet_value = params.get("spreadsheet_path")
@@ -322,3 +327,55 @@ def _verify_pdf(path: Path) -> JsonObject:
         raise ValueError(f"El PDF {path.name} no tiene páginas")
     return {"path": str(path), "name": path.name, "mime": "application/pdf", "size": len(data),
             "sha256": hashlib.sha256(data).hexdigest(), "pages": pages}
+
+
+def render_plan(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonObject:
+    """Entradas verificadas para el renderer existente; nunca se envían al modelo."""
+    family, template_id = _template(params)
+    if family == "formato" or params.get("color_mode") == "cmyk":
+        result, artifact = generate(params, grants, root)
+        return {"complete": True, "result": result, "artifact": artifact}
+    workflow, sources = _workflow_params(params, grants, root)
+    prepared = pdf_workflow.prepare(workflow)
+    if not prepared.get("ready"):
+        return {"complete": True, "result": {**_public(prepared), "generated": False}}
+    args = prepared["pdf_args"]
+    contexts = args["contexts"]
+    batches = [[ctx] for ctx in contexts] if args["output_mode"] == "individual" else [contexts]
+    items = []
+    for target, batch in zip(pdf_workflow.output_paths(args), batches, strict=True):
+        item: JsonObject = {"filename": Path(target).name}
+        if family == "html":
+            # Las plantillas con campos raíz se renderizan una vez por registro,
+            # como el motor Python; las demás conservan su consolidado.
+            parts = [[ctx] for ctx in batch] if pdf_workflow.template_profile(family, template_id)["root_fields"] else [batch]
+            item["htmls"] = [pdf_workflow._render({**args, "contexts": part, "_html_only": True}).decode("utf-8") for part in parts]
+        else:
+            from backend.handlers.canvas import canvas_get
+            from backend.utils.image_data import build_image_uris
+
+            document = canvas_get({"id": template_id})["document"]
+            if pdf_workflow.template_profile(family, template_id)["version"] != args["template_version"]:
+                raise ValueError("La plantilla cambió; vuelve a preparar el documento")
+            paths = args.get("localImagePaths") or {}
+            if any(hashlib.sha256(Path(path).read_bytes()).hexdigest() != args["photo_digests"].get(ref) for ref, path in paths.items()):
+                raise ValueError("Las fotos cambiaron; vuelve a preparar el documento")
+            uris = build_image_uris({}, paths)
+            item.update({"document": document, "contexts": [{**ctx, "images": [uris[ref] for ref in ctx.get("images") or []]} for ctx in batch]})
+        items.append(item)
+    return {"items": items, "metadata": {"family": family, "template_id": template_id,
+            "template_revision": args["template_version"], "fingerprint": prepared["fingerprint"],
+            "sources": sources, "records": len(contexts), "output_mode": args["output_mode"]}}
+
+
+def native_artifact(result: JsonObject, root: Path, artifact_id: str) -> JsonObject | None:
+    paths = result.get("saved_paths") or ([result["saved_path"]] if result.get("saved_path") else [])
+    if not paths:
+        return None
+    files = []
+    for raw in paths:
+        path = drafts.inside(root, str(raw))
+        if path is None:
+            raise ValueError("El PDF nativo está fuera de los borradores de esta conversación")
+        files.append(_verify_pdf(path))
+    return {**(result.get("artifact_metadata") or {}), "id": artifact_id, "files": files}

@@ -141,6 +141,19 @@ def test_changing_the_file_after_approval_invalidates_it(store, executed, pdf):
     assert executed == []
 
 
+def test_same_size_and_timestamp_change_still_invalidates_approval(store, executed, pdf):
+    _grant([pdf])
+    params = {"pdf_path": str(pdf)}
+    approval_id = _approve("same-stat", params)
+    stat = pdf.stat()
+    pdf.write_bytes(b"%PDF-1.4 cambiado")
+    assert pdf.stat().st_size == stat.st_size
+    os.utime(pdf, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    result = _run("same-stat", params, approval_id)
+    assert "no coinciden" in result["error"]
+    assert executed == []
+
+
 def test_revoked_grants_block_execution(store, executed, pdf):
     _grant([pdf])
     params = {"pdf_path": str(pdf)}

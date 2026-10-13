@@ -83,6 +83,12 @@ function main() {
   if (!catalog.INTERNAL_METHODS.has(refreshMethod) || knownUsedMethods.has(refreshMethod)) {
     throw new Error('El refresco de conexiones debe ser interno, sin acceso del renderer.');
   }
+  for (const method of ['agent_internal_approval_ensure', 'agent_internal_dispatch']) {
+    if (!catalog.INTERNAL_METHODS.has(method) || knownUsedMethods.has(method)
+      || catalog.METHODS[method].inputSchema.properties.context.type !== 'object') {
+      throw new Error('El contexto de aprobación debe viajar únicamente por el puente privado del agente.');
+    }
+  }
 
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
   const unexpectedInAllowlist = [...allowed].filter((m) => !knownUsedMethods.has(m));

@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, ChevronRight, Clock3, Loader2, ShieldCheck, Wrench, X } from 'lucide-react';
 import type { AgentApproval, AgentMessage, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
+import Toggle from '../ui/Toggle';
 import { METHOD_LABELS } from './methodLabels';
 
 const CALL_STATUS_LABEL: Record<string, string> = {
@@ -10,10 +11,12 @@ const CALL_STATUS_LABEL: Record<string, string> = {
   denied: 'rechazada',
   running: 'ejecutando',
   failed: 'fallida',
+  submitted: 'enviada · comprueba el resultado',
   interrupted: 'interrumpida · comprueba el resultado',
 };
 
 function CallStatusIcon({ status }: { status: string }) {
+  if (status === 'submitted') return <Clock3 size={12} className="text-[var(--text-muted)]" />;
   if (status === 'done') return <Check size={12} className="text-[var(--accent-green)]" />;
   if (status === 'denied' || status === 'failed') return <X size={12} className="text-[var(--accent-red)]" />;
   if (status === 'interrupted') return <AlertTriangle size={12} className="text-[var(--accent-yellow)]" />;
@@ -108,6 +111,15 @@ export function ApprovalCard({
         </p>
         {typeof approval.params.id === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Elemento: <span>{approval.params.id}</span></p>}
         {typeof approval.params.name === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Nombre: {approval.params.name}</p>}
+        {typeof approval.context?.filename === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">PDF: {approval.context.filename}</p>}
+        {typeof approval.params.printer_name === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Impresora: {approval.params.printer_name}</p>}
+        {typeof approval.params.copies === 'number' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Copias: {approval.params.copies} · Páginas: {String(approval.params.pages || 'Todas')}</p>}
+        {typeof approval.params.destination_folder === 'string' && <p className="mt-1 break-all text-xs text-[var(--text-secondary)]">Destino: {approval.params.destination_folder}\{String(approval.params.filename || approval.params.name || '')}</p>}
+        {approval.context?.account && <p className="mt-1 text-xs text-[var(--text-secondary)]">Cuenta: {approval.context.account}</p>}
+        {approval.context?.sheet_id && <p className="mt-1 break-all text-xs text-[var(--text-secondary)]">Hoja: {approval.context.sheet_id}</p>}
+        {approval.resources?.map((resource) => (
+          <p key={resource.path} className="mt-1 break-all text-xs text-[var(--text-secondary)]">Archivo: {resource.path}</p>
+        ))}
         <details className="mt-2 text-xs text-[var(--text-secondary)]">
           <summary className="cursor-pointer">Ver detalles de la acción</summary>
           <code>{approval.method}</code>
@@ -154,7 +166,13 @@ export interface AgentToolGroups {
   mcp: string[];
 }
 
-export function ToolGroup({ label, names }: { label: string; names: string[] }) {
+export function ToolGroup({ label, names, enabledNames, onToggle, disabled }: {
+  label: string;
+  names: string[];
+  enabledNames?: Set<string>;
+  onToggle?: (name: string, enabled: boolean) => void;
+  disabled?: boolean;
+}) {
   if (names.length === 0) return null;
   return (
     <details className="group rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5">
@@ -165,8 +183,9 @@ export function ToolGroup({ label, names }: { label: string; names: string[] }) 
       </summary>
       <ul className="mt-1.5 max-h-44 space-y-1 overflow-auto">
         {names.map((n) => (
-          <li key={n} className="truncate font-mono text-[11px] text-[var(--text-muted)]" title={n}>
-            {METHOD_LABELS[n] ?? n}
+          <li key={n} className="flex items-center gap-2 font-mono text-[11px] text-[var(--text-muted)]" title={n}>
+            <span className="min-w-0 flex-1 truncate">{METHOD_LABELS[n] ?? n}</span>
+            {onToggle && <Toggle checked={enabledNames?.has(n) ?? true} onChange={(enabled) => onToggle(n, enabled)} disabled={disabled} aria-label={`Habilitar ${n}`} />}
           </li>
         ))}
       </ul>

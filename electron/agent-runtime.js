@@ -225,12 +225,15 @@ async function messagesList(params) {
   const conv = await conversation(sessionId);
   await projection.ensureWatcher(session);
   const { messages, pending } = await projection.projectMessages(conv, session);
+  const { artifacts, questions } = await bridge('agent_internal_artifacts', { session_id: sessionId });
   const partial = projection.partialText(session.conversationId);
   if (partial) messages.push({ role: 'assistant', content: partial, partial: true, ts: Date.now() });
   return {
     messages,
     running: projection.isRunning(session.conversationId),
     pending_approvals: pending,
+    artifacts,
+    questions,
   };
 }
 
@@ -245,8 +248,16 @@ async function messageSend(params) {
     ? params.request_id.slice(0, MAX_REQUEST_ID_CHARS)
     : undefined;
   if (requestId && await _admittedRequest(session, requestId)) return { accepted: true, duplicate: true };
+  // Una corrección redirige el encargo en curso: entra tras la ronda de
+  // herramientas actual y rechaza los pasos aún sin aprobar. Los efectos ya
+  // aprobados o enviados conservan sus parámetros y su comprobante.
+  const correction = params.correction === true;
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
-  if (pending.length) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
+  if (pending.length && !correction) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
+  if (pending.length) {
+    const { denied } = await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
+    for (const id of denied || []) execution.notifyDecision(id);
+  }
   await execution.refreshTools();
   await execution.ensureProvider(session.provider, session.model);
   const conv = await conversation(sessionId);
@@ -266,10 +277,10 @@ async function messageSend(params) {
   const input = context
     ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }]
     : content;
-  shared.rounds.delete(session.conversationId);
+  if (!correction || !projection.isRunning(session.conversationId)) shared.rounds.delete(session.conversationId);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      await conv.submit({ type: 'input', content: input, whenBusy: 'reject', ...(requestId ? { requestId } : {}) }, ctx());
+      await conv.submit({ type: 'input', content: input, whenBusy: correction ? 'steer' : 'reject', ...(requestId ? { requestId } : {}) }, ctx());
       break;
     } catch (err) {
       if (!(err && (err.name === 'ConversationBusy' || /busy/i.test(err.message || '')))) throw err;
@@ -338,13 +349,32 @@ async function _admittedRequest(session, requestId) {
   return found !== undefined;
 }
 
-async function toolsList() {
+async function toolsList(params = {}) {
+  let enabled;
+  if (params.session_id) {
+    const conv = await conversation(String(params.session_id));
+    enabled = new Set((await conv.agent(ctx())).tools.map((tool) => tool.name));
+  }
   const tools = await execution.allToolSpecs();
   return {
     tools: tools.map((t) => ({
       name: t.name, gated: !!t.gated, kind: ['mcp', 'native'].includes(t.kind) ? t.kind : 'backend', module: t.module || null,
+      ...(enabled ? { enabled: enabled.has(t.name) } : {}),
     })),
   };
+}
+
+async function toolsSet(params) {
+  const conv = await conversation(String(params && params.session_id || ''));
+  const names = params.names;
+  if (names !== null && (!Array.isArray(names) || names.some((name) => typeof name !== 'string'))) {
+    throw validation('Selecciona una lista de herramientas o restablece la selección');
+  }
+  const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
+  if (names && names.some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
+  await execution.refreshTools();
+  await conv.configure({ tools: names === null ? null : [...new Set(names)].map((name) => ({ name })) }, ctx());
+  return toolsList(params);
 }
 
 async function turnStatus(params) {
@@ -422,13 +452,7 @@ async function _settleRecoveredApproval(approval) {
   let isError = false;
   let diagnostics;
   if (approval.status === 'approved') {
-    text = await execution.dispatchAndWait({
-      session_id: sessionId,
-      call_id: callId,
-      name: method,
-      params: approval.params || {},
-      approval_id: approval.id,
-    }, ctx());
+    text = await execution.dispatchApproved(approval, ctx());
     try { isError = !!JSON.parse(text).error; } catch { /* texto plano */ }
   } else {
     text = JSON.stringify({ error: 'El usuario rechazó esta acción' });
@@ -472,6 +496,16 @@ async function shutdown() {
 }
 
 module.exports = {
+  activitySnapshot: async () => {
+    if (!shared.state) return [];
+    const { attention = {} } = await bridge('agent_internal_activity', {});
+    return Object.values(await sessions()).map((session) => ({
+      id: session.id, title: session.title || 'Conversación',
+      status: attention[session.id] || (shared.waitingInput.has(session.id) ? 'waiting_input'
+        : [...shared.approvalsByCall].some(([key, id]) => key.startsWith(`${session.id}:`) && shared.liveApprovals.has(id)) ? 'waiting_approval'
+          : projection.isRunning(session.conversationId) ? 'running' : session.last_error ? 'failed' : 'completed'),
+    }));
+  },
   open: _open,
   shutdown,
   handlers: {
@@ -481,6 +515,7 @@ module.exports = {
     agent_messages_list: messagesList,
     agent_message_send: messageSend,
     agent_tools_list: toolsList,
+    agent_tools_set: toolsSet,
     agent_turn_status: turnStatus,
     agent_turn_cancel: turnCancel,
     agent_attach: attach,

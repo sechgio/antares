@@ -18,16 +18,18 @@ from __future__ import annotations
 
 import json
 import threading
+from pathlib import Path
 
 from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
+from backend.core.agent import agent_tools, artifacts, canvas_edit, documents, drafts, resource_grants
 from backend.core.agent import modules as _agent_modules
-from backend.core.agent import resource_grants
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.integrations import ai_providers as _ai_providers
 from backend.core.integrations import mcp_servers as _mcp_servers
 from backend.core.integrations.types import JsonObject
+from backend.core.ipc_catalog import input_schema_for
 from backend.handlers.common import validate_params, with_locale
 
 
@@ -38,7 +40,8 @@ def _store() -> _agent.AgentStore:
 _inflight: dict[str, _CancelEvent] = {}
 _inflight_lock = threading.Lock()
 _resource_locks: dict[str, threading.Lock] = {}
-_NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf")
+_NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
+                    "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields")
 
 
 def _resource_keys(params: JsonObject) -> list[str]:
@@ -117,19 +120,48 @@ def _provider(params: JsonObject) -> JsonObject:
     }
 
 
-def _intent(session_id: str, method: str, params: JsonObject) -> JsonObject:
+def _intent(session_id: str, method: str, params: JsonObject, context: JsonObject | None = None) -> JsonObject:
     """Intención que firma una aprobación: parámetros y revisión de cada archivo
     concedido que lee. Cambiar el archivo después de aprobar invalida la aprobación."""
     try:
+        artifact_context: JsonObject = {}
         store = _store()
         resources = _agent.read_resources(method, params, store.grants_for(session_id), store.drafts_dir(session_id))
+        resources = [{**record, **resource_grants.revision(str(record["path"]))} for record in resources]
+        if method == "drafts_save":
+            root = store.drafts_dir(session_id)
+            source = drafts.inside(root, str(root / str(params.get("name") or "")))
+            if source is None:
+                raise ValueError("El borrador no está autorizado")
+            resources.append(resource_grants.revision(str(source)))
+            folder_path = str(params.get("destination_folder") or "")
+            if Path(folder_path).exists():
+                folder = resource_grants.folder_record(folder_path, None)
+                resources.append({k: folder[k] for k in ("path", "dev", "ino")})
+                target = Path(str(folder["path"])) / drafts.safe_name(params.get("filename") or source.name)
+                resources.append(resource_grants.revision(str(target)) if target.exists() else {"path": str(target), "exists": False})
+            else:
+                resources.append({"path": folder_path, "exists": False})
+        if method == "artifact_print":
+            artifact, file, path = artifacts.verified_file(store, session_id, params)
+            if (artifact.get("reviewed") or {}).get(str(params.get("file_index", 0))) != file["sha256"]:
+                raise ValueError("Revisa el PDF en el chat antes de imprimirlo")
+            resources.append(resource_grants.revision(str(path)))
+            artifact_context = {"filename": file["name"], "sha256": file["sha256"]}
+        tool = agent_tools.SPECS.get(method) or {"inputSchema": input_schema_for(method)}
+        current_context = dict(context or {})
+        current_context.update(artifact_context)
+        mcp = _mcp_servers.parse_agent_tool(method)
+        if mcp is not None:
+            current_context = _mcp_servers.approval_context(mcp[0], method)
     except ValueError as err:
         raise ValidationError(str(err)) from err
-    return {"params": params, "resources": resources}
+    return {"params": json.loads(json.dumps(params)), "resources": resources,
+            "tool_version": _agent.fingerprint("tool-policy-v1", tool), "context": current_context}
 
 
-def _intent_fingerprint(session_id: str, method: str, params: JsonObject) -> str:
-    return _agent.fingerprint(method, _intent(session_id, method, params))
+def _intent_fingerprint(session_id: str, method: str, params: JsonObject, context: JsonObject | None = None) -> str:
+    return _agent.fingerprint(method, _intent(session_id, method, params, context))
 
 
 @with_locale
@@ -199,14 +231,16 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
     call_id = str(params["call_id"])
     method = str(params["method"])
     call_params = params.get("params") or {}
+    if method.startswith(_NATIVE_PREFIXES) and not (params.get("context") or {}).get("tool_version"):
+        raise ValidationError("La herramienta nativa necesita su contexto actual antes de pedir aprobación")
     store = _store()
-    intent = _intent_fingerprint(session_id, method, call_params)
-    approval = store.approval_for_call(session_id, call_id)
-    if approval is None:
-        approval = store.create_approval(
-            session_id, {"id": call_id, "name": method, "params": call_params, "fingerprint": intent},
-        )
-    elif approval.get("method") != method or approval.get("fingerprint") != intent:
+    snapshot = _intent(session_id, method, call_params, params.get("context"))
+    intent = _agent.fingerprint(method, snapshot)
+    approval = store.ensure_approval(
+        session_id, {"id": call_id, "name": method, "params": snapshot["params"], "fingerprint": intent,
+                     "context": snapshot["context"], "resources": snapshot["resources"]},
+    )
+    if approval.get("method") != method or approval.get("fingerprint") != intent:
         raise ValidationError("Esta llamada ya tiene una aprobación con otros parámetros o archivos")
     return {"approval": approval}
 
@@ -265,6 +299,8 @@ def _dispatch(params: JsonObject) -> JsonObject:
         if not name.startswith(_NATIVE_PREFIXES):
             return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
         gated = params.get("gated") is not False
+        if gated and not (params.get("context") or {}).get("tool_version"):
+            return _dispatch_error("La herramienta nativa necesita revalidar la cuenta y sus permisos")
     else:
         is_mcp = _mcp_servers.parse_agent_tool(name) is not None
         gated = is_mcp or name in _agent_chat.gated_methods()
@@ -276,7 +312,7 @@ def _dispatch(params: JsonObject) -> JsonObject:
 
     store = _store()
     try:
-        intent = _intent(session_id, name, call_params)
+        intent = _intent(session_id, name, call_params, params.get("context"))
     except ValidationError as err:
         return _dispatch_error(str(err))
     outcome, record = store.dispatch_claim(
@@ -300,6 +336,7 @@ def _dispatch(params: JsonObject) -> JsonObject:
     with _inflight_lock:
         _inflight[op_id] = token
     locks = _locks_for(_resource_keys(call_params)) if gated else []
+    call_params = intent["params"]
 
     def _run() -> None:
         acquired: list[threading.Lock] = []
@@ -307,10 +344,13 @@ def _dispatch(params: JsonObject) -> JsonObject:
             for lock in locks:
                 lock.acquire()
                 acquired.append(lock)
+            if _intent_fingerprint(session_id, name, call_params, params.get("context")) != _agent.fingerprint(name, intent):
+                raise ValidationError("Los parámetros o recursos cambiaron después de reservar la operación")
             result = _agent.get_agent_runner()._execute(
-                {"id": call_id, "name": name, "params": call_params, "session_id": session_id}, token
+                {"id": call_id, "name": name, "params": call_params, "session_id": session_id, "op_id": op_id,
+                 "approved_context": intent["context"]}, token
             )
-            status = "failed" if _agent.result_failed(result) else "succeeded"
+            status = "failed" if _agent.result_failed(result) else "submitted" if name == "artifact_print" else "succeeded"
         except RunCancelled:
             result = _agent._INTERRUPTED_RESULT
             status = "uncertain"
@@ -345,12 +385,82 @@ def _dispatch_finish(params: JsonObject) -> JsonObject:
     """Registra el resultado de una herramienta nativa ejecutada por Electron."""
     session_id, call_id = str(params["session_id"]), str(params["call_id"])
     result = str(params["result"])
+    store = _store()
+    record = store.get_dispatch(session_id, call_id)
+    if record is None or record.get("op_id") != params["op_id"]:
+        raise NotFoundError(f"Dispatch no encontrado: {call_id}")
+    if record.get("status") in {"running", "uncertain"}:
+        try:
+            payload = json.loads(result)
+            if isinstance(payload, dict) and not _agent.result_failed(result):
+                artifact = documents.native_artifact(payload, store.drafts_dir(session_id), str(params["op_id"]))
+                if artifact is not None:
+                    payload["artifact"] = store.add_artifact(session_id, artifact)
+                    result = json.dumps(payload, ensure_ascii=False)
+        except (ValueError, OSError) as err:
+            result = json.dumps({"error": str(err)}, ensure_ascii=False)
     status = "failed" if _agent.result_failed(result) else "succeeded"
+    if params.get("uncertain") is True:
+        status = "uncertain"
     _store().dispatch_finish(session_id, call_id, str(params["op_id"]), status, result)
     record = _store().get_dispatch(session_id, call_id)
     if record is None or record.get("op_id") != params["op_id"]:
         raise NotFoundError(f"Dispatch no encontrado: {call_id}")
     return {"result": (record.get("summary") or record.get("result")) if record.get("status") != "running" else None}
+
+
+@with_locale
+@validate_params("session_id", "params")
+def _document_plan(params: JsonObject) -> JsonObject:
+    session_id = str(params["session_id"])
+    store = _store()
+    plan = documents.render_plan(params["params"], store.grants_for(session_id), store.drafts_dir(session_id))
+    if plan.get("artifact"):
+        plan["result"]["artifact"] = store.add_artifact(session_id, plan.pop("artifact"))
+    return plan
+
+
+@with_locale
+@validate_params("session_id")
+def _artifacts(params: JsonObject) -> JsonObject:
+    return {"artifacts": _store().artifacts_for(str(params["session_id"])),
+            "questions": _store().questions_for(str(params["session_id"]))}
+
+
+@with_locale
+def _activity(params: JsonObject) -> JsonObject:
+    return {"attention": _store().attention()}
+
+
+@with_locale
+@validate_params("session_id", "question_id", "answers")
+def _question_answer(params: JsonObject) -> JsonObject:
+    try:
+        return {"question": _store().answer_question(str(params["session_id"]), str(params["question_id"]), params["answers"])}
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id", "artifact_id", "action")
+def _artifact_action(params: JsonObject) -> JsonObject:
+    try:
+        return artifacts.action(_store(), str(params["session_id"]), params)
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id", "call_id", "method", "params")
+def _artifact_effect(params: JsonObject) -> JsonObject:
+    if params["method"] not in {"artifact_print", "drafts_save"}:
+        raise ValidationError("Efecto de artefacto no permitido")
+    if params["method"] == "artifact_print":
+        try:
+            artifacts.validate_print(_store(), str(params["session_id"]), params["params"])
+        except ValueError as err:
+            raise ValidationError(str(err)) from err
+    return {"approval": _approval_ensure(params)["approval"]}
 
 
 @with_locale
@@ -380,4 +490,11 @@ HANDLERS = {
     "agent_internal_grants_add": _grants_add,
     "agent_internal_grants_revoke": _grants_revoke,
     "agent_internal_mentions": _mentions,
+    "agent_internal_document_plan": _document_plan,
+    "agent_canvas_fill": canvas_edit.fill_fields,
+    "agent_internal_artifacts": _artifacts,
+    "agent_internal_artifact_action": _artifact_action,
+    "agent_internal_artifact_effect": _artifact_effect,
+    "agent_internal_activity": _activity,
+    "agent_question_answer": _question_answer,
 }

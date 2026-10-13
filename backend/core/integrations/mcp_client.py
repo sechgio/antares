@@ -21,6 +21,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 
 from backend.core.integrations import http_guard
 from backend.core.integrations.types import JsonObject
@@ -30,10 +31,52 @@ _CLIENT_INFO = {"name": "antares-flujos", "version": "1.0"}
 _MAX_RESPONSE_BYTES = 1024 * 1024
 _HTTP_TIMEOUT_S = 30.0
 _STDIO_TIMEOUT_S = 45.0
+_MAX_TOOL_PAGES = 32
+_MAX_TOOLS = 512
 
 
 class McpError(ValueError):
     """Error del servidor MCP o del transporte."""
+
+
+class McpCancelled(McpError):
+    """El transporte se canceló; el efecto externo puede quedar incierto."""
+
+
+class McpUncertain(McpError):
+    """Falló la respuesta de una llamada enviada; su efecto no está confirmado."""
+
+
+def _tool_pages(request: Callable[[JsonObject], JsonObject]) -> JsonObject:
+    tools: list[JsonObject] = []
+    seen: set[str] = set()
+    names: set[str] = set()
+    params: JsonObject = {}
+    for _ in range(_MAX_TOOL_PAGES):
+        result = request(params)
+        page = result.get("tools")
+        if not isinstance(page, list):
+            raise McpError("Catálogo MCP sin lista de herramientas")
+        for tool in page:
+            if not isinstance(tool, dict) or not isinstance(tool.get("name"), str) or not tool["name"]:
+                raise McpError("Nombre de herramienta MCP inválido")
+            if tool["name"] in names:
+                raise McpError("El servidor MCP publicó nombres de herramientas duplicados")
+            schema = tool.get("inputSchema")
+            if schema is not None and (not isinstance(schema, dict) or schema.get("type") != "object"):
+                raise McpError("Schema de herramienta MCP inválido")
+            names.add(tool["name"])
+            tools.append(tool)
+            if len(tools) > _MAX_TOOLS:
+                raise McpError("El catálogo MCP supera 512 herramientas")
+        cursor = result.get("nextCursor")
+        if cursor is None:
+            return {"tools": tools}
+        if not isinstance(cursor, str) or not cursor or cursor in seen:
+            raise McpError("Cursor MCP inválido o repetido")
+        seen.add(cursor)
+        params = {"cursor": cursor}
+    raise McpError("El catálogo MCP supera 32 páginas")
 
 
 def _rpc(method: str, params: JsonObject | None = None, rpc_id: int = 1) -> JsonObject:
@@ -130,7 +173,8 @@ def _http_post(url: str, headers: dict[str, str], payload: JsonObject) -> tuple[
 
 
 def _http_session_call(
-    url: str, headers: dict[str, str], calls: list[tuple[str, JsonObject | None]]
+    url: str, headers: dict[str, str], calls: list[tuple[str, JsonObject | None]],
+    cancelled: Callable[[], bool] | None = None,
 ) -> list[JsonObject]:
     """Handshake initialize + una lista de llamadas JSON-RPC en la misma sesión."""
     init_res, session_id = _http_post(url, headers, _init_message())
@@ -140,9 +184,51 @@ def _http_session_call(
         headers = {**headers, "Mcp-Session-Id": session_id}
     _http_post(url, headers, _initialized_notification())
     results = []
-    for i, (method, params) in enumerate(calls, start=1):
-        res, _ = _http_post(url, headers, _rpc(method, params, rpc_id=i))
-        results.append(_result_of(res))
+    rpc_id = 0
+
+    def request(method: str, params: JsonObject | None) -> JsonObject:
+        nonlocal rpc_id
+        rpc_id += 1
+        current_id = rpc_id
+        if cancelled and cancelled():
+            raise McpCancelled("La operación MCP se canceló antes del envío")
+        def call() -> JsonObject:
+            try:
+                res, _ = _http_post(url, headers, _rpc(method, params, rpc_id=current_id))
+            except (McpError, OSError) as err:
+                if method == "tools/call":
+                    raise McpUncertain(str(err)) from err
+                raise
+            return _result_of(res)
+
+        if cancelled is None:
+            return call()
+        box: queue.Queue[JsonObject | Exception] = queue.Queue(maxsize=1)
+
+        def receive() -> None:
+            try:
+                box.put(call())
+            except Exception as err:
+                box.put(err)
+
+        threading.Thread(target=receive, daemon=True, name="mcp-http-call").start()
+        while True:
+            try:
+                value = box.get(timeout=0.1)
+                if isinstance(value, Exception):
+                    raise value
+                return value
+            except queue.Empty:
+                if cancelled():
+                    def notify() -> None:
+                        with contextlib.suppress(Exception):
+                            _http_post(url, headers, {"jsonrpc": "2.0", "method": "notifications/cancelled",
+                                                     "params": {"requestId": current_id, "reason": "Cancelado por el usuario"}})
+                    threading.Thread(target=notify, daemon=True, name="mcp-http-cancel").start()
+                    raise McpCancelled("Cancelación enviada al servidor MCP; comprueba el efecto antes de repetir") from None
+
+    for method, params in calls:
+        results.append(_tool_pages(lambda page: request("tools/list", page)) if method == "tools/list" else request(method, params))
     return results
 
 
@@ -152,11 +238,15 @@ def list_tools_http(url: str, headers: dict[str, str]) -> list[JsonObject]:
     return tools if isinstance(tools, list) else []
 
 
-def call_tool_http(url: str, headers: dict[str, str], tool: str, args: JsonObject) -> JsonObject:
+def call_tool_http(
+    url: str, headers: dict[str, str], tool: str, args: JsonObject,
+    *, cancelled: Callable[[], bool] | None = None,
+) -> JsonObject:
     (result,) = _http_session_call(
         url,
         headers,
         [("tools/call", {"name": tool, "arguments": args})],
+        cancelled,
     )
     return result
 
@@ -167,7 +257,8 @@ def call_tool_http(url: str, headers: dict[str, str], tool: str, args: JsonObjec
 
 
 def _stdio_session(
-    command: str, args: list[str], env: dict[str, str], calls: list[tuple[str, JsonObject | None]]
+    command: str, args: list[str], env: dict[str, str], calls: list[tuple[str, JsonObject | None]],
+    cancelled: Callable[[], bool] | None = None,
 ) -> list[JsonObject]:
     proc = subprocess.Popen(
         [shutil.which(command, path=env.get("PATH")) or command, *args],
@@ -218,12 +309,20 @@ def _stdio_session(
         deadline = time.monotonic() + _STDIO_TIMEOUT_S
         try:
             while True:
+                if cancelled and cancelled():
+                    with contextlib.suppress(Exception):
+                        send({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                              "params": {"requestId": rpc_id, "reason": "Cancelado por el usuario"}})
+                    raise McpCancelled("El proceso MCP se detuvo; comprueba los efectos externos antes de repetir")
                 if reader_errors:
                     raise McpError(f"Lector stdio MCP falló: {reader_errors[0]}")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise queue.Empty
-                msg = out_queue.get(timeout=remaining)
+                try:
+                    msg = out_queue.get(timeout=min(remaining, 0.1) if cancelled else remaining)
+                except queue.Empty:
+                    continue
                 if isinstance(msg, Exception):
                     raise McpError(f"Lector stdio MCP falló: {msg}")
                 if msg.get("id") == rpc_id:
@@ -236,9 +335,24 @@ def _stdio_session(
         _result_of(recv(0))
         send(_initialized_notification())
         results = []
-        for i, (method, params) in enumerate(calls, start=1):
-            send(_rpc(method, params, rpc_id=i))
-            results.append(_result_of(recv(i)))
+        rpc_id = 0
+
+        def request(method: str, params: JsonObject | None) -> JsonObject:
+            nonlocal rpc_id
+            rpc_id += 1
+            try:
+                send(_rpc(method, params, rpc_id=rpc_id))
+                response = recv(rpc_id)
+            except McpCancelled:
+                raise
+            except (McpError, OSError) as err:
+                if method == "tools/call":
+                    raise McpUncertain(str(err)) from err
+                raise
+            return _result_of(response)
+
+        for method, params in calls:
+            results.append(_tool_pages(lambda page: request("tools/list", page)) if method == "tools/list" else request(method, params))
         return results
     finally:
         try:
@@ -256,12 +370,16 @@ def list_tools_stdio(command: str, args: list[str], env: dict[str, str]) -> list
     return tools if isinstance(tools, list) else []
 
 
-def call_tool_stdio(command: str, args: list[str], env: dict[str, str], tool: str, tool_args: JsonObject) -> JsonObject:
+def call_tool_stdio(
+    command: str, args: list[str], env: dict[str, str], tool: str, tool_args: JsonObject,
+    *, cancelled: Callable[[], bool] | None = None,
+) -> JsonObject:
     (result,) = _stdio_session(
         command,
         args,
         env,
         [("tools/call", {"name": tool, "arguments": tool_args})],
+        cancelled,
     )
     return result
 

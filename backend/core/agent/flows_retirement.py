@@ -3,13 +3,14 @@ cuya procedencia queda demostrada por una ejecución registrada.
 
 Un PDF solo se borra si su ruta exacta figura como ``saved_path``/``saved_paths``
 de un paso correcto y no se modificó después de terminar ese paso. El resto queda
-en el manifiesto como pendiente. La carpeta de estado se borra al final y el
-marcador se escribe después: un fallo intermedio se reanuda en el siguiente
-arranque sin repetir borrados (los archivos ya ausentes se omiten).
+en el manifiesto como pendiente. El manifiesto se persiste antes de los efectos
+y conserva los recursos restantes; la carpeta de estado se borra al final.
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import os
@@ -51,11 +52,19 @@ def _timestamp(value: object) -> float | None:
 def _delete_os_task(name: str) -> None:
     if sys.platform != "win32":
         return
+    tasks = subprocess.run(
+        ["schtasks", "/Query", "/FO", "CSV", "/NH"],
+        capture_output=True, timeout=20, check=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    names = {row[0].lstrip("\\") for row in csv.reader(io.StringIO(tasks.stdout.decode(errors="replace"))) if row}
+    if name not in names:
+        return
     subprocess.run(
         ["schtasks", "/Delete", "/F", "/TN", name],
         capture_output=True,
         timeout=20,
-        check=False,
+        check=True,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 
@@ -129,52 +138,61 @@ def retire_flows(
         logger.info("Retirada de Flujos aplazada: sigue activa una ejecución programada")
         return {"status": "deferred"}
 
-    flows = _read_json(flows_dir / "flows.json")
-    runs = _read_json(flows_dir / "flow_runs.json")
-    tasks = [f"{_TASK_PREFIX}{flow_id}" for flow_id in flows]
-    for name in tasks:
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(done, dict) and done.get("status") in {"retiring", "deferred"}:
+        result = done
+    else:
+        flows = _read_json(flows_dir / "flows.json")
+        runs = _read_json(flows_dir / "flow_runs.json")
+        tasks = [f"{_TASK_PREFIX}{flow_id}" for flow_id in flows]
+        outputs: dict[str, JsonObject] = {}
+        for raw, finished in _output_candidates(runs):
+            outputs.setdefault(os.path.normcase(raw), {"path": raw, "finished": finished, "existed": Path(raw).exists()})
+        pending = []
+        for flow in flows.values():
+            artifacts = flow.get("source_artifacts")
+            for paths in artifacts.values() if isinstance(artifacts, dict) else []:
+                for raw in paths if isinstance(paths, list) else []:
+                    if isinstance(raw, str) and os.path.normcase(raw) not in outputs and Path(raw).exists():
+                        pending.append({"path": raw, "reason": "sin ejecución registrada que lo generara"})
+        result = {"status": "retiring", "flows": len(flows), "runs": len(runs), "tasks": tasks,
+                  "remaining_tasks": list(tasks), "outputs": list(outputs.values()), "deleted": [], "pending": pending}
+        atomic_write_json(marker, result)
+
+    failed_tasks = []
+    for name in list(result["remaining_tasks"]):
         try:
             delete_task(name)
         except Exception:
             logger.warning("No se pudo borrar la tarea programada %s", name, exc_info=True)
-
-    deleted: list[str] = []
-    pending: list[JsonObject] = []
-    seen: set[str] = set()
-    covered = {p for p, _ in _output_candidates(runs)}
-    for raw, finished in _output_candidates(runs):
-        key = os.path.normcase(raw)
-        if key in seen:
+            failed_tasks.append(name)
             continue
-        seen.add(key)
-        existed = Path(raw).exists()
+        result["remaining_tasks"].remove(name)
+        atomic_write_json(marker, result)
+    if failed_tasks:
+        result.update({"status": "deferred", "pending_tasks": failed_tasks})
+        atomic_write_json(marker, result)
+        return result
+    result["status"] = "retiring"
+    result.pop("pending_tasks", None)
+    for output in list(result["outputs"]):
+        raw = str(output["path"])
         try:
-            reason = _delete_output(raw, finished)
+            reason = _delete_output(raw, output["finished"])
         except OSError as exc:
             reason = f"no se pudo borrar: {exc.strerror or exc}"
         if reason:
-            pending.append({"path": raw, "reason": reason})
-        elif existed:
-            deleted.append(raw)
-    for flow in flows.values():
-        artifacts = flow.get("source_artifacts")
-        for paths in artifacts.values() if isinstance(artifacts, dict) else []:
-            for raw in paths if isinstance(paths, list) else []:
-                if isinstance(raw, str) and raw not in covered and Path(raw).exists():
-                    pending.append({"path": raw, "reason": "sin ejecución registrada que lo generara"})
+            result["pending"].append({"path": raw, "reason": reason})
+        elif output["existed"]:
+            result["deleted"].append(raw)
+        result["outputs"].remove(output)
+        atomic_write_json(marker, result)
 
     if flows_dir.exists():
         shutil.rmtree(flows_dir)
-    result: JsonObject = {
-        "status": "completed",
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-        "flows": len(flows),
-        "runs": len(runs),
-        "tasks": tasks,
-        "deleted": deleted,
-        "pending": pending,
-    }
-    marker.parent.mkdir(parents=True, exist_ok=True)
+    result.pop("outputs")
+    result.pop("remaining_tasks")
+    result.update({"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()})
     atomic_write_json(marker, result)
-    logger.info("Flujos retirado: %s PDFs borrados, %s pendientes", len(deleted), len(pending))
+    logger.info("Flujos retirado: %s PDFs borrados, %s pendientes", len(result["deleted"]), len(result["pending"]))
     return result

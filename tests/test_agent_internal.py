@@ -9,6 +9,8 @@ replay nunca repita un efecto cuyo resultado quedó incierto.
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 
 import pytest
 
@@ -110,6 +112,34 @@ def test_approval_ensure_is_idempotent_per_call(store):
         agent_internal.HANDLERS["agent_internal_approval_decide"](
             {"approval_id": first["id"], "approve": False}
         )
+
+
+def test_concurrent_approval_ensure_creates_one_approval(store, monkeypatch):
+    barrier = threading.Barrier(2)
+    lookup = store.approval_for_call
+
+    def concurrent_lookup(session_id, call_id):
+        found = lookup(session_id, call_id)
+        with suppress(threading.BrokenBarrierError):
+            barrier.wait(timeout=0.5)
+        return found
+
+    monkeypatch.setattr(store, "approval_for_call", concurrent_lookup)
+    params = {"session_id": "s1", "call_id": "race", "method": "db_export", "params": {}}
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        approvals = list(workers.map(lambda _: agent_internal._approval_ensure(params)["approval"], range(2)))
+    assert len({a["id"] for a in approvals}) == 1
+    assert len(store.pending_approvals("s1")) == 1
+
+
+def test_approved_but_unused_approval_expires_before_dispatch(store, monkeypatch):
+    monkeypatch.setattr(agent_internal._agent_chat, "gated_methods", lambda: ["db_export"])
+    now = agent._now_ms()
+    approval_id = _approve("s1", "expired-approved", "db_export", {})
+    monkeypatch.setattr(agent, "_now_ms", lambda: now + agent._APPROVAL_TTL_MS + 1_000)
+    result = _dispatch(session_id="s1", call_id="expired-approved", name="db_export", params={}, approval_id=approval_id)
+    assert "error" in json.loads(result["result"])
+    assert store.get_approval(approval_id)["status"] == "expired"
 
 
 def test_approvals_deny_session(store):
@@ -350,12 +380,26 @@ def test_native_tools_are_claimed_in_python_and_finished_by_electron(store):
 def test_native_effects_need_approval_and_unknown_native_names_are_rejected(store):
     blocked = _dispatch(session_id="s1", call_id="n1", name="autoimg_sync_to_sheet", params={}, native=True, gated=True)
     assert json.loads(blocked["result"]).get("error")
+    context = {"tool_version": "test-v1", "account": "prueba@example.com", "sheet_id": "sheet-test"}
     approval = agent_internal.HANDLERS["agent_internal_approval_ensure"](
-        {"session_id": "s1", "call_id": "n1", "method": "autoimg_sync_to_sheet", "params": {}}
+        {"session_id": "s1", "call_id": "n1", "method": "autoimg_sync_to_sheet", "params": {}, "context": context}
     )["approval"]
     agent_internal.HANDLERS["agent_internal_approval_decide"]({"approval_id": approval["id"], "approve": True})
     allowed = _dispatch(session_id="s1", call_id="n1", name="autoimg_sync_to_sheet", params={},
-                        native=True, gated=True, approval_id=approval["id"])
+                        native=True, gated=True, approval_id=approval["id"], context=context)
     assert allowed["execute"] == "native"
     other = _dispatch(session_id="s1", call_id="n2", name="spotify_playback", params={}, native=True, gated=False)
     assert "no disponible" in json.loads(other["result"])["error"]
+
+
+@pytest.mark.parametrize("key,value", [("account", "otra@example.com"), ("sheet_id", "otra-hoja"),
+                                      ("tool_version", "test-v2"), ("scopes", [])])
+def test_native_context_changes_invalidate_approval(store, key, value):
+    context = {"tool_version": "test-v1", "account": "prueba@example.com", "sheet_id": "sheet-test", "scopes": ["sheets"]}
+    approval = agent_internal._approval_ensure({"session_id": "s1", "call_id": "native-context",
+                                               "method": "autoimg_sync_to_sheet", "params": {}, "context": context})["approval"]
+    agent_internal._approval_decide({"approval_id": approval["id"], "approve": True})
+    out = _dispatch(session_id="s1", call_id="native-context", name="autoimg_sync_to_sheet", params={},
+                    native=True, gated=True, approval_id=approval["id"], context={**context, key: value})
+    assert "no coinciden" in json.loads(out["result"])["error"]
+    assert store.get_dispatch("s1", "native-context") is None

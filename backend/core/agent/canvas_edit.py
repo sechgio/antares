@@ -9,6 +9,7 @@ sobrescribe.
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from backend.core.integrations.types import JsonObject
@@ -48,21 +49,25 @@ def fill_fields(params: JsonObject) -> JsonObject:
     if not isinstance(values, dict) or not values:
         raise ValueError("Indica los campos a rellenar")
     store = get_canvas_store()
-    document: Any = store.get(doc_id)
-    if document is None:
-        raise ValueError("Documento de Canvas no encontrado")
-    if document.get("updatedAt") != expected:
-        raise ValueError("El documento cambió desde que se leyó; vuelve a consultarlo antes de editarlo")
-    keys = {str((layer.get("meta") or {}).get("key")) for layer in document.get("layers") or []
-            if layer.get("type") == "field" and (layer.get("meta") or {}).get("key")}
-    unknown = sorted(str(k) for k in values if str(k) not in keys)
-    if unknown:
-        raise ValueError(f"El documento no tiene estos campos: {', '.join(unknown)}")
-    changed = 0
-    for layer in document["layers"]:
-        key = (layer.get("meta") or {}).get("key") if layer.get("type") == "field" else None
-        if key is not None and str(key) in values:
-            layer["value"] = "" if values[str(key)] is None else str(values[str(key)])
-            changed += 1
-    saved = store.save(document, expected_updated_at=expected)
-    return {"id": saved["id"], "updatedAt": saved["updatedAt"], "fields_changed": changed}
+    with store._doc_lock(doc_id):
+        document: Any = store.get(doc_id)
+        if document is None:
+            raise ValueError("Documento de Canvas no encontrado")
+        if document.get("updatedAt") != expected:
+            raise ValueError("El documento cambió desde que se leyó; vuelve a consultarlo antes de editarlo")
+        keys = {str((layer.get("meta") or {}).get("key")) for layer in document.get("layers") or []
+                if layer.get("type") == "field" and (layer.get("meta") or {}).get("key")}
+        unknown = sorted(str(k) for k in values if str(k) not in keys)
+        if unknown:
+            raise ValueError(f"El documento no tiene estos campos: {', '.join(unknown)}")
+        changed = 0
+        previous = copy.deepcopy(document)
+        for layer in document["layers"]:
+            key = (layer.get("meta") or {}).get("key") if layer.get("type") == "field" else None
+            if key is not None and str(key) in values:
+                layer["value"] = "" if values[str(key)] is None else str(values[str(key)])
+                changed += 1
+        saved = store.save(document, expected_updated_at=expected)
+        history = store.get_history(doc_id)
+        store.save_history(doc_id, [*history["past"], previous], [])
+        return {"id": saved["id"], "updatedAt": saved["updatedAt"], "fields_changed": changed}
