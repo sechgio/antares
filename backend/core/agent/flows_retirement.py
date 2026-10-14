@@ -2,7 +2,8 @@
 cuya procedencia queda demostrada por una ejecución registrada.
 
 Un PDF solo se borra si su ruta exacta figura como ``saved_path``/``saved_paths``
-de un paso correcto y no se modificó después de terminar ese paso. El resto queda
+de un productor PDF registrado en el grafo del run, no fue reutilizado y no se
+escribió antes de iniciar ni después de terminar ese paso. El resto queda
 en el manifiesto como pendiente. El manifiesto se persiste antes de los efectos
 y conserva los recursos restantes; la carpeta de estado se borra al final.
 """
@@ -29,6 +30,11 @@ logger = logging.getLogger(__name__)
 
 _TASK_PREFIX = "AntaresFlow-"
 _HEADLESS_MUTEX = "Local\\AntaresFlowsHeadless"
+# Productores de archivos PDF que admitía Flujos antes de su retirada.
+_PDF_OUTPUT_METHODS = (
+    "flows_render_pdf", "canvas_export_cmyk_pdf", "formatos_generate",
+    "evidencia_volanteo_render", "panel_aviso_corte_render_pdf", "sellador_apply",
+)
 
 
 def _read_json(path: Path) -> dict[str, JsonObject]:
@@ -83,9 +89,16 @@ def _headless_running() -> bool:
     return True
 
 
-def _output_candidates(runs: dict[str, JsonObject]) -> list[tuple[str, float | None]]:
-    candidates: list[tuple[str, float | None]] = []
+def _output_candidates(runs: dict[str, JsonObject]) -> list[tuple[str, float | None, float | None, bool]]:
+    candidates: list[tuple[str, float | None, float | None, bool]] = []
     for run in runs.values():
+        graph = run.get("graph")
+        nodes = graph.get("nodes") if isinstance(graph, dict) else []
+        pdf_nodes = {
+            node["id"] for node in nodes if isinstance(node, dict) and isinstance(node.get("id"), str)
+            and node.get("kind") == "tool_call" and isinstance(node.get("config"), dict)
+            and node["config"].get("method") in _PDF_OUTPUT_METHODS
+        } if isinstance(nodes, list) else set()
         steps = run.get("steps")
         for step in steps if isinstance(steps, list) else []:
             if not isinstance(step, dict) or step.get("status") != "success":
@@ -96,12 +109,15 @@ def _output_candidates(runs: dict[str, JsonObject]) -> list[tuple[str, float | N
             paths = [output.get("saved_path")]
             saved = output.get("saved_paths")
             paths.extend(saved if isinstance(saved, list) else [])
+            started = _timestamp(step.get("started_at"))
             finished = _timestamp(step.get("finished_at")) or _timestamp(run.get("finished_at"))
-            candidates.extend((p, finished) for p in paths if isinstance(p, str) and p)
+            proven = (step.get("kind") == "tool_call" and isinstance(step.get("node_id"), str)
+                      and step["node_id"] in pdf_nodes and output.get("reused") is not True)
+            candidates.extend((p, started, finished, proven) for p in paths if isinstance(p, str) and p)
     return candidates
 
 
-def _delete_output(raw: str, finished: float | None) -> str | None:
+def _delete_output(raw: str, finished: float | None, started: float | None) -> str | None:
     """Borra el PDF si su procedencia es demostrable; si no, devuelve el motivo."""
     path = Path(raw)
     if not path.is_absolute():
@@ -112,10 +128,20 @@ def _delete_output(raw: str, finished: float | None) -> str | None:
         return "enlace simbólico"
     if not path.is_file():
         return "no es un archivo"
+    if path.suffix.lower() != ".pdf":
+        return "no es un PDF"
+    with path.open("rb") as stream:
+        if stream.read(5) != b"%PDF-":
+            return "no es un PDF"
     if finished is None:
         return "la ejecución no registra hora de término"
-    if path.stat().st_mtime > finished:
+    if started is None:
+        return "la ejecución no registra hora de inicio"
+    modified = path.stat().st_mtime
+    if modified > finished:
         return "modificado después de la ejecución"
+    if modified < started:
+        return "anterior al inicio del paso"
     path.unlink()
     return None
 
@@ -146,8 +172,9 @@ def retire_flows(
         runs = _read_json(flows_dir / "flow_runs.json")
         tasks = [f"{_TASK_PREFIX}{flow_id}" for flow_id in flows]
         outputs: dict[str, JsonObject] = {}
-        for raw, finished in _output_candidates(runs):
-            outputs.setdefault(os.path.normcase(raw), {"path": raw, "finished": finished, "existed": Path(raw).exists()})
+        for raw, started, finished, proven in _output_candidates(runs):
+            outputs.setdefault(os.path.normcase(raw), {"path": raw, "started": started, "finished": finished,
+                                                      "existed": Path(raw).exists(), "proven": proven})
         pending = []
         for flow in flows.values():
             artifacts = flow.get("source_artifacts")
@@ -178,7 +205,8 @@ def retire_flows(
     for output in list(result["outputs"]):
         raw = str(output["path"])
         try:
-            reason = _delete_output(raw, output["finished"])
+            reason = (_delete_output(raw, output["finished"], output.get("started")) if output.get("proven") is True
+                      else "sin ejecución registrada que lo generara")
         except OSError as exc:
             reason = f"no se pudo borrar: {exc.strerror or exc}"
         if reason:

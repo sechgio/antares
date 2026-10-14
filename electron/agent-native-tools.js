@@ -150,6 +150,12 @@ for (const [kind, properties] of Object.entries(SPACE_INPUTS)) {
     }, true];
   }
 }
+const taskUpdateSchema = RENDERER_TOOLS.espacios_tarea_update[2];
+taskUpdateSchema.required.push('expected_updated_at');
+taskUpdateSchema.properties.expected_updated_at = {
+  type: 'string', minLength: 1,
+  description: 'Revisión updated_at devuelta por espacios_task_get; consulta la tarea antes de actualizarla',
+};
 RENDERER_TOOLS.espacios_comment_create = ['espacios', 'Añadir un comentario a una tarea', {
   type: 'object', properties: { id: { type: 'string' }, body: { type: 'string' } }, required: ['id', 'body'],
 }, true];

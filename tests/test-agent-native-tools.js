@@ -37,6 +37,21 @@ for (const bad of ['', '..', 'sub/a.pdf', String.raw`C:\x\a.pdf`, 'a?.pdf']) {
 }
 
 async function exportTest() {
+  const { validateToolArguments } = await import('@earendil-works/pi-ai');
+  const taskSpec = specs.find((s) => s.name === 'espacios_tarea_update');
+  const taskTool = { name: taskSpec.name, description: taskSpec.description, parameters: taskSpec.inputSchema };
+  for (const revision of [undefined, '']) {
+    let rejected = false;
+    try {
+      validateToolArguments(taskTool, { id: 'call-1', name: taskTool.name,
+        arguments: { id: 'task-1', input: { title: 'Corregida' }, ...(revision === undefined ? {} : { expected_updated_at: revision }) } });
+    } catch { rejected = true; }
+    assert(rejected, 'el esquema rechaza una actualización sin revisión');
+  }
+  const revision = '2026-10-13T10:00:00Z';
+  const taskArgs = { id: 'task-1', input: { title: 'Corregida' }, expected_updated_at: revision };
+  assert(validateToolArguments(taskTool, { id: 'call-1', name: taskTool.name, arguments: taskArgs }).expected_updated_at === revision,
+    'una actualización válida conserva la revisión consultada');
   const fs = require('fs');
   const os = require('os');
   const path = require('path');

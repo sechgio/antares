@@ -3,9 +3,9 @@ import { executeRendererTool } from './rendererTools';
 import { registerAgentCanvasEditor } from './canvasEditor';
 import { createEmptyDocument } from '../canvas/types';
 
-const external = vi.hoisted(() => ({ getUser: vi.fn(), createEspacio: vi.fn(), fetchEspacios: vi.fn() }));
+const external = vi.hoisted(() => ({ getUser: vi.fn(), createEspacio: vi.fn(), fetchEspacios: vi.fn(), updateTarea: vi.fn() }));
 vi.mock('../../lib/supabase', () => ({ supabase: { auth: { getUser: external.getUser } } }));
-vi.mock('../espacios/api/espaciosApi', () => ({ createEspacio: external.createEspacio, fetchEspacios: external.fetchEspacios }));
+vi.mock('../espacios/api/espaciosApi', () => ({ createEspacio: external.createEspacio, fetchEspacios: external.fetchEspacios, updateTarea: external.updateTarea }));
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -57,4 +57,18 @@ it('una respuesta perdida tras una escritura de Espacios conserva la incertidumb
   await expect(executeRendererTool('espacios_espacio_create', { input: { name: 'Equipo' } })).rejects.toMatchObject({ name: 'AgentEffectUncertainError' });
   external.createEspacio.mockRejectedValue(new Error('Permiso denegado [42501]'));
   await expect(executeRendererTool('espacios_espacio_create', { input: { name: 'Equipo' } })).rejects.toMatchObject({ name: 'Error' });
+});
+
+it('actualizar una tarea exige la revisión y la transmite sin cambiarla', async () => {
+  external.getUser.mockResolvedValue({ data: { user: { id: 'account-a' } }, error: null });
+  external.updateTarea.mockClear();
+  const params = { id: 'task-1', input: { title: 'Corregida' } };
+  await expect(executeRendererTool('espacios_tarea_update', params)).rejects.toThrow('Consulta la revisión');
+  expect(external.updateTarea).not.toHaveBeenCalled();
+
+  const revision = '2026-10-13T10:00:00Z';
+  external.updateTarea.mockResolvedValue({ id: 'task-1', title: 'Corregida' });
+  await expect(executeRendererTool('espacios_tarea_update', { ...params, expected_updated_at: revision }))
+    .resolves.toMatchObject({ id: 'task-1' });
+  expect(external.updateTarea).toHaveBeenCalledWith('task-1', params.input, revision);
 });

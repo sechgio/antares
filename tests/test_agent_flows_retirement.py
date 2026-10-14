@@ -23,20 +23,26 @@ def profile(tmp_path):
     out.mkdir()
     finished = time.time() - 60
     proven = out / "reportes-a.pdf"
-    proven.write_bytes(b"%PDF proven")
+    proven.write_bytes(b"%PDF-1.7 proven")
     os.utime(proven, (finished - 5, finished - 5))
     edited = out / "reportes-b.pdf"
-    edited.write_bytes(b"%PDF edited later")
+    edited.write_bytes(b"%PDF-1.7 edited later")
     os.utime(edited, (finished + 30, finished + 30))
     untracked = out / "artefacto.pdf"
     untracked.write_bytes(b"%PDF artifact")
     foreign = out / "ajeno.pdf"
     foreign.write_bytes(b"%PDF ajeno")
     flows = {"f1": {"id": "f1", "source_artifacts": {"fp": [str(untracked)]}}}
-    runs = {"r1": {"id": "r1", "flow_id": "f1", "finished_at": _iso(finished), "steps": [
-        {"status": "success", "finished_at": _iso(finished), "output": {"saved_paths": [str(proven), str(edited)]}},
+    runs = {"r1": {"id": "r1", "flow_id": "f1", "finished_at": _iso(finished), "graph": {"nodes": [
+        {"id": "pdf", "kind": "tool_call", "config": {"method": "flows_render_pdf"}},
+    ]}, "steps": [
+        {"node_id": "pdf", "kind": "tool_call", "status": "success",
+         "started_at": _iso(finished - 10), "finished_at": _iso(finished),
+         "output": {"saved_paths": [str(proven), str(edited)]}},
         {"status": "error", "finished_at": _iso(finished), "output": {"saved_path": str(foreign)}},
-        {"status": "success", "finished_at": _iso(finished), "output": {"saved_path": str(out / "ya-borrado.pdf")}},
+        {"node_id": "pdf", "kind": "tool_call", "status": "success",
+         "started_at": _iso(finished - 10), "finished_at": _iso(finished),
+         "output": {"saved_path": str(out / "ya-borrado.pdf")}},
     ]}}
     (flows_dir / "flows.json").write_text(json.dumps(flows), encoding="utf-8")
     (flows_dir / "flow_runs.json").write_text(json.dumps(runs), encoding="utf-8")
@@ -170,3 +176,97 @@ def test_retirement_preserves_other_stores_and_documents(profile):
     result = flows_retirement.retire_flows(flows_dir, root / "marker.json", lambda name: None, lambda: False)
     assert result["status"] == "completed"
     assert all((root / relative).read_bytes() == content for relative, content in siblings.items())
+
+
+@pytest.mark.parametrize("kind,method,suffix,content,reused", [
+    ("tool_call", "evidencia_volanteo_render", ".docx", b"PK\x03\x04 documento", False),
+    ("tool_call", "panel_aviso_corte_render_pdf", ".docx", b"PK\x03\x04 documento", False),
+    ("tool_call", "flows_render_pdf", ".pdf", b"PK\x03\x04 documento", False),
+    ("transform", "flows_render_pdf", ".pdf", b"%PDF-1.7 ajeno", False),
+    ("code", "flows_render_pdf", ".pdf", b"%PDF-1.7 ajeno", False),
+    ("tool_call", "canvas_get", ".pdf", b"%PDF-1.7 ajeno", False),
+    ("tool_call", "flows_render_pdf", ".pdf", b"%PDF-1.7 reutilizado", True),
+])
+def test_retirement_preserves_non_pdf_and_unproven_outputs(tmp_path, kind, method, suffix, content, reused):
+    output = tmp_path / f"salida{suffix}"
+    output.write_bytes(content)
+    finished = time.time() - 60
+    os.utime(output, (finished - 5, finished - 5))
+    flows_dir = tmp_path / "flows"
+    flows_dir.mkdir()
+    run = {"graph": {"nodes": [{"id": "n", "kind": kind, "config": {"method": method}}]}, "steps": [
+        {"node_id": "n", "kind": kind, "status": "success",
+         "started_at": _iso(finished - 10), "finished_at": _iso(finished),
+         "output": {"saved_path": str(output), "reused": reused}},
+    ]}
+    (flows_dir / "flow_runs.json").write_text(json.dumps({"r": run}), encoding="utf-8")
+
+    result = flows_retirement.retire_flows(flows_dir, tmp_path / "marker.json", lambda name: None, lambda: False)
+
+    assert output.read_bytes() == content
+    assert result["deleted"] == []
+    assert [item["path"] for item in result["pending"]] == [str(output)]
+
+
+@pytest.mark.parametrize("method", [
+    "flows_render_pdf", "canvas_export_cmyk_pdf", "formatos_generate",
+    "evidencia_volanteo_render", "panel_aviso_corte_render_pdf", "sellador_apply",
+])
+def test_retirement_accepts_the_recorded_pdf_producers(profile, method):
+    root, flows_dir, proven, *_ = profile
+    runs_path = flows_dir / "flow_runs.json"
+    runs = json.loads(runs_path.read_text(encoding="utf-8"))
+    runs["r1"]["graph"]["nodes"][0]["config"]["method"] = method
+    runs_path.write_text(json.dumps(runs), encoding="utf-8")
+
+    result = flows_retirement.retire_flows(flows_dir, root / "marker.json", lambda name: None, lambda: False)
+
+    assert result["deleted"] == [str(proven)]
+    assert not proven.exists()
+
+
+def test_legacy_manifest_without_producer_evidence_preserves_its_outputs(profile):
+    root, flows_dir, proven, *_ = profile
+    marker = root / "marker.json"
+    manifest = {"status": "retiring", "flows": 1, "runs": 1, "tasks": [], "remaining_tasks": [],
+                "outputs": [{"path": str(proven), "finished": time.time(), "existed": True}],
+                "deleted": [], "pending": []}
+    marker.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = flows_retirement.retire_flows(flows_dir, marker, lambda name: None, lambda: False)
+
+    assert proven.exists()
+    assert result["deleted"] == []
+    assert [item["path"] for item in result["pending"]] == [str(proven)]
+
+
+@pytest.mark.parametrize("missing", ["graph", "node_id", "kind", "started_at"])
+def test_retirement_preserves_outputs_without_a_matching_recorded_tool(profile, missing):
+    root, flows_dir, proven, *_ = profile
+    runs_path = flows_dir / "flow_runs.json"
+    runs = json.loads(runs_path.read_text(encoding="utf-8"))
+    if missing == "graph":
+        runs["r1"].pop("graph")
+    else:
+        runs["r1"]["steps"][0].pop(missing)
+    runs_path.write_text(json.dumps(runs), encoding="utf-8")
+
+    result = flows_retirement.retire_flows(flows_dir, root / "marker.json", lambda name: None, lambda: False)
+
+    assert proven.exists()
+    assert str(proven) not in result["deleted"]
+    assert str(proven) in {item["path"] for item in result["pending"]}
+
+
+def test_retirement_preserves_a_pdf_written_before_its_recorded_step(profile):
+    root, flows_dir, proven, *_ = profile
+    runs_path = flows_dir / "flow_runs.json"
+    runs = json.loads(runs_path.read_text(encoding="utf-8"))
+    runs["r1"]["steps"][0]["started_at"] = _iso(proven.stat().st_mtime + 1)
+    runs_path.write_text(json.dumps(runs), encoding="utf-8")
+
+    result = flows_retirement.retire_flows(flows_dir, root / "marker.json", lambda name: None, lambda: False)
+
+    assert proven.exists()
+    assert str(proven) not in result["deleted"]
+    assert str(proven) in {item["path"] for item in result["pending"]}
