@@ -25,7 +25,7 @@ function session(backend) {
     } },
     './autoimg-security': { maskClientId: (id) => id },
     './autoimg-oauth-flow': {},
-    './connections-providers': { getProvider: () => ({ auth: {}, status: {
+    './connections-providers': { getProvider: () => ({ auth: { scopes: ['read'], callback_port: 42831, callback_path: '/callback' }, status: {
       url: 'https://example.com/account', account_field: 'name',
     } }) },
     './ipc-router': { _callBackend: async (method, params) => {
@@ -43,7 +43,7 @@ function session(backend) {
 async function main() {
   const fresh = { access_token: 'new', refresh_token: 'R2', expiry_date: Date.now() + 3600000 };
   const current = session(async (method) => {
-    assert.equal(method, 'flows_connection_token_refresh');
+    assert.equal(method, 'connections_token_refresh');
     return { tokens: fresh };
   });
   const [first, second] = await Promise.all([current.api.getValidTokens('demo'), current.api.getValidTokens('demo')]);
@@ -52,11 +52,11 @@ async function main() {
   assert.equal(current.calls.length, 1);
   await current.api.probeAccount('demo');
   assert.equal(current.stored.get('connections/demo-tokens.json').account, 'Cuenta');
-  assert.ok(current.calls.every((method) => method === 'flows_connection_token_refresh'));
+  assert.ok(current.calls.every((method) => method === 'connections_token_refresh'));
 
   let release;
   const pending = new Promise((resolve) => { release = resolve; });
-  const changed = session(async (method) => method === 'flows_connection_token_refresh' ? pending : {});
+  const changed = session(async (method) => method === 'connections_token_refresh' ? pending : {});
   const refreshing = changed.api.getValidTokens('demo');
   await Promise.resolve();
   await changed.api.disconnect('demo');
@@ -68,6 +68,23 @@ async function main() {
   const unavailable = session(async () => { throw new Error('Backend no disponible'); });
   assert.equal(await unavailable.api.getValidTokens('demo'), null);
   assert.equal(unavailable.api.loadTokens('demo').refresh_token, 'R1');
+  const blocked = await unavailable.api.getStatus('demo');
+  assert.equal(blocked.connected, false);
+  assert.equal(blocked.state, 'unavailable');
+  const valid = session(async () => ({ tokens: fresh }));
+  valid.stored.set('connections/demo-tokens.json', { ...fresh, scope: 'read', account: 'Cuenta' });
+  assert.equal((await valid.api.getStatus('demo')).state, 'connected');
+  const partial = session(async () => ({ tokens: fresh }));
+  partial.stored.set('connections/demo-tokens.json', { ...fresh, scope: 'other' });
+  const missing = await partial.api.getStatus('demo');
+  assert.equal(missing.connected, false);
+  assert.deepEqual(Array.from(missing.missing_scopes), ['read']);
+  assert.equal(missing.state, 'missing_scopes');
+  const expired = session(async () => ({}));
+  expired.stored.set('connections/demo-tokens.json', { access_token: 'old', expiry_date: 1, scope: 'read' });
+  assert.equal((await expired.api.getStatus('demo')).state, 'reauth_required');
+  await valid.api.disconnect('demo');
+  assert.equal((await valid.api.getStatus('demo')).state, 'disconnected');
   console.log('[PASS] OAuth usa el token rotado del backend, comparte el refresco y respeta la desconexión.');
 }
 

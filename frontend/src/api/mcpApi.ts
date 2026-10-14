@@ -9,11 +9,13 @@ export interface McpServer {
   args: string[];
   secret_keys: string[];
   tools_count: number | null;
+  disabled_tools?: string[];
 }
 
 export interface McpTool {
   name: string;
   description: string;
+  enabled?: boolean;
 }
 
 export const mcpApi = {
@@ -33,4 +35,7 @@ export const mcpApi = {
 
   mcpServerTools: (server: string) =>
     _invoke<{ tools: McpTool[] }>('mcp_server_tools', { server }),
+
+  mcpServerToolSet: (server: string, tool: string, enabled: boolean) =>
+    _invoke<{ tool: McpTool }>('mcp_server_tool_set', { server, tool, enabled }),
 };

@@ -31,6 +31,18 @@ class _BitmapInfo(ctypes.Structure):
                 ("colors", wintypes.DWORD), ("important_colors", wintypes.DWORD)]
 
 
+class _SystemTime(ctypes.Structure):
+    _fields_ = [(name, wintypes.WORD) for name in ("year", "month", "weekday", "day", "hour", "minute", "second", "milliseconds")]
+
+
+class _JobInfo(ctypes.Structure):
+    _fields_ = [("id", wintypes.DWORD), ("printer", wintypes.LPWSTR), ("machine", wintypes.LPWSTR),
+               ("user", wintypes.LPWSTR), ("document", wintypes.LPWSTR), ("datatype", wintypes.LPWSTR),
+               ("status_text", wintypes.LPWSTR), ("status", wintypes.DWORD), ("priority", wintypes.DWORD),
+               ("position", wintypes.DWORD), ("total_pages", wintypes.DWORD), ("pages_printed", wintypes.DWORD),
+               ("submitted", _SystemTime)]
+
+
 class _Devmode(ctypes.Structure):
     """DEVMODEW público (hasta dmPanningHeight) para dúplex y calidad."""
     _fields_ = [
@@ -77,6 +89,9 @@ def _spool() -> Any:
     spool.OpenPrinterW.restype = wintypes.BOOL
     spool.ClosePrinter.argtypes = [wintypes.HANDLE]
     spool.ClosePrinter.restype = wintypes.BOOL
+    spool.EnumJobsW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
+                               ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(wintypes.DWORD)]
+    spool.EnumJobsW.restype = wintypes.BOOL
     spool.DocumentPropertiesW.argtypes = [wintypes.HWND, wintypes.HANDLE, wintypes.LPWSTR,
                                           ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD]
     spool.DocumentPropertiesW.restype = ctypes.c_long
@@ -96,6 +111,34 @@ def reset_printer_cache_for_tests() -> None:
     global _printers_cache
     with _printers_cache_lock:
         _printers_cache = None
+
+
+def printer_job_status(printer_name: str, job_name: str) -> dict[str, str | int | bool]:
+    """La ausencia en la cola no demuestra que el papel se imprimió."""
+    if sys.platform != "win32":
+        return {"uncertain": True, "reason": "El spooler requiere Windows"}
+    spool = _spool()
+    handle = wintypes.HANDLE()
+    if not spool.OpenPrinterW(printer_name, ctypes.byref(handle), None):
+        return {"uncertain": True, "reason": "La impresora no está disponible"}
+    try:
+        needed, count = wintypes.DWORD(), wintypes.DWORD()
+        spool.EnumJobsW(handle, 0, 512, 1, None, 0, ctypes.byref(needed), ctypes.byref(count))
+        if not needed.value or needed.value > 4 * 1024 * 1024:
+            return {"uncertain": True, "reason": "El trabajo no se encontró en la cola; comprueba la impresora"}
+        buffer = ctypes.create_string_buffer(needed.value)
+        if not spool.EnumJobsW(handle, 0, 512, 1, buffer, len(buffer), ctypes.byref(needed), ctypes.byref(count)):
+            return {"uncertain": True, "reason": "No se pudo consultar la cola de impresión"}
+        jobs = ctypes.cast(buffer, ctypes.POINTER(_JobInfo))
+        for index in range(count.value):
+            job = jobs[index]
+            if job.document == job_name:
+                return {"submitted": True, "job_id": int(job.id), "printer_name": printer_name,
+                        "spooler_status": int(job.status), "pages_printed": int(job.pages_printed),
+                        "status_text": job.status_text or "En la cola de Windows"}
+        return {"uncertain": True, "reason": "El trabajo ya no está en la cola; comprueba la impresora antes de repetir"}
+    finally:
+        spool.ClosePrinter(handle)
 
 
 def list_printers() -> list[dict[str, str | bool]]:
@@ -217,7 +260,8 @@ def _devmode(printer_name: str, duplex: str | None, quality: str | None) -> ctyp
 def print_pdf(pdf_path: str, printer_name: str, copies: int = 1,
               cancelled: Callable[[], bool] | None = None, *,
               pages: Any = None, duplex: str | None = None,
-              quality: str | None = None) -> dict[str, str | int | bool]:
+              quality: str | None = None, job_name: str | None = None,
+              on_submitted: Callable[[int], None] | None = None) -> dict[str, str | int | bool]:
     if sys.platform != "win32":
         raise ValueError("La impresión de PDFs requiere Windows")
     if not printer_name or printer_name not in {p["name"] for p in list_printers()}:
@@ -252,11 +296,13 @@ def print_pdf(pdf_path: str, printer_name: str, copies: int = 1,
                 raise ValueError("La impresora no informó un área imprimible válida")
             if cancelled and cancelled():
                 raise ValueError("Impresión cancelada")
-            info = _DocInfo(ctypes.sizeof(_DocInfo), source.name, None, None, 0)
+            info = _DocInfo(ctypes.sizeof(_DocInfo), job_name or source.name, None, None, 0)
             job_id = gdi.StartDocW(dc, ctypes.byref(info))
             if job_id <= 0:
                 raise ValueError("No se pudo iniciar el trabajo de impresión")
             started = True
+            if on_submitted is not None:
+                on_submitted(job_id)
             gdi.SetStretchBltMode(dc, 4)
             for _ in range(copies):
                 for index in page_indexes:

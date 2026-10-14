@@ -1,6 +1,12 @@
 import { _invoke } from './core';
 
-export interface ConnectionProviderSpec {
+interface ConnectionState {
+  state?: 'connecting' | 'unconfigured' | 'unavailable' | 'disconnected' | 'reauth_required' | 'missing_scopes' | 'connected';
+  status_message?: string;
+  missing_scopes?: string[];
+}
+
+export interface ConnectionProviderSpec extends ConnectionState {
   id: string;
   label: string;
   description: string;
@@ -24,7 +30,7 @@ export interface ConnectionCategory {
   label: string;
 }
 
-export interface ConnectionStatus {
+export interface ConnectionStatus extends ConnectionState {
   provider: string;
   configured: boolean;
   client_id_masked?: string;

@@ -4,10 +4,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from backend.core.flows import agent, agent_chat, ai_providers, vault
-from backend.core.flows.runner import FlowRunner
+from backend.core.agent import agent, agent_chat
+from backend.core.integrations import ai_providers, vault
 from backend.handlers import agent as agent_handlers
-from backend.handlers import flows as flow_handlers
+from backend.handlers import integrations as integration_handlers
 
 
 @pytest.fixture
@@ -134,11 +134,11 @@ def provider_server(tmp_path, monkeypatch):
 ])
 def test_custom_provider_roundtrip_and_protocol(provider_server, monkeypatch, provider, suffix, models_path, chat_path):
     base, requests = provider_server
-    result = flow_handlers._ai_provider_save({
+    result = integration_handlers._ai_provider_save({
         "provider": provider, "api_key": "test-key-1234", "base_url": base + suffix, "model": "custom-model",
     })
     assert "test-key-1234" not in json.dumps(result)
-    listed = next(p for p in flow_handlers._ai_providers_list({})["providers"] if p["id"] == provider)
+    listed = next(p for p in integration_handlers._ai_providers_list({})["providers"] if p["id"] == provider)
     assert listed["default_model"] == "custom-model"
     assert listed["base_url"] == base + suffix.rstrip("/")
     monkeypatch.setattr(agent_chat, "tool_specs", lambda: [{
@@ -175,19 +175,14 @@ def test_custom_provider_roundtrip_and_protocol(provider_server, monkeypatch, pr
         assert followup["messages"][-1]["content"][0]["tool_use_id"] == "call-1"
 
 
-def test_saved_model_used_by_sessions_and_flow_nodes(provider_server, tmp_path, monkeypatch):
-    base, requests = provider_server
+def test_saved_model_used_by_sessions(provider_server, tmp_path, monkeypatch):
+    base, _ = provider_server
     ai_providers.put_config("anthropic", {"api_key": "test-key", "base_url": base + "/v1", "model": "custom-model"})
     store = agent.AgentStore(tmp_path / "agent")
     monkeypatch.setattr(agent_handlers, "_store", lambda: store)
     session = agent_handlers._session_create({"provider": "anthropic"})["session"]
     assert session["model"] == "custom-model"
     assert agent_handlers._session_create({"provider": "anthropic", "model": "explicit"})["session"]["model"] == "explicit"
-    result = FlowRunner._run_agent({"config": {"provider": "anthropic", "prompt": "Hola"}}, {})
-    assert result["json"]["model"] == "custom-model"
-    assert result["json"]["text"] == "Listo"
-    assert requests[-1][0] == "/v1/messages"
-    assert "tools" not in requests[-1][2]
 
 
 def test_model_and_url_can_be_reset_without_replacing_key(provider_server):
@@ -298,7 +293,7 @@ def test_streaming_matches_native_sdk_over_http(provider_server, monkeypatch, pr
 @pytest.mark.parametrize("model", ["stream-text", "stream-error"])
 def test_saved_provider_sends_turn_and_persists_streamed_response(provider_server, tmp_path, monkeypatch, caplog, provider, model):
     base, requests = provider_server
-    flow_handlers._ai_provider_save({"provider": provider, "api_key": "test-key-1234", "base_url": base + "/v1", "model": model})
+    integration_handlers._ai_provider_save({"provider": provider, "api_key": "test-key-1234", "base_url": base + "/v1", "model": model})
     store = agent.AgentStore(tmp_path / "agent")
     runner = agent.AgentRunner(store, lambda name: None)
     monkeypatch.setattr(agent_handlers, "_store", lambda: store)

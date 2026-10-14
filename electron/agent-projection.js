@@ -81,7 +81,7 @@ function applyEvent(convId, event) {
       if (sessionId) {
         commitSessions((sessions) => {
           const session = sessions[sessionId];
-          if (session) session.last_error = String(event.message || '').slice(0, 300) || session.last_error;
+          if (session) session.last_error = require('./agent-execution').sanitizeProviderError(event.message).slice(0, 300) || session.last_error;
         }).catch(() => {});
       }
       break;
@@ -122,6 +122,15 @@ function textOf(message) {
     .join('');
 }
 
+// Texto del humano sin el bloque de contexto de sus @menciones.
+function userTextOf(message) {
+  if (!message || typeof message.content === 'string') return textOf(message);
+  return (message.content || [])
+    .filter((block) => block && block.type === 'text' && !String(block.text || '').startsWith(shared.CONTEXT_MARKER))
+    .map((block) => block.text || '')
+    .join('');
+}
+
 function entryTs(entry, message) {
   if (message && typeof message.timestamp === 'number') return message.timestamp;
   if (entry.data && typeof entry.data.ts === 'number') return entry.data.ts;
@@ -158,7 +167,7 @@ async function projectMessages(conv, session) {
   for (const entry of entries) {
     const msg = entry.model && entry.model[0];
     if (entry.kind === 'pi.user') {
-      messages.push({ role: 'user', content: textOf(msg), ts: entryTs(entry, msg) });
+      messages.push({ role: 'user', content: userTextOf(msg), ts: entryTs(entry, msg) });
       continue;
     }
     if (entry.kind === NOTICE_KIND) {
@@ -217,6 +226,11 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
     const diagnostics = (result.entry.data && result.entry.data.diagnostics) || [];
     const blocked = result.msg.isError && diagnostics.some((d) => d && (d.code === 'blocked' || d.code === 'tool_unavailable'));
     base.status = !result.msg.isError ? 'done' : blocked ? 'denied' : 'failed';
+    try {
+      const receipt = JSON.parse(base.result);
+      if (receipt.queued === true || receipt.submitted === true) base.status = 'submitted';
+      else if (receipt.uncertain === true || receipt.interrupted === true) base.status = 'interrupted';
+    } catch { /* La herramienta también puede devolver texto. */ }
     return base;
   }
   if (pendingByCall.has(call.id)) {

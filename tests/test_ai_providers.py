@@ -1,6 +1,6 @@
 import pytest
 
-from backend.core.flows import ai_providers
+from backend.core.integrations import ai_providers
 
 
 def test_provider_specs_loaded():
