@@ -43,7 +43,7 @@ async function rejects(promise) {
 }
 
 async function main() {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-cloud-')));
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-cloud-')));
   try {
     const specs = nativeToolSpecs().filter((spec) => spec.module === 'connections');
     assert(specs.length === 15, 'quince herramientas cloud registradas en Conexiones');
