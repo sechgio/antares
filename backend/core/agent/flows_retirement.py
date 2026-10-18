@@ -5,7 +5,8 @@ Un PDF solo se borra si su ruta exacta figura como ``saved_path``/``saved_paths`
 de un productor PDF registrado en el grafo del run, no fue reutilizado y no se
 escribió antes de iniciar ni después de terminar ese paso. El resto queda
 en el manifiesto como pendiente. El manifiesto se persiste antes de los efectos
-y conserva los recursos restantes; la carpeta de estado se borra al final.
+y conserva los recursos restantes; la carpeta de estado se borra al final salvo
+que contenga una salida pendiente.
 """
 
 from __future__ import annotations
@@ -30,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 _TASK_PREFIX = "AntaresFlow-"
 _HEADLESS_MUTEX = "Local\\AntaresFlowsHeadless"
-# Productores de archivos PDF que admitía Flujos antes de su retirada.
 _PDF_OUTPUT_METHODS = (
     "flows_render_pdf", "canvas_export_cmyk_pdf", "formatos_generate",
     "evidencia_volanteo_render", "panel_aviso_corte_render_pdf", "sellador_apply",
@@ -216,7 +216,12 @@ def retire_flows(
         result["outputs"].remove(output)
         atomic_write_json(marker, result)
 
-    if flows_dir.exists():
+    state_root = Path(os.path.abspath(flows_dir))
+    contains_pending = any(
+        Path(os.path.abspath(item["path"])).is_relative_to(state_root) and Path(item["path"]).exists()
+        for item in result["pending"]
+    )
+    if flows_dir.exists() and not contains_pending:
         shutil.rmtree(flows_dir)
     result.pop("outputs")
     result.pop("remaining_tasks")

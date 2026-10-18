@@ -124,7 +124,7 @@ export default function ConnectionDetail({
         {!p.configured && ['google', 'microsoft'].includes(p.id) && <p className="text-xs text-[var(--text-secondary)]">
           La aplicación pública de Antares para este proveedor aún no está registrada. Esta conexión queda pendiente de ese registro.
         </p>}
-        {!p.connected && (
+        {!p.connected && !p.public_app && (
           <div className="space-y-2 text-xs leading-relaxed text-[var(--text-secondary)]">
             <p className="font-medium text-[var(--text-primary)]">1. Prepara la conexión</p>
             <p>La primera conexión necesita una aplicación registrada en {p.label}. Si no administras esta cuenta, pide al responsable los datos indicados abajo.</p>
@@ -154,7 +154,7 @@ export default function ConnectionDetail({
           )}
         </div>
 
-        <div>
+        {!p.public_app && <div>
           <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
             2. Registra la dirección de retorno
           </div>
@@ -173,7 +173,7 @@ export default function ConnectionDetail({
           <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
             Copia esta dirección en el campo «Redirect URI» de la aplicación que registraste en {p.label}.
           </p>
-        </div>
+        </div>}
 
         {p.scopes.length > 0 && (
           <details>
@@ -196,7 +196,7 @@ export default function ConnectionDetail({
           </details>
         )}
 
-        <div className="border-t border-[var(--border-subtle)] pt-4">
+        {!p.public_app && <div className="border-t border-[var(--border-subtle)] pt-4">
           <div className="mb-1 flex items-center justify-between">
             <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
               3. Guarda los datos de la aplicación
@@ -240,7 +240,7 @@ export default function ConnectionDetail({
             </Button>
             <p className="text-[11px] leading-relaxed text-[var(--text-secondary)]">4. Pulsa «Conectar con {p.label}» arriba. Se abrirá el navegador para que inicies sesión y revises los permisos.</p>
           </div>
-        </div>
+        </div>}
       </div>
     </aside>
   );

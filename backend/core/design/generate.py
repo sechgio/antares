@@ -1,6 +1,6 @@
 """Generación de un Design con el modelo del usuario.
 
-Reutiliza el cliente de chat de flujos (`agent_chat.chat`) para que la feature
+Reutiliza el cliente de chat del agente (`agent_chat.chat`) para que la feature
 funcione con **cualquier proveedor BYOK** —OpenAI, Anthropic, OpenRouter u
 Ollama— sin una sola ruta de código por proveedor: el estilo de cableado vive
 en `shared/ai-providers-catalog.json` y `agent_chat` ya lo adapta.
@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import logging
 
+from backend.core.agent import agent_chat
 from backend.core.design import memory as design_memory
 from backend.core.design import models
 from backend.core.design.prompt import SYSTEM_PROMPT, tool_spec
 from backend.core.design.types import JsonObject
-from backend.core.flows import agent_chat, ai_providers
+from backend.core.integrations import ai_providers
 
 logger = logging.getLogger(__name__)
 

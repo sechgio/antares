@@ -17,12 +17,14 @@ recurso se serializan.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from pathlib import Path
 
 from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
 from backend.core.agent import agent_tools, artifacts, canvas_edit, documents, drafts, resource_grants
+from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.core.exceptions import NotFoundError, ValidationError
@@ -32,23 +34,42 @@ from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import input_schema_for
 from backend.handlers.common import validate_params, with_locale
 
+logger = logging.getLogger(__name__)
+
 
 def _store() -> _agent.AgentStore:
     return _agent.get_agent_store()
 
 
+def _memory() -> _memory_store.MemoryStore:
+    return _memory_store.memory_for(_store())
+
+
+def _record_outcome(session_id: str, name: str, status: str) -> None:
+    try:
+        _memory().record_outcome(session_id, name, status)
+    except Exception:
+        logger.warning("No se pudo registrar el resultado del efecto %s", name, exc_info=True)
+
+
 _inflight: dict[str, _CancelEvent] = {}
 _inflight_lock = threading.Lock()
 _resource_locks: dict[str, threading.Lock] = {}
+# Locks de recurso que retiene un efecto nativo entre su reserva y
+# agent_internal_dispatch_finish (Electron lo ejecuta fuera de este proceso).
+_native_leases: dict[str, list[threading.Lock]] = {}
 _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
-                    "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields")
+                    "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields",
+                    "gdrive_", "gsheets_", "onedrive_", "excel_")
+_CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 
 
 def _resource_keys(params: JsonObject) -> list[str]:
-    """Claves de recurso de un efecto: documento/registro por ``id`` y archivos de salida."""
+    """Claves de recurso de un efecto: documento/registro/archivo remoto por ID y archivos de salida."""
     keys: set[str] = set()
     document = params.get("document")
-    for value in (params.get("id"), document.get("id") if isinstance(document, dict) else None):
+    remote = [params.get(name) for name in ("file_id", "replace_file_id", "spreadsheet_id", "item_id", "replace_item_id")]
+    for value in (params.get("id"), document.get("id") if isinstance(document, dict) else None, *remote):
         if isinstance(value, (str, int)) and str(value):
             keys.add(f"id:{value}")
     for name in ("output_path", "outputPath", "pdf_path", "path"):
@@ -61,6 +82,33 @@ def _resource_keys(params: JsonObject) -> list[str]:
 def _locks_for(keys: list[str]) -> list[threading.Lock]:
     with _inflight_lock:
         return [_resource_locks.setdefault(key, threading.Lock()) for key in keys]
+
+
+def _context_keys(context: object) -> list[str]:
+    """Recurso remoto compartido de un efecto nativo: la hoja (o cuenta) de AutoIMG."""
+    if not isinstance(context, dict):
+        return []
+    for field, prefix in (("sheet_id", "sheet"), ("account_id", "account")):
+        value = context.get(field)
+        if isinstance(value, str) and value:
+            return [f"{prefix}:{value}"]
+    return []
+
+
+def _try_locks(keys: list[str]) -> list[threading.Lock] | None:
+    """Toma todos los locks sin esperar (orden estable) o ninguno."""
+    acquired: list[threading.Lock] = []
+    for lock in _locks_for(keys):
+        if not lock.acquire(blocking=False):
+            _release(acquired)
+            return None
+        acquired.append(lock)
+    return acquired
+
+
+def _release(locks: list[threading.Lock]) -> None:
+    for lock in reversed(locks):
+        lock.release()
 
 
 @with_locale
@@ -148,6 +196,12 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
                 raise ValueError("Revisa el PDF en el chat antes de imprimirlo")
             resources.append(resource_grants.revision(str(path)))
             artifact_context = {"filename": file["name"], "sha256": file["sha256"]}
+        if method in _CLOUD_UPLOADS:
+            root = store.drafts_dir(session_id)
+            source = drafts.inside(root, str(root / str(params.get("draft") or "")))
+            if source is None or not source.is_file():
+                raise ValueError("El borrador que se quiere subir no existe en esta conversación")
+            resources.append(resource_grants.revision(str(source)))
         tool = agent_tools.SPECS.get(method) or {"inputSchema": input_schema_for(method)}
         current_context = dict(context or {})
         current_context.update(artifact_context)
@@ -202,6 +256,7 @@ def _mentions(params: JsonObject) -> JsonObject:
     """Resuelve las ``@menciones`` del texto del humano a módulos de Antares y
     prepara el contexto que acompaña su mensaje al modelo."""
     result = _agent_modules.resolve_mentions(str(params["text"]))
+    result["labels"] = {module: _agent_modules.label_for(module) for module in result["modules"]}
     if result["modules"]:
         native = params.get("native_tools")
         names = [str(spec["name"]) for spec in _agent_chat.tool_specs()]
@@ -311,13 +366,28 @@ def _dispatch(params: JsonObject) -> JsonObject:
         return _dispatch_error("La herramienta requiere una aprobación aprobada para esta llamada")
 
     store = _store()
+    leased: list[threading.Lock] = []
+    if native and gated and store.get_dispatch(session_id, call_id) is None:
+        held = _try_locks(_resource_keys(call_params) + _context_keys(params.get("context")))
+        if held is None:
+            return {"result": None, "busy": True}
+        leased = held
     try:
         intent = _intent(session_id, name, call_params, params.get("context"))
+        outcome, record = store.dispatch_claim(
+            session_id, call_id, name, intent, str(approval_id) if gated else None,
+        )
     except ValidationError as err:
+        _release(leased)
         return _dispatch_error(str(err))
-    outcome, record = store.dispatch_claim(
-        session_id, call_id, name, intent, str(approval_id) if gated else None,
-    )
+    except Exception:
+        _release(leased)
+        raise
+    if outcome == "new" and native:
+        with _inflight_lock:
+            _native_leases[str(record["op_id"])] = leased
+    else:
+        _release(leased)
     if outcome == "rejected":
         return _dispatch_error(str(record["error"]))
     if outcome == "conflict":
@@ -361,6 +431,7 @@ def _dispatch(params: JsonObject) -> JsonObject:
             for lock in reversed(acquired):
                 lock.release()
         store.dispatch_finish(session_id, call_id, op_id, status, str(result))
+        _record_outcome(session_id, name, status)
         with _inflight_lock:
             _inflight.pop(op_id, None)
 
@@ -383,6 +454,15 @@ def _dispatch_result(params: JsonObject) -> JsonObject:
 @validate_params("session_id", "call_id", "op_id", "result")
 def _dispatch_finish(params: JsonObject) -> JsonObject:
     """Registra el resultado de una herramienta nativa ejecutada por Electron."""
+    try:
+        return _finish_native(params)
+    finally:
+        with _inflight_lock:
+            leased = _native_leases.pop(str(params["op_id"]), [])
+        _release(leased)
+
+
+def _finish_native(params: JsonObject) -> JsonObject:
     session_id, call_id = str(params["session_id"]), str(params["call_id"])
     result = str(params["result"])
     store = _store()
@@ -403,6 +483,8 @@ def _dispatch_finish(params: JsonObject) -> JsonObject:
     if params.get("uncertain") is True:
         status = "uncertain"
     _store().dispatch_finish(session_id, call_id, str(params["op_id"]), status, result)
+    if record.get("status") in {"running", "uncertain"}:
+        _record_outcome(session_id, str(record.get("method") or ""), status)
     record = _store().get_dispatch(session_id, call_id)
     if record is None or record.get("op_id") != params["op_id"]:
         raise NotFoundError(f"Dispatch no encontrado: {call_id}")
@@ -423,8 +505,62 @@ def _document_plan(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("session_id")
 def _artifacts(params: JsonObject) -> JsonObject:
-    return {"artifacts": _store().artifacts_for(str(params["session_id"])),
-            "questions": _store().questions_for(str(params["session_id"]))}
+    session_id = str(params["session_id"])
+    files = [{"path": str(record["path"]), "folder": record.get("mode") == "folder"}
+             for record in _store().grants_for(session_id).values()]
+    return {"artifacts": _store().artifacts_for(session_id),
+            "questions": _store().questions_for(session_id),
+            "context": {"files": sorted(files, key=lambda f: f["path"]), "accounts": _store().accounts_for(session_id)}}
+
+
+@with_locale
+@validate_params("session_id", "path")
+def _grant_remove(params: JsonObject) -> JsonObject:
+    """El usuario retira un archivo concedido; solo lo llama Electron desde su acción."""
+    return {"removed": _store().revoke_grant(str(params["session_id"]), str(params["path"]))}
+
+
+@with_locale
+@validate_params("session_id", "text")
+def _memory_context(params: JsonObject) -> JsonObject:
+    """Recuerdos pertinentes al mensaje del humano. Electron envía la versión
+    actual de cada herramienta para suspender procedimientos desactualizados."""
+    raw = params.get("tools")
+    tools = raw if isinstance(raw, list) else []
+    versions = {str(t["name"]): str(t.get("version") or "") for t in tools if isinstance(t, dict) and t.get("name")}
+    memory = _memory()
+    templates: set[str] | None = None
+    if any(item.get("templates") for item in memory.items() if item["status"] == "active"):
+        try:
+            templates = {str(t["template_id"]) for t in documents.catalog()["templates"]}
+        except Exception:
+            logger.warning("No se pudo leer el catálogo de plantillas; la suspensión por plantilla queda desactivada", exc_info=True)
+            templates = None
+    raw_accounts = params.get("accounts")
+    accounts = {str(k): str(v) for k, v in raw_accounts.items() if v} if isinstance(raw_accounts, dict) else {}
+    return memory.context(str(params["session_id"]), str(params["text"]), versions, templates, accounts)
+
+
+@with_locale
+def _memory_list(params: JsonObject) -> JsonObject:
+    return {"items": _memory().items()}
+
+
+@with_locale
+@validate_params("id", "action")
+def _memory_update(params: JsonObject) -> JsonObject:
+    try:
+        return {"item": _memory().update(str(params["id"]), params)}
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("id")
+def _memory_delete(params: JsonObject) -> JsonObject:
+    if not _memory().delete(str(params["id"])):
+        raise NotFoundError("El recuerdo ya no existe")
+    return {"deleted": True}
 
 
 @with_locale
@@ -497,4 +633,9 @@ HANDLERS = {
     "agent_internal_artifact_effect": _artifact_effect,
     "agent_internal_activity": _activity,
     "agent_question_answer": _question_answer,
+    "agent_internal_memory_context": _memory_context,
+    "agent_internal_grant_remove": _grant_remove,
+    "agent_memory_list": _memory_list,
+    "agent_memory_update": _memory_update,
+    "agent_memory_delete": _memory_delete,
 }

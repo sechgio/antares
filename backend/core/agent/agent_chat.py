@@ -41,8 +41,6 @@ _ERR_MSG_MAX_CHARS = 300
 # vault/claves, configuración de proveedores y MCP, canales internos y el propio
 # canal del agente, y borrados destructivos.
 _DENIED_PREFIXES = ("ai_provider_", "ai_providers_", "connections_token_", "agent_", "mcp_server")
-# canvas_save/canvas_save_history reciben un documento completo: el agente
-# edita Canvas solo con canvas_fill_fields, contra la revisión leída.
 _DENIED_METHODS = frozenset({"db_clear", "mcp_tool_call", "telemetry", "canvas_save", "canvas_save_history", "print_pdf"})
 
 

@@ -177,7 +177,6 @@ async function beforeTool(call, api, context) {
       ...(approvedContext ? { context: approvedContext } : {}),
     }));
   } catch (err) {
-    // Archivo no autorizado o intención distinta: no se pide aprobación.
     return { block: String((err && err.message) || err) };
   }
   shared.approvalsByCall.set(callKey(sessionId, call.id), approval.id);
@@ -271,15 +270,21 @@ async function executeTool(spec, args, api, context) {
     if (spec.name === 'ask_user') shared.waitingInput.delete(sessionId);
   }
   let parsed = null;
-  try { parsed = JSON.parse(text); } catch { /* texto plano */ }
+  try { parsed = JSON.parse(text); } catch { }
   const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
   return { content: [{ type: 'text', text }], isError };
 }
 
-// Herramienta nativa: Python reserva la operación (y consume la aprobación);
-// solo el ganador de la reserva la ejecuta aquí y registra el comprobante.
 async function dispatchNative(spec, request, context) {
-  const first = await bridge('agent_internal_dispatch', { ...request, native: true, gated: !!spec.gated });
+  let first = await bridge('agent_internal_dispatch', { ...request, native: true, gated: !!spec.gated });
+  while (first.busy) {
+    await waitResource(context);
+    if (!await toolEnabled(request.session_id, spec.name, context)) {
+      return JSON.stringify({ error: `Herramienta deshabilitada en esta conversación: ${spec.name}` });
+    }
+    request.context = await nativeTools().nativeToolContext(spec.name);
+    first = await bridge('agent_internal_dispatch', { ...request, native: true, gated: !!spec.gated });
+  }
   if (first.execute !== 'native') {
     let result = first.result;
     while (result === null || result === undefined) {
@@ -290,6 +295,9 @@ async function dispatchNative(spec, request, context) {
   let text;
   let uncertain = false;
   try {
+    if (!await toolEnabled(request.session_id, spec.name, context)) {
+      throw new Error(`Herramienta deshabilitada en esta conversación: ${spec.name}`);
+    }
     const result = await nativeTools().runNativeTool(spec.name, request.params, {
       sessionId: request.session_id, approvedContext: request.context,
     });
@@ -332,6 +340,22 @@ async function dispatchApproved(approval, context) {
 async function toolEnabled(sessionId, name, context) {
   const conv = await conversation(sessionId);
   return (await conv.agent(context)).tools.some((tool) => tool.name === name);
+}
+
+function waitResource(context) {
+  const signal = context && context.abortSignal;
+  return new Promise((resolve, reject) => {
+    if (signal && signal.aborted) return reject(aborted());
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(aborted());
+    };
+    const timer = setTimeout(() => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, 400);
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function pollDispatch(sessionId, callId, context) {

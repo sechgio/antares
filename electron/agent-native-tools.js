@@ -3,13 +3,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-// Herramientas del agente que se ejecutan en el proceso principal (métodos
-// native:* del catálogo). Python sigue siendo dueño de la reserva, la
-// aprobación y el comprobante de cada operación; aquí solo se declara qué
-// métodos nativos ve el modelo, con qué esquema y si son lectura o efecto.
-// Configuración de cuentas, credenciales, OAuth y reglas permanentes (como el
-// auto-sync) quedan fuera: son acciones de la interfaz humana.
-
 const OBJECT = { type: 'object', properties: {} };
 const FOLDER = {
   type: 'object',
@@ -78,9 +71,6 @@ const AUTOIMG_EFFECTS = {
   autoimg_cancel_operation: ['Cancelar la operación en curso de AutoIMG', OBJECT],
 };
 
-// Exportación a PDF de los informes que el backend renderiza en HTML: el
-// HTML no pasa por el modelo; se imprime con el mismo motor que la pantalla
-// (html_to_pdf) y el PDF queda en los borradores de la conversación.
 const REPORT_EXPORTS = {
   technical_reports_export_pdf: {
     module: 'technicalReports', label: 'Informes técnicos', single: 'technical_reports_render_html',
@@ -160,6 +150,11 @@ RENDERER_TOOLS.espacios_comment_create = ['espacios', 'Añadir un comentario a u
   type: 'object', properties: { id: { type: 'string' }, body: { type: 'string' } }, required: ['id', 'body'],
 }, true];
 
+const CLOUD = {};
+for (const service of [require('./google-workspace-service'), require('./microsoft-files-service')]) {
+  for (const name of Object.keys(service.TOOLS)) CLOUD[name] = service;
+}
+
 function spec(name, [label, schema], gated) {
   return {
     name,
@@ -188,6 +183,11 @@ const SPECS = [
     name, module, label, gated, kind: 'native', description: `${label} (${gated ? 'requiere aprobación' : 'lectura o borrador interno'})`,
     inputSchema: schema || OBJECT, inheritSchema: !schema,
   })),
+  ...Object.entries(CLOUD).map(([name, service]) => {
+    const [label, schema, gated] = service.TOOLS[name];
+    return { name, module: 'connections', label, gated, kind: 'native', inputSchema: schema,
+      description: `Conexiones · ${label} (${gated ? 'efecto: requiere aprobación del usuario' : 'lectura o borrador interno'})` };
+  }),
 ];
 
 function nativeToolSpecs() {
@@ -200,6 +200,7 @@ async function nativeToolContext(name) {
   const { createHash } = require('node:crypto');
   const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
   const context = { tool_version: hash({ policy: 1, spec: selected }) };
+  if (CLOUD[name]) return Object.assign(context, await CLOUD[name].context(name));
   if (selected.module === 'espacios') {
     Object.assign(context, await require('./agent-renderer-tools').runRendererTool('espacios_context'));
     return context;
@@ -307,6 +308,7 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
       throw new Error('La cuenta, los permisos o la hoja cambiaron después de aprobar; solicita una nueva aprobación');
     }
   }
+  if (CLOUD[name]) return CLOUD[name].run(name, params || {}, { dir: draftsDir(sessionId) });
   if (name === 'document_generate') return generateDocument(params, sessionId);
   if (RENDERER_TOOLS[name]) {
     const result = await require('./agent-renderer-tools').runRendererTool(name,

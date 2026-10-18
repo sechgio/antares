@@ -17,7 +17,7 @@ def test_module_ids_match_navigation_or_known_groups():
     navigation = {
         "convert", "formatos", "sellador", "padron", "volantes", "reportesCampo", "technicalReports",
         "informesV2", "imageOptimizer", "previewPanel", "canvas", "agent", "panelAvisoCorte", "ubicaciones",
-        "evidenciaVolanteo", "autoimg", "fichasTecnicas", "espacios", "connections",
+        "evidenciaVolanteo", "autoimg", "fichasTecnicas", "espacios", "connections", "design",
     }
     extra = {"conversion", "printing", "history", "app", "drafts", "documents"}
     assert set(modules.catalog()) <= navigation | extra

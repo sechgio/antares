@@ -142,6 +142,7 @@ class AgentStore:
     def __init__(self, base_dir: Path | None = None) -> None:
         base = base_dir or user_data_path("ai-agent")
         base.mkdir(parents=True, exist_ok=True)
+        self.base_dir = base
         self._sessions_path = base / "sessions.json"
         self._approvals_path = base / "approvals.json"
         self._grants_path = base / "grants.json"
@@ -187,12 +188,10 @@ class AgentStore:
                         record["result"] = json.dumps({**receipt, "recovered": True, "interrupted": not receipt.get("submitted")}, ensure_ascii=False)
                         record["summary"] = record["result"]
                     except Exception:
-                        pass  # Conserva uncertain: nunca repite automáticamente la impresión.
+                        logger.warning("No se pudo verificar el trabajo de impresión %s", record.get("op_id"), exc_info=True)
                 dirty = True
         if dirty:
             self._write_dispatches()
-        # La reserva es la fuente de verdad del consumo de una aprobación: si el
-        # proceso cayó entre ambas escrituras, se completa aquí.
         consumed = False
         for record in self._dispatches.values():
             approval = self._approvals.get(str(record.get("approval_id") or ""))
@@ -378,8 +377,6 @@ class AgentStore:
 
     # ---- aprobaciones ----
 
-    # ---- archivos concedidos por el humano ----
-
     def add_grants(self, session_id: str, records: list[JsonObject]) -> None:
         with self._lock:
             session_grants = self._grants.setdefault(session_id, {})
@@ -397,14 +394,31 @@ class AgentStore:
         with self._lock:
             return {key: dict(value) for key, value in (self._grants.get(session_id) or {}).items()}
 
+    def revoke_grant(self, session_id: str, path: str) -> int:
+        """Retira el acceso a un archivo o carpeta concreta de la conversación."""
+        with self._lock:
+            grants = self._grants.get(session_id) or {}
+            keys = [key for key, record in grants.items() if str(record.get("path")) == path]
+            for key in keys:
+                del grants[key]
+            if keys:
+                self._write_grants()
+            return len(keys)
+
+    def accounts_for(self, session_id: str) -> list[str]:
+        """Cuentas que firmaron aprobaciones de esta conversación."""
+        with self._lock:
+            found = {str((a.get("context") or {}).get("account")) for a in self._approvals.values()
+                     if a.get("session_id") == session_id and a.get("status") == "approved"
+                     and (a.get("context") or {}).get("account")}
+            return sorted(found)
+
     def revoke_grants(self, session_id: str) -> int:
         with self._lock:
             removed = self._grants.pop(session_id, None)
             if removed is not None:
                 self._write_grants()
             return len(removed or {})
-
-    # ---- artefactos generados ----
 
     def add_artifact(self, session_id: str, artifact: JsonObject) -> JsonObject:
         record = {**artifact, "session_id": session_id, "created_at": _now_ms()}
@@ -564,6 +578,12 @@ class AgentStore:
 
     # ---- ejecuciones deduplicadas (replay unsafe) ----
 
+    def dispatches_for(self, session_id: str) -> list[JsonObject]:
+        """Comprobantes de la conversación, sin el resultado completo."""
+        with self._lock:
+            return [{k: v for k, v in record.items() if k != "result"}
+                    for record in self._dispatches.values() if record.get("session_id") == session_id]
+
     def get_dispatch(self, session_id: str, call_id: str) -> JsonObject | None:
         with self._lock:
             record = self._dispatches.get(dispatch_key(session_id, call_id))
@@ -616,8 +636,6 @@ class AgentStore:
                 "summary": None,
             }
             self._dispatches[key] = record
-            # Primero la reserva (journal) y después el consumo: al reabrir, el
-            # store completa el consumo a partir de las reservas.
             self._write_dispatches()
             if approval is not None:
                 approval["consumed_by"] = record["op_id"]

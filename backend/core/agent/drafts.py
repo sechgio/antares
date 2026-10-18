@@ -87,7 +87,7 @@ def bind_outputs(args: JsonObject, keys: frozenset[str], root: Path) -> JsonObje
         if not value or not isinstance(value, str):
             continue
         if inside(root, value) is not None:
-            continue  # ya apunta a un borrador de esta conversación
+            continue
         if os.path.isabs(value) or value.startswith(("\\\\", "//")):
             raise ValueError(
                 "El agente escribe en sus borradores: indica solo un nombre de archivo y guarda el resultado "

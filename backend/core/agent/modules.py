@@ -41,7 +41,7 @@ def module_for(method: str) -> str | None:
         if short and short in (spec.get("handlers") or []):
             return module_id
         if spec.get("native") and method.startswith(f"{module_id}_"):
-            return module_id  # herramienta nativa que ejecuta Electron
+            return module_id
     return None
 
 

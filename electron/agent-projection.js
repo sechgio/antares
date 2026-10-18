@@ -122,7 +122,6 @@ function textOf(message) {
     .join('');
 }
 
-// Texto del humano sin el bloque de contexto de sus @menciones.
 function userTextOf(message) {
   if (!message || typeof message.content === 'string') return textOf(message);
   return (message.content || [])
@@ -164,8 +163,13 @@ async function projectMessages(conv, session) {
   const slotByCall = new Map((live.tools || []).map((slot) => [slot.callId, slot]));
 
   const messages = [];
+  const usage = { input: 0, output: 0 };
   for (const entry of entries) {
     const msg = entry.model && entry.model[0];
+    if (entry.kind === 'pi.assistant' && msg && msg.usage) {
+      usage.input += Number(msg.usage.input) || 0;
+      usage.output += Number(msg.usage.output) || 0;
+    }
     if (entry.kind === 'pi.user') {
       messages.push({ role: 'user', content: userTextOf(msg), ts: entryTs(entry, msg) });
       continue;
@@ -198,7 +202,7 @@ async function projectMessages(conv, session) {
       continue;
     }
   }
-  return { messages, pending };
+  return { messages, pending, usage: usage.input + usage.output > 0 ? usage : null };
 }
 
 function mergeLegacyCalls(legacy, projected) {
@@ -230,7 +234,7 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
       const receipt = JSON.parse(base.result);
       if (receipt.queued === true || receipt.submitted === true) base.status = 'submitted';
       else if (receipt.uncertain === true || receipt.interrupted === true) base.status = 'interrupted';
-    } catch { /* La herramienta también puede devolver texto. */ }
+    } catch { }
     return base;
   }
   if (pendingByCall.has(call.id)) {

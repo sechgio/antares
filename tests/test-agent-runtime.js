@@ -20,7 +20,8 @@ const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('
 const PUBLIC_METHODS = [
   'agent_sessions_list', 'agent_session_create', 'agent_session_delete',
   'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set',
-  'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach',
+  'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
+  'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -30,7 +31,7 @@ const INTERNAL_RPCS = [
   'agent_internal_dispatch_result', 'agent_internal_dispatch_cancel',
   'agent_internal_grants_add', 'agent_internal_grants_revoke', 'agent_internal_mentions',
   'agent_internal_dispatch_finish',
-  'agent_internal_activity',
+  'agent_internal_activity', 'agent_internal_memory_context', 'agent_internal_grant_remove',
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -40,7 +41,14 @@ function makeBridge() {
   const bridge = async (method, params) => {
     switch (method) {
       case 'agent_internal_activity': return { attention: state.attention };
-      case 'agent_internal_artifacts': return { artifacts: [] };
+      case 'agent_internal_memory_context':
+        state.memoryCalls = [...(state.memoryCalls || []), params];
+        return /plantilla/.test(params.text) ? { context: 'Memoria del agente:\n- Preferencia: Plantilla — usa la B', items: ['m1'] } : { context: '', items: [] };
+      case 'agent_internal_artifacts':
+        return { artifacts: [], questions: [], context: { files: state.grants.flatMap((g) => g.paths.map((p) => ({ path: p, folder: false }))), accounts: ['ana@example.com'] } };
+      case 'agent_internal_grant_remove':
+        state.removed = [...(state.removed || []), params];
+        return { removed: 1 };
       case 'agent_internal_tools':
         return {
           tools: [
@@ -118,7 +126,7 @@ function makeBridge() {
         const modules = /@sellador\b/.test(params.text) ? ['sellador'] : [];
         const unknown = /@nada\b/.test(params.text) ? ['nada'] : [];
         return modules.length
-          ? { modules, unknown, ambiguous: [], context: 'El usuario mencionó estos módulos de Antares:\n- Sellador: herramientas sellador_apply' }
+          ? { modules, unknown, ambiguous: [], labels: { sellador: 'Sellador' }, context: 'El usuario mencionó estos módulos de Antares:\n- Sellador: herramientas sellador_apply' }
           : { modules, unknown, ambiguous: [] };
       }
       case 'agent_internal_grants_revoke':
@@ -173,26 +181,35 @@ async function main() {
   }
   const { fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
 
-  // --- herramientas por conversación: persistencia, aislamiento y revocación ---
   {
     const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-tools-'));
     const dbPath = path.join(dir, 'agent.sqlite');
     const { bridge, state } = makeBridge();
-    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    let added = false;
+    const toolsBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools' && added) result.tools.push({ name: 'mcp_new_read', description: 'Lectura MCP', kind: 'mcp', gated: false, inputSchema: { type: 'object', properties: {} } });
+      return result;
+    };
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge: toolsBridge, skipImport: true });
     const { session: first } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const { session: second } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const selected = await runtime.handlers.agent_tools_set({ session_id: first.id, names: ['flows_list'] });
     assert(selected.tools.filter((t) => t.enabled).map((t) => t.name).join() === 'flows_list', 'selección exacta por conversación');
     assert((await runtime.handlers.agent_tools_list({ session_id: second.id })).tools.every((t) => t.enabled), 'otra conversación conserva todas las herramientas');
     assert((await runtime.handlers.agent_tools_list({})).tools.every((t) => !('enabled' in t)), 'getter global conserva su contrato');
+    added = true;
+    assert((await runtime.handlers.agent_tools_list({ session_id: second.id })).tools.find((t) => t.name === 'mcp_new_read').enabled, 'las herramientas recién disponibles aparecen habilitadas con la selección predeterminada');
+    assert(!(await runtime.handlers.agent_tools_list({ session_id: first.id })).tools.find((t) => t.name === 'mcp_new_read').enabled, 'una herramienta nueva no amplía una selección explícita');
+    added = false;
     for (const names of [['agent_tools_set'], ['desconocida'], [false], 'flows_list', undefined]) {
       let error;
       try { await runtime.handlers.agent_tools_set({ session_id: first.id, names }); } catch (err) { error = err; }
       assert(!!error, 'selección inválida o privada rechazada');
     }
     await runtime.shutdown();
-    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge: toolsBridge, skipImport: true });
     assert((await runtime.handlers.agent_tools_list({ session_id: first.id })).tools.filter((t) => t.enabled).map((t) => t.name).join() === 'flows_list', 'la selección sobrevive al reinicio de SQLite');
     const recovered = await require('../electron/agent-execution').dispatchApproved({ session_id: first.id, call_id: 'recovered', method: 'db_clear', params: {}, id: 'ap-recovered' }, {});
     assert(JSON.parse(recovered).error && state.dispatchLog.length === 0, 'una aprobación recuperada no habilita una herramienta excluida');
@@ -216,6 +233,70 @@ async function main() {
     await runtime.handlers.agent_approve({ approval_id: [...state.approvals.keys()][0] });
     assert(await waitIdle(session.id), 'el turno continúa al bloquear la herramienta deshabilitada');
     assert(state.dispatchLog.length === 0, 'la aprobación pendiente no evita la nueva selección');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    let waiting = false;
+    let executed = 0;
+    const busyBridge = async (method, params) => {
+      if (method === 'agent_internal_dispatch' && params.native && !waiting) {
+        waiting = true;
+        return { busy: true };
+      }
+      return bridge(method, params);
+    };
+    runtime._internal.shared.nativeTools = {
+      nativeToolContext: async () => ({ tool_version: 'fake-v1' }),
+      nativeToolSpecs: () => [{ name: 'autoimg_status', description: 'Estado', gated: false, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+      runNativeTool: async () => { executed += 1; return { ok: true }; },
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('autoimg_status', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('bloqueada'),
+    ], busyBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'consulta' });
+    assert(await waitFor(() => waiting), 'el recurso nativo ocupado aplaza la ejecución');
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: [] });
+    assert(await waitIdle(session.id), 'la revocación resuelve la espera por el recurso');
+    assert(executed === 0 && state.dispatchLog.length === 0, 'una herramienta revocada durante la espera no reserva ni ejecuta el efecto');
+    runtime._internal.shared.nativeTools = null;
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    let reserved = false;
+    let release;
+    const response = new Promise((resolve) => { release = resolve; });
+    let executed = 0;
+    const delayedBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_dispatch' && params.native) {
+        reserved = true;
+        await response;
+      }
+      return result;
+    };
+    runtime._internal.shared.nativeTools = {
+      nativeToolContext: async () => ({ tool_version: 'fake-v1' }),
+      nativeToolSpecs: () => [{ name: 'autoimg_status', description: 'Estado', gated: false, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+      runNativeTool: async () => { executed += 1; return { ok: true }; },
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('autoimg_status', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('bloqueada'),
+    ], delayedBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'consulta' });
+    assert(await waitFor(() => reserved), 'la reserva precede a la respuesta tardía del puente');
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: [] });
+    release();
+    assert(await waitIdle(session.id), 'la reserva revocada termina con comprobante');
+    assert(executed === 0 && JSON.parse(state.dispatches[0].result).error.includes('deshabilitada'), 'se registra el bloqueo sin ejecutar el efecto reservado');
+    runtime._internal.shared.nativeTools = null;
     await runtime.shutdown();
   }
 
@@ -269,7 +350,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- reenvío con el mismo request_id: un único encargo admitido ---
   {
     const { bridge } = makeBridge();
     await openFaux([fauxAssistantMessage('una vez')], bridge);
@@ -287,7 +367,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- rutas escritas por el humano: concesión antes de admitir el mensaje ---
   {
     const extract = runtime._internal.extractPaths;
     const text = String.raw`Usa @sellador con C:\trabajos\informe.pdf, "C:\Mis docs\plan v2.pdf" y (D:\datos).`;
@@ -312,7 +391,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- @menciones: el modelo recibe el contexto y el transcript no lo muestra ---
   {
     const { bridge } = makeBridge();
     const seen = [];
@@ -333,7 +411,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- herramientas nativas: reserva en Python, ejecución única en Electron ---
   {
     const { bridge, state } = makeBridge();
     const executed = [];
@@ -365,7 +442,42 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- adjuntos: diálogo del proceso principal, ids opacos y concesión al enviar ---
+  {
+    const { bridge: inner, state } = makeBridge();
+    let busyLeft = 2;
+    let contextCalls = 0;
+    const sentContexts = [];
+    const bridge = async (method, params) => {
+      if (method === 'agent_internal_dispatch' && params.native && params.gated) {
+        sentContexts.push(params.context.n);
+        if (busyLeft > 0) { busyLeft -= 1; return { result: null, busy: true }; }
+      }
+      return inner(method, params);
+    };
+    const executed = [];
+    runtime._internal.shared.nativeTools = {
+      nativeToolContext: async () => ({ tool_version: 'fake-v1', n: ++contextCalls }),
+      nativeToolSpecs: () => [
+        { name: 'autoimg_sync_to_sheet', description: 'AutoIMG sync', gated: true, kind: 'native', module: 'autoimg', inputSchema: { type: 'object', properties: {} } },
+      ],
+      runNativeTool: async (name, _params, { approvedContext }) => { executed.push(approvedContext.n); return { ok: name }; },
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('autoimg_sync_to_sheet', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('sincronizado'),
+    ], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sincroniza' });
+    assert(await waitFor(() => state.approvals.size > 0), 'el efecto pide aprobación');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.keys()][0] });
+    assert(await waitIdle(session.id), 'el turno termina tras liberarse el recurso');
+    assert(sentContexts.length === 3 && new Set(sentContexts).size === 3, 'cada reintento envía un contexto recalculado');
+    assert(JSON.stringify(executed) === JSON.stringify([sentContexts[2]]), 'se ejecuta una vez con el contexto revalidado');
+    assert(state.dispatches.length === 1 && state.dispatches[0].status === 'succeeded', 'solo el intento admitido queda reservado');
+    runtime._internal.shared.nativeTools = null;
+    await runtime.shutdown();
+  }
+
   {
     const { bridge, state } = makeBridge();
     const seen = [];
@@ -423,7 +535,98 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- corrección: redirige pasos pendientes sin tocar efectos ya ejecutados ---
+  {
+    const { bridge, state } = makeBridge();
+    let seen = '';
+    await openFaux([(context) => { seen = JSON.stringify(context.messages); return fauxAssistantMessage('uso la B'); }], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'genera con mi plantilla' });
+    assert(await waitIdle(session.id), 'el turno con memoria termina');
+    assert(seen.includes('usa la B'), 'el modelo recibe la memoria pertinente');
+    const call = state.memoryCalls[0];
+    assert(call.session_id === session.id && call.tools.length > 0 && call.tools.every((t) => t.name && /^[0-9a-f]{16}$/.test(t.version)),
+      'Electron envía la versión de cada herramienta');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(!messages.some((m) => m.role === 'user' && String(m.content).includes('usa la B')), 'la memoria no aparece como texto del usuario');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    await openFaux([fauxAssistantMessage('hola')], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const renamed = await runtime.handlers.agent_session_rename({ id: session.id, title: '  Cierre de marzo  ' });
+    assert(renamed.session.title === 'Cierre de marzo' && !('conversationId' in renamed.session), 'renombrar devuelve el contrato público');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primer mensaje' });
+    assert(await waitIdle(session.id), 'el turno tras renombrar termina');
+    assert((await runtime.handlers.agent_sessions_list()).sessions[0].title === 'Cierre de marzo', 'el primer mensaje no pisa un nombre elegido');
+    let error;
+    try { await runtime.handlers.agent_session_rename({ id: session.id, title: '   ' }); } catch (err) { error = err; }
+    assert(!!error, 'un nombre vacío se rechaza');
+    await runtime.shutdown();
+  }
+
+  {
+    const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-profiles-'));
+    const dbPath = path.join(dir, 'agent.sqlite');
+    const { bridge } = makeBridge();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const { profile } = await runtime.handlers.agent_profile_save({
+      name: 'Informe mensual', description: 'Cortes del mes', instructions: 'Usa la plantilla de cortes y pide el mes.',
+      starter: 'Prepara el informe de este mes', tools: ['flows_list'],
+    });
+    assert(profile.id && profile.tools.join() === 'flows_list', 'el agente guarda instrucciones y herramientas');
+    for (const bad of [{ name: '', instructions: 'x' }, { name: 'X', instructions: '' }, { name: 'X', instructions: 'token: abcdef123456' },
+      { name: 'X', instructions: 'y', tools: ['desconocida'] }, { id: 'nope', name: 'X', instructions: 'y' }]) {
+      let error;
+      try { await runtime.handlers.agent_profile_save(bad); } catch (err) { error = err; }
+      assert(!!error, 'un agente inválido, con secretos o herramientas inexistentes se rechaza');
+    }
+    await runtime.shutdown();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const { profiles } = await runtime.handlers.agent_profiles_list();
+    assert(profiles.length === 1 && profiles[0].name === 'Informe mensual', 'los agentes sobreviven al reinicio');
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    assert(session.title === 'Informe mensual' && session.profile.id === profile.id, 'la conversación nace del agente');
+    const enabled = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools.filter((t) => t.enabled).map((t) => t.name);
+    assert(enabled.join() === 'flows_list', 'la conversación aplica las herramientas del agente');
+    const conv = await runtime._internal.state().harness.conversation(
+      (await require('../electron/agent-shared').requireSession(session.id)).conversationId, runtime._internal.state().ctx);
+    const instructions = (await conv.agent(runtime._internal.state().ctx)).instructions;
+    assert(String(instructions).includes('plantilla de cortes') && String(instructions).includes('requiriendo aprobación'),
+      'las indicaciones del agente se suman sin retirar las reglas de aprobación');
+    const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    assert((await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools.every((t) => t.enabled), 'una conversación normal no hereda el agente');
+    await runtime.handlers.agent_profile_delete({ id: profile.id });
+    assert((await runtime.handlers.agent_profiles_list()).profiles.length === 0, 'el agente se borra');
+    assert((await runtime.handlers.agent_sessions_list()).sessions.some((s) => s.id === session.id), 'sus conversaciones se conservan');
+    let missing;
+    try { await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id }); } catch (err) { missing = err; }
+    assert(!!missing, 'no se crea una conversación con un agente borrado');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux([fauxAssistantMessage('listo')], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Usa @sellador con C:\\docs\\a.pdf' });
+    assert(await waitIdle(session.id), 'el turno con contexto termina');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(JSON.stringify(listed.context.modules) === JSON.stringify([{ id: 'sellador', label: 'Sellador' }]), 'el módulo mencionado queda en el contexto de la conversación');
+    assert(listed.context.files[0].path === 'C:\\docs\\a.pdf' && listed.context.accounts[0] === 'ana@example.com', 'archivos y cuentas usados aparecen en el contexto');
+    assert(listed.usage === null || (listed.usage.input + listed.usage.output > 0), 'el uso solo se informa con datos del proveedor');
+    assert(!('modules' in (await runtime.handlers.agent_sessions_list()).sessions[0]), 'la lista de conversaciones conserva su contrato');
+    await runtime.handlers.agent_context_remove_file({ session_id: session.id, path: 'C:\\docs\\a.pdf' });
+    assert(state.removed[0].session_id === session.id && state.removed[0].path === 'C:\\docs\\a.pdf', 'retirar un archivo revoca solo ese acceso');
+    let error;
+    try { await runtime.handlers.agent_context_remove_file({ session_id: session.id, path: '' }); } catch (err) { error = err; }
+    assert(!!error, 'retirar exige un archivo concreto');
+    await runtime.shutdown();
+  }
+
   {
     const { bridge, state } = makeBridge();
     let sawCorrection = false;

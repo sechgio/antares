@@ -281,7 +281,7 @@ def _public(result: JsonObject) -> JsonObject:
     keys = ("ready", "reason", "suggested_mappings", "required_fields", "field_labels",
             "match_key", "fingerprint", "output_names")
     public = {key: result[key] for key in keys if key in result}
-    public["columns"] = list(result.get("headers") or [])  # "headers" se oculta como posible secreto
+    public["columns"] = list(result.get("headers") or [])
     public["pending"] = list(result.get("pending") or [])[:_MAX_PENDING]
     public["records"] = len(result.get("preview") or [])
     public["preview"] = [
@@ -346,8 +346,6 @@ def render_plan(params: JsonObject, grants: dict[str, JsonObject], root: Path) -
     for target, batch in zip(pdf_workflow.output_paths(args), batches, strict=True):
         item: JsonObject = {"filename": Path(target).name}
         if family == "html":
-            # Las plantillas con campos raíz se renderizan una vez por registro,
-            # como el motor Python; las demás conservan su consolidado.
             parts = [[ctx] for ctx in batch] if pdf_workflow.template_profile(family, template_id)["root_fields"] else [batch]
             item["htmls"] = [pdf_workflow._render({**args, "contexts": part, "_html_only": True}).decode("utf-8") for part in parts]
         else:

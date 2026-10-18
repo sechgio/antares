@@ -119,8 +119,6 @@ async function spaces(method: string, params: Data): Promise<unknown> {
     try { return await operation(); }
     catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
-      // La API conserva códigos de rechazos confirmados; una respuesta perdida
-      // después del envío no demuestra que la escritura haya fallado.
       if (failure.name !== 'TareaConflictError' && !/\[(?:[A-Z0-9]{5}|PGRST\d+)\]$/.test(failure.message)
         && !/no se guardaron los cambios|Prioridad de tarea no válida/.test(failure.message)) {
         failure.name = 'AgentEffectUncertainError';

@@ -270,3 +270,18 @@ def test_retirement_preserves_a_pdf_written_before_its_recorded_step(profile):
     assert proven.exists()
     assert str(proven) not in result["deleted"]
     assert str(proven) in {item["path"] for item in result["pending"]}
+
+
+def test_retirement_preserves_a_pending_document_inside_the_state_folder(profile):
+    root, flows_dir, *_ = profile
+    document = flows_dir / "aviso.docx"
+    document.write_bytes(b"PK\x03\x04 documento")
+    runs_path = flows_dir / "flow_runs.json"
+    runs = json.loads(runs_path.read_text(encoding="utf-8"))
+    runs["r1"]["steps"].append({"status": "success", "output": {"saved_path": str(document)}})
+    runs_path.write_text(json.dumps(runs), encoding="utf-8")
+
+    result = flows_retirement.retire_flows(flows_dir, root / "marker.json", lambda name: None, lambda: False)
+
+    assert document.read_bytes() == b"PK\x03\x04 documento"
+    assert str(document) in {item["path"] for item in result["pending"]}

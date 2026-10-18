@@ -13,6 +13,8 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const {
   readSecureJson,
   writeSecureJson,
@@ -80,10 +82,37 @@ function _mirrorDelete(provider) {
   _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connections_token_delete', { provider }), () => {});
 }
 
+// App OAuth pública de Antares (cliente instalado: su secreto no es
+// confidencial): variables de build/entorno ANTARES_<PROVEEDOR>_OAUTH_CLIENT_ID
+// y _SECRET, o resources/oauth-clients.json del paquete. La configuración que
+// guardó el usuario conserva la prioridad para no romper sus conexiones.
+function publicOAuthConfig(provider) {
+  const key = String(provider).toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  let data = {
+    client_id: process.env[`ANTARES_${key}_OAUTH_CLIENT_ID`],
+    client_secret: process.env[`ANTARES_${key}_OAUTH_CLIENT_SECRET`],
+  };
+  if (!data.client_id && process.resourcesPath) {
+    try {
+      const all = JSON.parse(fs.readFileSync(path.join(process.resourcesPath, 'oauth-clients.json'), 'utf8'));
+      data = (all && typeof all[provider] === 'object' && all[provider]) || {};
+    } catch { /* sin app pública empaquetada */ }
+  }
+  return {
+    clientId: String(data.client_id || '').trim(),
+    clientSecret: String(data.client_secret || '').trim(),
+  };
+}
+
 function loadOAuthConfig(provider) {
   const cfg = readSecureJson(_oauthConfigFile(provider), _oauthConfigNs(provider));
+  const clientId = String((cfg && cfg.client_id) || '').trim();
+  if (!clientId) {
+    const shared = publicOAuthConfig(provider);
+    if (shared.clientId) return { ...shared, publicApp: true };
+  }
   return {
-    clientId: String((cfg && cfg.client_id) || '').trim(),
+    clientId,
     clientSecret: String((cfg && cfg.client_secret) || '').trim(),
   };
 }
@@ -93,6 +122,7 @@ function oauthConfigStatus(provider) {
   return {
     configured: Boolean(cfg.clientId),
     client_id_masked: cfg.clientId ? maskClientId(cfg.clientId) : undefined,
+    public_app: Boolean(cfg.publicApp),
   };
 }
 
@@ -373,14 +403,28 @@ async function probeAccount(provider) {
   }
 }
 
+// Los proveedores no devuelven los scopes tal como se pidieron: Google
+// expande email/profile a userinfo.*, Microsoft omite offline_access (la
+// renovación lo demuestra) y puede prefijar los de Graph con su recurso.
+const SCOPE_ALIASES = {
+  email: ['https://www.googleapis.com/auth/userinfo.email'],
+  profile: ['https://www.googleapis.com/auth/userinfo.profile'],
+};
+
+function scopeGranted(granted, scope) {
+  if (scope === 'offline_access') return true;
+  return granted.some((value) => value === scope || value.endsWith(`/${scope}`)
+    || (SCOPE_ALIASES[scope] || []).includes(value));
+}
+
 async function getStatus(provider) {
   const spec = getProvider(provider);
   const cfg = oauthConfigStatus(provider);
   let tokens = loadTokens(provider);
   const expired = !!tokens?.expiry_date && tokens.expiry_date <= Date.now();
   if (expired && tokens.refresh_token) tokens = await getValidTokens(provider);
-  const granted = new Set(String(tokens?.scope || '').split(/[\s,]+/).filter(Boolean));
-  const missingScopes = (spec.auth.scopes || []).filter((scope) => !granted.has(scope));
+  const granted = String(tokens?.scope || '').split(/[\s,]+/).filter(Boolean);
+  const missingScopes = (spec.auth.scopes || []).filter((scope) => !scopeGranted(granted, scope));
   const current = !!tokens?.access_token && (!tokens.expiry_date || tokens.expiry_date > Date.now());
   const state = _pending.has(provider) ? 'connecting' : !cfg.configured ? 'unconfigured'
     : expired && !tokens ? 'unavailable' : !tokens?.access_token ? 'disconnected'
@@ -394,6 +438,7 @@ async function getStatus(provider) {
     provider,
     configured: cfg.configured,
     client_id_masked: cfg.client_id_masked,
+    public_app: cfg.public_app,
     connected,
     state,
     status_message: messages[state],
@@ -414,6 +459,7 @@ async function disconnect(provider) {
 }
 
 module.exports = {
+  scopeGranted,
   oauthConfigStatus,
   saveOAuthConfig,
   loadOAuthConfig,

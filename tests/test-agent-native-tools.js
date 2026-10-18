@@ -1,8 +1,5 @@
 'use strict';
 
-// Clasificación de las herramientas nativas que ve el agente: lecturas sin
-// aprobación, efectos con aprobación y configuración humana fuera.
-
 const { assert, finish } = require('./helpers/harness');
 const { nativeToolSpecs } = require('../electron/agent-native-tools');
 const { nativeMethods } = require('../shared/ipc-method-catalog');

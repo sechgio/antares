@@ -1,4 +1,3 @@
-// Etiquetas en español de los métodos que el agente muestra en su actividad y aprobaciones.
 export const METHOD_LABELS: Record<string, string> = {
   ask_user: 'Datos necesarios para continuar',
   artifact_print: 'Enviar el PDF revisado a impresión',
@@ -122,4 +121,22 @@ export const METHOD_LABELS: Record<string, string> = {
   autoimg_folders_remove: 'Quitar una carpeta vigilada de AutoIMG',
   autoimg_folders_toggle: 'Activar o pausar una carpeta de AutoIMG',
   autoimg_cancel_operation: 'Cancelar la operación en curso de AutoIMG',
+  gdrive_search: 'Buscar archivos en Google Drive',
+  gdrive_get: 'Consultar un archivo de Google Drive',
+  gdrive_download: 'Descargar un archivo de Google Drive a borradores',
+  gdrive_upload: 'Subir un borrador a Google Drive',
+  gsheets_metadata: 'Consultar las pestañas de una hoja de Google',
+  gsheets_read: 'Leer un rango de una hoja de Google',
+  gsheets_update_range: 'Actualizar un rango de una hoja de Google',
+  gsheets_append: 'Añadir filas a una hoja de Google',
+  onedrive_search: 'Buscar archivos en OneDrive',
+  onedrive_get: 'Consultar un archivo de OneDrive',
+  onedrive_download: 'Descargar un archivo de OneDrive a borradores',
+  onedrive_upload: 'Subir un borrador a OneDrive',
+  excel_worksheets: 'Listar las hojas de un libro de Excel',
+  excel_read_range: 'Leer un rango de un libro de Excel',
+  excel_update_range: 'Actualizar un rango de un libro de Excel',
+  memory_search: 'Buscar en la memoria del agente',
+  memory_remember: 'Guardar una preferencia o un hecho',
+  procedure_learn: 'Guardar un procedimiento comprobado',
 };

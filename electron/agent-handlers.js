@@ -7,6 +7,7 @@ const AGENT_METHODS = new Set([
   'agent_sessions_list',
   'agent_session_create',
   'agent_session_delete',
+  'agent_session_rename',
   'agent_messages_list',
   'agent_message_send',
   'agent_tools_list',
@@ -16,6 +17,10 @@ const AGENT_METHODS = new Set([
   'agent_approve',
   'agent_deny',
   'agent_attach',
+  'agent_context_remove_file',
+  'agent_profiles_list',
+  'agent_profile_save',
+  'agent_profile_delete',
   'agent_renderer_result',
   'agent_artifact_action',
 ]);

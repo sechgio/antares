@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import { ApprovalCard } from './AgentTimeline';
+import { ApprovalCard, MessageRow } from './AgentTimeline';
 
 it('muestra cuenta y recursos revisados antes de una decisión explícita', () => {
   const decide = vi.fn();
@@ -16,4 +16,15 @@ it('muestra cuenta y recursos revisados antes de una decisión explícita', () =
   expect(decide).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Aprobar' }));
   expect(decide).toHaveBeenCalledWith('approval', true);
+});
+
+it('resume más de dos pasos de herramientas y los abre si alguno necesita atención', () => {
+  const step = (id: string, status: string) => ({ id, name: 'templates_catalog', params: {}, status, gated: false });
+  const { container, rerender } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
+    tool_calls: [step('a', 'done'), step('b', 'done'), step('c', 'done')] } as never} />);
+  expect(screen.getByText('3 pasos · 3 completados')).toBeInTheDocument();
+  expect(container.querySelector('details')?.open).toBe(false);
+  rerender(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
+    tool_calls: [step('a', 'done'), step('b', 'failed'), step('c', 'done')] } as never} />);
+  expect(container.querySelector('details')?.open).toBe(true);
 });

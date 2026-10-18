@@ -8,6 +8,21 @@ export interface AgentSession {
   created_at: number;
   updated_at: number;
   last_error: string | null;
+  /** Agente guardado del que nació la conversación. */
+  profile?: { id: string; name: string };
+}
+
+// Agente guardado para una tarea repetitiva: mismo runtime, con sus
+// indicaciones y herramientas. No se ejecuta solo ni amplía permisos.
+export interface AgentProfile {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  starter: string;
+  tools: string[] | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface AgentToolCall {
@@ -86,11 +101,38 @@ export interface AgentQuestion {
   questions: { id: string; prompt: string; options?: string[] }[];
 }
 
+// Contexto visible de la conversación: módulos mencionados, archivos
+// concedidos y cuentas que firmaron aprobaciones.
+export interface AgentContext {
+  modules: { id: string; label: string }[];
+  files: { path: string; folder: boolean }[];
+  accounts: string[];
+}
+
+// Recuerdo del agente: la versión vigente y el historial con su fuente.
+export interface AgentMemoryItem {
+  id: string;
+  kind: 'preference' | 'fact' | 'procedure';
+  title: string;
+  status: 'active' | 'disabled' | 'suspended';
+  reason: string | null;
+  version: number;
+  updated_at: number;
+  content?: string;
+  when?: string;
+  steps?: { tool: string; purpose: string }[];
+  source: { kind: 'user' | 'agent'; session_id?: string; op_ids?: string[]; artifact_ids?: string[]; reverted_to?: number };
+  versions: { version: number; created_at: number; source: AgentMemoryItem['source'] }[];
+}
+
 export const agentApi = {
   agentSessionsList: () => _invoke<{ sessions: AgentSession[] }>('agent_sessions_list'),
 
-  agentSessionCreate: (p: { provider: string; model?: string; title?: string }) =>
+  agentSessionCreate: (p: { provider: string; model?: string; title?: string; profile_id?: string }) =>
     _invoke<{ session: AgentSession }>('agent_session_create', p),
+
+  agentSessionRename: (id: string, title: string) =>
+    _invoke<{ session: AgentSession }>('agent_session_rename', { id, title }),
 
   agentSessionDelete: (id: string) =>
     _invoke<{ deleted: boolean; id: string }>('agent_session_delete', { id }),
@@ -102,13 +144,20 @@ export const agentApi = {
       pending_approvals: AgentApproval[];
       artifacts?: AgentArtifact[];
       questions?: AgentQuestion[];
+      context?: AgentContext;
+      usage?: { input: number; output: number } | null;
     }>('agent_messages_list', { session_id }),
 
+  agentContextRemoveFile: (session_id: string, path: string) =>
+    _invoke<{ removed: number }>('agent_context_remove_file', { session_id, path }),
+
   // request_id identifica el envío: un reintento con el mismo id no crea otro encargo.
-  agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = []) =>
+  // correction: redirige el encargo en curso tras la ronda de herramientas
+  // actual; rechaza los pasos pendientes de aprobación, no los ya enviados.
+  agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = [], correction = false) =>
     _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles; mentions?: AgentMessageMentions }>(
       'agent_message_send',
-      { session_id, content, request_id, ...(attachments.length ? { attachments } : {}) },
+      { session_id, content, request_id, ...(attachments.length ? { attachments } : {}), ...(correction ? { correction: true } : {}) },
     ),
 
   agentAttach: (kind: 'files' | 'folder') =>
@@ -149,4 +198,18 @@ export const agentApi = {
 
   agentQuestionAnswer: (session_id: string, question_id: string, answers: Record<string, string>) =>
     _invoke<{ question: AgentQuestion }>('agent_question_answer', { session_id, question_id, answers }),
+
+  agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
+
+  agentProfileSave: (p: { id?: string; name: string; description: string; instructions: string; starter: string; tools: string[] | null }) =>
+    _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
+
+  agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),
+
+  agentMemoryList: () => _invoke<{ items: AgentMemoryItem[] }>('agent_memory_list'),
+
+  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; when?: string; version?: number }) =>
+    _invoke<{ item: AgentMemoryItem }>('agent_memory_update', params),
+
+  agentMemoryDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_memory_delete', { id }),
 };

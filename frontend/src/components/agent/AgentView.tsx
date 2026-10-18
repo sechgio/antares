@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FolderOpen, Paperclip, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
+import { ArrowDown, ArrowUp, CornerDownRight, FolderOpen, Paperclip, Pencil, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { agentApi, type AgentContext, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
@@ -13,7 +13,11 @@ import ThemedSelect from '../ui/ThemedSelect';
 import AgentAvatar from './AgentAvatar';
 import ArtifactCard from './ArtifactCard';
 import QuestionCard from './QuestionCard';
-import { ApprovalCard, MessageRow, ThinkingRow, ToolGroup } from './AgentTimeline';
+import MemoryMenu from './MemoryMenu';
+import ContextChips from './ContextChips';
+import AgentEditor from './AgentEditor';
+import ConversationMenu from './ConversationMenu';
+import { ApprovalCard, DaySeparator, MessageRow, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
 
 const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
@@ -40,6 +44,24 @@ function relTime(ms?: number): string {
   return `hace ${Math.floor(h / 24)} d`;
 }
 
+export function groupSessions(list: AgentSession[], now = Date.now()): { label: string; items: AgentSession[] }[] {
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const today = startOfToday.getTime();
+  const buckets: [string, (ts: number) => boolean][] = [
+    ['Hoy', (ts) => ts >= today],
+    ['Ayer', (ts) => ts >= today - 86_400_000],
+    ['Últimos 7 días', (ts) => ts >= today - 6 * 86_400_000],
+    ['Anteriores', () => true],
+  ];
+  const groups = buckets.map(([label]) => ({ label, items: [] as AgentSession[] }));
+  for (const item of list) {
+    const index = buckets.findIndex(([, test]) => test(item.updated_at || 0));
+    groups[index].items.push(item);
+  }
+  return groups.filter((group) => group.items.length > 0);
+}
+
 function SessionRow({
   session,
   active,
@@ -55,12 +77,12 @@ function SessionRow({
     <div
       className={`group flex h-[54px] shrink-0 items-center gap-2.5 rounded-xl p-1.5 transition-colors ${
         active
-          ? 'bg-[var(--bg-elevated)]'
+          ? 'bg-[var(--bg-input)]'
           : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'
       }`}
     >
-      <AgentAvatar seed={session.id} name={session.title || 'Conversación'} size={40} className="shrink-0" />
-      <button type="button" className="flex min-w-0 flex-1 flex-col gap-0.5 text-left" onClick={onSelect}>
+      <AgentAvatar seed={session.profile?.id ?? session.id} name={session.title || 'Conversación'} size={40} className="shrink-0" />
+      <button type="button" className="flex min-w-0 flex-1 flex-col text-left" onClick={onSelect}>
         <span className="flex min-w-0 items-center gap-1.5">
           {session.last_error && (
             <span
@@ -68,12 +90,12 @@ function SessionRow({
               title={session.last_error}
             />
           )}
-          <span className={`truncate text-[13px] text-[var(--text-primary)] ${active ? 'font-medium' : ''}`}>
+          <span className="truncate text-[14px] font-medium leading-5 text-[var(--text-primary)]">
             {session.title || 'Conversación'}
           </span>
         </span>
-        <span className="truncate text-[11px] text-[var(--text-muted)]">
-          {session.provider} · {session.model} · {relTime(session.updated_at)}
+        <span className="truncate text-[13px] leading-5 text-[var(--text-muted)]">
+          {session.model || session.provider} · {relTime(session.updated_at)}
         </span>
       </button>
       <button
@@ -101,12 +123,23 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
+  const [context, setContext] = useState<AgentContext | null>(null);
+  const [usage, setUsage] = useState<{ input: number; output: number } | null>(null);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [editing, setEditing] = useState<AgentProfile | 'new' | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    agentApi.agentProfilesList().then((res) => { if (!cancelled) setProfiles(res.profiles); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [deciding, setDeciding] = useState(false);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean }[]>(() => {
@@ -122,7 +155,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         })) : [];
     } catch { return []; }
   });
-  // Último envío directo fallido: reenviar el mismo texto reutiliza su request_id.
   const failedSendRef = useRef<{ session: string; text: string; requestId: string } | null>(null);
   const [stopping, setStopping] = useState(false);
   const [runningSince, setRunningSince] = useState<number | null>(null);
@@ -133,6 +165,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const messagesVersionRef = useRef(new Map<string, { version: number; pending: number }>());
   const sessionIdRef = useRef('');
   const listRef = useRef<HTMLDivElement | null>(null);
+  const atBottomRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
   const toolsMenu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end',
@@ -160,6 +194,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setMessages(res.messages);
           setArtifacts(res.artifacts ?? []);
           setQuestions(res.questions ?? []);
+          setContext(res.context ?? null);
+          setUsage(res.usage ?? null);
           setPending(res.pending_approvals);
           setRunning(res.running);
         }
@@ -227,6 +263,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setMessages([]);
     setArtifacts([]);
     setQuestions([]);
+    setContext(null);
+    setUsage(null);
     setPending([]);
     if (sessionId) void loadMessages(sessionId, false);
     else setRunning(false);
@@ -252,8 +290,27 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }, [sessionId, running, pending.length, loadMessages]);
 
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
+    if (atBottomRef.current) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages.length, messages[messages.length - 1]?.content, pending.length]);
+
+  useEffect(() => {
+    atBottomRef.current = true;
+    setShowJump(false);
+  }, [sessionId]);
+
+  const onListScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    atBottomRef.current = near;
+    setShowJump(!near);
+  };
+
+  const jumpToEnd = () => {
+    atBottomRef.current = true;
+    setShowJump(false);
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
+  };
 
   useEffect(() => {
     if (!running) {
@@ -322,15 +379,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     return sessions.filter((s) => (s.title || 'Conversación').toLowerCase().includes(query));
   }, [sessions, search]);
 
-  const newSession = async () => {
+  const newSession = async (profile?: AgentProfile) => {
     if (!provider) {
       addToast({ message: 'Elige un proveedor IA', type: 'error' });
       return null;
     }
     try {
-      const res = await agentApi.agentSessionCreate({ provider, model: model || undefined });
+      const res = await agentApi.agentSessionCreate({ provider, model: model || undefined, ...(profile ? { profile_id: profile.id } : {}) });
       await refreshSessions();
       setSessionId(res.session.id);
+      if (profile?.starter) setDraft(profile.starter);
       return res.session.id;
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo crear la conversación'), type: 'error' });
@@ -361,14 +419,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
-  const sendToSession = async (id: string, content: string, requestId: string, attachmentIds: string[] = []): Promise<boolean> => {
+  const sendToSession = async (id: string, content: string, requestId: string, attachmentIds: string[] = [], correction = false): Promise<boolean> => {
     const state = messagesVersionRef.current.get(id) ?? { version: 0, pending: 0 };
     messagesVersionRef.current.set(id, state);
     state.version += 1;
     state.pending += 1;
     if (id === sessionIdRef.current) setRunning(true);
     try {
-      const res = await agentApi.agentMessageSend(id, content, requestId, attachmentIds).finally(() => { state.pending -= 1; });
+      const res = await (correction
+        ? agentApi.agentMessageSend(id, content, requestId, attachmentIds, true)
+        : agentApi.agentMessageSend(id, content, requestId, attachmentIds)).finally(() => { state.pending -= 1; });
       for (const file of res.files?.rejected ?? []) {
         addToast({ message: `No se autorizó ${file.path}: ${file.reason}`, type: 'warning' });
       }
@@ -393,6 +453,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     const content = draft.trim();
     if (!content || !sessionId) return;
     setDraft('');
+    atBottomRef.current = true;
     const failed = failedSendRef.current;
     const requestId = failed && failed.session === sessionId && failed.text === content ? failed.requestId : newRequestId();
     const attachmentIds = attachments.map((a) => a.id);
@@ -421,6 +482,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     // Sin config ESLint en el repo esta directiva es inerte; las dependencias
     // están completas a propósito (queued dispara el reintento).
   }, [sessionId, running, stopping, pending.length, queued]);
+
+  const sendCorrection = async (item: (typeof queued)[number]) => {
+    setQueued((q) => q.filter((i) => i !== item));
+    const ok = await sendToSession(item.session, item.text, item.requestId, item.attachments ?? [], true);
+    if (!ok) setQueued((q) => [...q, { ...item, failed: true }]);
+  };
 
   const attach = async (kind: 'files' | 'folder') => {
     try {
@@ -464,97 +531,197 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   const showHero = !sessionId || messages.length === 0;
+  const activeProfile = session?.profile ? profiles.find((item) => item.id === session.profile?.id) ?? null : null;
+  const agentIdentity = session
+    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? (session.title || 'Agente de Antares') }
+    : undefined;
 
   return (
-    <div className="flex h-full min-h-0 gap-2.5 bg-[var(--bg-base)] p-2.5">
-      <aside className="hidden h-full w-[252px] shrink-0 flex-col rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2 md:flex">
-        <div className="flex shrink-0 items-center gap-1.5 px-0.5 pt-0.5">
+    <div
+      className="relative flex h-full min-h-0 gap-4 bg-[var(--bg-surface)] p-3"
+      onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          setSearchOpen(true);
+        }
+      }}
+    >
+      {editing && (
+        <AgentEditor
+          key={editing === 'new' ? 'new' : editing.id}
+          profile={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={(saved) => {
+            setProfiles((prev) => [...prev.filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'es')));
+            setEditing(null);
+          }}
+          onDeleted={(id) => {
+            setProfiles((prev) => prev.filter((p) => p.id !== id));
+            setEditing(null);
+          }}
+        />
+      )}
+      <aside className="hidden h-full w-[260px] shrink-0 flex-col rounded-[24px] border border-[var(--bg-surface)] bg-[var(--bg-base)] p-[7px] shadow-[0_1px_0_rgba(0,0,0,0.02),0_1px_12px_rgba(0,0,0,0.06)] md:flex">
+        <div className="flex shrink-0 items-center gap-2 p-1">
+          {searchOpen ? (
+            <label className="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-full bg-[var(--bg-input)] px-3">
+              <Search size={14} className="shrink-0 text-[var(--text-secondary)]" />
+              <input
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') { setSearch(''); setSearchOpen(false); } }}
+                placeholder="Buscar conversaciones…"
+                aria-label="Buscar conversaciones"
+                className="min-w-0 flex-1 bg-transparent text-[14px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+              <button
+                type="button"
+                className="flex size-5 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                aria-label="Cerrar búsqueda"
+                onClick={() => { setSearch(''); setSearchOpen(false); }}
+              >
+                <X size={12} />
+              </button>
+            </label>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="flex h-9 flex-1 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                aria-label="Buscar conversaciones"
+                title="Buscar conversaciones (Ctrl+K)"
+                onClick={() => setSearchOpen(true)}
+              >
+                <Search size={16} />
+              </button>
+              {onConfigureProvider && (
+                <button
+                  type="button"
+                  className="flex h-9 flex-1 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                  aria-label="Proveedores y conexiones"
+                  title="Proveedores y conexiones"
+                  onClick={onConfigureProvider}
+                >
+                  <Plug size={16} />
+                </button>
+              )}
+            </>
+          )}
           <Button
             variant="primary"
             size="none"
-            className="flex size-9 shrink-0 items-center justify-center rounded-full"
+            className="flex h-9 flex-1 items-center justify-center rounded-full"
             onClick={() => void newSession()}
             aria-label="Nueva conversación"
             title="Nueva conversación"
           >
             <Plus size={16} />
           </Button>
-          <label className="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 transition-colors focus-within:border-[var(--border-medium)]">
-            <Search size={13} className="shrink-0 text-[var(--text-muted)]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar conversaciones…"
-              aria-label="Buscar conversaciones"
-              className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
-            />
-            {search && (
-              <button
-                type="button"
-                className="shrink-0 rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-                aria-label="Limpiar búsqueda"
-                onClick={() => setSearch('')}
-              >
-                <X size={12} />
-              </button>
-            )}
-          </label>
         </div>
 
-        <div className="custom-scrollbar mt-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+        <div className="custom-scrollbar mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
+          <div className="flex items-center justify-between px-1.5 pb-1 pt-1">
+            <span className="text-[12px] font-medium text-[var(--text-muted)]">Agentes</span>
+            <button
+              type="button"
+              className="flex size-6 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+              aria-label="Crear agente"
+              title="Crear un agente para una tarea repetitiva"
+              onClick={() => setEditing('new')}
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+          {profiles.length === 0 && (
+            <button
+              type="button"
+              className="mb-1 rounded-xl px-2.5 py-2 text-left text-[12px] leading-relaxed text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)] hover:text-[var(--text-secondary)]"
+              onClick={() => setEditing('new')}
+            >
+              Crea un agente con tus indicaciones y herramientas para una tarea que repites.
+            </button>
+          )}
+          {profiles.map((profile) => (
+            <div key={profile.id} className="group flex h-[54px] shrink-0 items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]">
+              <AgentAvatar seed={profile.id} name={profile.name} size={40} className="shrink-0" />
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 flex-col text-left"
+                title={`Nueva conversación con ${profile.name}`}
+                onClick={() => void newSession(profile)}
+              >
+                <span className="truncate text-[14px] font-medium leading-5 text-[var(--text-primary)]">{profile.name}</span>
+                <span className="truncate text-[13px] leading-5 text-[var(--text-muted)]">{profile.description || 'Agente personalizado'}</span>
+              </button>
+              <button
+                type="button"
+                className="invisible shrink-0 rounded-md p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] group-hover:visible focus-visible:visible"
+                aria-label={`Editar agente ${profile.name}`}
+                title="Editar"
+                onClick={() => setEditing(profile)}
+              >
+                <Pencil size={13} />
+              </button>
+            </div>
+          ))}
           {sessions.length === 0 && (
-            <p className="px-2.5 py-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
-              Sin conversaciones. Pulsa + para empezar.
-            </p>
+            <>
+              <span className="px-1.5 pb-1 pt-3 text-[12px] font-medium text-[var(--text-muted)]">Conversaciones</span>
+              <p className="px-2.5 py-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+                Sin conversaciones. Pulsa + para empezar.
+              </p>
+            </>
           )}
           {sessions.length > 0 && visibleSessions.length === 0 && (
             <p className="px-2.5 py-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
               Sin resultados para «{search.trim()}».
             </p>
           )}
-          {visibleSessions.map((s) => (
-            <SessionRow
-              key={s.id}
-              session={s}
-              active={s.id === sessionId}
-              onSelect={() => setSessionId(s.id)}
-              onDelete={() => void removeSession(s.id)}
-            />
+          {groupSessions(visibleSessions).map((group) => (
+            <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5">
+              <span className="px-1.5 pb-1 pt-3 text-[12px] font-medium text-[var(--text-muted)]">{group.label}</span>
+              {group.items.map((s) => (
+                <SessionRow
+                  key={s.id}
+                  session={s}
+                  active={s.id === sessionId}
+                  onSelect={() => setSessionId(s.id)}
+                  onDelete={() => void removeSession(s.id)}
+                />
+              ))}
+            </section>
           ))}
         </div>
 
-        {onConfigureProvider && (
-          <footer className="mt-1.5 shrink-0 border-t border-[var(--border-subtle)] pt-1.5">
-            <button
-              type="button"
-              onClick={onConfigureProvider}
-              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)] hover:text-[var(--text-primary)]"
-            >
-              <Settings2 size={14} className="shrink-0" />
-              <span className="min-w-0 flex-1 truncate">Proveedores de IA</span>
-            </button>
-          </footer>
-        )}
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] bg-[var(--bg-base)]">
         <nav aria-label="Conversaciones" className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] p-3 md:hidden">
           <ThemedSelect value={sessionId} onChange={setSessionId} placeholder="Elegir conversación"
             options={sessions.map((item) => ({ value: item.id, label: item.title || 'Conversación' }))}
             aria-label="Conversación activa" className="min-w-0 flex-1" />
+          {profiles.length > 0 && (
+            <ThemedSelect value="" placeholder="Usar agente…" aria-label="Usar agente"
+              options={profiles.map((item) => ({ value: item.id, label: item.name }))}
+              onChange={(id) => { const chosen = profiles.find((item) => item.id === id); if (chosen) void newSession(chosen); }}
+              className="w-36 shrink-0" />
+          )}
           <Button size="sm" variant="secondary" aria-label="Crear conversación" onClick={() => void newSession()}><Plus size={14} /></Button>
+          <Button size="sm" variant="secondary" aria-label="Nuevo agente" onClick={() => setEditing('new')}><Pencil size={14} /></Button>
           {sessionId && <Button size="sm" variant="secondary" aria-label="Borrar conversación activa" onClick={() => void removeSession(sessionId)}><X size={14} /></Button>}
           {onConfigureProvider && <Button size="sm" variant="secondary" aria-label="Configurar proveedor" onClick={onConfigureProvider}><Settings2 size={14} /></Button>}
         </nav>
         {session && (
           <header className="flex shrink-0 items-center gap-2 px-3 pt-3">
-            <div className="flex h-[31px] min-w-0 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] pl-1 pr-3">
-              <AgentAvatar seed={session.id} name={session.title || 'Conversación'} size={22} className="shrink-0" />
-              <span className="truncate text-[12px] font-medium text-[var(--text-primary)]">
+            <div className="flex h-[31px] min-w-0 items-center gap-2 rounded-full pl-2 pr-3 transition-colors hover:bg-[var(--bg-input)]">
+              <AgentAvatar seed={session.profile?.id ?? session.id} name={session.title || 'Conversación'} size={20} className="shrink-0" />
+              <span className="truncate text-[13px] font-medium leading-[18px] text-[var(--text-secondary)]">
                 {session.title || 'Conversación'}
               </span>
             </div>
             <span className="min-w-0 flex-1" />
+            <MemoryMenu />
             <Button
               ref={toolsMenu.triggerRef}
               variant="none"
@@ -564,7 +731,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               aria-expanded={toolsMenu.isOpen}
               title="Herramientas del agente"
               onClick={toolsMenu.toggle}
-              className="relative flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              className="relative flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
             >
               <Wrench size={14} />
               {toolCount > 0 && (
@@ -573,25 +740,54 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 </span>
               )}
             </Button>
+            <ConversationMenu
+              session={session}
+              messages={messages}
+              onRename={async (title) => {
+                try {
+                  await agentApi.agentSessionRename(session.id, title);
+                  await refreshSessions();
+                } catch (err) {
+                  addToast({ message: errorMessage(err, 'No se pudo renombrar la conversación'), type: 'error' });
+                }
+              }}
+              onDelete={() => void removeSession(session.id)}
+              onCopied={() => addToast({ message: 'Conversación copiada', type: 'success' })}
+            />
           </header>
         )}
+        {session && (
+          <ContextChips
+            context={context}
+            usage={usage}
+            onRemoveFile={async (path) => {
+              try {
+                await agentApi.agentContextRemoveFile(session.id, path);
+                await loadMessages(session.id, false);
+              } catch (err) {
+                addToast({ message: errorMessage(err, 'No se pudo retirar el archivo'), type: 'error' });
+              }
+            }}
+          />
+        )}
 
-        <div ref={listRef} className="custom-scrollbar flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <div ref={listRef} onScroll={onListScroll} className="custom-scrollbar flex-1 space-y-4 overflow-y-auto px-3 pb-4 pt-2">
           {showHero ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
-                seed={session?.id ?? 'antares-agent'}
-                name={session?.title || 'Agente de Antares'}
+                seed={agentIdentity?.seed ?? 'antares-agent'}
+                name={agentIdentity?.name ?? 'Agente de Antares'}
                 size={88}
               />
               <div>
-                <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
-                  {sessionId ? '¿En qué trabajamos hoy?' : 'Agente de Antares'}
+                <h2 className="text-[16px] font-semibold leading-6 text-[var(--text-primary)]">
+                  {activeProfile ? activeProfile.name : sessionId ? '¿En qué trabajamos hoy?' : 'Agente de Antares'}
                 </h2>
-                <p className="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-[var(--text-secondary)]">
+                <p className="mx-auto mt-1 max-w-sm text-[13px] leading-[18px] text-[var(--text-secondary)]">
                   {readyProviders.length === 0
                     ? 'Configura un proveedor en «Proveedores IA» para empezar.'
-                    : 'Conversa con la app: consulta su estado con herramientas de lectura y aprueba cada acción con efectos antes de que se ejecute.'}
+                    : activeProfile?.description
+                      || 'Conversa con la app: consulta su estado con herramientas de lectura y aprueba cada acción con efectos antes de que se ejecute.'}
                 </p>
               </div>
               {readyProviders.length === 0 && onConfigureProvider && (
@@ -631,10 +827,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
                     Sugerencias
                   </p>
-                  {SUGGESTIONS.map((s) => (
+                  {(activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS).map((s) => (
                     <button
                       key={s}
-                      className="flex w-full items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]"
+                      className="flex w-full items-center gap-2 rounded-2xl bg-[var(--bg-surface)] px-3 py-2.5 text-left text-[13px] text-[var(--text-secondary)] shadow-[0_1px_0.5px_rgba(0,0,0,0.02),0_4px_2px_rgba(0,0,0,0.02)] transition-colors hover:text-[var(--text-primary)]"
                       onClick={() => void sendSuggestion(s)}
                     >
                       <Sparkles size={12} className="shrink-0 text-[var(--accent-primary-hover)]" />
@@ -645,7 +841,17 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               )}
             </div>
           ) : (
-            messages.map((m, i) => <MessageRow key={`${m.ts}-${i}`} msg={m} />)
+            messages.map((m, i) => {
+              const label = m.ts ? dayLabel(m.ts) : '';
+              const previous = messages.slice(0, i).reverse().find((item) => item.ts);
+              const newDay = !!label && (!previous?.ts || dayLabel(previous.ts) !== label);
+              return (
+                <div key={`${m.ts}-${i}`} className="space-y-4">
+                  {newDay && <DaySeparator label={label} />}
+                  <MessageRow msg={m} agent={agentIdentity} />
+                </div>
+              );
+            })
           )}
           {pending.map((a) => (
             <ApprovalCard key={a.id} approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
@@ -653,9 +859,20 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           {artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} sessionId={sessionId}
             onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />)}
           {questions.map((question) => <QuestionCard key={question.id} question={question} onAnswered={() => void loadMessages(sessionId, false)} />)}
-          {running && !questions.length && !pending.length && <ThinkingRow elapsedSeconds={elapsed} />}
+          {running && !questions.length && !pending.length && <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} />}
         </div>
 
+        <div className="relative h-0">
+          {showJump && (
+            <button
+              type="button"
+              className="absolute -top-12 left-1/2 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full bg-[var(--bg-surface)] px-3 text-[12px] text-[var(--text-secondary)] shadow-[0_2px_10px_rgba(0,0,0,0.12),0_0_1px_rgba(0,0,0,0.3)] transition-colors hover:text-[var(--text-primary)]"
+              onClick={jumpToEnd}
+            >
+              <ArrowDown size={13} /> Ir al final
+            </button>
+          )}
+        </div>
         <div className="shrink-0 p-3">
           {queuedForSession.length > 0 && (
             <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
@@ -681,6 +898,17 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   ) : (
                     <span className="truncate">{item.text}</span>
                   )}
+                  {(running || pending.length > 0) && (
+                    <button
+                      type="button"
+                      className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                      aria-label="Enviar como corrección"
+                      title="Enviar ahora como corrección del encargo en curso"
+                      onClick={() => void sendCorrection(item)}
+                    >
+                      <CornerDownRight size={10} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
@@ -694,7 +922,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </div>
           )}
-          <div className="rounded-[22px] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.02),0_4px_2px_rgba(0,0,0,0.02)] transition-colors focus-within:border-[var(--border-medium)]">
+          <div className="rounded-[20px] border border-transparent bg-[var(--bg-surface)] p-2.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.02),0_4px_2px_rgba(0,0,0,0.02)] transition-colors focus-within:border-[var(--border-subtle)]">
             {attachments.length > 0 && (
               <div className="mb-1.5 flex flex-wrap gap-1.5 px-1" aria-label="Adjuntos">
                 {attachments.map((item) => (
@@ -732,73 +960,73 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   ? 'Crea una conversación primero'
                   : running || pending.length > 0
                     ? 'Escribe para cuando termine…'
-                    : 'Escribe un mensaje…'
+                    : 'Hola, ¿qué necesitas hoy?'
               }
               disabled={!sessionId}
               aria-label="Mensaje para el agente"
-              className="max-h-36 w-full resize-none bg-transparent px-1.5 pt-1 text-[13px] leading-relaxed text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
+              className="max-h-36 w-full resize-none bg-transparent px-1.5 pt-1.5 text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
             />
-            <div className="mt-1.5 flex items-center justify-between gap-2">
+            <div className="mt-2 flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   type="button"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-primary)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_10%,var(--bg-input))] disabled:opacity-50"
                   onClick={() => void attach('files')}
                   disabled={!sessionId}
                   aria-label="Adjuntar archivos"
                   title="Adjuntar archivos (solo lectura para el agente)"
                 >
-                  <Paperclip size={13} />
+                  <Plus size={16} />
                 </button>
                 <button
                   type="button"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
                   onClick={() => void attach('folder')}
                   disabled={!sessionId}
                   aria-label="Adjuntar carpeta"
                   title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
                 >
-                  <FolderOpen size={13} />
+                  <FolderOpen size={15} />
                 </button>
                 {session && (
                   <span
-                    className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-input)] px-2.5 text-[11px] text-[var(--text-secondary)]"
+                    className="flex h-[30px] shrink-0 items-center gap-1.5 rounded-full pl-2 pr-2.5 text-[14px] text-[var(--text-secondary)]"
                     title="Las acciones que modifican datos se pausan hasta que las apruebes"
                   >
                     <ShieldCheck
-                      size={12}
-                      className={pending.length > 0 ? 'text-[var(--accent-yellow)]' : 'text-[var(--text-muted)]'}
+                      size={15}
+                      className={pending.length > 0 ? 'text-[var(--accent-yellow)]' : 'text-[var(--text-secondary)]'}
                     />
                     {pending.length > 0 ? `${pending.length} por aprobar` : 'Con aprobación'}
                   </span>
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <span className="hidden max-w-56 truncate rounded-full bg-[var(--bg-input)] px-2.5 py-1 text-[11px] text-[var(--text-muted)] sm:block">
+                <span className="hidden h-8 max-w-56 items-center truncate rounded-xl px-2 text-[14px] text-[var(--text-secondary)] sm:flex">
                   {session
-                    ? `${sessionProviderLabel}${session.model ? ` · ${session.model}` : ''}`
-                    : `${providerLabel || 'Proveedor IA'}${model ? ` · ${model}` : ''}`}
+                    ? session.model || sessionProviderLabel
+                    : model || providerLabel || 'Proveedor IA'}
                 </span>
                 {(running || pending.length > 0) && (
                   <button
                     type="button"
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-red)] hover:text-[var(--accent-red)]"
+                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-surface)] text-[var(--text-secondary)] shadow-[0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-[var(--border-subtle)] transition-colors hover:text-[var(--accent-red)]"
                     onClick={() => void cancelTurn()}
                     aria-label="Detener"
                     disabled={stopping}
                     title="Detener el turno"
                   >
-                    <Square size={11} />
+                    <Square size={12} />
                   </button>
                 )}
                 <button
                   type="button"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-all duration-150 hover:bg-[var(--accent-primary-hover)] active:scale-[0.96] disabled:bg-[var(--bg-input)] disabled:text-[var(--text-muted)]"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-all duration-150 hover:bg-[var(--accent-primary-hover)] active:scale-[0.96] disabled:bg-[var(--bg-input)] disabled:text-[var(--text-muted)]"
                   onClick={() => void send()}
                   disabled={!sessionId || !draft.trim()}
                   aria-label="Enviar"
                 >
-                  <Send size={13} />
+                  <ArrowUp size={16} />
                 </button>
               </div>
             </div>

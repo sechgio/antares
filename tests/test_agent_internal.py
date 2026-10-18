@@ -24,6 +24,8 @@ from backend.handlers import agent_internal
 def store(tmp_path, monkeypatch):
     instance = agent.AgentStore(tmp_path)
     monkeypatch.setattr(agent, "get_agent_store", lambda: instance)
+    monkeypatch.setattr(agent_internal, "_resource_locks", {})
+    monkeypatch.setattr(agent_internal, "_native_leases", {})
     return instance
 
 
@@ -311,7 +313,7 @@ def test_approval_is_consumed_once_and_survives_a_crash_between_writes(store, tm
     approval_id = _approve("s1", "c1", "db_export", {})
     intent = agent_internal._intent("s1", "db_export", {})
     real_write = store._write_approvals
-    monkeypatch.setattr(store, "_write_approvals", lambda: None)  # caída tras la reserva
+    monkeypatch.setattr(store, "_write_approvals", lambda: None)
     outcome, record = store.dispatch_claim("s1", "c1", "db_export", intent, approval_id)
     assert outcome == "new"
     monkeypatch.setattr(store, "_write_approvals", real_write)
@@ -367,7 +369,7 @@ def test_native_tools_are_claimed_in_python_and_finished_by_electron(store):
     first = _dispatch(session_id="s1", call_id="n1", name="autoimg_status", params={}, native=True, gated=False)
     assert first["execute"] == "native" and first["result"] is None
     again = _dispatch(session_id="s1", call_id="n1", name="autoimg_status", params={}, native=True, gated=False)
-    assert "execute" not in again and again["result"] is None  # sigue en vuelo: no se ejecuta dos veces
+    assert "execute" not in again and again["result"] is None
     finished = agent_internal.HANDLERS["agent_internal_dispatch_finish"]({
         "session_id": "s1", "call_id": "n1", "op_id": first["dispatch"]["op_id"], "result": '{"ok": true}',
     })
@@ -403,3 +405,129 @@ def test_native_context_changes_invalidate_approval(store, key, value):
                     native=True, gated=True, approval_id=approval["id"], context={**context, key: value})
     assert "no coinciden" in json.loads(out["result"])["error"]
     assert store.get_dispatch("s1", "native-context") is None
+
+
+def _approve_native(session_id, call_id, method, params, context):
+    approval = agent_internal._approval_ensure({"session_id": session_id, "call_id": call_id, "method": method,
+                                               "params": params, "context": context})["approval"]
+    agent_internal._approval_decide({"approval_id": approval["id"], "approve": True})
+    return approval["id"]
+
+
+def _finish(session_id, call_id, out, result='{"ok": true}'):
+    return agent_internal.HANDLERS["agent_internal_dispatch_finish"]({
+        "session_id": session_id, "call_id": call_id, "op_id": out["dispatch"]["op_id"], "result": result,
+    })
+
+
+def test_native_effects_on_the_same_resource_wait_without_claiming(store):
+    sheet = {"tool_version": "test-v1", "account_id": "u1", "sheet_id": "hoja-a"}
+    other = {**sheet, "sheet_id": "hoja-b"}
+    method = "autoimg_sync_to_sheet"
+    first_id = _approve_native("s1", "c1", method, {}, sheet)
+    second_id = _approve_native("s2", "c2", method, {}, sheet)
+    third_id = _approve_native("s3", "c3", method, {}, other)
+    first = _dispatch(session_id="s1", call_id="c1", name=method, params={}, native=True, gated=True,
+                      approval_id=first_id, context=sheet)
+    assert first["execute"] == "native"
+    busy = _dispatch(session_id="s2", call_id="c2", name=method, params={}, native=True, gated=True,
+                     approval_id=second_id, context=sheet)
+    assert busy == {"result": None, "busy": True}
+    assert store.get_dispatch("s2", "c2") is None
+    assert not store.get_approval(second_id).get("consumed_by")
+    independent = _dispatch(session_id="s3", call_id="c3", name=method, params={}, native=True, gated=True,
+                            approval_id=third_id, context=other)
+    assert independent["execute"] == "native"
+    repeat = _dispatch(session_id="s1", call_id="c1", name=method, params={}, native=True, gated=True,
+                       approval_id=first_id, context=sheet)
+    assert "busy" not in repeat and "execute" not in repeat
+    _finish("s1", "c1", first)
+    second = _dispatch(session_id="s2", call_id="c2", name=method, params={}, native=True, gated=True,
+                       approval_id=second_id, context=sheet)
+    assert second["execute"] == "native"
+    _finish("s2", "c2", second)
+    _finish("s3", "c3", independent)
+
+
+def test_native_wait_revalidates_the_approval_with_the_current_context(store):
+    sheet = {"tool_version": "test-v1", "account_id": "u1", "sheet_id": "hoja-a"}
+    method = "autoimg_sync_to_sheet"
+    holder = _dispatch(session_id="s1", call_id="c1", name=method, params={}, native=True, gated=True,
+                       approval_id=_approve_native("s1", "c1", method, {}, sheet), context=sheet)
+    waiting_id = _approve_native("s2", "c2", method, {}, sheet)
+    assert _dispatch(session_id="s2", call_id="c2", name=method, params={}, native=True, gated=True,
+                     approval_id=waiting_id, context=sheet)["busy"] is True
+    _finish("s1", "c1", holder)
+    changed = {**sheet, "account_id": "u2"}
+    out = _dispatch(session_id="s2", call_id="c2", name=method, params={}, native=True, gated=True,
+                    approval_id=waiting_id, context=changed)
+    assert "no coinciden" in json.loads(out["result"])["error"]
+    assert store.get_dispatch("s2", "c2") is None
+    retry_id = _approve_native("s3", "c3", method, {}, sheet)
+    assert _dispatch(session_id="s3", call_id="c3", name=method, params={}, native=True, gated=True,
+                     approval_id=retry_id, context=sheet)["execute"] == "native"
+
+
+def test_python_workers_wait_for_a_native_effect_on_the_same_document(store, monkeypatch):
+    ran = threading.Event()
+    monkeypatch.setattr(agent, "get_agent_runner",
+                        lambda: agent.AgentRunner(store, lambda name: lambda params: ran.set() or {"ok": True}))
+    monkeypatch.setattr(agent_internal._agent_chat, "gated_methods", lambda: ["canvas_save"])
+    context = {"tool_version": "test-v1"}
+    params = {"id": "doc", "expected_updated_at": "1", "values": {}}
+    native = _dispatch(session_id="s1", call_id="n1", name="canvas_fill_fields", params=params, native=True,
+                       gated=True, approval_id=_approve_native("s1", "n1", "canvas_fill_fields", params, context),
+                       context=context)
+    assert native["execute"] == "native"
+    approval_id = _approve("s2", "c2", "canvas_save", {"id": "doc"})
+    _dispatch(session_id="s2", call_id="c2", name="canvas_save", params={"id": "doc"}, approval_id=approval_id)
+    assert not ran.wait(0.3)
+    _finish("s1", "n1", native)
+    assert ran.wait(5)
+    _wait_result("c2", session_id="s2")
+
+
+def test_cloud_upload_approval_is_bound_to_the_draft_content(store):
+    context = {"tool_version": "test-v1", "account": "ana@example.com", "scopes": ["Files.ReadWrite"]}
+    draft = store.drafts_dir("s1") / "informe.pdf"
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    draft.write_bytes(b"%PDF-aprobado")
+    params = {"draft": "informe.pdf", "replace_item_id": "item01", "expected_etag": '"e1"'}
+    approval_id = _approve_native("s1", "up1", "onedrive_upload", params, context)
+    draft.write_bytes(b"%PDF-modificado")
+    out = _dispatch(session_id="s1", call_id="up1", name="onedrive_upload", params=params, native=True,
+                    gated=True, approval_id=approval_id, context=context)
+    assert "no coinciden" in json.loads(out["result"])["error"]
+    with pytest.raises(ValidationError):
+        _approve_native("s1", "up2", "gdrive_upload", {"draft": "falta.pdf"}, context)
+
+
+def test_cloud_writes_on_the_same_remote_file_are_serialized(store):
+    context = {"tool_version": "test-v1", "account": "ana@example.com", "scopes": ["spreadsheets"]}
+    params = {"spreadsheet_id": "sheet0001", "range": "A1", "values": [["x"]]}
+    first = _dispatch(session_id="s1", call_id="w1", name="gsheets_update_range", params=params, native=True, gated=True,
+                      approval_id=_approve_native("s1", "w1", "gsheets_update_range", params, context), context=context)
+    assert first["execute"] == "native"
+    other = _dispatch(session_id="s2", call_id="w2", name="gsheets_append", params=params, native=True, gated=True,
+                      approval_id=_approve_native("s2", "w2", "gsheets_append", params, context), context=context)
+    assert other.get("busy") is True
+    reads = _dispatch(session_id="s3", call_id="r1", name="gsheets_read", params=params, native=True, gated=False)
+    assert reads["execute"] == "native"
+    _finish("s1", "w1", first)
+
+
+def test_context_lists_granted_files_and_accounts_and_removes_one_file(store, tmp_path):
+    first, second = tmp_path / "a.pdf", tmp_path / "b.pdf"
+    for path in (first, second):
+        path.write_bytes(b"%PDF-1.4")
+    agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [str(first), str(second)]})
+    context = {"tool_version": "test-v1", "account": "ana@example.com", "scopes": ["spreadsheets"]}
+    _approve_native("s1", "w1", "gsheets_update_range", {"spreadsheet_id": "sheet0001", "range": "A1", "values": [["x"]]}, context)
+    listed = agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s1"})["context"]
+    assert [f["path"] for f in listed["files"]] == sorted(str(p.resolve()) for p in (first, second))
+    assert listed["accounts"] == ["ana@example.com"]
+    removed = agent_internal.HANDLERS["agent_internal_grant_remove"]({"session_id": "s1", "path": listed["files"][0]["path"]})
+    assert removed == {"removed": 1}
+    left = agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s1"})["context"]["files"]
+    assert [f["path"] for f in left] == [listed["files"][1]["path"]]
+    assert agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s2"})["context"] == {"files": [], "accounts": []}

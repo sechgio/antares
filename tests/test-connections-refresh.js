@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function session(backend) {
+function session(backend, extra = {}) {
   const stored = new Map([
     ['connections/demo-tokens.json', { access_token: 'old', refresh_token: 'R1', expiry_date: 1 }],
     ['connections/demo-oauth-config.json', { client_id: 'client', client_secret: 'secret' }],
@@ -35,7 +35,7 @@ function session(backend) {
     './app-log': { appendLogEvent: () => {} },
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../electron/connections-session.js'), 'utf8'), {
-    module, require: (name) => deps[name] || require(name), Buffer, URLSearchParams, console,
+    module, require: (name) => deps[name] || require(name), Buffer, URLSearchParams, console, ...extra,
   });
   return { api: module.exports, stored, calls };
 }
@@ -86,6 +86,37 @@ async function main() {
   await valid.api.disconnect('demo');
   assert.equal((await valid.api.getStatus('demo')).state, 'disconnected');
   console.log('[PASS] OAuth usa el token rotado del backend, comparte el refresco y respeta la desconexión.');
+
+  const resources = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'oauth-public-'));
+  fs.writeFileSync(path.join(resources, 'oauth-clients.json'), JSON.stringify({ demo: { client_id: 'antares-public', client_secret: 'pub' } }));
+  const fakeProcess = { env: {}, resourcesPath: resources };
+  const publicApp = session(async () => ({ tokens: fresh }), { process: fakeProcess });
+  publicApp.stored.delete('connections/demo-oauth-config.json');
+  publicApp.stored.delete('connections/demo-tokens.json');
+  const status = await publicApp.api.getStatus('demo');
+  assert.equal(status.configured, true);
+  assert.equal(status.public_app, true);
+  assert.equal(status.state, 'disconnected');
+  assert.equal(publicApp.api.loadOAuthConfig('demo').clientId, 'antares-public');
+  const env = session(async () => ({ tokens: fresh }), { process: { env: { ANTARES_DEMO_OAUTH_CLIENT_ID: 'desde-build' }, resourcesPath: resources } });
+  env.stored.delete('connections/demo-oauth-config.json');
+  assert.equal(env.api.loadOAuthConfig('demo').clientId, 'desde-build');
+  const own = session(async () => ({ tokens: fresh }), { process: fakeProcess });
+  assert.equal(own.api.loadOAuthConfig('demo').clientId, 'client');
+  assert.equal((await own.api.getStatus('demo')).public_app, false);
+  const none = session(async () => ({ tokens: fresh }), { process: { env: {}, resourcesPath: path.join(resources, 'falta') } });
+  none.stored.delete('connections/demo-oauth-config.json');
+  assert.equal((await none.api.getStatus('demo')).state, 'unconfigured');
+  fs.rmSync(resources, { recursive: true, force: true });
+  console.log('[PASS] La app OAuth pública evita pedir Client ID sin reemplazar la configuración propia.');
+
+  const google = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'];
+  for (const scope of ['openid', 'email', 'profile']) assert.ok(own.api.scopeGranted(google, scope), `Google concede ${scope}`);
+  const microsoft = ['https://graph.microsoft.com/User.Read', 'Files.ReadWrite', 'openid'];
+  for (const scope of ['offline_access', 'User.Read', 'Files.ReadWrite']) assert.ok(own.api.scopeGranted(microsoft, scope), `Microsoft concede ${scope}`);
+  assert.ok(!own.api.scopeGranted(microsoft, 'Tasks.ReadWrite'), 'un permiso ausente sigue faltando');
+  assert.ok(!own.api.scopeGranted(['Files.ReadWrite.All'], 'Files.ReadWrite') , 'un scope parecido no cuenta como concedido');
+  console.log('[PASS] Los scopes concedidos se reconocen con las formas que devuelve cada proveedor.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

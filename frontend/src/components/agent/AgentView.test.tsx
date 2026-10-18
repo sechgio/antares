@@ -232,8 +232,6 @@ it('un envío fallido conserva el borrador y termina el indicador de ejecución'
   expect(screen.queryByText('El agente está trabajando')).not.toBeInTheDocument();
   expect(addToast).toHaveBeenCalledWith({ message: 'Sin conexión', type: 'error' });
 
-  // Reenviar el mismo texto tras el fallo reutiliza el request_id: el backend
-  // reconoce el duplicado si el primer intento sí llegó a admitirse.
   vi.mocked(agentApi.agentMessageSend).mockResolvedValue({ accepted: true });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
@@ -324,4 +322,53 @@ it('recupera una aprobación pendiente sin aprobarla al montar y permite detener
   await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
   expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
   expect(approve).not.toHaveBeenCalled();
+});
+
+it('envía un mensaje en cola como corrección del encargo en curso', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
+  fireEvent.click(screen.getByLabelText('Enviar'));
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar como corrección')); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Usa la plantilla B', expect.any(String), [], true);
+  expect(screen.queryByText('En cola')).not.toBeInTheDocument();
+});
+
+it('muestra el contexto de la conversación y permite retirar un archivo concedido', async () => {
+  const withContext = {
+    ...empty,
+    context: { modules: [{ id: 'sellador', label: 'Sellador' }], files: [{ path: 'C:\\docs\\informe.pdf', folder: false }], accounts: ['ana@example.com'] },
+    usage: { input: 1500, output: 200 },
+  };
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(withContext);
+  const remove = vi.spyOn(agentApi, 'agentContextRemoveFile').mockResolvedValue({ removed: 1 });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  expect(screen.getByText('Sellador')).toBeInTheDocument();
+  expect(screen.getByText('informe.pdf')).toBeInTheDocument();
+  expect(screen.getByText('ana@example.com')).toBeInTheDocument();
+  expect(screen.getByText('1,5 k / 200 tokens')).toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByLabelText('Retirar acceso a informe.pdf')); });
+  expect(remove).toHaveBeenCalledWith('s1', 'C:\\docs\\informe.pdf');
+});
+
+it('abre una conversación desde un agente guardado con su mensaje inicial', async () => {
+  vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [
+    { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
+  ] } as never);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [{
+    id: 'p1', name: 'Informe mensual', description: 'Cortes del mes', instructions: 'x', starter: 'Prepara el informe de este mes',
+    tools: null, created_at: 1, updated_at: 1,
+  }] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } } });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByTitle('Nueva conversación con Informe mensual')); });
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
 });
