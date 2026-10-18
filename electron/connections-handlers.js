@@ -76,11 +76,6 @@ async function handleConnectionsCall(method, params = {}) {
         return { handled: true, result };
       }
 
-      case 'connections_status': {
-        const provider = String(params.provider || '');
-        return { handled: true, result: await session.getStatus(provider) };
-      }
-
       default:
         return { handled: false };
     }

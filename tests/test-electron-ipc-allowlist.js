@@ -77,7 +77,7 @@ function main() {
     for (const m of extractApiMethods(moduleSource, /\binvoke\b/g)) apiMethods.add(m);
   }
   const preloadMethods = extractPreloadMethods(preloadSource);
-  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'autoimg_scan_all']);
+  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
   if (!apiMethods.has('flows_pdf_preview') || !catalog.isIdempotent('flows_pdf_preview')
       || catalog.METHODS.flows_pdf_preview.lane !== 'heavy'
