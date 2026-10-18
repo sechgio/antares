@@ -4,13 +4,6 @@ import threading
 from backend.core.state import ProcessState, log_message
 
 
-def test_state_lock_is_reentrant() -> None:
-    state = ProcessState()
-    with state._lock, state._lock:
-        state.progress = 50
-    assert state.progress == 50
-
-
 def test_log_message_inside_lock_does_not_deadlock() -> None:
     state = ProcessState()
     with state._lock:

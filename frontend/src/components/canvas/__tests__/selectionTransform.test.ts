@@ -28,6 +28,7 @@ describe('selectionTransform', () => {
     expect(at1).toBeCloseTo(5 / MM_TO_PX, 5);
     expect(at2).toBeCloseTo(at1 / 2, 5);
     expect(snapThresholdMm(0.02, 5)).toBe(SNAP_THRESHOLD_MAX_MM);
+    expect(snapThresholdMm(0.02, 5)).toBeLessThan(5 / (MM_TO_PX * 0.02));
     expect(snapThresholdMm(0.05, 5)).toBeLessThanOrEqual(SNAP_THRESHOLD_MAX_MM);
   });
 

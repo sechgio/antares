@@ -20,11 +20,9 @@ import {
   prepareSnapRails,
   snapGuidePosition,
   snapMoveWithGuides,
-  snapThresholdMm,
 } from '../ops/selectionTransform';
 import { createEmptyDocument, resolvePageMarginMm, DEFAULT_PAGE_MARGIN_MM } from '../types';
 import { createLayer } from '../constants';
-import { MM_TO_PX } from '../ops/drawHelpers';
 
 function collectReferenceGapsByPairScan(
   others: Array<{ x: number; y: number; w: number; h: number }>,
@@ -130,14 +128,6 @@ describe('guides', () => {
     );
     expect(result.dx).toBeCloseTo(-18, 5);
     expect(result.guides.some((g) => g.axis === 'x' && g.pos === 30)).toBe(true);
-  });
-
-  it('snapThresholdMm scales with zoom', () => {
-    const at1 = snapThresholdMm(1, 5);
-    const at2 = snapThresholdMm(2, 5);
-    expect(at1).toBeCloseTo(5 / MM_TO_PX, 5);
-    expect(at2).toBeCloseTo(at1 / 2, 5);
-    expect(snapThresholdMm(0.02, 5)).toBeLessThan(5 / (MM_TO_PX * 0.02));
   });
 
   it('clampGuidePos clamps to the page extent', () => {

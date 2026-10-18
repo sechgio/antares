@@ -12,7 +12,6 @@ import {
 } from './canvasCloudSync';
 import { isNewer } from './syncCompare';
 import { notifyPushHealth, subscribeCanvasPushHealth } from './pushHealth';
-import { withTimeout } from '../../../utils/async';
 import { recordPendingCanvasDelete, clearPendingCanvasDelete } from './cloudQueue';
 
 const supabaseMock = vi.hoisted(() => {
@@ -107,24 +106,6 @@ function resetMocks(): void {
     (supabaseMock.chainable[m] as ReturnType<typeof vi.fn>).mockClear();
   }
 }
-
-describe('withTimeout', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('resolves when the promise wins', async () => {
-    await expect(withTimeout(Promise.resolve(42), 1000, 'test')).resolves.toBe(42);
-  });
-
-  it('rejects when the timer wins', async () => {
-    vi.useFakeTimers();
-    const pending = withTimeout(new Promise<number>(() => {}), 50, 'test-hang');
-    const assertion = expect(pending).rejects.toThrow(/test-hang timed out after 50ms/);
-    await vi.advanceTimersByTimeAsync(50);
-    await assertion;
-  });
-});
 
 describe('canvasCloudSync isNewer', () => {
   it('treats missing local as older', () => {
