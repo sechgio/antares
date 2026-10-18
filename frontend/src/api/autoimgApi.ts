@@ -31,15 +31,6 @@ export function createAutoimgApi(invoke: IpcInvoke) {
         config_error?: string;
       }>('autoimg_sheets_open', { sheet_id }),
     autoimgSheetsGetConfig: () => invoke<{ sheet_id: string; name: string; linked: boolean }>('autoimg_sheets_get_config'),
-    autoimgSheetsReadRange: (range: string) => invoke<{ values: string[][] }>('autoimg_sheets_read_range', { range }),
-    autoimgSheetsWriteRange: (range: string, values: string[][]) =>
-      invoke<{ updated: number }>('autoimg_sheets_write_range', { range, values }),
-    autoimgSheetsAppendRow: (range: string, values: string[]) =>
-      invoke<{ row: number }>('autoimg_sheets_append_row', { range, values }),
-    autoimgDriveListFolder: (folder_id: string) =>
-      invoke<{ files: Array<{ name: string; id: string; modifiedTime: string }> }>('autoimg_drive_list_folder', { folder_id }),
-    autoimgDriveScanNis: (folder_id: string, folder_name?: string) =>
-      invoke<{ nis_map: Record<string, { count: number; files: unknown[] }> }>('autoimg_drive_scan_nis', { folder_id, folder_name }),
     autoimgDriveVerifyFolder: (urlOrId: string) =>
       invoke<DriveVerifyResult>('autoimg_drive_verify_folder', { url: urlOrId }),
     autoimgDriveFolderPreview: (folder_id: string, force = false) =>
@@ -144,7 +135,6 @@ export function createAutoimgApi(invoke: IpcInvoke) {
       'autoimg_auto_sync_toggle',
       { enabled },
     ),
-    autoimgScanAll: () => invoke<{ success: boolean; results?: unknown }>('autoimg_scan_all'),
     autoimgCancelOperation: () => invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
     autoimgOperationStatus: () =>
       invoke<{ active: string | null; cancellable: boolean }>('autoimg_operation_status'),

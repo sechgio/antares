@@ -29,6 +29,9 @@ def test_tool_specs_carry_module_and_spanish_label():
     assert specs["sellador_apply"]["description"].startswith("Sellador · ")
     assert specs["sellador_inspect_pdf"]["gated"] is False
     assert specs["formatos_generate"]["gated"] is True
+    assert specs["is_video"]["module"] == "conversion"
+    assert specs["is_video"]["gated"] is False
+    assert specs["design_memory_update"]["gated"] is True
 
 
 def test_mentions_resolve_aliases_accents_and_ignore_emails():

@@ -74,7 +74,6 @@ export type {
   ImageOptimizerSaveFilesResponse,
 } from './api/toolsApi';
 export type {
-  SpotifyAlbumsParams,
   SpotifyAuthStatus,
   SpotifyLibraryParams,
   SpotifyOAuthConfigStatus,

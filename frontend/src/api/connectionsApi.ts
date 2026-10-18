@@ -32,18 +32,6 @@ export interface ConnectionCategory {
   label: string;
 }
 
-export interface ConnectionStatus extends ConnectionState {
-  provider: string;
-  configured: boolean;
-  client_id_masked?: string;
-  connected: boolean;
-  account?: string | null;
-  expiry_date?: number | null;
-  scope?: string | null;
-  auth_type: string;
-  redirect_hint: string;
-}
-
 export const connectionsApi = {
   connectionsProviders: () =>
     _invoke<{ providers: ConnectionProviderSpec[]; categories: ConnectionCategory[] }>(
@@ -60,6 +48,4 @@ export const connectionsApi = {
     }),
   connectionsDisconnect: (provider: string) =>
     _invoke<{ success: boolean }>('connections_disconnect', { provider }),
-  connectionsStatus: (provider: string) =>
-    _invoke<ConnectionStatus>('connections_status', { provider }),
 };

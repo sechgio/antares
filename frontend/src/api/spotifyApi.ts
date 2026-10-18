@@ -72,14 +72,6 @@ export interface SpotifyPlaylistsParams {
   snapshot_id?: string;
 }
 
-export interface SpotifyAlbumsParams {
-  action?: 'get' | 'tracks';
-  album_id?: string;
-  market?: string;
-  limit?: number;
-  offset?: number;
-}
-
 export interface SpotifyLibraryParams {
   kind: 'tracks' | 'albums';
   action?: 'list' | 'save' | 'remove';
@@ -109,8 +101,6 @@ export function createSpotifyApi(invoke: IpcInvoke) {
       invoke<Record<string, unknown>>('spotify_search', params),
     spotifyPlaylists: (params: SpotifyPlaylistsParams = {}) =>
       invoke<Record<string, unknown> & SpotifyActionResult>('spotify_playlists', params),
-    spotifyAlbums: (params: SpotifyAlbumsParams = {}) =>
-      invoke<Record<string, unknown> & SpotifyActionResult>('spotify_albums', params),
     spotifyLibrary: (params: SpotifyLibraryParams) =>
       invoke<Record<string, unknown> & SpotifyActionResult>('spotify_library', params),
   };

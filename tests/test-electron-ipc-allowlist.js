@@ -77,7 +77,7 @@ function main() {
     for (const m of extractApiMethods(moduleSource, /\binvoke\b/g)) apiMethods.add(m);
   }
   const preloadMethods = extractPreloadMethods(preloadSource);
-  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'autoimg_scan_all']);
+  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
   const refreshMethod = 'connections_token_refresh';
   if (!catalog.INTERNAL_METHODS.has(refreshMethod) || knownUsedMethods.has(refreshMethod)) {

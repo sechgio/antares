@@ -52,7 +52,6 @@ MAX_SUBTITLE_CHARS = _LIMITS.get("maxSubtitleChars", 400)
 MAX_BODY_CHARS = _LIMITS.get("maxBodyChars", 4000)
 MAX_BULLETS = _LIMITS.get("maxBullets", 12)
 MAX_BULLET_CHARS = _LIMITS.get("maxBulletChars", 400)
-MAX_COLUMNS = _LIMITS.get("maxColumns", 2)
 MAX_NOTES_CHARS = _LIMITS.get("maxNotesChars", 2000)
 MAX_NAME_CHARS = _LIMITS.get("maxNameChars", 120)
 
