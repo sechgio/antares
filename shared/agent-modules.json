@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "description": "Módulos de Antares que el agente puede usar y sus menciones. Las herramientas salen de los handlers del catálogo IPC; aquí solo se agrupan, se nombran y se declara su disponibilidad.",
+  "modules": {
+    "conversion": {
+      "label": "Conversión y renombrado",
+      "aliases": ["conversion", "conversión", "convertir", "renombrado", "renombrar"],
+      "handlers": ["conversion"],
+      "methods": ["rename_patterns_get", "rename_patterns_update", "rename_patterns_reset"]
+    },
+    "formatos": {
+      "label": "Formatos PDF",
+      "aliases": ["formatos", "formato", "formatos-pdf"],
+      "handlers": ["formatos"]
+    },
+    "sellador": {
+      "label": "Sellador",
+      "aliases": ["sellador", "sello", "sellar"],
+      "handlers": ["sellador"]
+    },
+    "padron": {
+      "label": "Generar Padrones",
+      "aliases": ["padron", "padrón", "padrones"],
+      "handlers": [],
+      "methods": ["padron_describe", "padron_export_pdf"],
+      "native": true
+    },
+    "volantes": {
+      "label": "Generar Volantes",
+      "aliases": ["volantes", "volante"],
+      "handlers": ["spreadsheet"],
+      "methods": ["volantes_describe", "volantes_export_pdf"],
+      "native": true
+    },
+    "reportesCampo": {
+      "label": "Reportes de Campo",
+      "aliases": ["reportes-campo", "reportes", "catalogo", "catálogo"],
+      "handlers": ["database"],
+      "methods": ["history_list", "history_get"]
+    },
+    "technicalReports": {
+      "label": "Informes técnicos",
+      "aliases": ["informes-tecnicos", "informes-técnicos", "informe-tecnico", "informe-técnico"],
+      "handlers": ["technical_reports"],
+      "methods": ["technical_reports_export_pdf"]
+    },
+    "informesV2": {
+      "label": "Informes v2",
+      "aliases": ["informes-v2", "informev2", "informe-v2"],
+      "handlers": ["informes_v2"],
+      "methods": ["informes_v2_export_pdf"]
+    },
+    "fichasTecnicas": {
+      "label": "Fichas Técnicas",
+      "aliases": ["fichas", "fichas-tecnicas", "fichas-técnicas", "ficha"],
+      "handlers": ["fichas_tecnicas"],
+      "methods": ["fichas_tecnicas_export_pdf"]
+    },
+    "previewPanel": {
+      "label": "Generador Reportes",
+      "aliases": ["generador", "plantillas", "plantilla", "reportes-html"],
+      "handlers": ["templates"]
+    },
+    "canvas": {
+      "label": "Canvas",
+      "aliases": ["canvas", "lienzo"],
+      "handlers": ["canvas"],
+      "methods": ["canvas_fill_fields"]
+    },
+    "design": {
+      "label": "Design",
+      "aliases": ["design", "diseño", "presentaciones", "diapositivas"],
+      "handlers": ["design"]
+    },
+    "imageOptimizer": {
+      "label": "Optimizador",
+      "aliases": ["optimizador", "optimizar"],
+      "handlers": ["optimizer"]
+    },
+    "panelAvisoCorte": {
+      "label": "Aviso de Corte",
+      "aliases": ["aviso-de-corte", "aviso", "corte"],
+      "handlers": ["panel_aviso_corte"]
+    },
+    "ubicaciones": {
+      "label": "Ubicaciones",
+      "aliases": ["ubicaciones", "ubicacion", "ubicación", "mapas"],
+      "handlers": ["ubicaciones"]
+    },
+    "evidenciaVolanteo": {
+      "label": "Evidencia Volanteo",
+      "aliases": ["evidencia", "evidencia-volanteo"],
+      "handlers": ["evidencia_volanteo"]
+    },
+    "printing": {
+      "label": "Impresión",
+      "aliases": ["imprimir", "impresora", "impresion", "impresión"],
+      "handlers": ["printing"],
+      "methods": ["artifact_print"]
+    },
+    "documents": {
+      "label": "Documentos",
+      "aliases": ["documentos", "documento"],
+      "handlers": [],
+      "methods": ["templates_catalog", "template_describe", "document_prepare", "document_generate", "file_read", "artifacts_list", "ask_user"]
+    },
+    "drafts": {
+      "label": "Borradores",
+      "aliases": ["borradores", "borrador"],
+      "handlers": [],
+      "methods": ["drafts_list", "drafts_save"]
+    },
+    "history": {
+      "label": "Historial",
+      "aliases": ["historial"],
+      "handlers": ["history"]
+    },
+    "autoimg": {
+      "label": "AutoIMG",
+      "aliases": ["autoimg"],
+      "handlers": [],
+      "native": true
+    },
+    "espacios": {
+      "label": "Espacios",
+      "aliases": ["espacios", "espacio"],
+      "handlers": [],
+      "native": true
+    },
+    "agent": {
+      "label": "Memoria del agente",
+      "aliases": ["memoria", "procedimientos", "recuerdos"],
+      "handlers": [],
+      "methods": ["memory_search", "memory_remember", "procedure_learn"]
+    },
+    "connections": {
+      "label": "Conexiones",
+      "aliases": ["conexiones", "drive", "google-drive", "sheets", "hojas-de-google", "onedrive", "excel"],
+      "handlers": [],
+      "methods": ["gdrive_search", "gdrive_get", "gdrive_download", "gdrive_upload", "gsheets_metadata", "gsheets_read",
+        "gsheets_update_range", "gsheets_append", "onedrive_search", "onedrive_get", "onedrive_download", "onedrive_upload",
+        "excel_worksheets", "excel_read_range", "excel_update_range"],
+      "native": true
+    },
+    "app": {
+      "label": "Antares",
+      "aliases": ["antares", "app"],
+      "handlers": ["info", "diagnostics", "theme"]
+    }
+  }
+}

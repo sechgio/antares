@@ -118,6 +118,7 @@ async function _refreshAccessToken(tokens, session = captureAuthSession()) {
     ...tokens,
     access_token: data.access_token,
     refresh_token: data.refresh_token || tokens.refresh_token,
+    ...(typeof data.scope === 'string' ? { scope: data.scope } : {}),
     expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
   };
   assertAuthSessionCurrent(session);

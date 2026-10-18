@@ -5,6 +5,7 @@ const sheets = require('./google-sheets-service');
 const drive = require('./google-drive-service');
 const engine = require('./autoimg-sync-engine');
 const { sanitizeError, sanitizeErrorMessage, assertNoSecretInObject } = require('./autoimg-security');
+const { assertAllowedSheetRange } = require('./autoimg-sheet-ranges');
 const { emit } = require('./autoimg-notify');
 
 async function handleAutoimgCall(method, params = {}) {
@@ -84,6 +85,32 @@ async function handleAutoimgCall(method, params = {}) {
       case 'autoimg_sheets_get_config':
         return { handled: true, result: await sheets.restorePersistedSheet() };
 
+      case 'autoimg_sheets_read_range': {
+        const range = assertAllowedSheetRange(params.range);
+        return { handled: true, result: await sheets.readRange(range) };
+      }
+
+      case 'autoimg_sheets_write_range': {
+        const range = assertAllowedSheetRange(params.range);
+        return { handled: true, result: await sheets.writeRange(range, params.values) };
+      }
+
+      case 'autoimg_sheets_append_row': {
+        const range = assertAllowedSheetRange(params.range);
+        return { handled: true, result: await sheets.appendRow(range, params.values) };
+      }
+
+      case 'autoimg_drive_list_folder': {
+        const folderId = drive.assertValidFolderId(params.folder_id);
+        const files = await drive.listFolder(folderId);
+        return { handled: true, result: { files } };
+      }
+
+      case 'autoimg_drive_scan_nis': {
+        const folderId = drive.assertValidFolderId(params.folder_id);
+        return { handled: true, result: await drive.scanNis(folderId, params.folder_name || '') };
+      }
+
       case 'autoimg_drive_verify_folder':
         return { handled: true, result: await drive.verifyFolder(params.folder_id || params.url || '') };
 
@@ -113,6 +140,9 @@ async function handleAutoimgCall(method, params = {}) {
 
       case 'autoimg_folders_toggle':
         return { handled: true, result: await engine.toggleFolder(params) };
+
+      case 'autoimg_scan_all':
+        return { handled: true, result: await engine.scanAll() };
 
       case 'autoimg_scan_and_sync':
         return { handled: true, result: await engine.scanAndSync() };

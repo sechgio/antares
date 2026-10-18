@@ -323,6 +323,8 @@ def test_memory_handlers_roundtrip(tmp_path, monkeypatch):
     assert stored["notes"][0]["text"] == "Nada de emojis"
 
     note_id = stored["notes"][0]["id"]
+    handlers.design_memory_update({"id": note_id, "text": "Nada de emojis ni iconos"})
+    assert handlers.design_memory_get({})["memory"]["notes"][0]["text"] == "Nada de emojis ni iconos"
 
     handlers.design_memory_delete({"id": note_id})
     assert handlers.design_memory_get({})["memory"]["notes"] == []

@@ -46,6 +46,16 @@ function getMappingScrollContainer() {
 }
 
 describe('PreviewPanelView column mapping', () => {
+  it('carga la plantilla catalogada solicitada desde Agent', async () => {
+    sessionStorage.setItem('agent:open:previewPanel', 'report.html');
+    const list = vi.spyOn(api, 'templatesList').mockResolvedValue({ templates: [{ id: 'report', name: 'Reporte', filename: 'report.html' }] });
+    const get = vi.spyOn(api, 'templateGet').mockResolvedValue({ name: 'Reporte', content: '<html><body>Plantilla de prueba</body></html>' });
+    try {
+      renderView();
+      await waitFor(() => expect(get).toHaveBeenCalledWith('report.html'));
+      expect(sessionStorage.getItem('agent:open:previewPanel')).toBeNull();
+    } finally { list.mockRestore(); get.mockRestore(); }
+  });
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem(CUSTOM_COLS_KEY, JSON.stringify([

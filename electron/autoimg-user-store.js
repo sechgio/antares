@@ -51,6 +51,7 @@ function _safeTokens(tokens) {
     access_token: tokens?.access_token,
     refresh_token: tokens?.refresh_token,
     expiry_date: tokens?.expiry_date,
+    ...(typeof tokens?.scope === 'string' ? { scope: tokens.scope } : {}),
   };
 }
 

@@ -39,7 +39,7 @@ export default function TechnicalReportsApp() {
     deleteReport,
     clearReports,
     importFile,
-  } = useReportWorkspace(technicalReportsApi);
+  } = useReportWorkspace(technicalReportsApi, { agentModule: 'technicalReports' });
   const { logoLeft, logoRight, changeLogo, exportCurrent, exportConsolidated } =
     useTechnicalReportsActions({
       reports,

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.core.flows import agent_chat
+from backend.core.agent import agent_chat
 
 PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
