@@ -1,11 +1,30 @@
+// Contrato de los sobres que devuelve el transporte (api/reportsApi.ts):
+// definido una sola vez aquí, que es donde se adaptan a la forma de dominio.
+export interface ReportListEnvelope<TListItem = unknown> {
+  items?: TListItem[];
+  total?: number;
+}
+
+export interface ReportItemEnvelope<TReport> {
+  item?: TReport;
+}
+
+export interface ReportImportEnvelope {
+  success?: boolean;
+  message?: string;
+  deleted_count?: number;
+  imported_count: number;
+  total_rows_in_file?: number;
+}
+
 interface ReportApiSpec<TReport> {
-  list: (params: { summary: boolean }) => Promise<Record<string, unknown>>;
-  get: (id: string) => Promise<Record<string, unknown>>;
-  create: (item?: Partial<TReport>) => Promise<Record<string, unknown>>;
-  update: (id: string, item: Partial<TReport>) => Promise<Record<string, unknown>>;
+  list: (params: { summary: boolean }) => Promise<ReportListEnvelope>;
+  get: (id: string) => Promise<ReportItemEnvelope<TReport>>;
+  create: (item?: Partial<TReport>) => Promise<ReportItemEnvelope<TReport>>;
+  update: (id: string, item: Partial<TReport>) => Promise<ReportItemEnvelope<TReport>>;
   delete: (id: string) => Promise<unknown>;
   clear: () => Promise<unknown>;
-  importFile: (params: { filename: string; content_b64: string }) => Promise<{ imported_count: number }>;
+  importFile: (params: { filename: string; content_b64: string }) => Promise<ReportImportEnvelope>;
 }
 
 interface ReportListResult<TListItem> {
