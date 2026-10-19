@@ -29,6 +29,8 @@ export interface AiProviderCustomInput {
   base_url: string;
   model: string;
   api_key?: string;
+  /** Quita la clave guardada al editar; un api_key nuevo tiene prioridad. */
+  remove_key?: boolean;
 }
 
 export interface AiProviderStatus extends AiProviderSpec {

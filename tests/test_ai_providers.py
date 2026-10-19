@@ -167,6 +167,19 @@ def test_custom_model_edit_keeps_key_and_allows_keyless(tmp_path, monkeypatch):
     assert ai_providers.get_provider(other)["auth"]["type"] == "none"
 
 
+def test_custom_model_can_remove_its_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    provider = ai_providers.upsert_custom(_custom())["id"]
+
+    ai_providers.upsert_custom(_custom(id=provider, remove_key=True, api_key=""))
+    assert "api_key" not in ai_providers.get_config(provider)
+    assert ai_providers.public_state(provider)["needs_key"] is False
+    assert ai_providers.get_provider(provider)["auth"]["type"] == "none"
+
+    ai_providers.upsert_custom(_custom(id=provider, api_key="sk-nueva"))
+    assert ai_providers.public_state(provider)["key_masked"] == "••••ueva"
+
+
 def test_custom_model_validates_input(tmp_path, monkeypatch):
     monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
     cases = [
@@ -239,6 +252,25 @@ def test_ipc_list_exposes_custom_models_without_the_key(tmp_path, monkeypatch):
     assert entry["has_key"] is True
     assert "sk-secreto" not in str(listed)
     assert all("custom" not in item for item in listed["providers"] if item["id"] != provider)
+
+
+def test_ipc_list_keeps_catalog_before_custom_models(tmp_path, monkeypatch):
+    """Agente y Diseño usan el primer proveedor listo: un custom no debe adelantarse."""
+    from backend.handlers import integrations
+
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    created = integrations.HANDLERS["ai_provider_custom_save"]({
+        "label": "AAA",
+        "api": "openai",
+        "base_url": "https://gateway.example.com/v1",
+        "model": "mi-modelo",
+        "api_key": "sk-secreto",
+    })
+    ids = [item["id"] for item in integrations.HANDLERS["ai_providers_list"]({})["providers"]]
+    builtins = [pid for pid in ids if not pid.startswith("custom-")]
+    assert builtins == sorted(builtins)
+    assert ids.index("openai") < ids.index(created["id"])
+    assert all(ids.index(pid) < ids.index(created["id"]) for pid in builtins)
 
 
 def test_custom_model_with_corrupt_vault_can_be_deleted(tmp_path, monkeypatch):

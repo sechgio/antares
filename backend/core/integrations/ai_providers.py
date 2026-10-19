@@ -254,6 +254,8 @@ def upsert_custom(config: JsonObject) -> JsonObject:
         "base_url": _validate_base_url(base_url),
         "model": _custom_text(config.get("model"), _CUSTOM_MODEL_MAX, "El modelo"),
     }
+    if config.get("remove_key") is True:
+        saved.pop("api_key", None)
     api_key = config.get("api_key")
     if api_key is not None:
         if not isinstance(api_key, str):

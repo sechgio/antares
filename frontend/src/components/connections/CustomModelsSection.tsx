@@ -29,6 +29,7 @@ interface CustomFormState {
   baseUrl: string;
   model: string;
   apiKey: string;
+  removeKey: boolean;
   saving: boolean;
 }
 
@@ -47,7 +48,7 @@ export default function CustomModelsSection({
   const editing = form?.id ? providers.find((p) => p.id === form.id) : undefined;
 
   const openCreate = () => {
-    setForm({ id: null, label: '', api: 'openai', baseUrl: '', model: '', apiKey: '', saving: false });
+    setForm({ id: null, label: '', api: 'openai', baseUrl: '', model: '', apiKey: '', removeKey: false, saving: false });
   };
 
   const openEdit = (p: AiProviderSpec) => {
@@ -59,6 +60,7 @@ export default function CustomModelsSection({
       baseUrl: p.base_url,
       model: p.default_model,
       apiKey: '',
+      removeKey: false,
       saving: false,
     });
   };
@@ -82,6 +84,7 @@ export default function CustomModelsSection({
         base_url: baseUrl,
         model,
         ...(apiKey ? { api_key: apiKey } : {}),
+        ...(form.removeKey && !apiKey ? { remove_key: true } : {}),
       });
       addToast({ message: `${label} guardado y cifrado en este equipo`, type: 'success' });
       setForm(null);
@@ -217,24 +220,40 @@ export default function CustomModelsSection({
                 aria-label="Modelo personalizado"
               />
             </label>
-            <label className="block text-xs font-medium text-[var(--text-secondary)] sm:col-span-2">
-              Clave de acceso (opcional)
+            <div className="sm:col-span-2">
+              <span className="block text-xs font-medium text-[var(--text-secondary)]">Clave de acceso (opcional)</span>
               <Input
                 className="mt-1.5 w-full"
                 type="password"
                 value={form.apiKey}
-                disabled={form.saving}
+                disabled={form.saving || form.removeKey}
                 onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
-                placeholder={editing?.has_key ? `Guardada: ${editing.key_masked}` : 'Clave del servicio'}
+                placeholder={
+                  form.removeKey
+                    ? 'Se quitará la clave guardada'
+                    : editing?.has_key ? `Guardada: ${editing.key_masked}` : 'Clave del servicio'
+                }
                 spellCheck={false}
                 aria-label="Clave del modelo personalizado"
               />
               <span className="mt-1 block text-[11px] font-normal text-[var(--text-muted)]">
-                {editing?.has_key
-                  ? 'Déjala vacía para conservar la clave guardada.'
-                  : 'Déjala vacía si el servicio local no pide clave.'} Se guarda cifrada en este equipo.
+                {form.removeKey
+                  ? 'Al guardar, el modelo quedará sin clave.'
+                  : `${editing?.has_key ? 'Déjala vacía para conservar la clave guardada.' : 'Déjala vacía si el servicio local no pide clave.'} Se guarda cifrada en este equipo.`}
               </span>
-            </label>
+              {editing?.has_key && (
+                <Button
+                  className="mt-1 px-0 text-[11px] font-normal text-[var(--text-secondary)] hover:bg-transparent hover:text-[var(--text-primary)]"
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={form.saving}
+                  onClick={() => setForm({ ...form, removeKey: !form.removeKey, apiKey: '' })}
+                >
+                  {form.removeKey ? 'Conservar la clave guardada' : 'Quitar la clave guardada'}
+                </Button>
+              )}
+            </div>
           </div>
           <div className="mt-4 flex items-center justify-end gap-2">
             <Button type="button" size="sm" variant="ghost" disabled={form.saving} onClick={() => setForm(null)}>

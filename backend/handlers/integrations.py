@@ -44,7 +44,9 @@ def _connection_token_refresh(params: JsonObject) -> JsonObject:
 def _ai_providers_list(params: JsonObject) -> JsonObject:
     specs = _ai_providers.load_provider_specs()
     providers = []
-    for pid in sorted(specs):
+    # El catálogo va primero: Agente y Diseño eligen el primer proveedor listo
+    # como predeterminado y un modelo personalizado no debe desplazarlo.
+    for pid in sorted(specs, key=lambda pid: (bool(specs[pid].get("custom")), pid)):
         spec = specs[pid]
         entry: JsonObject = {
             "id": pid,
@@ -86,7 +88,7 @@ def _ai_provider_delete(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("label", "api", "base_url", "model")
 def _ai_provider_custom_save(params: JsonObject) -> JsonObject:
-    fields = ("id", "label", "api", "base_url", "model", "api_key")
+    fields = ("id", "label", "api", "base_url", "model", "api_key", "remove_key")
     try:
         return _ai_providers.upsert_custom({k: params[k] for k in fields if k in params})
     except ValueError as exc:

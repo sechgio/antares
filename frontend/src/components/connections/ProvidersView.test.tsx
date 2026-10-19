@@ -164,3 +164,23 @@ it('edita un modelo personalizado sin reemplazar la clave y permite probarlo y e
   fireEvent.click(await screen.findByRole('button', { name: 'Eliminar Mi gateway' }));
   await waitFor(() => expect(remove).toHaveBeenCalledWith(customProvider.id));
 });
+
+it('permite quitar la clave guardada de un modelo personalizado', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [customProvider] });
+  const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({
+    id: customProvider.id,
+    provider: customProvider,
+  });
+  render(<ProvidersView />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar Mi gateway' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Quitar la clave guardada' }));
+  expect(screen.getByLabelText('Clave del modelo personalizado')).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+    id: customProvider.id,
+    remove_key: true,
+  })));
+  expect(save.mock.calls.at(-1)?.[0]).not.toHaveProperty('api_key');
+});
