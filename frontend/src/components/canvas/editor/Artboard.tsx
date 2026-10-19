@@ -928,7 +928,6 @@ function Artboard({
     onStartPathEdit,
   });
 
-
   const transformGesturesRef = useLiveRef(createArtboardTransformGestures({
     frameRef,
     zoomRef,

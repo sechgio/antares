@@ -465,6 +465,7 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (e.defaultPrevented || isLayerListKeyboardTarget(e.target)) return;
         if (!editableIds.length) {
+          if (selectedIds.length) return;
           const nav = viewportNavRef.current;
           if (!nav) return;
           e.preventDefault();

@@ -42,6 +42,19 @@ function makeDoc(layers: CanvasLayer[]): CanvasDocument {
   return { ...doc, layers: [...doc.layers, ...layers] };
 }
 
+function makeViewportNav(overrides: Partial<ViewportNavApi> = {}): ViewportNavApi {
+  return {
+    getZoom: () => 1,
+    getPan: () => ({ x: 0, y: 0 }),
+    setZoom: vi.fn(),
+    setPan: vi.fn(),
+    zoomToFit: vi.fn(),
+    zoomToSelection: vi.fn(),
+    animateTo: vi.fn(),
+    ...overrides,
+  };
+}
+
 function makeInput(doc: CanvasDocument, overrides: Partial<CanvasKeyboardInput> = {}) {
   const input: CanvasKeyboardInput = {
     onKeyDownRef: { current: () => {} },
@@ -192,7 +205,7 @@ describe('useCanvasKeyboard', () => {
   it('flechas sin selección panean la vista en vez de mover capas', () => {
     const doc = makeDoc([]);
     const setPan = vi.fn();
-    const nav = { getZoom: () => 1, getPan: () => ({ x: 0, y: 0 }), setPan } as unknown as ViewportNavApi;
+    const nav = makeViewportNav({ setPan });
     const input = makeInput(doc, { viewportNavRef: { current: nav } });
     renderHook(() => useCanvasKeyboard(input));
     press(input, { key: 'ArrowRight' });
@@ -201,14 +214,24 @@ describe('useCanvasKeyboard', () => {
     expect(setPan.mock.calls).toEqual([[{ x: -50, y: 0 }], [{ x: 0, y: 200 }]]);
   });
 
+  it('las flechas no panean la vista cuando hay capas bloqueadas seleccionadas', () => {
+    const locked = createLayer('rect', { locked: true });
+    const doc = makeDoc([locked]);
+    const setPan = vi.fn();
+    const input = makeInput(doc, {
+      selectedIds: [locked.id],
+      viewportNavRef: { current: makeViewportNav({ setPan }) },
+    });
+    renderHook(() => useCanvasKeyboard(input));
+    press(input, { key: 'ArrowRight' });
+    expect(input.nudgeLayersLive).not.toHaveBeenCalled();
+    expect(setPan).not.toHaveBeenCalled();
+  });
+
   it('Shift+= y Shift+- cambian el zoom por presets', () => {
     const doc = makeDoc([]);
     const animateTo = vi.fn();
-    const nav = {
-      getZoom: () => 1,
-      getPan: () => ({ x: 0, y: 0 }),
-      animateTo,
-    } as unknown as ViewportNavApi;
+    const nav = makeViewportNav({ animateTo });
     const input = makeInput(doc, { viewportNavRef: { current: nav } });
     renderHook(() => useCanvasKeyboard(input));
     press(input, { key: '+', code: 'Equal', shiftKey: true });
