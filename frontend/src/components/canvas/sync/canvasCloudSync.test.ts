@@ -13,7 +13,12 @@ import {
 import { isNewer } from './syncCompare';
 import { notifyPushHealth, subscribeCanvasPushHealth } from './pushHealth';
 import { withTimeout } from '../../../utils/async';
-import { recordPendingCanvasDelete, clearPendingCanvasDelete } from './cloudQueue';
+import {
+  recordPendingCanvasDelete,
+  clearPendingCanvasDelete,
+  pendingCanvasPushes,
+  queueCanvasCloudPush as queuePushBeforeImport,
+} from './cloudQueue';
 
 const supabaseMock = vi.hoisted(() => {
   const responses: Array<
@@ -951,6 +956,95 @@ describe('opChain push serialization', () => {
       'canvas_push_document_lww_v2',
       expect.objectContaining({ p_document: expect.objectContaining({ id: 'doc-idle' }) }),
     );
+  });
+
+  it('keeps a queued push durable until the server accepts it', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    supabaseMock.rpc.mockImplementation(async () => {
+      await gate;
+      return { data: true, error: null };
+    });
+    const push = queueCanvasCloudPush(makeDoc({ id: 'doc-durable' }));
+    try {
+      await vi.waitFor(() => expect(supabaseMock.rpc).toHaveBeenCalled());
+      expect(pendingCanvasPushes()).toEqual([{ id: 'doc-durable' }]);
+    } finally {
+      release();
+      await push;
+    }
+    expect(pendingCanvasPushes()).toEqual([]);
+  });
+
+  it('records pending push metadata before loading the cloud module', async () => {
+    const doc = makeDoc({ id: 'doc-before-import' });
+    const push = queuePushBeforeImport(doc);
+    expect(pendingCanvasPushes()).toEqual([{ id: doc.id }]);
+    await push;
+    expect(pendingCanvasPushes()).toEqual([]);
+  });
+
+  it('recovers a pending push from the latest local document instead of a stored snapshot', async () => {
+    const stale = makeDoc({ id: 'doc-recovered', name: 'stale' });
+    const latest = makeDoc({ id: stale.id, name: 'latest', updatedAt: '2026-07-22T12:01:00Z' });
+    localStorage.setItem('antares:canvas:pending-pushes', JSON.stringify([{ id: stale.id, doc: stale }]));
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: latest });
+    await queueCanvasCloudPush(makeDoc({ id: 'doc-next' }));
+    expect(api.canvasGet).toHaveBeenCalledWith(latest.id);
+    expect(supabaseMock.rpc).toHaveBeenCalledWith(
+      'canvas_push_document_lww_v2',
+      expect.objectContaining({ p_document: expect.objectContaining({ name: 'latest' }) }),
+    );
+    expect(pendingCanvasPushes()).toEqual([]);
+  });
+
+  it('preserves a newer pending push while the previous version is being accepted', async () => {
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const secondGate = new Promise<void>((resolve) => { releaseSecond = resolve; });
+    let calls = 0;
+    supabaseMock.rpc.mockImplementation(async () => {
+      calls += 1;
+      await (calls === 1 ? firstGate : secondGate);
+      return { data: true, error: null };
+    });
+    const doc = makeDoc({ id: 'doc-concurrent' });
+    const first = queueCanvasCloudPush(doc);
+    let second: Promise<void> | undefined;
+    try {
+      await vi.waitFor(() => expect(calls).toBe(1));
+      second = queueCanvasCloudPush({ ...doc, name: 'latest' }, { forceResurrect: true });
+      releaseFirst();
+      await first;
+      await vi.waitFor(() => expect(calls).toBe(2));
+      expect(pendingCanvasPushes()).toEqual([{ id: doc.id, options: { forceResurrect: true } }]);
+    } finally {
+      releaseFirst();
+      releaseSecond();
+      await Promise.all([first, second]);
+    }
+    expect(pendingCanvasPushes()).toEqual([]);
+  });
+
+  it('continues pushing when the persistent queue cannot be read', async () => {
+    const getItem = Storage.prototype.getItem;
+    const storage = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (key) {
+      if (key === 'antares:canvas:pending-pushes') throw new Error('Storage unavailable');
+      return getItem.call(this, key);
+    });
+    try {
+      await expect(Promise.resolve().then(() => queueCanvasCloudPush(makeDoc()))).resolves.toBeUndefined();
+      expect(supabaseMock.rpc).toHaveBeenCalled();
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
+  it('discards a pending push when its document is deleted', async () => {
+    localStorage.setItem('antares:canvas:pending-pushes', JSON.stringify([{ id: 'doc-deleted' }]));
+    await queueCanvasCloudDelete('doc-deleted');
+    expect(pendingCanvasPushes()).toEqual([]);
   });
 
   it('serializes delete behind a pending push', async () => {

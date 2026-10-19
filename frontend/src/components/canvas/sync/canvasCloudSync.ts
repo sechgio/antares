@@ -14,7 +14,14 @@ import { notifyPushHealth } from './pushHealth';
 import { reportFrontendError, reportFrontendEvent } from '../../../utils/observability';
 import { errorMessage } from '@/utils/errors';
 import { withTimeout } from '@/utils/async';
-import { pendingCanvasDeletes, recordPendingCanvasDelete, clearPendingCanvasDelete } from './cloudQueue';
+import {
+  pendingCanvasDeletes,
+  recordPendingCanvasDelete,
+  clearPendingCanvasDelete,
+  pendingCanvasPushes,
+  recordPendingCanvasPush,
+  clearPendingCanvasPush,
+} from './cloudQueue';
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
@@ -559,6 +566,18 @@ const pendingPushById = new Map<
 let pushFlushQueued = false;
 let pushFlushPromise: Promise<void> | null = null;
 
+function hydratePendingCanvasPushes(): void {
+  const deletedIds = new Set(pendingCanvasDeletes());
+  for (const pending of pendingCanvasPushes()) {
+    if (deletedIds.has(pending.id)) {
+      pendingPushById.delete(pending.id);
+      clearPendingCanvasPush(pending.id);
+    } else if (!pendingPushById.has(pending.id)) {
+      pendingPushById.set(pending.id, pending);
+    }
+  }
+}
+
 function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
   return {
     openDocumentId: b.openDocumentId ?? a?.openDocumentId,
@@ -873,6 +892,7 @@ function flushPendingPushes(): Promise<void> {
   const flush = opChain.then(async () => {
     pushFlushQueued = false;
     try {
+      hydratePendingCanvasPushes();
       await replayPendingCanvasDeletes();
     } catch (err) {
       schedulePendingPushRetry();
@@ -889,13 +909,15 @@ function flushPendingPushes(): Promise<void> {
         const result = await pushCanvasDocumentResult(doc, item.options);
         if (!result.accepted) {
           firstError ??= new Error('El servidor conservó una versión más reciente del documento');
-          continue;
+        } else {
+          await publishAcceptedPush(result);
         }
-        await publishAcceptedPush(result);
+        if (!pendingPushById.has(item.id)) clearPendingCanvasPush(item.id);
       } catch (err) {
         firstError ??= err;
         if (!pendingPushById.has(item.id)) {
           pendingPushById.set(item.id, { id: item.id, options: item.options });
+          recordPendingCanvasPush({ id: item.id, options: item.options });
         }
       }
     }
@@ -925,18 +947,21 @@ export function queueCanvasCloudPush(
   options?: { forceResurrect?: boolean },
 ): Promise<void> {
   pendingPushById.set(doc.id, { id: doc.id, doc, options });
+  recordPendingCanvasPush({ id: doc.id, options });
   return flushPendingPushes();
 }
 
 export function _resetCanvasPushQueueForTests(): void {
   pendingPushById.clear();
   pushRetry.cancel();
+  for (const pending of pendingCanvasPushes()) clearPendingCanvasPush(pending.id);
 }
 
 export function queueCanvasCloudDelete(id: string): Promise<void> {
   recordPendingCanvasDelete(id);
   const next = opChain.then(async () => {
     pendingPushById.delete(id);
+    clearPendingCanvasPush(id);
     if (pendingPushById.size === 0) {
       pushRetry.cancel();
       notifyPushHealth(false);

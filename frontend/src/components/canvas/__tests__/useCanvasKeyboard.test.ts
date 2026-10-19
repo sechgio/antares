@@ -1,8 +1,9 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { useCanvasKeyboard, type CanvasKeyboardInput } from '../hooks/useCanvasKeyboard';
+import type { ViewportNavApi } from '../editor/DesignStage';
 import { createLayer } from '../constants';
-import { createEmptyDocument, type CanvasDocument, type CanvasLayer } from '../types';
+import { createEmptyDocument, parseMm, type CanvasDocument, type CanvasLayer } from '../types';
 
 interface FakeKeyEvent {
   key: string;
@@ -39,6 +40,19 @@ function keyEvent(overrides: Partial<FakeKeyEvent> = {}): FakeKeyEvent {
 function makeDoc(layers: CanvasLayer[]): CanvasDocument {
   const doc = createEmptyDocument('test');
   return { ...doc, layers: [...doc.layers, ...layers] };
+}
+
+function makeViewportNav(overrides: Partial<ViewportNavApi> = {}): ViewportNavApi {
+  return {
+    getZoom: () => 1,
+    getPan: () => ({ x: 0, y: 0 }),
+    setZoom: vi.fn(),
+    setPan: vi.fn(),
+    zoomToFit: vi.fn(),
+    zoomToSelection: vi.fn(),
+    animateTo: vi.fn(),
+    ...overrides,
+  };
 }
 
 function makeInput(doc: CanvasDocument, overrides: Partial<CanvasKeyboardInput> = {}) {
@@ -158,6 +172,71 @@ describe('useCanvasKeyboard', () => {
     const newIds = vi.mocked(input.setSelectedIds).mock.calls[0][0] as string[];
     expect(newIds).toHaveLength(1);
     expect(newIds[0]).not.toBe(text.id);
+  });
+
+  it('Ctrl+D repite el desplazamiento de la última copia (como Figma)', () => {
+    const rect = createLayer('rect', {
+      cssVars: { '--translate-x': '10mm', '--translate-y': '10mm', '--width': '10mm', '--height': '10mm' },
+    });
+    const doc = makeDoc([rect]);
+    const input = makeInput(doc, { selectedIds: [rect.id] });
+    const { rerender } = renderHook((props: CanvasKeyboardInput) => useCanvasKeyboard(props), {
+      initialProps: input,
+    });
+    press(input, { key: 'd', code: 'KeyD', ctrlKey: true });
+    const firstLayers = vi.mocked(input.setAllLayers).mock.calls[0][0] as CanvasLayer[];
+    const firstIds = vi.mocked(input.setSelectedIds).mock.calls[0][0] as string[];
+
+    const next = makeInput({ ...doc, layers: firstLayers }, {
+      selectedIds: firstIds,
+      onKeyDownRef: input.onKeyDownRef,
+    });
+    rerender(next);
+    press(next, { key: 'd', code: 'KeyD', ctrlKey: true });
+    const secondLayers = vi.mocked(next.setAllLayers).mock.calls[0][0] as CanvasLayer[];
+
+    const copyX = (layers: CanvasLayer[], id: string) =>
+      parseMm(layers.find((l) => l.id === id)!.cssVars['--translate-x']);
+    const secondIds = vi.mocked(next.setSelectedIds).mock.calls[0][0] as string[];
+    expect(copyX(firstLayers, firstIds[0])).toBeCloseTo(15, 5);
+    expect(copyX(secondLayers, secondIds[0])).toBeCloseTo(20, 5);
+  });
+
+  it('flechas sin selección panean la vista en vez de mover capas', () => {
+    const doc = makeDoc([]);
+    const setPan = vi.fn();
+    const nav = makeViewportNav({ setPan });
+    const input = makeInput(doc, { viewportNavRef: { current: nav } });
+    renderHook(() => useCanvasKeyboard(input));
+    press(input, { key: 'ArrowRight' });
+    press(input, { key: 'ArrowUp', shiftKey: true });
+    expect(input.nudgeLayersLive).not.toHaveBeenCalled();
+    expect(setPan.mock.calls).toEqual([[{ x: -50, y: 0 }], [{ x: 0, y: 200 }]]);
+  });
+
+  it('las flechas no panean la vista cuando hay capas bloqueadas seleccionadas', () => {
+    const locked = createLayer('rect', { locked: true });
+    const doc = makeDoc([locked]);
+    const setPan = vi.fn();
+    const input = makeInput(doc, {
+      selectedIds: [locked.id],
+      viewportNavRef: { current: makeViewportNav({ setPan }) },
+    });
+    renderHook(() => useCanvasKeyboard(input));
+    press(input, { key: 'ArrowRight' });
+    expect(input.nudgeLayersLive).not.toHaveBeenCalled();
+    expect(setPan).not.toHaveBeenCalled();
+  });
+
+  it('Shift+= y Shift+- cambian el zoom por presets', () => {
+    const doc = makeDoc([]);
+    const animateTo = vi.fn();
+    const nav = makeViewportNav({ animateTo });
+    const input = makeInput(doc, { viewportNavRef: { current: nav } });
+    renderHook(() => useCanvasKeyboard(input));
+    press(input, { key: '+', code: 'Equal', shiftKey: true });
+    press(input, { key: '_', code: 'Minus', shiftKey: true });
+    expect(animateTo.mock.calls.map(([arg]) => arg.zoom)).toEqual([1.5, 0.75]);
   });
 
   it('Ctrl+Shift+D no duplica: el shell lo reserva para abrir Ajustes', () => {
