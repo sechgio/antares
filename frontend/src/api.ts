@@ -1,16 +1,21 @@
 // Fachada del bridge IPC: la maquinaria vive en api/core.ts y los wrappers por
-// dominio en api/<dominio>Api.ts. Este archivo solo compone y re-exporta para
-// que los consumidores sigan importando desde '../api'.
+// dominio en api/<dominio>Api.ts. Este archivo compone y re-exporta para que
+// los consumidores puedan importar desde '../api'; los módulos de dominio
+// conservan también su ruta directa './api/<dominio>Api'.
+import { agentApi } from './api/agentApi';
+import { aiProvidersApi } from './api/aiProvidersApi';
 import { createAutoimgApi } from './api/autoimgApi';
 import { resetCanvasHistoryTransportForTests } from './api/canvasHistoryTransport';
 import { canvasApi } from './api/canvasApi';
 import { catalogApi } from './api/catalogApi';
+import { connectionsApi } from './api/connectionsApi';
 import { conversionApi } from './api/conversionApi';
 import { _invoke } from './api/core';
 import { designApi } from './api/designApi';
 import { evidenciaVolanteoApi } from './api/evidenciaVolanteoApi';
 import { formatosApi } from './api/formatosApi';
 import { historyApi } from './api/historyApi';
+import { mcpApi } from './api/mcpApi';
 import { panelAvisoCorteApi } from './api/panelAvisoCorteApi';
 import { reportsApi } from './api/reportsApi';
 import { selladorApi } from './api/selladorApi';
@@ -101,6 +106,10 @@ export const api = {
   ...panelAvisoCorteApi,
   ...evidenciaVolanteoApi,
   ...designApi,
+  ...agentApi,
+  ...connectionsApi,
+  ...mcpApi,
+  ...aiProvidersApi,
   ...createAutoimgApi(_invoke),
   ...createSpotifyApi(_invoke),
 };
