@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import { cloneDocument, cloneDocumentBaseline } from '../ops/document';
 import { ancestorIds, buildLayerTree, expandWithDescendants, flattenLayerTree } from '../ops/layerTree';
@@ -273,6 +273,31 @@ describe('canvas perf hot path', () => {
     expect(node.style.transform).toContain('translate(');
     expect(node.style.transform).toContain('rotate(15deg)');
     expect(node.style.willChange).toBe('transform');
+  });
+
+  it('applyLayerDomTransforms reuses resolved layer nodes across gesture frames', async () => {
+    const { applyLayerDomTransforms } = await import('../ops/imperativeLayerDom');
+    const layer = createLayer('rect', {
+      id: 'c1',
+      cssVars: { '--translate-x': '10mm', '--translate-y': '20mm', '--width': '8mm', '--height': '8mm' },
+    });
+    const root = document.createElement('div');
+    const node = document.createElement('div');
+    node.dataset.layerId = 'c1';
+    root.appendChild(node);
+    const query = vi.spyOn(root, 'querySelector');
+    applyLayerDomTransforms(root, [layer], ['c1']);
+    const firstTransform = node.style.transform;
+    applyLayerDomTransforms(root, [{ ...layer, cssVars: { ...layer.cssVars, '--translate-x': '30mm' } }], ['c1']);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(node.style.transform).not.toBe(firstTransform);
+
+    const replacement = document.createElement('div');
+    replacement.dataset.layerId = 'c1';
+    root.replaceChild(replacement, node);
+    applyLayerDomTransforms(root, [layer], ['c1']);
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(replacement.style.transform).toContain('translate(');
   });
 
   it('applyLayerDomGeometry writes size + transform; clear drops will-change', async () => {

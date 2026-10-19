@@ -15,7 +15,7 @@ export type { RectMm };
 
 export type HandlePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
-export type SmartGuide = { axis: 'x' | 'y'; pos: number };
+export type SmartGuide = { axis: 'x' | 'y'; pos: number; from?: number; to?: number };
 
 const SNAP_THRESHOLD_MM = 0.5;
 export const SNAP_THRESHOLD_MAX_MM = 10;
@@ -548,6 +548,35 @@ export function prepareSnapRails(
   return guidePositionsCached(layers, exclude, page, manualGuides, pageMarginMm);
 }
 
+const GUIDE_SPAN_EPS_MM = 0.01;
+
+// Limita la guía al tramo de la selección y de los objetos alineados en esa posición.
+// Sin objetos alineados (guías manuales o de página) devuelve {} y la guía cruza toda la página.
+function alignedGuideSpan(
+  layers: CanvasLayer[],
+  ids: string[],
+  axis: SmartGuide['axis'],
+  pos: number,
+  span: { from: number; to: number },
+): Pick<SmartGuide, 'from' | 'to'> {
+  const exclude = new Set(expandWithDescendants(layers, ids));
+  const near = (edge: number) => Math.abs(edge - pos) <= GUIDE_SPAN_EPS_MM;
+  let { from, to } = span;
+  let aligned = false;
+  for (const layer of layers) {
+    if (exclude.has(layer.id) || !isTransformable(layer)) continue;
+    const b = layerBounds(layer);
+    const hit = axis === 'x'
+      ? near(b.x) || near(b.cx) || near(b.right)
+      : near(b.y) || near(b.cy) || near(b.bottom);
+    if (!hit) continue;
+    aligned = true;
+    from = Math.min(from, axis === 'x' ? b.y : b.x);
+    to = Math.max(to, axis === 'x' ? b.bottom : b.right);
+  }
+  return aligned ? { from, to } : {};
+}
+
 export function snapMoveWithGuides(
   layers: CanvasLayer[],
   ids: string[],
@@ -605,8 +634,14 @@ export function snapMoveWithGuides(
   }
 
   const guides: SmartGuide[] = [];
-  if (guideX != null) guides.push({ axis: 'x', pos: guideX });
-  if (guideY != null) guides.push({ axis: 'y', pos: guideY });
+  if (guideX != null) {
+    const span = { from: bounds.y + bestDy, to: bounds.y + bounds.h + bestDy };
+    guides.push({ axis: 'x', pos: guideX, ...alignedGuideSpan(layers, ids, 'x', guideX, span) });
+  }
+  if (guideY != null) {
+    const span = { from: bounds.x + bestDx, to: bounds.x + bounds.w + bestDx };
+    guides.push({ axis: 'y', pos: guideY, ...alignedGuideSpan(layers, ids, 'y', guideY, span) });
+  }
   return { dx: bestDx, dy: bestDy, guides };
 }
 
@@ -668,15 +703,26 @@ export function snapResizeBox(
   }
 
   const guides: SmartGuide[] = [];
-  if (guideX != null) guides.push({ axis: 'x', pos: guideX });
-  if (guideY != null) guides.push({ axis: 'y', pos: guideY });
+  if (guideX != null) {
+    guides.push({ axis: 'x', pos: guideX, ...alignedGuideSpan(layers, ids, 'x', guideX, { from: y, to: y + h }) });
+  }
+  if (guideY != null) {
+    guides.push({ axis: 'y', pos: guideY, ...alignedGuideSpan(layers, ids, 'y', guideY, { from: x, to: x + w }) });
+  }
   return { box: { x, y, w, h }, guides };
 }
 
 export function smartGuidesEqual(a: SmartGuide[], b: SmartGuide[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    if (a[i]!.axis !== b[i]!.axis || a[i]!.pos !== b[i]!.pos) return false;
+    if (
+      a[i]!.axis !== b[i]!.axis ||
+      a[i]!.pos !== b[i]!.pos ||
+      a[i]!.from !== b[i]!.from ||
+      a[i]!.to !== b[i]!.to
+    ) {
+      return false;
+    }
   }
   return true;
 }

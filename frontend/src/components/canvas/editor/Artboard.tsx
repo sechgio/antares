@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   memo,
+  Fragment,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -74,7 +75,7 @@ import {
   createSelectionMoveStarter,
 } from './artboardSelectionGestures';
 import { useArtboardGuideInteraction } from './useArtboardGuideInteraction';
-import LayerNode from './LayerNode';
+import ArtboardLayers, { type ArtboardLayerCallbacks } from './ArtboardLayers';
 import PathHandlesOverlay from './PathHandlesOverlay';
 import { SelectionChromeOverlay } from './SelectionChromeOverlay';
 import { SmartSelectionOverlay } from './SmartSelectionOverlay';
@@ -148,6 +149,16 @@ const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
 }) {
   if (!guides.length) return null;
   const strokeW = screenChromePx(1, zoom);
+  const markerHalf = screenChromePx(3, zoom);
+  const marker = (x: number, y: number) => (
+    <path
+      data-testid="canvas-smart-guide-marker"
+      d={`M${x - markerHalf} ${y - markerHalf}L${x + markerHalf} ${y + markerHalf}M${x - markerHalf} ${y + markerHalf}L${x + markerHalf} ${y - markerHalf}`}
+      fill="none"
+      stroke="var(--cv-accent-2)"
+      strokeWidth={strokeW}
+    />
+  );
   return (
     <svg
       style={{
@@ -161,31 +172,31 @@ const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
         overflow: 'visible',
       }}
     >
-      {guides.map((g) =>
-        g.axis === 'x' ? (
-          <line
-            key={`gx-${g.pos}`}
-            data-testid="canvas-smart-guide"
-            x1={mmToScreenPx(g.pos, 1)}
-            y1={0}
-            x2={mmToScreenPx(g.pos, 1)}
-            y2="100%"
-            stroke="var(--cv-accent-2)"
-            strokeWidth={strokeW}
-          />
-        ) : (
-          <line
-            key={`gy-${g.pos}`}
-            data-testid="canvas-smart-guide"
-            x1={0}
-            y1={mmToScreenPx(g.pos, 1)}
-            x2="100%"
-            y2={mmToScreenPx(g.pos, 1)}
-            stroke="var(--cv-accent-2)"
-            strokeWidth={strokeW}
-          />
-        ),
-      )}
+      {guides.map((guide) => {
+        const vertical = guide.axis === 'x';
+        const pos = mmToScreenPx(guide.pos, 1);
+        const from = guide.from === undefined ? undefined : mmToScreenPx(guide.from, 1);
+        const to = guide.to === undefined ? undefined : mmToScreenPx(guide.to, 1);
+        return (
+          <Fragment key={`${guide.axis}-${guide.pos}`}>
+            <line
+              data-testid="canvas-smart-guide"
+              x1={vertical ? pos : from ?? 0}
+              y1={vertical ? from ?? 0 : pos}
+              x2={vertical ? pos : to ?? '100%'}
+              y2={vertical ? to ?? '100%' : pos}
+              stroke="var(--cv-accent-2)"
+              strokeWidth={strokeW}
+            />
+            {from !== undefined && to !== undefined && (
+              <>
+                {marker(vertical ? pos : from, vertical ? from : pos)}
+                {marker(vertical ? pos : to, vertical ? to : pos)}
+              </>
+            )}
+          </Fragment>
+        );
+      })}
     </svg>
   );
 });
@@ -905,6 +916,18 @@ function Artboard({
     pickHit,
     beginSelectionMove,
   });
+  const layerCallbacksRef = useLiveRef<ArtboardLayerCallbacks>({
+    onSelect: handleSelect,
+    onLayerPointerDown: handleLayerPointerDown,
+    onContextMenu: (id, x, y) => onContextMenu?.(id, x, y, clientPointMm(x, y)),
+    onStartEdit,
+    onEditValue,
+    onFitTextHeight,
+    onEditStyle,
+    onCommitEdit,
+    onStartPathEdit,
+  });
+
 
   const transformGesturesRef = useLiveRef(createArtboardTransformGestures({
     frameRef,
@@ -1146,36 +1169,20 @@ function Artboard({
               }}
             />
           )}
-          {renderLayers.map((layer) => (
-            <LayerNode
-              key={layer.id}
-              layer={layer}
-              masterLayer={
-                layer.meta?.instanceOf ? masterById.get(layer.meta.instanceOf) ?? null : null
-              }
-              documentLayers={displayLayers}
-              selected={selectedIdSet.has(layer.id)}
-              moving={(gestureLayers !== null || gestureActive === 'transform') && selectedIdSet.has(layer.id)}
-              panning={panning || cameraMoving}
-              interactive={interactive && !panning}
-              editing={editingLayerId === layer.id}
-              pathEditing={pathEditingLayerId === layer.id}
-              editingSelectAll={editingSelectAll}
-              editingRange={editingRange}
-              scale={1}
-              onSelect={handleSelect}
-              onLayerPointerDown={handleLayerPointerDown}
-              onContextMenu={(id, x, y) =>
-                onContextMenu?.(id, x, y, clientPointMm(x, y))
-              }
-              onStartEdit={onStartEdit}
-              onEditValue={onEditValue}
-              onFitTextHeight={onFitTextHeight}
-              onEditStyle={onEditStyle}
-              onCommitEdit={onCommitEdit}
-              onStartPathEdit={onStartPathEdit}
-            />
-          ))}
+          <ArtboardLayers
+            layers={renderLayers}
+            documentLayers={displayLayers}
+            masterById={masterById}
+            selectedIdSet={selectedIdSet}
+            movingActive={gestureLayers !== null || gestureActive === 'transform'}
+            panning={panning || cameraMoving}
+            interactive={interactive && !panning}
+            editingLayerId={editingLayerId}
+            pathEditingLayerId={pathEditingLayerId}
+            editingSelectAll={editingSelectAll}
+            editingRange={editingRange}
+            callbacksRef={layerCallbacksRef}
+          />
 
           {pathEditLayer && (
             <PathHandlesOverlay
