@@ -1,29 +1,12 @@
 'use strict';
 
-// Dispatch `native:agent`: los diez métodos públicos agent_* corren sobre el
+// Dispatch `native:agent`: los métodos públicos agent_* corren sobre el
 // runtime durable del proceso principal (electron/agent-runtime.js).
 
-const AGENT_METHODS = new Set([
-  'agent_sessions_list',
-  'agent_session_create',
-  'agent_session_delete',
-  'agent_session_rename',
-  'agent_messages_list',
-  'agent_message_send',
-  'agent_tools_list',
-  'agent_tools_set',
-  'agent_turn_status',
-  'agent_turn_cancel',
-  'agent_approve',
-  'agent_deny',
-  'agent_attach',
-  'agent_context_remove_file',
-  'agent_profiles_list',
-  'agent_profile_save',
-  'agent_profile_delete',
-  'agent_renderer_result',
-  'agent_artifact_action',
-]);
+const { nativeMethods } = require('../shared/ipc-method-catalog');
+
+// Proyección del catálogo IPC: el bucket `native:agent` define los métodos.
+const AGENT_METHODS = nativeMethods('agent');
 
 async function handleAgentCall(method, params) {
   if (method === 'agent_artifact_action') {
