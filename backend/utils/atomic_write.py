@@ -46,6 +46,13 @@ def atomic_output_file(
     tmp = destination.with_name(f"{destination.name}.{uuid.uuid4().hex}.tmp")
     try:
         yield AtomicOutputTarget(tmp_path=tmp, destination=destination)
+        # Durabilidad: el caller ya escribió el tmp; fsync antes de publicarlo,
+        # con el mismo contrato que atomic_write_text.
+        fd = os.open(tmp, os.O_WRONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
         if overwrite:
             os.replace(tmp, destination)
         elif destination.exists():

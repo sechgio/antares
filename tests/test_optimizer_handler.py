@@ -110,6 +110,28 @@ def test_image_optimizer_save_files_sanitizes_path_traversal_attempts(tmp_path) 
     assert not (tmp_path.parent.parent / "etc" / "passwd").exists()
 
 
+def test_image_optimizer_save_files_sanitizes_windows_reserved_names(tmp_path) -> None:
+    payload = {
+        "output_folder": str(tmp_path),
+        "files": [
+            {
+                "filename": "CON.txt",
+                "content_b64": base64.b64encode(b"con").decode("ascii"),
+            },
+            {
+                "filename": "aux.png",
+                "content_b64": base64.b64encode(b"aux").decode("ascii"),
+            },
+        ],
+    }
+
+    result = image_optimizer_save_files(payload)
+
+    assert result["saved_count"] == 2
+    assert (tmp_path / "_CON.txt").read_bytes() == b"con"
+    assert (tmp_path / "_aux.png").read_bytes() == b"aux"
+
+
 def test_image_optimizer_save_files_dedupes_when_multiple_preexisting_files_collide(tmp_path) -> None:
     (tmp_path / "foto.jpg").write_bytes(b"old-1")
     (tmp_path / "foto-2.jpg").write_bytes(b"old-2")
