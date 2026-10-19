@@ -7,6 +7,7 @@
   },
   "methods": {
     "agent_internal_activity": { "handler": "backend:agent_internal", "internal": true, "idempotent": true },
+    "ai_provider_custom_save": { "handler": "backend:integrations" },
     "ai_provider_delete": { "handler": "backend:integrations" },
     "ai_provider_save": { "handler": "backend:integrations" },
     "ai_provider_status": { "handler": "backend:integrations", "idempotent": true },

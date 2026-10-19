@@ -114,3 +114,142 @@ def test_status_http_error(tmp_path, monkeypatch):
     monkeypatch.setattr(ai_providers, "_get_json", fake_get)
     st = ai_providers.status("openai")
     assert st["reachable"] is False and "401" in st["error"]
+
+
+def _custom(**overrides):
+    data = {
+        "label": "Mi modelo",
+        "api": "openai",
+        "base_url": "https://gateway.example.com/v1",
+        "model": "mi-modelo",
+        "api_key": "sk-custom-9876",
+    }
+    data.update(overrides)
+    return data
+
+
+def test_custom_model_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    created = ai_providers.upsert_custom(_custom())
+
+    provider = created["id"]
+    assert provider.startswith("custom-mi-modelo-")
+    state = ai_providers.public_state(provider)
+    assert state["has_key"] is True
+    assert state["key_masked"] == "••••9876"
+    assert state["default_model"] == "mi-modelo"
+    assert state["needs_key"] is True
+    assert "sk-custom-9876" not in str(state)
+
+    spec = ai_providers.get_provider(provider)
+    assert spec["custom"] is True
+    assert spec["chat"]["style"] == "openai_chat"
+    assert ai_providers.load_provider_specs()[provider]["label"] == "Mi modelo"
+
+    ai_providers.delete_config(provider)
+    assert ai_providers.get_config(provider) is None
+    assert provider not in ai_providers.load_provider_specs()
+
+
+def test_custom_model_edit_keeps_key_and_allows_keyless(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    provider = ai_providers.upsert_custom(_custom())["id"]
+
+    ai_providers.upsert_custom({"id": provider, "label": "Mi modelo", "api": "anthropic",
+                                "base_url": "https://gateway.example.com", "model": "otro"})
+    assert ai_providers.get_config(provider)["api_key"] == "sk-custom-9876"
+    spec = ai_providers.get_provider(provider)
+    assert spec["chat"]["style"] == "anthropic_messages"
+    assert spec["auth"]["type"] == "api_key"
+
+    other = ai_providers.upsert_custom(_custom(label="Local", api_key="", base_url="http://127.0.0.1:8080/v1"))["id"]
+    assert ai_providers.public_state(other)["needs_key"] is False
+    assert ai_providers.get_provider(other)["auth"]["type"] == "none"
+
+
+def test_custom_model_validates_input(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    cases = [
+        (_custom(label="  "), "nombre"),
+        (_custom(api="bedrock"), "formato de API"),
+        (_custom(base_url=""), "dirección base"),
+        (_custom(base_url="file:///etc/passwd"), "http"),
+        (_custom(model="x" * 129), "modelo"),
+    ]
+    for payload, message in cases:
+        with pytest.raises(ValueError, match=message):
+            ai_providers.upsert_custom(payload)
+    with pytest.raises(ValueError, match="desconocido"):
+        ai_providers.upsert_custom(_custom(id="custom-no-existe"))
+    with pytest.raises(ValueError, match="id"):
+        ai_providers.upsert_custom(_custom(id=123))
+
+
+def test_custom_model_status_uses_its_api_format(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    seen = {}
+
+    def fake_get(url, headers):
+        seen["url"] = url
+        seen["headers"] = headers
+        return {"data": [{"id": "mi-modelo"}]}
+
+    monkeypatch.setattr(ai_providers, "_get_json", fake_get)
+    openai_id = ai_providers.upsert_custom(_custom())["id"]
+    anthropic_id = ai_providers.upsert_custom(
+        _custom(label="Claude local", api="anthropic", base_url="https://proxy.example.com", api_key="ak-1")
+    )["id"]
+
+    assert ai_providers.status(openai_id)["reachable"] is True
+    assert seen["url"] == "https://gateway.example.com/v1/models"
+    assert seen["headers"]["Authorization"] == "Bearer sk-custom-9876"
+
+    ai_providers.status(anthropic_id)
+    assert seen["url"] == "https://proxy.example.com/v1/models"
+    assert seen["headers"]["x-api-key"] == "ak-1"
+    assert seen["headers"]["anthropic-version"] == "2023-06-01"
+
+
+def test_catalog_providers_still_resolve_with_custom_models(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    ai_providers.upsert_custom(_custom())
+    specs = ai_providers.load_provider_specs()
+    assert specs["openai"]["auth"]["type"] == "api_key"
+    assert "custom" not in specs["openai"]
+
+
+def test_ipc_list_exposes_custom_models_without_the_key(tmp_path, monkeypatch):
+    from backend.handlers import integrations
+
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    created = integrations.HANDLERS["ai_provider_custom_save"]({
+        "label": "Mi gateway",
+        "api": "openai",
+        "base_url": "https://gateway.example.com/v1",
+        "model": "mi-modelo",
+        "api_key": "sk-secreto",
+    })
+    provider = created["id"]
+
+    listed = integrations.HANDLERS["ai_providers_list"]({})
+    entry = next(item for item in listed["providers"] if item["id"] == provider)
+    assert entry["custom"] is True
+    assert entry["api"] == "openai"
+    assert entry["default_model"] == "mi-modelo"
+    assert entry["has_key"] is True
+    assert "sk-secreto" not in str(listed)
+    assert all("custom" not in item for item in listed["providers"] if item["id"] != provider)
+
+
+def test_custom_model_with_corrupt_vault_can_be_deleted(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    path = tmp_path / "ai-providers" / "custom-roto-aaaaaa.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("no-es-json", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        ai_providers.get_provider("custom-roto-aaaaaa")
+
+    ai_providers.delete_config("custom-roto-aaaaaa")
+    assert not path.exists()
+

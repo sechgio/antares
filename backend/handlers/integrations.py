@@ -46,17 +46,19 @@ def _ai_providers_list(params: JsonObject) -> JsonObject:
     providers = []
     for pid in sorted(specs):
         spec = specs[pid]
-        providers.append(
-            {
-                "id": pid,
-                "label": spec.get("label", pid),
-                "description": spec.get("description", ""),
-                "docs": spec.get("docs", ""),
-                "editable_base_url": bool(spec.get("editable_base_url")),
-                "default_base_url": spec.get("base_url", ""),
-                **_ai_providers.public_state(pid),
-            }
-        )
+        entry: JsonObject = {
+            "id": pid,
+            "label": spec.get("label", pid),
+            "description": spec.get("description", ""),
+            "docs": spec.get("docs", ""),
+            "editable_base_url": bool(spec.get("editable_base_url")),
+            "default_base_url": spec.get("base_url", ""),
+            **_ai_providers.public_state(pid),
+        }
+        if spec.get("custom"):
+            entry["custom"] = True
+            entry["api"] = spec.get("api", "")
+        providers.append(entry)
     return {"providers": providers}
 
 
@@ -82,6 +84,16 @@ def _ai_provider_delete(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("label", "api", "base_url", "model")
+def _ai_provider_custom_save(params: JsonObject) -> JsonObject:
+    fields = ("id", "label", "api", "base_url", "model", "api_key")
+    try:
+        return _ai_providers.upsert_custom({k: params[k] for k in fields if k in params})
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
+@with_locale
 @validate_params("provider")
 def _ai_provider_status(params: JsonObject) -> JsonObject:
     try:
@@ -96,6 +108,7 @@ HANDLERS = {
     "connections_token_refresh": _connection_token_refresh,
     "ai_providers_list": _ai_providers_list,
     "ai_provider_save": _ai_provider_save,
+    "ai_provider_custom_save": _ai_provider_custom_save,
     "ai_provider_delete": _ai_provider_delete,
     "ai_provider_status": _ai_provider_status,
 }

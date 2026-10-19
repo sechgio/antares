@@ -14,6 +14,21 @@ export interface AiProviderSpec {
   key_masked: string | null;
   base_url: string;
   needs_key: boolean;
+  /** Presente solo en modelos personalizados. */
+  custom?: boolean;
+  /** Estilo de API elegido para un modelo personalizado. */
+  api?: string;
+}
+
+export type AiProviderApiFormat = 'openai' | 'anthropic';
+
+export interface AiProviderCustomInput {
+  id?: string;
+  label: string;
+  api: AiProviderApiFormat;
+  base_url: string;
+  model: string;
+  api_key?: string;
 }
 
 export interface AiProviderStatus extends AiProviderSpec {
@@ -27,6 +42,9 @@ export const aiProvidersApi = {
 
   aiProviderSave: (p: { provider: string; api_key?: string; base_url?: string; model?: string }) =>
     _invoke<{ provider: AiProviderSpec }>('ai_provider_save', p),
+
+  aiProviderCustomSave: (p: AiProviderCustomInput) =>
+    _invoke<{ id: string; provider: AiProviderSpec }>('ai_provider_custom_save', { ...p }),
 
   aiProviderDelete: (provider: string) =>
     _invoke<{ deleted: boolean }>('ai_provider_delete', { provider }),

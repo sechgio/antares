@@ -6,29 +6,8 @@ import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { ProviderIcon } from './connectionIcons';
-
-const TONE_COLOR = {
-  ok: 'var(--accent-green)',
-  warn: 'var(--accent-yellow)',
-  off: 'var(--text-secondary)',
-} as const;
-
-function StatusBadge({ tone, children }: { tone: keyof typeof TONE_COLOR; children: string }) {
-  const color = TONE_COLOR[tone];
-  return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium"
-      style={{
-        color,
-        borderColor: tone === 'off' ? 'var(--border-subtle)' : `color-mix(in srgb, ${color} 40%, transparent)`,
-        background: tone === 'off' ? 'transparent' : `color-mix(in srgb, ${color} 10%, transparent)`,
-      }}
-    >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-      {children}
-    </span>
-  );
-}
+import CustomModelsSection from './CustomModelsSection';
+import { StatusBadge, providerStatusText, providerStatusTone } from './providerStatus';
 
 const STEPS = ['Elige un servicio', 'Obtén su clave y guárdala aquí', 'Pulsa «Probar» para comprobar la conexión'];
 
@@ -158,20 +137,9 @@ export default function ProvidersView() {
     }
   };
 
-  const statusText = (p: AiProviderSpec): string => {
-    const st = statuses[p.id];
-    if (st?.reachable) {
-      return st.models_count != null ? `Disponible · ${st.models_count} modelos` : 'Disponible';
-    }
-    if (p.has_key || (p.configured && !p.needs_key)) return 'Configurado';
-    return p.needs_key ? 'Necesita clave de acceso' : 'No configurado';
-  };
+  const statusText = (p: AiProviderSpec): string => providerStatusText(p, statuses[p.id]);
 
-  const statusTone = (p: AiProviderSpec): 'ok' | 'warn' | 'off' => {
-    if (statuses[p.id]?.reachable) return 'ok';
-    if (p.has_key || (p.configured && !p.needs_key)) return 'warn';
-    return 'off';
-  };
+  const statusTone = (p: AiProviderSpec): 'ok' | 'warn' | 'off' => providerStatusTone(p, statuses[p.id]);
 
   if (loading) {
     return (
@@ -180,6 +148,9 @@ export default function ProvidersView() {
       </div>
     );
   }
+
+  const builtins = providers.filter((p) => !p.custom);
+  const customs = providers.filter((p) => p.custom);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -212,7 +183,7 @@ export default function ProvidersView() {
         </div>
 
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-          {providers.map((p) => {
+          {builtins.map((p) => {
             const form = forms[p.id];
             const st = statuses[p.id];
             const busy = form?.saving || probing === p.id;
@@ -341,6 +312,8 @@ export default function ProvidersView() {
             );
           })}
         </div>
+
+        <CustomModelsSection providers={customs} onChanged={refresh} />
 
         {!providers.length && (
           <p className="mt-4 text-center text-sm text-[var(--text-secondary)]">
