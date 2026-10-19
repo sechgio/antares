@@ -282,6 +282,19 @@ def test_custom_model_with_corrupt_vault_can_be_deleted(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         ai_providers.get_provider("custom-roto-aaaaaa")
 
+    from backend.handlers import integrations
+
+    assert all(
+        item["id"] != "custom-roto-aaaaaa"
+        for item in integrations.HANDLERS["ai_providers_list"]({})["providers"]
+    )
+    listed = integrations.HANDLERS["ai_providers_list"]({"include_invalid": True})["providers"]
+    entry = next(item for item in listed if item["id"] == "custom-roto-aaaaaa")
+    assert entry["invalid"] is True
+    assert entry["label"] == "Modelo no válido"
+    assert entry["custom"] is True
+    assert entry["has_key"] is False
+
     ai_providers.delete_config("custom-roto-aaaaaa")
     assert not path.exists()
 

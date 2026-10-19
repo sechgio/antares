@@ -23,14 +23,17 @@ export default function ProvidersView() {
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
   const [statuses, setStatuses] = useState<Record<string, AiProviderStatus | undefined>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [probing, setProbing] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<string, FormState>>({});
 
   const refresh = useCallback(async () => {
     try {
-      const res = await aiProvidersApi.aiProvidersList();
+      const res = await aiProvidersApi.aiProvidersList({ include_invalid: true });
       setProviders(res.providers);
+      setLoadError(false);
     } catch (err) {
+      setLoadError(true);
       addToast({ message: errorMessage(err, 'No se pudieron cargar los proveedores IA'), type: 'error' });
     } finally {
       setLoading(false);
@@ -137,14 +140,24 @@ export default function ProvidersView() {
     }
   };
 
-  const statusText = (p: AiProviderSpec): string => providerStatusText(p, statuses[p.id]);
-
-  const statusTone = (p: AiProviderSpec): 'ok' | 'warn' | 'off' => providerStatusTone(p, statuses[p.id]);
-
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
         Cargando proveedores…
+      </div>
+    );
+  }
+
+  if (loadError && !providers.length) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-center">
+        <div>
+          <p className="text-sm font-medium text-[var(--text-primary)]">No se pudieron cargar los proveedores.</p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">Revisa la conexión e inténtalo de nuevo.</p>
+          <Button className="mt-3" size="sm" onClick={() => void refresh()}>
+            Reintentar
+          </Button>
+        </div>
       </div>
     );
   }
@@ -199,7 +212,7 @@ export default function ProvidersView() {
                     <div className="truncate text-sm font-medium text-[var(--text-primary)]">{p.label}</div>
                     <div className="mt-0.5 text-xs text-[var(--text-secondary)]">{p.description}</div>
                   </div>
-                  <StatusBadge tone={statusTone(p)}>{statusText(p)}</StatusBadge>
+                  <StatusBadge tone={providerStatusTone(p, st)}>{providerStatusText(p, st)}</StatusBadge>
                 </div>
 
                 <div className="mx-4 flex items-start justify-between gap-3 rounded-lg bg-[var(--bg-input)] px-3 py-2.5">

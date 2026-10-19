@@ -43,7 +43,7 @@ def _connection_token_refresh(params: JsonObject) -> JsonObject:
 @with_locale
 def _ai_providers_list(params: JsonObject) -> JsonObject:
     specs = _ai_providers.load_provider_specs()
-    providers = []
+    providers: list[JsonObject] = []
     # El catálogo va primero: Agente y Diseño eligen el primer proveedor listo
     # como predeterminado y un modelo personalizado no debe desplazarlo.
     for pid in sorted(specs, key=lambda pid: (bool(specs[pid].get("custom")), pid)):
@@ -61,6 +61,28 @@ def _ai_providers_list(params: JsonObject) -> JsonObject:
             entry["custom"] = True
             entry["api"] = spec.get("api", "")
         providers.append(entry)
+    if params.get("include_invalid") is True:
+        for pid in _ai_providers.invalid_custom_providers():
+            if pid in specs:
+                continue
+            providers.append({
+                "id": pid,
+                "label": "Modelo no válido",
+                "description": "No se pudo leer su configuración guardada",
+                "docs": "",
+                "editable_base_url": False,
+                "default_base_url": "",
+                "provider": pid,
+                "configured": False,
+                "has_key": False,
+                "key_masked": None,
+                "base_url": "",
+                "default_model": "",
+                "needs_key": False,
+                "custom": True,
+                "api": "",
+                "invalid": True,
+            })
     return {"providers": providers}
 
 

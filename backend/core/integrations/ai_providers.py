@@ -92,18 +92,34 @@ def _custom_spec(payload: JsonObject) -> JsonObject | None:
     }
 
 
+def _custom_paths() -> list[tuple[str, Path]]:
+    paths: list[tuple[str, Path]] = []
+    for path in sorted(user_data_path("ai-providers").glob(f"{_CUSTOM_PREFIX}*.json")):
+        provider = path.stem[:64]
+        if re.fullmatch(r"[A-Za-z0-9_-]+", provider):
+            paths.append((provider, path))
+    return paths
+
+
 def custom_provider_specs() -> dict[str, JsonObject]:
     """Specs de los modelos personalizados válidos, indexados por id."""
     specs: dict[str, JsonObject] = {}
-    for path in sorted(user_data_path("ai-providers").glob(f"{_CUSTOM_PREFIX}*.json")):
-        provider = path.stem[:64]
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", provider):
-            continue
+    for provider, _ in _custom_paths():
         payload = _custom_payload(provider)
         spec = _custom_spec(payload) if payload is not None else None
         if spec is not None:
             specs[provider] = spec
     return specs
+
+
+def invalid_custom_providers() -> list[str]:
+    """Ids de archivos custom presentes pero ilegibles o incompletos."""
+    invalid: list[str] = []
+    for provider, _ in _custom_paths():
+        payload = _custom_payload(provider)
+        if payload is None or _custom_spec(payload) is None:
+            invalid.append(provider)
+    return invalid
 
 
 def _catalog_specs() -> dict[str, JsonObject]:

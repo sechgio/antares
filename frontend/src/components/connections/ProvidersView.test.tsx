@@ -184,3 +184,41 @@ it('permite quitar la clave guardada de un modelo personalizado', async () => {
   })));
   expect(save.mock.calls.at(-1)?.[0]).not.toHaveProperty('api_key');
 });
+
+it('muestra los modelos ilegibles con opción de eliminarlos', async () => {
+  const invalidProvider: AiProviderSpec = {
+    ...customProvider,
+    id: 'custom-roto-aaaaaa',
+    provider: 'custom-roto-aaaaaa',
+    label: 'Modelo no válido',
+    description: 'No se pudo leer su configuración guardada',
+    api: '',
+    invalid: true,
+    configured: false,
+    has_key: false,
+    key_masked: null,
+    base_url: '',
+    default_base_url: '',
+    default_model: '',
+    needs_key: false,
+  };
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [invalidProvider] });
+  const remove = vi.spyOn(aiProvidersApi, 'aiProviderDelete').mockResolvedValue({ deleted: true });
+  render(<ProvidersView />);
+
+  expect(await screen.findByText('Modelo no válido')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Probar Modelo no válido' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar custom-roto-aaaaaa' }));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith('custom-roto-aaaaaa'));
+});
+
+it('muestra un error con reintento si no puede cargar el listado', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList)
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce({ providers: [provider] });
+  render(<ProvidersView />);
+
+  expect(await screen.findByText('No se pudieron cargar los proveedores.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(await screen.findByLabelText('Base URL Anthropic')).toHaveValue(provider.base_url);
+});

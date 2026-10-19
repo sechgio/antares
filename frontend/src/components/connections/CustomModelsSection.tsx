@@ -20,7 +20,7 @@ const API_FORMATS: { value: AiProviderApiFormat; label: string }[] = [
 ];
 
 const apiFormatLabel = (api?: string): string =>
-  API_FORMATS.find((format) => format.value === api)?.label ?? 'OpenAI compatible (Chat Completions)';
+  API_FORMATS.find((format) => format.value === api)?.label ?? 'Formato no válido';
 
 interface CustomFormState {
   id: string | null;
@@ -124,7 +124,12 @@ export default function CustomModelsSection({
         return next;
       });
       if (form?.id === p.id) setForm(null);
-      addToast({ message: `Clave y ajustes de ${p.label} eliminados de este equipo`, type: 'success' });
+      addToast({
+        message: p.invalid
+          ? `Modelo no válido ${p.id} eliminado de este equipo`
+          : `Clave y ajustes de ${p.label} eliminados de este equipo`,
+        type: 'success',
+      });
       await onChanged();
     } catch (err) {
       addToast({ message: errorMessage(err, `No se pudo eliminar ${p.label}`), type: 'error' });
@@ -271,6 +276,33 @@ export default function CustomModelsSection({
         <ul className="mt-4 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
           {providers.map((p, index) => {
             const st = statuses[p.id];
+            if (p.invalid) {
+              return (
+                <li
+                  key={p.id}
+                  aria-label={p.label}
+                  className={`flex items-center gap-3 px-4 py-3 ${index ? 'border-t border-[var(--border-subtle)]' : ''}`}
+                >
+                  <AlertCircle size={16} className="shrink-0 text-[var(--accent-red)]" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-[var(--text-primary)]">{p.label}</p>
+                    <p className="mt-0.5 break-words text-[11px] text-[var(--text-secondary)]">
+                      No se pudo leer su configuración guardada ({p.id}). Elimínalo y vuelve a crearlo.
+                    </p>
+                  </div>
+                  <Button
+                    className="ml-auto hover:text-[var(--accent-red)]"
+                    size="sm"
+                    variant="ghost"
+                    title="Eliminar"
+                    aria-label={`Eliminar ${p.id}`}
+                    onClick={() => void remove(p)}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </li>
+              );
+            }
             const busy = probing === p.id;
             const tone = providerStatusTone(p, st);
             return (

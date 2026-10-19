@@ -18,6 +18,8 @@ export interface AiProviderSpec {
   custom?: boolean;
   /** Estilo de API elegido para un modelo personalizado. */
   api?: string;
+  /** Archivo custom ilegible, listado solo para poder eliminarlo. */
+  invalid?: boolean;
 }
 
 export type AiProviderApiFormat = 'openai' | 'anthropic';
@@ -40,7 +42,8 @@ export interface AiProviderStatus extends AiProviderSpec {
 }
 
 export const aiProvidersApi = {
-  aiProvidersList: () => _invoke<{ providers: AiProviderSpec[] }>('ai_providers_list'),
+  aiProvidersList: (p?: { include_invalid?: boolean }) =>
+    _invoke<{ providers: AiProviderSpec[] }>('ai_providers_list', p ?? {}),
 
   aiProviderSave: (p: { provider: string; api_key?: string; base_url?: string; model?: string }) =>
     _invoke<{ provider: AiProviderSpec }>('ai_provider_save', p),
