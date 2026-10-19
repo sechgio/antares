@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Antares Connections catalog",
   "version": 1,
-  "description": "Catálogo de proveedores externos conectables por OAuth. Cada proveedor declara sus URLs de autorización/token, los scopes pedidos y cómo sondear el estado. Las credenciales de app (client_id/secret) las aporta el usuario y se guardan cifradas; los tokens igual. El backend usa este mismo catálogo para refrescar tokens al ejecutar nodos http_request con connection_ref. `category` agrupa al proveedor en la pestaña Conexiones; `categories` define el orden y las etiquetas de esos grupos.",
+  "description": "Catálogo de proveedores externos conectables por OAuth. Cada proveedor declara sus URLs de autorización/token, los scopes pedidos y cómo sondear el estado. Las credenciales de app (client_id/secret) las aporta el usuario y se guardan cifradas; los tokens igual. El backend usa este mismo catálogo para refrescar tokens con connection_ref. `category` agrupa al proveedor en la pestaña Conexiones; `categories` define el orden y las etiquetas de esos grupos.",
   "categories": [
     { "id": "desarrollo", "label": "Desarrollo" },
     { "id": "comunicacion", "label": "Comunicación" },

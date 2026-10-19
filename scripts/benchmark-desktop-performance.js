@@ -382,7 +382,7 @@ async function waitForUi(cdp, expression, label, timeoutMs = 15_000, logsDir = n
     if (value) return value;
     if (logsDir && readAppEvents(logsDir).some((event) =>
       event.method === 'canvas_save' && event.error_code === 'MEMORY_PRESSURE')) {
-      throw new Error('Canvas no pudo guardar por MEMORY_PRESSURE; libera memoria antes de medir el flujo.');
+      throw new Error('Canvas no pudo guardar por MEMORY_PRESSURE; libera memoria antes de medir el recorrido.');
     }
     await sleep(100);
   }
@@ -660,7 +660,7 @@ async function runIteration(exe, iteration, canvasAssetNames, options = {}) {
       event.event === 'renderer.lifecycle' && event.reason === 'ready_to_show',
     );
     const backendEvent = startupEvents.find((event) => event.event === 'backend.ready');
-    stage = 'flujo Canvas';
+    stage = 'recorrido Canvas';
     const workflow = options.canvasFlow ? await measureCanvasWorkflow(cdp, tempDir, options.canvasFlow) : null;
     const modes = options.startupOnly ? [] : iteration % 2 === 1
       ? ['on_demand', 'idle_prefetched']

@@ -13,9 +13,10 @@ def _catalog() -> dict:
 
 
 def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_secrets(monkeypatch):
-    from backend.core.flows import agent_chat, connections
+    from backend.core.agent import agent_chat
+    from backend.core.integrations import connections
     from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, input_schema_for
-    from backend.handlers import flows
+    from backend.handlers import integrations
 
     methods = _catalog()["methods"]
     for method in ORCHESTRATABLE_METHODS | set(agent_chat.gated_methods()):
@@ -23,24 +24,13 @@ def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_s
         assert schema == methods[method]["inputSchema"]
         assert schema["type"] == "object"
         assert set(schema.get("required", [])) <= schema["properties"].keys()
-    assert methods["flows_connection_token_refresh"]["internal"] is True
+    assert methods["connection_token_refresh"]["internal"] is True
     monkeypatch.setattr(connections, "fresh_tokens", lambda provider: {
         "access_token": "new", "refresh_token": "rotated", "client_id": "private", "client_secret": "secret",
     })
-    result = flows.HANDLERS["flows_connection_token_refresh"]({"provider": "demo"})
+    result = integrations.HANDLERS["connection_token_refresh"]({"provider": "demo"})
     assert result["tokens"]["refresh_token"] == "rotated"
     assert "client_secret" not in result["tokens"] and "client_id" not in result["tokens"]
-
-
-def test_flow_actions_projection_keeps_effects_separate_from_reads() -> None:
-    from backend.core.ipc_catalog import FLOW_ACTION_METHODS, ORCHESTRATABLE_METHODS
-
-    expected = ORCHESTRATABLE_METHODS | {
-        name for name, entry in _catalog()["methods"].items()
-        if entry.get("flowCallable") is True and entry["handler"].startswith("backend:")
-    }
-    assert expected == FLOW_ACTION_METHODS
-    assert "flows_path_authorize" not in FLOW_ACTION_METHODS
 
 
 def test_catalog_backend_methods_match_handler_registry() -> None:
@@ -86,20 +76,6 @@ def test_lane_and_handler_projections() -> None:
     assert SYNC_METHODS.isdisjoint(HEAVY_METHODS)
 
 
-def test_guided_pdf_preview_is_readonly_heavy_and_keeps_file_capabilities():
-    from backend.core.ipc_catalog import FLOW_ACTION_METHODS, handler_module_for, lane_for, timeout_ms_for
-
-    entry = _catalog()["methods"]["flows_pdf_preview"]
-    assert handler_module_for("flows_pdf_preview") == "backend.handlers.flows"
-    assert lane_for("flows_pdf_preview") == "heavy"
-    assert timeout_ms_for("flows_pdf_preview") == 900_000
-    assert entry["idempotent"] is True
-    assert entry["fileTokens"] == [["spreadsheet_path"]]
-    assert entry["writePathKeys"] == ["output_folder"]
-    assert "flows_pdf_preview" not in FLOW_ACTION_METHODS
-    assert entry["inputSchema"]["properties"]["template_kind"]["enum"] == ["html", "canvas", "formato"]
-
-
 def test_catalog_declares_only_known_timeout_tiers() -> None:
     catalog = _catalog()
     tiers = set(catalog["timeouts"])
@@ -116,7 +92,6 @@ def test_catalog_declares_only_known_timeout_tiers() -> None:
         ("db_import", 300_000),
         ("process_start", 900_000),
         ("canvas_export_cmyk_pdf", 900_000),
-        ("flows_print_pdf", 900_000),
         ("html_to_pdf", 900_000),
         ("dialog_folder", 300_000),
     ],
@@ -179,7 +154,5 @@ def test_catalog_full_projection_matches_json() -> None:
     assert file_tokens_for("version") == ()
     assert write_path_keys_for("process_start") == frozenset({"destino"})
     assert file_tokens_for("canvas_export_cmyk_pdf") == (("localImagePaths", "*"),)
-    assert file_tokens_for("flows_render_pdf") == (("localImagePaths", "*"),)
-    assert file_tokens_for("flows_print_pdf") == (("pdf_path",),)
-    assert not is_idempotent("flows_print_pdf")
-    assert is_idempotent("flows_printers_list")
+    assert not is_idempotent("db_export")
+    assert is_idempotent("version")

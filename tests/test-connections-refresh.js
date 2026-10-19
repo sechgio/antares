@@ -43,7 +43,7 @@ function session(backend) {
 async function main() {
   const fresh = { access_token: 'new', refresh_token: 'R2', expiry_date: Date.now() + 3600000 };
   const current = session(async (method) => {
-    assert.equal(method, 'flows_connection_token_refresh');
+    assert.equal(method, 'connection_token_refresh');
     return { tokens: fresh };
   });
   const [first, second] = await Promise.all([current.api.getValidTokens('demo'), current.api.getValidTokens('demo')]);
@@ -52,11 +52,11 @@ async function main() {
   assert.equal(current.calls.length, 1);
   await current.api.probeAccount('demo');
   assert.equal(current.stored.get('connections/demo-tokens.json').account, 'Cuenta');
-  assert.ok(current.calls.every((method) => method === 'flows_connection_token_refresh'));
+  assert.ok(current.calls.every((method) => method === 'connection_token_refresh'));
 
   let release;
   const pending = new Promise((resolve) => { release = resolve; });
-  const changed = session(async (method) => method === 'flows_connection_token_refresh' ? pending : {});
+  const changed = session(async (method) => method === 'connection_token_refresh' ? pending : {});
   const refreshing = changed.api.getValidTokens('demo');
   await Promise.resolve();
   await changed.api.disconnect('demo');

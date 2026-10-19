@@ -27,7 +27,6 @@ import {
   Settings,
   Stamp,
   User,
-  Workflow,
   Wrench,
   Zap,
 } from 'lucide-react';
@@ -74,7 +73,6 @@ const ICONS: Record<TabId, IconComponent> = {
   imageOptimizer: Image,
   previewPanel: LayoutDashboard,
   canvas: Paintbrush,
-  flows: Workflow,
   agent: Bot,
   panelAvisoCorte: FileStack,
   ubicaciones: MapPin,
@@ -112,7 +110,7 @@ const NAV_GROUPS: { id: string; label: string; icon: IconComponent; tabs: TabId[
     id: 'herramientas',
     label: 'Herramientas',
     icon: Wrench,
-    tabs: ['imageOptimizer', 'ubicaciones', 'autoimg', 'flows'],
+    tabs: ['imageOptimizer', 'ubicaciones', 'autoimg'],
   },
   {
     id: 'agent',

@@ -11,8 +11,9 @@ import time
 
 import pytest
 
+from backend.core.agent import agent
 from backend.core.exceptions import NotFoundError, ValidationError
-from backend.core.flows import agent, ai_providers, mcp_servers
+from backend.core.integrations import ai_providers, mcp_servers
 from backend.handlers import agent_internal
 
 
@@ -51,14 +52,14 @@ def test_tools_list_projects_backend_and_mcp_kinds(monkeypatch):
         agent_internal._agent_chat,
         "tool_specs",
         lambda: [
-            {"name": "flows_list", "gated": False},
+            {"name": "formats", "gated": False},
             {"name": "db_export", "gated": True},
             {"name": mcp_servers.agent_tool_name("srv", "search"), "gated": True},
         ],
     )
     tools = agent_internal.HANDLERS["agent_internal_tools"]({})["tools"]
     by_name = {t["name"]: t for t in tools}
-    assert by_name["flows_list"]["kind"] == "backend"
+    assert by_name["formats"]["kind"] == "backend"
     assert by_name["db_export"]["kind"] == "backend"
     assert by_name[mcp_servers.agent_tool_name("srv", "search")]["kind"] == "mcp"
 
@@ -124,16 +125,16 @@ def test_dispatch_dedup_never_reexecutes(store, monkeypatch):
     executed = []
     runner = agent.AgentRunner(store, lambda name: lambda params: executed.append(name) or {"ok": 1})
     monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
-    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"flows_list"})
+    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"formats"})
 
-    params = {"session_id": "s1", "call_id": "c1", "name": "flows_list", "params": {}}
+    params = {"session_id": "s1", "call_id": "c1", "name": "formats", "params": {}}
     assert _dispatch(**params)["result"] is None  # arranca en segundo plano
     out = _wait_result("c1")
     assert json.loads(out["result"]) == {"ok": 1}
     # La repetición sirve lo persistido: no hay segunda ejecución.
     again = _dispatch(**params)
     assert json.loads(again["result"]) == {"ok": 1}
-    assert executed == ["flows_list"]
+    assert executed == ["formats"]
 
 
 def test_dispatch_gated_requires_bound_approved_approval(store, monkeypatch):
@@ -174,9 +175,9 @@ def test_dispatch_rejects_forged_file_grants(store, monkeypatch):
     executed = []
     runner = agent.AgentRunner(store, lambda name: lambda params: executed.append(params) or {"ok": 1})
     monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
-    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"flows_list"})
+    monkeypatch.setattr(agent_internal, "ORCHESTRATABLE_METHODS", {"formats"})
 
-    _dispatch(session_id="s1", call_id="c1", name="flows_list",
+    _dispatch(session_id="s1", call_id="c1", name="formats",
               params={"_file_grants": {"write": ["C:/otra"]}})
     result = json.loads(_wait_result("c1")["result"])
     assert "permisos" in result["error"]

@@ -16,14 +16,13 @@ from __future__ import annotations
 import json
 import threading
 
+from backend.core.agent import agent as _agent
+from backend.core.agent import agent_chat as _agent_chat
+from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.core.exceptions import NotFoundError, ValidationError
-from backend.core.flows import agent as _agent
-from backend.core.flows import agent_chat as _agent_chat
-from backend.core.flows import ai_providers as _ai_providers
-from backend.core.flows import mcp_servers as _mcp_servers
-from backend.core.flows.cancel import RunCancelled
-from backend.core.flows.runner import _CancelEvent
-from backend.core.flows.types import JsonObject
+from backend.core.integrations import ai_providers as _ai_providers
+from backend.core.integrations import mcp_servers as _mcp_servers
+from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 from backend.handlers.common import validate_params, with_locale
 

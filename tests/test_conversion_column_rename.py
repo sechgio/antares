@@ -147,7 +147,7 @@ def test_preview_column_rename_record_mode_usa_fila_correcta_por_indice(monkeypa
     assert [item["en_bd"] for item in result["preview"]] == [True, True, True]
 
 
-def test_flujo_normal_siempre_usa_codigos_manuales_no_fallback(tmp_path) -> None:
+def test_conversion_normal_siempre_usa_codigos_manuales_no_fallback(tmp_path) -> None:
     names = ["IMG_1.jpg"]
     files = [str(tmp_path / name) for name in names]
     for path in files:

@@ -12,13 +12,13 @@ import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
 import AgentAvatar from './AgentAvatar';
 import { ApprovalCard, MessageRow, ThinkingRow, ToolGroup } from './AgentTimeline';
+import ProvidersView from '../connections/ProvidersView';
 
 const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
 
 const SUGGESTIONS = [
-  '¿Qué flujos tengo configurados y cuáles están activos?',
   'Resume el estado de mis conexiones externas.',
   '¿Qué ejecuciones recientes fallaron y por qué?',
 ];
@@ -83,7 +83,7 @@ function SessionRow({
   );
 }
 
-export default function AgentView({ initialDraft, onConfigureProvider }: { active?: boolean; initialDraft?: string; onConfigureProvider?: () => void }) {
+export default function AgentView() {
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
@@ -106,6 +106,7 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { activ
     } catch { return []; }
   });
   const [stopping, setStopping] = useState(false);
+  const [showProviders, setShowProviders] = useState(false);
   const [runningSince, setRunningSince] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<number | null>(null);
@@ -124,8 +125,16 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { activ
   });
 
   useEffect(() => {
-    if (initialDraft) setDraft(initialDraft);
-  }, [initialDraft]);
+    if (!showProviders) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowProviders(false);
+      }
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [showProviders]);
 
   useEffect(() => {
     localStorage.setItem(QUEUE_KEY, JSON.stringify(queued));
@@ -451,18 +460,16 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { activ
           ))}
         </div>
 
-        {onConfigureProvider && (
-          <footer className="mt-1.5 shrink-0 border-t border-[var(--border-subtle)] pt-1.5">
-            <button
-              type="button"
-              onClick={onConfigureProvider}
-              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)] hover:text-[var(--text-primary)]"
-            >
-              <Settings2 size={14} className="shrink-0" />
-              <span className="min-w-0 flex-1 truncate">Proveedores de IA</span>
-            </button>
-          </footer>
-        )}
+        <footer className="mt-1.5 shrink-0 border-t border-[var(--border-subtle)] pt-1.5">
+          <button
+            type="button"
+            onClick={() => setShowProviders(true)}
+            className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)] hover:text-[var(--text-primary)]"
+          >
+            <Settings2 size={14} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate">Proveedores de IA</span>
+          </button>
+        </footer>
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
@@ -514,8 +521,8 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { activ
                     : 'Conversa con la app: consulta su estado con herramientas de lectura y aprueba cada acción con efectos antes de que se ejecute.'}
                 </p>
               </div>
-              {readyProviders.length === 0 && onConfigureProvider && (
-                <Button size="sm" onClick={onConfigureProvider}>Configurar IA</Button>
+              {readyProviders.length === 0 && (
+                <Button size="sm" onClick={() => setShowProviders(true)}>Configurar IA</Button>
               )}
               {readyProviders.length > 0 && !sessionId && (
                 <div className="w-full max-w-sm space-y-1.5 text-left">
@@ -714,6 +721,29 @@ export default function AgentView({ initialDraft, onConfigureProvider }: { activ
           </p>
         </div>,
         document.body,
+      )}
+      {showProviders && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center p-4 animate-fade-in"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)' }}
+          onClick={() => setShowProviders(false)}
+        >
+          <div
+            className="relative h-[86vh] w-full max-w-3xl overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              aria-label="Cerrar proveedores de IA"
+              title="Cerrar"
+              onClick={() => setShowProviders(false)}
+              className="absolute right-3 top-3 z-10 rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <X size={16} />
+            </button>
+            <ProvidersView />
+          </div>
+        </div>
       )}
     </div>
   );

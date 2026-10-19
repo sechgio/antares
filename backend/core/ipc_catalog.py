@@ -57,10 +57,6 @@ ORCHESTRATABLE_METHODS: frozenset[str] = frozenset(
     if entry.get("orchestratable") is True
     and str(entry.get("handler", "")).startswith("backend:")
 )
-FLOW_ACTION_METHODS: frozenset[str] = ORCHESTRATABLE_METHODS | frozenset(
-    name for name, entry in _METHODS.items()
-    if entry.get("flowCallable") is True and str(entry.get("handler", "")).startswith("backend:")
-)
 
 
 def backend_methods() -> frozenset[str]:

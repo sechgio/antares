@@ -83,8 +83,8 @@ def _spool() -> Any:
     return spool
 
 
-# EnumPrintersW tarda ~80-340 ms por llamada (medido con bench:ipc en
-# flows_printers_list): el listado se cachea unos segundos para aperturas
+# EnumPrintersW tarda ~80-340 ms por llamada (medido con bench:ipc en la
+# selección de impresoras): el listado se cachea unos segundos para aperturas
 # sucesivas del selector. Una impresora instalada hace <TTL puede no aparecer
 # hasta el próximo vencimiento.
 _PRINTERS_CACHE_TTL_SECONDS = 30.0

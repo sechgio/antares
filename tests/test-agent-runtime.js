@@ -39,7 +39,7 @@ function makeBridge() {
       case 'agent_internal_tools':
         return {
           tools: [
-            { name: 'flows_list', description: 'Lista flujos', gated: false, kind: 'backend', inputSchema: { type: 'object', properties: {} } },
+            { name: 'formats', description: 'Lista formatos', gated: false, kind: 'backend', inputSchema: { type: 'object', properties: {} } },
             { name: 'db_clear', description: 'Borra datos', gated: true, kind: 'backend', inputSchema: { type: 'object', properties: {} } },
           ],
         };
@@ -133,11 +133,11 @@ async function main() {
     assert(METHODS[name].handler === 'backend:agent_internal', `${name} → backend:agent_internal`);
   }
 
-  // --- flujo completo: herramienta segura + gated + aprobación + dedup ---
+  // --- recorrido completo: herramienta segura + gated + aprobación + dedup ---
   {
     const { bridge, state } = makeBridge();
     await openFaux([
-      fauxAssistantMessage([fauxToolCall('flows_list', {}), fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('formats', {}), fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
       fauxAssistantMessage('hecho'),
     ], bridge);
 
@@ -147,7 +147,7 @@ async function main() {
     assert(sessions.length === 1 && sessions[0].id === session.id, 'sessions_list incluye la sesión');
 
     const { tools } = await runtime.handlers.agent_tools_list({});
-    assert(tools.some((t) => t.name === 'flows_list' && !t.gated) && tools.some((t) => t.name === 'db_clear' && t.gated), 'tools_list proyecta gated');
+    assert(tools.some((t) => t.name === 'formats' && !t.gated) && tools.some((t) => t.name === 'db_clear' && t.gated), 'tools_list proyecta gated');
 
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hazlo' });
     const sawPending = await waitFor(async () =>
@@ -162,7 +162,7 @@ async function main() {
     assert(pending_approvals.length === 0, 'no quedan aprobaciones pendientes');
     const assistant = messages.find((m) => m.tool_calls);
     const calls = assistant.tool_calls;
-    assert(calls.find((c) => c.name === 'flows_list').status === 'done', 'herramienta segura ejecutada');
+    assert(calls.find((c) => c.name === 'formats').status === 'done', 'herramienta segura ejecutada');
     assert(calls.find((c) => c.name === 'db_clear').status === 'done', 'herramienta aprobada ejecutada');
     assert(messages.at(-1).content === 'hecho', 'respuesta final del modelo');
     assert(state.dispatchLog.filter((id) => id === calls[1].id).length === 1, 'dispatch deduplicado: una ejecución por call_id');

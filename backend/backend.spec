@@ -62,7 +62,6 @@ _datas = [
     (str(project_dir / 'shared' / 'default-theme.json'), 'shared'),
     (str(project_dir / 'shared' / 'ipc-method-catalog.json'), 'shared'),
     (str(project_dir / 'shared' / 'canvas-schema.json'), 'shared'),
-    (str(project_dir / 'shared' / 'workflow-schema.json'), 'shared'),
     (str(project_dir / 'shared' / 'connections-catalog.json'), 'shared'),
     (str(project_dir / 'shared' / 'ai-providers-catalog.json'), 'shared'),
 ]

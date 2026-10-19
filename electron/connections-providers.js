@@ -3,7 +3,7 @@
 /**
  * Catálogo de proveedores conectables (shared/connections-catalog.json).
  * Cada spec declara cómo autorizar, canjear y sondear el estado; el backend
- * Python consume el mismo documento para refrescar tokens en los flujos.
+ * Python consume el mismo documento para refrescar tokens.
  */
 
 const catalog = require('../shared/connections-catalog.json');

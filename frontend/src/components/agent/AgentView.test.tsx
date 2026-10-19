@@ -160,14 +160,14 @@ it('muestra respuestas progresivas y estados de herramientas durante el sondeo',
   expect(screen.getByText('Progreso')).toBeInTheDocument();
   list.mockResolvedValue({ ...empty, running: true, messages: [{
     role: 'assistant', content: 'Progreso ampliado', ts: 2,
-    tool_calls: [{ id: 'c1', name: 'flows_run', params: {}, gated: true, status: 'running' }],
+    tool_calls: [{ id: 'c1', name: 'canvas_save', params: {}, gated: true, status: 'running' }],
   }] });
   await act(async () => { vi.advanceTimersByTime(1500); });
   expect(screen.getByText('Progreso ampliado')).toBeInTheDocument();
   expect(screen.getByText('ejecutando')).toBeInTheDocument();
   list.mockResolvedValue({ ...empty, messages: [{
     role: 'assistant', content: 'Turno interrumpido', ts: 2,
-    tool_calls: [{ id: 'c1', name: 'flows_run', params: {}, gated: true, status: 'interrupted', result: 'Resultado incierto' }],
+    tool_calls: [{ id: 'c1', name: 'canvas_save', params: {}, gated: true, status: 'interrupted', result: 'Resultado incierto' }],
   }] });
   await act(async () => { vi.advanceTimersByTime(1500); });
   expect(screen.getByText('interrumpida · comprueba el resultado')).toBeInTheDocument();
@@ -197,7 +197,7 @@ it('detener pausa la cola y conserva las tareas pendientes para un envío explí
 it('recupera una aprobación pendiente sin aprobarla al montar y permite detenerla', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const approval = {
-    id: 'a1', session_id: session.id, call_id: 'c1', method: 'flows_run', params: {},
+    id: 'a1', session_id: session.id, call_id: 'c1', method: 'canvas_save', params: {},
     status: 'pending' as const, created_at: 1, decided_at: null,
   };
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
@@ -215,4 +215,13 @@ it('recupera una aprobación pendiente sin aprobarla al montar y permite detener
   await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
   expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
   expect(approve).not.toHaveBeenCalled();
+});
+
+it('abre y cierra la vista de proveedores de IA en el propio Agent', async () => {
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Proveedores de IA' }));
+  expect(await screen.findByText('No hay proveedores en el catálogo.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar proveedores de IA' }));
+  expect(screen.queryByText('No hay proveedores en el catálogo.')).not.toBeInTheDocument();
 });

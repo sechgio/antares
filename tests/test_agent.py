@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from backend.core.flows import agent, agent_chat
+from backend.core.agent import agent, agent_chat
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods
 
 
@@ -31,7 +31,7 @@ def test_gated_methods_exclude_readonly_and_denied():
     safe = set(ORCHESTRATABLE_METHODS)
     assert gated.isdisjoint(safe)
     assert gated <= set(backend_methods())
-    for banned in ("ai_provider_save", "flows_connection_token_put", "db_clear"):
+    for banned in ("ai_provider_save", "connection_token_put", "db_clear"):
         assert banned not in gated
     # hay métodos con efectos en el catálogo que sí quedan tras la puerta
     assert len(gated) > 0
@@ -46,7 +46,7 @@ def test_tool_specs_cover_readonly_and_gated():
 
 @pytest.mark.parametrize("style", ["openai", "anthropic"])
 def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style):
-    from backend.core.flows import mcp_servers
+    from backend.core.integrations import mcp_servers
 
     schema = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
     monkeypatch.setattr(mcp_servers, "list_servers", lambda: [{"id": "demo", "name": "Demo"}])
@@ -67,7 +67,7 @@ def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style)
     assert {"files", "destino"} <= wire["process_start"]["properties"].keys()
     assert {"formato", "calidad", "conversion_enabled", "mapping_path", "sequence_mode"} <= wire["process_start"]["properties"].keys()
     assert all(not k.startswith("_") for s in wire.values() for k in s.get("properties", {}))
-    assert "flows_connection_token_refresh" not in wire
+    assert "connection_token_refresh" not in wire
 
 
 def test_tools_list_projection(monkeypatch):
@@ -77,14 +77,14 @@ def test_tools_list_projection(monkeypatch):
         agent_chat,
         "tool_specs",
         lambda: [
-            {"name": "flows_list", "gated": False},
+            {"name": "formats", "gated": False},
             {"name": "canvas_save", "gated": True},
             {"name": "mcp__srv1__search", "gated": True},
         ],
     )
     tools = agent_handler._tools_list({})["tools"]
     by_name = {t["name"]: t for t in tools}
-    assert by_name["flows_list"] == {"name": "flows_list", "gated": False, "kind": "backend"}
+    assert by_name["formats"] == {"name": "formats", "gated": False, "kind": "backend"}
     assert by_name["canvas_save"]["gated"] is True
     assert by_name["mcp__srv1__search"]["kind"] == "mcp"
 
@@ -92,9 +92,9 @@ def test_tools_list_projection(monkeypatch):
 def test_approval_flow(tmp_path):
     store = _store(tmp_path)
     s = store.create_session("ollama", "m", "t")
-    call = {"id": "c1", "name": "flujos_x", "params": {"a": 1}}
+    call = {"id": "c1", "name": "tool_x", "params": {"a": 1}}
     ap = store.create_approval(s["id"], call)
-    assert store.pending_approvals(s["id"])[0]["method"] == "flujos_x"
+    assert store.pending_approvals(s["id"])[0]["method"] == "tool_x"
     decided = store.decide_approval(ap["id"], True)
     assert decided["status"] == "approved" and decided["decided_at"]
     assert store.decide_approval(ap["id"], True) is None  # no doble decisión
@@ -103,10 +103,8 @@ def test_approval_flow(tmp_path):
 
 @pytest.mark.parametrize("name,params", [
     ("db_export", {"path": "C:/unauthorized/export.xlsx"}),
-    ("flows_print_pdf", {"pdf_path": "C:/unauthorized/document.pdf"}),
+    ("canvas_export_cmyk_pdf", {"localImagePaths": ["C:/unauthorized/img.png"]}),
     ("sellador_apply", {"pdf_path": "document.pdf"}),
-    ("flows_update", {"graph": {"nodes": [{"config": {"args": {"output_path": "C:/unauthorized/out.pdf"}}}]}}),
-    ("flows_update", {"graph": {"nodes": [{"config": {"_file_grants": {"write": ["C:/unauthorized"]}}}]}}),
     ("canvas_save", {"_resolved_output_path": "relative.pdf"}),
 ])
 def test_agent_rejects_ungranted_paths_and_forged_grants_before_dispatch(tmp_path, name, params):
@@ -478,7 +476,7 @@ def test_interrupted_turn_gets_marked_once_on_runner_init(tmp_path):
     store.append_message(ok["id"], {"role": "assistant", "content": "respuesta"})
     waiting = store.create_session("ollama", "m", "Con aprobación")
     store.append_message(waiting["id"], {"role": "user", "content": "haz algo"})
-    store.create_approval(waiting["id"], {"id": "c1", "name": "flows_delete", "params": {}})
+    store.create_approval(waiting["id"], {"id": "c1", "name": "db_clear", "params": {}})
 
     store2 = _store(tmp_path)
     agent.AgentRunner(store2, lambda name: lambda params: {})
@@ -496,7 +494,7 @@ def test_stale_approval_expires_and_cannot_be_decided(tmp_path):
     """Una aprobación más vieja que el TTL ya no ejecuta la acción."""
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "S")
-    approval = store.create_approval(session["id"], {"id": "c1", "name": "flows_delete", "params": {}})
+    approval = store.create_approval(session["id"], {"id": "c1", "name": "db_clear", "params": {}})
     store._approvals[approval["id"]]["created_at"] = agent._now_ms() - agent._APPROVAL_TTL_MS - 1
     assert store.pending_approvals(session["id"]) == []
     assert store.get_approval(approval["id"])["status"] == "expired"
@@ -557,7 +555,7 @@ def test_partial_text_checkpoint_survives_restart(tmp_path):
 def test_recovery_never_replays_a_tool_or_a_decided_approval(tmp_path, status):
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "Tarea")
-    call = {"id": "effect", "name": "flows_run", "params": {}, "status": status, "result": "resultado"}
+    call = {"id": "effect", "name": "db_clear", "params": {}, "status": status, "result": "resultado"}
     store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
     approval = store.create_approval(session["id"], call)
     store.decide_approval(approval["id"], True)
@@ -636,7 +634,7 @@ def test_cancel_running_tool_discards_late_result_and_queued_approved_effect(tmp
 def test_cancel_turn_waiting_for_approval_does_not_execute(tmp_path):
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "Tarea")
-    call = {"id": "c1", "name": "flows_run", "params": {}, "status": "pending"}
+    call = {"id": "c1", "name": "db_clear", "params": {}, "status": "pending"}
     store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
     approval = store.create_approval(session["id"], call)
     runner = agent.AgentRunner(store, lambda name: pytest.fail("No ejecutar al cancelar"))
@@ -666,7 +664,7 @@ def test_cancelled_provider_cannot_publish_deltas_to_a_new_turn(tmp_path):
 def test_tool_failures_have_distinct_status(tmp_path, monkeypatch, result):
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "Tarea")
-    call = {"id": "c1", "name": "flows_run", "params": {}, "status": "queued"}
+    call = {"id": "c1", "name": "db_clear", "params": {}, "status": "queued"}
     store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
     runner = agent.AgentRunner(store, lambda name: None)
     monkeypatch.setattr(runner, "_execute", lambda call, token=None: result)

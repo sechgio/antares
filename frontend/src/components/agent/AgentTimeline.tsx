@@ -1,9 +1,7 @@
 import { AlertTriangle, Check, ChevronRight, Clock3, Loader2, ShieldCheck, Wrench, X } from 'lucide-react';
 import type { AgentApproval, AgentMessage, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
-import { METHOD_LABELS } from '../flows/nodeDefs';
-import { useEffect, useState } from 'react';
-import { flowsApi } from '../../api/flowsApi';
+import { METHOD_LABELS } from './methodLabels';
 
 const CALL_STATUS_LABEL: Record<string, string> = {
   queued: 'en cola',
@@ -98,17 +96,6 @@ export function ApprovalCard({
   busy: boolean;
   onDecide: (id: string, ok: boolean) => void;
 }) {
-  const [flowName, setFlowName] = useState('');
-  useEffect(() => {
-    let alive = true;
-    setFlowName('');
-    if (typeof approval.params.id === 'string' && ['flows_update', 'flows_delete', 'flows_duplicate', 'flows_run'].includes(approval.method)) {
-      flowsApi.flowsGet(approval.params.id)
-        .then((res) => { if (alive) setFlowName(res.flow.name); })
-        .catch(() => undefined);
-    }
-    return () => { alive = false; };
-  }, [approval.method, approval.params.id]);
   return (
     <div className="max-w-[90%] overflow-hidden rounded-2xl border border-[color:color-mix(in_srgb,var(--accent-yellow)_40%,transparent)] bg-[var(--bg-surface)]">
       <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)]">
@@ -119,9 +106,8 @@ export function ApprovalCard({
         <p className="text-[12px] font-medium text-[var(--text-primary)]">
           {METHOD_LABELS[approval.method] ?? 'Acción avanzada: revisa sus detalles antes de aprobar'}
         </p>
-        {typeof approval.params.id === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Elemento: <span>{flowName || approval.params.id}</span></p>}
+        {typeof approval.params.id === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Elemento: <span>{approval.params.id}</span></p>}
         {typeof approval.params.name === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Nombre: {approval.params.name}</p>}
-        {approval.method === 'flows_delete' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Se borrarán el flujo y su historial de ejecuciones. No se puede deshacer.</p>}
         <details className="mt-2 text-xs text-[var(--text-secondary)]">
           <summary className="cursor-pointer">Ver detalles de la acción</summary>
           <code>{approval.method}</code>
