@@ -2,6 +2,7 @@ import type { FichaTecnica, FichaTecnicaListItem } from '../components/fichas-te
 import type { InformeV2, InformeV2ListItem } from '../components/informes-v2/types';
 import type { TechnicalReport, TechnicalReportListItem } from '../components/technical-reports/types';
 import { _invoke } from './core';
+import type { ReportImportEnvelope, ReportItemEnvelope, ReportListEnvelope } from './reportApi';
 
 export interface TechnicalReportsListBody {
   cs?: string;
@@ -64,19 +65,19 @@ export interface FichasTecnicasRenderBody {
 
 export const reportsApi = {
   technicalReportsList: (body?: TechnicalReportsListBody) =>
-    _invoke<{ items: TechnicalReportListItem[] | TechnicalReport[]; total?: number }>('technical_reports_list', body),
+    _invoke<ReportListEnvelope<TechnicalReportListItem | TechnicalReport>>('technical_reports_list', body),
   technicalReportsGet: (id: string) =>
-    _invoke<{ item: TechnicalReport }>('technical_reports_get', { id }),
+    _invoke<ReportItemEnvelope<TechnicalReport>>('technical_reports_get', { id }),
   technicalReportsCreate: (report?: Partial<TechnicalReport>) =>
-    _invoke<{ success: boolean; item: TechnicalReport }>('technical_reports_create', report ? { report } : {}),
+    _invoke<ReportItemEnvelope<TechnicalReport>>('technical_reports_create', report ? { report } : {}),
   technicalReportsUpdate: (id: string, report: Partial<TechnicalReport>) =>
-    _invoke<{ success: boolean; item: TechnicalReport }>('technical_reports_update', { id, report }),
+    _invoke<ReportItemEnvelope<TechnicalReport>>('technical_reports_update', { id, report }),
   technicalReportsDelete: (id: string) =>
     _invoke<{ success: boolean; deleted_id: string }>('technical_reports_delete', { id }),
   technicalReportsClear: () =>
     _invoke<{ success: boolean; deleted_count: number; message: string }>('technical_reports_clear'),
   technicalReportsImportFile: (body: TechnicalReportsImportBody) =>
-    _invoke<{ success: boolean; message: string; deleted_count: number; imported_count: number; total_rows_in_file: number }>('technical_reports_import_file', body),
+    _invoke<ReportImportEnvelope>('technical_reports_import_file', body),
   technicalReportsAutocompleteCs: () =>
     _invoke<{ options: string[] }>('technical_reports_autocomplete_cs'),
   technicalReportsAutocompleteContratista: (cs?: string) =>
@@ -87,19 +88,19 @@ export const reportsApi = {
     _invoke<{ html: string; filename: string; count: number }>('technical_reports_render_consolidated_html', body),
 
   informesV2List: (body?: InformesV2ListBody) =>
-    _invoke<{ items: InformeV2ListItem[] | InformeV2[]; total?: number }>('informes_v2_list', body),
+    _invoke<ReportListEnvelope<InformeV2ListItem | InformeV2>>('informes_v2_list', body),
   informesV2Get: (id: string) =>
-    _invoke<{ item: InformeV2 }>('informes_v2_get', { id }),
+    _invoke<ReportItemEnvelope<InformeV2>>('informes_v2_get', { id }),
   informesV2Create: (report?: Partial<InformeV2>) =>
-    _invoke<{ success: boolean; item: InformeV2 }>('informes_v2_create', report ? { report } : {}),
+    _invoke<ReportItemEnvelope<InformeV2>>('informes_v2_create', report ? { report } : {}),
   informesV2Update: (id: string, report: Partial<InformeV2>) =>
-    _invoke<{ success: boolean; item: InformeV2 }>('informes_v2_update', { id, report }),
+    _invoke<ReportItemEnvelope<InformeV2>>('informes_v2_update', { id, report }),
   informesV2Delete: (id: string) =>
     _invoke<{ success: boolean; deleted_id: string }>('informes_v2_delete', { id }),
   informesV2Clear: () =>
     _invoke<{ success: boolean; deleted_count: number; message: string }>('informes_v2_clear'),
   informesV2ImportFile: (body: InformesV2ImportBody) =>
-    _invoke<{ success: boolean; message: string; deleted_count: number; imported_count: number; total_rows_in_file: number }>('informes_v2_import_file', body),
+    _invoke<ReportImportEnvelope>('informes_v2_import_file', body),
   informesV2DownloadTemplate: (plantilla?: string) =>
     _invoke<{ filename: string; content_b64: string; mime: string }>(
       'informes_v2_download_template',
@@ -116,19 +117,19 @@ export const reportsApi = {
     _invoke<{ html: string; filename: string; count: number }>('informes_v2_render_consolidated_html', body),
 
   fichasTecnicasList: (body?: FichasTecnicasListBody) =>
-    _invoke<{ items: FichaTecnicaListItem[] | FichaTecnica[]; total: number }>('fichas_tecnicas_list', body),
+    _invoke<ReportListEnvelope<FichaTecnicaListItem | FichaTecnica>>('fichas_tecnicas_list', body),
   fichasTecnicasGet: (id: string) =>
-    _invoke<{ item: FichaTecnica }>('fichas_tecnicas_get', { id }),
+    _invoke<ReportItemEnvelope<FichaTecnica>>('fichas_tecnicas_get', { id }),
   fichasTecnicasCreate: (ficha?: Partial<FichaTecnica>) =>
-    _invoke<{ success: boolean; item: FichaTecnica }>('fichas_tecnicas_create', ficha ? { ficha } : {}),
+    _invoke<ReportItemEnvelope<FichaTecnica>>('fichas_tecnicas_create', ficha ? { ficha } : {}),
   fichasTecnicasUpdate: (id: string, ficha: Partial<FichaTecnica>) =>
-    _invoke<{ success: boolean; item: FichaTecnica }>('fichas_tecnicas_update', { id, ficha }),
+    _invoke<ReportItemEnvelope<FichaTecnica>>('fichas_tecnicas_update', { id, ficha }),
   fichasTecnicasDelete: (id: string) =>
     _invoke<{ success: boolean; deleted_id: string }>('fichas_tecnicas_delete', { id }),
   fichasTecnicasClear: () =>
     _invoke<{ success: boolean; deleted_count: number; message: string }>('fichas_tecnicas_clear'),
   fichasTecnicasImportFile: (body: FichasTecnicasImportBody) =>
-    _invoke<{ success: boolean; message: string; deleted_count: number; imported_count: number; total_rows_in_file: number }>('fichas_tecnicas_import_file', body),
+    _invoke<ReportImportEnvelope>('fichas_tecnicas_import_file', body),
   fichasTecnicasRenderHtml: (body: FichasTecnicasRenderBody) =>
     _invoke<{ html: string; filename: string }>('fichas_tecnicas_render_html', body),
   fichasTecnicasRenderConsolidatedHtml: (body?: { ficha_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>
