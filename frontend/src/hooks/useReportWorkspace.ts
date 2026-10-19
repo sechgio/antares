@@ -79,6 +79,7 @@ export interface ReportWorkspaceOptions<TReport> {
   draftKey?: string;
   initialMobileTab?: ReportWorkspaceMobileTab;
   focusPreviewOnOpen?: boolean;
+  agentModule?: string;
 }
 
 function defaultFormatError(error: unknown, fallback: string): string {
@@ -274,6 +275,20 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
       }
     });
   }, [addToast, dialog, formData, formatError, hasChanges, labels, markClean, normalizeItem, options.focusPreviewOnOpen, options.saveBeforeSelect, refreshReports, reportApi, runOperation]);
+
+  useEffect(() => {
+    if (!options.agentModule) return;
+    const key = `agent:open:${options.agentModule}`;
+    const openRequested = () => {
+      const id = sessionStorage.getItem(key);
+      if (!id) return;
+      sessionStorage.removeItem(key);
+      void selectReport(id);
+    };
+    openRequested();
+    window.addEventListener('agent:open-module', openRequested);
+    return () => window.removeEventListener('agent:open-module', openRequested);
+  }, [options.agentModule, selectReport]);
 
   const createReport = useCallback(async (seed?: Partial<TReport>) => {
     const gen = ++sessionGenRef.current;

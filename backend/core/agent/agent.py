@@ -13,6 +13,7 @@ El cliente LLM y las specs de herramientas viven en ``agent_chat``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import ntpath
@@ -23,19 +24,78 @@ from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
-from backend.core.agent.agent_chat import chat, gated_methods, scrub_secrets
-from backend.core.agent.cancel import RunCancelled, _CancelEvent, _validate_action_paths, await_or_cancel
+from backend.core.agent import agent_tools, drafts, resource_grants
+from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, scrub_secrets
+from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
-from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, lane_for, timeout_ms_for
+from backend.core.ipc_catalog import (
+    allows_raw_output_path,
+    file_tokens_for,
+    lane_for,
+    timeout_ms_for,
+    write_path_keys_for,
+)
 from backend.core.scheduler import get_scheduler
 from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
 
+
+def _schema_values(value: object, segments: tuple[str, ...]) -> list[object]:
+    if not segments:
+        return [value]
+    if segments[0] == "*":
+        children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
+        return [item for child in children for item in _schema_values(child, segments[1:])]
+    return _schema_values(value[segments[0]], segments[1:]) if isinstance(value, dict) and segments[0] in value else []
+
+
+def read_resources(
+    method: str, args: JsonObject, grants: dict[str, JsonObject], drafts_root: Path | None = None,
+) -> list[JsonObject]:
+    """Revisión de cada archivo de lectura del método: archivos concedidos por el
+    humano o borradores de la propia conversación."""
+    revisions: list[JsonObject] = []
+    for schema in file_tokens_for(method):
+        for value in _schema_values(args, schema):
+            if not value or (isinstance(value, str) and value.startswith(("data:", "canvas-asset:"))):
+                continue
+            if not isinstance(value, str):
+                raise ValueError("El archivo del paso no está autorizado; elígelo o usa la entrada de imágenes")
+            draft = drafts.inside(drafts_root, value) if drafts_root is not None else None
+            if draft is not None and draft.is_file():
+                stat = draft.stat()
+                revisions.append({"path": str(draft), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "value": value})
+                continue
+            revisions.append({**resource_grants.check(value, grants), "value": value})
+    return sorted(revisions, key=lambda r: str(r["path"]))
+
+
+def _write_keys(method: str) -> frozenset[str]:
+    keys = write_path_keys_for(method) | {"outputPath", "output_path", "output_dir", "outputDir", "output_folder", "destino"}
+    return keys | {"path"} if allows_raw_output_path(method) else keys
+
+
+def _validate_action_paths(
+    method: str, args: JsonObject, grants: dict[str, JsonObject] | None = None, drafts_root: Path | None = None,
+) -> None:
+    """Lecturas de archivos concedidos o borradores; salidas solo dentro de los borradores."""
+    read_resources(method, args, grants or {}, drafts_root)
+    for key in ("_resolved_file_token_path", "_resolved_output_path"):
+        if args.get(key):
+            raise ValueError("El agente no puede concederse permisos de archivos")
+    for key in _write_keys(method):
+        value = args.get(key)
+        if not value:
+            continue
+        if not isinstance(value, str) or drafts_root is None or drafts.inside(drafts_root, value) is None:
+            raise ValueError("El destino del paso no está autorizado; el agente escribe en sus borradores")
+
 _MAX_TOOL_STEPS = 12
 _MAX_TOOL_RESULT_CHARS = 6_000
+_MAX_RECEIPT_CHARS = 2 * 1024 * 1024
 _MAX_SESSIONS = 50
 _APPROVAL_TTL_MS = 24 * 3600 * 1000
 _INTERRUPTED_RESULT = json.dumps(
@@ -48,31 +108,98 @@ def _now_ms() -> float:
     return time.time() * 1000
 
 
+def fingerprint(method: str, params: object) -> str:
+    """Huella determinista de la intención: método y parámetros normalizados."""
+    canonical = json.dumps({"method": method, "params": params}, sort_keys=True, ensure_ascii=False,
+                           separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def dispatch_key(session_id: str, call_id: str) -> str:
+    """El ``call_id`` del proveedor solo es único dentro de su conversación."""
+    return f"{session_id}:{call_id}"
+
+
+def summarize_result(full: str) -> str:
+    """Resumen para el modelo: el comprobante completo se guarda aparte."""
+    if len(full) <= _MAX_TOOL_RESULT_CHARS:
+        return full
+    preview = full[: _MAX_TOOL_RESULT_CHARS - 200]
+    return json.dumps({"truncated": True, "total_chars": len(full), "preview": preview}, ensure_ascii=False)
+
+
+def result_failed(full: str) -> bool:
+    try:
+        data = json.loads(full)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(data, dict) and ("error" in data or data.get("isError") is True)
+
+
 class AgentStore:
     """Persistencia JSON de sesiones, mensajes y aprobaciones del agente."""
 
     def __init__(self, base_dir: Path | None = None) -> None:
         base = base_dir or user_data_path("ai-agent")
         base.mkdir(parents=True, exist_ok=True)
+        self.base_dir = base
         self._sessions_path = base / "sessions.json"
         self._approvals_path = base / "approvals.json"
+        self._grants_path = base / "grants.json"
+        self._drafts_root = base / "drafts"
         self._dispatches_path = base / "dispatches.json"
         self._messages_dir = base / "messages"
         self._messages_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._sessions: dict[str, JsonObject] = self._read(self._sessions_path)
         self._approvals: dict[str, JsonObject] = self._read(self._approvals_path)
-        self._dispatches: dict[str, JsonObject] = self._read(self._dispatches_path)
+        self._grants: dict[str, JsonObject] = self._read(self._grants_path)
+        self._artifacts_path = base / "artifacts.json"
+        self._artifacts: dict[str, JsonObject] = self._read(self._artifacts_path)
+        self._questions_path = base / "questions.json"
+        self._questions: dict[str, JsonObject] = self._read(self._questions_path)
+        for question in self._questions.values():
+            if question.get("status") == "pending":
+                question["status"] = "interrupted"
+        atomic_write_json(self._questions_path, self._questions)
+        loaded = self._read(self._dispatches_path)
+        # Registros antiguos indexados solo por call_id: se reindexan por sesión.
+        self._dispatches: dict[str, JsonObject] = {
+            (key if ":" in key or not isinstance(rec, dict) or not rec.get("session_id")
+             else dispatch_key(str(rec["session_id"]), str(rec.get("call_id") or key))): rec
+            for key, rec in loaded.items()
+        }
         # Un dispatch "running" al cargar quedó interrumpido: su resultado es
         # incierto y no debe reejecutarse ni servirse como éxito.
-        dirty = False
+        dirty = self._dispatches.keys() != loaded.keys()
         for record in self._dispatches.values():
             if record.get("status") == "running":
-                record["status"] = "interrupted"
+                record["status"] = "uncertain"
                 record["result"] = _INTERRUPTED_RESULT
+                record["summary"] = _INTERRUPTED_RESULT
+                if record.get("method") == "artifact_print":
+                    from backend.core.printing import printer_job_status
+
+                    print_approval = self._approvals.get(str(record.get("approval_id"))) or {}
+                    printer = record.get("printer_name") or (print_approval.get("params") or {}).get("printer_name")
+                    try:
+                        receipt = printer_job_status(str(printer or ""), f"Antares-{record['op_id']}")
+                        record["status"] = "submitted" if receipt.get("submitted") else "uncertain"
+                        record["result"] = json.dumps({**receipt, "recovered": True, "interrupted": not receipt.get("submitted")}, ensure_ascii=False)
+                        record["summary"] = record["result"]
+                    except Exception:
+                        logger.warning("No se pudo verificar el trabajo de impresión %s", record.get("op_id"), exc_info=True)
                 dirty = True
         if dirty:
             self._write_dispatches()
+        consumed = False
+        for record in self._dispatches.values():
+            approval = self._approvals.get(str(record.get("approval_id") or ""))
+            if approval is not None and not approval.get("consumed_by"):
+                approval["consumed_by"] = record.get("op_id") or record.get("call_id")
+                consumed = True
+        if consumed:
+            self._write_approvals()
 
     @staticmethod
     def _read(path: Path) -> dict[str, JsonObject]:
@@ -87,6 +214,9 @@ class AgentStore:
 
     def _write_approvals(self) -> None:
         atomic_write_json(self._approvals_path, self._approvals)
+
+    def _write_grants(self) -> None:
+        atomic_write_json(self._grants_path, self._grants)
 
     def _write_dispatches(self) -> None:
         atomic_write_json(self._dispatches_path, self._dispatches)
@@ -155,6 +285,11 @@ class AgentStore:
                 self._write_sessions()
             self._approvals = {k: a for k, a in self._approvals.items() if a.get("session_id") != session_id}
             self._write_approvals()
+            self.revoke_grants(session_id)
+            if self._artifacts.pop(session_id, None) is not None:
+                atomic_write_json(self._artifacts_path, self._artifacts)
+            self._questions = {key: item for key, item in self._questions.items() if item["session_id"] != session_id}
+            atomic_write_json(self._questions_path, self._questions)
             self._messages_path(session_id).unlink(missing_ok=True)
         return removed
 
@@ -242,6 +377,115 @@ class AgentStore:
 
     # ---- aprobaciones ----
 
+    def add_grants(self, session_id: str, records: list[JsonObject]) -> None:
+        with self._lock:
+            session_grants = self._grants.setdefault(session_id, {})
+            for record in records:
+                session_grants[resource_grants.grant_key(record)] = record
+            self._write_grants()
+
+    def drafts_dir(self, session_id: str) -> Path:
+        safe = "".join(ch for ch in session_id if ch.isalnum() or ch in "-_")[:64]
+        if not safe:
+            raise ValueError("Sesión de agente no válida")
+        return self._drafts_root / safe
+
+    def grants_for(self, session_id: str) -> dict[str, JsonObject]:
+        with self._lock:
+            return {key: dict(value) for key, value in (self._grants.get(session_id) or {}).items()}
+
+    def revoke_grant(self, session_id: str, path: str) -> int:
+        """Retira el acceso a un archivo o carpeta concreta de la conversación."""
+        with self._lock:
+            grants = self._grants.get(session_id) or {}
+            keys = [key for key, record in grants.items() if str(record.get("path")) == path]
+            for key in keys:
+                del grants[key]
+            if keys:
+                self._write_grants()
+            return len(keys)
+
+    def accounts_for(self, session_id: str) -> list[str]:
+        """Cuentas que firmaron aprobaciones de esta conversación."""
+        with self._lock:
+            found = {str((a.get("context") or {}).get("account")) for a in self._approvals.values()
+                     if a.get("session_id") == session_id and a.get("status") == "approved"
+                     and (a.get("context") or {}).get("account")}
+            return sorted(found)
+
+    def revoke_grants(self, session_id: str) -> int:
+        with self._lock:
+            removed = self._grants.pop(session_id, None)
+            if removed is not None:
+                self._write_grants()
+            return len(removed or {})
+
+    def add_artifact(self, session_id: str, artifact: JsonObject) -> JsonObject:
+        record = {**artifact, "session_id": session_id, "created_at": _now_ms()}
+        with self._lock:
+            entry = self._artifacts.setdefault(session_id, {"items": []})
+            existing = next((item for item in entry["items"] if item["id"] == record["id"]), None)
+            if existing is not None:
+                return dict(existing)
+            entry["items"].append(record)
+            atomic_write_json(self._artifacts_path, self._artifacts)
+        return dict(record)
+
+    def artifacts_for(self, session_id: str) -> list[JsonObject]:
+        with self._lock:
+            return [dict(item) for item in (self._artifacts.get(session_id) or {}).get("items", [])]
+
+    def review_artifact(self, session_id: str, artifact_id: str, index: int, sha256: str) -> None:
+        with self._lock:
+            for item in (self._artifacts.get(session_id) or {}).get("items", []):
+                if item["id"] == artifact_id:
+                    item.setdefault("reviewed", {})[str(index)] = sha256
+                    atomic_write_json(self._artifacts_path, self._artifacts)
+                    return
+            raise ValueError("Artefacto no encontrado")
+
+    def dispatch_note(self, session_id: str, op_id: str, note: JsonObject) -> None:
+        with self._lock:
+            for record in self._dispatches.values():
+                if record.get("op_id") == op_id and record.get("session_id") == session_id:
+                    record.update(note)
+                    self._write_dispatches()
+                    return
+            raise ValueError("La operación de impresión no está reservada")
+
+    def add_question(self, session_id: str, op_id: str, params: JsonObject) -> JsonObject:
+        from backend.core.agent.questions import validate
+
+        items = validate(params)
+        with self._lock:
+            question = {"id": op_id, "session_id": session_id, "questions": items, "status": "pending", "answers": {}}
+            self._questions[op_id] = question
+            atomic_write_json(self._questions_path, self._questions)
+            return dict(question)
+
+    def questions_for(self, session_id: str) -> list[JsonObject]:
+        with self._lock:
+            return [dict(item) for item in self._questions.values() if item.get("session_id") == session_id and item.get("status") == "pending"]
+
+    def answer_question(self, session_id: str, question_id: str, answers: JsonObject) -> JsonObject:
+        with self._lock:
+            item = self._questions.get(question_id)
+            if item is None or item.get("session_id") != session_id or item.get("status") != "pending":
+                raise ValueError("La pregunta ya no está activa en esta conversación")
+            keys = {question["id"] for question in item["questions"]}
+            if not isinstance(answers, dict) or set(answers) != keys or any(not isinstance(value, str) or not value.strip() or len(value) > 12000 for value in answers.values()):
+                raise ValueError("Responde todos los datos solicitados")
+            item.update({"answers": answers, "status": "answered"})
+            atomic_write_json(self._questions_path, self._questions)
+            return dict(item)
+
+    def attention(self) -> JsonObject:
+        with self._lock:
+            states = {str(record["session_id"]): "uncertain" for record in self._dispatches.values() if record["status"] == "uncertain"}
+            states.update({str(item["session_id"]): "waiting_approval" for item in self.pending_approvals()})
+            states.update({str(item["session_id"]): "waiting_input" for item in self._questions.values() if item["status"] == "pending"})
+            return states
+
     def create_approval(self, session_id: str, call: JsonObject) -> JsonObject:
         approval = {
             "id": uuid.uuid4().hex[:12],
@@ -249,9 +493,12 @@ class AgentStore:
             "call_id": call["id"],
             "method": call["name"],
             "params": call.get("params") or {},
+            "fingerprint": call.get("fingerprint") or fingerprint(str(call["name"]), call.get("params") or {}),
             "status": "pending",
             "created_at": _now_ms(),
             "decided_at": None,
+            "context": call.get("context") or {},
+            "resources": call.get("resources") or [],
         }
         with self._lock:
             self._approvals[approval["id"]] = approval
@@ -265,7 +512,7 @@ class AgentStore:
             now = _now_ms()
             stale = [
                 a for a in self._approvals.values()
-                if a.get("status") == "pending"
+                if a.get("status") in {"pending", "approved"} and not a.get("consumed_by")
                 and now - float(a.get("created_at") or now) > _APPROVAL_TTL_MS
             ]
             if not stale:
@@ -311,6 +558,11 @@ class AgentStore:
                     return dict(approval)
             return None
 
+    def ensure_approval(self, session_id: str, call: JsonObject) -> JsonObject:
+        """Consulta y creación en una sola sección crítica, también entre callers."""
+        with self._lock:
+            return self.approval_for_call(session_id, str(call["id"])) or self.create_approval(session_id, call)
+
     def deny_pending_approvals(self, session_id: str) -> list[str]:
         self._expire_stale_approvals()
         with self._lock:
@@ -326,37 +578,84 @@ class AgentStore:
 
     # ---- ejecuciones deduplicadas (replay unsafe) ----
 
-    def get_dispatch(self, call_id: str) -> JsonObject | None:
+    def dispatches_for(self, session_id: str) -> list[JsonObject]:
+        """Comprobantes de la conversación, sin el resultado completo."""
         with self._lock:
-            record = self._dispatches.get(call_id)
+            return [{k: v for k, v in record.items() if k != "result"}
+                    for record in self._dispatches.values() if record.get("session_id") == session_id]
+
+    def get_dispatch(self, session_id: str, call_id: str) -> JsonObject | None:
+        with self._lock:
+            record = self._dispatches.get(dispatch_key(session_id, call_id))
             return dict(record) if isinstance(record, dict) else None
 
-    def dispatch_begin(self, call_id: str, session_id: str, method: str) -> JsonObject:
-        """Registra el inicio; si ya existe devuelve el registro previo para que
-        el llamador sirva el resultado guardado en vez de repetir el efecto."""
+    def dispatch_claim(
+        self, session_id: str, call_id: str, method: str, params: JsonObject, approval_id: str | None,
+    ) -> tuple[str, JsonObject]:
+        """Reserva atómica de una operación.
+
+        Devuelve ``("new", registro)`` solo al ganador, que debe iniciar el
+        worker; ``("existing", registro)`` a quien repite la misma intención y
+        ``("conflict", registro)`` si el ``call_id`` ya se usó con otra intención
+        en esta conversación. Con ``approval_id`` la reserva exige una aprobación
+        aprobada, vinculada a la llamada, con la misma huella y sin consumir, y la
+        consume en la misma operación (``("rejected", {"error": ...})`` si no)."""
+        intent = fingerprint(method, params)
+        key = dispatch_key(session_id, call_id)
         with self._lock:
-            existing = self._dispatches.get(call_id)
+            existing = self._dispatches.get(key)
             if isinstance(existing, dict):
-                return dict(existing)
+                same = existing.get("method") == method and existing.get("fingerprint") in (None, intent)
+                return ("existing" if same else "conflict"), dict(existing)
+            approval = None
+            if approval_id is not None:
+                self._expire_stale_approvals()
+                approval = self._approvals.get(approval_id)
+                error = None
+                if (approval is None or approval.get("status") != "approved"
+                        or approval.get("session_id") != session_id or approval.get("call_id") != call_id
+                        or approval.get("method") != method):
+                    error = "La herramienta requiere una aprobación aprobada para esta llamada"
+                elif (approval.get("fingerprint")
+                      or fingerprint(str(approval.get("method")), approval.get("params") or {})) != intent:
+                    error = "Los parámetros no coinciden con los aprobados; vuelve a pedir aprobación"
+                elif approval.get("consumed_by"):
+                    error = "Esta aprobación ya se usó en otra ejecución"
+                if error:
+                    return "rejected", {"error": error}
             record: JsonObject = {
+                "op_id": uuid.uuid4().hex,
                 "call_id": call_id,
                 "session_id": session_id,
                 "method": method,
+                "fingerprint": intent,
+                "approval_id": approval_id,
                 "status": "running",
                 "started_at": _now_ms(),
                 "result": None,
+                "summary": None,
             }
-            self._dispatches[call_id] = record
+            self._dispatches[key] = record
             self._write_dispatches()
-            return dict(record)
+            if approval is not None:
+                approval["consumed_by"] = record["op_id"]
+                self._write_approvals()
+            return "new", dict(record)
 
-    def dispatch_finish(self, call_id: str, status: str, result: str) -> None:
+    def dispatch_finish(self, session_id: str, call_id: str, op_id: str, status: str, result: str) -> None:
         with self._lock:
-            record = self._dispatches.get(call_id)
-            if record is None or record.get("status") != "running":
+            record = self._dispatches.get(dispatch_key(session_id, call_id))
+            if record is None or record.get("status") not in {"running", "uncertain"} or record.get("op_id") != op_id:
                 return
             record["status"] = status
-            record["result"] = result
+            if len(result) > _MAX_RECEIPT_CHARS:
+                receipt = self._dispatches_path.parent / "receipts" / f"{op_id}.json"
+                atomic_write_json(receipt, {"result": result})
+                record["result_ref"] = str(receipt)
+                record["result"] = summarize_result(result)
+            else:
+                record["result"] = result
+            record["summary"] = summarize_result(result)
             record["finished_at"] = _now_ms()
             self._write_dispatches()
 
@@ -464,7 +763,7 @@ class AgentRunner:
             invocable = (
                 mcp_servers.parse_agent_tool(method) is not None
                 or method in gated_methods()
-                or method in ORCHESTRATABLE_METHODS
+                or method in readonly_methods()
             )
             if invocable:
                 result = self._execute_call(
@@ -557,12 +856,57 @@ class AgentRunner:
         if token is not None and token.cancelled:
             raise RunCancelled()
         name = str(call.get("name") or "")
+        if name == "ask_user":
+            question = self._store.add_question(str(call["session_id"]), str(call["op_id"]), call["params"])
+            while True:
+                with self._store._lock:
+                    current = dict(self._store._questions.get(question["id"]) or {"status": "cancelled"})
+                if current["status"] == "cancelled":
+                    raise RunCancelled()
+                if current["status"] == "answered":
+                    return json.dumps({"answers": current["answers"]}, ensure_ascii=False)
+                if token and token.wait(0.1):
+                    with self._store._lock:
+                        if question["id"] in self._store._questions:
+                            self._store._questions[question["id"]]["status"] = "cancelled"
+                        atomic_write_json(self._store._questions_path, self._store._questions)
+                    raise RunCancelled()
+                if token is None:
+                    time.sleep(0.1)
+        if name == "artifact_print":
+            from backend.core.agent.artifacts import print_artifact
+
+            try:
+                return json.dumps(print_artifact(self._store, str(call["session_id"]), call["params"], str(call["op_id"]),
+                                                cancelled=(lambda: token.cancelled) if token else None), ensure_ascii=False)
+            except Exception:
+                record = self._store.get_dispatch(str(call["session_id"]), str(call["id"]))
+                if record and record.get("job_id"):
+                    raise RunCancelled() from None
+                raise
         mcp_ref = mcp_servers.parse_agent_tool(name)
         if mcp_ref is not None:
             params = call.get("params")
             try:
-                result = mcp_servers.call_tool(mcp_ref[0], name, params if isinstance(params, dict) else {}, advertised=True)
-                return json.dumps(result, ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
+                options = {"approved_context": call["approved_context"]} if "approved_context" in call else {}
+                if token:
+                    options["cancelled"] = lambda: token.cancelled
+                result = mcp_servers.call_tool(mcp_ref[0], name, params if isinstance(params, dict) else {}, advertised=True,
+                                               **options)
+                return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
+            except (mcp_servers.mcp_client.McpCancelled, mcp_servers.mcp_client.McpUncertain):
+                raise RunCancelled() from None
+            except Exception as err:
+                return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
+        session_id = call.get("session_id")
+        if name in agent_tools.SPECS:
+            try:
+                if not session_id:
+                    raise ValueError("Esta herramienta requiere una conversación")
+                raw_params = call.get("params")
+                tool_args: JsonObject = dict(raw_params) if isinstance(raw_params, dict) else {}
+                result = agent_tools.run(name, tool_args, self._store, str(session_id))
+                return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
             except Exception as err:
                 return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
         fn = self._handler_getter(name)
@@ -571,21 +915,27 @@ class AgentRunner:
         params = call.get("params")
         try:
             args = dict(params) if isinstance(params, dict) else {}
+            grants = self._store.grants_for(str(session_id)) if session_id else {}
+            drafts_root = self._store.drafts_dir(str(session_id)) if session_id else None
+            if drafts_root is not None:
+                args = drafts.bind_outputs(args, _write_keys(name), drafts_root)
+            granted = {str(r["value"]) for r in read_resources(name, args, grants, drafts_root)}
+            granted |= {str(args[k]) for k in _write_keys(name) if isinstance(args.get(k), str) and args[k]}
 
             def check_paths(value: object) -> None:
                 if isinstance(value, dict):
                     for key, child in value.items():
-                        if key == "_file_grants" or key.startswith("_resolved_"):
+                        if key in ("_file_grants", "_flow_file_grants") or key.startswith("_resolved_"):
                             raise ValueError("El agente no puede concederse permisos de archivos")
                         check_paths(child)
                 elif isinstance(value, list):
                     for child in value:
                         check_paths(child)
-                elif isinstance(value, str) and ntpath.isabs(value):
+                elif isinstance(value, str) and ntpath.isabs(value) and value not in granted:
                     raise ValueError("Usa los diálogos de Antares para autorizar archivos; la aprobación no autoriza rutas")
 
             check_paths(args)
-            _validate_action_paths(name, args, {})
+            _validate_action_paths(name, args, grants, drafts_root)
             lane = lane_for(name)
             if lane == "sync":
                 result = fn(args)
@@ -602,7 +952,11 @@ class AgentRunner:
                 except FutureTimeoutError:
                     future.cancel()
                     raise ValueError("La herramienta excedió su tiempo; puede seguir ejecutándose, comprueba el resultado antes de repetirla") from None
-            return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)[:_MAX_TOOL_RESULT_CHARS]
+            if session_id and isinstance(result, dict):
+                from backend.core.agent.artifacts import backend_pdf
+
+                result = backend_pdf(self._store, str(session_id), name, result, str(call.get("op_id") or uuid.uuid4().hex))
+            return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
         except RunCancelled:
             raise
         except Exception as err:  # el error vuelve al modelo como resultado de la tool
@@ -637,7 +991,7 @@ class AgentRunner:
                     name = str(call.get("name") or "")
                     is_mcp = mcp_servers.parse_agent_tool(name) is not None
                     call["gated"] = is_mcp or name in gated
-                    call["allowed"] = call["gated"] or name in ORCHESTRATABLE_METHODS
+                    call["allowed"] = call["gated"] or name in readonly_methods()
                     call["status"] = "queued"
                     call["result"] = None
                 self._store.append_message(

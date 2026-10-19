@@ -9,6 +9,7 @@ const INTERRUPTED_RESULT = JSON.stringify({
   error: 'Acción interrumpida: el resultado puede ser incierto. Compruébalo antes de repetirla.',
 });
 const NOTICE_KIND = 'antares.notice';
+const CONTEXT_MARKER = '[Contexto de Antares]';
 
 const shared = {
   deps: null, // {pi, chord, aiOpenai, aiAnthropic, bridge}
@@ -17,14 +18,19 @@ const shared = {
   convToSession: new Map(), // conversationId -> sessionId público
   watchers: new Map(), // conversationId -> AgentEventStream
   toolSpecs: new Map(), // name -> {gated, kind}
-  approvalsByCall: new Map(), // callId -> approvalId
+  approvalsByCall: new Map(),
   liveApprovals: new Set(), // approvalId con espera beforeTool activa
   decisionWaiters: new Map(), // approvalId -> Set<resolve>
   rounds: new Map(), // conversationId -> rondas de herramientas del run
+  waitingInput: new Set(),
   providers: new Map(), // providerId -> {info, modelIds:Set}
   providerOverrides: new Map(), // providerId -> Provider (tests)
+  nativeTools: null,
+  attachments: new Map(),
+  dialog: null,
   INTERRUPTED_RESULT,
   NOTICE_KIND,
+  CONTEXT_MARKER,
 };
 
 function bridge(method, params) {

@@ -1,9 +1,9 @@
-"""Registro de servidores MCP del usuario (Conexiones y agente).
+"""Registro de servidores MCP del usuario para el agente.
 
 Los servidores se guardan en ``mcp_servers.json`` dentro de datos de usuario;
 los secretos (cabeceras HTTP, env de procesos stdio) viven en el vault sellado
-de ``core.integrations.vault`` y nunca salen del backend — el listado público
-solo expone los nombres de las claves.
+de ``core.integrations.vault`` y nunca salen del backend — el listado público solo
+expone los nombres de las claves.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import re
 import threading
 import time
 import urllib.parse
+from collections.abc import Callable
 from pathlib import Path
 
 from backend.core.integrations import http_guard, mcp_client, vault
@@ -84,6 +85,7 @@ def _public(server: JsonObject) -> JsonObject:
         "args": server.get("args", []),
         "secret_keys": sorted((secrets.get("headers") or {}).keys() or (secrets.get("env") or {}).keys()),
         "tools_count": server.get("tools_count"),
+        "disabled_tools": server.get("disabled_tools", []),
     }
 
 
@@ -178,10 +180,46 @@ def _secrets(server_id: str) -> JsonObject:
 
 
 def _stdio_env(secrets: JsonObject) -> dict[str, str]:
-    env = dict(os.environ)
+    runtime_keys = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "USERPROFILE",
+                    "HOME", "APPDATA", "LOCALAPPDATA", "LANG", "LC_ALL", "LC_CTYPE", "NODE_EXTRA_CA_CERTS"}
+    env = {key: value for key, value in os.environ.items() if key.upper() in runtime_keys}
     for k, v in (secrets.get("env") or {}).items():
         env[str(k)] = str(v)
     return env
+
+
+def _redact(value: object, secrets: JsonObject) -> object:
+    if isinstance(value, dict):
+        return {str(_redact(key, secrets)): _redact(child, secrets) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_redact(child, secrets) for child in value]
+    if not isinstance(value, str):
+        return value
+    for group in ("headers", "env"):
+        for secret in (secrets.get(group) or {}).values():
+            if isinstance(secret, str) and secret:
+                value = value.replace(secret, "<REDACTED>")
+                if secret.lower().startswith("bearer ") and len(secret[7:]) >= 8:
+                    value = value.replace(secret[7:], "<REDACTED>")
+    return value
+
+
+def approval_context(server_id: str, advertised_name: str, *, force: bool = True) -> JsonObject:
+    """Config y schema actuales, sin exponer credenciales en una aprobación."""
+    server = get_server(server_id)
+    try:
+        tools = list_tools(server_id, force=force)
+    except Exception:
+        raise ValueError("No se pudo verificar la herramienta MCP; comprueba su conexión antes de aprobar") from None
+    real_name = _resolve_tool_name(server_id, advertised_name, advertised=True)
+    tool = next(t for t in tools if t["name"] == real_name)
+    if not tool.get("enabled", True):
+        raise ValueError("La herramienta MCP está deshabilitada; selecciónala en Conexiones")
+    config = {k: server.get(k) for k in ("id", "transport", "url", "command", "args", "tool_revision")}
+    canonical = json.dumps({"config": config, "tool": tool, "credentials": _secrets(server_id)},
+                           sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return {"account": f"MCP: {server['name']}", "server_id": server_id, "tool": real_name,
+            "tool_version": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
 
 
 def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
@@ -189,21 +227,22 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
     with _lock:
         cached = _tools_cache.get(server_id)
         if cached and not force and time.time() - cached[0] < _TOOLS_TTL_S:
-            return cached[1]
+            return [{**tool, "enabled": tool["name"] not in server.get("disabled_tools", [])} for tool in cached[1]]
     secrets = _secrets(server_id)
     if server["transport"] == "http":
         tools = mcp_client.list_tools_http(server["url"], secrets.get("headers") or {})
     else:
         tools = mcp_client.list_tools_stdio(server["command"], server.get("args") or [], _stdio_env(secrets))
-    clean = [
-        {
-            "name": str(t.get("name") or ""),
+    clean = []
+    for tool in tools:
+        t = _redact(tool, secrets)
+        if not isinstance(t, dict) or not t.get("name") or t["name"] != tool.get("name"):
+            continue
+        clean.append({
+            "name": str(t["name"]),
             "description": str(t.get("description") or "")[:300],
             "inputSchema": t.get("inputSchema") if isinstance(t.get("inputSchema"), dict) else {"type": "object", "properties": {}},
-        }
-        for t in tools
-        if isinstance(t, dict) and t.get("name")
-    ]
+        })
     with _lock:
         _tools_cache[server_id] = (time.time(), clean)
         servers = _load()
@@ -211,23 +250,67 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
             if s.get("id") == server_id:
                 s["tools_count"] = len(clean)
         _save(servers)
-    return clean
-
-
-def call_tool(server_id: str, tool: str, args: JsonObject, *, advertised: bool = False) -> JsonObject:
     server = get_server(server_id)
-    secrets = _secrets(server_id)
-    tool = _resolve_tool_name(server_id, tool, advertised=advertised)
-    if server["transport"] == "http":
-        result = mcp_client.call_tool_http(server["url"], secrets.get("headers") or {}, tool, args)
-    else:
-        result = mcp_client.call_tool_stdio(
-            server["command"],
-            server.get("args") or [],
-            _stdio_env(secrets),
-            tool,
-            args,
-        )
+    return [{**tool, "enabled": tool["name"] not in server.get("disabled_tools", [])} for tool in clean]
+
+
+def set_tool_enabled(server_id: str, tool: str, enabled: bool) -> JsonObject:
+    tools = list_tools(server_id)
+    if not any(item["name"] == tool for item in tools):
+        raise ValueError("La herramienta MCP ya no está disponible; vuelve a listar el servidor")
+    with _lock:
+        servers = _load()
+        server = next((s for s in servers if s["id"] == server_id), None)
+        if server is None:
+            raise ValueError("El servidor MCP se desconectó")
+        disabled = set(server.get("disabled_tools") or [])
+        if (tool not in disabled) != enabled:
+            if enabled:
+                disabled.discard(tool)
+            else:
+                disabled.add(tool)
+            server["disabled_tools"] = sorted(disabled)
+            server["tool_revision"] = int(server.get("tool_revision") or 0) + 1
+            _save(servers)
+    return {"name": tool, "enabled": enabled}
+
+
+def call_tool(
+    server_id: str, tool: str, args: JsonObject, *, advertised: bool = False,
+    cancelled: Callable[[], bool] | None = None,
+    approved_context: JsonObject | None = None,
+) -> JsonObject:
+    with _lock:
+        if approved_context is not None and approval_context(server_id, tool, force=False) != approved_context:
+            raise ValueError("La configuración MCP cambió después de aprobar; solicita una nueva aprobación")
+        server = get_server(server_id)
+        secrets = _secrets(server_id)
+        tool = _resolve_tool_name(server_id, tool, advertised=advertised)
+        if tool in server.get("disabled_tools", []):
+            raise ValueError("La herramienta MCP está deshabilitada; selecciónala en Conexiones")
+    try:
+        if server["transport"] == "http":
+            result = mcp_client.call_tool_http(server["url"], secrets.get("headers") or {}, tool, args,
+                                              **({"cancelled": cancelled} if cancelled else {}))
+        else:
+            result = mcp_client.call_tool_stdio(
+                server["command"], server.get("args") or [], _stdio_env(secrets), tool, args,
+                **({"cancelled": cancelled} if cancelled else {}),
+            )
+    except mcp_client.McpCancelled:
+        raise
+    except mcp_client.McpUncertain as err:
+        if advertised:
+            raise mcp_client.McpUncertain(str(_redact(str(err), secrets))) from None
+        raise
+    except Exception as err:
+        if advertised:
+            raise ValueError(_redact(str(err), secrets)) from None
+        raise
+    if advertised:
+        cleaned = _redact(result, secrets)
+        if isinstance(cleaned, dict):
+            result = cleaned
     return mcp_client.normalize_result(result)
 
 

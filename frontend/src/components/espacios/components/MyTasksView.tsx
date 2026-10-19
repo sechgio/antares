@@ -65,7 +65,6 @@ export default function MyTasksView({
           </div>
           <div>
             <h1 className="text-lg font-semibold text-[var(--text-primary)]">Mis tareas</h1>
-            <p className="text-xs text-[var(--text-muted)]">Trabajo asignado en todos tus espacios y proyectos.</p>
           </div>
         </div>
         <div className="mt-4 grid gap-2 md:grid-cols-5">

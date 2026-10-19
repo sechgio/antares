@@ -303,7 +303,7 @@ function _assertAllowedRawOutputPath(outRaw) {
   }
 }
 
-function validateAndResolveWriteParams(params, win, method, options = {}) {
+function validateAndResolveWriteParams(params, win, method) {
   if (!params || typeof params !== 'object') return params;
   if ('_resolved_output_path' in params || '_write_token' in params) {
     params = { ...params };
@@ -332,19 +332,7 @@ function validateAndResolveWriteParams(params, win, method, options = {}) {
       throw new Error(`invalid output path for ${key}`);
     }
     if (!value.startsWith('antares-write_')) {
-      const { isPathInside, hasSymlinkAncestor } = require('./path-allowlist');
-      const verifiedWrite = path.isAbsolute(value) && Array.isArray(options.verifiedWriteRoots)
-        && options.verifiedWriteRoots.some((root) => (
-          typeof root === 'string' && path.isAbsolute(root)
-          && isPathInside(root, value)
-        ));
-      if (verifiedWrite) {
-        if ((fs.existsSync(value) && fs.lstatSync(value).isSymbolicLink()) || hasSymlinkAncestor(value)) {
-          throw new Error('symlink no permitido en ruta de salida');
-        }
-      } else {
-        _assertAllowedRawOutputPath(value);
-      }
+      _assertAllowedRawOutputPath(value);
       continue;
     }
     const { resolveCapability } = require('./file-capabilities');

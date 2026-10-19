@@ -64,7 +64,8 @@ function Row({
       ) : (
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors duration-150 group-hover:border-[var(--accent-primary)] group-hover:text-[var(--text-primary)]">
           <Plug size={11} />
-          Conectar
+          {p.state === 'missing_scopes' ? 'Faltan permisos' : p.state === 'reauth_required' ? 'Volver a conectar'
+            : p.state === 'unavailable' ? 'Sin verificar' : p.state === 'connecting' ? 'Conectando…' : 'Conectar'}
         </span>
       )}
     </button>
@@ -137,7 +138,7 @@ export default function ConnectionsView() {
   const disconnect = async (p: ConnectionProviderSpec) => {
     const ok = await confirm({
       title: `Desconectar ${p.label}`,
-      description: `Se eliminarán los tokens de ${p.label} guardados en este equipo. Las apps conectadas perderán el acceso.`,
+      description: `Se eliminarán los tokens de ${p.label} guardados en este equipo.`,
       confirmLabel: 'Desconectar',
       type: 'destructive',
     });
@@ -247,7 +248,7 @@ export default function ConnectionsView() {
             <div>
               <h2 className="text-sm font-semibold text-[var(--text-primary)]">Conexiones</h2>
               <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                Autoriza apps externas vía OAuth; el agente firma sus llamadas con estas cuentas.
+                Autoriza apps externas vía OAuth para usarlas desde Antares.
               </p>
             </div>
             <div className="relative w-60 shrink-0">

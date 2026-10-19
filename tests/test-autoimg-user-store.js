@@ -56,6 +56,9 @@ store.saveTokens({ access_token: 'a', refresh_token: 'r', expiry_date: 123, id_t
 let tokens = store.loadTokens();
 assert(tokens.access_token === 'a' && tokens.refresh_token === 'r' && tokens.expiry_date === 123, 'tokens round-trip');
 assert(tokens.id_token === undefined, 'campos extra de tokens descartados');
+store.saveTokens({ ...tokens, scope: 'https://www.googleapis.com/auth/spreadsheets' });
+tokens = store.loadTokens();
+assert(tokens.scope === 'https://www.googleapis.com/auth/spreadsheets', 'conserva los permisos otorgados por Google');
 
 const capturedUserKey = scope.userKeyFromEmail('captured-scope@example.com');
 store.saveTokensForUserKey(capturedUserKey, { access_token: 'captured', refresh_token: 'r2', expiry_date: 456 });

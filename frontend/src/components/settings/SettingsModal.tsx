@@ -13,7 +13,7 @@ const HistoryView = React.lazy(() => import('../history/HistoryView'));
 const PanelView = React.lazy(() => import('./PanelView'));
 const PetdexView = React.lazy(() => import('./PetdexView'));
 const PluginsView = React.lazy(() => import('./PluginsView'));
-const ConnectionsView = React.lazy(() => import('../connections/ConnectionsView'));
+const ConnectionsView = React.lazy(() => import('../connections'));
 
 const sectionFallback = (
   <div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">

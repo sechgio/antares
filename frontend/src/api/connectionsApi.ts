@@ -1,6 +1,14 @@
 import { _invoke } from './core';
 
-export interface ConnectionProviderSpec {
+interface ConnectionState {
+  state?: 'connecting' | 'unconfigured' | 'unavailable' | 'disconnected' | 'reauth_required' | 'missing_scopes' | 'connected';
+  status_message?: string;
+  missing_scopes?: string[];
+  /** Conexión con la app OAuth pública de Antares: no pide Client ID. */
+  public_app?: boolean;
+}
+
+export interface ConnectionProviderSpec extends ConnectionState {
   id: string;
   label: string;
   description: string;
@@ -24,18 +32,6 @@ export interface ConnectionCategory {
   label: string;
 }
 
-export interface ConnectionStatus {
-  provider: string;
-  configured: boolean;
-  client_id_masked?: string;
-  connected: boolean;
-  account?: string | null;
-  expiry_date?: number | null;
-  scope?: string | null;
-  auth_type: string;
-  redirect_hint: string;
-}
-
 export const connectionsApi = {
   connectionsProviders: () =>
     _invoke<{ providers: ConnectionProviderSpec[]; categories: ConnectionCategory[] }>(
@@ -52,6 +48,4 @@ export const connectionsApi = {
     }),
   connectionsDisconnect: (provider: string) =>
     _invoke<{ success: boolean }>('connections_disconnect', { provider }),
-  connectionsStatus: (provider: string) =>
-    _invoke<ConnectionStatus>('connections_status', { provider }),
 };

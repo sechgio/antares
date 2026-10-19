@@ -1,17 +1,20 @@
 'use strict';
 
 /**
- * Sesión OAuth genérica por proveedor de conexión (Configuración → Conexiones).
+ * Sesión OAuth genérica por proveedor de conexión (Conexiones).
  *
  * Generaliza el patrón de spotify-session/google-session: config y tokens por
  * proveedor en secure-storage, loopback 127.0.0.1 + state (+ PKCE si el spec lo
  * pide) y canje de código según `auth.type` del catálogo compartido.
  *
  * Tras cada alta/refresco se espeja el token al vault del backend
- * (`connection_token_*`); las claves nunca salen de los vaults cifrados.
+ * (`connections_token_*`), que es quien renueva los tokens; las claves nunca
+ * salen de los vaults cifrados.
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const {
   readSecureJson,
   writeSecureJson,
@@ -56,7 +59,7 @@ function _enqueueMirror(provider, task, onError) {
 
 function _mirrorToBackend(provider, tokens, cfg) {
   if (!tokens || !tokens.access_token) return;
-  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connection_token_put', {
+  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connections_token_put', {
     provider,
     tokens: {
       access_token: tokens.access_token,
@@ -76,13 +79,40 @@ function _mirrorToBackend(provider, tokens, cfg) {
 }
 
 function _mirrorDelete(provider) {
-  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connection_token_delete', { provider }), () => {});
+  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connections_token_delete', { provider }), () => {});
+}
+
+// App OAuth pública de Antares (cliente instalado: su secreto no es
+// confidencial): variables de build/entorno ANTARES_<PROVEEDOR>_OAUTH_CLIENT_ID
+// y _SECRET, o resources/oauth-clients.json del paquete. La configuración que
+// guardó el usuario conserva la prioridad para no romper sus conexiones.
+function publicOAuthConfig(provider) {
+  const key = String(provider).toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  let data = {
+    client_id: process.env[`ANTARES_${key}_OAUTH_CLIENT_ID`],
+    client_secret: process.env[`ANTARES_${key}_OAUTH_CLIENT_SECRET`],
+  };
+  if (!data.client_id && process.resourcesPath) {
+    try {
+      const all = JSON.parse(fs.readFileSync(path.join(process.resourcesPath, 'oauth-clients.json'), 'utf8'));
+      data = (all && typeof all[provider] === 'object' && all[provider]) || {};
+    } catch { /* sin app pública empaquetada */ }
+  }
+  return {
+    clientId: String(data.client_id || '').trim(),
+    clientSecret: String(data.client_secret || '').trim(),
+  };
 }
 
 function loadOAuthConfig(provider) {
   const cfg = readSecureJson(_oauthConfigFile(provider), _oauthConfigNs(provider));
+  const clientId = String((cfg && cfg.client_id) || '').trim();
+  if (!clientId) {
+    const shared = publicOAuthConfig(provider);
+    if (shared.clientId) return { ...shared, publicApp: true };
+  }
   return {
-    clientId: String((cfg && cfg.client_id) || '').trim(),
+    clientId,
     clientSecret: String((cfg && cfg.client_secret) || '').trim(),
   };
 }
@@ -92,6 +122,7 @@ function oauthConfigStatus(provider) {
   return {
     configured: Boolean(cfg.clientId),
     client_id_masked: cfg.clientId ? maskClientId(cfg.clientId) : undefined,
+    public_app: Boolean(cfg.publicApp),
   };
 }
 
@@ -122,7 +153,7 @@ function requireOAuthConfig(provider) {
   const cfg = loadOAuthConfig(provider);
   if (!cfg.clientId) {
     throw new Error(
-      `Credenciales de ${spec.label} no configuradas. En Configuración → Conexiones guarda el Client ID de tu app.`,
+      `Credenciales de ${spec.label} no configuradas. En Conexiones guarda el Client ID de tu app.`,
     );
   }
   return cfg;
@@ -203,7 +234,7 @@ async function _refreshTokens(provider, tokens) {
   if (!tokens) return null;
   const generation = _tokenGenerations.get(provider) || 0;
   await _mirrorPromises.get(provider);
-  const result = await require('./ipc-router')._callBackend('connection_token_refresh', { provider });
+  const result = await require('./ipc-router')._callBackend('connections_token_refresh', { provider });
   if ((_tokenGenerations.get(provider) || 0) !== generation) return null;
   if (!result || !result.tokens || !result.tokens.access_token) return null;
   return _saveTokens(provider, { ...result.tokens, account: tokens.account || result.tokens.account }, false);
@@ -276,10 +307,10 @@ async function beginConnect(provider, onComplete, onError) {
     callbackPath: spec.auth.callback_path,
     onCode: async (code) => {
       try {
-        const tokens = await _exchangeCode(provider, code);
+        await _exchangeCode(provider, code);
         await probeAccount(provider);
         const status = await getStatus(provider);
-        onComplete({ ...status, connected: Boolean(tokens) });
+        onComplete(status);
       } catch (err) {
         onError(err);
       } finally {
@@ -372,17 +403,47 @@ async function probeAccount(provider) {
   }
 }
 
+// Los proveedores no devuelven los scopes tal como se pidieron: Google
+// expande email/profile a userinfo.*, Microsoft omite offline_access (la
+// renovación lo demuestra) y puede prefijar los de Graph con su recurso.
+const SCOPE_ALIASES = {
+  email: ['https://www.googleapis.com/auth/userinfo.email'],
+  profile: ['https://www.googleapis.com/auth/userinfo.profile'],
+};
+
+function scopeGranted(granted, scope) {
+  if (scope === 'offline_access') return true;
+  return granted.some((value) => value === scope || value.endsWith(`/${scope}`)
+    || (SCOPE_ALIASES[scope] || []).includes(value));
+}
+
 async function getStatus(provider) {
   const spec = getProvider(provider);
   const cfg = oauthConfigStatus(provider);
-  const tokens = loadTokens(provider);
-  const connected = Boolean(tokens && tokens.access_token);
+  let tokens = loadTokens(provider);
+  const expired = !!tokens?.expiry_date && tokens.expiry_date <= Date.now();
+  if (expired && tokens.refresh_token) tokens = await getValidTokens(provider);
+  const granted = String(tokens?.scope || '').split(/[\s,]+/).filter(Boolean);
+  const missingScopes = (spec.auth.scopes || []).filter((scope) => !scopeGranted(granted, scope));
+  const current = !!tokens?.access_token && (!tokens.expiry_date || tokens.expiry_date > Date.now());
+  const state = _pending.has(provider) ? 'connecting' : !cfg.configured ? 'unconfigured'
+    : expired && !tokens ? 'unavailable' : !tokens?.access_token ? 'disconnected'
+      : !current ? 'reauth_required' : missingScopes.length ? 'missing_scopes' : 'connected';
+  const connected = state === 'connected';
+  const messages = { connecting: 'Completa la autorización en el navegador', unconfigured: 'Falta registrar y configurar una aplicación OAuth',
+    unavailable: 'No se pudo renovar la autorización; comprueba la conexión y vuelve a conectar si continúa',
+    disconnected: 'Cuenta desconectada', reauth_required: 'La autorización venció; vuelve a conectar la cuenta',
+    missing_scopes: 'Faltan permisos; vuelve a autorizar la cuenta', connected: 'Autorización vigente' };
   return {
     provider,
     configured: cfg.configured,
     client_id_masked: cfg.client_id_masked,
+    public_app: cfg.public_app,
     connected,
-    account: connected ? (tokens.account || null) : null,
+    state,
+    status_message: messages[state],
+    missing_scopes: missingScopes,
+    account: tokens?.account || null,
     expiry_date: tokens ? tokens.expiry_date || null : null,
     scope: tokens ? tokens.scope || null : null,
     auth_type: spec.auth.type,
@@ -398,6 +459,7 @@ async function disconnect(provider) {
 }
 
 module.exports = {
+  scopeGranted,
   oauthConfigStatus,
   saveOAuthConfig,
   loadOAuthConfig,

@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 
 from .layout import CUADRANTE_LABEL
 
-MAX_IMAGES_PER_PAGE = 6
 MAX_PAGES = 1000
 
 

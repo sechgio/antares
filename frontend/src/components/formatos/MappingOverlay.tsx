@@ -244,8 +244,6 @@ export default function MappingOverlay({
         onClick={(event) => event.stopPropagation()}
         onMouseDown={startMove}
         onKeyDown={(event) => {
-          // Las flechas del asa de redimensionar burbujean hasta aquí: sin esta
-          // guarda también moverían el recuadro y pisarían el redimensionado.
           if (event.target !== event.currentTarget) return;
           const step = event.shiftKey ? 10 : 1;
           if (event.key === 'ArrowLeft') { event.preventDefault(); nudgeBox(-step, 0); }
@@ -283,7 +281,6 @@ export default function MappingOverlay({
           <span className="inline-flex items-center gap-1"><Move size={11} /> Mover</span>
           <span className="inline-flex items-center gap-1"><ZoomIn size={11} /> Redimensionar</span>
         </div>
-        <p className="mt-1 text-[var(--text-muted)]">Haz clic en la página, arrastra el recuadro o edita los valores manualmente.</p>
       </div>
     </div>
   );

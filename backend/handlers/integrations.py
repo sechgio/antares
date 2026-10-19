@@ -1,10 +1,4 @@
-"""Handlers IPC de integraciones: tokens OAuth de Conexiones y proveedores IA.
-
-``connection_token_*`` son internos (``internal`` del catálogo): los llama
-Electron para espejar en el vault del backend los tokens OAuth de las cuentas
-conectadas y para pedir rotaciones. ``ai_provider_*`` administra la
-configuración (clave, base_url, modelo) que el agente y el chat leen del vault.
-"""
+"""Configuración de proveedores IA (BYOK) y espejo de tokens OAuth de Conexiones."""
 
 from __future__ import annotations
 
@@ -18,7 +12,7 @@ from backend.handlers.common import validate_params, with_locale
 @with_locale
 @validate_params("provider", "tokens")
 def _connection_token_put(params: JsonObject) -> JsonObject:
-    """Espeja tokens OAuth gestionados por Electron en el vault del backend."""
+    """Espeja en el vault del backend los tokens OAuth gestionados por Electron."""
     provider = str(params["provider"])
     tokens = params["tokens"]
     if not isinstance(tokens, dict) or not isinstance(tokens.get("access_token"), str):
@@ -97,9 +91,9 @@ def _ai_provider_status(params: JsonObject) -> JsonObject:
 
 
 HANDLERS = {
-    "connection_token_put": _connection_token_put,
-    "connection_token_delete": _connection_token_delete,
-    "connection_token_refresh": _connection_token_refresh,
+    "connections_token_put": _connection_token_put,
+    "connections_token_delete": _connection_token_delete,
+    "connections_token_refresh": _connection_token_refresh,
     "ai_providers_list": _ai_providers_list,
     "ai_provider_save": _ai_provider_save,
     "ai_provider_delete": _ai_provider_delete,

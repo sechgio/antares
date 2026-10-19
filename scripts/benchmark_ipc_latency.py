@@ -339,7 +339,6 @@ def build_params(fixtures: dict[str, Any], setup: dict[str, Any], methods: list[
             "informes_v2_get": {"id": setup.get("informe_id", "audit-missing")},
             "informes_v2_render_html": {"report": setup.get("informe_report", {})},
             "informes_v2_update": {"id": "", "report": None},
-            "is_video": {"path": str(output_dir / "missing.bin")},
             "panel_aviso_corte_compute_match": {
                 "rows": [{"ID": "A001", "DIRECCION": "Calle 1"}],
                 "key_column": "ID",

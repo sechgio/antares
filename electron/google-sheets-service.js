@@ -179,6 +179,7 @@ async function exchangeCode(code, redirectUri) {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
+    ...(typeof data.scope === 'string' ? { scope: data.scope } : {}),
   };
   const email = await _resolveGoogleEmail(tokens.access_token);
   if (!email) {
@@ -236,6 +237,7 @@ async function getAuthStatus() {
           access_token: tokens.access_token,
           refresh_token: tokens.refresh_token,
           expiry_date: tokens.expiry_date,
+          ...(typeof tokens.scope === 'string' ? { scope: tokens.scope } : {}),
         });
       }
     }

@@ -151,7 +151,7 @@ async function main() {
           return {
             ok: true,
             status: 200,
-            json: async () => ({ access_token: 'AT-B', refresh_token: 'RT-B', expires_in: 3600 }),
+            json: async () => ({ access_token: 'AT-B', refresh_token: 'RT-B', expires_in: 3600, scope: 'verified-granted-scope' }),
           };
         }
         if (u.includes('oauth2/v2/userinfo')) {
@@ -163,6 +163,7 @@ async function main() {
       const { redirect_uri } = await svc.beginBrowserOAuthFlow(() => {}, () => {});
       const tokens = await svc.exchangeCode('code-B', redirect_uri);
       assert(tokens.access_token === 'AT-B', 'exchangeCode devuelve los tokens de la cuenta nueva');
+      assert(tokens.scope === 'verified-granted-scope', 'exchangeCode conserva los scopes otorgados');
       assert(
         events.join(',') === 'setActiveUser:cuentaB@example.com,saveTokensForUserKey,clearTokensLegacyPaths',
         'identidad resuelta antes de persistir: un solo saveTokensForUserKey en el scope de la cuenta B (no pisa cuenta A)',

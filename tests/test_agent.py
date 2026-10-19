@@ -30,8 +30,10 @@ def test_gated_methods_exclude_readonly_and_denied():
     gated = set(agent_chat.gated_methods())
     safe = set(ORCHESTRATABLE_METHODS)
     assert gated.isdisjoint(safe)
-    assert gated <= set(backend_methods())
-    for banned in ("ai_provider_save", "connection_token_put", "db_clear"):
+    from backend.core.agent import agent_tools
+
+    assert gated <= set(backend_methods()) | set(agent_tools.SPECS)
+    for banned in ("ai_provider_save", "connections_token_put", "db_clear"):
         assert banned not in gated
     # hay métodos con efectos en el catálogo que sí quedan tras la puerta
     assert len(gated) > 0
@@ -62,12 +64,12 @@ def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style)
         s["name"]: s["input_schema"] for s in seen["tools"]}
     assert wire[mcp_servers.agent_tool_name("demo", "search")] == schema
     assert wire["canvas_get"]["required"] == ["id"]
-    assert "document" in wire["canvas_save"]["properties"]
+    assert "canvas_save" not in wire and wire["canvas_fill_fields"]["required"] == ["id", "expected_updated_at", "values"]
     assert wire["informes_v2_update"]["required"] == ["id", "report"]
     assert {"files", "destino"} <= wire["process_start"]["properties"].keys()
     assert {"formato", "calidad", "conversion_enabled", "mapping_path", "sequence_mode"} <= wire["process_start"]["properties"].keys()
     assert all(not k.startswith("_") for s in wire.values() for k in s.get("properties", {}))
-    assert "connection_token_refresh" not in wire
+    assert "connections_token_refresh" not in wire
 
 
 def test_tools_list_projection(monkeypatch):
@@ -77,14 +79,14 @@ def test_tools_list_projection(monkeypatch):
         agent_chat,
         "tool_specs",
         lambda: [
-            {"name": "formats", "gated": False},
+            {"name": "flows_list", "gated": False},
             {"name": "canvas_save", "gated": True},
             {"name": "mcp__srv1__search", "gated": True},
         ],
     )
     tools = agent_handler._tools_list({})["tools"]
     by_name = {t["name"]: t for t in tools}
-    assert by_name["formats"] == {"name": "formats", "gated": False, "kind": "backend"}
+    assert by_name["flows_list"] == {"name": "flows_list", "gated": False, "kind": "backend"}
     assert by_name["canvas_save"]["gated"] is True
     assert by_name["mcp__srv1__search"]["kind"] == "mcp"
 
@@ -92,9 +94,9 @@ def test_tools_list_projection(monkeypatch):
 def test_approval_flow(tmp_path):
     store = _store(tmp_path)
     s = store.create_session("ollama", "m", "t")
-    call = {"id": "c1", "name": "tool_x", "params": {"a": 1}}
+    call = {"id": "c1", "name": "flujos_x", "params": {"a": 1}}
     ap = store.create_approval(s["id"], call)
-    assert store.pending_approvals(s["id"])[0]["method"] == "tool_x"
+    assert store.pending_approvals(s["id"])[0]["method"] == "flujos_x"
     decided = store.decide_approval(ap["id"], True)
     assert decided["status"] == "approved" and decided["decided_at"]
     assert store.decide_approval(ap["id"], True) is None  # no doble decisión
@@ -103,8 +105,10 @@ def test_approval_flow(tmp_path):
 
 @pytest.mark.parametrize("name,params", [
     ("db_export", {"path": "C:/unauthorized/export.xlsx"}),
-    ("canvas_export_cmyk_pdf", {"localImagePaths": ["C:/unauthorized/img.png"]}),
+    ("print_pdf", {"pdf_path": "C:/unauthorized/document.pdf"}),
     ("sellador_apply", {"pdf_path": "document.pdf"}),
+    ("canvas_save", {"document": {"layers": [{"meta": {"output_path": "C:/unauthorized/out.pdf"}}]}}),
+    ("canvas_save", {"document": {"layers": [{"meta": {"_file_grants": {"write": ["C:/unauthorized"]}}}]}}),
     ("canvas_save", {"_resolved_output_path": "relative.pdf"}),
 ])
 def test_agent_rejects_ungranted_paths_and_forged_grants_before_dispatch(tmp_path, name, params):
@@ -214,7 +218,7 @@ def test_turn_runs_safe_tool_then_answers(tmp_path, monkeypatch):
 
 
 def test_turn_pauses_on_gated_tool_and_decide_resumes(tmp_path, monkeypatch):
-    gated = agent_chat.gated_methods()[0]
+    gated = "canvas_duplicate"
     store, runner, executed = _fake_runner(
         tmp_path,
         monkeypatch,
@@ -476,7 +480,7 @@ def test_interrupted_turn_gets_marked_once_on_runner_init(tmp_path):
     store.append_message(ok["id"], {"role": "assistant", "content": "respuesta"})
     waiting = store.create_session("ollama", "m", "Con aprobación")
     store.append_message(waiting["id"], {"role": "user", "content": "haz algo"})
-    store.create_approval(waiting["id"], {"id": "c1", "name": "db_clear", "params": {}})
+    store.create_approval(waiting["id"], {"id": "c1", "name": "flows_delete", "params": {}})
 
     store2 = _store(tmp_path)
     agent.AgentRunner(store2, lambda name: lambda params: {})
@@ -494,7 +498,7 @@ def test_stale_approval_expires_and_cannot_be_decided(tmp_path):
     """Una aprobación más vieja que el TTL ya no ejecuta la acción."""
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "S")
-    approval = store.create_approval(session["id"], {"id": "c1", "name": "db_clear", "params": {}})
+    approval = store.create_approval(session["id"], {"id": "c1", "name": "flows_delete", "params": {}})
     store._approvals[approval["id"]]["created_at"] = agent._now_ms() - agent._APPROVAL_TTL_MS - 1
     assert store.pending_approvals(session["id"]) == []
     assert store.get_approval(approval["id"])["status"] == "expired"
@@ -555,7 +559,7 @@ def test_partial_text_checkpoint_survives_restart(tmp_path):
 def test_recovery_never_replays_a_tool_or_a_decided_approval(tmp_path, status):
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "Tarea")
-    call = {"id": "effect", "name": "db_clear", "params": {}, "status": status, "result": "resultado"}
+    call = {"id": "effect", "name": "flows_run", "params": {}, "status": status, "result": "resultado"}
     store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
     approval = store.create_approval(session["id"], call)
     store.decide_approval(approval["id"], True)
@@ -574,7 +578,7 @@ def test_recovery_never_replays_a_tool_or_a_decided_approval(tmp_path, status):
 def test_pending_approval_recovers_and_still_requires_one_explicit_decision(tmp_path, monkeypatch):
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "Tarea")
-    method = agent_chat.gated_methods()[0]
+    method = "canvas_duplicate"
     call = {"id": "effect", "name": method, "params": {}, "status": "pending"}
     store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
     approval = store.create_approval(session["id"], call)
@@ -634,7 +638,7 @@ def test_cancel_running_tool_discards_late_result_and_queued_approved_effect(tmp
 def test_cancel_turn_waiting_for_approval_does_not_execute(tmp_path):
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "Tarea")
-    call = {"id": "c1", "name": "db_clear", "params": {}, "status": "pending"}
+    call = {"id": "c1", "name": "flows_run", "params": {}, "status": "pending"}
     store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
     approval = store.create_approval(session["id"], call)
     runner = agent.AgentRunner(store, lambda name: pytest.fail("No ejecutar al cancelar"))
@@ -664,7 +668,7 @@ def test_cancelled_provider_cannot_publish_deltas_to_a_new_turn(tmp_path):
 def test_tool_failures_have_distinct_status(tmp_path, monkeypatch, result):
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "Tarea")
-    call = {"id": "c1", "name": "db_clear", "params": {}, "status": "queued"}
+    call = {"id": "c1", "name": "flows_run", "params": {}, "status": "queued"}
     store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
     runner = agent.AgentRunner(store, lambda name: None)
     monkeypatch.setattr(runner, "_execute", lambda call, token=None: result)
@@ -727,3 +731,54 @@ def test_cancel_removes_a_tool_still_queued_in_the_scheduler(tmp_path, monkeypat
     assert cancelled.wait(3)
     assert future.cancelled()
     assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == "interrupted"
+
+
+def test_tool_results_scrub_secrets():
+    """Los resultados de tools que viajan al LLM no llevan secretos ni grants."""
+    scrubbed = agent_chat.scrub_secrets({"config": {
+        "secret": "s3cr3t",
+        "headers": {"Authorization": "Bearer x"},
+        "_file_grants": {"signature": "abc", "read": ["C:\tmp"]},
+        "name": "visible",
+    }})
+    assert scrubbed["config"] == {"secret": "…", "headers": "…", "_file_grants": "…", "name": "visible"}
+
+
+def test_agent_decide_never_runs_denied_method(tmp_path, monkeypatch):
+    """Una aprobación manipulada para un método denegado no debe ejecutarse."""
+    store = _store(tmp_path)
+    session = store.create_session("provider-x", "model", "t")
+    calls: list = []
+    runner = agent.AgentRunner(store, lambda m: calls.append(m) or (lambda p: {}))
+    monkeypatch.setattr(runner, "_run_loop", lambda sid: None)
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
+
+    approval = store.create_approval(session["id"], {"id": "c1", "name": "db_clear", "params": {}})
+    runner.decide(approval["id"], True)
+
+    assert calls == []
+    last = store.messages(session["id"])[-1]
+    assert last["role"] == "tool_result"
+    assert "no disponible" in last["content"]
+
+
+def test_agent_decide_runs_approved_mcp_tool(tmp_path, monkeypatch):
+    """Una aprobación de tool MCP (mcp__srv__tool) sí debe ejecutarse al aprobar."""
+    from backend.core.integrations import mcp_servers
+
+    store = _store(tmp_path)
+    session = store.create_session("provider-x", "model", "t")
+    runner = agent.AgentRunner(store, lambda m: None)
+    monkeypatch.setattr(runner, "_run_loop", lambda sid: None)
+    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
+    seen: dict = {}
+    monkeypatch.setattr(
+        mcp_servers,
+        "call_tool",
+        lambda srv, tool, args, **kw: seen.update(srv=srv, tool=tool, args=args, **kw) or {"ok": True},
+    )
+
+    approval = store.create_approval(session["id"], {"id": "c2", "name": "mcp__srv__do", "params": {"a": 1}})
+    runner.decide(approval["id"], True)
+
+    assert seen == {"srv": "srv", "tool": "mcp__srv__do", "args": {"a": 1}, "advertised": True}

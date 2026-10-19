@@ -38,11 +38,21 @@ _ERR_BODY_MAX_BYTES = 4_096
 _ERR_MSG_MAX_CHARS = 300
 
 # Métodos backend que el agente nunca debe invocar (ni siquiera con aprobación):
-# vault/claves, el propio canal del agente y borrados destructivos.
-_DENIED_PREFIXES = ("ai_provider_", "connection_token_", "agent_")
-_DENIED_METHODS = frozenset({
-    "db_clear", "mcp_server_add", "mcp_server_delete", "mcp_tool_call",
-})
+# vault/claves, configuración de proveedores y MCP, canales internos y el propio
+# canal del agente, y borrados destructivos.
+_DENIED_PREFIXES = ("ai_provider_", "ai_providers_", "connections_token_", "agent_", "mcp_server")
+_DENIED_METHODS = frozenset({"db_clear", "mcp_tool_call", "telemetry", "canvas_save", "canvas_save_history", "print_pdf"})
+
+
+def _denied(method: str) -> bool:
+    return method in _DENIED_METHODS or method.startswith(_DENIED_PREFIXES)
+
+
+def readonly_methods() -> list[str]:
+    """Lecturas que el agente ejecuta sin aprobación."""
+    from backend.core.agent import agent_tools
+
+    return sorted({m for m in ORCHESTRATABLE_METHODS if not _denied(m)} | agent_tools.READ_TOOLS)
 
 
 # Claves cuyo valor nunca viaja al LLM: credenciales de nodos (webhook, headers
@@ -50,7 +60,7 @@ _DENIED_METHODS = frozenset({
 _SECRET_RESULT_KEYS = frozenset({
     "secret", "headers", "api_key", "client_secret", "token", "access_token",
     "refresh_token", "authorization", "signature", "password",
-    "_file_grants",
+    "_file_grants", "_flow_file_grants",
 })
 
 
@@ -75,31 +85,39 @@ _SYSTEM_PROMPT = (
 
 
 def gated_methods() -> list[str]:
+    from backend.core.agent import agent_tools
+
     return sorted(
-        m
-        for m in backend_methods()
-        if m not in ORCHESTRATABLE_METHODS and m not in _DENIED_METHODS and not m.startswith(_DENIED_PREFIXES)
+        {m for m in backend_methods() if m not in ORCHESTRATABLE_METHODS and not _denied(m)} | agent_tools.EFFECT_TOOLS
     )
 
 
 def tool_specs() -> list[JsonObject]:
     """Specs de herramientas para el modelo (formato neutro, se adapta al proveedor)."""
+    from backend.core.agent import agent_tools as _agent_tools
+    from backend.core.agent import modules
+
+    agent_tools = _agent_tools.SPECS
     specs: list[JsonObject] = [
+        dict(agent_tools[m]) if m in agent_tools else
         {
             "name": m,
-            "description": f"Antares · {m} (solo lectura)",
+            "description": f"{modules.label_for(modules.module_for(m))} · {m} (solo lectura)",
             "gated": False,
+            "module": modules.module_for(m),
             "inputSchema": input_schema_for(m),
         }
-        for m in sorted(ORCHESTRATABLE_METHODS)
+        for m in readonly_methods()
     ]
     specs += [
         {
             "name": m,
-            "description": f"Antares · {m} (efecto: requiere aprobación del usuario)",
+            "description": f"{modules.label_for(modules.module_for(m))} · {m} (efecto: requiere aprobación del usuario)",
             "gated": True,
+            "module": modules.module_for(m),
             "inputSchema": input_schema_for(m),
         }
+        if m not in agent_tools else dict(agent_tools[m])
         for m in gated_methods()
     ]
     for server in mcp_servers.list_servers():
@@ -108,6 +126,8 @@ def tool_specs() -> list[JsonObject]:
         except Exception:
             continue  # un servidor caído no bloquea el chat
         for tool in tools:
+            if not tool.get("enabled", True):
+                continue
             specs.append(
                 {
                     "name": mcp_servers.agent_tool_name(str(server["id"]), str(tool["name"])),
@@ -579,10 +599,10 @@ def chat(
 ) -> JsonObject:
     """Un turno LLM; `messages` es el historial persistido en formato neutro.
 
-    ``with_tools=False`` desactiva las herramientas: una sola respuesta de
-    texto, sin tool-calling interactivo. ``on_delta`` recibe el texto parcial
-    acumulado cuando el proveedor hace streaming (opcional; el chat del agente
-    lo usa para mostrar progreso).
+    ``with_tools=False`` desactiva las herramientas (nodos Agente de flujos:
+    una sola respuesta de texto, sin tool-calling interactivo).
+    ``on_delta`` recibe el texto parcial acumulado cuando el proveedor hace
+    streaming (opcional; el chat del agente lo usa para mostrar progreso).
     ``extra_tools`` añade specs propias del llamante a las de Antares, para
     que el modelo devuelva una estructura en vez de prosa. ``max_tokens`` solo
     aplica al estilo Anthropic y sube el techo cuando la respuesta es un

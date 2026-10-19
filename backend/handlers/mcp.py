@@ -1,4 +1,4 @@
-"""Handlers IPC de servidores MCP (Configuración → Conexiones).
+"""Handlers IPC de servidores MCP (Conexiones).
 
 `mcp_tool_call` es interno: lo usan el runner y el agente, nunca el renderer
 (marca ``internal`` del catálogo).
@@ -68,10 +68,22 @@ def _tool_call(params: JsonObject) -> JsonObject:
         raise ValidationError(str(exc)) from exc
 
 
+@with_locale
+@validate_params("server", "tool", "enabled")
+def _tool_set(params: JsonObject) -> JsonObject:
+    if not isinstance(params["enabled"], bool):
+        raise ValidationError("enabled debe ser booleano")
+    try:
+        return {"tool": mcp_servers.set_tool_enabled(str(params["server"]), str(params["tool"]), params["enabled"])}
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
 HANDLERS = {
     "mcp_servers_list": _servers_list,
     "mcp_server_add": _server_add,
     "mcp_server_delete": _server_delete,
     "mcp_server_tools": _server_tools,
     "mcp_tool_call": _tool_call,
+    "mcp_server_tool_set": _tool_set,
 }

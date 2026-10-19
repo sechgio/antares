@@ -30,7 +30,8 @@ function StatusPill({ p }: { p: ConnectionProviderSpec }) {
   if (p.configured) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-yellow)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--accent-yellow)]">
-        Lista para conectar
+        {p.state === 'missing_scopes' ? 'Faltan permisos' : p.state === 'reauth_required' ? 'Autorización vencida'
+          : p.state === 'unavailable' ? 'Sin verificar' : p.state === 'connecting' ? 'Conectando…' : 'Lista para conectar'}
       </span>
     );
   }
@@ -118,7 +119,12 @@ export default function ConnectionDetail({
       </header>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
-        {!p.connected && (
+        {p.status_message && <p role="status" className="text-xs text-[var(--text-secondary)]">{p.status_message}</p>}
+        {!!p.missing_scopes?.length && <p className="break-words text-xs text-[var(--text-secondary)]">Permisos pendientes: {p.missing_scopes.join(', ')}</p>}
+        {!p.configured && ['google', 'microsoft'].includes(p.id) && <p className="text-xs text-[var(--text-secondary)]">
+          La aplicación pública de Antares para este proveedor aún no está registrada. Esta conexión queda pendiente de ese registro.
+        </p>}
+        {!p.connected && !p.public_app && (
           <div className="space-y-2 text-xs leading-relaxed text-[var(--text-secondary)]">
             <p className="font-medium text-[var(--text-primary)]">1. Prepara la conexión</p>
             <p>La primera conexión necesita una aplicación registrada en {p.label}. Si no administras esta cuenta, pide al responsable los datos indicados abajo.</p>
@@ -148,7 +154,7 @@ export default function ConnectionDetail({
           )}
         </div>
 
-        <div>
+        {!p.public_app && <div>
           <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
             2. Registra la dirección de retorno
           </div>
@@ -167,7 +173,7 @@ export default function ConnectionDetail({
           <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
             Copia esta dirección en el campo «Redirect URI» de la aplicación que registraste en {p.label}.
           </p>
-        </div>
+        </div>}
 
         {p.scopes.length > 0 && (
           <details>
@@ -190,7 +196,7 @@ export default function ConnectionDetail({
           </details>
         )}
 
-        <div className="border-t border-[var(--border-subtle)] pt-4">
+        {!p.public_app && <div className="border-t border-[var(--border-subtle)] pt-4">
           <div className="mb-1 flex items-center justify-between">
             <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
               3. Guarda los datos de la aplicación
@@ -234,7 +240,7 @@ export default function ConnectionDetail({
             </Button>
             <p className="text-[11px] leading-relaxed text-[var(--text-secondary)]">4. Pulsa «Conectar con {p.label}» arriba. Se abrirá el navegador para que inicies sesión y revises los permisos.</p>
           </div>
-        </div>
+        </div>}
       </div>
     </aside>
   );

@@ -77,12 +77,17 @@ function main() {
     for (const m of extractApiMethods(moduleSource, /\binvoke\b/g)) apiMethods.add(m);
   }
   const preloadMethods = extractPreloadMethods(preloadSource);
-  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'autoimg_scan_all']);
+  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
-
-  const refreshMethod = 'connection_token_refresh';
+  const refreshMethod = 'connections_token_refresh';
   if (!catalog.INTERNAL_METHODS.has(refreshMethod) || knownUsedMethods.has(refreshMethod)) {
     throw new Error('El refresco de conexiones debe ser interno, sin acceso del renderer.');
+  }
+  for (const method of ['agent_internal_approval_ensure', 'agent_internal_dispatch']) {
+    if (!catalog.INTERNAL_METHODS.has(method) || knownUsedMethods.has(method)
+      || catalog.METHODS[method].inputSchema.properties.context.type !== 'object') {
+      throw new Error('El contexto de aprobación debe viajar únicamente por el puente privado del agente.');
+    }
   }
 
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
@@ -120,6 +125,7 @@ function main() {
     ['db_import', 300_000],
     ['process_start', 900_000],
     ['canvas_export_cmyk_pdf', 900_000],
+    ['print_pdf', 900_000],
     ['html_to_pdf', 900_000],
   ].filter(([m, ms]) => catalog.timeoutMsFor(m) !== ms);
 

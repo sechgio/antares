@@ -55,7 +55,7 @@ export default function InformesV2App() {
     deleteReport,
     clearReports,
     importFile,
-  } = useReportWorkspace(informesV2Api, { normalizeItem: normalizeInforme });
+  } = useReportWorkspace(informesV2Api, { normalizeItem: normalizeInforme, agentModule: 'informesV2' });
   const [logoLeft, setLogoLeft] = useState<LogoAsset | null>(null);
   const [logoRight, setLogoRight] = useState<LogoAsset | null>(null);
   const [photos, setPhotos] = useState<PhotoAsset[]>([]);

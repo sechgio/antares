@@ -1,8 +1,9 @@
-"""Guardas de destino para las llamadas HTTP del backend.
+"""Guardas de destino para el nodo http_request.
 
-Rechaza esquemas no http/https y hosts que resuelven a IPs no públicas
-(SSRF a loopback/LAN/metadata); rechaza todo redirect en clientes que
-envían credenciales.
+Rechaza esquemas no http/https, hosts que resuelven a IPs no públicas
+(SSRF a loopback/LAN/metadata) y revalida cada destino de redirect,
+retirando Authorization cuando el destino no está entre los hosts
+firmables de la conexión.
 """
 
 from __future__ import annotations

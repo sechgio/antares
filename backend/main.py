@@ -381,7 +381,6 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
         future.add_done_callback(_log_future_exception)
     return future
 
-
 def main() -> None:
     try:
         init_db()
@@ -433,6 +432,17 @@ def main() -> None:
                 logger.exception("warm_post_ready failed")
         warm_thread = threading.Thread(target=_post_ready_warm, name="post-ready-warm", daemon=True)
         warm_thread.start()
+
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        def _retire_flows() -> None:
+            try:
+                from backend.core.agent.flows_retirement import retire_flows
+
+                retire_flows()
+            except Exception:
+                logger.exception("No se pudo completar la retirada de Flujos")
+
+        threading.Thread(target=_retire_flows, name="flows-retirement", daemon=True).start()
 
     try:
         while True:
@@ -511,4 +521,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Una tarea programada de Flujos aún no borrada no debe arrancar un backend.
+    if len(sys.argv) >= 2 and sys.argv[1] in ("--flow-run", "--flow-code-run"):
+        sys.exit(0)
     main()

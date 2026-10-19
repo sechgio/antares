@@ -241,6 +241,21 @@ export default function PreviewPanelView() {
     }
   };
 
+  const openAgentTemplateRef = useRef(handleBackendTemplateSelect);
+  openAgentTemplateRef.current = handleBackendTemplateSelect;
+  useEffect(() => {
+    const openRequested = () => {
+      const id = sessionStorage.getItem('agent:open:previewPanel');
+      if (!id || !availableTemplates.length) return;
+      sessionStorage.removeItem('agent:open:previewPanel');
+      if (availableTemplates.some((template) => template.filename === id)) void openAgentTemplateRef.current(id);
+      else addToast({ message: 'La plantilla ya no está disponible', type: 'error' });
+    };
+    openRequested();
+    window.addEventListener('agent:open-module', openRequested);
+    return () => window.removeEventListener('agent:open-module', openRequested);
+  }, [availableTemplates, addToast]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;

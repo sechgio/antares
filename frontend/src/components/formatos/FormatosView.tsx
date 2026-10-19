@@ -744,6 +744,22 @@ export default function FormatosView() {
     null,
   );
   const [zoom, setZoom] = useState(100);
+  useEffect(() => {
+    const openRequested = () => {
+      const id = sessionStorage.getItem('agent:open:formatos');
+      if (!id || !formats.length) return;
+      sessionStorage.removeItem('agent:open:formatos');
+      if (mappingMode) {
+        addToast({ message: 'Cierra la edición del mapping y vuelve a abrir el formato desde Agent', type: 'info' });
+        return;
+      }
+      if (formats.some((format) => format.id === id)) setSelectedId(id);
+      else addToast({ message: 'El formato ya no está disponible', type: 'error' });
+    };
+    openRequested();
+    window.addEventListener('agent:open-module', openRequested);
+    return () => window.removeEventListener('agent:open-module', openRequested);
+  }, [formats, mappingMode, addToast]);
   const zoomStep = 10;
 
   const selected = formats.find((f) => f.id === selectedId) ?? null;

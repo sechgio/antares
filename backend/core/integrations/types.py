@@ -1,4 +1,4 @@
-"""Alias compartidos para documentos JSON de los módulos de integración."""
+"""Alias compartidos para documentos JSON de agente e integraciones."""
 
 from __future__ import annotations
 
