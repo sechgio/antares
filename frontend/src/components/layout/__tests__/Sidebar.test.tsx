@@ -107,7 +107,7 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByTestId('sidebar-group-herramientas'));
 
     expect(screen.getByRole('heading', { name: 'Herramientas' })).toBeInTheDocument();
-    expect(within(panel()).getByRole('button', { name: 'Conexiones' })).toBeInTheDocument();
+    expect(within(panel()).getByRole('button', { name: 'Optimizador' })).toBeInTheDocument();
     expect(onTabChange).not.toHaveBeenCalled();
   });
 
@@ -197,9 +197,9 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByTestId('sidebar-toggle'));
 
     fireEvent.mouseEnter(screen.getByTestId('sidebar-group-herramientas'));
-    fireEvent.click(within(screen.getByTestId('sidebar-peek')).getByRole('button', { name: 'Conexiones' }));
+    fireEvent.click(within(screen.getByTestId('sidebar-peek')).getByRole('button', { name: 'Ubicaciones' }));
 
-    expect(onTabChange).toHaveBeenCalledWith('connections');
+    expect(onTabChange).toHaveBeenCalledWith('ubicaciones');
     expect(screen.getByTestId('sidebar-peek')).toHaveAttribute('aria-hidden', 'true');
   });
 

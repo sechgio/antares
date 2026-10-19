@@ -20,15 +20,14 @@ vi.mock('../components/agent', () => ({
   ),
 }));
 
-it('abre Conexiones desde la navegación y Proveedores IA desde el agente', async () => {
+it('no hay tab de Conexiones y el agente abre la sección de Ajustes', async () => {
   render(<App />);
   expect(screen.queryByRole('button', { name: 'Flujos' })).not.toBeInTheDocument();
-  fireEvent.click(await findSidebarTab('Conexiones'));
-  await screen.findByText('Conexiones: connections');
+  expect(screen.queryByRole('button', { name: 'Conexiones' })).not.toBeInTheDocument();
   fireEvent.click(await findSidebarTab('Agent'));
   fireEvent.click(screen.getAllByRole('button', { name: 'Agent' }).at(-1)!);
   fireEvent.click(await screen.findByRole('button', { name: 'Configurar IA' }));
-  await screen.findByText('Conexiones: providers');
+  await screen.findByText('Conexiones: connections');
 });
 
 it('transmite la incertidumbre de una escritura sin alterar los rechazos confirmados', async () => {

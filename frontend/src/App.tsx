@@ -8,7 +8,6 @@ import ToastContainer from './components/ui/Toast';
 import Dialog from './components/ui/Dialog';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, type TabId, type ConfigSectionId } from './navigation';
-import type { ConnectionsSection } from './components/connections';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthSkeleton';
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
@@ -42,7 +41,6 @@ const AutoIMGView = React.lazy(() => import('./components/autoimg'));
 const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas'));
 const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
-const ConnectionsHub = React.lazy(() => import('./components/connections'));
 const AgentView = React.lazy(() => import('./components/agent'));
 const DesignView = React.lazy(() => import('./components/design'));
 
@@ -76,7 +74,6 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   imageOptimizer: ImageOptimizerView,
   previewPanel: PreviewPanelView,
   canvas: CanvasView,
-  connections: ConnectionsHub,
   agent: AgentView,
   panelAvisoCorte: PanelAvisoCorteView,
   ubicaciones: UbicacionesView,
@@ -157,11 +154,9 @@ function AppContent() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<ConfigSectionId>('appearance');
   const [petEnabled, setPetEnabled] = useState(isPetMascotEnabled);
-  const [connectionsSection, setConnectionsSection] = useState<ConnectionsSection | null>(null);
   const stickyNotesEnabled = usePluginEnabled('sticky-notes');
 
   const handleTabChange = useCallback((tab: TabId) => {
-    setConnectionsSection(null);
     if (tab === 'canvas') {
       prefetchCanvasView();
       setCanvasMounted(true);
@@ -175,10 +170,7 @@ function AppContent() {
   }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openAppearanceSettings = useCallback(() => openSettings('appearance'), [openSettings]);
-  const openProvidersSection = useCallback(() => {
-    setConnectionsSection('providers');
-    setActiveTab('connections');
-  }, []);
+  const openProvidersSection = useCallback(() => openSettings('connections'), [openSettings]);
   const openAgentModule = useCallback((module: string, id?: string) => {
     const tab = module === 'conversion' ? 'convert' : module;
     if (!TAB_DEFINITIONS.some((item) => item.id === tab)) return;
@@ -344,9 +336,7 @@ function AppContent() {
                 {ActiveView && (
                   <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
                     <ErrorBoundary key={activeTab} view={activeTab}>
-                      {activeTab === 'connections' ? (
-                        <ConnectionsHub initialSection={connectionsSection ?? undefined} />
-                      ) : activeTab === 'agent' ? (
+                      {activeTab === 'agent' ? (
                         <AgentView onConfigureProvider={openProvidersSection} onOpenModule={openAgentModule} />
                       ) : (
                         <ActiveView />

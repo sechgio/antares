@@ -27,7 +27,7 @@ from backend.core.integrations import http_guard
 from backend.core.integrations.types import JsonObject
 
 _PROTOCOL_VERSION = "2024-11-05"
-_CLIENT_INFO = {"name": "antares-flujos", "version": "1.0"}
+_CLIENT_INFO = {"name": "antares", "version": "1.0"}
 _MAX_RESPONSE_BYTES = 1024 * 1024
 _HTTP_TIMEOUT_S = 30.0
 _STDIO_TIMEOUT_S = 45.0

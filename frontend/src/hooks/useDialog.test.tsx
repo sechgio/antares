@@ -10,7 +10,7 @@ function Harness({ onResult }: { onResult: (value: boolean) => void }): ReactNod
     <button
       type="button"
       onClick={() => {
-        void confirm({ title: '¿Salir de Flujos?' }).then(onResult);
+        void confirm({ title: '¿Salir sin guardar cambios?' }).then(onResult);
       }}
     >
       abrir

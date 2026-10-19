@@ -52,7 +52,7 @@ function makeBridge() {
       case 'agent_internal_tools':
         return {
           tools: [
-            { name: 'flows_list', description: 'Lista flujos', gated: false, kind: 'backend', inputSchema: { type: 'object', properties: {} } },
+            { name: 'canvas_list', description: 'Lista documentos de Canvas', gated: false, kind: 'backend', inputSchema: { type: 'object', properties: {} } },
             { name: 'db_clear', description: 'Borra datos', gated: true, kind: 'backend', inputSchema: { type: 'object', properties: {} } },
           ],
         };
@@ -195,22 +195,22 @@ async function main() {
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge: toolsBridge, skipImport: true });
     const { session: first } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const { session: second } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    const selected = await runtime.handlers.agent_tools_set({ session_id: first.id, names: ['flows_list'] });
-    assert(selected.tools.filter((t) => t.enabled).map((t) => t.name).join() === 'flows_list', 'selección exacta por conversación');
+    const selected = await runtime.handlers.agent_tools_set({ session_id: first.id, names: ['canvas_list'] });
+    assert(selected.tools.filter((t) => t.enabled).map((t) => t.name).join() === 'canvas_list', 'selección exacta por conversación');
     assert((await runtime.handlers.agent_tools_list({ session_id: second.id })).tools.every((t) => t.enabled), 'otra conversación conserva todas las herramientas');
     assert((await runtime.handlers.agent_tools_list({})).tools.every((t) => !('enabled' in t)), 'getter global conserva su contrato');
     added = true;
     assert((await runtime.handlers.agent_tools_list({ session_id: second.id })).tools.find((t) => t.name === 'mcp_new_read').enabled, 'las herramientas recién disponibles aparecen habilitadas con la selección predeterminada');
     assert(!(await runtime.handlers.agent_tools_list({ session_id: first.id })).tools.find((t) => t.name === 'mcp_new_read').enabled, 'una herramienta nueva no amplía una selección explícita');
     added = false;
-    for (const names of [['agent_tools_set'], ['desconocida'], [false], 'flows_list', undefined]) {
+    for (const names of [['agent_tools_set'], ['desconocida'], [false], 'canvas_list', undefined]) {
       let error;
       try { await runtime.handlers.agent_tools_set({ session_id: first.id, names }); } catch (err) { error = err; }
       assert(!!error, 'selección inválida o privada rechazada');
     }
     await runtime.shutdown();
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge: toolsBridge, skipImport: true });
-    assert((await runtime.handlers.agent_tools_list({ session_id: first.id })).tools.filter((t) => t.enabled).map((t) => t.name).join() === 'flows_list', 'la selección sobrevive al reinicio de SQLite');
+    assert((await runtime.handlers.agent_tools_list({ session_id: first.id })).tools.filter((t) => t.enabled).map((t) => t.name).join() === 'canvas_list', 'la selección sobrevive al reinicio de SQLite');
     const recovered = await require('../electron/agent-execution').dispatchApproved({ session_id: first.id, call_id: 'recovered', method: 'db_clear', params: {}, id: 'ap-recovered' }, {});
     assert(JSON.parse(recovered).error && state.dispatchLog.length === 0, 'una aprobación recuperada no habilita una herramienta excluida');
     await runtime.handlers.agent_tools_set({ session_id: first.id, names: [] });
@@ -229,7 +229,7 @@ async function main() {
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'borra' });
     assert(await waitFor(() => state.approvals.size > 0), 'la llamada espera aprobación antes de deshabilitarla');
-    await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['flows_list'] });
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['canvas_list'] });
     await runtime.handlers.agent_approve({ approval_id: [...state.approvals.keys()][0] });
     assert(await waitIdle(session.id), 'el turno continúa al bloquear la herramienta deshabilitada');
     assert(state.dispatchLog.length === 0, 'la aprobación pendiente no evita la nueva selección');
@@ -313,7 +313,7 @@ async function main() {
   {
     const { bridge, state } = makeBridge();
     await openFaux([
-      fauxAssistantMessage([fauxToolCall('flows_list', {}), fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('canvas_list', {}), fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
       fauxAssistantMessage('hecho'),
     ], bridge);
 
@@ -323,7 +323,7 @@ async function main() {
     assert(sessions.length === 1 && sessions[0].id === session.id, 'sessions_list incluye la sesión');
 
     const { tools } = await runtime.handlers.agent_tools_list({});
-    assert(tools.some((t) => t.name === 'flows_list' && !t.gated) && tools.some((t) => t.name === 'db_clear' && t.gated), 'tools_list proyecta gated');
+    assert(tools.some((t) => t.name === 'canvas_list' && !t.gated) && tools.some((t) => t.name === 'db_clear' && t.gated), 'tools_list proyecta gated');
 
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hazlo' });
     const sawPending = await waitFor(async () =>
@@ -338,7 +338,7 @@ async function main() {
     assert(pending_approvals.length === 0, 'no quedan aprobaciones pendientes');
     const assistant = messages.find((m) => m.tool_calls);
     const calls = assistant.tool_calls;
-    assert(calls.find((c) => c.name === 'flows_list').status === 'done', 'herramienta segura ejecutada');
+    assert(calls.find((c) => c.name === 'canvas_list').status === 'done', 'herramienta segura ejecutada');
     assert(calls.find((c) => c.name === 'db_clear').status === 'done', 'herramienta aprobada ejecutada');
     assert(messages.at(-1).content === 'hecho', 'respuesta final del modelo');
     assert(state.dispatchLog.filter((id) => id === calls[1].id).length === 1, 'dispatch deduplicado: una ejecución por call_id');
@@ -574,9 +574,9 @@ async function main() {
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
     const { profile } = await runtime.handlers.agent_profile_save({
       name: 'Informe mensual', description: 'Cortes del mes', instructions: 'Usa la plantilla de cortes y pide el mes.',
-      starter: 'Prepara el informe de este mes', tools: ['flows_list'],
+      starter: 'Prepara el informe de este mes', tools: ['canvas_list'],
     });
-    assert(profile.id && profile.tools.join() === 'flows_list', 'el agente guarda instrucciones y herramientas');
+    assert(profile.id && profile.tools.join() === 'canvas_list', 'el agente guarda instrucciones y herramientas');
     for (const bad of [{ name: '', instructions: 'x' }, { name: 'X', instructions: '' }, { name: 'X', instructions: 'token: abcdef123456' },
       { name: 'X', instructions: 'y', tools: ['desconocida'] }, { id: 'nope', name: 'X', instructions: 'y' }]) {
       let error;
@@ -590,7 +590,7 @@ async function main() {
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
     assert(session.title === 'Informe mensual' && session.profile.id === profile.id, 'la conversación nace del agente');
     const enabled = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools.filter((t) => t.enabled).map((t) => t.name);
-    assert(enabled.join() === 'flows_list', 'la conversación aplica las herramientas del agente');
+    assert(enabled.join() === 'canvas_list', 'la conversación aplica las herramientas del agente');
     const conv = await runtime._internal.state().harness.conversation(
       (await require('../electron/agent-shared').requireSession(session.id)).conversationId, runtime._internal.state().ctx);
     const instructions = (await conv.agent(runtime._internal.state().ctx)).instructions;
@@ -631,7 +631,7 @@ async function main() {
     const { bridge, state } = makeBridge();
     let sawCorrection = false;
     await openFaux([
-      fauxAssistantMessage([fauxToolCall('flows_list', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' }),
       fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
       (context) => {
         sawCorrection = JSON.stringify(context.messages).includes('usa solo lectura');
@@ -653,7 +653,7 @@ async function main() {
     assert([...state.approvals.values()][0].status === 'denied', 'la aprobación pendiente queda rechazada');
     assert(JSON.stringify(state.dispatchLog) === JSON.stringify(executedBefore) && executedBefore.length === 1,
       'el efecto pendiente no se ejecuta y el ya ejecutado no se repite');
-    assert(state.dispatches[0].result === JSON.stringify({ ok: true, tool: 'flows_list' }), 'el comprobante ejecutado conserva su resultado');
+    assert(state.dispatches[0].result === JSON.stringify({ ok: true, tool: 'canvas_list' }), 'el comprobante ejecutado conserva su resultado');
     assert(sawCorrection, 'el modelo recibe la corrección en los pasos siguientes');
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(messages.at(-1).content === 'corregido', 'el encargo continúa con la corrección');
