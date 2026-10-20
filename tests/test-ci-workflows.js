@@ -39,6 +39,11 @@ function run() {
   const staticVitestConfig = fs.readFileSync(STATIC_VITEST_CONFIG_PATH, 'utf8');
   const pangoSetup = fs.readFileSync(PANGO_SETUP_PATH, 'utf8');
   const pyproject = fs.readFileSync(PYPROJECT_PATH, 'utf8');
+  const minimumPython = pyproject.match(/^requires-python\s*=\s*">=(\d+\.\d+)"/m)?.[1];
+
+  assert(Boolean(minimumPython), 'The backend declares its minimum Python version');
+  assert(setupCi.includes(`python-version: '${minimumPython}'`), 'CI installs the minimum supported Python version');
+  assert(release.includes(`python-version: '${minimumPython}'`), 'Release packaging installs the minimum supported Python version');
 
   assert(/permissions:\r?\n\s+contents:\s+read/.test(ci), 'CI has explicit read-only permissions');
   assert(ci.includes('cancel-in-progress: true'), 'CI cancels obsolete runs for the same ref');

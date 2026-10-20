@@ -93,6 +93,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Procesamiento de imágenes**: Pillow sube a 13.0.0 para corregir las vulnerabilidades detectadas por la auditoría Python. El backend requiere Python 3.11 o superior; CI y empaquetado usan ese mínimo.
+
 ## [0.11.12] — 2026-09-16
 
 ### Added

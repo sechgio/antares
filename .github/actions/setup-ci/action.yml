@@ -1,5 +1,5 @@
 name: Setup CI
-description: Node from .node-version, Python 3.10, locked uv, npm ci (root + frontend)
+description: Node from .node-version, Python 3.11, locked uv, npm ci (root + frontend)
 
 inputs:
   python:
@@ -19,7 +19,7 @@ runs:
       if: inputs.python == 'true'
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
       with:
-        python-version: '3.10'
+        python-version: '3.11'
 
     - name: Setup Node.js
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020

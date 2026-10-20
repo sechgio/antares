@@ -13,9 +13,9 @@ authors = [
     {name = "Antares", email = "dev@antares.app"},
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    "Pillow>=12.3.0",
+    "Pillow>=13.0.0",
     "Jinja2>=3.1.0",
     "pandas>=2.0.0,<3",
     "openpyxl>=3.1.0",
@@ -57,7 +57,7 @@ ignore = ["E501"]
 "backend/main.py" = ["E402"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = true
