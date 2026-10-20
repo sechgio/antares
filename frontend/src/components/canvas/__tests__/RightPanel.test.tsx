@@ -27,6 +27,8 @@ import { parseMm } from '../types';
 import RightPanel from '../editor/RightPanel';
 import PaintRow from '../editor/PaintRow';
 import LayerNode from '../editor/LayerNode';
+import { boxCss } from './fixtures';
+
 
 const panelProps = {
   selectedCount: 1,
@@ -76,11 +78,7 @@ describe('layerStyle', () => {
   });
 
   it('cssVarsToStyleParts includes fill opacity, shadow and transform', () => {
-    const parts = cssVarsToStyleParts({
-      '--width': '10mm',
-      '--height': '10mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
+    const parts = cssVarsToStyleParts(boxCss('0mm', '0mm', '10mm', '10mm', {
       '--background-color': '#FF0000',
       '--fill-opacity': '50',
       '--border-width': '2px',
@@ -89,7 +87,7 @@ describe('layerStyle', () => {
       '--box-shadow': formatBoxShadow({ color: '#000000', x: 0, y: 4, blur: 8, opacity: 25 }),
       '--rotate': '10deg',
       '--scale-y': '-1',
-    });
+    }));
     const css = parts.join(';');
     expect(css).toContain('background-color:rgba(255,0,0,0.5)');
     expect(css).toContain('box-shadow:');
@@ -98,12 +96,7 @@ describe('layerStyle', () => {
   });
 
   it('cssVarsToStyleParts parses opacity as plain number, legacy %, and invalid', () => {
-    const base = {
-      '--width': '10mm',
-      '--height': '10mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const base = boxCss('0mm', '0mm', '10mm', '10mm');
     expect(cssVarsToStyleParts({ ...base, '--opacity': '40' }).join(';')).toContain('opacity:0.4');
     expect(cssVarsToStyleParts({ ...base, '--opacity': '40%' }).join(';')).toContain('opacity:0.4');
     expect(cssVarsToStyleParts({ ...base, '--opacity': 'abc' }).join(';')).toContain('opacity:1');
@@ -130,16 +123,12 @@ describe('layerStyle', () => {
         '--fill-visible': '0',
       }),
     ).toBe('transparent');
-    const stroke = resolveStrokeStyle({
-      '--width': '1mm',
-      '--height': '1mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
+    const stroke = resolveStrokeStyle(boxCss('0mm', '0mm', '1mm', '1mm', {
       '--border-width': '2px',
       '--border-color': '#0000FF',
       '--stroke-opacity': '50',
       '--stroke-align': 'inside',
-    });
+    }));
     expect(stroke.border).toBe('2px solid rgba(0,0,255,0.5)');
   });
 
@@ -185,31 +174,23 @@ describe('layerStyle', () => {
   });
 
   it('resolveStrokeStyle supports dashed borders', () => {
-    const stroke = resolveStrokeStyle({
-      '--width': '1mm',
-      '--height': '1mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
+    const stroke = resolveStrokeStyle(boxCss('0mm', '0mm', '1mm', '1mm', {
       '--border-width': '2px',
       '--border-color': '#000000',
       '--stroke-dash': 'dashed',
       '--stroke-align': 'inside',
-    });
+    }));
     expect(stroke.border).toBe('2px dashed #000000');
   });
 
   it('cssVarsToStyleParts includes linear fill and layer blur', () => {
-    const css = cssVarsToStyleParts({
-      '--width': '10mm',
-      '--height': '10mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
+    const css = cssVarsToStyleParts(boxCss('0mm', '0mm', '10mm', '10mm', {
       '--background-color': '#FF0000',
       '--fill-color-2': '#0000FF',
       '--fill-type': 'linear',
       '--fill-angle': '180',
       '--filter-blur': '4px',
-    }).join(';');
+    })).join(';');
     expect(css).toContain('background:linear-gradient(180deg, #FF0000, #0000FF)');
     expect(css).toContain('filter:blur(4px)');
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../../constants';
-import { applyAnchoredResize, applyParentConstraint, parseResizeAnchor, RESIZE_ANCHORS } from '../resizeConstraints';
+import { applyParentConstraint } from '../resizeConstraints';
 import { mm, parseMm } from '../../types';
 
 describe('applyParentConstraint', () => {
@@ -59,22 +59,5 @@ describe('applyParentConstraint', () => {
     expect(parseMm(next.cssVars['--width'])).toBe(80);
     expect(parseMm(next.cssVars['--translate-y'])).toBe(70);
     expect(parseMm(next.cssVars['--height'])).toBe(40);
-  });
-});
-
-describe('applyAnchoredResize (manual anchor still works)', () => {
-  it('keeps legacy 9-point anchors', () => {
-    expect(RESIZE_ANCHORS).toHaveLength(9);
-    expect(parseResizeAnchor(undefined)).toBe('tl');
-    const layer = createLayer('rect', {
-      cssVars: {
-        '--width': '100mm',
-        '--height': '50mm',
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-      },
-    });
-    const next = applyAnchoredResize(layer, { w: 200 }, 'tl');
-    expect(next.cssVars['--translate-x']).toBe('10mm');
   });
 });

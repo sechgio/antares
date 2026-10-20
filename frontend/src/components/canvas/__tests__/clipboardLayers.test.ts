@@ -7,6 +7,8 @@ import {
   pasteToReplaceLayers,
 } from '../ops/clipboardLayers';
 import { createLayer } from '../constants';
+import { boxCss } from './fixtures';
+
 
 describe('parseClipboardLayers', () => {
   it('parses a valid layer array', () => {
@@ -93,16 +95,12 @@ describe('appearance vars (copy/paste properties)', () => {
   it('extractAppearanceVars strips geometry and keeps style keys', () => {
     const layer = createLayer('rect', {
       id: 'r1',
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-        '--width': '40mm',
-        '--height': '12mm',
+      cssVars: boxCss('10mm', '20mm', '40mm', '12mm', {
         '--rotate': '15',
         '--background-color': '#3366FF',
         '--border-color': '#FF0000',
         '--opacity': '80',
-      },
+      }),
     });
     const appearance = extractAppearanceVars(layer.cssVars);
     expect(appearance['--background-color']).toBe('#3366FF');
@@ -170,12 +168,7 @@ describe('pasteToReplaceLayers', () => {
     const target = at('target', 10, 10);
     const parent = createLayer('group', {
       id: 'g',
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '40mm',
-        '--height': '40mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '40mm', '40mm'),
     });
     const child = at('c', 5, 5);
     child.parentId = 'g';

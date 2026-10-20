@@ -17,6 +17,7 @@ from backend.core.canvas.models import (
 from backend.core.canvas.store import CanvasStore, encode_canvas_json, migrate_legacy_canvas_documents
 from backend.core.exceptions import NotFoundError, ResourceLockedError, ValidationError
 from backend.handlers import canvas as canvas_handlers
+from tests.canvas_fixtures import box_css, canvas_layer
 
 
 def test_create_empty_document_has_a4_frame() -> None:
@@ -99,69 +100,21 @@ def test_normalize_accepts_new_layer_types() -> None:
     raw = create_empty_document()
     raw["layers"].extend(
         [
-            {
-                "id": "g1",
-                "type": "grid",
-                "name": "Grid",
-                "value": "",
-                "cssVars": {
-                    "--width": "100mm",
-                    "--height": "100mm",
-                    "--translate-x": "0mm",
-                    "--translate-y": "0mm",
-                },
-                "meta": {"cols": 3, "rows": 3, "gapMm": 2},
-            },
-            {
-                "id": "cb1",
-                "type": "checkbox",
-                "name": "Check",
-                "value": "",
-                "cssVars": {
-                    "--width": "6mm",
-                    "--height": "6mm",
-                    "--translate-x": "10mm",
-                    "--translate-y": "10mm",
-                },
-                "meta": {"key": "SERVICIO_A", "checked": True},
-            },
-            {
-                "id": "ar1",
-                "type": "arrow",
-                "name": "Flecha",
-                "value": "",
-                "cssVars": {
-                    "--width": "50mm",
-                    "--height": "24mm",
-                    "--translate-x": "10mm",
-                    "--translate-y": "20mm",
-                    "--background-color": "#000000",
-                },
-            },
-            {
-                "id": "pg1",
-                "type": "polygon",
-                "name": "Polígono",
-                "value": "",
-                "cssVars": {
-                    "--width": "40mm",
-                    "--height": "40mm",
-                    "--translate-x": "10mm",
-                    "--translate-y": "50mm",
-                },
-            },
-            {
-                "id": "st1",
-                "type": "star",
-                "name": "Estrella",
-                "value": "",
-                "cssVars": {
-                    "--width": "40mm",
-                    "--height": "40mm",
-                    "--translate-x": "10mm",
-                    "--translate-y": "100mm",
-                },
-            },
+            canvas_layer(
+                "g1", "grid", "Grid",
+                box_css("0mm", "0mm", "100mm", "100mm"),
+                meta={"cols": 3, "rows": 3, "gapMm": 2},
+            ),
+            canvas_layer(
+                "cb1", "checkbox", "Check",
+                box_css("10mm", "10mm", "6mm", "6mm"),
+                meta={"key": "SERVICIO_A", "checked": True},
+            ),
+            canvas_layer(
+                "ar1", "arrow", "Flecha", box_css("10mm", "20mm", "50mm", "24mm", {"--background-color": "#000000"})
+            ),
+            canvas_layer("pg1", "polygon", "Polígono", box_css("10mm", "50mm", "40mm", "40mm")),
+            canvas_layer("st1", "star", "Estrella", box_css("10mm", "100mm", "40mm", "40mm")),
         ]
     )
     doc = normalize_document(raw)
@@ -186,20 +139,11 @@ def test_normalize_preserves_shared_styles_and_layer_links() -> None:
         }
     ]
     raw["layers"].append(
-        {
-            "id": "rect-1",
-            "type": "rect",
-            "name": "Box",
-            "value": "",
-            "fillStyleId": "style-1",
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "20mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--background-color": "#FF0000",
-            },
-        }
+        canvas_layer(
+            "rect-1", "rect", "Box",
+            box_css("10mm", "10mm", "40mm", "20mm", {"--background-color": "#FF0000"}),
+            fillStyleId="style-1",
+        )
     )
     doc = normalize_document(raw)
     assert len(doc["styles"]) == 1
@@ -217,33 +161,10 @@ def test_normalize_preserves_shared_styles_and_layer_links() -> None:
 def test_normalize_rejects_unknown_layer_types() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "bad",
-            "type": "video",
-            "name": "x",
-            "value": "",
-            "cssVars": {
-                "--width": "10mm",
-                "--height": "10mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        canvas_layer("bad", "video", "x", box_css("0mm", "0mm", "10mm", "10mm"))
     )
     raw["layers"].append(
-        {
-            "id": "ok",
-            "type": "field",
-            "name": "NIS",
-            "value": "",
-            "cssVars": {
-                "--width": "20mm",
-                "--height": "8mm",
-                "--translate-x": "5mm",
-                "--translate-y": "5mm",
-            },
-            "meta": {"key": "NIS", "fallback": "-"},
-        }
+        canvas_layer("ok", "field", "NIS", box_css("5mm", "5mm", "20mm", "8mm"), meta={"key": "NIS", "fallback": "-"})
     )
     doc = normalize_document(raw)
     types = [layer["type"] for layer in doc["layers"]]
@@ -286,12 +207,7 @@ def test_normalize_preserves_grid_tracks() -> None:
             "id": "grid-1",
             "type": "grid",
             "name": "Grid",
-            "cssVars": {
-                "--width": "100mm",
-                "--height": "100mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
+            "cssVars": box_css("0mm", "0mm", "100mm", "100mm"),
             "meta": {
                 "cols": 2,
                 "rows": 2,
@@ -310,13 +226,11 @@ def test_normalize_preserves_grid_tracks() -> None:
 def test_normalize_meta_preserves_valid_auto_layout() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "grp",
-            "type": "group",
-            "name": "Stack",
-            "value": "",
-            "pageIndex": 0,
-            "meta": {
+        canvas_layer(
+            "grp", "group", "Stack",
+            box_css("0mm", "0mm", "100mm", "40mm"),
+            pageIndex=0,
+            meta={
                 "autoLayout": {
                     "direction": "row",
                     "gapMm": 4,
@@ -328,13 +242,7 @@ def test_normalize_meta_preserves_valid_auto_layout() -> None:
                 "constraintH": "end",
                 "constraintV": "scale",
             },
-            "cssVars": {
-                "--width": "100mm",
-                "--height": "40mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        )
     )
     doc = normalize_document(raw)
     grp = next(layer for layer in doc["layers"] if layer["id"] == "grp")
@@ -353,13 +261,11 @@ def test_normalize_meta_preserves_valid_auto_layout() -> None:
 def test_normalize_meta_omits_invalid_auto_layout() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "bad",
-            "type": "group",
-            "name": "Bad",
-            "value": "",
-            "pageIndex": 0,
-            "meta": {
+        canvas_layer(
+            "bad", "group", "Bad",
+            box_css("0mm", "0mm", "40mm", "10mm"),
+            pageIndex=0,
+            meta={
                 "autoLayout": {
                     "direction": "diagonal",
                     "gapMm": -1,
@@ -371,13 +277,7 @@ def test_normalize_meta_omits_invalid_auto_layout() -> None:
                 "constraintH": "diagonal",
                 "key": "keep-me",
             },
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "10mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        )
     )
     doc = normalize_document(raw)
     bad = next(layer for layer in doc["layers"] if layer["id"] == "bad")
@@ -389,13 +289,11 @@ def test_normalize_meta_omits_invalid_auto_layout() -> None:
 def test_normalize_meta_rejects_non_finite_auto_layout_values_and_non_boolean_wrap() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "non-finite",
-            "type": "group",
-            "name": "Non-finite",
-            "value": "",
-            "pageIndex": 0,
-            "meta": {
+        canvas_layer(
+            "non-finite", "group", "Non-finite",
+            box_css("0mm", "0mm", "40mm", "10mm"),
+            pageIndex=0,
+            meta={
                 "autoLayout": {
                     "direction": "row",
                     "gapMm": float("inf"),
@@ -405,22 +303,14 @@ def test_normalize_meta_rejects_non_finite_auto_layout_values_and_non_boolean_wr
                     "sizing": "hug",
                 },
             },
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "10mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        )
     )
     raw["layers"].append(
-        {
-            "id": "invalid-options",
-            "type": "group",
-            "name": "Invalid options",
-            "value": "",
-            "pageIndex": 0,
-            "meta": {
+        canvas_layer(
+            "invalid-options", "group", "Invalid options",
+            box_css("0mm", "0mm", "40mm", "10mm"),
+            pageIndex=0,
+            meta={
                 "autoLayout": {
                     "direction": "row",
                     "gapMm": 1,
@@ -433,13 +323,7 @@ def test_normalize_meta_rejects_non_finite_auto_layout_values_and_non_boolean_wr
                     "sizing": "hug",
                 },
             },
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "10mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        )
     )
 
     doc = normalize_document(raw)
@@ -696,19 +580,9 @@ def test_store_crud_roundtrip(tmp_path: Path) -> None:
     assert listed[0]["name"] == "Panel A"
 
     created["layers"].append(
-        {
-            "id": "t1",
-            "type": "text",
-            "name": "Titulo",
-            "value": "Hola",
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "10mm",
-                "--translate-x": "10mm",
-                "--translate-y": "20mm",
-                "--color": "#000",
-            },
-        }
+        canvas_layer(
+            "t1", "text", "Titulo", box_css("10mm", "20mm", "40mm", "10mm", {"--color": "#000"}), value="Hola"
+        )
     )
     saved = store.save(created)
     loaded = store.get(saved["id"])
@@ -850,19 +724,7 @@ def test_store_delete_cleans_pending_spills(tmp_path: Path) -> None:
 def test_duplicate_document_new_ids() -> None:
     source = create_empty_document(name="Orig")
     source["layers"].append(
-        {
-            "id": "layer-a",
-            "type": "logo",
-            "name": "Logo",
-            "value": "",
-            "cssVars": {
-                "--width": "30mm",
-                "--height": "15mm",
-                "--translate-x": "5mm",
-                "--translate-y": "5mm",
-            },
-            "meta": {"side": "left"},
-        }
+        canvas_layer("layer-a", "logo", "Logo", box_css("5mm", "5mm", "30mm", "15mm"), meta={"side": "left"})
     )
     dup = duplicate_document(source)
     assert dup["id"] != source["id"]
@@ -875,35 +737,10 @@ def test_duplicate_document_remaps_parent_ids() -> None:
     gid = "group-old"
     cid = "child-old"
     source["layers"].append(
-        {
-            "id": gid,
-            "type": "group",
-            "name": "G",
-            "value": "",
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "10mm",
-                "--height": "10mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        canvas_layer(gid, "group", "G", box_css("0mm", "0mm", "10mm", "10mm"), pageIndex=0)
     )
     source["layers"].append(
-        {
-            "id": cid,
-            "type": "text",
-            "name": "T",
-            "value": "x",
-            "parentId": gid,
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "10mm",
-                "--height": "10mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        canvas_layer(cid, "text", "T", box_css("0mm", "0mm", "10mm", "10mm"), value="x", parentId=gid, pageIndex=0)
     )
     dup = duplicate_document(source)
     child = next(layer for layer in dup["layers"] if layer["type"] == "text")
@@ -982,14 +819,7 @@ def test_list_large_document_uses_extract_doc_meta(tmp_path: Path) -> None:
     body["id"] = "inner-large"
     body["updatedAt"] = "2026-08-02T12:00:00.000Z"
     body["layers"].append(
-        {
-            "id": "img1",
-            "type": "image",
-            "name": "Pad",
-            "value": f"data:image/jpeg;base64,{'A' * 80_000}",
-            "pageIndex": 0,
-            "cssVars": {},
-        },
+        canvas_layer("img1", "image", "Pad", {}, value=f"data:image/jpeg;base64,{'A' * 80_000}", pageIndex=0),
     )
     path = tmp_path / "large-stem.json"
     path.write_text(json.dumps(body), encoding="utf-8")
@@ -1081,18 +911,10 @@ def test_bootstrap_returns_most_recently_updated_document(
 def test_normalize_preserves_layer_meta_path() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "line-1",
-            "type": "line",
-            "name": "Linea Vector",
-            "value": "",
-            "cssVars": {
-                "--width": "60mm",
-                "--height": "10mm",
-                "--translate-x": "5mm",
-                "--translate-y": "5mm",
-            },
-            "meta": {
+        canvas_layer(
+            "line-1", "line", "Linea Vector",
+            box_css("5mm", "5mm", "60mm", "10mm"),
+            meta={
                 "path": {
                     "points": [
                         {"x": 0.0, "y": 5.0, "hin": None, "hout": {"x": 2.0, "y": 0.0}},
@@ -1101,7 +923,7 @@ def test_normalize_preserves_layer_meta_path() -> None:
                     "closed": False,
                 }
             },
-        }
+        )
     )
     doc = normalize_document(raw)
     line_layer = next(layer for layer in doc["layers"] if layer["id"] == "line-1")
@@ -1118,19 +940,7 @@ def test_normalize_clamps_out_of_range_page_index() -> None:
     raw = create_empty_document()
     raw["pages"] = [{"id": "p1", "name": "Página 1"}, {"id": "p2", "name": "Página 2"}]
     raw["layers"].append(
-        {
-            "id": "ghost",
-            "type": "text",
-            "name": "Ghost",
-            "value": "x",
-            "pageIndex": 999,
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "10mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-            },
-        }
+        canvas_layer("ghost", "text", "Ghost", box_css("10mm", "10mm", "40mm", "10mm"), value="x", pageIndex=999)
     )
     doc = normalize_document(raw)
     ghost = next(layer for layer in doc["layers"] if layer["id"] == "ghost")
@@ -1147,68 +957,36 @@ def test_normalize_clamps_negative_page_index_to_zero() -> None:
 def test_normalize_meta_bool_strings() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "cb-false",
-            "type": "checkbox",
-            "name": "Off",
-            "value": "",
-            "pageIndex": 0,
-            "meta": {"checked": "false"},
-            "cssVars": {
-                "--width": "10mm",
-                "--height": "10mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        canvas_layer(
+            "cb-false", "checkbox", "Off",
+            box_css("0mm", "0mm", "10mm", "10mm"),
+            pageIndex=0,
+            meta={"checked": "false"},
+        )
     )
     raw["layers"].append(
-        {
-            "id": "cb-true",
-            "type": "checkbox",
-            "name": "On",
-            "value": "",
-            "pageIndex": 0,
-            "meta": {"checked": "true"},
-            "cssVars": {
-                "--width": "10mm",
-                "--height": "10mm",
-                "--translate-x": "20mm",
-                "--translate-y": "0mm",
-            },
-        }
+        canvas_layer(
+            "cb-true", "checkbox", "On",
+            box_css("20mm", "0mm", "10mm", "10mm"),
+            pageIndex=0,
+            meta={"checked": "true"},
+        )
     )
     raw["layers"].append(
-        {
-            "id": "cb-bool",
-            "type": "checkbox",
-            "name": "Bool",
-            "value": "",
-            "pageIndex": 0,
-            "meta": {"checked": True},
-            "cssVars": {
-                "--width": "10mm",
-                "--height": "10mm",
-                "--translate-x": "40mm",
-                "--translate-y": "0mm",
-            },
-        }
+        canvas_layer(
+            "cb-bool", "checkbox", "Bool",
+            box_css("40mm", "0mm", "10mm", "10mm"),
+            pageIndex=0,
+            meta={"checked": True},
+        )
     )
     raw["layers"].append(
-        {
-            "id": "slot",
-            "type": "imageSlot",
-            "name": "Foto",
-            "value": "",
-            "pageIndex": 0,
-            "meta": {"index": 0, "showDate": "0"},
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "40mm",
-                "--translate-x": "0mm",
-                "--translate-y": "20mm",
-            },
-        }
+        canvas_layer(
+            "slot", "imageSlot", "Foto",
+            box_css("0mm", "20mm", "40mm", "40mm"),
+            pageIndex=0,
+            meta={"index": 0, "showDate": "0"},
+        )
     )
     doc = normalize_document(raw)
     by_id = {layer["id"]: layer for layer in doc["layers"]}
@@ -1221,19 +999,9 @@ def test_normalize_meta_bool_strings() -> None:
 def test_duplicate_document_drops_orphan_parent_id() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "child",
-            "type": "text",
-            "name": "Child",
-            "value": "x",
-            "parentId": "does-not-exist",
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "10mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-            },
-        }
+        canvas_layer(
+            "child", "text", "Child", box_css("10mm", "10mm", "40mm", "10mm"), value="x", parentId="does-not-exist"
+        )
     )
     doc = duplicate_document(raw)
     child = next(layer for layer in doc["layers"] if layer["type"] == "text" and layer["name"] == "Child")
@@ -1241,18 +1009,7 @@ def test_duplicate_document_drops_orphan_parent_id() -> None:
 
 
 def _text_layer(layer_id: str, **extra: Any) -> dict[str, Any]:
-    layer: dict[str, Any] = {
-        "id": layer_id,
-        "type": "text",
-        "name": layer_id,
-        "value": "",
-        "cssVars": {
-            "--width": "40mm",
-            "--height": "10mm",
-            "--translate-x": "10mm",
-            "--translate-y": "10mm",
-        },
-    }
+    layer: dict[str, Any] = canvas_layer(layer_id, "text", layer_id, box_css("10mm", "10mm", "40mm", "10mm"))
     layer.update(extra)
     return layer
 
@@ -1702,20 +1459,11 @@ def test_get_history_skips_oversized_entries_on_disk(tmp_path: Path) -> None:
 def test_normalize_allows_component_layer_type() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "comp-1",
-            "type": "component",
-            "name": "Botón",
-            "value": "",
-            "meta": {"componentId": "comp-1"},
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "12mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--background-color": "#3366FF",
-            },
-        }
+        canvas_layer(
+            "comp-1", "component", "Botón",
+            box_css("10mm", "10mm", "40mm", "12mm", {"--background-color": "#3366FF"}),
+            meta={"componentId": "comp-1"},
+        )
     )
     doc = normalize_document(raw)
     types = [layer["type"] for layer in doc["layers"]]
@@ -1727,12 +1475,10 @@ def test_normalize_allows_component_layer_type() -> None:
 def test_normalize_preserves_instance_meta_fields() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "inst-1",
-            "type": "component",
-            "name": "Botón instancia",
-            "value": "",
-            "meta": {
+        canvas_layer(
+            "inst-1", "component", "Botón instancia",
+            box_css("50mm", "10mm", "40mm", "12mm", {"--background-color": "#FF0000"}),
+            meta={
                 "instanceOf": "comp-1",
                 "variant": "primary",
                 "overrideVars": {
@@ -1740,14 +1486,7 @@ def test_normalize_preserves_instance_meta_fields() -> None:
                     "--background-color": "#FF0000",
                 },
             },
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "12mm",
-                "--translate-x": "50mm",
-                "--translate-y": "10mm",
-                "--background-color": "#FF0000",
-            },
-        }
+        )
     )
     doc = normalize_document(raw)
     inst = next(layer for layer in doc["layers"] if layer["id"] == "inst-1")
@@ -1760,12 +1499,10 @@ def test_normalize_preserves_instance_meta_fields() -> None:
 def test_normalize_omits_invalid_instance_meta() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "inst-bad",
-            "type": "component",
-            "name": "Bad",
-            "value": "",
-            "meta": {
+        canvas_layer(
+            "inst-bad", "component", "Bad",
+            box_css("0mm", "0mm", "40mm", "12mm"),
+            meta={
                 "instanceOf": "   ",
                 "variant": "",
                 "overrideVars": {
@@ -1775,13 +1512,7 @@ def test_normalize_omits_invalid_instance_meta() -> None:
                 },
                 "componentId": "",
             },
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "12mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        )
     )
     doc = normalize_document(raw)
     inst = next(layer for layer in doc["layers"] if layer["id"] == "inst-bad")
@@ -1795,12 +1526,10 @@ def test_normalize_omits_invalid_instance_meta() -> None:
 def test_normalize_preserves_component_variants() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "comp-1",
-            "type": "component",
-            "name": "Botón",
-            "value": "",
-            "meta": {
+        canvas_layer(
+            "comp-1", "component", "Botón",
+            box_css("10mm", "10mm", "40mm", "12mm"),
+            meta={
                 "componentId": "comp-1",
                 "variants": {
                     "primary": {"--background-color": "#3366FF"},
@@ -1808,13 +1537,7 @@ def test_normalize_preserves_component_variants() -> None:
                     "": {"--background-color": "#000"},
                 },
             },
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "12mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-            },
-        }
+        )
     )
     doc = normalize_document(raw)
     master = next(layer for layer in doc["layers"] if layer["id"] == "comp-1")
@@ -1824,34 +1547,16 @@ def test_normalize_preserves_component_variants() -> None:
 def test_duplicate_document_remaps_instanceOf_and_componentId() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "comp-1",
-            "type": "component",
-            "name": "Master",
-            "value": "",
-            "meta": {"componentId": "comp-1"},
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "12mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-            },
-        }
+        canvas_layer(
+            "comp-1", "component", "Master", box_css("10mm", "10mm", "40mm", "12mm"), meta={"componentId": "comp-1"}
+        )
     )
     raw["layers"].append(
-        {
-            "id": "inst-1",
-            "type": "component",
-            "name": "Inst",
-            "value": "",
-            "meta": {"instanceOf": "comp-1", "overrideVars": {"--translate-x": "50mm"}},
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "12mm",
-                "--translate-x": "50mm",
-                "--translate-y": "10mm",
-            },
-        }
+        canvas_layer(
+            "inst-1", "component", "Inst",
+            box_css("50mm", "10mm", "40mm", "12mm"),
+            meta={"instanceOf": "comp-1", "overrideVars": {"--translate-x": "50mm"}},
+        )
     )
     dup = duplicate_document(raw)
     by_name = {layer["name"]: layer for layer in dup["layers"]}
@@ -1869,24 +1574,16 @@ def test_normalize_allows_boolean_layer_type() -> None:
         [
             _text_layer("a"),
             _text_layer("b"),
-            {
-                "id": "bool-1",
-                "type": "boolean",
-                "name": "Booleana",
-                "value": "",
-                "meta": {
+            canvas_layer(
+                "bool-1", "boolean", "Booleana",
+                box_css("10mm", "10mm", "40mm", "40mm"),
+                meta={
                     "ops": [
                         {"op": "union", "layerId": "a"},
                         {"op": "subtract", "layerId": "b"},
                     ]
                 },
-                "cssVars": {
-                    "--width": "40mm",
-                    "--height": "40mm",
-                    "--translate-x": "10mm",
-                    "--translate-y": "10mm",
-                },
-            },
+            ),
         ]
     )
     doc = normalize_document(raw)
@@ -1902,19 +1599,9 @@ def test_normalize_allows_boolean_layer_type() -> None:
 def test_normalize_preserves_mask_and_boolean_ops() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "masked-1",
-            "type": "image",
-            "name": "Foto",
-            "value": "",
-            "meta": {"maskLayerId": "mask-shape"},
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "40mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        canvas_layer(
+            "masked-1", "image", "Foto", box_css("0mm", "0mm", "40mm", "40mm"), meta={"maskLayerId": "mask-shape"}
+        )
     )
     doc = normalize_document(raw)
     layer = next(layer for layer in doc["layers"] if layer["id"] == "masked-1")
@@ -1925,12 +1612,10 @@ def test_normalize_omits_invalid_mask_and_ops() -> None:
     raw = create_empty_document()
     raw["layers"].append(_text_layer("ok"))
     raw["layers"].append(
-        {
-            "id": "bad-bool",
-            "type": "boolean",
-            "name": "Bad",
-            "value": "",
-            "meta": {
+        canvas_layer(
+            "bad-bool", "boolean", "Bad",
+            box_css("0mm", "0mm", "40mm", "40mm"),
+            meta={
                 "maskLayerId": "   ",
                 "ops": [
                     {"op": "merge", "layerId": "a"},
@@ -1940,13 +1625,7 @@ def test_normalize_omits_invalid_mask_and_ops() -> None:
                     {"op": "exclude"},
                 ],
             },
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "40mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
-        }
+        )
     )
     doc = normalize_document(raw)
     layer = next(layer for layer in doc["layers"] if layer["id"] == "bad-bool")
@@ -1959,22 +1638,18 @@ def test_normalize_prunes_dangling_and_self_referencing_parent_id() -> None:
     raw = create_empty_document()
     raw["layers"].extend(
         [
-            {
-                "id": "valid-child",
-                "type": "text",
-                "name": "Child",
-                "value": "Text",
-                "parentId": "non-existent-parent",
-                "cssVars": {"--width": "20mm", "--height": "10mm", "--translate-x": "0mm", "--translate-y": "0mm"},
-            },
-            {
-                "id": "self-loop",
-                "type": "text",
-                "name": "Loop",
-                "value": "Text",
-                "parentId": "self-loop",
-                "cssVars": {"--width": "20mm", "--height": "10mm", "--translate-x": "0mm", "--translate-y": "0mm"},
-            },
+            canvas_layer(
+                "valid-child", "text", "Child",
+                box_css("0mm", "0mm", "20mm", "10mm"),
+                value="Text",
+                parentId="non-existent-parent",
+            ),
+            canvas_layer(
+                "self-loop", "text", "Loop",
+                box_css("0mm", "0mm", "20mm", "10mm"),
+                value="Text",
+                parentId="self-loop",
+            ),
         ]
     )
     doc = normalize_document(raw)
@@ -1987,13 +1662,10 @@ def test_normalize_prunes_dangling_and_self_referencing_parent_id() -> None:
 def test_normalize_preserves_autolayout_padding_and_meta_variants() -> None:
     raw = create_empty_document()
     raw["layers"].append(
-        {
-            "id": "frame-auto",
-            "type": "frame",
-            "name": "AutoLayout Frame",
-            "value": "",
-            "cssVars": {"--width": "50mm", "--height": "30mm", "--translate-x": "0mm", "--translate-y": "0mm"},
-            "meta": {
+        canvas_layer(
+            "frame-auto", "frame", "AutoLayout Frame",
+            box_css("0mm", "0mm", "50mm", "30mm"),
+            meta={
                 "autoLayout": {
                     "direction": "row",
                     "gapMm": 4.0,
@@ -2020,7 +1692,7 @@ def test_normalize_preserves_autolayout_padding_and_meta_variants() -> None:
                     },
                 },
             },
-        }
+        )
     )
     doc = normalize_document(raw)
     layer = next(lyr for lyr in doc["layers"] if lyr["id"] == "frame-auto")

@@ -3,53 +3,37 @@ const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 
-const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
+const { assert, finish } = require('./helpers/harness');
+const { loadIpcRouter } = require('./helpers/ipc-router');
 
 function loadRouterWithHandler({ documentsDir, downloadsDir, userDataDir, fakeProc, fakeWin }) {
   const handlers = new Map();
-  stubModule('electron', {
-    ipcMain: {
-      handle: (channel, fn) => handlers.set(channel, fn),
-      removeHandler: () => {},
-    },
-    dialog: {},
-    app: {
-      isPackaged: true,
-      getPath: (name) => {
-        if (name === 'documents') return documentsDir;
-        if (name === 'downloads') return downloadsDir;
-        if (name === 'userData') return userDataDir;
-        throw new Error(`unknown path: ${name}`);
+  const router = loadIpcRouter({
+    electron: {
+      ipcMain: {
+        handle: (channel, fn) => handlers.set(channel, fn),
+        removeHandler: () => {},
       },
+      app: {
+        isPackaged: true,
+        getPath: (name) => {
+          if (name === 'documents') return documentsDir;
+          if (name === 'downloads') return downloadsDir;
+          if (name === 'userData') return userDataDir;
+          throw new Error(`unknown path: ${name}`);
+        },
+      },
+      BrowserWindow: class {},
+      session: {},
+      nativeImage: {},
     },
-    BrowserWindow: class {},
-    session: {},
-    nativeImage: {},
+    backend: {
+      getProcess: () => fakeProc,
+    },
+    windowManager: {
+      getMainWindow: () => fakeWin,
+    },
   });
-
-  stubModule('electron/backend-spawner', {
-    getProcess: () => fakeProc,
-    isReady: () => true,
-    waitForReady: async () => true,
-    getState: () => 'ready',
-    getLastError: () => null,
-    getStderrTail: () => '',
-    manualRestart: async () => true,
-    incrementPendingRequests: () => {},
-    decrementPendingRequests: () => {},
-    noteJobActivity: () => {},
-    clearJobActivity: () => {},
-    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-  });
-
-  stubModule('electron/window-manager', {
-    getMainWindow: () => fakeWin,
-    getIsDev: () => true,
-  });
-
-  const routerPath = require.resolve('../electron/ipc-router');
-  evictModule('electron/ipc-router');
-  const router = require(routerPath);
   router.registerIpcHandlers();
   return { router, handlers };
 }

@@ -3,6 +3,8 @@ import { createLayer } from '../constants';
 import { cssVarsToStyleParts } from '../ops/layerStyle';
 import { renderMultiPageHtml } from '../runtime/planning';
 import { createEmptyDocument, mm, type CanvasLayer } from '../types';
+import { boxCss } from './fixtures';
+
 
 function docWithTextLayer(overrides: Partial<CanvasLayer['cssVars']> = {}): {
   doc: ReturnType<typeof createEmptyDocument>;
@@ -29,16 +31,12 @@ function spanStyleOf(html: string, layerId: string): string {
 
 describe('Text typography — cssVarsToStyleParts', () => {
   it('emits font-style, text-decoration, letter-spacing, text-transform', () => {
-    const parts = cssVarsToStyleParts({
-      '--width': '60mm',
-      '--height': '10mm',
-      '--translate-x': '20mm',
-      '--translate-y': '30mm',
+    const parts = cssVarsToStyleParts(boxCss('20mm', '30mm', '60mm', '10mm', {
       '--font-style': 'italic',
       '--text-decoration': 'underline',
       '--letter-spacing': '0.5px',
       '--text-transform': 'uppercase',
-    });
+    }));
     const css = parts.join(';');
     expect(css).toContain('font-style:italic');
     expect(css).toContain('text-decoration:underline');
@@ -47,14 +45,7 @@ describe('Text typography — cssVarsToStyleParts', () => {
   });
 
   it('skips text-transform:none and empty values', () => {
-    const parts = cssVarsToStyleParts({
-      '--width': '60mm',
-      '--height': '10mm',
-      '--translate-x': '20mm',
-      '--translate-y': '30mm',
-      '--text-transform': 'none',
-      '--font-style': '',
-    });
+    const parts = cssVarsToStyleParts(boxCss('20mm', '30mm', '60mm', '10mm', { '--text-transform': 'none', '--font-style': '' }));
     const css = parts.join(';');
     expect(css).not.toContain('text-transform');
     expect(css).not.toContain('font-style');

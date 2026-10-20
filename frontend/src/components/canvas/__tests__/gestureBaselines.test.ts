@@ -6,6 +6,8 @@ import {
 } from '../ops/gridLayout';
 import { isOpenDocumentDirty } from '../hooks/useCanvasSync';
 import { parseMm } from '../types';
+import { boxCss } from './fixtures';
+
 
 describe('isOpenDocumentDirty', () => {
   it('is dirty when has unsaved edits', () => {
@@ -63,22 +65,12 @@ describe('applyLivePanelLayerChange', () => {
       id: 's1',
       parentId: gridId,
       meta: { index: 0 },
-      cssVars: {
-        '--width': '48mm',
-        '--height': '38mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '48mm', '38mm'),
     });
     const grid = createLayer('grid', {
       id: gridId,
       meta: { cols: 2, rows: 2, gapMm: 2 },
-      cssVars: {
-        '--width': '100mm',
-        '--height': '80mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '100mm', '80mm'),
     });
     const layers = [
       grid,
@@ -102,12 +94,7 @@ describe('applyLivePanelLayerChange', () => {
     const grid = createLayer('grid', {
       id: gridId,
       meta: { cols: 2, rows: 1, gapMm: 2 },
-      cssVars: {
-        '--width': '100mm',
-        '--height': '40mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '100mm', '40mm'),
     });
     const layers = [
       grid,
@@ -115,23 +102,13 @@ describe('applyLivePanelLayerChange', () => {
         id: 's1',
         parentId: gridId,
         meta: { index: 0 },
-        cssVars: {
-          '--width': '49mm',
-          '--height': '40mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '49mm', '40mm'),
       }),
       createLayer('imageSlot', {
         id: 's2',
         parentId: gridId,
         meta: { index: 1 },
-        cssVars: {
-          '--width': '49mm',
-          '--height': '40mm',
-          '--translate-x': '51mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('51mm', '0mm', '49mm', '40mm'),
       }),
     ];
     const nextGrid: typeof grid = {
@@ -149,23 +126,13 @@ describe('applyLivePanelLayerChange', () => {
     const grid = createLayer('grid', {
       id: gridId,
       meta: { cols: 2, rows: 2, gapMm: 2 },
-      cssVars: {
-        '--width': '100mm',
-        '--height': '80mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '100mm', '80mm'),
     });
     const slot = createLayer('imageSlot', {
       id: 's1',
       parentId: gridId,
       meta: { index: 0 },
-      cssVars: {
-        '--width': '30mm',
-        '--height': '20mm',
-        '--translate-x': '19mm',
-        '--translate-y': '19mm',
-      },
+      cssVars: boxCss('19mm', '19mm', '30mm', '20mm'),
     });
     const layers = [
       grid,

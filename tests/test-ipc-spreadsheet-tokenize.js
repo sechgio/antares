@@ -2,39 +2,12 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-
-const { stubModule, evictModule } = require('./helpers/harness');
+const { loadIpcRouter } = require('./helpers/ipc-router');
 
 function loadRouter() {
-  stubModule('electron', {
-    ipcMain: { handle: () => {}, removeHandler: () => {} },
-    dialog: {},
-    app: { isPackaged: true },
+  return loadIpcRouter({
+    ready: false,
   });
-
-  stubModule('electron/backend-spawner', {
-    getProcess: () => null,
-    isReady: () => false,
-    waitForReady: async () => false,
-    getState: () => 'starting',
-    getLastError: () => null,
-    getStderrTail: () => '',
-    manualRestart: async () => false,
-    incrementPendingRequests: () => {},
-    decrementPendingRequests: () => {},
-    noteJobActivity: () => {},
-    clearJobActivity: () => {},
-    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-  });
-
-  stubModule('electron/window-manager', {
-    getMainWindow: () => null,
-    getIsDev: () => true,
-  });
-
-  const routerPath = require.resolve('../electron/ipc-router');
-  evictModule('electron/ipc-router');
-  return require(routerPath);
 }
 
 async function main() {

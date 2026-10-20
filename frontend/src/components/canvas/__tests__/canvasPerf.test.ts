@@ -9,6 +9,8 @@ import { moveSelection, rotateSelection } from '../ops/selectionTransform';
 import { selectLayersByIds } from '../ops/mixedSelection';
 import { resolveBooleanRender } from '../ops/booleanOps';
 import type { CanvasDocument } from '../types';
+import { boxCss } from './fixtures';
+
 
 function makeLayers(n: number) {
   return Array.from({ length: n }, (_, i) =>
@@ -257,13 +259,7 @@ describe('canvas perf hot path', () => {
     const { applyLayerDomTransforms } = await import('../ops/imperativeLayerDom');
     const layer = createLayer('rect', {
       id: 'r1',
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-        '--width': '8mm',
-        '--height': '8mm',
-        '--rotate': '15deg',
-      },
+      cssVars: boxCss('10mm', '20mm', '8mm', '8mm', { '--rotate': '15deg' }),
     });
     const root = document.createElement('div');
     const node = document.createElement('div');
@@ -304,12 +300,7 @@ describe('canvas perf hot path', () => {
     const { applyLayerDomGeometry, clearLayerDomGestureStyles } = await import('../ops/imperativeLayerDom');
     const layer = createLayer('rect', {
       id: 'r2',
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-        '--width': '25mm',
-        '--height': '12mm',
-      },
+      cssVars: boxCss('10mm', '20mm', '25mm', '12mm'),
     });
     const root = document.createElement('div');
     const node = document.createElement('div');
@@ -328,12 +319,7 @@ describe('canvas perf hot path', () => {
     const { applyLayerDomGeometry, applyLayerDomTransforms } = await import('../ops/imperativeLayerDom');
     const layer = createLayer('rect', {
       id: 'r3',
-      cssVars: {
-        '--translate-x': '5mm',
-        '--translate-y': '5mm',
-        '--width': '20mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('5mm', '5mm', '20mm', '10mm'),
     });
     const root = document.createElement('div');
     const node = document.createElement('div');
@@ -408,12 +394,7 @@ describe('canvas perf hot path', () => {
     const { layerBounds } = await import('../ops/layerBounds');
     const layer = createLayer('rect', {
       id: 'r1',
-      cssVars: {
-        '--translate-x': '15mm',
-        '--translate-y': '25mm',
-        '--width': '30mm',
-        '--height': '40mm',
-      },
+      cssVars: boxCss('15mm', '25mm', '30mm', '40mm'),
     });
     const b1 = layerBounds(layer);
     const b2 = layerBounds(layer);

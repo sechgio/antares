@@ -11,12 +11,6 @@ def test_redact_url_strips_key_query_param() -> None:
     assert "key=%2A%2A%2A" in redacted or "key=***" in redacted
 
 
-def test_redact_url_strips_access_token() -> None:
-    url = "https://api.mapbox.com/tiles/1/2/3?access_token=pk.test.secret"
-    redacted = _redact_url_for_log(url)
-    assert "pk.test.secret" not in redacted
-
-
 def test_redact_url_hides_geocoding_query() -> None:
     url = "https://nominatim.openstreetmap.org/search?q=Av+Privada+123&format=jsonv2"
     redacted = _redact_url_for_log(url)

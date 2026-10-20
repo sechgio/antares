@@ -5,6 +5,8 @@ import Artboard from '../editor/Artboard';
 import { createFrameRectCache } from '../editor/frameRectCache';
 import { mmToScreenPx } from '../ops/drawHelpers';
 import { createEmptyDocument, type CanvasLayer } from '../types';
+import { boxCss } from './fixtures';
+
 
 const { applyLayerDomGeometrySpy, collectReferenceGapsSpy } = vi.hoisted(() => ({
   applyLayerDomGeometrySpy: vi.fn(),
@@ -299,20 +301,10 @@ describe('Artboard drag gestures', () => {
 
   it('keeps object-guide alignment when grid snapping is also enabled', () => {
     const moving = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '20mm',
-        '--translate-y': '20mm',
-        '--width': '10mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('20mm', '20mm', '10mm', '10mm'),
     });
     const fixed = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '43mm',
-        '--translate-y': '20mm',
-        '--width': '10mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('43mm', '20mm', '10mm', '10mm'),
     });
     const document = createEmptyDocument('Snap priority');
     document.layers.push(moving, fixed);
@@ -1148,21 +1140,11 @@ describe('Artboard drag gestures', () => {
   it('point-click on artboard selects top-most layer under cursor', () => {
     const bottom = createLayer('rect', {
       id: 'bottom',
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '40mm',
-        '--height': '40mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '40mm', '40mm'),
     });
     const top = createLayer('rect', {
       id: 'top',
-      cssVars: {
-        '--translate-x': '15mm',
-        '--translate-y': '15mm',
-        '--width': '40mm',
-        '--height': '40mm',
-      },
+      cssVars: boxCss('15mm', '15mm', '40mm', '40mm'),
     });
     const document = createEmptyDocument('Test');
     document.layers.push(bottom, top);

@@ -1,37 +1,10 @@
 const { EventEmitter } = require('events');
 
-const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
+const { assert, finish } = require('./helpers/harness');
+const { loadIpcRouter } = require('./helpers/ipc-router');
 
 function loadRouter() {
-  stubModule('electron', {
-    ipcMain: { handle: () => {}, removeHandler: () => {} },
-    dialog: {},
-    app: { isPackaged: true },
-  });
-
-  stubModule('electron/backend-spawner', {
-    getProcess: () => null,
-    isReady: () => true,
-    waitForReady: async () => true,
-    getState: () => 'ready',
-    getLastError: () => null,
-    getStderrTail: () => '',
-    manualRestart: async () => true,
-    incrementPendingRequests: () => {},
-    decrementPendingRequests: () => {},
-    noteJobActivity: () => {},
-    clearJobActivity: () => {},
-    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-  });
-
-  stubModule('electron/window-manager', {
-    getMainWindow: () => null,
-    getIsDev: () => true,
-  });
-
-  const routerPath = require.resolve('../electron/ipc-router');
-  evictModule('electron/ipc-router');
-  return require(routerPath);
+  return loadIpcRouter();
 }
 
 async function run() {

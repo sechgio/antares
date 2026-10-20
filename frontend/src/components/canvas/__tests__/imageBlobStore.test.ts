@@ -12,6 +12,8 @@ import {
   sweepOrphanBlobs,
 } from '../utils/imageBlobStore';
 import { createEmptyDocument } from '../types';
+import { boxCss } from './fixtures';
+
 
 describe('imageBlobStore', () => {
   afterEach(() => {
@@ -45,12 +47,7 @@ describe('imageBlobStore', () => {
       type: 'image',
       name: 'Foto',
       value: base64Data,
-      cssVars: {
-        '--width': '50mm',
-        '--height': '40mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '50mm', '40mm'),
     });
 
     const hydrated = await hydrateDocumentImages(doc);
@@ -68,12 +65,7 @@ describe('imageBlobStore', () => {
     (window as unknown as { electronAPI: { canvasAssetGet: typeof get } }).electronAPI = {
       canvasAssetGet: get,
     };
-    const cssVars = {
-      '--width': '10mm',
-      '--height': '10mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const cssVars = boxCss('0mm', '0mm', '10mm', '10mm');
     const doc = createEmptyDocument('Duplicate asset');
     doc.layers.push(
       { id: 'image-a', type: 'image', name: 'A', value: ref, cssVars },
@@ -114,12 +106,7 @@ describe('imageBlobStore', () => {
     const first = await registerImageBlob(new Blob(['same'], { type: 'image/png' }));
     const second = await registerImageBlob(new Blob(['other'], { type: 'image/png' }));
     const doc = createEmptyDocument('Serial assets');
-    const cssVars = {
-      '--width': '10mm',
-      '--height': '10mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const cssVars = boxCss('0mm', '0mm', '10mm', '10mm');
     doc.layers.push(
       { id: 'img-a', type: 'image', name: 'A', value: first.url, cssVars },
       { id: 'img-b', type: 'image', name: 'B', value: first.url, cssVars },
@@ -166,12 +153,7 @@ describe('imageBlobStore', () => {
               type: 'image' as const,
               name: 'Foto',
               value: reg.url,
-              cssVars: {
-                '--width': '10mm',
-                '--height': '10mm',
-                '--translate-x': '0mm',
-                '--translate-y': '0mm',
-              },
+              cssVars: boxCss('0mm', '0mm', '10mm', '10mm'),
             },
           ],
         },
@@ -204,12 +186,7 @@ describe('imageBlobStore', () => {
   it('roundtrips blob URL and blobId through serialize then hydrate', async () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' });
     const reg = await registerImageBlob(file);
-    const css = {
-      '--width': '50mm',
-      '--height': '40mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const css = boxCss('0mm', '0mm', '50mm', '40mm');
     const doc = createEmptyDocument('Roundtrip');
     doc.layers = [
       { id: 'img', type: 'image', name: 'Foto', value: reg.url, cssVars: css },
@@ -239,12 +216,7 @@ describe('imageBlobStore', () => {
       type: 'image',
       name: 'Keep',
       value: keep.url,
-      cssVars: {
-        '--width': '50mm',
-        '--height': '40mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '50mm', '40mm'),
     });
 
     const live = collectImageRefsFromLayers(doc.layers);
@@ -259,12 +231,7 @@ describe('imageBlobStore', () => {
   it('applySavedDocumentKeepingImages keeps blob refs after save (no dataUrl in editor)', async () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' });
     const reg = await registerImageBlob(file);
-    const css = {
-      '--width': '50mm',
-      '--height': '40mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const css = boxCss('0mm', '0mm', '50mm', '40mm');
     const editor = createEmptyDocument('Editor');
     editor.layers = [
       { id: 'img', type: 'image', name: 'Foto', value: reg.url, cssVars: css },
@@ -345,12 +312,7 @@ describe('imageBlobStore', () => {
     const first = await registerImageBlob(new Blob(['first'], { type: 'image/png' }));
     const second = await registerImageBlob(new Blob(['second'], { type: 'image/png' }));
     const doc = createEmptyDocument('Save race');
-    const cssVars = {
-      '--width': '10mm',
-      '--height': '10mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const cssVars = boxCss('0mm', '0mm', '10mm', '10mm');
     doc.layers = [
       { id: 'first', type: 'image', name: 'First', value: first.url, cssVars },
       { id: 'second', type: 'image', name: 'Second', value: second.url, cssVars },
