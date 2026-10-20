@@ -1,1 +1,0 @@
--- Antares has no static seed data; schema state is defined by migrations.

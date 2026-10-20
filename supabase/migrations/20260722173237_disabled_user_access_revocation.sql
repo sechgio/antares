@@ -1,6 +1,3 @@
--- Disabled users must keep SELECT on their own profile so clients can read
--- is_disabled and force logout. Migration 0010 gated own-row SELECT on
--- is_active_user(), which hid the flag and left disabled sessions usable.
 DROP POLICY IF EXISTS "users_read_own_profile" ON public.user_profiles;
 CREATE POLICY "users_read_own_profile"
   ON public.user_profiles
@@ -8,8 +5,6 @@ CREATE POLICY "users_read_own_profile"
   TO authenticated
   USING (user_id = auth.uid());
 
--- When an admin disables a user: ban auth login and revoke live sessions.
--- Re-enabling clears the ban so the user can sign in again.
 CREATE OR REPLACE FUNCTION public.admin_toggle_disabled(p_user_id uuid, p_disabled boolean)
 RETURNS void
 LANGUAGE plpgsql
@@ -47,7 +42,6 @@ BEGIN
 END;
 $$;
 
--- Push profile updates (incl. is_disabled) to connected clients.
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -61,7 +55,6 @@ BEGIN
   END IF;
 END $$;
 
--- Backfill: users disabled before this migration must also be banned.
 UPDATE auth.users u
 SET banned_until = '9999-12-31 23:59:59+00'::timestamptz
 FROM public.user_profiles p

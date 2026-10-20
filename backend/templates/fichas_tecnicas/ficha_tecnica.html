@@ -6,10 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ficha Técnica de Evaluación de Actividades</title>
     <style>
-        /*
-         * Espejo 1:1 de frontend PreviewPanel.tsx — misma tipografía, bordes,
-         * paddings y estructura. Una hoja A4 exacta por ficha.
-         */
         * {
             margin: 0;
             padding: 0;
@@ -31,7 +27,6 @@
             print-color-adjust: exact !important;
         }
 
-        /* Papel A4 = .ficha-preview-container en PreviewPanel */
         .container {
             width: 210mm;
             height: 297mm;
@@ -56,7 +51,6 @@
             break-after: auto;
         }
 
-        /* Marco interior con borde = div border 2px padding 12px del preview */
         .sheet {
             border: 2px solid #333;
             padding: 12px;
@@ -99,7 +93,6 @@
             display: block;
         }
 
-        /* Título + número en la misma línea; O.S.N° debajo del número */
         .header-main {
             flex: 1;
             min-width: 0;
@@ -290,7 +283,6 @@
             padding-left: 16px;
         }
 
-        /* Texto a la izquierda; cuadro alineado a la derecha de la columna */
         .treatment-row {
             display: flex;
             align-items: center;
@@ -458,7 +450,6 @@
             line-height: 1;
         }
 
-        /* Firmas + footer anclados al pie del marco (llena la hoja) */
         .sheet-foot {
             flex: 0 0 auto;
             margin-top: auto;
@@ -523,7 +514,6 @@
     <div class="container">
         <div class="sheet">
             <div class="sheet-body">
-                <!-- Header: título y número en la misma línea; O.S.N° debajo del número -->
                 <div class="header">
                     <div class="logo">
                         {% if logo_left %}

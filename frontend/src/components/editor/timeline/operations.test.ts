@@ -135,7 +135,7 @@ describe('operaciones de timeline', () => {
   it('limita las copias a 100', () => {
     const p = project([clip({ sourceOutUs: 100_000 })]);
     const result = applyOperation(p, { type: 'repeat', clipId: 'c1', times: 500 });
-    expect(result.clips).toHaveLength(101); // original + 100 copias
+    expect(result.clips).toHaveLength(101);
   });
 
   it('borra el clip', () => {

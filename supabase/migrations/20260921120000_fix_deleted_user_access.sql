@@ -1,9 +1,3 @@
--- Fix access revocation for deleted users.
--- Previously, private.is_active_user() used:
---   SELECT auth.uid() IS NOT NULL AND NOT COALESCE((SELECT is_disabled FROM public.user_profiles WHERE user_id = auth.uid()), false);
--- If the user was deleted, the user_profiles row was gone, so the subquery returned NULL,
--- COALESCE(NULL, false) became false, and NOT false became true, granting deleted users access.
--- We require that the user actually EXISTS in public.user_profiles with is_disabled = false.
 
 CREATE OR REPLACE FUNCTION private.is_active_user()
 RETURNS boolean
@@ -22,7 +16,6 @@ $$;
 
 ALTER TABLE public.user_profiles REPLICA IDENTITY FULL;
 
--- Ensure admin_delete_user cleans up sessions and refresh tokens before deleting auth.users
 CREATE OR REPLACE FUNCTION private.admin_delete_user(p_user_id uuid)
 RETURNS void
 LANGUAGE plpgsql

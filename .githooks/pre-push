@@ -1,5 +1,4 @@
 #!/bin/sh
-# Bloquea push directo a main. Usa: npm run push:ship
 
 protected_branch="main"
 

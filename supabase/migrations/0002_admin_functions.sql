@@ -1,4 +1,3 @@
--- Funcion helper: verifica si el usuario actual es admin
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS boolean
 LANGUAGE sql
@@ -11,14 +10,12 @@ AS $$
   );
 $$;
 
--- Politica: admins pueden leer todos los perfiles
 DROP POLICY IF EXISTS "admins_read_all_profiles" ON public.user_profiles;
 CREATE POLICY "admins_read_all_profiles"
   ON public.user_profiles
   FOR SELECT
   USING (public.is_admin());
 
--- Funcion para listar usuarios (vista segura para admins)
 CREATE OR REPLACE FUNCTION public.admin_list_users()
 RETURNS TABLE (
   user_id uuid,
@@ -46,7 +43,6 @@ AS $$
   WHERE public.is_admin();
 $$;
 
--- Funcion para alternar is_disabled (solo admin, no puede desactivarse a si mismo)
 CREATE OR REPLACE FUNCTION public.admin_toggle_disabled(p_user_id uuid, p_disabled boolean)
 RETURNS void
 LANGUAGE plpgsql
@@ -65,7 +61,6 @@ BEGIN
 END;
 $$;
 
--- Funcion para promover/degradar admin (solo admin, no puede quitarse a si mismo)
 CREATE OR REPLACE FUNCTION public.admin_set_admin(p_user_id uuid, p_is_admin boolean)
 RETURNS void
 LANGUAGE plpgsql

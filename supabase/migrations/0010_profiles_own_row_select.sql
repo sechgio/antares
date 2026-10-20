@@ -1,6 +1,3 @@
--- Narrow user_profiles SELECT: own row only.
--- Assignee picker uses team_list_members() (SECURITY DEFINER).
--- Admins still use admins_read_all_profiles.
 
 DROP POLICY IF EXISTS "authenticated_read_profiles" ON public.user_profiles;
 

@@ -15,7 +15,7 @@ def test_export_volantes_template_devuelve_b64_sin_path() -> None:
     result = ss.spreadsheet_export_volantes_template({})
     assert result["filename"] == "plantilla-volantes.xlsx"
     payload = base64.b64decode(result["content_b64"])
-    assert payload[:2] == b"PK"  # xlsx es zip
+    assert payload[:2] == b"PK"
 
     import openpyxl
 

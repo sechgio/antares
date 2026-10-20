@@ -150,7 +150,6 @@ export function useEditorRecorder(): UseEditorRecorderResult {
               stream.addTrack(track);
             }
           } catch {
-            // Sin micrófono la grabación sigue con video y audio del sistema.
           }
         }
         streamRef.current = stream;
@@ -229,7 +228,6 @@ export function useEditorRecorder(): UseEditorRecorderResult {
       try {
         await api.editorRecordingAbort(sessionId);
       } catch {
-        // Abortar una sesión inexistente no debe romper el descarte.
       }
     }
     recorderRef.current = null;

@@ -13,7 +13,6 @@ from backend.core.editor.toolchain import (
 )
 from backend.utils.paths import user_data_path
 
-# Topes para detectar filtergraphs que ffmpeg rechaza por complejidad.
 MAX_CLIPS_IN_GRAPH = 64
 
 
@@ -190,7 +189,6 @@ def _visual_chain(
     if op:
         parts.append(op)
     if not is_text:
-        # El título llega como RGBA; forzar yuva destruiría su alfa.
         parts.append("format=yuva420p")
 
     label = f"v{chain_index}"
@@ -304,7 +302,7 @@ def execute_render(
             cmd += ["-i", source["value"]]
     cmd += ["-filter_complex", plan["filter_complex"], *plan["args"], str(tmp)]
 
-    proc = subprocess.run(  # nosec B603 - argv con listas, sin shell
+    proc = subprocess.run(
         cmd,
         capture_output=True,
         text=True,

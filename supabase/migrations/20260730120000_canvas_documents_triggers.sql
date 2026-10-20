@@ -1,8 +1,3 @@
--- Defense-in-depth for canvas_documents:
--- 1. set_updated_at: auto-stamp updated_at on UPDATE so any code path that
---    forgets to set it cannot break LWW cloud sync.
--- 2. preserve_created_by: never let an UPDATE overwrite created_by — the
---    original creator is immutable even if app code sends a stale value.
 
 DROP TRIGGER IF EXISTS canvas_documents_set_updated_at ON public.canvas_documents;
 CREATE TRIGGER canvas_documents_set_updated_at

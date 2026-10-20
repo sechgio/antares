@@ -6,7 +6,7 @@
 ![Electron](https://img.shields.io/badge/Electron-33+-47848F?style=flat-square&logo=electron)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript)
-![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python)
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python)
 
 ---
 
@@ -46,7 +46,7 @@
 | :--- | :--- | :--- |
 | **Frontend** | React 18, TypeScript, Vite, TailwindCSS | Interfaz gráfica moderna, reactiva y modular con soporte multi-tema (23 presets). |
 | **Desktop Runtime** | Electron | Proceso principal main/preload, IPC-Router seguro y administración de ventanas. |
-| **Backend Service** | Python 3.10+ (PyInstaller) | Servicio local encargado del procesamiento de imágenes, manipulación de PDFs y persistencia local vía IPC JSON-RPC 2.0 (stdio). |
+| **Backend Service** | Python 3.11+ (PyInstaller) | Servicio local encargado del procesamiento de imágenes, manipulación de PDFs y persistencia local vía IPC JSON-RPC 2.0 (stdio). |
 | **Bases de Datos & Cloud** | SQLite, Supabase | Persistencia local ligera en SQLite e integración cloud para autenticación y espacios colaborativos. |
 
 ---
@@ -77,7 +77,7 @@ antares/
 
 - **Sistema Operativo**: Windows 10 / Windows 11 (64-bit)
 - **Node.js**: `v18.0.0` o superior
-- **Python**: `3.10` o superior (con `pip` habilitado)
+- **Python**: `3.11` o superior (con `pip` habilitado)
 
 ---
 

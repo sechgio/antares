@@ -96,9 +96,6 @@ def _spool() -> Any:
     return spool
 
 
-# EnumPrintersW tarda ~80-340 ms por llamada (medido con bench:ipc en
-# flows_printers_list): el listado se cachea unos segundos para aperturas
-# sucesivas del selector.
 _PRINTERS_CACHE_TTL_SECONDS = 30.0
 _printers_cache: tuple[float, list[dict[str, str | bool]]] | None = None
 _printers_cache_lock = threading.Lock()

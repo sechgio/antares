@@ -1,6 +1,3 @@
--- Fix is_active_user: authenticated users without a user_profiles row were treated as
--- inactive (COALESCE → false), so Espacios RLS blocked all SELECT/INSERT for them.
--- Also backfill missing profiles for users created before the handle_new_user trigger.
 
 CREATE OR REPLACE FUNCTION public.is_active_user()
 RETURNS boolean
@@ -16,7 +13,6 @@ AS $$
     );
 $$;
 
--- Backfill profiles for any auth users missing a row (idempotent).
 INSERT INTO public.user_profiles (user_id, display_name)
 SELECT
   u.id,

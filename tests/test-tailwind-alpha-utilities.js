@@ -1,9 +1,5 @@
 // Tailwind 3 omite las utilidades `var(--token)/NN` y genera CSS inválido para
 // `shadow-[... var(--x)/NN ...]`; este guard detecta ambas formas.
-//
-// Formas correctas:
-//   - Paleta del tema: `bg-mc-ink/50` (alfa resuelto con color-mix en tailwind.config.js).
-//   - token CSS arbitrario: `bg-[color:color-mix(in_srgb,var(--x)_50%,transparent)]`.
 
 const fs = require('fs');
 const path = require('path');

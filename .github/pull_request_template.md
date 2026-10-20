@@ -1,6 +1,5 @@
 ## What / Why
 
-<!-- Qué cambia y por qué. Enlaza el issue si existe. Mínimo ~120 caracteres. -->
 
 ## Risk
 
@@ -17,7 +16,6 @@
 
 ## Notes for the reviewer
 
-<!-- Dónde mirar primero. Alguna decisión de la que no estés seguro. -->
 
 ## Checklist
 
@@ -26,7 +24,6 @@
 - [ ] `CHANGELOG.md` actualizado si hay cambio visible para el usuario
 - [ ] Docs/ADR actualizados si cambió una restricción arquitectónica
 
-<!-- Tamaño del diff, archivos nuevos y tests los audita `review-policy` en cada push: lee su comentario en el PR. -->
 
 ---
 

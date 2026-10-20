@@ -130,7 +130,6 @@
             min-height: 0;
         }
 
-        /* 3x3 Photo Grid */
         .photo-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -291,7 +290,6 @@
                 </div>
                 {% endfor %}
 
-                {# Fill remaining cells if less than 9 images #}
                 {% for i in range(report.images|length, 9) %}
                 <div class="photo-cell">
                     <div class="photo-placeholder"></div>

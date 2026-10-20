@@ -1,5 +1,4 @@
 #!/bin/sh
-# Bloquea commits que incluyan credenciales locales o archivos .env con secretos.
 
 blocked_paths=""
 secret_hits=""

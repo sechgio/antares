@@ -1,16 +1,12 @@
-# Base de datos local
 data/*.db
 data/technical_reports.json
 data/informes_v2.json
 
-# Fixtures de canvas
 data/canvas/documents/*.json
 !data/canvas/documents/.gitkeep
 
-# Archivos de Excel temporales
 ~$*.xlsx
 
-# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,53 +15,40 @@ dist/
 build/
 .pytest_cache/
 
-# Entornos virtuales
 .venv/
 env/
 venv*/
 
-# IDE
 .vscode/
 .idea/
 *.swp
 
-# PyInstaller
 *.spec
 !backend/backend.spec
 
-# Output de pruebas
 test_output/
 .coverage
 
-# Electron
 node_modules/
 dist-electron/
 
-# Frontend build
 frontend/.vite/
 frontend/coverage/
 frontend/*.tsbuildinfo
 
-# OS
 .DS_Store
 Thumbs.db
 
-# Worktrees
 .worktrees/
 worktrees/
 
-# Superpowers local companion sessions
 .superpowers/
 
-# workbuddy
 .workbuddy-ai/
 
-# Local dev server scratch files
 .vite-brand.*
 
-# DESIGN.md: no está en la allowlist de Markdown.
 DESIGN.md
-# Config de AI tools
 .claude/
 .codex/
 .commandcode/
@@ -90,55 +73,42 @@ docs/*
 !docs/adr/
 !docs/adr/**
 
-# Cadena multimedia del editor: binarios preparados ignorados,
-# manifest y avisos de licencia versionables
 media/*
 !media/manifest.json
 !media/LICENSE-THIRD-PARTY.txt
 
-# Ruff cache
 .ruff_cache/
 .mypy_cache/
 
-# Temp files
 _temp_*
 mypy-out.txt
 *.log
 *.tmp
 *.temp
 
-# Windows reserved filename artifact
 nul
 
-# Additional caches & environments
 .venv-audit/
 .tox/
 
-# Scratch / local dev artifacts
 scratch/
 !scratch/.gitkeep
 .tmp-simplify/
 
-# Vite bundle analyze output
 frontend/stats.html
 
-# .env
 .env
 .env.*
 !.env.example
 !frontend/.env.example
 
-# Supabase CLI
 supabase/.env
 supabase/.env.*
 !supabase/.env.example
 
-# Cursor: settings y rules locales
 .cursor/settings.json
 .cursor/rules/
 
-# AutoIMG: credenciales locales
-# No uses **/autoimg/: ignora frontend/src/components/autoimg/.
 autoimg-oauth-config.json
 autoimg-tokens.json
 autoimg-sheet.json
@@ -146,24 +116,18 @@ autoimg-local-prefs.json
 autoimg-*.json
 /autoimg/
 
-# Plantillas subidas en runtime
 data/formatos/uploads/
 
-# Agent scratch output (local only)
 agent-tools/
 outputs/
 
-# Advisor plans (local only)
 plans/
 advisor-plans/
 tasks/
 
-# Reportes de audit locales
 BUGS_BOTTLENECKS_AUDIT_*.md
 PERFORMANCE_AUDIT_*.md
 
-# Salida de benchmarks
 scripts/benchmark_*_results.json
 
-# vid.stab transforms del editor
 *.trf

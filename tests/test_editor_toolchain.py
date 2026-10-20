@@ -47,8 +47,8 @@ def test_delogo_and_stabilization_present() -> None:
 
 def test_mp4_and_webm_encoders_present() -> None:
     encoders = list_encoders(resolve_toolchain())
-    assert {"libx264", "aac"} <= encoders  # MP4
-    assert {"libvpx-vp9", "libopus"} <= encoders  # WebM
+    assert {"libx264", "aac"} <= encoders
+    assert {"libvpx-vp9", "libopus"} <= encoders
 
 
 def test_synthetic_clip_probes_with_expected_streams() -> None:

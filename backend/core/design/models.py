@@ -10,11 +10,11 @@ from backend.core.design.types import JsonObject
 from backend.utils.paths import resource_path
 
 
-def _load_design_schema() -> JsonObject:  # allowlist: JsonObject
+def _load_design_schema() -> JsonObject:
     try:
         p = resource_path("shared/design-schema.json")
         if p.exists():
-            return cast("JsonObject", json.loads(p.read_text(encoding="utf-8")))  # allowlist: JsonObject
+            return cast("JsonObject", json.loads(p.read_text(encoding="utf-8")))
     except Exception:
         pass
     return {}

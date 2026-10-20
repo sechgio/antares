@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <title>{{ title }}</title>
     <style>
-        /* STRICT A4 ONE-PAGE FIT */
         @page {
             size: A4 portrait;
             margin: 0;
@@ -79,7 +78,6 @@
             overflow: hidden;
         }
 
-        /* === HEADER (Fixed Height) === */
         .header {
             display: flex;
             justify-content: space-between;
@@ -188,7 +186,6 @@
             grid-column: span 3;
         }
 
-        /* === PHOTO SECTION (Flex-grow to fill remaining space) === */
         .photo-section {
             flex: 1;
             border: 2px solid #333;
@@ -199,7 +196,6 @@
             overflow: hidden;
         }
 
-        /* === UNIFIED PHOTO GRID: 6 images -> 3 columns x 2 rows (default) === */
         .photo-grid {
             flex: 1;
             display: grid;
@@ -210,13 +206,11 @@
             height: 100%;
         }
 
-        /* === LAYOUT: 3 IMAGES (2 top + 1 centered bottom) === */
         .layout-3 {
             grid-template-columns: repeat(2, minmax(0, 1fr));
             grid-template-rows: repeat(2, minmax(0, 1fr));
         }
 
-        /* === LAYOUT: 2 IMAGES (stacked and vertically centered) === */
         .layout-2 {
             grid-template-columns: minmax(0, 1fr);
             grid-template-rows: repeat(2, minmax(0, 1fr));
@@ -239,12 +233,10 @@
             grid-template-rows: repeat(2, minmax(0, 1fr));
         }
 
-        /* === LAYOUT: 6 IMAGES (3x2) — full-bleed (previous version behavior) === */
         .layout-6 .photo-item img {
             object-fit: fill;
         }
 
-        /* === LAYOUT: 5 IMAGES (3 top + 2 centered bottom) === */
         .layout-5 {
             grid-template-columns: repeat(6, minmax(0, 1fr));
             grid-template-rows: repeat(2, minmax(0, 1fr));
@@ -305,7 +297,6 @@
 </head>
 
 <body>
-    {# Handle both single 'data'/'images' (legacy) and 'reports' list #}
     {% set report_list = reports if reports else [{'data': data, 'images': images, 'layout_mode': layout_mode,
     'img_count': img_count}] %}
 
@@ -373,7 +364,6 @@
             {% if img_count == 0 %}
             <div class="no-photos">No se encontraron imágenes asociadas a esta orden.</div>
             {% else %}
-            <!-- Layout based on image count -->
             <div class="photo-grid layout-{{ img_count if img_count in [1, 2, 3, 4, 5, 6] else '6' }}">
                 {% for img in report.images[:6] %}
                 <div class="photo-item">

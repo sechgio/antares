@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <title>{{ title }}</title>
     <style>
-        /* STRICT A4 ONE-PAGE FIT */
         @page {
             size: A4;
             margin: 0;
@@ -93,7 +92,6 @@
             page-break-after: auto;
         }
 
-        /* === HEADER (Fixed Height) === */
         .header {
             display: flex;
             justify-content: space-between;
@@ -205,7 +203,6 @@
             word-break: break-word;
         }
 
-        /* === PHOTO SECTION (Fixed height or auto-fill) === */
         .photo-section {
             flex: 1;
             border: 1px solid #0066cc;
@@ -216,7 +213,6 @@
             overflow: hidden;
         }
 
-        /* === PHOTO GRID — adaptive layout by image count === */
         .photo-grid {
             flex: 1;
             display: flex;
@@ -241,7 +237,6 @@
             display: block;
         }
 
-        /* === LAYOUT-1: 1 imagen — centrada y grande === */
         .layout-1 {
             justify-content: center;
             align-items: center;
@@ -253,7 +248,6 @@
             height: 100%;
         }
 
-        /* === LAYOUT-2: 2 imágenes — apiladas verticalmente === */
         .layout-2 {
             flex-direction: column;
             justify-content: space-between;
@@ -264,7 +258,6 @@
             height: calc(50% - 1mm);
         }
 
-        /* === LAYOUT-3: 3 imágenes — 2 arriba + 1 abajo centrada === */
         .layout-3 {
             justify-content: space-between;
             align-content: space-between;
@@ -280,7 +273,6 @@
             margin-right: auto;
         }
 
-        /* === LAYOUT-4: 4 imágenes — grid 2x2 === */
         .layout-4 {
             justify-content: space-between;
             align-content: space-between;
@@ -314,7 +306,6 @@
 </head>
 
 <body>
-    {# Handle both single 'data'/'images' (legacy) and 'reports' list #}
     {% set report_list = reports if reports else [{'data': data, 'images': images, 'layout_mode': layout_mode,
     'img_count': img_count}] %}
 

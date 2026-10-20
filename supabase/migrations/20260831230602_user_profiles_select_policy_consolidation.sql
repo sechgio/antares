@@ -1,4 +1,3 @@
--- Evaluate the own-row and admin branches once through a single policy.
 DROP POLICY IF EXISTS "admins_read_all_profiles" ON public.user_profiles;
 DROP POLICY IF EXISTS "users_read_own_profile" ON public.user_profiles;
 

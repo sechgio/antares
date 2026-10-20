@@ -1,6 +1,4 @@
--- Phase 5: invite-only hardening
 
--- 1. is_admin() must also reject disabled accounts
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS boolean
 LANGUAGE sql
@@ -17,7 +15,6 @@ AS $$
   );
 $$;
 
--- 2. Prevent deletion of system board columns
 CREATE OR REPLACE FUNCTION public.board_columns_prevent_system_delete()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -35,7 +32,6 @@ CREATE TRIGGER board_columns_prevent_system_delete
   BEFORE DELETE ON public.board_columns
   FOR EACH ROW EXECUTE FUNCTION public.board_columns_prevent_system_delete();
 
--- 3. Force created_by from auth.uid() on insert (espacios, tareas)
 CREATE OR REPLACE FUNCTION public.set_created_by()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -58,7 +54,6 @@ CREATE TRIGGER tareas_set_created_by
   BEFORE INSERT ON public.tareas
   FOR EACH ROW EXECUTE FUNCTION public.set_created_by();
 
--- 4. Restrict admin RPCs to authenticated role only
 REVOKE EXECUTE ON FUNCTION public.admin_list_users() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.admin_toggle_disabled(uuid, boolean) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.admin_set_admin(uuid, boolean) FROM PUBLIC;
@@ -67,7 +62,6 @@ GRANT EXECUTE ON FUNCTION public.admin_list_users() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_toggle_disabled(uuid, boolean) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_set_admin(uuid, boolean) TO authenticated;
 
--- 5. seed_default_board_columns: only active users may seed
 CREATE OR REPLACE FUNCTION public.seed_default_board_columns(p_proyecto_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -90,7 +84,6 @@ BEGIN
 END;
 $$;
 
--- 6. team_list_members: email not shown in assignee picker UI
 DROP FUNCTION IF EXISTS public.team_list_members();
 CREATE OR REPLACE FUNCTION public.team_list_members()
 RETURNS TABLE (

@@ -383,7 +383,7 @@ def test_slide_images_rasterizes_every_page(tmp_path):
     assert len(images) == 3
     assert all(img["media_type"] == "image/png" for img in images)
     assert all(img["data_b64"] for img in images)
-    assert images[0]["data_b64"].startswith("iVBORw0KGgo")  # firma PNG
+    assert images[0]["data_b64"].startswith("iVBORw0KGgo")
 
 
 def test_slide_images_respects_the_cap():

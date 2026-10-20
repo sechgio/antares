@@ -93,6 +93,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Procesamiento de imágenes**: Pillow sube a 13.0.0 para corregir las vulnerabilidades detectadas por la auditoría Python. El backend requiere Python 3.11 o superior; CI y empaquetado usan ese mínimo.
+
 ## [0.11.12] — 2026-09-16
 
 ### Added
@@ -627,27 +629,3 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Changed
 - Migración a React 18 + TypeScript + Vite + TailwindCSS.
 - Arquitectura IPC renovada con backend Python separado.
-
-<!--
-Template para nuevas entradas:
-
-## [X.Y.Z] — YYYY-MM-DD
-
-### Added
-- Nueva funcionalidad.
-
-### Changed
-- Cambios en funcionalidad existente.
-
-### Deprecated
-- Funcionalidad que será eliminada en futuras versiones.
-
-### Removed
-- Funcionalidad eliminada en esta versión.
-
-### Fixed
-- Corrección de errores.
-
-### Security
-- Parches de seguridad.
--->

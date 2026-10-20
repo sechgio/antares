@@ -1,5 +1,3 @@
--- Migration: Atomic LWW push and delete for canvas_documents to eliminate TOCTOU races.
--- Prevents concurrent overwrite when another client pushed or deleted a newer version.
 
 CREATE OR REPLACE FUNCTION public.canvas_push_document_lww(
   p_id uuid,
@@ -25,7 +23,6 @@ BEGIN
   -- alone cannot lock a missing row, so two first-time inserts could race.
   PERFORM pg_advisory_xact_lock(hashtextextended(p_id::text, 0));
 
-  -- Serialize concurrent mutations for this document id.
   SELECT updated_at, deleted_at, created_by INTO v_existing
   FROM public.canvas_documents
   WHERE id = p_id
@@ -86,7 +83,6 @@ $$;
 REVOKE ALL ON FUNCTION public.canvas_push_document_lww(uuid, text, jsonb, timestamptz, boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.canvas_push_document_lww(uuid, text, jsonb, timestamptz, boolean) TO authenticated;
 
--- Only delete when the document has not advanced past the expected version.
 CREATE OR REPLACE FUNCTION public.canvas_delete_document_lww(
   p_id uuid,
   p_expected_updated_at timestamptz DEFAULT NULL

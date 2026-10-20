@@ -47,7 +47,6 @@ export interface Tarea {
   title: string;
   description: string | null;
   status: TareaStatus;
-  // Optional only for snapshots from clients predating the priority migration.
   priority?: TareaPriority;
   assignee_id: string | null;
   start_date: string | null;

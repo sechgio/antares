@@ -70,7 +70,7 @@ def apply_stabilize(
             cmd += ["-vf", chain, "-f", "null", "-"]
         else:
             cmd += ["-vf", chain, "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", str(output)]
-        proc = subprocess.run(  # nosec B603 - argv con listas, sin shell
+        proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
