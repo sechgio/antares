@@ -1,4 +1,6 @@
-import { clipDurationUs, clipEndUs, type Clip, type EditorProject } from '../types';
+import { clipDurationUs, clipEndUs, type Clip, type EditorProject, type MediaAsset } from '../types';
+
+const IMAGE_DEFAULT_DURATION_US = 5_000_000;
 
 export type TimelineOperation =
   | { type: 'split'; clipId: string; atTimelineUs: number }
@@ -128,6 +130,47 @@ export function timelineEndUs(clips: Clip[]): number {
 
 export function clipsInTrack(clips: Clip[], trackId: string): Clip[] {
   return clips.filter((c) => c.trackId === trackId).sort((a, b) => a.timelineStartUs - b.timelineStartUs);
+}
+
+export function clipFromAsset(project: EditorProject, asset: MediaAsset, clipId: string): Clip | null {
+  const isAudio = asset.type === 'audio';
+  const track = [...project.tracks]
+    .sort((a, b) => a.order - b.order)
+    .find((t) => t.kind === (isAudio ? 'audio' : 'video') && !t.locked);
+  if (!track) return null;
+  const audioStream = asset.streams.find((s) => s.kind === 'audio');
+  return {
+    id: clipId,
+    trackId: track.id,
+    kind: isAudio ? 'audio' : asset.type === 'image' ? 'image' : 'video',
+    assetId: asset.id,
+    timelineStartUs: timelineEndUs(clipsInTrack(project.clips, track.id)),
+    sourceInUs: 0,
+    sourceOutUs: Math.max(1, asset.durationUs || IMAGE_DEFAULT_DURATION_US),
+    speed: { num: 1, den: 1 },
+    transform: {
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      canvasX: 0,
+      canvasY: 0,
+      canvasW: 1,
+      canvasH: 1,
+      rotationDeg: 0,
+      flipX: false,
+      flipY: false,
+      opacity: 1,
+      fit: 'fit',
+    },
+    audio: {
+      streamIndex: audioStream?.index ?? 0,
+      embeddedEnabled: Boolean(audioStream),
+      gainDb: 0,
+      fadeInUs: 0,
+      fadeOutUs: 0,
+      effects: [],
+    },
+    delogo: { rects: [] },
+    effects: [],
+  };
 }
 
 export function clipAt(clips: Clip[], trackId: string, timelineUs: number): Clip | null {

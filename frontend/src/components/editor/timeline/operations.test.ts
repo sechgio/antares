@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { applyOperation, clipAt, clipsInTrack, timelineEndUs, type TimelineOperation } from './operations';
-import type { Clip, EditorProject, Track } from '../types';
+import { applyOperation, clipAt, clipFromAsset, clipsInTrack, timelineEndUs, type TimelineOperation } from './operations';
+import type { Clip, EditorProject, MediaAsset, Track } from '../types';
 
 function clip(overrides: Partial<Clip> = {}): Clip {
   return {
@@ -181,5 +181,53 @@ describe('consultas de timeline', () => {
     expect(clipAt(clips, 'track-v', 1_999_999)?.id).toBe('c1');
     expect(clipAt(clips, 'track-v', 2_000_000)).toBeNull();
     expect(clipAt(clips, 'otra-pista', 0)).toBeNull();
+  });
+});
+
+describe('clipFromAsset', () => {
+  const tracks: Track[] = [
+    { id: 'track-a', kind: 'audio', order: 1, visible: true, muted: false, locked: false },
+    { id: 'track-v', kind: 'video', order: 0, visible: true, muted: false, locked: false },
+  ];
+  function asset(overrides: Partial<MediaAsset> = {}): MediaAsset {
+    return {
+      id: 'a2',
+      type: 'video',
+      displayName: 'toma.mp4',
+      byteSize: 10,
+      sha256: 'a'.repeat(64),
+      durationUs: 3_000_000,
+      streams: [
+        { index: 0, kind: 'video', codec: 'h264', timeBase: { num: 1, den: 25 } },
+        { index: 1, kind: 'audio', codec: 'aac', timeBase: { num: 1, den: 48000 } },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('añade el video al final de la pista de video con su audio embebido', () => {
+    const created = clipFromAsset(project([clip()], tracks), asset(), 'nuevo');
+    expect(created).toMatchObject({
+      id: 'nuevo',
+      trackId: 'track-v',
+      kind: 'video',
+      assetId: 'a2',
+      timelineStartUs: 5_000_000,
+      sourceInUs: 0,
+      sourceOutUs: 3_000_000,
+      audio: { streamIndex: 1, embeddedEnabled: true },
+    });
+  });
+
+  it('manda el audio a la pista de audio y da 5 s a las imágenes sin duración', () => {
+    const p = project([], tracks);
+    expect(clipFromAsset(p, asset({ type: 'audio' }), 'x')?.trackId).toBe('track-a');
+    const image = clipFromAsset(p, asset({ type: 'image', durationUs: undefined, streams: [{ index: 0, kind: 'video', codec: 'png', timeBase: { num: 1, den: 25 } }] }), 'y');
+    expect(image).toMatchObject({ kind: 'image', sourceOutUs: 5_000_000, audio: { embeddedEnabled: false } });
+  });
+
+  it('no añade nada si la pista destino está bloqueada', () => {
+    const locked = tracks.map((t) => ({ ...t, locked: true }));
+    expect(clipFromAsset(project([], locked), asset(), 'z')).toBeNull();
   });
 });
