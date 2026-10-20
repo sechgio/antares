@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Proveedores IA, modelos personalizados**: el alta y la edición se hacen en un editor modal con presets de proveedor (Anthropic, OpenAI, OpenRouter, Ollama u otro), autenticación por clave, clave guardada o sin clave, búsqueda de modelos con sugerencias (y los modelos reales del servicio al editar), nombre visible opcional y opciones avanzadas. Los errores se muestran en el propio editor y eliminar pide confirmación. En el Agente, los modelos personalizados aparecen agrupados en «Personalizados» con su nombre visible y se eligen sin consultar el servicio.
 - Agent permite elegir proveedor y modelo desde el composer, consultar los modelos disponibles, filtrar por nombre y reutilizar selecciones recientes. También acepta escribir un modelo manualmente si el proveedor no responde.
 - Agent puede delegar tareas en agentes guardados con herramientas de solo lectura. La conversación muestra los pasos, el resultado y la duración de cada delegación.
 - Agent permite habilitar herramientas por conversación y conserva la selección al reiniciar. Deshabilitarlas bloquea también las llamadas que aún esperan aprobación o un recurso compartido.

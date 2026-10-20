@@ -28,6 +28,7 @@ const RECENTS_KEY = 'antares-agent-models';
 const MAX_RECENTS = 4;
 const MENU_HEIGHT = 420;
 const MENU_WIDTH = 360;
+const CUSTOM_TAB = '__custom';
 
 function readRecents(): ModelChoice[] {
   try {
@@ -74,12 +75,24 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const [query, setQuery] = useState('');
-  const [activeProvider, setActiveProvider] = useState(value.provider || providers[0]?.id || '');
+  const customs = useMemo(() => providers.filter((item) => item.custom), [providers]);
+  const tabFor = useCallback(
+    (id: string) => (customs.some((item) => item.id === id) ? CUSTOM_TAB : id),
+    [customs],
+  );
+  const tabs = useMemo(() => [
+    ...providers.filter((item) => !item.custom),
+    ...(customs.length ? [{ id: CUSTOM_TAB, label: 'Personalizados' }] : []),
+  ], [providers, customs]);
+  const [activeProvider, setActiveProvider] = useState(tabFor(value.provider || providers[0]?.id || ''));
   const [models, setModels] = useState<Record<string, ProviderModels>>({});
   const [highlighted, setHighlighted] = useState(0);
 
+  const customTab = activeProvider === CUSTOM_TAB;
   const provider = providers.find((item) => item.id === activeProvider) ?? providers[0];
-  const state = models[activeProvider] ?? { loading: true, models: [], error: null };
+  const state = customTab
+    ? { loading: false, models: [], error: null }
+    : models[activeProvider] ?? { loading: true, models: [], error: null };
 
   const load = useCallback(async (id: string) => {
     if (!id) return;
@@ -103,7 +116,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   }, []);
 
   useEffect(() => {
-    if (isOpen && activeProvider) void load(activeProvider);
+    if (isOpen && activeProvider && activeProvider !== CUSTOM_TAB) void load(activeProvider);
   }, [isOpen, activeProvider, load]);
 
   useEffect(() => {
@@ -121,33 +134,38 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   }, [isOpen, activeProvider, state.models.length, query, updatePosition]);
 
   const recents = useMemo(
-    () => (query.trim() ? [] : readRecents().filter((item) => item.provider === activeProvider)),
-    [query, activeProvider],
+    () => (query.trim() || customTab ? [] : readRecents().filter((item) => item.provider === activeProvider)),
+    [query, activeProvider, customTab],
   );
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
     const unique = [...new Set(state.models)];
     return term ? unique.filter((model) => model.toLowerCase().includes(term)) : unique;
   }, [state.models, query]);
-  const custom = query.trim() && !filtered.some((model) => model === query.trim()) ? query.trim() : '';
+  const custom = !customTab && query.trim() && !filtered.some((model) => model === query.trim()) ? query.trim() : '';
 
-  const items = useMemo(
-    () => [
-      ...recents.map((item) => ({ provider: item.provider, model: item.model, label: item.model, recent: true })),
+  const items = useMemo(() => {
+    if (customTab) {
+      const term = query.trim().toLowerCase();
+      return customs
+        .filter((item) => !term || item.label.toLowerCase().includes(term) || item.default_model.toLowerCase().includes(term))
+        .map((item) => ({ provider: item.id, model: item.default_model, label: item.label, recent: false, typed: false }));
+    }
+    return [
+      ...recents.map((item) => ({ provider: item.provider, model: item.model, label: item.model, recent: true, typed: false })),
       ...filtered
         .filter((model) => !recents.some((item) => item.model === model))
-        .map((model) => ({ provider: activeProvider, model, label: model, recent: false })),
+        .map((model) => ({ provider: activeProvider, model, label: model, recent: false, typed: false })),
       ...(custom
-        ? [{ provider: activeProvider, model: custom, label: `Usar «${custom}»`, recent: false }]
+        ? [{ provider: activeProvider, model: custom, label: `Usar «${custom}»`, recent: false, typed: true }]
         : []),
-    ],
-    [recents, filtered, custom, activeProvider],
-  );
+    ];
+  }, [customTab, customs, query, recents, filtered, custom, activeProvider]);
 
   const recentCount = items.filter((item) => item.recent).length;
   const sections = [
     { id: 'recent', title: 'Recientes', from: 0, to: recentCount },
-    { id: 'models', title: provider?.label ?? 'Modelos', from: recentCount, to: items.length },
+    { id: 'models', title: customTab ? 'Modelos personalizados' : provider?.label ?? 'Modelos', from: recentCount, to: items.length },
   ].filter((section) => section.to > section.from);
 
   useEffect(() => {
@@ -168,7 +186,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
 
   const openMenu = () => {
     setQuery('');
-    setActiveProvider(value.provider || providers[0]?.id || '');
+    setActiveProvider(tabFor(value.provider || providers[0]?.id || ''));
     open();
   };
 
@@ -198,7 +216,8 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
     );
   }
 
-  const modelLabel = value.model || provider?.default_model || 'Elegir modelo';
+  const selectedCustom = customs.find((item) => item.id === value.provider);
+  const modelLabel = selectedCustom?.label || value.model || provider?.default_model || 'Elegir modelo';
 
   return (
     <div className={className}>
@@ -273,9 +292,9 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
               : <kbd className="shrink-0 rounded-md border border-[var(--border-subtle)] px-1.5 py-0.5 font-sans text-[10px] text-[var(--text-muted)]">Esc</kbd>}
           </div>
 
-          {providers.length > 1 && (
+          {tabs.length > 1 && (
             <div className="flex gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-2.5 py-2 custom-scrollbar">
-              {providers.map((item) => (
+              {tabs.map((item) => (
                 <button
                   key={item.id}
                   type="button"
@@ -310,7 +329,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
                       {items.slice(section.from, section.to).map((item, offset) => {
                         const index = section.from + offset;
                         const selected = value.provider === item.provider && value.model === item.model;
-                        const isCustom = !item.recent && item.label !== item.model;
+                        const isCustom = item.typed;
                         return (
                           <button
                             key={`${item.recent ? 'recent' : 'model'}:${item.provider}:${item.model}`}
@@ -328,7 +347,12 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
                             {isCustom
                               ? <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-md border border-dashed border-[var(--border-medium)] text-[var(--text-muted)]"><Plus size={12} /></span>
                               : <ProviderMark id={item.provider} label={providers.find((entry) => entry.id === item.provider)?.label ?? item.provider} />}
-                            <span className={`min-w-0 flex-1 truncate text-[13px] ${selected ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{item.label}</span>
+                            <span className="min-w-0 flex-1">
+                              <span className={`block truncate text-[13px] ${selected ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{item.label}</span>
+                              {!item.typed && item.label !== item.model && (
+                                <span className="block truncate font-mono text-[11px] text-[var(--text-muted)]">{item.model}</span>
+                              )}
+                            </span>
                             {selected && <Check size={14} className="shrink-0 text-[var(--accent-primary-hover)]" />}
                           </button>
                         );
@@ -340,9 +364,11 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
                   <p className="px-2 py-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
                     {state.error
                       ? state.error
-                      : state.models.length === 0
-                        ? 'Escribe el nombre exacto del modelo que ofrece tu proveedor.'
-                        : 'Ningún modelo coincide con la búsqueda.'}
+                      : customTab
+                        ? 'Ningún modelo personalizado coincide con la búsqueda.'
+                        : state.models.length === 0
+                          ? 'Escribe el nombre exacto del modelo que ofrece tu proveedor.'
+                          : 'Ningún modelo coincide con la búsqueda.'}
                   </p>
                 )}
               </>
