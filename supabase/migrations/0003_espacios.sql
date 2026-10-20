@@ -1,4 +1,3 @@
--- ESPACIOS: espacios, proyectos, tareas y vistas (equipo compartido)
 
 CREATE TABLE IF NOT EXISTS public.espacios (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -51,7 +50,6 @@ CREATE INDEX IF NOT EXISTS idx_tareas_due_date ON public.tareas(due_date);
 CREATE INDEX IF NOT EXISTS idx_tareas_assignee ON public.tareas(assignee_id);
 CREATE INDEX IF NOT EXISTS idx_vistas_proyecto ON public.vistas(proyecto_id);
 
--- updated_at triggers
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -82,7 +80,6 @@ CREATE TRIGGER vistas_set_updated_at
   BEFORE UPDATE ON public.vistas
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- Helper: usuario activo (no deshabilitado)
 CREATE OR REPLACE FUNCTION public.is_active_user()
 RETURNS boolean
 LANGUAGE sql
@@ -96,7 +93,6 @@ AS $$
   );
 $$;
 
--- Lista miembros del equipo (display_name para assignee picker)
 CREATE OR REPLACE FUNCTION public.team_list_members()
 RETURNS TABLE (
   user_id uuid,
@@ -120,7 +116,6 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.team_list_members() TO authenticated;
 
--- RLS
 ALTER TABLE public.espacios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.proyectos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tareas ENABLE ROW LEVEL SECURITY;
@@ -154,7 +149,6 @@ CREATE POLICY "vistas_active_users_all"
   USING (public.is_active_user())
   WITH CHECK (public.is_active_user());
 
--- Perfiles: lectura para picker de assignee
 DROP POLICY IF EXISTS "authenticated_read_profiles" ON public.user_profiles;
 CREATE POLICY "authenticated_read_profiles"
   ON public.user_profiles
@@ -162,7 +156,6 @@ CREATE POLICY "authenticated_read_profiles"
   TO authenticated
   USING (public.is_active_user());
 
--- PostgREST: exponer tablas a roles de API
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.espacios TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.proyectos TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.tareas TO authenticated;
@@ -172,7 +165,6 @@ GRANT ALL ON public.proyectos TO service_role;
 GRANT ALL ON public.tareas TO service_role;
 GRANT ALL ON public.vistas TO service_role;
 
--- Realtime (idempotente)
 DO $$
 BEGIN
   IF NOT EXISTS (

@@ -43,7 +43,6 @@ export function mixLevels(nodes: AudioMixNode[]): { peak: number; rms: number } 
 }
 
 export function detectClipping(nodes: AudioMixNode[]): boolean {
-  // Suma de ganancias por encima de 0 dBFS recorta la mezcla.
   const total = nodes.reduce((acc, node) => acc + dbToGain(node.gainDb), 0);
   return total > 1.0;
 }

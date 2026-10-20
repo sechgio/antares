@@ -1,6 +1,4 @@
--- Security remediation: Canvas search_path, RPC append, CORS helper notes, last-admin guard
 
--- Fix search_path on SECURITY DEFINER functions
 CREATE OR REPLACE FUNCTION public.canvas_documents_snapshot_and_prune()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -21,7 +19,6 @@ BEGIN
 END;
 $$;
 
--- canvas_documents_preserve_created_by is not SECURITY DEFINER but fix search_path anyway
 CREATE OR REPLACE FUNCTION public.canvas_documents_preserve_created_by()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -33,7 +30,6 @@ BEGIN
 END;
 $$;
 
--- RPC for version append: replaces direct INSERT from clients
 CREATE OR REPLACE FUNCTION public.canvas_append_document_version(p_document_id uuid, p_document jsonb)
 RETURNS uuid
 LANGUAGE plpgsql
@@ -56,11 +52,8 @@ $$;
 REVOKE ALL ON FUNCTION public.canvas_append_document_version(uuid, jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.canvas_append_document_version(uuid, jsonb) TO authenticated;
 
--- Revoke direct INSERT for clients; they must use the RPC. Keep SELECT.
 REVOKE INSERT ON public.canvas_document_versions FROM authenticated;
--- Ensure RLS still allows SELECT via existing policy; INSERT now only via SECURITY DEFINER RPC
 
--- Harden admin functions: lock rows and prevent last-admin removal/disable
 CREATE OR REPLACE FUNCTION public.admin_set_admin(p_user_id uuid, p_is_admin boolean)
 RETURNS void
 LANGUAGE plpgsql
@@ -76,15 +69,12 @@ BEGIN
   IF p_user_id = auth.uid() AND NOT p_is_admin THEN
     RAISE EXCEPTION 'No puedes quitarte el rol de administrador a ti mismo';
   END IF;
-  -- Lock relevant rows to prevent concurrent last-admin race
   PERFORM 1 FROM public.user_profiles WHERE user_id = p_user_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Usuario no encontrado';
   END IF;
   IF NOT p_is_admin THEN
-    -- Count active admins (locked)
     SELECT count(*) INTO v_admins FROM public.user_profiles WHERE is_admin = true AND COALESCE(is_disabled,false)=false FOR UPDATE;
-    -- If target is an active admin and we'd drop to zero, block
     IF EXISTS (SELECT 1 FROM public.user_profiles WHERE user_id=p_user_id AND is_admin=true AND COALESCE(is_disabled,false)=false) THEN
       IF v_admins <= 1 THEN
         RAISE EXCEPTION 'No se puede degradar al último administrador activo';
@@ -115,7 +105,6 @@ BEGIN
     RAISE EXCEPTION 'Usuario no encontrado';
   END IF;
   IF p_disabled THEN
-    -- Prevent disabling the last active admin
     SELECT count(*) INTO v_admins FROM public.user_profiles WHERE is_admin = true AND COALESCE(is_disabled,false)=false FOR UPDATE;
     IF EXISTS (SELECT 1 FROM public.user_profiles WHERE user_id=p_user_id AND is_admin=true AND COALESCE(is_disabled,false)=false) THEN
       IF v_admins <= 1 THEN

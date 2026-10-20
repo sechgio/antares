@@ -1,6 +1,3 @@
--- Board columns (tableros/columnas Kanban) por proyecto.
--- Defaults del sistema: Pendiente, En curso, Completados, Urgente (+ Cerrada).
--- Permite columnas personalizadas; tareas.status deja de estar limitado a un CHECK fijo.
 
 CREATE TABLE IF NOT EXISTS public.board_columns (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -25,10 +22,8 @@ CREATE TRIGGER board_columns_set_updated_at
   BEFORE UPDATE ON public.board_columns
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- Status libre (debe coincidir con board_columns.key del proyecto)
 ALTER TABLE public.tareas DROP CONSTRAINT IF EXISTS tareas_status_check;
 
--- Seed de columnas por defecto para un proyecto
 CREATE OR REPLACE FUNCTION public.seed_default_board_columns(p_proyecto_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -64,7 +59,6 @@ CREATE TRIGGER proyectos_seed_board_columns
   AFTER INSERT ON public.proyectos
   FOR EACH ROW EXECUTE FUNCTION public.trg_seed_board_columns_on_proyecto();
 
--- Backfill proyectos existentes
 DO $$
 DECLARE
   r record;
@@ -74,7 +68,6 @@ BEGIN
   END LOOP;
 END $$;
 
--- RLS
 ALTER TABLE public.board_columns ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "board_columns_active_users_all" ON public.board_columns;
@@ -89,7 +82,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.board_columns TO authenticated;
 GRANT ALL ON public.board_columns TO service_role;
 GRANT EXECUTE ON FUNCTION public.seed_default_board_columns(uuid) TO authenticated;
 
--- Realtime
 DO $$
 BEGIN
   IF NOT EXISTS (

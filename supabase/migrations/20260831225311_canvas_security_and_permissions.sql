@@ -1,4 +1,3 @@
--- Canvas security and least-privilege reconciliation.
 
 CREATE OR REPLACE FUNCTION public.canvas_documents_snapshot_and_prune()
 RETURNS trigger

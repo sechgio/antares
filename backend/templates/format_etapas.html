@@ -116,7 +116,6 @@
             padding-left: 2mm;
         }
 
-        /* 2x2 Photo Grid - Fixed heights to preserve image aspect ratios */
         .photo-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -220,7 +219,6 @@
                 margin: 0;
             }
 
-            /* Preserve image aspect ratios in PDF */
             .photo-cell {
                 height: 90mm;
             }
@@ -269,7 +267,6 @@
 
         <section class="photo-grid">
 
-            <!-- ANTES (_1) -->
             <div class="photo-container">
                 <div class="photo-cell">
                     {% set ns = namespace(found=false) %}
@@ -286,7 +283,6 @@
                 <div class="photo-label">ANTES</div>
             </div>
 
-            <!-- DURANTE (_2) -->
             <div class="photo-container">
                 <div class="photo-cell">
                     {% set ns = namespace(found=false) %}
@@ -303,7 +299,6 @@
                 <div class="photo-label">DURANTE</div>
             </div>
 
-            <!-- DESPUES (_3) -->
             <div class="photo-container">
                 <div class="photo-cell">
                     {% set ns = namespace(found=false) %}
@@ -320,7 +315,6 @@
                 <div class="photo-label">DESPUES</div>
             </div>
 
-            <!-- RESIDUOS (_4) -->
             <div class="photo-container">
                 <div class="photo-cell">
                     {% set ns = namespace(found=false) %}

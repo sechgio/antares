@@ -71,7 +71,7 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
         with serialized_import():
             import openpyxl
             from openpyxl.utils.exceptions import InvalidFileException
-    except ImportError as err:  # pragma: no cover
+    except ImportError as err:
         logger.exception("parse_excel_bytes: openpyxl no disponible: %s", err)
         msg = f"{_ERR_READ_PREFIX}: {err}"
         raise InvalidExcelError(msg) from err
@@ -91,7 +91,7 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
         )
         msg = f"{_ERR_READ_PREFIX}: {err}"
         raise InvalidExcelError(msg) from err
-    except Exception as err:  # pragma: no cover
+    except Exception as err:
         logger.exception(
             "parse_excel_bytes: fallo inesperado abriendo %r: %s",
             filename,
@@ -102,7 +102,7 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
 
     try:
         sheet = workbook.active
-        if sheet is None:  # pragma: no cover
+        if sheet is None:
             logger.error(
                 "parse_excel_bytes: workbook %r sin hoja activa", filename,
             )
@@ -241,7 +241,7 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
     finally:
         try:
             workbook.close()
-        except Exception:  # pragma: no cover
+        except Exception:
             logger.debug(
                 "parse_excel_bytes: error cerrando workbook %r",
                 filename,

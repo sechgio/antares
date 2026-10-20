@@ -100,8 +100,6 @@ BEGIN
     NEW.updated_at := NEW.created_at;
   ELSE
     NEW.tarea_id := OLD.tarea_id;
-    -- Preserve client ownership changes, but allow the FK's ON DELETE SET NULL
-    -- action to detach an author without deleting the conversation.
     IF NEW.author_id IS NOT NULL THEN
       NEW.author_id := OLD.author_id;
     END IF;

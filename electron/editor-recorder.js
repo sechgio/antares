@@ -65,14 +65,12 @@ class RecordingSession {
       try {
         fs.closeSync(this.fd);
       } catch {
-        // El fd puede estar ya cerrado por un fallo previo.
       }
       this.closed = true;
     }
     try {
       fs.unlinkSync(this.path);
     } catch {
-      // Si el archivo no existe, el abort ya logró su objetivo.
     }
     return { sessionId: this.sessionId, aborted: true };
   }

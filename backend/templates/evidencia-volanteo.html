@@ -54,7 +54,6 @@
       border: none;
     }
 
-    /* ── Header: 2-row block with logos spanning both rows ── */
 
     .row-header-title {
       height: {{ header_title_height_cm }}cm;
@@ -134,14 +133,12 @@
       word-break: break-word;
     }
 
-    /* ── Spacer between header and photos ── */
 
     .gap-under-header {
       height: {{ gap_under_header_cm }}cm;
       width: 100%;
     }
 
-    /* ── Gap row / gap columns (sin borde — solo aire alrededor de cada foto) ── */
 
     .row-gap {
       height: {{ photo_gap_cm }}cm;
@@ -161,7 +158,6 @@
       font-size: 0;
     }
 
-    /* ── Photo rows ── */
 
     .row-photo {
       height: {{ photo_height_cm }}cm;
@@ -205,7 +201,6 @@
         <col style="width: {{ header_title_width_cm }}cm;">
         <col style="width: {{ header_logo_width_cm }}cm;">
       </colgroup>
-      {# ── Header row 1: Logo left (rowspan 2) | Title | Logo right (rowspan 2) ── #}
       <tr class="row-header-title">
         <td class="logo-cell" rowspan="2">
           {% if logo_left %}
@@ -227,7 +222,6 @@
           {% endif %}
         </td>
       </tr>
-      {# ── Header row 2: Cuadrante info (center cell only — logos span from above) ── #}
       <tr class="row-header-info">
         <td class="info-cell">
           {% if show_cuadrante_label | default(true) and cuadrante_label %}
@@ -248,7 +242,6 @@
           <col style="width: {{ photo_gap_cm }}cm;">
         {% endfor %}
       </colgroup>
-      {# Un marco exterior + gutters uniformes: gap|foto|gap|foto|gap|foto|gap #}
       <tr class="row-gap">
         <td colspan="7" style="height: {{ photo_gap_cm }}cm; line-height: 0; font-size: 0;">&nbsp;</td>
       </tr>

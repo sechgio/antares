@@ -8,7 +8,6 @@ from backend.core.design.types import JsonObject
 MIN_FONT_PT = 9.0
 _OVERFLOW_TOLERANCE_PT = 2.0
 _COLLISION_AREA_RATIO = 0.18
-# Ratios WCAG: 3:1 para texto grande y elementos gráficos, 4.5:1 para cuerpo.
 MIN_CONTRAST_BODY = 4.5
 MIN_CONTRAST_LARGE = 3.0
 

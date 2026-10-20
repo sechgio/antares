@@ -91,7 +91,7 @@ def _manual_datos(manual_data: dict) -> dict[str, Any]:  # allowlist: dict[str, 
     }
 
 
-def _geocode_opts_from_payload(payload: dict) -> tuple[bool, str | None]:  # allowlist: dict[str, Any]
+def _geocode_opts_from_payload(payload: dict) -> tuple[bool, str | None]:
     enabled = payload.get("geocode") is True
     raw_country = payload.get("geocodeCountry")
     country = _ubic_geocode.normalize_country(raw_country)
@@ -104,7 +104,7 @@ def _has_address_columns(col_dir: Any, col_loc: Any, col_dist: Any) -> bool:
     return bool(col_dir or col_loc or col_dist)
 
 
-def _try_geocode(datos: dict, *, enabled: bool, country: str | None) -> tuple[float, float] | None:  # allowlist: dict[str, Any]
+def _try_geocode(datos: dict, *, enabled: bool, country: str | None) -> tuple[float, float] | None:
     if not enabled:
         return None
     query = _ubic_geocode.build_geocode_query(

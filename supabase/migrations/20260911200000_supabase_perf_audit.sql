@@ -1,20 +1,3 @@
--- Performance audit hardening (2026-09-11):
--- * Legacy canvas_push_document_lww delegates to v2 so old callers keep the
---   tombstone/force_resurrect semantics instead of silently resurrecting.
--- * LWW RPCs stop detoasting the full document on the hot path: they lock and
---   read only metadata, and fetch `document` lazily for the hash fallback.
--- * canvas_storage_apply_delta updates the counter in one statement so the
---   global usage row stays locked for a single UPDATE instead of SELECT+UPDATE.
--- * Storage guards drop the size assert: the CHECK constraints
---   canvas_*_document_size_check already enforce the limit on write.
--- * canvas_record_document_version prunes once (keep=49 before insert) and the
---   size assert moves to the public boundary canvas_append_document_version.
--- * The deleted-document purge runs under a non-blocking advisory lock so
---   concurrent pushes skip it instead of piling up on the same work.
--- * team_list_members evaluates is_active_user() once per call (InitPlan).
--- * private.is_admin() is STABLE like is_active_user().
--- * Indexes: drop dead/redundant ones, add composites for the ordered
---   per-proyecto lists served by the API.
 
 CREATE OR REPLACE FUNCTION private.canvas_push_document_lww(
   p_document jsonb,

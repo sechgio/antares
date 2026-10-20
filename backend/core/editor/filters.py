@@ -49,7 +49,6 @@ def speed(speed_num: int, speed_den: int, has_audio: bool) -> str:
     pts_factor = speed_den / speed_num
     parts = [f"setpts=PTS*{_num(pts_factor)}"]
     if has_audio:
-        # atempo admite [0.5, 2.0] por filtro: se encadenan raíces.
         tempo = speed_num / speed_den
         for factor in _atempo_chain(tempo):
             parts.append(f"atempo={_num(factor)}")
@@ -95,7 +94,7 @@ def rotate(deg: float) -> str:
     if normalized == 0:
         return ""
     if normalized == 90:
-        return "transpose=1"  # 90° horario
+        return "transpose=1"
     if normalized == 180:
         return "transpose=1,transpose=1"
     if normalized == 270:
@@ -139,7 +138,6 @@ def fit_canvas(
 def opacity(alpha: float) -> str:
     if alpha >= 1.0:
         return ""
-    # format=yuva420p permite alfa; el overlay lo consume.
     return f"format=yuva420p,colorchannelmixer=aa={_num(alpha)}"
 
 

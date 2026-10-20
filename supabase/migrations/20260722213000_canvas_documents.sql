@@ -1,5 +1,3 @@
--- Canvas templates: shared library for all active authenticated users.
--- Local app keeps a file cache; this table is the multi-user source of truth.
 
 CREATE TABLE IF NOT EXISTS public.canvas_documents (
   id uuid PRIMARY KEY,

@@ -1,5 +1,3 @@
--- Keep the PostgREST RPC contract while moving privileged implementations
--- out of the exposed public schema.
 CREATE SCHEMA IF NOT EXISTS private;
 
 REVOKE ALL ON SCHEMA private FROM PUBLIC, anon, authenticated;
@@ -330,8 +328,6 @@ GRANT EXECUTE ON FUNCTION private.canvas_push_document_lww(jsonb, timestamptz) T
 GRANT EXECUTE ON FUNCTION private.seed_default_board_columns(uuid) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION private.team_list_members() TO authenticated, service_role;
 
--- Public wrappers preserve the existing RPC names and signatures without
--- running with elevated privileges themselves.
 CREATE OR REPLACE FUNCTION public.is_active_user()
 RETURNS boolean
 LANGUAGE sql
@@ -437,8 +433,6 @@ GRANT EXECUTE ON FUNCTION public.canvas_push_document_lww(jsonb, timestamptz) TO
 GRANT EXECUTE ON FUNCTION public.seed_default_board_columns(uuid) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.team_list_members() TO authenticated, service_role;
 
--- RLS policies call the private helpers directly so they don't depend on an
--- exposed function for authorization decisions.
 ALTER POLICY "board_columns_active_users_all" ON public.board_columns
   USING ((SELECT private.is_active_user()))
   WITH CHECK ((SELECT private.is_active_user()));

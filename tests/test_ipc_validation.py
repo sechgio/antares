@@ -13,7 +13,7 @@ class _BinaryStdout:
     def __init__(self) -> None:
         self.buffer = io.BytesIO()
 
-    def write(self, _data: str) -> int:  # pragma: no cover - must not be used
+    def write(self, _data: str) -> int:
         raise AssertionError("text write path must not be used when buffer exists")
 
     def flush(self) -> None:

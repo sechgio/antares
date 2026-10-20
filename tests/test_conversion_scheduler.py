@@ -69,7 +69,7 @@ def test_conversion_prefetches_next_chunk_while_heavy_runs(monkeypatch) -> None:
                 if not future.cancelled():
                     try:
                         future.set_result(fn(task))
-                    except Exception as exc:  # pragma: no cover
+                    except Exception as exc:
                         future.set_exception(exc)
 
             threading.Thread(target=_run, daemon=True).start()

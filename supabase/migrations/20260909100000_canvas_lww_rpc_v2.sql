@@ -1,6 +1,3 @@
--- Historical rows are checked incrementally by an operator instead of during
--- deployment. The UUID cursors let callers walk indexed primary keys without
--- rescanning rows that were already inspected.
 CREATE OR REPLACE FUNCTION public.canvas_validate_legacy_storage_batch(
   p_document_after uuid DEFAULT NULL,
   p_version_after uuid DEFAULT NULL,
@@ -312,8 +309,6 @@ BEGIN
 
   IF FOUND THEN
     IF v_updated_at < v_existing.updated_at THEN
-      -- Preserve stale writes in public.canvas_document_versions through the
-      -- canonical version recorder instead of overwriting the live row.
       PERFORM private.canvas_record_document_version(
         v_id,
         p_document,

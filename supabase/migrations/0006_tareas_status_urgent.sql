@@ -1,4 +1,3 @@
--- Add "urgent" status for espacios tareas (Pendiente / En curso / Completados / Urgente)
 
 ALTER TABLE public.tareas DROP CONSTRAINT IF EXISTS tareas_status_check;
 

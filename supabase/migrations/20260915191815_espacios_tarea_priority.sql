@@ -1,5 +1,3 @@
--- Register the already-shipped T01 contract in migration history. This must
--- precede T03/T04 because the global view projects tareas.priority.
 ALTER TABLE public.tareas ADD COLUMN IF NOT EXISTS priority text;
 
 UPDATE public.tareas

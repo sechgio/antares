@@ -1,6 +1,3 @@
--- Bloquear UPDATE directo de is_admin / is_disabled por usuarios no admin.
--- display_name y updated_at siguen permitidos via users_update_own_profile.
--- admin_set_admin / admin_toggle_disabled (SECURITY DEFINER) siguen funcionando.
 
 CREATE OR REPLACE FUNCTION public.user_profiles_guard_privilege_columns()
 RETURNS trigger

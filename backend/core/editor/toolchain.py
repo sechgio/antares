@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess  # nosec B404 - uso acotado: argv fijo, shell=False
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -52,7 +52,7 @@ def resolve_toolchain() -> Toolchain:
 
 
 def _run(tool: Path, args: list[str], timeout_s: int = _DEFAULT_TIMEOUT_S) -> str:
-    proc = subprocess.run(  # nosec B603 - argv construido con listas, sin shell
+    proc = subprocess.run(
         [str(tool), *args],
         capture_output=True,
         text=True,
@@ -123,7 +123,7 @@ def verify_decodable(toolchain: Toolchain, path: Path) -> None:
     (p. ej. MP4 con ``faststart``): la única prueba real de integridad
     es decodificar. Lanza ``ToolchainError`` si ffmpeg reporta errores.
     """
-    proc = subprocess.run(  # nosec B603 - argv con listas, sin shell
+    proc = subprocess.run(
         [str(toolchain.ffmpeg), "-v", "error", "-xerror", "-i", str(path), "-f", "null", "-"],
         capture_output=True,
         text=True,

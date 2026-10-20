@@ -1,5 +1,3 @@
--- Limits live here: clients have several write paths, and JSONB snapshots
--- with images can dominate storage.
 
 CREATE OR REPLACE FUNCTION private.canvas_payload_bytes(p_document jsonb)
 RETURNS bigint
@@ -15,7 +13,6 @@ CREATE TABLE IF NOT EXISTS public.canvas_storage_usage (
   id boolean PRIMARY KEY DEFAULT true CHECK (id),
   document_bytes bigint NOT NULL DEFAULT 0 CHECK (document_bytes >= 0),
   version_bytes bigint NOT NULL DEFAULT 0 CHECK (version_bytes >= 0),
-  -- 256 MiB leaves room for the rest of the app; service_role can raise it.
   max_total_bytes bigint NOT NULL DEFAULT 268435456 CHECK (max_total_bytes > 0),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -212,7 +209,6 @@ BEGIN
 END;
 $$;
 
--- One-shot prune of rows written before every path used bounded retention.
 DELETE FROM public.canvas_document_versions AS version_row
  WHERE version_row.created_at < now() - interval '90 days'
     OR version_row.id IN (
@@ -272,7 +268,6 @@ BEGIN
       USING ERRCODE = '23503';
   END IF;
 
-  -- Prune first so the storage trigger has quota for the new snapshot.
   PERFORM private.canvas_prune_document_versions(p_document_id);
 
   INSERT INTO public.canvas_document_versions (
@@ -289,7 +284,6 @@ BEGIN
   )
   RETURNING id INTO v_id;
 
-  -- Insert can push the doc over 50; prune again after the write.
   PERFORM private.canvas_prune_document_versions(p_document_id);
   RETURN v_id;
 END;
@@ -417,7 +411,6 @@ BEGIN
     now()
   );
 
-  -- Bounded purge on write so clients never run an unbounded maintenance query.
   PERFORM private.canvas_purge_deleted_documents(25);
 
   SELECT *
@@ -483,7 +476,6 @@ ON public.canvas_document_versions
 FOR EACH ROW
 EXECUTE FUNCTION public.canvas_document_versions_storage_guard();
 
--- Retired client-side LWW overloads.
 DROP FUNCTION IF EXISTS public.canvas_push_document_lww(
   uuid,
   text,

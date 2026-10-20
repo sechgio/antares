@@ -18,7 +18,7 @@ from typing import Any
 _BACKEND_VERSION: str | None = None
 try:
     from backend.version import __version__ as _BACKEND_VERSION
-except ImportError:  # pragma: no cover
+except ImportError:
     _BACKEND_VERSION = None
 
 

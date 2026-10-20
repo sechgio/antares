@@ -36,8 +36,6 @@ export function diffDaysIso(from: string, to: string): number {
 }
 
 export function resolveTaskRange(tarea: Tarea): { start: string; end: string } {
-  // created_at es timestamptz: cortarlo en UTC desplazaba un día las tareas
-  // creadas de noche en América. Se usa el día del calendario local.
   const created = toLocalDateString(new Date(tarea.created_at));
   const start = tarea.start_date ?? tarea.due_date ?? created;
   let end = tarea.due_date ?? tarea.start_date ?? created;

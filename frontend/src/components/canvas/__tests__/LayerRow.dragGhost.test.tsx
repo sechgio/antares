@@ -47,7 +47,6 @@ describe('LayerRow ghost de drag', () => {
     fireEvent.dragStart(row, { dataTransfer });
     expect(document.body.querySelector('.canvas-layer-drag-ghost')).not.toBeNull();
 
-    // Una fila virtualizada puede desmontarse sin recibir dragend.
     unmount();
     expect(document.body.querySelector('.canvas-layer-drag-ghost')).toBeNull();
   });

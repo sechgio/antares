@@ -27,7 +27,6 @@
             padding: 0;
         }
 
-        /* Page Container - FIXED height to prevent overflow */
         .page {
             width: 210mm;
             height: 297mm;
@@ -174,7 +173,6 @@
             color: #000;
         }
 
-        /* Photo Panel Section - fills remaining space */
         .panel-fotografico {
             flex: 1;
             display: flex;
@@ -183,7 +181,6 @@
             overflow: hidden;
         }
 
-        /* Photo Grid - CRITICAL: constrained to available space */
         .photo-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -276,7 +273,6 @@
             }
         }
 
-        /* Print/PDF styles - Strict enforcement */
         @media print {
             @page {
                 size: A4;
@@ -403,7 +399,6 @@
                 </div>
                 {% endfor %}
 
-                {# Fill remaining cells if less than 4 images #}
                 {% for i in range(report.images|length, 4) %}
                 <div class="photo-cell">
                     <div class="photo-placeholder">Sin imagen</div>
