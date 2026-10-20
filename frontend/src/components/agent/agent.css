@@ -32,6 +32,53 @@
 .agent-thinking-dots span:nth-child(3) { animation-delay: 320ms; }
 .agent-subagent-body[inert] { visibility: hidden; }
 
+.agent-workspace .agent-suggestion {
+  display: inline-flex;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition-property: background-color, color, border-color;
+  transition-duration: 150ms;
+}
+.agent-workspace .agent-suggestion:hover:not(:disabled) { background: var(--bg-input); }
+.agent-workspace .agent-suggestion:focus-visible { outline-offset: -2px; box-shadow: none; }
+.agent-workspace .agent-suggestion:active { transform: none; }
+
+@property --agent-suggestion-fade-start {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --agent-suggestion-fade-end {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+@supports (animation-timeline: scroll()) {
+  .agent-suggestions {
+    mask-image: linear-gradient(to right, transparent, #000 var(--agent-suggestion-fade-start), #000 calc(100% - var(--agent-suggestion-fade-end)), transparent);
+    animation: agentSuggestionFadeStart linear both, agentSuggestionFadeEnd linear both;
+    animation-timeline: scroll(self inline), scroll(self inline);
+    animation-range: 0px 96px, calc(100% - 96px) 100%;
+  }
+}
+@keyframes agentSuggestionFadeStart {
+  to { --agent-suggestion-fade-start: min(12%, 40px); }
+}
+@keyframes agentSuggestionFadeEnd {
+  from { --agent-suggestion-fade-end: min(12%, 40px); }
+  to { --agent-suggestion-fade-end: 0px; }
+}
+
 @keyframes agentEyesWorking {
   0%, 42%, 49%, 100% { transform: scaleY(1); }
   45% { transform: scaleY(0.15); }
