@@ -240,7 +240,7 @@ async function sessionCreate(params) {
     : SYSTEM_PROMPT;
   const conv = await shared.state.harness.createConversation({
     ownership: { kind: 'ownerless' },
-    agent: { model: { provider, modelId: model }, instructions },
+    agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model), instructions },
   }, ctx());
   if (profile && Array.isArray(profile.tools)) {
     const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
@@ -301,7 +301,7 @@ async function sessionModelSet(params) {
     const doc = await tx.doc(shared.state.SessionsDoc);
     const current = doc.sessions[sessionId];
     if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
-    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model } });
+    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model) });
     current.provider = provider;
     current.model = model;
     current.style = info.style || 'openai_chat';
@@ -337,7 +337,18 @@ async function messagesList(params) {
   const { messages, pending, usage } = await projection.projectMessages(conv, session);
   const { artifacts, questions, context } = await bridge('agent_internal_artifacts', { session_id: sessionId });
   const partial = projection.partialText(session.conversationId);
-  if (partial) messages.push({ role: 'assistant', content: partial, partial: true, ts: Date.now() });
+  const partialReasoning = projection.partialReasoning(session.conversationId);
+  if (partial || partialReasoning) {
+    const reasoningMs = projection.partialReasoningMs(session.conversationId, partialReasoning);
+    messages.push({
+      role: 'assistant',
+      content: partial,
+      ...(partialReasoning ? { reasoning: partialReasoning } : {}),
+      ...(reasoningMs !== undefined ? { reasoning_ms: reasoningMs } : {}),
+      partial: true,
+      ts: Date.now(),
+    });
+  }
   return {
     messages,
     running: projection.isRunning(session.conversationId),
