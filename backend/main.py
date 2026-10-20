@@ -64,7 +64,7 @@ from backend.core.scheduler import (
     is_memory_pressure,
 )
 from backend.handlers import HANDLERS, WARM_CRITICAL_DONE
-from backend.ipc_protocol import _SKIP, read_message, send_notification, send_response
+from backend.ipc_protocol import _Skip, read_message, send_notification, send_response
 from backend.utils.i18n import t
 
 _shutdown_requested = False
@@ -299,7 +299,6 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
     ipc_phase_telemetry.set_fields(msg_id, method=method_name, lane=lane)
     ipc_phase_telemetry.mark(msg_id, "enqueue")
     scheduler = get_scheduler()
-    # Importar handlers.canvas solo bajo presión de memoria evita bloquear el lector JSON-RPC.
     if method_name in ("canvas_save", "canvas_save_history") and is_memory_pressure():
         request_params = params if isinstance(params, dict) else {}
         try:
@@ -458,7 +457,7 @@ def main() -> None:
                 if msg is None:
                     logger.info("EOF on stdin — pipe closed. Exiting immediately.")
                     break
-                if msg is _SKIP:
+                if isinstance(msg, _Skip):
                     _consecutive_errors = max(0, _consecutive_errors - 1)
                     continue
 
@@ -521,7 +520,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # Una tarea programada de Flujos aún no borrada no debe arrancar un backend.
     if len(sys.argv) >= 2 and sys.argv[1] in ("--flow-run", "--flow-code-run"):
         sys.exit(0)
     main()

@@ -1,9 +1,3 @@
-"""Memoria del agente: evidencia, versiones, correcciones, borrado e invalidación.
-
-Un procedimiento solo se aprende de comprobantes verificados de la conversación;
-reutilizarlo no concede permisos y la corrección del usuario prevalece.
-"""
-
 import json
 
 import pytest

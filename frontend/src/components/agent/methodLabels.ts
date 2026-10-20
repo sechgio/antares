@@ -1,5 +1,6 @@
 export const METHOD_LABELS: Record<string, string> = {
   ask_user: 'Datos necesarios para continuar',
+  subagent_run: 'Delegar en un agente guardado',
   artifact_print: 'Enviar el PDF revisado a impresión',
   padron_describe: 'Campos y formatos de Padrones',
   padron_export_pdf: 'Generar PDF de Padrones',

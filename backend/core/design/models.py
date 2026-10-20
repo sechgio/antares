@@ -1,13 +1,3 @@
-"""Modelo de datos de **Design**: un documento de presentación.
-
-Deliberadamente **no** es un Canvas Document (ver ``CONTEXT.md``): un Design
-tiene diapositivas con *layout* semántico y un tema, no capas posicionadas en
-milímetros. El modelo de IA emite este IR; el render lo convierte a HTML.
-
-Todo el contenido del modelo pasa por allowlists: un Design nunca inyecta HTML,
-CSS ni nombres de fuente arbitrarios en el render. Los colores se validan con
-regex hex, las fuentes con la lista segura del schema y el texto se escapa.
-"""
 
 from __future__ import annotations
 
@@ -55,9 +45,6 @@ MAX_BULLET_CHARS = _LIMITS.get("maxBulletChars", 400)
 MAX_NOTES_CHARS = _LIMITS.get("maxNotesChars", 2000)
 MAX_NAME_CHARS = _LIMITS.get("maxNameChars", 120)
 
-# Solo hex de 3 o 6 dígitos. Sin alpha, sin `rgb()`, sin `url()`: el color se
-# interpola en `style="..."`, así que cualquier otra gramática sería un hueco de
-# inyección CSS.
 _HEX_COLOR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 _MIN_PAGE_MM = 20.0
 _MAX_PAGE_MM = 2000.0
@@ -71,13 +58,10 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
-# C0/C1 y DEL: invisibles que sobreviven a `split()` y acabarían en el nombre de
-# fichero exportado. Mismo criterio que `utils.validators.sanitizar_nombre`.
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 def _text(raw: Any, limit: int) -> str:
-    """Limpia, colapsa espacios y recorta. Nunca devuelve None; el render escapa después."""
     if not isinstance(raw, str):
         return ""
     flat = " ".join(_CONTROL_CHARS.sub(" ", raw).split())

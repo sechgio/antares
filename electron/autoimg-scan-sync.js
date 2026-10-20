@@ -52,8 +52,6 @@ function nowStamp() {
 }
 
 async function _loadExistingNisSet() {
-  // Sin catch: si la lectura falla, un set vacío inflaría fuera_padron/sin_sgio
-  // del resumen. Mejor abortar el scan que reportar métricas corruptas.
   const existing = new Set();
   const { values } = await sheets.readRange('BD_IMG!A:A');
   const start = tabStartIndex(values, ['NIS']);

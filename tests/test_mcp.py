@@ -1,5 +1,3 @@
-"""Pruebas del subsistema MCP: registro de servidores, cliente stdio/HTTP y ejecución de herramientas."""
-
 from __future__ import annotations
 
 import json
@@ -31,7 +29,7 @@ for line in sys.stdin:
     msg = json.loads(line)
     mid = msg.get("id")
     if mid is None:
-        continue  # notifications/initialized
+        continue
     method = msg.get("method")
     if method == "initialize":
         out = {"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "fake", "version": "0"}}}
@@ -69,7 +67,6 @@ def test_add_and_list_servers(mcp_root):
     listed = mcp_servers.list_servers()
     assert len(listed) == 1
     assert listed[0]["args"] == ["-y", "@modelcontextprotocol/server-github"]
-    # el secreto nunca aparece en el listado público
     assert "secreto" not in json.dumps(listed)
 
 
@@ -83,7 +80,6 @@ def test_add_server_validates(mcp_root):
 
 
 def test_add_server_http_requires_tls_or_loopback(mcp_root):
-    """CWE-319: http:// a hosts remotos enviaría las credenciales sin cifrar."""
     with pytest.raises(ValueError, match="https"):
         mcp_servers.add_server("Remoto", "http", url="http://mcp.ejemplo.com/mcp")
     with pytest.raises(ValueError, match="https"):
@@ -236,7 +232,6 @@ def test_http_initializes_session_before_tool_requests(method):
 
 
 def test_http_secret_headers_not_sent_on_redirect(mcp_root):
-    """CWE-200: un redirect no debe reenviar las cabeceras secretas a otro host."""
     seen: list[dict] = []
 
     class Sink(BaseHTTPRequestHandler):
@@ -284,13 +279,11 @@ def test_agent_tool_name_roundtrip(mcp_root):
     assert mcp_servers.parse_agent_tool(name) == ("github", name[len(mcp_servers.agent_tool_name("github", "")):])
     assert mcp_servers.parse_agent_tool("flows_list") is None
     assert mcp_servers.parse_agent_tool("mcp__solo") is None
-    # Todos llevan identidad estable, incluso si comparten un alias antiguo.
     assert mcp_servers.agent_tool_name("s", "ping").startswith(mcp_servers.agent_tool_name("s", "") + "ping-")
     assert len(mcp_servers.agent_tool_name("s" * 60, "t" * 60)) <= 64
 
 
 def test_call_tool_resolves_advertised_name(mcp_root, monkeypatch):
-    """El agente invoca el nombre saneado (repos-get); call_tool traduce al real."""
     monkeypatch.setattr(
         mcp_servers, "list_tools", lambda sid, **kw: [{"name": "repos.get", "description": ""}]
     )

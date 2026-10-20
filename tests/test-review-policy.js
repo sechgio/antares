@@ -520,7 +520,6 @@ function testMetrics() {
     'el objetivo de taxonomía sale de la política, no de una constante duplicada',
   );
 
-  // El tamaño que mide la métrica es el mismo que mide la política: sin excluir generados.
   const big = { author: { login: 'sechgio' }, createdAt: '2026-08-05T10:00:00Z', additions: 3500, deletions: 500, reviews: [], comments: [] };
   const rawOnly = metrics.computeMetrics([big]);
   eq(
@@ -805,7 +804,6 @@ function testStabilityAndExemptions() {
     eq([...severities][0], policy.BLOCKING, `${id} es bloqueante también cuando pasa o avisa`);
   }
 
-  // Un archivo modificado sin `status` ya no parece nuevo.
   assert(!policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0 }), 'sin status no se puede afirmar que es nuevo');
   assert(!policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0, status: 'modified' }), 'modified no es nuevo');
   assert(policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0, status: 'added' }), 'added es nuevo');
@@ -945,7 +943,6 @@ function testMetricsRounds() {
   assert(byId.firstReviewHours.detail.includes('borrador'), 'el detalle dice cuántos borradores se excluyeron');
   eq(byId.rubberStamp.value, 0, 'los borradores no cuentan como rubber-stamp');
 
-  // Dos revisores pidiendo cambios en la misma Review = una ronda.
   eq(metrics.reworkRounds(prs[0]), 2, 'dos revisores distintos son dos peticiones');
   const sameTwice = metrics.reworkRounds({
     author: { login: 'a' },

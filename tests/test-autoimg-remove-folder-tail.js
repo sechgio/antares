@@ -2,7 +2,6 @@ const { assertOrExit: assert, stubModule, clearAutoimgModules } = require('./hel
 
 const HEADER = ['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS'];
 
-// Como spreadsheets.values.update, el fixture conserva las filas fuera del rango enviado.
 function makeSheet(initialRows) {
   let rows = initialRows.map((row) => row.slice());
 

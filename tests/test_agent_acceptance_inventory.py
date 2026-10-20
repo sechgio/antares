@@ -1,5 +1,3 @@
-"""Corpus F0 sin datos personales: fuentes locales y cada plantilla bundled."""
-
 from __future__ import annotations
 
 import json

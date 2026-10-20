@@ -66,7 +66,6 @@ function neutralizeUrlAttr(match, attr, quote, urlValue) {
   if (scheme === 'javascript' || scheme === 'vbscript') {
     return `${attr}=${quote}${quote}`;
   }
-  // Protocol-relative (//host/path) hereda http(s) del documento: neutralizar.
   if (cleaned.startsWith('//')) {
     return `${attr}=${quote}${quote}`;
   }
@@ -128,7 +127,6 @@ function injectContentSecurityPolicy(stripped, cspMeta) {
   return `${cspMeta}${stripped}`;
 }
 
-// Pipeline compartida por las políticas PDF y Canvas-preview: solo difieren en la CSP inyectada y en si url() admite blob:.
 function sanitizeGoogleFontHtml(html, cspMeta, allowBlobUrl) {
   const stripped = String(html)
     .replace(/<!--[\s\S]*?-->/g, '')

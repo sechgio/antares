@@ -1,22 +1,3 @@
-"""Control de calidad determinista sobre un Design renderizado.
-
-La skill ``pptx`` de Claude exige mirar las diapositivas ya renderizadas antes
-de darlas por buenas — *"después de mirar el código generador tiendes a ver lo
-que esperas, no lo que se renderizó"*. El escritorio de Claude no puede hacer
-eso: solo imprime el lienzo remoto y se acaba.
-
-Aquí sí. Se renderiza el PDF con el mismo motor que el export y se mide sobre
-el resultado, no sobre la intención:
-
-- **Desbordamiento**: una caja de texto que sale del área segura de la página.
-- **Colisión**: dos cajas de texto que se solapan.
-- **Texto minúsculo**: un span por debajo del suelo de legibilidad.
-- **Diapositiva vacía**: una página sin una sola caja de texto.
-- **Contraste**: ratio WCAG de la paleta contra el fondo.
-
-Todo es determinista y barato: no depende del modelo y funciona igual con un
-modelo local de 3B que con uno frontier.
-"""
 
 from __future__ import annotations
 
@@ -25,13 +6,8 @@ from typing import Any
 from backend.core.design.render import render_html
 from backend.core.design.types import JsonObject
 
-# Piso de legibilidad en puntos. Por debajo, la proyección o el escaneo la
-# vuelven ilegible aunque el contraste sea correcto.
 MIN_FONT_PT = 9.0
-# Una caja puede salirse este tanto antes de contarlo como desbordamiento.
 _OVERFLOW_TOLERANCE_PT = 2.0
-# Fracción de intersección sobre el área menor a partir de la cual dos cajas
-# se consideran en colisión en vez de adyacentes.
 _COLLISION_AREA_RATIO = 0.18
 # Ratios WCAG: 3:1 para texto grande y elementos gráficos, 4.5:1 para cuerpo.
 MIN_CONTRAST_BODY = 4.5
@@ -101,11 +77,6 @@ def consecutive_run_lengths(items: list[str]) -> list[tuple[str, int, int]]:
 
 
 def check_layout_monotony(document: JsonObject, max_run: int = 3) -> list[Finding]:
-    """Avisa cuando la misma maquetación se repite sin variedad.
-
-    El prompt del sistema pide al modelo variar; aquí se comprueba sobre el
-    documento, que es el único sitio donde se verifica de verdad.
-    """
     findings: list[Finding] = []
     for layout, length, start in consecutive_run_lengths(layouts_for(document)):
         if length >= max_run:
@@ -237,8 +208,6 @@ def run_preflight(document: JsonObject, pdf: bytes | None = None) -> Preflight:
 
     width_mm = float(page.get("widthMm") or 210)
     height_mm = float(page.get("heightMm") or 297)
-    # El render usa el mismo pad para ancho y alto (7.5% de la dimensión
-    # correspondiente), así que el área segura se deriva igual que allí.
     pad_x = width_mm * 0.075 / 25.4 * 72.0
     pad_y = height_mm * 0.075 / 25.4 * 72.0
 

@@ -1,13 +1,5 @@
 'use strict';
 
-// Runtime del agente en el proceso principal: pi-durable (SQLite durable) +
-// pi-ai (proveedores). Python conserva vault, allowlist, MCP, scheduler y
-// aprobaciones a través de los RPC internos `agent_internal_*`, a los que solo
-// llega este módulo vía `_callBackend` (el catálogo los marca `internal`).
-// Este archivo guarda el ciclo de vida y los diez handlers públicos; la
-// ejecución de herramientas/proveedores vive en agent-execution.js y la
-// proyección al contrato público en agent-projection.js.
-
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -55,7 +47,8 @@ const SYSTEM_PROMPT =
   'Para archivos de salida indica solo un nombre: se generan en los borradores de la ' +
   'conversación; para entregarlos en una carpeta del usuario usa drafts_save. ' +
   'Guarda con memory_remember solo preferencias o hechos duraderos que indique el usuario, nunca secretos; ' +
-  'cuando un encargo repetible termine con comprobante, guarda sus pasos con procedure_learn.';
+  'cuando un encargo repetible termine con comprobante, guarda sus pasos con procedure_learn. ' +
+  'Si el encargo encaja con un agente guardado, delégalo con subagent_run y resume lo que devuelva.';
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';
@@ -156,8 +149,6 @@ async function _indexConversations() {
   }
 }
 
-// ---------- handlers públicos (contrato backend:agent) ----------
-
 async function sessionsList() {
   const result = Object.values(await sessions())
     .filter((s) => !s.deleted)
@@ -234,7 +225,7 @@ async function profileDelete(params = {}) {
 async function sessionCreate(params) {
   const provider = params && params.provider;
   if (typeof provider !== 'string' || !provider) throw validation('Falta el parámetro provider');
-  const info = await execution.providerInfo(provider); // valida chat + clave en Python
+  const info = await execution.providerInfo(provider);
   const requested = typeof params.model === 'string' ? params.model : '';
   const model = (requested || String(info.default_model || '')).slice(0, 120);
   const profile = params.profile_id ? (await _profiles())[String(params.profile_id)] : null;
@@ -293,6 +284,31 @@ async function sessionRename(params) {
     renamed = rest;
   });
   return { session: renamed };
+}
+
+async function sessionModelSet(params) {
+  const sessionId = _text(params.id, 'la conversación', 120, true);
+  const provider = _text(params.provider, 'un proveedor', 120, true);
+  const model = _text(params.model, 'un modelo', 120, true);
+  const session = await requireSession(sessionId);
+  const info = await execution.providerInfo(provider);
+  await execution.ensureProvider(provider, model);
+  const { pi } = shared.deps;
+  return shared.state.harness.commit(async (tx) => {
+    const live = await tx.doc(pi.LiveDoc, session.conversationId);
+    const inbox = await tx.doc(pi.InboxDoc, session.conversationId);
+    if (live.run || inbox.items.length) throw validation('Espera a que termine el turno para cambiar de modelo');
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model } });
+    current.provider = provider;
+    current.model = model;
+    current.style = info.style || 'openai_chat';
+    current.updated_at = Date.now();
+    const { conversationId, style, modules, ...publicSession } = current;
+    return { session: publicSession };
+  }, ctx());
 }
 
 async function sessionDelete(params) {
@@ -539,10 +555,6 @@ async function approve(params, approved) {
   const approvalId = String(params && params.approval_id || '');
   const { approval } = await bridge('agent_internal_approval_decide', { approval_id: approvalId, approve: !!approved });
   execution.notifyDecision(approvalId);
-  // Aprobación recuperada tras un reinicio: ninguna espera beforeTool la
-  // consume; ejecutamos/negamos una sola vez vía dispatch deduplicado y
-  // dejamos constancia en la transcripción. Una espera viva para esa llamada
-  // o un tool task en curso la gestionan ellos.
   const approvalCall = approval && execution.callKey(String(approval.session_id), String(approval.call_id));
   const approvalSession = approval && (await sessions())[String(approval.session_id)];
   const approvalLive = approvalSession && shared.live.get(approvalSession.conversationId);
@@ -553,12 +565,8 @@ async function approve(params, approved) {
       (t) => t.callId === approval.call_id && t.status !== 'done')
   );
   if (approval && !liveWait) {
-    // Pequeña pausa: una espera recién reanudada puede registrar su marca
-    // un instante después de decidirse la aprobación.
     await new Promise((r) => setTimeout(r, 150));
     const stillLive = shared.liveApprovals.has(approval.id) || shared.approvalsByCall.has(approvalCall);
-    // Igual que el runner antiguo: la decisión responde ya y el efecto corre
-    // en segundo plano; el resultado aparece vía messages_list.
     if (!stillLive) void _settleRecoveredApproval(approval).catch(() => {});
   }
   return { approval };
@@ -574,14 +582,14 @@ async function _settleRecoveredApproval(approval) {
   const method = String(approval.method || '');
 
   const already = await _resultEntryFor(conv, callId);
-  if (already) return; // el tool task vivo ya escribió el resultado
+  if (already) return;
 
   let text;
   let isError = false;
   let diagnostics;
   if (approval.status === 'approved') {
     text = await execution.dispatchApproved(approval, ctx());
-    try { isError = !!JSON.parse(text).error; } catch { /* texto plano */ }
+    try { isError = !!JSON.parse(text).error; } catch {}
   } else {
     text = JSON.stringify({ error: 'El usuario rechazó esta acción' });
     isError = true;
@@ -612,14 +620,14 @@ async function _resultEntryFor(conv, callId) {
 
 async function shutdown() {
   for (const stream of shared.watchers.values()) {
-    try { await stream.stop(); } catch { /* cierre */ }
+    try { await stream.stop(); } catch {}
   }
   shared.watchers.clear();
   shared.live.clear();
   if (shared.state) {
     const harness = shared.state.harness;
     shared.state = null;
-    try { await harness.close(ctx()); } catch { /* cierre */ }
+    try { await harness.close(ctx()); } catch {}
   }
 }
 
@@ -641,6 +649,7 @@ module.exports = {
     agent_session_create: sessionCreate,
     agent_session_delete: sessionDelete,
     agent_session_rename: sessionRename,
+    agent_session_model_set: sessionModelSet,
     agent_messages_list: messagesList,
     agent_message_send: messageSend,
     agent_tools_list: toolsList,

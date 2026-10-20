@@ -1,9 +1,5 @@
 'use strict';
 
-// Proyección del runtime del agente hacia el contrato público: watchEvents de
-// pi-durable alimenta el estado en vivo (texto parcial, herramientas en curso)
-// y las entradas durables se traducen al formato de messages_list.
-
 const {
   shared,
   bridge,
@@ -13,8 +9,6 @@ const {
 
 const NOTICE_KIND = shared.NOTICE_KIND;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
-
-// ---------- watchEvents: estado en vivo para la UI ----------
 
 async function ensureWatcher(session, context) {
   const convId = session.conversationId;
@@ -111,8 +105,6 @@ function partialText(convId) {
     .join('');
 }
 
-// ---------- proyección del transcript al contrato público ----------
-
 function textOf(message) {
   if (!message) return '';
   if (typeof message.content === 'string') return message.content;
@@ -144,7 +136,7 @@ async function allEntries(conv) {
     entries.push(...page.items);
     cursor = page.nextCursor;
   } while (cursor);
-  return entries.reverse(); // oldest → newest
+  return entries.reverse();
 }
 
 async function projectMessages(conv, session) {

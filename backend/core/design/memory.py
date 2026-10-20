@@ -1,14 +1,3 @@
-"""Memoria de diseño persistente.
-
-En Claude Design el modelo guarda sus decisiones de diseño entre turnos con
-`memory_write` / `memory_str_replace`, de modo que una preferencia dicha una
-vez sigue vigente. Aquí esa memoria es local, explícita y editable: el usuario
-la escribe, el modelo la obedece en cada generación sin que haya que repetirla.
-
-Vive en un único fichero JSON, no por documento, porque una preferencia
-("nada de degradados", "logotipo arriba a la izquierda", "español formal") es
-del usuario, no de una presentación concreta.
-"""
 
 from __future__ import annotations
 
@@ -59,7 +48,6 @@ def normalize_memory(raw: Any) -> Memory:
             text = _clean(item.get("text"))
             key = text.lower()
             if not text or key in seen:
-                # Duplicada o vacía: gasta contexto de prompt sin aportar nada.
                 continue
             seen.add(key)
             note_id = item.get("id")

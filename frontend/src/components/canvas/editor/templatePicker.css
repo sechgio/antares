@@ -1,4 +1,3 @@
-/* ── Explorador de plantillas ─────────────────────────────────── */
 
 .tpl-overlay {
   position: fixed;
@@ -474,7 +473,6 @@
   font-size: 11px;
 }
 
-/* ── Vista previa (lightbox) ──────────────────────────────────── */
 
 .tpl-lightbox {
   position: fixed;

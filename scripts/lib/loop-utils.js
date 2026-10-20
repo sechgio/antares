@@ -56,7 +56,6 @@ function ghApi(args, opts = {}) {
   return gh(['api', ...args], { timeout: 60_000, maxBuffer: 40 * 1024 * 1024, ...opts });
 }
 
-// Variante no bloqueante de gh(): permite lanzar varias llamadas a la vez (auditorías de PR).
 async function ghAsync(args, opts = {}) {
   const { stdout } = await execFileAsync('gh', args, {
     cwd: ROOT,
@@ -71,8 +70,6 @@ async function ghApiAsync(args, opts = {}) {
   return ghAsync(['api', ...args], { timeout: 30_000, ...opts });
 }
 
-// spec: { defaults: {...}, flags: { '--flag': { key } } booleano,
-// '--flag': { key, value: true, coerce?: fn } con valor }
 function parseCliArgs(argv, { defaults = {}, flags = {} } = {}) {
   const out = { ...defaults };
   for (let i = 0; i < argv.length; i++) {

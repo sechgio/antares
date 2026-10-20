@@ -67,10 +67,10 @@ describe("buildGeneratedPdfName", () => {
 
 describe("formatCanPreview", () => {
   it("rechaza rangos inválidos", () => {
-    expect(formatCanPreview(fmt(), 0, 5)).toBe(false); // desde < numMin
-    expect(formatCanPreview(fmt(), 5, 3)).toBe(false); // hasta < desde
-    expect(formatCanPreview(fmt({ number_max: 10 }), 1, 20)).toBe(false); // hasta > max
-    expect(formatCanPreview(fmt({ max_pages: 3 }), 1, 10)).toBe(false); // total > maxPages
+    expect(formatCanPreview(fmt(), 0, 5)).toBe(false);
+    expect(formatCanPreview(fmt(), 5, 3)).toBe(false);
+    expect(formatCanPreview(fmt({ number_max: 10 }), 1, 20)).toBe(false);
+    expect(formatCanPreview(fmt({ max_pages: 3 }), 1, 10)).toBe(false);
   });
 
   it("rechaza estrategias sin preview", () => {

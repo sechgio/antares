@@ -1,9 +1,3 @@
-"""Handlers IPC de la feature **Design**.
-
-Superficie mínima de la v1: generar desde un prompt con el modelo propio del
-usuario, inspeccionar el documento, previsualizarlo y exportarlo a PDF.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -42,7 +36,6 @@ def _require_document(design_id: str) -> JsonObject:
 
 
 def _document_from_params(params: JsonObject) -> JsonObject:
-    """Acepta el documento completo o solo su id, para no arrastrar el IR dos veces."""
     raw = params.get("document")
     if isinstance(raw, dict) and raw:
         return models.normalize_document(raw)
@@ -99,7 +92,6 @@ def design_delete(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("prompt", "provider")
 def design_generate(params: JsonObject) -> JsonObject:
-    """Genera un Design con el proveedor y modelo que indique el renderer."""
     provider = str(params.get("provider") or "").strip()
     if not provider:
         raise ValidationError("Falta 'provider'")
@@ -164,8 +156,6 @@ def design_export_pdf(params: JsonObject) -> JsonObject:
     output_path = params.get("output_path")
     output_path = output_path.strip() if isinstance(output_path, str) and output_path.strip() else None
 
-    # `notes=True` imprime además las notas del ponente bajo cada diapositiva,
-    # que es lo que convierte el PDF en un guion que se puede usar en la sala.
     render = render_html(document, notes=True) if params.get("notes") is True else render_html(document)
     pdf = write_pdf_sanitized(render)
     filename = _filename_for(document, output_path)
@@ -185,7 +175,6 @@ def design_export_pdf(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params()
 def design_preflight(params: JsonObject) -> JsonObject:
-    """Mide el Design sobre su PDF: desbordamiento, colisión, contraste, vacías."""
     document = _document_from_params(params)
     return run_preflight(document)
 

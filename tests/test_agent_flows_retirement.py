@@ -1,5 +1,3 @@
-"""Retirada de Flujos: borrado atribuible, pendientes explícitos e idempotencia."""
-
 from __future__ import annotations
 
 import json

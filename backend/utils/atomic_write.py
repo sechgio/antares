@@ -28,8 +28,6 @@ def atomic_output_file(
 ) -> Iterator[AtomicOutputTarget]:
     resolved = Path(resolved_path)
     if write_token:
-        # A write capability authorizes this exact path. Never rename it
-        # through sanitization; only the convenience extension still applies.
         destination = resolved
         if not destination.name.lower().endswith(extension.lower()):
             destination = destination.with_name(destination.name + extension)
@@ -46,6 +44,11 @@ def atomic_output_file(
     tmp = destination.with_name(f"{destination.name}.{uuid.uuid4().hex}.tmp")
     try:
         yield AtomicOutputTarget(tmp_path=tmp, destination=destination)
+        fd = os.open(tmp, os.O_WRONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
         if overwrite:
             os.replace(tmp, destination)
         elif destination.exists():
@@ -58,8 +61,6 @@ def atomic_output_file(
                     raise FileExistsError(exists_message.format(path=destination)) from None
                 os.rename(tmp, destination)
             else:
-                # Link ya creó destination; un unlink fallido no debe reportar
-                # FileExistsError sobre un archivo que sí se escribió.
                 with contextlib.suppress(OSError):
                     os.unlink(tmp)
     except BaseException:

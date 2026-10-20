@@ -8,7 +8,7 @@ const API_DIR = path.join(ROOT, 'frontend', 'src', 'api');
 const PRELOAD_PATH = path.join(ROOT, 'electron', 'preload.js');
 const CATALOG_PATH = path.join(ROOT, 'shared', 'ipc-method-catalog.js');
 
-const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|spotify|connections|agent))$/;
+const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|spotify|connections|agent|editor))$/;
 const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);
 const VALID_LANES = new Set(['sync', 'light', 'heavy']);
 
@@ -69,7 +69,6 @@ function main() {
   const preloadSource = fs.readFileSync(PRELOAD_PATH, 'utf8');
   const catalog = require(CATALOG_PATH);
 
-  // Revisa también api/*.ts: los wrappers usan _invoke y autoimgApi recibe invoke inyectado.
   const apiMethods = extractApiMethods(apiSource);
   for (const file of fs.readdirSync(API_DIR).filter((f) => f.endsWith('.ts'))) {
     const moduleSource = fs.readFileSync(path.join(API_DIR, file), 'utf8');
@@ -79,6 +78,10 @@ function main() {
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
+  if (!apiMethods.has('agent_session_model_set') || !allowed.has('agent_session_model_set')
+    || catalog.METHODS.agent_session_model_set.handler !== 'native:agent') {
+    throw new Error('El selector de modelos debe usar el método nativo permitido del agente.');
+  }
   const refreshMethod = 'connections_token_refresh';
   if (!catalog.INTERNAL_METHODS.has(refreshMethod) || knownUsedMethods.has(refreshMethod)) {
     throw new Error('El refresco de conexiones debe ser interno, sin acceso del renderer.');

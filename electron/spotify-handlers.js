@@ -1,4 +1,3 @@
-// Despacho de los métodos nativos spotify_* por params.action.
 const { SPOTIFY_METHODS } = require('./spotify-ipc-methods');
 const session = require('./spotify-session');
 const client = require('./spotify-client');

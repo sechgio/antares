@@ -33,7 +33,6 @@ export function clampCurrentPage(page: number, totalPages: number): number {
   return page >= totalPages ? Math.max(0, totalPages - 1) : page;
 }
 
-/** Texto de estado para el botón de exportación consolidada. */
 export function exportablePanelStatus(count: number): string {
   if (count === 0) return "Sin fotos";
   return `${count} panel${count === 1 ? "" : "es"} listo${count === 1 ? "" : "s"}`;

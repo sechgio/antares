@@ -52,7 +52,6 @@ interface InspeccionItem {
   sub: string;
 }
 
-// (clave, descripción, subdescripción) en el orden del formato Reservorios_2.
 export const R2_INSPECCION_ITEMS: InspeccionItem[] = [
   { key: 'caja_registro', label: 'CAJA DE REGISTRO', sub: '' },
   { key: 'marco_tapa', label: 'MARCO Y TAPA SANITARIA', sub: '' },

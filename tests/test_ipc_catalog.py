@@ -19,6 +19,15 @@ def test_approval_context_is_declared_only_on_private_agent_calls():
         assert methods[method]["inputSchema"]["properties"]["context"] == {"type": "object"}
 
 
+def test_agent_model_selection_is_a_renderer_command_not_an_agent_tool():
+    from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
+
+    entry = _catalog()["methods"]["agent_session_model_set"]
+    assert entry["handler"] == "native:agent"
+    assert entry["inputSchema"]["required"] == ["id", "provider", "model"]
+    assert "agent_session_model_set" not in ORCHESTRATABLE_METHODS
+
+
 def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_secrets(monkeypatch):
     from backend.core.agent import agent_chat
     from backend.core.integrations import connections
@@ -84,7 +93,7 @@ def test_lane_and_handler_projections() -> None:
     assert lane_for("canvas_export_cmyk_pdf") == "heavy"
     assert lane_for("process_start") == "light"
     assert lane_for("version") == "sync"
-    assert lane_for("html_to_pdf") == "light"  # método nativo: sin lane de backend
+    assert lane_for("html_to_pdf") == "light"
     assert lane_for("metodo_inexistente") == "light"
 
     assert handler_module_for("canvas_get") == "backend.handlers.canvas"

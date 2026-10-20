@@ -10,8 +10,6 @@ async function main() {
   assert(Number.isInteger(port) && port >= 1024, 'findAvailablePort devuelve un puerto válido');
 
   {
-    // Un segundo startCallbackServer no debe derribar el listener del primero:
-    // cada intento posee su servidor y solo su propio stop() lo cierra.
     const probe = (p) =>
       new Promise((resolve, reject) => {
         http

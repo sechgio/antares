@@ -8,8 +8,6 @@ function emit(method, params) {
 }
 
 function emitError(code, detail) {
-  // Los errores de Google llegan con el body crudo (p.ej. "Google API error
-  // (403): {...}"): la ruta IPC sanitiza en el handler pero este canal no.
   const safe = sanitizeErrorMessage(detail);
   appendLogEvent('ERROR', 'autoimg.error', {
     component: 'electron',

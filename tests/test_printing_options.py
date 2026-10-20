@@ -1,5 +1,3 @@
-"""Opciones de impresión: parseo de páginas y tablas de calidad/dúplex."""
-
 from __future__ import annotations
 
 import pytest

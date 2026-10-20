@@ -26,9 +26,6 @@ const RECT_FIELDS = [
   { key: 'height', label: 'Alto' },
 ] as const;
 
-// El rect llega limitado y redondeado desde el padre: mientras se teclea se
-// muestra el borrador, o cada pulsación intermedia (p. ej. "5" camino a "50")
-// se reescribiría con el valor limitado.
 function RectField({
   label,
   ariaLabel,

@@ -13,6 +13,15 @@ const provider: AiProviderSpec = {
   configured: true, has_key: true, key_masked: '••••1234', needs_key: true,
 };
 
+const customProvider: AiProviderSpec = {
+  ...provider,
+  id: 'custom-mi-gateway-1a2b3c', provider: 'custom-mi-gateway-1a2b3c', label: 'Mi gateway',
+  description: 'Modelo personalizado · OpenAI compatible (Chat Completions)',
+  custom: true, api: 'openai', base_url: 'https://gateway.example.com/v1',
+  default_base_url: 'https://gateway.example.com/v1', default_model: 'mi-modelo',
+  key_masked: '••••9876',
+};
+
 beforeEach(() => {
   vi.restoreAllMocks();
   addToast.mockClear();
@@ -91,4 +100,125 @@ it.each(['openai', 'anthropic'])('guarda, prueba y elimina la configuración de 
   fireEvent.click(screen.getByRole('button', { name: 'Eliminar' }));
   await waitFor(() => expect(remove).toHaveBeenCalledWith(id));
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('añade un modelo personalizado con formato, dirección, modelo y clave', async () => {
+  const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({
+    id: customProvider.id,
+    provider: customProvider,
+  });
+  render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Añadir modelo' }));
+  fireEvent.change(screen.getByLabelText('Nombre del modelo personalizado'), { target: { value: 'Mi gateway' } });
+  const format = screen.getByRole('button', { name: 'Formato de API del modelo personalizado' });
+  fireEvent.keyDown(format, { key: 'ArrowDown' });
+  fireEvent.keyDown(format, { key: 'ArrowDown' });
+  fireEvent.keyDown(format, { key: 'Enter' });
+  fireEvent.change(screen.getByLabelText('Dirección base del modelo personalizado'), { target: { value: 'https://gateway.example.com/v1' } });
+  fireEvent.change(screen.getByLabelText('Modelo personalizado'), { target: { value: 'mi-modelo' } });
+  fireEvent.change(screen.getByLabelText('Clave del modelo personalizado'), { target: { value: 'sk-9876' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar modelo' }));
+
+  await waitFor(() => expect(save).toHaveBeenCalledWith({
+    label: 'Mi gateway',
+    api: 'anthropic',
+    base_url: 'https://gateway.example.com/v1',
+    model: 'mi-modelo',
+    api_key: 'sk-9876',
+  }));
+  expect(addToast).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'success' }));
+});
+
+it('edita un modelo personalizado sin reemplazar la clave y permite probarlo y eliminarlo', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [customProvider] });
+  const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({
+    id: customProvider.id,
+    provider: customProvider,
+  });
+  const probe = vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({
+    provider: { ...customProvider, reachable: true, models_count: 3, error: null },
+  });
+  const remove = vi.spyOn(aiProvidersApi, 'aiProviderDelete').mockResolvedValue({ deleted: true });
+  render(<ProvidersView />);
+
+  expect(await screen.findByText('mi-modelo')).toBeVisible();
+  expect(screen.getByText('••••9876')).toBeVisible();
+  expect(screen.getByText('OpenAI compatible (Chat Completions)')).toBeVisible();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Probar Mi gateway' }));
+  expect(await screen.findByText('Disponible · 3 modelos')).toBeVisible();
+  expect(probe).toHaveBeenCalledWith(customProvider.id);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Editar Mi gateway' }));
+  expect(screen.getByLabelText('Modelo personalizado')).toHaveValue('mi-modelo');
+  fireEvent.change(screen.getByLabelText('Modelo personalizado'), { target: { value: 'mi-modelo-2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+  await waitFor(() => expect(save).toHaveBeenCalledWith({
+    id: customProvider.id,
+    label: 'Mi gateway',
+    api: 'openai',
+    base_url: 'https://gateway.example.com/v1',
+    model: 'mi-modelo-2',
+  }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar Mi gateway' }));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith(customProvider.id));
+});
+
+it('permite quitar la clave guardada de un modelo personalizado', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [customProvider] });
+  const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({
+    id: customProvider.id,
+    provider: customProvider,
+  });
+  render(<ProvidersView />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar Mi gateway' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Quitar la clave guardada' }));
+  expect(screen.getByLabelText('Clave del modelo personalizado')).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+    id: customProvider.id,
+    remove_key: true,
+  })));
+  expect(save.mock.calls.at(-1)?.[0]).not.toHaveProperty('api_key');
+});
+
+it('muestra los modelos ilegibles con opción de eliminarlos', async () => {
+  const invalidProvider: AiProviderSpec = {
+    ...customProvider,
+    id: 'custom-roto-aaaaaa',
+    provider: 'custom-roto-aaaaaa',
+    label: 'Modelo no válido',
+    description: 'No se pudo leer su configuración guardada',
+    api: '',
+    invalid: true,
+    configured: false,
+    has_key: false,
+    key_masked: null,
+    base_url: '',
+    default_base_url: '',
+    default_model: '',
+    needs_key: false,
+  };
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [invalidProvider] });
+  const remove = vi.spyOn(aiProvidersApi, 'aiProviderDelete').mockResolvedValue({ deleted: true });
+  render(<ProvidersView />);
+
+  expect(await screen.findByText('Modelo no válido')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Probar Modelo no válido' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar custom-roto-aaaaaa' }));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith('custom-roto-aaaaaa'));
+});
+
+it('muestra un error con reintento si no puede cargar el listado', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList)
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce({ providers: [provider] });
+  render(<ProvidersView />);
+
+  expect(await screen.findByText('No se pudieron cargar los proveedores.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(await screen.findByLabelText('Base URL Anthropic')).toHaveValue(provider.base_url);
 });

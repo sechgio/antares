@@ -27,7 +27,7 @@ from backend.core.integrations import http_guard
 from backend.core.integrations.types import JsonObject
 
 _PROTOCOL_VERSION = "2024-11-05"
-_CLIENT_INFO = {"name": "antares-flujos", "version": "1.0"}
+_CLIENT_INFO = {"name": "antares", "version": "1.0"}
 _MAX_RESPONSE_BYTES = 1024 * 1024
 _HTTP_TIMEOUT_S = 30.0
 _STDIO_TIMEOUT_S = 45.0
@@ -114,11 +114,6 @@ def _result_of(message: JsonObject) -> JsonObject:
     return result
 
 
-# ---------------------------------------------------------------------------
-# Streamable HTTP
-# ---------------------------------------------------------------------------
-
-
 def _parse_sse_response(raw: bytes) -> JsonObject:
     """Extrae el mensaje JSON-RPC de un cuerpo que puede ser JSON o SSE."""
     text = raw.decode("utf-8", errors="replace").strip()
@@ -178,7 +173,7 @@ def _http_session_call(
 ) -> list[JsonObject]:
     """Handshake initialize + una lista de llamadas JSON-RPC en la misma sesión."""
     init_res, session_id = _http_post(url, headers, _init_message())
-    init_result = _result_of(init_res)  # valida el handshake
+    init_result = _result_of(init_res)
     headers = {**headers, "MCP-Protocol-Version": str(init_result.get("protocolVersion") or _PROTOCOL_VERSION)}
     if session_id:
         headers = {**headers, "Mcp-Session-Id": session_id}
@@ -251,11 +246,6 @@ def call_tool_http(
     return result
 
 
-# ---------------------------------------------------------------------------
-# stdio
-# ---------------------------------------------------------------------------
-
-
 def _stdio_session(
     command: str, args: list[str], env: dict[str, str], calls: list[tuple[str, JsonObject | None]],
     cancelled: Callable[[], bool] | None = None,
@@ -284,7 +274,7 @@ def _stdio_session(
                     raise McpError("La respuesta del servidor MCP supera el tamaño máximo")
                 line = line.strip()
                 if not line or not line.startswith(b"{"):
-                    continue  # logs del servidor por stdout no conformes
+                    continue
                 message = json.loads(line)
                 if not isinstance(message, dict):
                     raise McpError("Respuesta MCP no es un objeto JSON")
@@ -292,7 +282,7 @@ def _stdio_session(
                     out_queue.put_nowait(message)
                 except queue.Full:
                     raise McpError("El servidor MCP excedió el límite de mensajes pendientes") from None
-        except Exception as err:  # va a la cola para el llamador
+        except Exception as err:
             reader_errors.append(err)
             with contextlib.suppress(queue.Full):
                 out_queue.put_nowait(err)

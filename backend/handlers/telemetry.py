@@ -56,7 +56,6 @@ def telemetry(params: dict[str, Any]) -> dict[str, bool]:
     msg = (
         f"rum metric={name} value={value:.4f} rating={rating} id={metric_id} nav={nav_type}"
     )
-    # Allowlist en _rum_safe_field. Sin URL ni PII.
     log_event(
         logger,
         logging.INFO,

@@ -1,5 +1,3 @@
-"""Módulos y menciones del agente: cobertura de herramientas y resolución de @alias."""
-
 from __future__ import annotations
 
 from backend.core.agent import agent_chat, modules

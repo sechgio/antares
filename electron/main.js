@@ -48,7 +48,6 @@ process.on('uncaughtException', async (err) => {
   process.exit(1);
 });
 
-// Los 'Tab' ya los cubre render-process-gone del webContents de la ventana.
 app.on('child-process-gone', (_event, details) => {
   try {
     if (details && details.type === 'Tab') return;
@@ -193,9 +192,6 @@ function _shutdownOnce() {
     console.warn('[main] cleanupAutoUpdater threw during shutdown:', err && err.message);
   }
   try {
-    // Cierre best-effort: watchers y harness del agente nativo. Las escrituras
-    // SQLite de pi-durable son síncronas (node:sqlite), así que el estado ya
-    // es durable; esto solo libera recursos si el runtime llegó a abrirse.
     require('./agent-runtime').shutdown().catch(() => {});
   } catch (err) {
     console.warn('[main] agent runtime shutdown threw:', err && err.message);
@@ -205,7 +201,6 @@ function _shutdownOnce() {
   } catch (err) {
     console.warn('[main] killPython threw during shutdown:', err && err.message);
   }
-  // will-quit/exit/SIGINT requieren un flush síncrono para conservar los logs pendientes.
   try {
     flushLogQueueSync();
   } catch {}
@@ -282,9 +277,6 @@ if (typeof ipcMain.on === 'function') {
   });
 }
 
-// Debe superar el tier "long" del catálogo IPC (canvas_save/canvas_save_history,
-// 300 s): si el flush vence antes que el save en vuelo, el quit mata al backend
-// a mitad de escritura y se pierde la última edición.
 const CANVAS_FLUSH_TIMEOUT_MS = 310000;
 
 async function _cleanupStagedFiles() {

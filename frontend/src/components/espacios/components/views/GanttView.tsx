@@ -154,9 +154,6 @@ export default function GanttView({
 
   const visualLanes = Math.max(lanes, Math.floor(Math.max(0, bodyHeight - 8) / LANE_HEIGHT));
 
-  // El contenedor con scrollRef solo existe con tareas: el efecto debe
-  // reengancharse cuando el nodo aparece o desaparece, no en cada cambio de
-  // cantidad.
   const hasTasks = tareas.length > 0;
 
   useEffect(() => {
@@ -349,8 +346,6 @@ export default function GanttView({
       const deltaDays = Math.round((e.clientX - drag.startX) / colW);
       if (deltaDays !== 0) drag.moved = true;
       const next = applyGanttDragDelta(drag.mode, drag.originStart, drag.originEnd, deltaDays);
-      // Sin esta guarda, cada pointermove re-renderizaba todo el gráfico aunque
-      // el día no hubiera cambiado.
       setDragPreview((prev) =>
         prev && prev.id === drag.id && prev.start === next.start && prev.end === next.end
           ? prev
@@ -605,8 +600,6 @@ export default function GanttView({
             onClick={handleGridClick}
             onMouseMove={(e) => {
               const d = dateFromClientX(e.clientX);
-              // Cada mousemove re-renderizaba todo el gráfico; solo cambia el
-              // estado al cruzar un borde de día.
               setHoverDate((prev) => (prev === d ? prev : d));
             }}
             onMouseLeave={() => setHoverDate(null)}
@@ -899,7 +892,6 @@ export default function GanttView({
         }
 
         .espacios-gantt .gantt-bar {
-          /* font-size 0. El texto hijo no se pinta encima de la barra. */
           font-size: 0;
           line-height: 0;
           overflow: hidden;

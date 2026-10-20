@@ -123,8 +123,6 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
     }, []);
 
     const persistPanelNow = useCallback((panel: CampoPanel, type: ReportTypeConfig['id']) => {
-        // Se desmarca solo cuando el write resolvió: si IndexedDB falla el panel
-        // queda sucio y el próximo flush (cambio de plantilla o cierre) lo reintenta.
         void savePanel(panelToStored(panel, type)).then(() => {
             dirtyIdsRef.current.delete(panel.id);
         }, () => {});
@@ -150,8 +148,6 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
         cancelPendingSave(panel.id);
         const timer = setTimeout(() => {
             saveTimersRef.current.delete(panel.id);
-            // La carga de otra plantilla pudo reemplazar este panel mientras estaba
-            // en espera: escribirlo igualmente lo dejaría fantasma en la nueva lista.
             const latest = panelsRef.current.find((p) => p.id === panel.id);
             if (!latest) {
                 dirtyIdsRef.current.delete(panel.id);
@@ -195,8 +191,6 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
                 setPanels(restored);
                 setSelectedPanelId(restored[0]?.id ?? null);
             } catch (err) {
-                // Antes era una promesa rechazada sin manejar y el usuario se
-                // quedaba en un panel vacío sin saber que sus paneles fallaron.
                 if (cancelled) return;
                 reportFrontendError({
                     kind: 'storage_error',

@@ -7,6 +7,7 @@
   },
   "methods": {
     "agent_internal_activity": { "handler": "backend:agent_internal", "internal": true, "idempotent": true },
+    "ai_provider_custom_save": { "handler": "backend:integrations" },
     "ai_provider_delete": { "handler": "backend:integrations" },
     "ai_provider_save": { "handler": "backend:integrations" },
     "ai_provider_status": { "handler": "backend:integrations", "idempotent": true },
@@ -46,6 +47,7 @@
     "agent_internal_memory_context": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_grant_remove": { "handler": "backend:agent_internal", "internal": true },
     "agent_session_rename": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"}},"required":["id","title"]} },
+    "agent_session_model_set": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"id":{"type":"string"},"provider":{"type":"string"},"model":{"type":"string"}},"required":["id","provider","model"]} },
     "agent_profiles_list": { "handler": "native:agent", "idempotent": true },
     "agent_profile_save": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"instructions":{"type":"string"},"starter":{"type":"string"},"tools":{"type":["array","null"],"items":{"type":"string"}}},"required":["name","instructions"]} },
     "agent_profile_delete": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"id":{"type":"string"}},"required":["id"]} },
@@ -243,6 +245,326 @@
     "theme_save": { "handler": "backend:theme", "inputSchema": {"type":"object","properties":{"name":{"type":"string"},"bg":{"type":"string"},"bg_secondary":{"type":"string"},"fg":{"type":"string"},"fg_muted":{"type":"string"},"fg_secondary":{"type":"string"},"fg_tertiary":{"type":"string"},"accent":{"type":"string"},"accent_light":{"type":"string"},"accent_hover":{"type":"string"},"accent_dark":{"type":"string"},"border":{"type":"string"},"blue_hover":{"type":"string"},"error":{"type":"string"},"warning":{"type":"string"},"success":{"type":"string"},"orange":{"type":"string"}}} },
     "ubicaciones_keys_get": { "handler": "native:ubicaciones" },
     "ubicaciones_keys_set": { "handler": "native:ubicaciones" },
-    "version": { "handler": "backend:info", "lane": "sync", "idempotent": true, "orchestratable": true, "inputSchema": {"type":"object","properties":{}} }
+    "version": { "handler": "backend:info", "lane": "sync", "idempotent": true, "orchestratable": true, "inputSchema": {"type":"object","properties":{}} },
+    "editor_assets_import_start": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "fileTokens": [
+        [
+          "files",
+          "*"
+        ]
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "files"
+        ]
+      }
+    },
+    "editor_bootstrap": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "idempotent": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    "editor_effect_start": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "object"
+          },
+          "effectType": {
+            "type": "string",
+            "enum": [
+              "stabilize",
+              "chromakey"
+            ]
+          },
+          "clipId": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "document",
+          "effectType"
+        ]
+      }
+    },
+    "editor_export_start": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "object"
+          },
+          "outputPath": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "document"
+        ]
+      }
+    },
+    "editor_exports_history": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "normal",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "editor_import_files": {
+      "handler": "native:editor",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "editor_job_cancel": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ]
+      }
+    },
+    "editor_job_status": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "idempotent": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ]
+      }
+    },
+    "editor_project_create": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "editor_project_delete": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      }
+    },
+    "editor_project_duplicate": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      }
+    },
+    "editor_project_get": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "idempotent": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      }
+    },
+    "editor_project_save": {
+      "handler": "backend:editor",
+      "lane": "light",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "object"
+          },
+          "expectedRevision": {
+            "type": "integer"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "document",
+          "expectedRevision"
+        ]
+      }
+    },
+    "editor_recording_abort": {
+      "handler": "native:editor",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      }
+    },
+    "editor_recording_append": {
+      "handler": "native:editor",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "chunkB64": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "seq",
+          "chunkB64"
+        ]
+      }
+    },
+    "editor_recording_create": {
+      "handler": "native:editor",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "quotaBytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      }
+    },
+    "editor_recording_finish": {
+      "handler": "native:editor",
+      "timeout": "long",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      }
+    }
   }
 }

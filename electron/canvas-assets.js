@@ -7,7 +7,6 @@ const path = require('path');
 const ASSET_REF_PREFIX = 'canvas-asset:';
 const MAX_ASSET_BYTES = 64 * 1024 * 1024;
 const MAX_CANVAS_ASSET_TOTAL_BYTES = 512 * 1024 * 1024;
-// Serialize quota checks and buffer at most one active and one pending asset.
 const MAX_PENDING_ASSET_WRITE_BYTES = MAX_ASSET_BYTES * 2;
 
 function _antaresUserData(...parts) {
@@ -27,8 +26,6 @@ function assetsDir() {
 }
 
 function assetPath(assetId) {
-  // Solo ids content-addressed (sha256, 64 hex) pueden resolverse a rutas; ids
-  // más amplios solo se aceptan en scans/GC para limpieza de archivos legados.
   if (typeof assetId !== 'string' || !/^[a-f0-9]{64}$/i.test(assetId)) {
     throw new Error('invalid canvas asset id');
   }
@@ -44,9 +41,6 @@ function toAssetRef(assetId) {
   return `${ASSET_REF_PREFIX}${assetId}`;
 }
 
-// An asset written by putCanvasAsset is not referenced by any persisted
-// document until the next save; a pending marker keeps GC from collecting it
-// during that window (which survives restarts, unlike the mtime grace).
 const PENDING_ASSET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PENDING_ASSET_MARKERS = 512;
 
@@ -85,7 +79,6 @@ async function markAssetPending(assetId) {
     entries.push({ id: assetId, at: Date.now() });
     await writePendingAssets(entries.slice(-MAX_PENDING_ASSET_MARKERS));
   } catch {
-    // A failed marker only weakens GC protection for this asset. Never break put.
   }
 }
 
@@ -125,7 +118,6 @@ async function canvasAssetUsageBytes() {
   return total;
 }
 
-// Writes apply deltas. Garbage collection recalculates the total from disk.
 let cachedAssetUsageBytes = null;
 const MAX_VERIFIED_ASSET_CACHE_ENTRIES = 512;
 const verifiedAssetStatKeys = new Map();
@@ -207,7 +199,6 @@ async function putCanvasAsset(bytes) {
     }
 
     if (replacedBytes > 0) {
-      // A mismatched content-addressed file invalidates the cached total.
       await fsp.rm(dest, { force: true });
       invalidateVerifiedAsset(assetId);
       await reconcileAssetUsageBytes();
@@ -323,8 +314,8 @@ async function gcOrphanCanvasAssets({ nowMs = Date.now(), graceMs = GC_GRACE_MS 
   const livePending = [];
   for (const entry of await readPendingAssets()) {
     const id = entry.id.toLowerCase();
-    if (referenced.has(id)) continue; // persisted now: the marker did its job
-    if (nowMs - entry.at > PENDING_ASSET_TTL_MS) continue; // stale marker
+    if (referenced.has(id)) continue;
+    if (nowMs - entry.at > PENDING_ASSET_TTL_MS) continue;
     referenced.add(id);
     livePending.push(entry);
   }

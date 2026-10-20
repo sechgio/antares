@@ -1,0 +1,37 @@
+# Avisos de licencia de terceros — cadena multimedia del editor
+
+El editor de Antares distribuye ejecutables nativos de FFmpeg dentro del
+instalador. Este documento registra las obligaciones asociadas al build
+seleccionado en `media/manifest.json`.
+
+## FFmpeg
+
+FFmpeg se distribuye bajo la **GNU General Public License versión 3 o
+posterior** (con secciones de la GPLv2 en componentes antiguos). El build
+usado se compila con `--enable-gpl --enable-version3`, por lo que incluye
+componentes GPL, entre ellos:
+
+- `libavfilter/vf_delogo.c` — filtro **delogo** (GPL).
+- **libvidstab** — vid.stab, estabilización en dos pasadas (GPL).
+- **librubberband** — cambio de tono/tiempo (partes GPL según build).
+- **libx264 / libx265 / libvpx / libopus / libmp3lame** — encoders
+  (LGPL/GPL según el componente).
+
+## Obligaciones al distribuir
+
+1. Incluir una copia de la GPLv3 con el instalador.
+2. Incluir los avisos de copyright de cada componente.
+3. Ofrecer el código fuente correspondiente a los binarios distribuidos
+   (la fuente de FFmpeg está publicada; el build debe poder
+   reproducirse desde las flags registradas en `media/manifest.json`).
+
+## Fuentes
+
+- FFmpeg: https://ffmpeg.org/legal.html y https://github.com/FFmpeg/FFmpeg
+- delogo: https://github.com/FFmpeg/FFmpeg/blob/master/libavfilter/vf_delogo.c
+- vid.stab: https://github.com/georgmartius/vid.stab
+- rubberband: https://github.com/breakfastquay/rubberband
+- Build binario: https://github.com/BtbN/FFmpeg-Builds
+
+Este archivo es la fuente local de la decisión de licencia tomada en L0
+del plan del editor. No sustituye asesoría legal.

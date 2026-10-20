@@ -48,8 +48,6 @@ function formFromTarea(tarea: Tarea) {
   };
 }
 
-// A session belongs to a task, not to the identity of a realtime snapshot.
-// Closing or selecting a different task resets the editor, never the project view.
 export default function TaskForm({ open, ...props }: TaskFormProps) {
   if (!open) return null;
   const key = props.initial

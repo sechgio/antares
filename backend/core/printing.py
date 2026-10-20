@@ -1,4 +1,3 @@
-"""Impresión de PDFs en la cola de Windows, sin depender de un visor externo."""
 
 from __future__ import annotations
 
@@ -100,8 +99,7 @@ def _spool() -> Any:
 
 # EnumPrintersW tarda ~80-340 ms por llamada (medido con bench:ipc en
 # flows_printers_list): el listado se cachea unos segundos para aperturas
-# sucesivas del selector. Una impresora instalada hace <TTL puede no aparecer
-# hasta el próximo vencimiento.
+# sucesivas del selector.
 _PRINTERS_CACHE_TTL_SECONDS = 30.0
 _printers_cache: tuple[float, list[dict[str, str | bool]]] | None = None
 _printers_cache_lock = threading.Lock()

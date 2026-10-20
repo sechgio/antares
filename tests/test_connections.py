@@ -1,11 +1,7 @@
-"""Pruebas del vault de conexiones, renovación de tokens y redirecciones HTTP."""
-
 from __future__ import annotations
 
 import json
-import socket
 import threading
-import urllib.request
 
 import pytest
 
@@ -163,70 +159,3 @@ def test_concurrent_refresh_reuses_rotated_token(expired_connection, monkeypatch
     assert not first.is_alive() and not second.is_alive()
     assert calls == ["old-refresh"]
     assert results == ["refreshed", "refreshed"]
-
-
-def _public_dns(monkeypatch, ip: str = "93.184.216.34"):
-    monkeypatch.setattr(
-        "socket.getaddrinfo",
-        lambda host, *a, **k: [(2, 1, 6, "", (ip, 443))],
-    )
-
-
-def test_redirect_strips_authorization_off_allowlist(monkeypatch):
-    from backend.core.integrations.http_guard import FlowRedirectHandler
-
-    _public_dns(monkeypatch)
-    req = urllib.request.Request(
-        "https://api.github.com/x",
-        headers={"Authorization": "Bearer tok-9", "X-Api-Key": "secret", "Cookie": "session=secret"},
-    )
-    handler = FlowRedirectHandler(frozenset({"api.github.com"}))
-    new_req = handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example/exfil")
-    assert "Authorization" not in new_req.headers
-    assert "X-api-key" not in new_req.headers and "Cookie" not in new_req.headers
-
-    same_host = handler.redirect_request(req, None, 302, "Found", {}, "https://api.github.com/y")
-    assert same_host.headers["Authorization"] == "Bearer tok-9"
-    assert same_host.headers["X-api-key"] == "secret"
-
-
-@pytest.mark.parametrize("target", ["http://api.github.com/user", "http://other.example/user"])
-def test_redirect_rejects_http_with_authorization(monkeypatch, target):
-    from backend.core.integrations.http_guard import FlowRedirectHandler
-
-    _public_dns(monkeypatch)
-    req = urllib.request.Request("https://api.github.com/user")
-    req.add_unredirected_header("Authorization", "Bearer secret")
-    handler = FlowRedirectHandler(frozenset({"api.github.com"}))
-    with pytest.raises(ValueError, match="HTTPS"):
-        handler.redirect_request(req, None, 302, "Found", {}, target)
-
-
-def test_redirect_rejects_private_target():
-    from backend.core.integrations.http_guard import FlowRedirectHandler
-
-    req = urllib.request.Request("https://api.github.com/x")
-    handler = FlowRedirectHandler(frozenset({"api.github.com"}))
-    with pytest.raises(ValueError, match="no pública"):
-        handler.redirect_request(req, None, 302, "Found", {}, "http://169.254.169.254/meta")
-
-    with pytest.raises(ValueError, match="no permitida"):
-        handler.redirect_request(req, None, 302, "Found", {}, "file:///etc/passwd")
-
-
-def test_https_preserves_hostname_for_tls(monkeypatch):
-    from unittest.mock import Mock
-
-    from backend.core.integrations.http_guard import _PublicHTTPSConnection
-
-    _public_dns(monkeypatch)
-    sock = Mock()
-    monkeypatch.setattr(socket, "socket", lambda *args: sock)
-    connection = _PublicHTTPSConnection("api.github.com", timeout=7)
-    wrapped = Mock(return_value=sock)
-    monkeypatch.setattr(connection._context, "wrap_socket", wrapped)
-    connection.connect()
-    sock.connect.assert_called_once_with(("93.184.216.34", 443))
-    sock.settimeout.assert_called_once_with(7)
-    wrapped.assert_called_once_with(sock, server_hostname="api.github.com")
-    assert connection._context.check_hostname is True

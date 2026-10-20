@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * IPC nativo de Conexiones: providers del catálogo
- * compartido + sesión OAuth genérica por proveedor.
- */
-
 const { CONNECTIONS_METHODS } = require('./connections-ipc-methods');
 const session = require('./connections-session');
 const { listProviders, listCategories } = require('./connections-providers');

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { applyGridToImageSlots } from '../ops/gridLayout';
 import { MM_TO_PX } from '../ops/drawHelpers';
+import { createGuide } from '../ops/guides';
 import {
   constrainMoveToAxis,
   isPointerClick,
@@ -12,6 +13,7 @@ import {
   rotateSelection,
   selectionBounds,
   SNAP_THRESHOLD_MAX_MM,
+  snapResizeBox,
   snapUnalignedAxesToGrid,
   snapMoveWithGuides,
   snapRectToGrid,
@@ -161,6 +163,63 @@ describe('selectionTransform', () => {
     );
     expect(result.dx).toBeCloseTo(-18, 5);
     expect(result.guides.some((g) => g.axis === 'x')).toBe(true);
+  });
+
+  it('snapMoveWithGuides spans the guide over the moving selection and every object aligned on it', () => {
+    const moving = createLayer('rect', {
+      cssVars: { '--translate-x': '48mm', '--translate-y': '25mm', '--width': '20mm', '--height': '10mm' },
+    });
+    const near = createLayer('rect', {
+      cssVars: { '--translate-x': '10mm', '--translate-y': '10mm', '--width': '20mm', '--height': '10mm' },
+    });
+    const far = createLayer('rect', {
+      cssVars: { '--translate-x': '30mm', '--translate-y': '60mm', '--width': '14mm', '--height': '10mm' },
+    });
+    const result = snapMoveWithGuides(
+      [moving, near, far],
+      [moving.id],
+      -17.7,
+      0,
+      { widthMm: 210, heightMm: 297 },
+      0.5,
+    );
+    expect(result.dx).toBeCloseTo(-18, 5);
+    expect(result.guides).toStrictEqual([{ axis: 'x', pos: 30, from: 10, to: 70 }]);
+  });
+
+  it('snapMoveWithGuides keeps a manual guide full-length when no object is aligned on it', () => {
+    const moving = createLayer('rect', {
+      cssVars: { '--translate-x': '48mm', '--translate-y': '25mm', '--width': '20mm', '--height': '10mm' },
+    });
+    const result = snapMoveWithGuides(
+      [moving],
+      [moving.id],
+      -17.7,
+      0,
+      { widthMm: 210, heightMm: 297 },
+      0.5,
+      [createGuide('x', 30)],
+    );
+    expect(result.dx).toBeCloseTo(-18, 5);
+    expect(result.guides).toStrictEqual([{ axis: 'x', pos: 30 }]);
+  });
+
+  it('snapResizeBox spans the guide over the resized box and the objects aligned on it', () => {
+    const resized = createLayer('rect', {
+      cssVars: { '--translate-x': '50mm', '--translate-y': '10mm', '--width': '20mm', '--height': '20mm' },
+    });
+    const target = createLayer('rect', {
+      cssVars: { '--translate-x': '100mm', '--translate-y': '70mm', '--width': '20mm', '--height': '10mm' },
+    });
+    const result = snapResizeBox(
+      [resized, target],
+      [resized.id],
+      { x: 50, y: 10, w: 49.7, h: 20 },
+      { widthMm: 210, heightMm: 297 },
+      0.5,
+    );
+    expect(result.box.w).toBeCloseTo(50, 5);
+    expect(result.guides).toStrictEqual([{ axis: 'x', pos: 100, from: 10, to: 80 }]);
   });
 
   it('selectionBounds includes rotated AABB', () => {

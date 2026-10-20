@@ -22,7 +22,6 @@ const REALTIME_PULL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
 interface UseCanvasSyncOptions {
   historyDocRef: React.MutableRefObject<CanvasDocument>;
-  // Evalúa hasUnsavedEdits y los baselines al leer.
   isOpenDirty: () => boolean;
   refreshList: () => Promise<void>;
   replaceDocument: CanvasHistoryHandle['replaceDocument'];
@@ -78,7 +77,6 @@ export function useCanvasSync({
   const [collaborators, setCollaborators] = useState<CanvasCollaborator[]>([]);
 
   const currentDocumentId = documentId ?? historyDocRef.current.id;
-  // El ref evita rearmar efectos si cambia la identidad del getter.
   const isOpenDirtyRef = useRef(isOpenDirty);
   isOpenDirtyRef.current = isOpenDirty;
   const currentOpenDirty = isOpenDirtyRef.current();
@@ -126,7 +124,6 @@ export function useCanvasSync({
         try {
           await refreshList();
           if (result.conflict && onConflictRef.current) {
-            // Descarta conflictos del documento anterior si el usuario cambió durante el sync.
             if (result.conflict.localDoc.id === historyDocRef.current.id) {
               onConflictRef.current(result.conflict);
             }
@@ -137,7 +134,6 @@ export function useCanvasSync({
             const got = await api.canvasGet(result.reloadOpenId);
             const doc = normalizeDocument(got.document as CanvasDocument);
             const hydrated = await hydrateDocumentImages(doc, { strict: true });
-            // El documento abierto puede cambiar mientras se carga el snapshot remoto.
             if (result.reloadOpenId === historyDocRef.current.id) {
               if (!isOpenDirtyRef.current()) {
                 replaceDocumentRef.current(hydrated);
@@ -451,8 +447,6 @@ export function useCanvasSync({
     return () => window.removeEventListener('focus', onFocus);
   }, [runCloudSync, active]);
 
-  // La cola de push reintenta en background; sus fallos no pasan por
-  // runCloudSync, así que el badge necesita su propia señal de salud.
   useEffect(() => {
     return subscribeCanvasPushHealth((unhealthy) => {
       setSyncStatus(unhealthy ? 'error' : 'idle');

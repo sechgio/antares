@@ -62,7 +62,6 @@ async function main() {
     assert(state.loadFileCalls === 1, 'createWindow carga el renderer empaquetado con loadFile');
     assert(state.windowOpts && state.windowOpts.show === false, 'la ventana nace oculta hasta que el contenido está listo');
 
-    // Fallo de carga -> reintento automático -> segundo fallo -> página de fallo.
     state.loadFileRejects = true;
     state.win.webContents.emit('did-fail-load', {}, -6, 'ERR_FILE_NOT_FOUND', 'file:///x', true);
     await new Promise((resolve) => timers.original.setTimeout(resolve, 25));

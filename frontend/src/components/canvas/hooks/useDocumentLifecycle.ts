@@ -164,8 +164,6 @@ export function useDocumentLifecycle({
     ]);
     try {
       const serialized = await serializeDocumentImages(document);
-      // Evita reenviar el historial si el debounce ya guardó esta revisión
-      // del mismo documento.
       const historyAlreadyPersisted =
         lastSavedHistorySigRef.current === `${snapshot.documentId}:${snapshot.revision}`;
       const [savedRes, histPersistOk] = await Promise.all([
@@ -179,8 +177,6 @@ export function useDocumentLifecycle({
                 return false;
               }),
       ]);
-      // Slim responses return only backend-stamped meta; the persisted content
-      // is the serialized document we sent.
       const saved = normalizeDocument({ ...serialized, ...savedRes.document });
       const current = isCurrentSnapshot(snapshot);
       if (current) {

@@ -341,8 +341,6 @@ def test_normalize_meta_rejects_non_finite_auto_layout_values_and_non_boolean_wr
 
 
 def _strict_json_loads(text: str) -> Any:
-    """json.loads que rechaza los literales NaN/Infinity que JSON no define."""
-
     def _reject(literal: str) -> None:
         raise AssertionError(f"literal no-JSON en disco: {literal}")
 
@@ -350,7 +348,6 @@ def _strict_json_loads(text: str) -> Any:
 
 
 def test_normalize_rejects_non_finite_values_across_the_document() -> None:
-    """Sustituye NaN/Infinity por el fallback del campo para conservar JSON válido."""
     raw = create_empty_document()
     raw["page"] = {"widthMm": float("inf"), "heightMm": float("nan")}
     raw["settings"] = {
@@ -458,7 +455,6 @@ def test_spill_comparison_reports_unknown_when_mtime_is_unreadable(tmp_path: Pat
 def test_document_spill_survives_an_unreadable_comparison(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Una comparación fallida debe conservar el spill con la edición aún no guardada."""
     store = CanvasStore(tmp_path / "documents")
     spill_dir = tmp_path / "spill"
     spill_dir.mkdir(parents=True, exist_ok=True)
@@ -496,7 +492,6 @@ def test_stale_document_spill_is_still_discarded(tmp_path: Path, monkeypatch: py
 
 
 def test_store_init_removes_orphan_tmp_files(tmp_path: Path) -> None:
-    """Un .tmp solo existe si el proceso murió entre write y rename."""
     docs_dir = tmp_path / "documents"
     docs_dir.mkdir()
     (docs_dir / "doc-1.json").write_text(
@@ -899,7 +894,6 @@ def test_bootstrap_returns_most_recently_updated_document(
 
     monkeypatch.setattr("backend.core.canvas.get_canvas_store", _get_store)
 
-    # Los ids invierten el orden por updatedAt para distinguirlo del orden del glob.
     older = create_empty_document(name="Viejo")
     older["id"] = "aaa-older"
     older["updatedAt"] = "2020-01-01T00:00:00.000Z"
@@ -1031,8 +1025,6 @@ def test_normalize_breaks_parent_id_cycle() -> None:
     )
     doc = normalize_document(raw)
     by_id = {layer["id"]: layer for layer in doc["layers"]}
-    # A→B→A se rompe en la primera capa del array que cierra el ciclo; el
-    # resto de la cadena queda intacto.
     assert "parentId" not in by_id["a"]
     assert by_id["b"]["parentId"] == "a"
     assert by_id["c"]["parentId"] == "a"
@@ -1726,7 +1718,6 @@ def test_normalize_preserves_autolayout_padding_and_meta_variants() -> None:
 
 
 def _count_document_serializations(monkeypatch: pytest.MonkeyPatch, doc_id: str) -> list[int]:
-    """Cuenta serializaciones por doc_id: la normalización crea una copia del documento."""
     real_dumps = canvas_store_mod.json.dumps
     calls: list[int] = []
 
@@ -1740,7 +1731,6 @@ def _count_document_serializations(monkeypatch: pytest.MonkeyPatch, doc_id: str)
 
 
 def _count_history_payload_serializations(monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    """Cuenta serializaciones del payload agregado de historial ({"past", "future"})."""
     real_dumps = canvas_store_mod.json.dumps
     calls: list[int] = []
 
@@ -1853,7 +1843,6 @@ def test_canvas_save_reports_unencodable_documents_as_validation_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """CanvasStore.save debe traducir los errores de serialización a ValidationError."""
     store = CanvasStore(tmp_path)
     monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
     monkeypatch.setattr(canvas_handlers, "is_memory_pressure", lambda: False)
@@ -1863,7 +1852,6 @@ def test_canvas_save_reports_unencodable_documents_as_validation_errors(
         canvas_handlers.canvas_save({"document": document})
 
     assert list(tmp_path.glob("*.json")) == []
-    # A serialization failure is not a size-limit failure: no limit_bytes detail.
     assert "limit_bytes" not in exc_info.value.details
 
 

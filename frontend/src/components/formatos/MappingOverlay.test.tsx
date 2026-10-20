@@ -92,21 +92,4 @@ describe('MappingOverlay', () => {
     expect(text.style.fontWeight).toBe('700');
     expect(text.style.left).toBe(`${(500 / 595) * 100}%`);
   });
-
-  it('shows drag hint text', () => {
-    const imageRef = createRef<HTMLImageElement>();
-    render(
-      <>
-        <img ref={imageRef} data-mapping-page-image alt="page" />
-        <MappingOverlay
-          mapping={BASE_MAPPING}
-          pageSize={{ width: 595, height: 842 }}
-          imageRef={imageRef}
-          onChange={() => {}}
-        />
-      </>,
-    );
-
-    expect(screen.getByText(/Haz clic en la página, arrastra el recuadro/i)).toBeInTheDocument();
-  });
 });

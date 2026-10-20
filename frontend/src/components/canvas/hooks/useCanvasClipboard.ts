@@ -59,8 +59,6 @@ export function useCanvasClipboard({
     (source: CanvasLayer[], offsetMm?: number) => {
       if (!source.length) return;
       const withIds = source.map((l) => ({ ...l, pageIndex }));
-      // Asigna ids nuevos antes de duplicateLayers para evitar colisiones con
-      // las capas originales y clones duplicados.
       const rekeyed = new Map(withIds.map((l) => [l.id, newId()]));
       const incoming = withIds.map((l) => ({
         ...l,

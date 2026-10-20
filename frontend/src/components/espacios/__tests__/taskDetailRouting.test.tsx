@@ -51,8 +51,6 @@ vi.mock('../components/ViewTabs', () => ({ default: ({ active, onChange }: {
   <button key={view} aria-pressed={view === active} onClick={() => onChange(view)}>Vista {view}</button>,
 )}</div> }));
 
-// Only the large project renderers are replaced. The app routing, filters,
-// TaskForm, drawer and input controls are real in these integration tests.
 function ProjectView({ tareas, onEdit, onEditTask }: {
   tareas: Tarea[]; onEdit?: (task: Tarea) => void; onEditTask?: (task: Tarea) => void;
 }) {

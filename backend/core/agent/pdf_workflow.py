@@ -1,5 +1,3 @@
-"""Preparación y exportación de lotes PDF con plantillas HTML, Canvas y Formatos PDF."""
-
 from __future__ import annotations
 
 import base64
@@ -100,7 +98,6 @@ def _batch_template_profile(name: str) -> JsonObject:
 
 
 def _render_html_pdf(params: JsonObject) -> JsonObject:
-    """Renderiza la plantilla HTML con los contextos del lote; devuelve el PDF en base64."""
     html = params.get("html")
     template_name = params.get("template_name")
     expected_pages = params.get("expected_pages")

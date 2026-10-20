@@ -64,7 +64,6 @@ describe('StampPlacementEditor', () => {
     );
     const overlay = container.querySelector('.cursor-grab')!;
     fireEvent.mouseDown(overlay, { clientX: 10, clientY: 10 });
-    // sin imagen con data-stamp-page-image, toPdfPoint da (0,0); move aplica delta
     fireEvent.mouseMove(window, { clientX: 20, clientY: 20 });
     fireEvent.mouseUp(window);
     expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ width: 120 }));

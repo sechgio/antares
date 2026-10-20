@@ -1,11 +1,5 @@
 'use strict';
 
-/**
- * Catálogo de proveedores conectables (shared/connections-catalog.json).
- * Cada spec declara cómo autorizar, canjear y sondear el estado; el backend
- * Python consume el mismo documento para refrescar tokens en los flujos.
- */
-
 const catalog = require('../shared/connections-catalog.json');
 
 const AUTH_TYPES = new Set(['oauth_secret', 'oauth_pkce']);

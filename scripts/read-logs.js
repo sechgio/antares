@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-// Lee los JSONL de telemetría (%LOCALAPPDATA%\Antares\logs por defecto).
-//   node scripts/read-logs.js [--dir DIR] [--event X] [--level L] [--method M]
-//      [--component C] [--session ID] [--since ISO] [--tail N] [--stats]
-// Sin --stats imprime los eventos filtrados como JSONL (últimos --tail, por defecto 50).
-// Con --stats agrega por evento y, para ipc.request, por método (conteo, errores, p50/p95/max).
 
 const fs = require('fs');
 const os = require('os');

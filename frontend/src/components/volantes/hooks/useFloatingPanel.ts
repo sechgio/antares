@@ -23,7 +23,6 @@ function safeSetItem(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
   } catch {
-    // Cuota o modo privado: la posición no persiste, pero el panel sigue.
   }
 }
 
@@ -66,8 +65,6 @@ export function useFloatingPanel({
     if (savedPosition) {
       try {
         const parsed: unknown = JSON.parse(savedPosition);
-        // El try solo cubría sintaxis: {"x":"a","y":null} parseaba bien y
-        // dejaba NaN en style.left/top.
         setPosition(isValidPosition(parsed) ? parsed : defaultPosition(panelWidth));
       } catch {
         setPosition(defaultPosition(panelWidth));

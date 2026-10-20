@@ -1,15 +1,11 @@
 'use strict';
 
-// Ejecución del runtime del agente: proveedores pi-ai (con auth/base URL que
-// resuelve el vault de Python) y herramientas pi-durable con aprobaciones,
-// dispatch reservado por (session_id, call_id) y sondeo de resultados hacia
-// Python. El call_id del proveedor solo es único dentro de su conversación.
-
 const {
   shared,
   bridge,
   aborted,
   conversation,
+  profiles,
   sessionForConversation,
   commitSessions,
 } = require('./agent-shared');
@@ -17,8 +13,8 @@ const {
 const MAX_TOOL_STEPS = 12;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.';
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
-
-// ---------- proveedores (pi-ai) ----------
+const SUBAGENT_TOOL = 'subagent_run';
+const SUBAGENT_DESCRIPTION_MAX = 80;
 
 async function providerInfo(provider) {
   return bridge('agent_internal_provider', { provider });
@@ -100,8 +96,6 @@ async function buildProvider(record) {
   });
 }
 
-// ---------- herramientas (registry pi-durable) ----------
-
 async function allToolSpecs() {
   const { tools } = await bridge('agent_internal_tools', {});
   const merged = new Map(tools.map((tool) => [tool.name, tool]));
@@ -109,7 +103,35 @@ async function allToolSpecs() {
     const current = merged.get(tool.name);
     merged.set(tool.name, { ...current, ...tool, ...(tool.inheritSchema && current ? { inputSchema: current.inputSchema } : {}) });
   }
+  const saved = Object.values(await profiles()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  if (saved.length > 0) {
+    merged.set(SUBAGENT_TOOL, {
+      name: SUBAGENT_TOOL,
+      description: `Delega una tarea acotada en uno de los agentes guardados del usuario: solo lee datos y devuelve su resultado y sus pasos. Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
+      gated: false,
+      kind: 'subagent',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          agent: { type: 'string', description: 'Nombre exacto del agente guardado' },
+          task: { type: 'string', description: 'Encargo concreto y autocontenido para el subagente' },
+        },
+        required: ['agent', 'task'],
+      },
+    });
+  } else {
+    merged.delete(SUBAGENT_TOOL);
+  }
   return [...merged.values()];
+}
+
+async function resolveProfile(name) {
+  const wanted = String(name || '').trim();
+  if (!wanted) return null;
+  const saved = Object.values(await profiles());
+  return saved.find((profile) => profile.id === wanted)
+    || saved.find((profile) => String(profile.name || '').trim().toLowerCase() === wanted.toLowerCase())
+    || null;
 }
 
 function nativeTools() {
@@ -213,7 +235,7 @@ function waitForDecision(approvalId, context) {
       waiters = new Set();
       shared.decisionWaiters.set(approvalId, waiters);
     }
-    const timer = setTimeout(resolve, 1500); // re-sondeo: TTL y decisiones cruzadas
+    const timer = setTimeout(resolve, 1500);
     const done = () => {
       clearTimeout(timer);
       waiters.delete(done);
@@ -260,6 +282,26 @@ async function executeTool(spec, args, api, context) {
     approval_id: approvalId,
     ...(spec.kind === 'native' ? { context: await nativeTools().nativeToolContext(spec.name) } : {}),
   };
+  if (spec.kind === 'subagent') {
+    const profile = await resolveProfile(args && args.agent);
+    if (!profile) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Ese agente guardado ya no existe; elige uno de los disponibles' }) }],
+        isError: true,
+      };
+    }
+    const conv = await conversation(sessionId);
+    const enabled = (await conv.agent(context)).tools.map((tool) => tool.name);
+    request.context = {
+      subagent: {
+        id: profile.id,
+        name: profile.name,
+        instructions: profile.instructions,
+        tools: Array.isArray(profile.tools) ? profile.tools : null,
+        enabled,
+      },
+    };
+  }
   let text;
   if (spec.name === 'ask_user') shared.waitingInput.add(sessionId);
   try {

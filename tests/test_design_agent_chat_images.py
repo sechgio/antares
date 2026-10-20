@@ -1,10 +1,3 @@
-"""Tests del cableado multimodal de `agent_chat`.
-
-Lo que importa aquí es doble: que un mensaje con imágenes se traduzca bien a
-cada proveedor, y que un adjunto dudoso se descarte en vez de romper el turno
-o filtrarse tal cual a la request.
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -27,7 +20,6 @@ def test_openai_wire_turns_images_into_image_url_parts() -> None:
 
 
 def test_openai_wire_without_images_stays_a_plain_string() -> None:
-    """Sin adjuntos el comportamiento no cambia ni un ápice."""
     wire = agent_chat._openai_wire([{"role": "user", "content": "hola"}], "system")
     assert wire[1]["content"] == "hola"
 
@@ -75,7 +67,6 @@ def test_sanitize_images_handles_absent_or_non_list() -> None:
 
 
 def test_wire_functions_keep_history_intact_with_images() -> None:
-    """Un historial con tool_calls + imágenes sigue siendo válido para ambos."""
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": "haz un deck", "images": [{"media_type": "image/png", "data_b64": PNG_1X1}]},
         {

@@ -112,8 +112,6 @@ function readSecureJson(filename, namespace) {
         try {
           writeSecureJson(filename, namespace, payload);
         } catch (err) {
-          // La lectura ya dio su payload: seguir con v1 en disco es válido, pero el
-          // fallo de la reescritura debe verse en la telemetría.
           try {
             require('./app-log').appendLogEvent('WARN', 'autoimg.storage_upgrade_failed', {
               outcome: 'failed',
@@ -127,9 +125,6 @@ function readSecureJson(filename, namespace) {
     }
     return null;
   } catch (err) {
-    // Un archivo corrupto/ilegible se comporta como ausente (re-auth), pero
-    // sin este WARN no hay forma de distinguir "nunca hubo archivo" de
-    // "el archivo estaba corrupto" al diagnosticar.
     try {
       require('./app-log').appendLogEvent('WARN', 'secure_storage.read_failed', {
         outcome: 'failed',

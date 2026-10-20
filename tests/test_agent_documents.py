@@ -1,5 +1,3 @@
-"""Documentos del agente: catálogo de las tres familias, datos con procedencia y artefactos."""
-
 from __future__ import annotations
 
 import json

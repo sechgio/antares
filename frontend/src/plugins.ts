@@ -4,7 +4,6 @@ export type PluginId = 'sticky-notes' | 'radio-live' | 'spotify' | 'audius' | 'j
 
 const PLUGINS_CHANGED_EVENT = 'antares-plugins-changed';
 
-// Radio Live conserva su activación por defecto; los demás plugins requieren activación.
 const DEFAULTS: Record<PluginId, boolean> = {
   'sticky-notes': false,
   'radio-live': true,
@@ -16,7 +15,6 @@ const DEFAULTS: Record<PluginId, boolean> = {
 
 const storageKey = (id: PluginId): string => `plugin.${id}.enabled`;
 
-// Preferencia de esta sesión cuando el storage falla (modo privado, cuota llena).
 const sessionPrefs = new Map<PluginId, boolean>();
 
 export const TITLEBAR_PLUGINS = ['radio-live', 'spotify', 'audius', 'jamendo', 'archive'] as const;
@@ -26,8 +24,6 @@ const ORDER_STORAGE_KEY = 'plugins.titlebar.order';
 let sessionOrder: TitleBarPluginId[] | null = null;
 let orderSnapshot: TitleBarPluginId[] | null = null;
 
-// raw puede traer ids ajenos, duplicados o quedarse corto (plugin nuevo tras
-// guardar); el orden siempre cubre TITLEBAR_PLUGINS completo, lo nuevo al final.
 function normalizeOrder(raw: readonly unknown[]): TitleBarPluginId[] {
   const ordered: TitleBarPluginId[] = [];
   for (const id of raw) {
@@ -53,7 +49,6 @@ export function setPluginEnabled(id: PluginId, enabled: boolean): void {
   try {
     localStorage.setItem(storageKey(id), enabled ? 'true' : 'false');
   } catch {
-    // Sin persistencia; la preferencia en memoria sigue aplicándose esta sesión.
     sessionPrefs.set(id, enabled);
   }
   window.dispatchEvent(new CustomEvent(PLUGINS_CHANGED_EVENT));
@@ -64,7 +59,6 @@ export function getPluginOrder(): TitleBarPluginId[] {
   try {
     stored = JSON.parse(localStorage.getItem(ORDER_STORAGE_KEY) ?? 'null') ?? sessionOrder;
   } catch {
-    // Sin persistencia; la preferencia en memoria sigue aplicándose esta sesión.
   }
   const next = normalizeOrder(Array.isArray(stored) ? stored : []);
   // Snapshot estable: useSyncExternalStore compara por referencia.

@@ -65,7 +65,6 @@ describe("orden de apilado", () => {
       rect("b", 0, 0, 10, 10, { locked: true }),
       rect("f", 0, 0, 10, 10, { type: "frame" as never }),
     ];
-    // solo 'a' es elegible: pasa al final de sus hermanos no-frame
     expect(ids(bringToFront(withLocked, ["b", "f", "a"]))).toEqual([
       "b",
       "a",
@@ -81,7 +80,6 @@ describe("orden de apilado", () => {
       { ...rect("b"), parentId: "p" },
       rect("c"),
     ];
-    // 'b' está dentro de 'p': traerla al frente no cruza con a/c
     const out = bringToFront(nested, ["b"]);
     expect(ids(out)).toEqual(ids(nested));
   });
@@ -159,7 +157,6 @@ describe("duplicateLayers", () => {
 describe("reorderAmongSiblings / moveLayerInTree", () => {
   it("inserta antes/después del target", () => {
     const ls = [rect("a"), rect("b"), rect("c")];
-    // 'after' inserta en targetIdx, 'before' en targetIdx+1 (orden visual vs array)
     expect(ids(reorderAmongSiblings(ls, "c", "a", "after"))).toEqual([
       "c",
       "a",
@@ -291,7 +288,6 @@ describe("distributeLayers", () => {
   it.each([undefined, { mode: "gaps" }] as const)("modo gaps iguala separación horizontal: %j", (options) => {
     const out = distributeLayers(three, ["a", "b", "c"], "horizontal", options);
     const xs = ["a", "b", "c"].map((id) => tx(out.find((l) => l.id === id)!));
-    // gap uniforme: (60-(0+10)-10)/2 = 20 → b.x = 30
     expect(xs).toEqual([0, 30, 60]);
   });
 

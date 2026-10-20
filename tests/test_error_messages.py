@@ -39,7 +39,6 @@ def test_user_error_message_hides_unexpected_internals():
 
 
 def test_user_error_message_keeps_tool_domain_errors():
-    """Conserva los mensajes de dominio de Evidencia Volanteo y Aviso de Corte."""
     from backend.core.evidencia_volanteo.errors import EvidenciaVolanteoError, RenderingError
     from backend.core.panel_aviso_corte.errors import (
         InvalidExcelError,

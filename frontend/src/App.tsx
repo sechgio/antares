@@ -8,7 +8,6 @@ import ToastContainer from './components/ui/Toast';
 import Dialog from './components/ui/Dialog';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, type TabId, type ConfigSectionId } from './navigation';
-import type { ConnectionsSection } from './components/connections';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthSkeleton';
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
@@ -42,8 +41,8 @@ const AutoIMGView = React.lazy(() => import('./components/autoimg'));
 const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas'));
 const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
-const ConnectionsHub = React.lazy(() => import('./components/connections'));
 const AgentView = React.lazy(() => import('./components/agent'));
+const EditorView = React.lazy(() => import('./components/editor/EditorView').then((m) => ({ default: m.EditorView })));
 const DesignView = React.lazy(() => import('./components/design'));
 
 const CANVAS_KEEPALIVE_MS = 60 * 1000;
@@ -76,13 +75,13 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   imageOptimizer: ImageOptimizerView,
   previewPanel: PreviewPanelView,
   canvas: CanvasView,
-  connections: ConnectionsHub,
   agent: AgentView,
   panelAvisoCorte: PanelAvisoCorteView,
   ubicaciones: UbicacionesView,
   evidenciaVolanteo: EvidenciaVolanteoView,
   autoimg: AutoIMGView,
   fichasTecnicas: FichasTecnicasView,
+  editor: EditorView,
   design: DesignView,
 };
 
@@ -157,11 +156,9 @@ function AppContent() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<ConfigSectionId>('appearance');
   const [petEnabled, setPetEnabled] = useState(isPetMascotEnabled);
-  const [connectionsSection, setConnectionsSection] = useState<ConnectionsSection | null>(null);
   const stickyNotesEnabled = usePluginEnabled('sticky-notes');
 
   const handleTabChange = useCallback((tab: TabId) => {
-    setConnectionsSection(null);
     if (tab === 'canvas') {
       prefetchCanvasView();
       setCanvasMounted(true);
@@ -175,10 +172,7 @@ function AppContent() {
   }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openAppearanceSettings = useCallback(() => openSettings('appearance'), [openSettings]);
-  const openProvidersSection = useCallback(() => {
-    setConnectionsSection('providers');
-    setActiveTab('connections');
-  }, []);
+  const openProvidersSection = useCallback(() => openSettings('providers'), [openSettings]);
   const openAgentModule = useCallback((module: string, id?: string) => {
     const tab = module === 'conversion' ? 'convert' : module;
     if (!TAB_DEFINITIONS.some((item) => item.id === tab)) return;
@@ -194,11 +188,6 @@ function AppContent() {
   }, [activeTab, canvasMounted]);
 
   useEffect(() => {
-    // El ack debe estar suscrito siempre: al abrir la pestaña Canvas el chunk
-    // lazy tarda en registrar su propio handler, y en esa ventana un cierre
-    // quedaba sin ack y detenía el quit 310 s. Si Canvas ya es dueño del flush,
-    // App se abstiene: el proceso principal acepta el primer ack, y el de App
-    // llegaría antes de que Canvas termine de guardar.
     return onNotify(async (method, params) => {
       if (method === 'agent.renderer-tool' && params && typeof params === 'object') {
         const request = params as Record<string, unknown>;
@@ -245,8 +234,6 @@ function AppContent() {
 
   useEffect(() => bootThemeFromBackend(api.getTheme), []);
 
-  // Las claves de ubicaciones legacy vivían en localStorage en claro; migrarlas
-  // al arranque (en idle) para no depender de que el usuario abra la vista.
   useEffect(() => {
     if (import.meta.env.MODE === 'test') return;
     const run = () => {
@@ -344,9 +331,7 @@ function AppContent() {
                 {ActiveView && (
                   <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
                     <ErrorBoundary key={activeTab} view={activeTab}>
-                      {activeTab === 'connections' ? (
-                        <ConnectionsHub initialSection={connectionsSection ?? undefined} />
-                      ) : activeTab === 'agent' ? (
+                      {activeTab === 'agent' ? (
                         <AgentView onConfigureProvider={openProvidersSection} onOpenModule={openAgentModule} />
                       ) : (
                         <ActiveView />

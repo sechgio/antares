@@ -15,8 +15,6 @@ function _isSheetsUrl(url) {
   return String(url).includes('sheets.googleapis.com');
 }
 
-// Endpoint label safe for logs: host + path with long/id-like segments masked.
-// Never includes the query string (it may carry access tokens or API keys).
 function _endpointLabel(url) {
   try {
     const u = new URL(String(url));

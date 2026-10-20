@@ -99,8 +99,6 @@ export function createBudgetedLoop(
   };
   const wake = () => {
     if (idle() || id !== undefined) return;
-    // El interval se autoapaga al quedar idle: dejarlo girando serían 12
-    // comprobaciones por segundo sin pinta mientras no suena nada.
     id = window.setInterval(() => (idle() ? stop() : tick()), 1000 / fps);
   };
   wake();

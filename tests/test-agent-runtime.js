@@ -1,11 +1,5 @@
 'use strict';
 
-// Tests del runtime nativo del agente (Electron main): pi-durable + pi-ai,
-// con el puente privado a Python sustituido por un fake en memoria. Cubre el
-// contrato público, aprobaciones (aprobar/rechazar/recuperar), cancelación,
-// dispatch deduplicado, importación JSON→SQLite y el wire OpenAI contra un
-// servidor HTTP simulado.
-
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -21,7 +15,7 @@ const PUBLIC_METHODS = [
   'agent_sessions_list', 'agent_session_create', 'agent_session_delete',
   'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set',
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
-  'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename',
+  'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -52,7 +46,7 @@ function makeBridge() {
       case 'agent_internal_tools':
         return {
           tools: [
-            { name: 'flows_list', description: 'Lista flujos', gated: false, kind: 'backend', inputSchema: { type: 'object', properties: {} } },
+            { name: 'canvas_list', description: 'Lista documentos de Canvas', gated: false, kind: 'backend', inputSchema: { type: 'object', properties: {} } },
             { name: 'db_clear', description: 'Borra datos', gated: true, kind: 'backend', inputSchema: { type: 'object', properties: {} } },
           ],
         };
@@ -182,6 +176,45 @@ async function main() {
   const { fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
 
   {
+    const { bridge } = makeBridge();
+    const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+    const { fauxProvider } = await import('@earendil-works/pi-ai');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-model-'));
+    const dbPath = path.join(dir, 'agent.sqlite');
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const faux = fauxProvider();
+    runtime._internal._providerOverrides.set('faux', faux.provider);
+    faux.setResponses([fauxAssistantMessage('respuesta anterior')]);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primera consulta' });
+    assert(await waitIdle(session.id), 'el turno anterior termina antes de elegir modelo');
+    const next = fauxProvider({ provider: 'otro', models: [{ id: 'otro-modelo' }] });
+    runtime._internal._providerOverrides.set('otro', next.provider);
+    next.setResponses([fauxAssistantMessage('respuesta del nuevo modelo')]);
+    const changed = await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'otro', model: next.models[0].id });
+    assert(changed.session.id === session.id && changed.session.provider === 'otro', 'cambiar proveedor conserva la conversación');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'segunda consulta' });
+    assert(await waitIdle(session.id), 'el turno usa el proveedor elegido');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(messages.some((m) => m.content === 'respuesta anterior') && messages.at(-1).content === 'respuesta del nuevo modelo',
+      'conserva el historial y la respuesta procede del nuevo proveedor');
+    assert(faux.state.callCount === 1 && next.state.callCount === 1, 'cada proveedor atiende solo su turno');
+    let invalid;
+    try { await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'otro', model: '' }); } catch (err) { invalid = err; }
+    assert(invalid, 'rechaza un modelo vacío');
+    await runtime.shutdown();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const restored = (await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id);
+    assert(restored.provider === 'otro' && restored.model === 'otro-modelo', 'el modelo elegido sobrevive al reinicio de SQLite');
+    const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+    const map = await runtime._internal.state().harness.snapshot(runtime._internal.state().SessionsDoc, context);
+    const conv = await runtime._internal.state().harness.conversation(map.sessions[session.id].conversationId, context);
+    assert((await conv.agent(context)).model.modelId === 'otro-modelo', 'la configuración durable del runtime conserva el modelo');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
     const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-tools-'));
     const dbPath = path.join(dir, 'agent.sqlite');
@@ -195,22 +228,22 @@ async function main() {
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge: toolsBridge, skipImport: true });
     const { session: first } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const { session: second } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    const selected = await runtime.handlers.agent_tools_set({ session_id: first.id, names: ['flows_list'] });
-    assert(selected.tools.filter((t) => t.enabled).map((t) => t.name).join() === 'flows_list', 'selección exacta por conversación');
+    const selected = await runtime.handlers.agent_tools_set({ session_id: first.id, names: ['canvas_list'] });
+    assert(selected.tools.filter((t) => t.enabled).map((t) => t.name).join() === 'canvas_list', 'selección exacta por conversación');
     assert((await runtime.handlers.agent_tools_list({ session_id: second.id })).tools.every((t) => t.enabled), 'otra conversación conserva todas las herramientas');
     assert((await runtime.handlers.agent_tools_list({})).tools.every((t) => !('enabled' in t)), 'getter global conserva su contrato');
     added = true;
     assert((await runtime.handlers.agent_tools_list({ session_id: second.id })).tools.find((t) => t.name === 'mcp_new_read').enabled, 'las herramientas recién disponibles aparecen habilitadas con la selección predeterminada');
     assert(!(await runtime.handlers.agent_tools_list({ session_id: first.id })).tools.find((t) => t.name === 'mcp_new_read').enabled, 'una herramienta nueva no amplía una selección explícita');
     added = false;
-    for (const names of [['agent_tools_set'], ['desconocida'], [false], 'flows_list', undefined]) {
+    for (const names of [['agent_tools_set'], ['desconocida'], [false], 'canvas_list', undefined]) {
       let error;
       try { await runtime.handlers.agent_tools_set({ session_id: first.id, names }); } catch (err) { error = err; }
       assert(!!error, 'selección inválida o privada rechazada');
     }
     await runtime.shutdown();
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge: toolsBridge, skipImport: true });
-    assert((await runtime.handlers.agent_tools_list({ session_id: first.id })).tools.filter((t) => t.enabled).map((t) => t.name).join() === 'flows_list', 'la selección sobrevive al reinicio de SQLite');
+    assert((await runtime.handlers.agent_tools_list({ session_id: first.id })).tools.filter((t) => t.enabled).map((t) => t.name).join() === 'canvas_list', 'la selección sobrevive al reinicio de SQLite');
     const recovered = await require('../electron/agent-execution').dispatchApproved({ session_id: first.id, call_id: 'recovered', method: 'db_clear', params: {}, id: 'ap-recovered' }, {});
     assert(JSON.parse(recovered).error && state.dispatchLog.length === 0, 'una aprobación recuperada no habilita una herramienta excluida');
     await runtime.handlers.agent_tools_set({ session_id: first.id, names: [] });
@@ -229,7 +262,7 @@ async function main() {
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'borra' });
     assert(await waitFor(() => state.approvals.size > 0), 'la llamada espera aprobación antes de deshabilitarla');
-    await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['flows_list'] });
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['canvas_list'] });
     await runtime.handlers.agent_approve({ approval_id: [...state.approvals.keys()][0] });
     assert(await waitIdle(session.id), 'el turno continúa al bloquear la herramienta deshabilitada');
     assert(state.dispatchLog.length === 0, 'la aprobación pendiente no evita la nueva selección');
@@ -300,7 +333,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- contrato estático del catálogo ---
   for (const name of PUBLIC_METHODS) {
     assert(nativeDispatchFor(name) === 'agent', `${name} → native:agent`);
   }
@@ -309,11 +341,10 @@ async function main() {
     assert(METHODS[name].handler === 'backend:agent_internal', `${name} → backend:agent_internal`);
   }
 
-  // --- flujo completo: herramienta segura + gated + aprobación + dedup ---
   {
     const { bridge, state } = makeBridge();
     await openFaux([
-      fauxAssistantMessage([fauxToolCall('flows_list', {}), fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('canvas_list', {}), fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
       fauxAssistantMessage('hecho'),
     ], bridge);
 
@@ -323,7 +354,7 @@ async function main() {
     assert(sessions.length === 1 && sessions[0].id === session.id, 'sessions_list incluye la sesión');
 
     const { tools } = await runtime.handlers.agent_tools_list({});
-    assert(tools.some((t) => t.name === 'flows_list' && !t.gated) && tools.some((t) => t.name === 'db_clear' && t.gated), 'tools_list proyecta gated');
+    assert(tools.some((t) => t.name === 'canvas_list' && !t.gated) && tools.some((t) => t.name === 'db_clear' && t.gated), 'tools_list proyecta gated');
 
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hazlo' });
     const sawPending = await waitFor(async () =>
@@ -331,6 +362,11 @@ async function main() {
     assert(sawPending, 'la herramienta gated queda pendiente de aprobación');
 
     const ap = (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals[0];
+    let busyModel;
+    try { await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'faux', model: 'otro-modelo' }); } catch (err) { busyModel = err; }
+    assert(busyModel && /termine el turno/.test(busyModel.message), 'no cambia el modelo mientras un turno espera aprobación');
+    assert((await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id).model === 'faux-1',
+      'el rechazo conserva el modelo original');
     await runtime.handlers.agent_approve({ approval_id: ap.id });
     assert(await waitIdle(session.id), 'el turno termina tras aprobar');
 
@@ -338,7 +374,7 @@ async function main() {
     assert(pending_approvals.length === 0, 'no quedan aprobaciones pendientes');
     const assistant = messages.find((m) => m.tool_calls);
     const calls = assistant.tool_calls;
-    assert(calls.find((c) => c.name === 'flows_list').status === 'done', 'herramienta segura ejecutada');
+    assert(calls.find((c) => c.name === 'canvas_list').status === 'done', 'herramienta segura ejecutada');
     assert(calls.find((c) => c.name === 'db_clear').status === 'done', 'herramienta aprobada ejecutada');
     assert(messages.at(-1).content === 'hecho', 'respuesta final del modelo');
     assert(state.dispatchLog.filter((id) => id === calls[1].id).length === 1, 'dispatch deduplicado: una ejecución por call_id');
@@ -513,7 +549,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- deny: la herramienta no se ejecuta y el modelo lo ve ---
   {
     const { bridge, state } = makeBridge();
     await openFaux([
@@ -574,9 +609,9 @@ async function main() {
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
     const { profile } = await runtime.handlers.agent_profile_save({
       name: 'Informe mensual', description: 'Cortes del mes', instructions: 'Usa la plantilla de cortes y pide el mes.',
-      starter: 'Prepara el informe de este mes', tools: ['flows_list'],
+      starter: 'Prepara el informe de este mes', tools: ['canvas_list'],
     });
-    assert(profile.id && profile.tools.join() === 'flows_list', 'el agente guarda instrucciones y herramientas');
+    assert(profile.id && profile.tools.join() === 'canvas_list', 'el agente guarda instrucciones y herramientas');
     for (const bad of [{ name: '', instructions: 'x' }, { name: 'X', instructions: '' }, { name: 'X', instructions: 'token: abcdef123456' },
       { name: 'X', instructions: 'y', tools: ['desconocida'] }, { id: 'nope', name: 'X', instructions: 'y' }]) {
       let error;
@@ -590,7 +625,7 @@ async function main() {
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
     assert(session.title === 'Informe mensual' && session.profile.id === profile.id, 'la conversación nace del agente');
     const enabled = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools.filter((t) => t.enabled).map((t) => t.name);
-    assert(enabled.join() === 'flows_list', 'la conversación aplica las herramientas del agente');
+    assert(enabled.join() === 'canvas_list', 'la conversación aplica las herramientas del agente');
     const conv = await runtime._internal.state().harness.conversation(
       (await require('../electron/agent-shared').requireSession(session.id)).conversationId, runtime._internal.state().ctx);
     const instructions = (await conv.agent(runtime._internal.state().ctx)).instructions;
@@ -606,6 +641,41 @@ async function main() {
     assert(!!missing, 'no se crea una conversación con un agente borrado');
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const delegated = [];
+    const spyBridge = async (method, params) => {
+      if (method === 'agent_internal_dispatch') delegated.push(params);
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('subagent_run', { agent: 'Investigador', task: '¿Qué documentos hay?' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('listo'),
+    ], spyBridge);
+    const { profile } = await runtime.handlers.agent_profile_save({
+      name: 'Investigador', description: 'Busca en la app', instructions: 'Consulta Canvas y resume.',
+      starter: '', tools: ['canvas_list'],
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const listed = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools;
+    const spec = listed.find((tool) => tool.name === 'subagent_run');
+    assert(spec && spec.kind === 'backend' && !spec.gated, 'la delegación aparece como herramienta de lectura');
+    assert((await runtime.handlers.agent_tools_list({})).tools.some((tool) => tool.name === 'subagent_run'),
+      'la lista global incluye los agentes guardados');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega' });
+    assert(await waitIdle(session.id), 'el turno con delegación termina');
+    const sent = delegated.find((request) => request.name === 'subagent_run');
+    assert(sent && sent.context.subagent && sent.context.subagent.name === 'Investigador',
+      'el perfil resuelto viaja por el canal interno');
+    assert(sent.context.subagent.instructions.includes('Consulta Canvas'), 'las indicaciones del agente llegan al subagente');
+    assert(sent.context.subagent.tools.join() === 'canvas_list', 'solo las herramientas del agente');
+    assert(sent.context.subagent.enabled.includes('canvas_list'), 'la conversación limita las herramientas del subagente');
+    await runtime.handlers.agent_profile_delete({ id: profile.id });
+    assert(!(await runtime.handlers.agent_tools_list({})).tools.some((tool) => tool.name === 'subagent_run'),
+      'sin agentes guardados no se ofrece delegar');
+    await runtime.shutdown();
   }
 
   {
@@ -631,7 +701,7 @@ async function main() {
     const { bridge, state } = makeBridge();
     let sawCorrection = false;
     await openFaux([
-      fauxAssistantMessage([fauxToolCall('flows_list', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' }),
       fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
       (context) => {
         sawCorrection = JSON.stringify(context.messages).includes('usa solo lectura');
@@ -653,7 +723,7 @@ async function main() {
     assert([...state.approvals.values()][0].status === 'denied', 'la aprobación pendiente queda rechazada');
     assert(JSON.stringify(state.dispatchLog) === JSON.stringify(executedBefore) && executedBefore.length === 1,
       'el efecto pendiente no se ejecuta y el ya ejecutado no se repite');
-    assert(state.dispatches[0].result === JSON.stringify({ ok: true, tool: 'flows_list' }), 'el comprobante ejecutado conserva su resultado');
+    assert(state.dispatches[0].result === JSON.stringify({ ok: true, tool: 'canvas_list' }), 'el comprobante ejecutado conserva su resultado');
     assert(sawCorrection, 'el modelo recibe la corrección en los pasos siguientes');
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(messages.at(-1).content === 'corregido', 'el encargo continúa con la corrección');
@@ -664,11 +734,8 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- cancelación de un turno activo y respuesta tardía descartada ---
   {
     const { bridge } = makeBridge();
-    // El proveedor resuelve 300 ms DESPUÉS de la señal de abort: la respuesta
-    // llega tarde a un turno ya cancelado y no debe publicarse.
     const lateFactory = (_ctx, options) => new Promise((resolve) => {
       const sig = options && options.signal;
       if (sig) sig.addEventListener('abort', () => setTimeout(() => resolve(fauxAssistantMessage('RESPUESTA TARDÍA')), 300), { once: true });
@@ -680,9 +747,7 @@ async function main() {
     assert(await waitFor(async () => (await runtime.handlers.agent_turn_status({ session_id: session.id })).running), 'el turno arranca');
     const cancelled = await runtime.handlers.agent_turn_cancel({ session_id: session.id });
     assert(cancelled.cancelled === true, 'turno activo cancelado');
-    await sleep(700); // la respuesta tardía aterriza tras cancelar
-    // La cola de respuestas se resetea: un reintento interno del turno abortado
-    // no debe robar la respuesta del siguiente turno.
+    await sleep(700);
     faux.setResponses([fauxAssistantMessage('segunda respuesta')]);
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'dos' });
     assert(await waitIdle(session.id), 'el turno siguiente termina');
@@ -692,7 +757,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- importación JSON → durable + recuperación de aprobación pendiente ---
   {
     const { MemoryStorage } = await import('@earendil-works/pi-durable');
     const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-legacy-'));
@@ -717,12 +781,9 @@ async function main() {
     };
 
     const { bridge, state } = makeBridge();
-    // La aprobación pendiente del JSON vive en Python: la sembramos en el fake.
     state.approvals.set('ap-legacy', { ...approvals['ap-legacy'] });
     state.seq = 1;
 
-    // SQLite real: hace falta para reabrir tras "reinicio" (harness.close()
-    // cierra el storage; un MemoryStorage nuevo no conserva nada).
     const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
     const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-runtime-'));
     const dbPath = path.join(runtimeDir, 'agent.sqlite');
@@ -733,7 +794,6 @@ async function main() {
     assert(messages.length === 2 && messages[0].content === 'hola' && messages[1].tool_calls[0].id === 'call-1', 'mensajes importados en orden');
     assert(pending_approvals.length === 1 && pending_approvals[0].id === 'ap-legacy', 'aprobación pendiente recuperada');
 
-    // Idempotencia: reimportar no duplica.
     await importer.importLegacySessions(runtime._internal.state(), legacyDir);
     const { sessions: listed2 } = await runtime.handlers.agent_sessions_list({});
     assert(listed2.length === 1, 'la reimportación no duplica sesiones');
@@ -741,8 +801,6 @@ async function main() {
     assert(fs.readFileSync(path.join(legacyDir, 'approvals.json'), 'utf8') === snapshotBefore.a, 'approvals.json intacto');
     assert(fs.readFileSync(path.join(legacyDir, 'messages', 'legacy-1.json'), 'utf8') === snapshotBefore.m, 'messages intactos');
 
-    // "Reinicio": cerramos y reabrimos sobre el mismo SQLite; la aprobación
-    // pendiente no se ejecuta sola, y decidirla ejecuta una única vez.
     await runtime.shutdown();
     await runtime.open({ dbPath, bridge, dir: legacyDir, skipImport: true });
     const { pending_approvals: pendingAfter } = await runtime.handlers.agent_messages_list({ session_id: 'legacy-1' });
@@ -757,7 +815,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- wire real: OpenAI Chat Completions + streaming contra servidor simulado ---
   {
     const hits = [];
     const server = http.createServer((req, res) => {
@@ -803,14 +860,12 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // Los errores del proveedor también son contenido no confiable.
   {
     const secret = 'demo-provider-secret-987654';
     const headerSecret = 'demo-header-secret-123456';
     const replacementSecret = 'demo-provider-next-567890';
     const replacementHeader = 'Bearer demo-header-next-567890';
     const server = http.createServer((req, res) => {
-      // Otra petición puede renovar el contexto antes de recibir este error.
       const record = runtime._internal.shared.providers.get('openai');
       record.info = { ...record.info, api_key: replacementSecret, extra_headers: { 'x-test-credential': replacementHeader } };
       res.writeHead(401, { 'content-type': 'application/json' });

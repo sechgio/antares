@@ -104,7 +104,7 @@ export function sendToBack(layers: CanvasLayer[], ids: string[]): CanvasLayer[] 
 export function duplicateLayers(
   layers: CanvasLayer[],
   ids: string[],
-  options?: { offsetMm?: number },
+  options?: { offsetMm?: number; offsetYMm?: number },
 ): { layers: CanvasLayer[]; newIds: string[] } {
   const byId = new Map(layers.map((l) => [l.id, l]));
   const requested = new Set(
@@ -115,7 +115,8 @@ export function duplicateLayers(
   );
 
   const toDuplicate = new Set(expandWithDescendants(layers, [...requested]));
-  const offset = options?.offsetMm ?? NUDGE_OFFSET_MM;
+  const offsetX = options?.offsetMm ?? NUDGE_OFFSET_MM;
+  const offsetY = options?.offsetYMm ?? offsetX;
 
   const idMap = new Map<string, string>();
   for (const id of toDuplicate) {
@@ -135,8 +136,8 @@ export function duplicateLayers(
       name: `${layer.name} copia`,
       cssVars: {
         ...layer.cssVars,
-        '--translate-x': mm(parseMm(layer.cssVars['--translate-x']) + offset),
-        '--translate-y': mm(parseMm(layer.cssVars['--translate-y']) + offset),
+        '--translate-x': mm(parseMm(layer.cssVars['--translate-x']) + offsetX),
+        '--translate-y': mm(parseMm(layer.cssVars['--translate-y']) + offsetY),
       },
       parentId:
         layer.parentId && toDuplicate.has(layer.parentId)
@@ -148,6 +149,35 @@ export function duplicateLayers(
   }
 
   return { layers: result, newIds };
+}
+
+function topLeftMm(layers: CanvasLayer[], ids: string[]): { x: number; y: number } | null {
+  const set = new Set(ids);
+  let x = Infinity;
+  let y = Infinity;
+  let found = false;
+  for (const layer of layers) {
+    if (!set.has(layer.id)) continue;
+    const b = layerBounds(layer);
+    found = true;
+    x = Math.min(x, b.x);
+    y = Math.min(y, b.y);
+  }
+  return found ? { x, y } : null;
+}
+
+export function duplicateRepeatOffset(
+  layers: CanvasLayer[],
+  ids: string[],
+  last: { sourceIds: string[]; newIds: string[] } | null,
+): { dx: number; dy: number } | null {
+  if (!last || ids.length !== last.newIds.length || !ids.every((id) => last.newIds.includes(id))) {
+    return null;
+  }
+  const copy = topLeftMm(layers, last.newIds);
+  const source = topLeftMm(layers, last.sourceIds);
+  if (!copy || !source) return null;
+  return { dx: copy.x - source.x, dy: copy.y - source.y };
 }
 
 export function reorderAmongSiblings(

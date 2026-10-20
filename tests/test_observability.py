@@ -103,7 +103,6 @@ def test_install_exception_hooks_captures_uncaught_exceptions(monkeypatch: pytes
         assert fields["outcome"] == "failed"
         assert len(mock_sys_called) == 1
 
-        # KeyboardInterrupt should be forwarded without backend.crash
         sys.excepthook(KeyboardInterrupt, KeyboardInterrupt(), None)
         assert len(records) == 1
         assert len(mock_sys_called) == 2
@@ -115,7 +114,7 @@ def test_install_exception_hooks_captures_uncaught_exceptions(monkeypatch: pytes
             raise RuntimeError("worker failure")
         except RuntimeError as exc:
             t_tb = exc.__traceback__
-            thread_args = threading.ExceptHookArgs((RuntimeError, exc, t_tb, DummyThread()))  # type: ignore[arg-type]
+            thread_args = threading.ExceptHookArgs((RuntimeError, exc, t_tb, DummyThread()))
             threading.excepthook(thread_args)
 
         assert len(records) == 2
@@ -194,7 +193,7 @@ def test_ubicaciones_client_structured_http_logging(monkeypatch: pytest.MonkeyPa
                 url="https://tile.openstreetmap.org/18/1/1.png",
                 code=503,
                 msg="Service Unavailable",
-                hdrs=None,  # type: ignore[arg-type]
+                hdrs=None,
                 fp=None,
             )
 

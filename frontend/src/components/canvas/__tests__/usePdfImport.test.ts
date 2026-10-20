@@ -133,7 +133,7 @@ describe('usePdfImport', () => {
     expect(appendPdfFragment).toHaveBeenCalledWith(doc, fragment);
     expect(input.history.setDocument).toHaveBeenCalledWith(nextDoc);
     expect(input.setSelectedIds).toHaveBeenCalledWith(['l1', 'l2']);
-    expect(input.setPageIndex).toHaveBeenCalledWith(2); // 1 página base + firstPageIndex 1
+    expect(input.setPageIndex).toHaveBeenCalledWith(2);
     expect(result.current.pdfImportReport).toBe(REPORT);
     expect(result.current.pdfImporting).toBe(false);
     expect(input.flashStatus).toHaveBeenCalledWith(

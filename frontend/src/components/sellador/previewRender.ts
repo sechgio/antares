@@ -183,7 +183,6 @@ export async function renderOtherPagesPreview(
   };
 
   try {
-    // Reuse one staged upload for every page in this batch.
     if (!pdfPath && !pdfBase64 && pdfFile) {
       pdfHandle = await acquireStagedFile(pdfFile);
       if (!pdfHandle.token) {

@@ -124,7 +124,7 @@ class TestPanelCapacityAndPositions:
                 cuadrante="CUAD-1",
                 fecha_corte="2024-01-15",
                 motivo="Trabajos",
-                imagenes=[_ref(1), _ref(2)],  # type: ignore[arg-type]
+                imagenes=[_ref(1), _ref(2)],
             )
 
     def test_panel_imagenes_must_contain_panel_image_refs(self) -> None:
@@ -133,7 +133,7 @@ class TestPanelCapacityAndPositions:
                 cuadrante="CUAD-1",
                 fecha_corte="2024-01-15",
                 motivo="Trabajos",
-                imagenes=({"filename": "x.jpg"},),  # type: ignore[arg-type]
+                imagenes=({"filename": "x.jpg"},),
             )
 
 
@@ -211,7 +211,7 @@ class TestMatchRule:
         with pytest.raises(InvalidMatchRuleError, match="strategy"):
             MatchRule(
                 key_column="CODIGO",
-                strategy="fuzzy",  # type: ignore[arg-type]
+                strategy="fuzzy",
             )
 
 
@@ -223,14 +223,14 @@ class TestFrozenDataclasses:
             motivo="Trabajos",
         )
         with pytest.raises(FrozenInstanceError):
-            panel.cuadrante = "otro"  # type: ignore[misc]
+            panel.cuadrante = "otro"
 
     def test_panel_image_ref_is_frozen(self) -> None:
         ref = _ref(1)
         with pytest.raises(FrozenInstanceError):
-            ref.position = 2  # type: ignore[misc]
+            ref.position = 2
 
     def test_match_rule_is_frozen(self) -> None:
         rule = MatchRule(key_column="CODIGO", strategy="prefix")
         with pytest.raises(FrozenInstanceError):
-            rule.strategy = "contains"  # type: ignore[misc]
+            rule.strategy = "contains"

@@ -9,8 +9,6 @@ const {
 
 const AUTO_SYNC_INTERVAL_MS = 5 * 60_000;
 
-// El timer llama a `tick` (syncFromSheet) solo cuando no hay operación activa.
-// El engine inyecta el tick para evitar un ciclo engine↔autosync.
 function createAutoSync({ tick }) {
   let enabled = false;
   let timer = null;
@@ -28,8 +26,6 @@ function createAutoSync({ tick }) {
       if (operationState.active) return;
       tick().catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
-        // Contienda del lock (una op manual ganó entre el check y el runLocked):
-        // no es un fallo de autosync, no merece banner global.
         if (/operación en curso/i.test(msg)) return;
         emitError('AUTO_SYNC', msg);
       });

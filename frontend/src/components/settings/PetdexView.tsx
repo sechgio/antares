@@ -75,7 +75,6 @@ function writeManifestCache(pets: Pet[]) {
     const payload: ManifestCache = { cachedAt: Date.now(), pets };
     localStorage.setItem(PETDEX_MANIFEST_CACHE_KEY, JSON.stringify(payload));
   } catch {
-    // El manifiesto en memoria sigue siendo válido aunque el almacenamiento esté lleno o bloqueado.
   }
 }
 

@@ -87,7 +87,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
           onClose();
         }
       }}
-      className="absolute inset-y-3 right-3 z-20 flex w-[min(380px,calc(100%-24px))] flex-col rounded-[24px] bg-[var(--bg-surface)] shadow-[0_16px_40px_rgba(0,0,0,0.18),0_0_1px_rgba(0,0,0,0.32)]"
+      className="absolute inset-y-3 right-3 z-20 flex w-[min(340px,calc(100%-24px))] flex-col rounded-[24px] bg-[var(--bg-surface)] shadow-[0_16px_40px_rgba(0,0,0,0.18),0_0_1px_rgba(0,0,0,0.32)] xl:static xl:order-last xl:w-[300px] xl:shrink-0 xl:shadow-none"
     >
       <header className="relative flex shrink-0 items-center justify-center px-4 pt-4">
         <h2 className="text-[14px] font-medium text-[var(--text-primary)]">{profile ? name || profile.name : 'Nuevo agente'}</h2>
@@ -101,8 +101,8 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
         </button>
       </header>
       <div className="custom-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3 pt-4">
-        <div className="flex justify-center pb-1">
-          <AgentAvatar seed={profile?.id ?? (name || 'nuevo-agente')} name={name || 'Agente'} size={96} />
+        <div className="flex flex-col items-center gap-3 py-5">
+          <AgentAvatar seed={profile?.id ?? (name || 'nuevo-agente')} name={name || 'Agente'} size={112} />
         </div>
         <div className="divide-y divide-[var(--border-subtle)] rounded-2xl bg-[var(--bg-base)]">
           <label className={FIELD}>

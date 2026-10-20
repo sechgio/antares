@@ -526,7 +526,6 @@ export default function CalendarView({
           width: 100% !important;
         }
 
-        /* Mes: sin columna de horas. */
         .espacios-calendar .fc-dayGridMonth-view .fc-col-header-cell {
           width: calc(100% / 7) !important;
         }
@@ -677,7 +676,6 @@ export default function CalendarView({
           width: 100%;
         }
 
-        /* 100%/7 ignora la columna del eje y desalinea header, all-day y slots. */
         .espacios-calendar .fc-timeGridWeek-view .fc-scrollgrid-sync-table,
         .espacios-calendar .fc-timeGridWeek-view .fc-col-header,
         .espacios-calendar .fc-timeGridWeek-view .fc-daygrid-body > table,
@@ -690,7 +688,6 @@ export default function CalendarView({
           width: 100% !important;
         }
 
-        /* El eje tiene que medir lo mismo en header, all-day y slots. */
         .espacios-calendar .fc-timeGridWeek-view .fc-timegrid-axis,
         .espacios-calendar .fc-timeGridWeek-view th.fc-timegrid-axis,
         .espacios-calendar .fc-timeGridWeek-view td.fc-timegrid-axis,
@@ -753,7 +750,6 @@ export default function CalendarView({
           margin-bottom: 2px;
         }
 
-        /* Solo el cuerpo de horas hace scroll. scrollbar-gutter evita desalineación. */
         .espacios-calendar .fc-timeGridWeek-view .fc-scroller {
           scrollbar-gutter: stable;
         }

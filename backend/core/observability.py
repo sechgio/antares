@@ -19,7 +19,7 @@ from typing import Any
 _BACKEND_VERSION: str | None = None
 try:
     from backend.version import __version__ as _BACKEND_VERSION
-except ImportError:  # pragma: no cover - direct module execution fallback
+except ImportError:  # pragma: no cover
     _BACKEND_VERSION = None
 
 
@@ -27,7 +27,6 @@ _SAFE_TOKEN_RE = re.compile(r"[^a-zA-Z0-9_.:-]")
 _LEVEL_NAMES = {"DEBUG", "INFO", "WARN", "ERROR", "FATAL"}
 _OUTCOMES = {"success", "partial", "degraded", "failed", "timeout", "cancelled", "rejected"}
 
-# Allowlist RUM (CLS/INP/LCP). Ver telemetry.py.
 _RUM_METRIC_NAMES = frozenset({"CLS", "INP", "LCP"})
 _RUM_RATINGS = frozenset({"good", "needs-improvement", "poor", "unknown"})
 _RUM_NAV_TYPES = frozenset(

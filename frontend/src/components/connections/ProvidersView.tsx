@@ -6,29 +6,8 @@ import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { ProviderIcon } from './connectionIcons';
-
-const TONE_COLOR = {
-  ok: 'var(--accent-green)',
-  warn: 'var(--accent-yellow)',
-  off: 'var(--text-secondary)',
-} as const;
-
-function StatusBadge({ tone, children }: { tone: keyof typeof TONE_COLOR; children: string }) {
-  const color = TONE_COLOR[tone];
-  return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium"
-      style={{
-        color,
-        borderColor: tone === 'off' ? 'var(--border-subtle)' : `color-mix(in srgb, ${color} 40%, transparent)`,
-        background: tone === 'off' ? 'transparent' : `color-mix(in srgb, ${color} 10%, transparent)`,
-      }}
-    >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-      {children}
-    </span>
-  );
-}
+import CustomModelsSection from './CustomModelsSection';
+import { StatusBadge, providerStatusText, providerStatusTone } from './providerStatus';
 
 const STEPS = ['Elige un servicio', 'Obtén su clave y guárdala aquí', 'Pulsa «Probar» para comprobar la conexión'];
 
@@ -44,14 +23,17 @@ export default function ProvidersView() {
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
   const [statuses, setStatuses] = useState<Record<string, AiProviderStatus | undefined>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [probing, setProbing] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<string, FormState>>({});
 
   const refresh = useCallback(async () => {
     try {
-      const res = await aiProvidersApi.aiProvidersList();
+      const res = await aiProvidersApi.aiProvidersList({ include_invalid: true });
       setProviders(res.providers);
+      setLoadError(false);
     } catch (err) {
+      setLoadError(true);
       addToast({ message: errorMessage(err, 'No se pudieron cargar los proveedores IA'), type: 'error' });
     } finally {
       setLoading(false);
@@ -158,21 +140,6 @@ export default function ProvidersView() {
     }
   };
 
-  const statusText = (p: AiProviderSpec): string => {
-    const st = statuses[p.id];
-    if (st?.reachable) {
-      return st.models_count != null ? `Disponible · ${st.models_count} modelos` : 'Disponible';
-    }
-    if (p.has_key || (p.configured && !p.needs_key)) return 'Configurado';
-    return p.needs_key ? 'Necesita clave de acceso' : 'No configurado';
-  };
-
-  const statusTone = (p: AiProviderSpec): 'ok' | 'warn' | 'off' => {
-    if (statuses[p.id]?.reachable) return 'ok';
-    if (p.has_key || (p.configured && !p.needs_key)) return 'warn';
-    return 'off';
-  };
-
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
@@ -181,10 +148,27 @@ export default function ProvidersView() {
     );
   }
 
+  if (loadError && !providers.length) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-center">
+        <div>
+          <p className="text-sm font-medium text-[var(--text-primary)]">No se pudieron cargar los proveedores.</p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">Revisa la conexión e inténtalo de nuevo.</p>
+          <Button className="mt-3" size="sm" onClick={() => void refresh()}>
+            Reintentar
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const builtins = providers.filter((p) => !p.custom);
+  const customs = providers.filter((p) => p.custom);
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl px-6 py-5">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Proveedores IA</h2>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Proveedores</h2>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
           Después podrás usarlo en el Agente o en un paso de IA.
         </p>
@@ -212,7 +196,7 @@ export default function ProvidersView() {
         </div>
 
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-          {providers.map((p) => {
+          {builtins.map((p) => {
             const form = forms[p.id];
             const st = statuses[p.id];
             const busy = form?.saving || probing === p.id;
@@ -228,7 +212,7 @@ export default function ProvidersView() {
                     <div className="truncate text-sm font-medium text-[var(--text-primary)]">{p.label}</div>
                     <div className="mt-0.5 text-xs text-[var(--text-secondary)]">{p.description}</div>
                   </div>
-                  <StatusBadge tone={statusTone(p)}>{statusText(p)}</StatusBadge>
+                  <StatusBadge tone={providerStatusTone(p, st)}>{providerStatusText(p, st)}</StatusBadge>
                 </div>
 
                 <div className="mx-4 flex items-start justify-between gap-3 rounded-lg bg-[var(--bg-input)] px-3 py-2.5">
@@ -341,6 +325,8 @@ export default function ProvidersView() {
             );
           })}
         </div>
+
+        <CustomModelsSection providers={customs} onChanged={refresh} />
 
         {!providers.length && (
           <p className="mt-4 text-center text-sm text-[var(--text-secondary)]">

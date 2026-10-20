@@ -401,9 +401,6 @@ export default function VolantesView() {
       addToast({ message: "No hay contenido para exportar.", type: "error" });
       return;
     }
-    // El rasterizado por lotes tarda segundos y el botón no se deshabilita: sin
-    // este candado un segundo clic exporta dos PDFs a la vez, con historial y
-    // descarga duplicados.
     if (exportAllInFlightRef.current) return;
     exportAllInFlightRef.current = true;
 

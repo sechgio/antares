@@ -5,8 +5,6 @@ const CACHE_TTL_MS = 60_000;
 const SHEET_CACHE_BUDGET_BYTES = 32 * 1024 * 1024;
 const SHEET_CACHE_BLOCKS = Object.freeze(['bdImg', 'logs', 'arrastre', 'folders']);
 
-// Estado mutable del caché en un solo objeto: permite que otros módulos lean
-// los bloques sin getters y que este módulo reasigne sin perder la referencia.
 const sheetCache = {
   sheetId: null,
   bdImg: [],

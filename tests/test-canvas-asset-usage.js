@@ -14,7 +14,6 @@ async function main() {
   process.env.LOCALAPPDATA = fakeHome;
   process.env.XDG_DATA_HOME = fakeHome;
 
-  // canvas-assets conserva la referencia a fs.promises, por lo que estos parches interceptan sus llamadas.
   const fsp = fs.promises;
   const realReaddir = fsp.readdir;
   const realStat = fsp.stat;
@@ -78,7 +77,6 @@ async function main() {
       'the incremental counter tracks the payloads',
     );
 
-    // El GC debe reconciliar el contador con archivos creados fuera del módulo.
     const strayBytes = 32;
     await fs.promises.writeFile(path.join(dir, 'f'.repeat(64)), Buffer.alloc(strayBytes, 1));
     const legacyBytes = 24;

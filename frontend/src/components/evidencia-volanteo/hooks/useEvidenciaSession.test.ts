@@ -175,12 +175,9 @@ describe("useEvidenciaSession", () => {
     loadSession.mockRejectedValue(new Error("idb bloqueado"));
     const { result } = renderHook(() => useEvidenciaSession());
     await waitFor(() => expect(result.current.restoreFailed).toBe(true));
-    // Sin ediciones no se guarda: la sesión vacía pisaría la que sigue en disco.
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(saveSession).not.toHaveBeenCalled();
 
-    // El guardado solo se programa cuando isLoaded es true: tras editar, el
-    // autoguardado sigue vivo.
     act(() => result.current.setTitle("Editado tras el fallo"));
     await waitFor(() => expect(result.current.persistenceStatus).toBe("saved"), {
       timeout: 2000,

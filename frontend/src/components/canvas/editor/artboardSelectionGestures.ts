@@ -104,7 +104,6 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
     );
     let moveIds = ids;
     let didDuplicate = false;
-    let useReactPreview = false;
     gestureDirtyRef.current = false;
     let dragging = false;
     const marginMm = pageMarginRef.current;
@@ -117,7 +116,6 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
       snapshot = layers;
       moveIds = newIds;
       onSelectIdsRef.current(newIds);
-      useReactPreview = true;
       applyGestureLayers(snapshot);
     };
 
@@ -238,8 +236,7 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
       }
       setGuidesIfChanged(nextGuides);
       const moved = moveSelection(snapshot, moveIds, dx, dy);
-      if (useReactPreview) applyGestureLayers(moved);
-      else applyMovePreview(moved, moveIds);
+      applyMovePreview(moved, moveIds);
       const bounds = selectionBounds(moved, moveIds);
       if (bounds) {
         setGestureBbox(bounds);

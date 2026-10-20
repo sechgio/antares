@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import Artboard from '../editor/Artboard';
 import { createFrameRectCache } from '../editor/frameRectCache';
+import { mmToScreenPx } from '../ops/drawHelpers';
 import { createEmptyDocument, type CanvasLayer } from '../types';
 import { boxCss } from './fixtures';
 
@@ -336,6 +337,44 @@ describe('Artboard drag gestures', () => {
 
     const committed = onChangeLayers.mock.calls[0][0] as CanvasLayer[];
     expect(committed.find((layer) => layer.id === moving.id)!.cssVars['--translate-x']).toBe('43mm');
+  });
+
+  it('limits a smart guide to the moving selection and the aligned objects instead of crossing the page (Figma)', () => {
+    const moving = createLayer('rect', {
+      cssVars: { '--translate-x': '20mm', '--translate-y': '20mm', '--width': '10mm', '--height': '10mm' },
+    });
+    const fixed = createLayer('rect', {
+      cssVars: { '--translate-x': '60mm', '--translate-y': '60mm', '--width': '10mm', '--height': '10mm' },
+    });
+    const document = createEmptyDocument('Guide span');
+    document.layers.push(moving, fixed);
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[moving.id]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${moving.id}"]`)!;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 50 * mm, clientY: 100 });
+    act(() => tick());
+    const vertical = screen
+      .getAllByTestId('canvas-smart-guide')
+      .find((line) => line.getAttribute('x1') === line.getAttribute('x2'))!;
+    expect(vertical.getAttribute('x1')).toBe(String(mmToScreenPx(70, 1)));
+    expect(vertical.getAttribute('y1')).toBe(String(mmToScreenPx(20, 1)));
+    expect(vertical.getAttribute('y2')).toBe(String(mmToScreenPx(70, 1)));
+    expect(screen.getAllByTestId('canvas-smart-guide-marker')).toHaveLength(2);
+    fireEvent.pointerUp(window, { clientX: 100 + 50 * mm, clientY: 100 });
   });
 
   it('Alt+drag duplicates then moves the copy in one commit (Figma)', () => {

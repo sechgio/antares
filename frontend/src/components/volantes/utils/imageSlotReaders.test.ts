@@ -79,7 +79,6 @@ describe("abortAllImageReaders", () => {
       vi.fn(),
     );
     expect(() => abortAllImageReaders()).not.toThrow();
-    // idempotente
     abortAllImageReaders();
   });
 });

@@ -713,8 +713,6 @@ export default function PadronView() {
         isWaterCutNotice ? waterCutVisibleItems.length : visibleItems.length,
       );
     } catch (err) {
-      // Sin este catch la promesa quedaba rechazada sin manejar: el spinner
-      // paraba y el botón volvía a "Descargar PDF" sin decir nada.
       setPdfError(errorMessage(err, "No se pudo generar el PDF."));
     } finally {
       if (root) {

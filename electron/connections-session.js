@@ -1,17 +1,5 @@
 'use strict';
 
-/**
- * Sesión OAuth genérica por proveedor de conexión (Conexiones).
- *
- * Generaliza el patrón de spotify-session/google-session: config y tokens por
- * proveedor en secure-storage, loopback 127.0.0.1 + state (+ PKCE si el spec lo
- * pide) y canje de código según `auth.type` del catálogo compartido.
- *
- * Tras cada alta/refresco se espeja el token al vault del backend
- * (`connections_token_*`), que es quien renueva los tokens; las claves nunca
- * salen de los vaults cifrados.
- */
-
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -28,11 +16,11 @@ const {
 } = require('./autoimg-oauth-flow');
 const { getProvider } = require('./connections-providers');
 
-const _pending = new Map(); // provider -> { redirectUri, codeVerifier, stop }
-const _tokenCache = new Map(); // provider -> tokens | null
-const _refreshPromises = new Map(); // provider -> Promise
-const _mirrorPromises = new Map(); // provider -> Promise
-const _tokenGenerations = new Map(); // provider -> number
+const _pending = new Map();
+const _tokenCache = new Map();
+const _refreshPromises = new Map();
+const _mirrorPromises = new Map();
+const _tokenGenerations = new Map();
 
 function _oauthConfigFile(providerId) {
   return `connections/${providerId}-oauth-config.json`;
@@ -82,10 +70,6 @@ function _mirrorDelete(provider) {
   _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connections_token_delete', { provider }), () => {});
 }
 
-// App OAuth pública de Antares (cliente instalado: su secreto no es
-// confidencial): variables de build/entorno ANTARES_<PROVEEDOR>_OAUTH_CLIENT_ID
-// y _SECRET, o resources/oauth-clients.json del paquete. La configuración que
-// guardó el usuario conserva la prioridad para no romper sus conexiones.
 function publicOAuthConfig(provider) {
   const key = String(provider).toUpperCase().replace(/[^A-Z0-9]/g, '_');
   let data = {
@@ -96,7 +80,7 @@ function publicOAuthConfig(provider) {
     try {
       const all = JSON.parse(fs.readFileSync(path.join(process.resourcesPath, 'oauth-clients.json'), 'utf8'));
       data = (all && typeof all[provider] === 'object' && all[provider]) || {};
-    } catch { /* sin app pública empaquetada */ }
+    } catch {}
   }
   return {
     clientId: String(data.client_id || '').trim(),
