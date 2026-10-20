@@ -1,12 +1,14 @@
 import { useCallback, useState } from 'react';
 import { api } from '../../api';
 import Button from '../ui/Button';
-import type { Clip, EditorProject } from './types';
+import type { Clip, EditorProject, MediaAsset } from './types';
 import { useEditorProject, type SaveState } from './hooks/useEditorProject';
 import { TextPanel } from './panels/TextPanel';
 import { AudioPanel } from './panels/AudioPanel';
 import { RemoveLogoPanel } from './panels/RemoveLogoPanel';
 import { RecordPanel } from './panels/RecordPanel';
+import { TimelinePanel, ASSET_DRAG_TYPE } from './timeline/TimelinePanel';
+import { applyOperation, clipFromAsset, type TimelineOperation } from './timeline/operations';
 
 const SAVE_LABEL: Record<SaveState, string> = {
   idle: 'Sin cambios',
@@ -94,47 +96,6 @@ function EditorPreview({ projectName }: { projectName: string }) {
   );
 }
 
-function EditorTimeline({
-  clips,
-  selectedClipId,
-  onSelectClip,
-}: {
-  clips: Clip[];
-  selectedClipId: string | null;
-  onSelectClip: (clipId: string | null) => void;
-}) {
-  return (
-    <section
-      className="h-48 border-t border-[var(--border-medium)] bg-[var(--bg-elevated)] p-3"
-      aria-label="Línea de tiempo"
-    >
-      <div className="text-xs text-[var(--text-muted)]">
-        Línea de tiempo · {clips.length} {clips.length === 1 ? 'clip' : 'clips'}
-      </div>
-      <div className="mt-2 flex h-28 flex-col gap-1 overflow-y-auto" data-testid="editor-timeline">
-        {clips.length === 0 && (
-          <div className="rounded border border-dashed border-[var(--border-medium)]" />
-        )}
-        {clips.map((clip) => (
-          <button
-            key={clip.id}
-            type="button"
-            aria-pressed={clip.id === selectedClipId}
-            className={`rounded border px-2 py-1 text-left text-xs ${
-              clip.id === selectedClipId
-                ? 'border-[var(--accent-primary)] text-[var(--text-primary)]'
-                : 'border-[var(--border-medium)] text-[var(--text-secondary)]'
-            }`}
-            onClick={() => onSelectClip(clip.id === selectedClipId ? null : clip.id)}
-          >
-            {clip.kind === 'text' ? clip.text?.content || 'Texto' : `Clip ${clip.assetId?.slice(0, 6) ?? ''}`}
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function EditorProperties({
   clip,
   onChange,
@@ -183,9 +144,11 @@ function EditorProperties({
 function EditorMediaLibrary({
   assets,
   onRecorded,
+  onAdd,
 }: {
-  assets: Array<{ id: string; displayName: string; type: string; durationUs?: number }>;
+  assets: MediaAsset[];
   onRecorded: (fileToken: string) => void;
+  onAdd: (assetId: string) => void;
 }) {
   const [tab, setTab] = useState<'media' | 'grabar'>('media');
 
@@ -227,12 +190,26 @@ function EditorMediaLibrary({
               {assets.map((asset) => (
                 <li
                   key={asset.id}
-                  className="rounded px-2 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                  draggable
+                  onDragStart={(event) => event.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id)}
+                  onDoubleClick={() => onAdd(asset.id)}
+                  className="group flex cursor-grab items-center gap-2 rounded px-2 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
                 >
-                  <span className="block truncate">{asset.displayName}</span>
-                  <span className="text-[var(--text-muted)]">
-                    {asset.type} · {formatDuration(asset.durationUs)}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{asset.displayName}</span>
+                    <span className="text-[var(--text-muted)]">
+                      {asset.type} · {formatDuration(asset.durationUs)}
+                    </span>
                   </span>
+                  <button
+                    type="button"
+                    aria-label={`Añadir ${asset.displayName} a la línea de tiempo`}
+                    title="Añadir a la línea de tiempo"
+                    className="h-5 w-5 shrink-0 rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    onClick={() => onAdd(asset.id)}
+                  >
+                    +
+                  </button>
                 </li>
               ))}
             </ul>
@@ -253,71 +230,93 @@ export function EditorView() {
     openProject,
     updateProject,
   } = useEditorProject();
-  const [imported, setImported] = useState<EditorProject['assets']>([]);
   const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  const [playheadUs, setPlayheadUs] = useState(0);
 
-  const handleImport = useCallback(async () => {
-    if (!project) return;
-    setImporting(true);
-    try {
-      const dialog = await api.editorImportFiles();
-      if (!dialog.file_tokens.length) return;
-      const job = await api.editorAssetsImportStart(dialog.file_tokens);
-      if (!job.started || !job.jobId) return;
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        const status = await api.editorJobStatus(job.jobId);
-        if (!status.running) {
-          if (status.imported.length > 0) {
-            const assets = status.imported as typeof imported;
-            setImported((prev) => [...prev, ...assets]);
+  const runImport = useCallback(
+    async (fileTokens: string[]) => {
+      if (!fileTokens.length) return;
+      setImporting(true);
+      setImportError(null);
+      try {
+        const job = await api.editorAssetsImportStart(fileTokens);
+        if (!job.started || !job.jobId) throw new Error('No se pudo iniciar la importación');
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          const status = await api.editorJobStatus(job.jobId);
+          if (status.running) continue;
+          const assets = status.imported as MediaAsset[];
+          if (assets.length > 0) {
             updateProject((draft) => {
               draft.assets = [...draft.assets, ...assets];
             });
           }
-          break;
+          if (status.failed.length > 0) {
+            setImportError(`No se pudieron importar ${status.failed.length} archivo(s): ${status.failed[0].reason}`);
+          }
+          return;
         }
+        setImportError('La importación tardó demasiado');
+      } catch (err) {
+        setImportError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setImporting(false);
       }
-    } catch {
-      // El error de importación se refleja en el estado del proyecto.
-    } finally {
-      setImporting(false);
+    },
+    [updateProject],
+  );
+
+  const handleImport = useCallback(async () => {
+    try {
+      const dialog = await api.editorImportFiles();
+      await runImport(dialog.file_tokens);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
     }
-  }, [project, updateProject]);
+  }, [runImport]);
 
   const handleCreate = useCallback(async () => {
     await createProject(`Proyecto ${projects.length + 1}`);
   }, [createProject, projects.length]);
 
-  const handleRecorded = useCallback(
-    async (fileToken: string) => {
+  const handleCreateAndImport = useCallback(async () => {
+    try {
+      const dialog = await api.editorImportFiles();
+      if (!dialog.file_tokens.length) return;
+      await createProject(`Proyecto ${projects.length + 1}`);
+      await runImport(dialog.file_tokens);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    }
+  }, [createProject, projects.length, runImport]);
+
+  const handleRecorded = useCallback((fileToken: string) => runImport([fileToken]), [runImport]);
+
+  const handleOperation = useCallback(
+    (op: TimelineOperation) => {
       if (!project) return;
-      setImporting(true);
-      try {
-        const job = await api.editorAssetsImportStart([fileToken]);
-        if (!job.started || !job.jobId) return;
-        for (let attempt = 0; attempt < 60; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          const status = await api.editorJobStatus(job.jobId);
-          if (!status.running) {
-            if (status.imported.length > 0) {
-              const assets = status.imported as typeof imported;
-              setImported((prev) => [...prev, ...assets]);
-              updateProject((draft) => {
-                draft.assets = [...draft.assets, ...assets];
-              });
-            }
-            break;
-          }
-        }
-      } catch {
-        // El error de importación se refleja en el estado del proyecto.
-      } finally {
-        setImporting(false);
-      }
+      const result = applyOperation(project, op);
+      if (!result.changed) return;
+      updateProject((draft) => {
+        draft.clips = result.clips;
+      });
     },
     [project, updateProject],
+  );
+
+  const handleAddAsset = useCallback(
+    (assetId: string) => {
+      const clipId = crypto.randomUUID().replace(/-/g, '');
+      updateProject((draft) => {
+        const asset = draft.assets.find((a) => a.id === assetId);
+        const clip = asset ? clipFromAsset(draft, asset, clipId) : null;
+        if (clip) draft.clips.push(clip);
+      });
+      setSelectedClipId(clipId);
+    },
+    [updateProject],
   );
 
   if (!project) {
@@ -341,22 +340,31 @@ export function EditorView() {
             </ul>
           </div>
         )}
-        <EditorEmptyState onCreate={() => void handleCreate()} onImport={() => void handleCreate()} />
+        <EditorEmptyState onCreate={() => void handleCreate()} onImport={() => void handleCreateAndImport()} />
       </main>
     );
   }
 
   return (
     <main className="flex h-full w-full flex-col bg-[var(--bg-base)]" data-testid="editor-view">
-      <EditorToolbar saveState={saveState} error={error} onImport={() => void handleImport()} />
+      <EditorToolbar saveState={saveState} error={importError ?? error} onImport={() => void handleImport()} />
       <div className="flex min-h-0 flex-1">
-        <EditorMediaLibrary assets={imported} onRecorded={(token) => void handleRecorded(token)} />
+        <EditorMediaLibrary
+          assets={project.assets}
+          onRecorded={(token) => void handleRecorded(token)}
+          onAdd={handleAddAsset}
+        />
         <div className="flex min-h-0 flex-1 flex-col">
           <EditorPreview projectName={project.name} />
-          <EditorTimeline
-            clips={project.clips}
+          <TimelinePanel
+            project={project}
             selectedClipId={selectedClipId}
+            playheadUs={playheadUs}
             onSelectClip={setSelectedClipId}
+            onSeek={setPlayheadUs}
+            onOperation={handleOperation}
+            onImport={() => void handleImport()}
+            onAddAsset={handleAddAsset}
           />
         </div>
         <EditorProperties

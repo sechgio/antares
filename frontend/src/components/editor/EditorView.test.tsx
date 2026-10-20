@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { EditorView } from './EditorView';
 
 const mockInvoke = vi.fn();
@@ -99,6 +99,50 @@ describe('EditorView', () => {
     expect(screen.getByTestId('editor-timeline')).toBeInTheDocument();
     expect(screen.getByLabelText('Propiedades')).toBeInTheDocument();
     expect(screen.getByTestId('editor-save-state')).toHaveTextContent('Guardado');
+  });
+
+  it('Abrir archivos abre el diálogo y no crea proyecto si se cancela', async () => {
+    mockInvoke.mockImplementation((method: string) => {
+      if (method === 'editor_bootstrap') {
+        return Promise.resolve({ schemaVersion: 1, projects: [], toolchain: { available: true } });
+      }
+      if (method === 'editor_import_files') return Promise.resolve({ paths: [], file_tokens: [] });
+      return Promise.resolve({});
+    });
+    render(<EditorView />);
+    fireEvent.click(await screen.findByRole('button', { name: /Abrir archivos/i }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('editor_import_files', {}));
+    expect(mockInvoke).not.toHaveBeenCalledWith('editor_project_create', expect.anything());
+  });
+
+  it('añade un medio importado a la línea de tiempo con el botón +', async () => {
+    const withAsset = {
+      ...projectFixture(),
+      assets: [
+        {
+          id: 'a1',
+          type: 'video',
+          displayName: 'toma.mp4',
+          byteSize: 10,
+          sha256: 'a'.repeat(64),
+          durationUs: 4_000_000,
+          streams: [{ index: 0, kind: 'video', codec: 'h264', timeBase: { num: 1, den: 25 } }],
+        },
+      ],
+    };
+    mockInvoke.mockImplementation((method: string) => {
+      if (method === 'editor_bootstrap') {
+        return Promise.resolve({ schemaVersion: 1, projects: [{ id: 'p1', name: 'Mi video' }], toolchain: { available: true } });
+      }
+      if (method === 'editor_project_get') return Promise.resolve({ project: withAsset });
+      return Promise.resolve({});
+    });
+    render(<EditorView />);
+    fireEvent.click(await screen.findByRole('button', { name: /Mi video/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Añadir toma.mp4 a la línea de tiempo' }));
+    const timeline = screen.getByTestId('editor-timeline');
+    expect(await within(timeline).findByRole('button', { name: 'toma.mp4', pressed: true })).toBeInTheDocument();
+    expect(screen.getByTestId('editor-timecode')).toHaveTextContent('00:00:00 / 00:04:00');
   });
 
   it('no depende de cuenta ni de Supabase', async () => {
