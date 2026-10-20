@@ -7,30 +7,11 @@ from pathlib import Path
 
 from backend.core.jobs import Job
 from backend.handlers import conversion, conversion_job
+from tests.conversion_fixtures import ImmediateFuture as _ImmediateFuture
+from tests.conversion_fixtures import RecordingScheduler
 
 
-class _ImmediateFuture:
-    def __init__(self, result):
-        self._result = result
-
-    def result(self):
-        return self._result
-
-    def cancelled(self):
-        return False
-
-    def cancel(self):
-        return False
-
-
-class _RecordingScheduler:
-    def __init__(self) -> None:
-        self.submitted: list[tuple[str, str, bool]] = []
-
-    def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
-        self.submitted.append(task)
-        return _ImmediateFuture(fn(task))
-
+class _RecordingScheduler(RecordingScheduler):
     def submit_light(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
         return _ImmediateFuture(fn(*args, **kwargs))
 

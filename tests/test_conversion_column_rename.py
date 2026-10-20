@@ -4,39 +4,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from backend.core.jobs import Job
 from backend.core.renamer import RenamerEngine
 from backend.handlers import conversion, conversion_job
 from backend.utils.validators import parse_filename_parts
+from tests.conversion_fixtures import RecordingScheduler as _RecordingScheduler
 
 
 def _slice_db_rows(rows: list[dict[str, Any]], limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
     if limit is None:
         return rows[offset:]
     return rows[offset : offset + limit]
-
-
-class _ImmediateFuture:
-    def __init__(self, result):
-        self._result = result
-
-    def result(self):
-        return self._result
-
-    def cancelled(self):
-        return False
-
-    def cancel(self):
-        return False
-
-
-class _RecordingScheduler:
-    def __init__(self) -> None:
-        self.submitted: list[tuple[str, Path, bool]] = []
-
-    def submit_heavy(self, fn, task, *, block=False, cancel_check=None):
-        self.submitted.append(task)
-        return _ImmediateFuture(fn(task))
 
 
 def _broken_lookup(codigos_list: list[str], db_rows: list[dict[str, Any]]):
@@ -49,17 +29,47 @@ def _broken_lookup(codigos_list: list[str], db_rows: list[dict[str, Any]]):
     return lookup
 
 
-def test_preview_column_rename_maps_by_file_index_not_first_code_match(monkeypatch, tmp_path) -> None:
-    names = ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"]
+@pytest.mark.parametrize(
+    ("names", "db_rows", "sequence_mode", "use_filename_seq", "expected", "in_db"),
+    [
+        pytest.param(
+            ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"],
+            [
+                {"nis": "ROW0", "sgio": "SGIO_A"},
+                {"nis": "ROW1", "sgio": "SGIO_B"},
+                {"nis": "ROW2", "sgio": "SGIO_C"},
+            ],
+            "global", True,
+            ["SGIO_A_001.jpg", "SGIO_B_002.jpg", "SGIO_C_003.jpg"], [True, True, True],
+            id="maps_by_file_index_not_first_code_match",
+        ),
+        pytest.param(
+            ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"],
+            [{"nis": "ROW0", "sgio": "SGIO_A"}, {"nis": "ROW1", "sgio": "SGIO_B"}],
+            "global", True,
+            ["SGIO_A_001.jpg", "SGIO_B_002.jpg", "4210502 (3).jpg"], [True, True, False],
+            id="sin_fila_bd_conserva_nombre",
+        ),
+        pytest.param(
+            ["4210502 (1).jpg", "4210544 (2).jpg", "4210502 (3).jpg"],
+            [
+                {"nis": "4210502", "sgio": "SGIO_A"},
+                {"nis": "4210544", "sgio": "SGIO_B"},
+                {"nis": "4210502", "sgio": "SGIO_A"},
+            ],
+            "record", False,
+            ["SGIO_A_001.jpg", "SGIO_B_001.jpg", "SGIO_A_002.jpg"], [True, True, True],
+            id="record_mode_usa_fila_correcta_por_indice",
+        ),
+    ],
+)
+def test_preview_column_rename(
+    monkeypatch, tmp_path, names, db_rows, sequence_mode, use_filename_seq, expected, in_db,
+) -> None:
     files = [str(tmp_path / name) for name in names]
     for path in files:
         Path(path).write_text("x")
 
-    db_rows = [
-        {"nis": "ROW0", "sgio": "SGIO_A"},
-        {"nis": "ROW1", "sgio": "SGIO_B"},
-        {"nis": "ROW2", "sgio": "SGIO_C"},
-    ]
     monkeypatch.setattr(
         "backend.core.database.obtener_todos",
         lambda limit=None, offset=0: db_rows[:limit] if limit is not None else db_rows,
@@ -70,81 +80,12 @@ def test_preview_column_rename_maps_by_file_index_not_first_code_match(monkeypat
         "patron": "{sgio}_{seq}{ext}",
         "secuencia": 1,
         "use_column_rename": True,
-        "sequence_mode": "global",
-        "use_filename_seq": True,
+        "sequence_mode": sequence_mode,
+        "use_filename_seq": use_filename_seq,
     })
 
-    assert [item["nuevo"] for item in result["preview"]] == [
-        "SGIO_A_001.jpg",
-        "SGIO_B_002.jpg",
-        "SGIO_C_003.jpg",
-    ]
-    assert [item["en_bd"] for item in result["preview"]] == [True, True, True]
-
-
-def test_preview_column_rename_sin_fila_bd_conserva_nombre(monkeypatch, tmp_path) -> None:
-    names = ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"]
-    files = [str(tmp_path / name) for name in names]
-    for path in files:
-        Path(path).write_text("x")
-
-    db_rows = [
-        {"nis": "ROW0", "sgio": "SGIO_A"},
-        {"nis": "ROW1", "sgio": "SGIO_B"},
-    ]
-    monkeypatch.setattr(
-        "backend.core.database.obtener_todos",
-        lambda limit=None, offset=0: db_rows[:limit] if limit is not None else db_rows,
-    )
-
-    result = conversion.preview({
-        "files": files,
-        "patron": "{sgio}_{seq}{ext}",
-        "secuencia": 1,
-        "use_column_rename": True,
-        "sequence_mode": "global",
-        "use_filename_seq": True,
-    })
-
-    assert [item["nuevo"] for item in result["preview"]] == [
-        "SGIO_A_001.jpg",
-        "SGIO_B_002.jpg",
-        "4210502 (3).jpg",
-    ]
-    assert [item["en_bd"] for item in result["preview"]] == [True, True, False]
-
-
-def test_preview_column_rename_record_mode_usa_fila_correcta_por_indice(monkeypatch, tmp_path) -> None:
-    names = ["4210502 (1).jpg", "4210544 (2).jpg", "4210502 (3).jpg"]
-    files = [str(tmp_path / name) for name in names]
-    for path in files:
-        Path(path).write_text("x")
-
-    db_rows = [
-        {"nis": "4210502", "sgio": "SGIO_A"},
-        {"nis": "4210544", "sgio": "SGIO_B"},
-        {"nis": "4210502", "sgio": "SGIO_A"},
-    ]
-    monkeypatch.setattr(
-        "backend.core.database.obtener_todos",
-        lambda limit=None, offset=0: db_rows[:limit] if limit is not None else db_rows,
-    )
-
-    result = conversion.preview({
-        "files": files,
-        "patron": "{sgio}_{seq}{ext}",
-        "secuencia": 1,
-        "use_column_rename": True,
-        "sequence_mode": "record",
-        "use_filename_seq": False,
-    })
-
-    assert [item["nuevo"] for item in result["preview"]] == [
-        "SGIO_A_001.jpg",
-        "SGIO_B_001.jpg",
-        "SGIO_A_002.jpg",
-    ]
-    assert [item["en_bd"] for item in result["preview"]] == [True, True, True]
+    assert [item["nuevo"] for item in result["preview"]] == expected
+    assert [item["en_bd"] for item in result["preview"]] == in_db
 
 
 def test_flujo_normal_siempre_usa_codigos_manuales_no_fallback(tmp_path) -> None:
@@ -168,12 +109,20 @@ def test_flujo_normal_siempre_usa_codigos_manuales_no_fallback(tmp_path) -> None
     assert rows == [(files[0], "OK_1.jpg", True)]
 
 
-def test_prepare_chunk_tasks_column_rename_mapea_por_indice(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("extra_rows", "expected_last"),
+    [
+        pytest.param([], "4210502 (3).jpg", id="mapea_por_indice_sin_fila"),
+        pytest.param([{"nis": "ROW2", "sgio": "SGIO_C"}], "SGIO_C_003.jpg", id="codigos_duplicados_por_indice"),
+    ],
+)
+def test_prepare_chunk_tasks_column_rename(monkeypatch, tmp_path, extra_rows, expected_last) -> None:
     names = ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"]
     files = [str(tmp_path / name) for name in names]
     db_rows = [
         {"nis": "ROW0", "sgio": "SGIO_A"},
         {"nis": "ROW1", "sgio": "SGIO_B"},
+        *extra_rows,
     ]
     monkeypatch.setattr(
         "backend.core.database.obtener_todos",
@@ -196,42 +145,7 @@ def test_prepare_chunk_tasks_column_rename_mapea_por_indice(monkeypatch, tmp_pat
     assert [task[1].name for task in tasks] == [
         "SGIO_A_001.jpg",
         "SGIO_B_002.jpg",
-        "4210502 (3).jpg",
-    ]
-
-
-def test_prepare_chunk_tasks_column_rename_codigos_duplicados_por_indice(
-    monkeypatch, tmp_path
-) -> None:
-    names = ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"]
-    files = [str(tmp_path / name) for name in names]
-    db_rows = [
-        {"nis": "ROW0", "sgio": "SGIO_A"},
-        {"nis": "ROW1", "sgio": "SGIO_B"},
-        {"nis": "ROW2", "sgio": "SGIO_C"},
-    ]
-    monkeypatch.setattr(
-        "backend.core.database.obtener_todos",
-        lambda limit=None, offset=0: _slice_db_rows(db_rows, limit, offset),
-    )
-    engine = RenamerEngine("{sgio}_{seq}{ext}", 1, sequence_mode="global")
-
-    tasks = conversion_job._prepare_chunk_tasks(
-        files,
-        destino=str(tmp_path / "out"),
-        engine=engine,
-        conversion_enabled=False,
-        ext_dest=None,
-        lookup_fn=lambda _codigos: {},
-        use_column_rename=True,
-        global_offset=0,
-        key_column="",
-    )
-
-    assert [task[1].name for task in tasks] == [
-        "SGIO_A_001.jpg",
-        "SGIO_B_002.jpg",
-        "SGIO_C_003.jpg",
+        expected_last,
     ]
 
 

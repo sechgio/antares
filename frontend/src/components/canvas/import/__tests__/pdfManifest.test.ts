@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyDocument, newId } from '../../types';
 import { parseCanvasManifest, serializeCanvasManifest } from '../pdfManifest';
+import { boxCss } from '../../__tests__/fixtures';
+
 
 function decodeBase64(value: string): Uint8Array {
   const binary = atob(value);
@@ -24,12 +26,7 @@ describe('Canvas PDF manifest', () => {
       type: 'image',
       name: 'Inline',
       value: 'data:image/png;base64,AAAA',
-      cssVars: {
-        '--width': '10mm',
-        '--height': '10mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '10mm', '10mm'),
     });
     const decoded = new TextDecoder().decode(decodeBase64(await serializeCanvasManifest(document)));
     expect(decoded).not.toContain('data:image');
@@ -51,12 +48,7 @@ describe('Canvas PDF manifest', () => {
         name: `Layer ${index}`,
         value: 'x',
         pageIndex: 0,
-        cssVars: {
-          '--width': '1mm',
-          '--height': '1mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '1mm', '1mm'),
       })),
     );
 

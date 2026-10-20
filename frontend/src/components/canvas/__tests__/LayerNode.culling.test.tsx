@@ -2,6 +2,8 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import LayerNode from '../editor/LayerNode';
+import { boxCss } from './fixtures';
+
 
 const baseHandlers = {
   onSelect: vi.fn(),
@@ -49,14 +51,7 @@ describe('LayerNode viewport culling and performance', () => {
 
   it('strips filter and blurred shadows when panning, but keeps spread-only (frame) shadows', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--width': '40mm',
-        '--height': '40mm',
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--box-shadow': '0 10px 20px rgba(0,0,0,0.5)',
-        '--filter': 'blur(4px)',
-      },
+      cssVars: boxCss('10mm', '10mm', '40mm', '40mm', { '--box-shadow': '0 10px 20px rgba(0,0,0,0.5)', '--filter': 'blur(4px)' }),
     });
 
     const { container, rerender } = render(
@@ -92,16 +87,12 @@ describe('LayerNode viewport culling and performance', () => {
 
   it('keeps spread-only box-shadow (outside stroke / frame) during panning to avoid flicker', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--width': '40mm',
-        '--height': '40mm',
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
+      cssVars: boxCss('10mm', '10mm', '40mm', '40mm', {
         '--stroke-align': 'outside',
         '--border-width': '2px',
         '--border-color': '#000000',
         '--stroke-visible': '1',
-      },
+      }),
     });
 
     const { container, rerender } = render(

@@ -122,13 +122,18 @@ describe("bringForward / sendBackward", () => {
 });
 
 describe("duplicateLayers", () => {
-  it("duplica con offset, sufijo copia y nuevos ids", () => {
-    const out = duplicateLayers([rect("a", 10, 20)], ["a"], { offsetMm: 5 });
+  it.each([
+    ["por defecto", undefined, 15, 25],
+    ["configurado", { offsetMm: 5 }, 15, 25],
+    ["en el sitio", { offsetMm: 0 }, 10, 20],
+  ] as const)("duplica con offset %s, sufijo copia y nuevos ids", (_label, options, x, y) => {
+    const out = duplicateLayers([rect("a", 10, 20)], ["a"], options);
     expect(out.layers).toHaveLength(2);
     const dup = out.layers[1];
+    expect(dup.id).not.toBe("a");
     expect(dup.name).toBe("a copia");
-    expect(tx(dup)).toBe(15);
-    expect(ty(dup)).toBe(25);
+    expect(tx(dup)).toBe(x);
+    expect(ty(dup)).toBe(y);
     expect(out.newIds).toEqual([dup.id]);
   });
 
@@ -244,13 +249,13 @@ describe("nudgeLayers / deleteLayers", () => {
 });
 
 describe("alignLayers", () => {
-  it("con frame + un solo target alinea al frame", () => {
+  it.each([undefined, { pageIndex: 0 }])("con frame + un solo target alinea al frame: %j", (options) => {
     const frame = rect("f", 0, 0, 100, 50, {
       type: "frame" as never,
       pageIndex: 0,
     });
     const box = rect("a", 10, 10, 20, 10, { pageIndex: 0 });
-    const out = alignLayers([frame, box], ["a"], "left", { pageIndex: 0 });
+    const out = alignLayers([frame, box], ["a"], "left", options);
     expect(tx(out.find((l) => l.id === "a")!)).toBe(0);
     const outR = alignLayers([frame, box], ["a"], "right", { pageIndex: 0 });
     expect(tx(outR.find((l) => l.id === "a")!)).toBe(80);
@@ -283,8 +288,8 @@ describe("distributeLayers", () => {
     ]);
   });
 
-  it("modo gaps iguala separación horizontal", () => {
-    const out = distributeLayers(three, ["a", "b", "c"], "horizontal");
+  it.each([undefined, { mode: "gaps" }] as const)("modo gaps iguala separación horizontal: %j", (options) => {
+    const out = distributeLayers(three, ["a", "b", "c"], "horizontal", options);
     const xs = ["a", "b", "c"].map((id) => tx(out.find((l) => l.id === id)!));
     // gap uniforme: (60-(0+10)-10)/2 = 20 → b.x = 30
     expect(xs).toEqual([0, 30, 60]);

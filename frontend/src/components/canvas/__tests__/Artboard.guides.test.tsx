@@ -5,6 +5,8 @@ import { MM_TO_PX } from '../ops/drawHelpers';
 import { createGuide } from '../ops/guides';
 import { A4_HEIGHT_PX, A4_WIDTH_PX, createEmptyDocument, DEFAULT_PAGE_MARGIN_MM, type CanvasDocument } from '../types';
 import { createLayer } from '../constants';
+import { boxCss } from './fixtures';
+
 
 describe('Artboard guide dragging', () => {
   let frames: Map<number, FrameRequestCallback>;
@@ -40,12 +42,7 @@ describe('Artboard guide dragging', () => {
     document.layers.push(
       createLayer('rect', {
         pageIndex: 0,
-        cssVars: {
-          '--translate-x': '80mm',
-          '--translate-y': '40mm',
-          '--width': '20mm',
-          '--height': '10mm',
-        },
+        cssVars: boxCss('80mm', '40mm', '20mm', '10mm'),
       }),
     );
     const onMoveGuide = vi.fn();

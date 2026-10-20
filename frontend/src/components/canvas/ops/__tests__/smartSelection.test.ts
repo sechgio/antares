@@ -7,6 +7,8 @@ import {
   smartGapRect,
   tidySmartSequence,
 } from '../smartSelection';
+import { boxCss } from '../../__tests__/fixtures';
+
 
 function rectAt(id: string, x: number, y: number, w = 10, h = 10) {
   return createLayer('rect', {
@@ -106,12 +108,7 @@ describe('resizeSmartGap', () => {
   it('moves descendants together with their parent', () => {
     const g = createLayer('group', {
       id: 'g',
-      cssVars: {
-        '--translate-x': '30mm',
-        '--translate-y': '10mm',
-        '--width': '10mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('30mm', '10mm', '10mm', '10mm'),
     });
     const child = { ...rectAt('ch', 32, 12, 4, 4), parentId: 'g' };
     const a = rectAt('a', 10, 10);

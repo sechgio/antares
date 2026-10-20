@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyDocument, newId } from '../types';
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { applyDocumentDiff, computeDocumentDiff } from '../utils/canvasDiff';
+import { boxCss } from './fixtures';
+
 
 describe('canvasDiff', () => {
   it('returns empty diff for identical documents', () => {
@@ -19,12 +21,7 @@ describe('canvasDiff', () => {
       name: 'Big Image',
       value: largeImageValue,
       pageIndex: 0,
-      cssVars: {
-        '--width': '100mm',
-        '--height': '100mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '100mm', '100mm'),
     };
     doc1.layers.push(imageLayer);
 

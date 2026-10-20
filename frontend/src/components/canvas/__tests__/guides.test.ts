@@ -23,6 +23,8 @@ import {
 } from '../ops/selectionTransform';
 import { createEmptyDocument, resolvePageMarginMm, DEFAULT_PAGE_MARGIN_MM } from '../types';
 import { createLayer } from '../constants';
+import { boxCss } from './fixtures';
+
 
 function collectReferenceGapsByPairScan(
   others: Array<{ x: number; y: number; w: number; h: number }>,
@@ -109,12 +111,7 @@ describe('guides', () => {
 
   it('snapMoveWithGuides snaps to manual guide', () => {
     const moving = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '48mm',
-        '--translate-y': '10mm',
-        '--width': '20mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('48mm', '10mm', '20mm', '10mm'),
     });
     const guide = createGuide('x', 30, 0);
     const result = snapMoveWithGuides(
@@ -154,12 +151,7 @@ describe('guides', () => {
 
   it('prepareSnapRails includes page margin rails', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '50mm',
-        '--translate-y': '50mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('50mm', '50mm', '20mm', '20mm'),
     });
     const rails = prepareSnapRails([layer], [layer.id], { widthMm: 210, heightMm: 297 }, [], 10);
     expect(rails.xs).toContain(10);
@@ -170,12 +162,7 @@ describe('guides', () => {
 
   it('snapGuidePosition aligns a manual guide to the nearest object rail', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '50mm',
-        '--translate-y': '70mm',
-        '--width': '20mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('50mm', '70mm', '20mm', '10mm'),
     });
     const rails = prepareSnapRails([layer], [], { widthMm: 210, heightMm: 297 });
 

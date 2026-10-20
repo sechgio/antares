@@ -317,11 +317,13 @@ describe('useCanvasHistory gesture coalesce', () => {
 
     const { result } = renderHook(() => useCanvasHistory(base));
     expect(result.current.hasUnsavedEditsRef.current).toBe(false);
+    expect(result.current.hasUnsavedEdits).toBe(false);
 
     act(() => {
       result.current.setDocument(withMovedText(result.current.document, 10));
     });
     expect(result.current.hasUnsavedEditsRef.current).toBe(true);
+    expect(result.current.hasUnsavedEdits).toBe(true);
     expect(result.current.canUndo).toBe(true);
 
     const savedPast = result.current.past;
@@ -333,16 +335,19 @@ describe('useCanvasHistory gesture coalesce', () => {
     });
     expect(result.current.canUndo).toBe(true);
     expect(result.current.hasUnsavedEditsRef.current).toBe(false);
+    expect(result.current.hasUnsavedEdits).toBe(false);
 
     act(() => {
       result.current.undo();
     });
     expect(result.current.hasUnsavedEditsRef.current).toBe(true);
+    expect(result.current.hasUnsavedEdits).toBe(true);
 
     act(() => {
       result.current.markSaved();
     });
     expect(result.current.hasUnsavedEditsRef.current).toBe(false);
+    expect(result.current.hasUnsavedEdits).toBe(false);
   });
 
   it('marks unsaved on redo after undo', () => {
@@ -388,6 +393,8 @@ describe('useCanvasHistory gesture coalesce', () => {
       result.current.commitFromBaseline(baseline);
     });
     expect(result.current.hasUnsavedEditsRef.current).toBe(true);
+    expect(result.current.hasUnsavedEdits).toBe(true);
+    expect(parseMm(result.current.document.layers.find((layer) => layer.type === 'text')!.cssVars['--translate-x'])).toBe(12);
   });
 
   it('exports a 64 MiB aggregate history budget', () => {

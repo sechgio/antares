@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { importPdfFile } from '../importPdf';
 import { parseCanvasManifest, serializeCanvasManifest } from '../pdfManifest';
 import { createEmptyDocument } from '../../types';
+import { boxCss } from '../../__tests__/fixtures';
+
 
 const mocks = vi.hoisted(() => ({
   extractPdfDocument: vi.fn(),
@@ -88,12 +90,7 @@ describe('importPdfFile', () => {
       name: 'Manifest text',
       value: 'Exacto',
       pageIndex: 0,
-      cssVars: {
-        '--width': '30mm',
-        '--height': '8mm',
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '30mm', '8mm'),
     });
     const manifestBytes = Uint8Array.from(
       atob(await serializeCanvasManifest(document)),
@@ -135,12 +132,7 @@ describe('importPdfFile', () => {
       name: 'Manifest image',
       value: 'canvas-asset:abc123',
       pageIndex: 0,
-      cssVars: {
-        '--width': '10mm',
-        '--height': '10mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '10mm', '10mm'),
     });
     const manifestBytes = Uint8Array.from(
       atob(await serializeCanvasManifest(document)),
@@ -189,12 +181,7 @@ describe('importPdfFile', () => {
       name: 'Missing image asset',
       value: '',
       pageIndex: 0,
-      cssVars: {
-        '--width': '10mm',
-        '--height': '10mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '10mm', '10mm'),
     });
     const manifestBytes = Uint8Array.from(
       atob(await serializeCanvasManifest(document)),

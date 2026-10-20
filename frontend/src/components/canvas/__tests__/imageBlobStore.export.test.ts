@@ -4,6 +4,8 @@ import {
   clearBlobStore,
 } from '../utils/imageBlobStore';
 import { createEmptyDocument } from '../types';
+import { boxCss } from './fixtures';
+
 
 describe('imageBlobStore export', () => {
   afterEach(() => {
@@ -68,12 +70,7 @@ describe('imageBlobStore export', () => {
     };
 
     const doc = createEmptyDocument('Repeated export asset');
-    const cssVars = {
-      '--width': '10mm',
-      '--height': '10mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const cssVars = boxCss('0mm', '0mm', '10mm', '10mm');
     doc.layers.push(
       { id: 'img-a', type: 'image', name: 'A', value: 'canvas-asset:repeated', cssVars },
       { id: 'img-b', type: 'logo', name: 'B', value: 'canvas-asset:repeated', cssVars },

@@ -12,6 +12,23 @@ def db_path(tmp_path, monkeypatch):
     return db_file
 
 
+@pytest.fixture
+def config_path(tmp_path, monkeypatch):
+    path = tmp_path / "fields_config.json"
+    monkeypatch.setattr("backend.core.config_fields._config_file", lambda: path)
+    return path
+
+
+@pytest.fixture
+def catalog(db_path, config_path):
+    save_fields([
+        {"name": "codigo", "type": "TEXT", "required": True},
+        {"name": "nombre", "type": "TEXT"},
+    ])
+    db.init_db()
+    return db_path
+
+
 class TestInitDb:
     def test_crea_tabla_si_no_existe(self, db_path, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr(
@@ -56,18 +73,7 @@ class TestInitDb:
             conn.close()
         assert cols == ["id", "nombre"]
 
-    def test_migra_datos_cuando_cambia_esquema(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
-
-        save_fields([
-            {"name": "codigo", "type": "TEXT", "required": True},
-            {"name": "nombre", "type": "TEXT"},
-        ])
-        db.init_db()
+    def test_migra_datos_cuando_cambia_esquema(self, db_path, catalog) -> None:
         import sqlite3
         conn = sqlite3.connect(str(db_path))
         conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("1", "Test"))
@@ -121,17 +127,7 @@ class TestInitDb:
 
 
 class TestBuscarLotePorCodigos:
-    def test_encuentra_registro(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
-        save_fields([
-            {"name": "codigo", "type": "TEXT", "required": True},
-            {"name": "nombre", "type": "TEXT"},
-        ])
-        db.init_db()
+    def test_encuentra_registro(self, db_path, catalog) -> None:
 
         import sqlite3
         conn = sqlite3.connect(str(db_path))
@@ -145,17 +141,7 @@ class TestBuscarLotePorCodigos:
         assert resultado["ABC"]["nombre"] == "Producto"
         assert set(resultado["ABC"].keys()) == {"codigo", "nombre"}
 
-    def test_busca_case_insensitive(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
-        save_fields([
-            {"name": "codigo", "type": "TEXT", "required": True},
-            {"name": "nombre", "type": "TEXT"},
-        ])
-        db.init_db()
+    def test_busca_case_insensitive(self, db_path, catalog) -> None:
         import sqlite3
         conn = sqlite3.connect(str(db_path))
         conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("ABC", "Producto"))
@@ -171,12 +157,7 @@ class TestBuscarLotePorCodigos:
         assert por_col["abc"]["nombre"] == "Producto"
         assert db.contar_por_columna(["abc", "ABC"], "codigo") == 1
 
-    def test_no_encuentra_retorna_vacio(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
+    def test_no_encuentra_retorna_vacio(self, db_path, config_path) -> None:
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
         ])
@@ -184,12 +165,7 @@ class TestBuscarLotePorCodigos:
 
         assert db.buscar_lote_por_codigos(["NO_EXISTE"]) == {}
 
-    def test_strip_en_busqueda(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
+    def test_strip_en_busqueda(self, db_path, config_path) -> None:
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
         ])
@@ -205,12 +181,7 @@ class TestBuscarLotePorCodigos:
         assert "XYZ" in resultado
         assert resultado["XYZ"]["codigo"] == "XYZ"
 
-    def test_busca_por_cualquier_campo_texto_si_codigo_no_coincide(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
+    def test_busca_por_cualquier_campo_texto_si_codigo_no_coincide(self, db_path, config_path) -> None:
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
             {"name": "nombre", "type": "TEXT"},
@@ -233,12 +204,7 @@ class TestBuscarLotePorCodigos:
         assert resultado["69466481"]["codigo"] == "1"
         assert resultado["69466481"]["nombre"] == "69466481"
 
-    def test_buscar_por_columna_obsoleta_retorna_vacio(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
+    def test_buscar_por_columna_obsoleta_retorna_vacio(self, db_path, config_path) -> None:
         save_fields([
             {"name": "archivo", "type": "TEXT", "required": True},
             {"name": "cliente", "type": "TEXT"},
@@ -247,19 +213,7 @@ class TestBuscarLotePorCodigos:
 
         assert db.buscar_por_columna(["IMG-001"], "codigo") == {}
 
-    def test_buscar_por_columna_duplicado_conserva_primero_y_avisa(
-        self, db_path, monkeypatch, tmp_path, caplog,
-    ) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
-        save_fields([
-            {"name": "codigo", "type": "TEXT", "required": True},
-            {"name": "nombre", "type": "TEXT"},
-        ])
-        db.init_db()
+    def test_buscar_por_columna_duplicado_conserva_primero_y_avisa(self, db_path, caplog, catalog) -> None:
 
         import sqlite3
         conn = sqlite3.connect(str(db_path))
@@ -276,19 +230,7 @@ class TestBuscarLotePorCodigos:
         assert resultado["DUP"]["nombre"] == "primero"
         assert any("DUP" in rec.message for rec in caplog.records)
 
-    def test_buscar_lote_por_codigos_duplicado_conserva_primero_y_avisa(
-        self, db_path, monkeypatch, tmp_path, caplog,
-    ) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
-        save_fields([
-            {"name": "codigo", "type": "TEXT", "required": True},
-            {"name": "nombre", "type": "TEXT"},
-        ])
-        db.init_db()
+    def test_buscar_lote_por_codigos_duplicado_conserva_primero_y_avisa(self, db_path, caplog, catalog) -> None:
 
         import sqlite3
         conn = sqlite3.connect(str(db_path))
@@ -305,13 +247,8 @@ class TestBuscarLotePorCodigos:
         assert any("DUP" in rec.message for rec in caplog.records)
 
     def test_buscar_lote_por_codigos_mismo_registro_varios_campos_no_es_colision(
-        self, db_path, monkeypatch, tmp_path, caplog,
+        self, db_path, caplog, config_path,
     ) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
             {"name": "alias", "type": "TEXT"},
@@ -334,13 +271,8 @@ class TestBuscarLotePorCodigos:
 
 class TestImportarExcel:
     def test_fallo_de_migracion_no_deja_la_configuracion_adelantada(
-        self, db_path, monkeypatch, tmp_path,
+        self, db_path, monkeypatch, tmp_path, config_path,
     ) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
         old_fields = [
             {"name": "codigo", "type": "TEXT", "required": True, "unique": True},
             {"name": "nombre", "type": "TEXT", "required": False, "unique": False},
@@ -364,12 +296,7 @@ class TestImportarExcel:
 
         assert load_fields() == old_fields
 
-    def test_importacion_no_desplaza_valores_con_columna_id_reservada(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
+    def test_importacion_no_desplaza_valores_con_columna_id_reservada(self, db_path, tmp_path, config_path) -> None:
         pandas = pytest.importorskip("pandas")
         excel_path = tmp_path / "with_id.xlsx"
         pandas.DataFrame([
@@ -381,12 +308,7 @@ class TestImportarExcel:
         assert imported == {"inserted": 1, "skipped": 0}
         assert db.obtener_todos() == [{"codigo": "C-1", "nombre": "Nombre 1"}]
 
-    def test_importa_columnas_nuevas_del_excel_al_esquema(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
+    def test_importa_columnas_nuevas_del_excel_al_esquema(self, db_path, tmp_path, config_path) -> None:
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
             {"name": "marca", "type": "TEXT"},
@@ -409,12 +331,7 @@ class TestImportarExcel:
             "modelo": "Modelo 2024",
         }]
 
-    def test_importacion_reporta_skipped_en_filas_invalidas(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
+    def test_importacion_reporta_skipped_en_filas_invalidas(self, db_path, tmp_path, config_path) -> None:
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
             {"name": "nombre", "type": "TEXT"},
@@ -443,12 +360,7 @@ class TestImportarExcel:
         assert {r["codigo"] for r in rows} == {"OK1", "OK2"}
         assert all(r["codigo"] != "OLD" for r in rows)
 
-    def test_importacion_sincroniza_esquema_con_columnas_del_excel(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
+    def test_importacion_sincroniza_esquema_con_columnas_del_excel(self, db_path, tmp_path, config_path) -> None:
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
             {"name": "nombre", "type": "TEXT"},
@@ -469,12 +381,7 @@ class TestImportarExcel:
 
 
 class TestObtenerTodos:
-    def test_retorna_lista_vacia(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
+    def test_retorna_lista_vacia(self, db_path, config_path) -> None:
         save_fields([{"name": "codigo", "type": "TEXT"}])
         db.init_db()
         assert db.obtener_todos() == []
@@ -587,17 +494,7 @@ class TestMigrationStreaming:
         finally:
             conn.close()
 
-    def test_migracion_preserva_miles_de_filas(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
-        save_fields([
-            {"name": "codigo", "type": "TEXT", "required": True},
-            {"name": "nombre", "type": "TEXT"},
-        ])
-        db.init_db()
+    def test_migracion_preserva_miles_de_filas(self, db_path, catalog) -> None:
         self._seed(db_path, 1500)
 
         save_fields([
@@ -613,17 +510,7 @@ class TestMigrationStreaming:
         assert rows[1499]["codigo"] == "CODE-1499"
         assert all(r["nombre"] == f"Name {i}" for i, r in enumerate(rows))
 
-    def test_migracion_wipe_con_muchas_filas(self, db_path, monkeypatch, tmp_path) -> None:
-        config_path = tmp_path / "fields_config.json"
-        monkeypatch.setattr(
-            "backend.core.config_fields._config_file",
-            lambda: config_path,
-        )
-        save_fields([
-            {"name": "codigo", "type": "TEXT", "required": True},
-            {"name": "nombre", "type": "TEXT"},
-        ])
-        db.init_db()
+    def test_migracion_wipe_con_muchas_filas(self, db_path, catalog) -> None:
         self._seed(db_path, 1200)
 
         save_fields([

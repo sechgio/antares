@@ -64,6 +64,8 @@ vi.mock('../../../lib/supabase', () => ({
 vi.mock('./canvasRealtime', () => realtimeMock);
 
 import { api } from '../../../api';
+import { boxCss } from '../__tests__/fixtures';
+
 
 function makeDoc(overrides: Partial<CanvasDocument> = {}): CanvasDocument {
   return {
@@ -1237,12 +1239,7 @@ describe('pushCanvasDocument', () => {
           type: 'image',
           name: 'Foto',
           value: 'canvas-asset:missing',
-          cssVars: {
-            '--width': '10mm',
-            '--height': '10mm',
-            '--translate-x': '0mm',
-            '--translate-y': '0mm',
-          },
+          cssVars: boxCss('0mm', '0mm', '10mm', '10mm'),
         },
       ],
     });

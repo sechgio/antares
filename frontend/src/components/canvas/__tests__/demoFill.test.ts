@@ -5,6 +5,8 @@ import { collectDemoFieldKeys } from '../runtime/demoFill';
 import { renderMultiPageHtml } from '../runtime/planning';
 import type { FillContext } from '../runtime/renderHtml';
 import { createEmptyDocument, mm, newId } from '../types';
+import { boxCss } from './fixtures';
+
 
 const demoContext = (doc: ReturnType<typeof createEmptyDocument>): FillContext => ({
   data: Object.fromEntries(collectDemoFieldKeys(doc).map((key) => [key, '45871203'])),
@@ -53,12 +55,7 @@ describe('demoFill', () => {
       ...createLayer('field'),
       id: newId(),
       meta: { key: 'NIS', fallback: '-' },
-      cssVars: {
-        '--width': '40mm',
-        '--height': '8mm',
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '40mm', '8mm'),
     });
     const html = renderMultiPageHtml(doc, demoContext(doc), { forScreen: true });
     expect(html).toContain('45871203');

@@ -20,6 +20,8 @@ import {
   type HandlePos,
 } from '../ops/selectionTransform';
 import { parseMm } from '../types';
+import { boxCss } from './fixtures';
+
 
 describe('selectionTransform', () => {
   it('snapThresholdMm scales with zoom but caps at low zoom', () => {
@@ -77,12 +79,7 @@ describe('selectionTransform', () => {
 
   it('moveSelection allows negative coordinates (free canvas)', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '5mm',
-        '--width': '20mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('10mm', '5mm', '20mm', '10mm'),
     });
     const moved = moveSelection([layer], [layer.id], -18, -12);
     const next = moved.find((l) => l.id === layer.id)!;
@@ -92,20 +89,10 @@ describe('selectionTransform', () => {
 
   it('selectionBounds unions selected layers', () => {
     const a = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-        '--width': '30mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('10mm', '20mm', '30mm', '10mm'),
     });
     const b = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '50mm',
-        '--translate-y': '40mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('50mm', '40mm', '20mm', '20mm'),
     });
     const bounds = selectionBounds([a, b], [a.id, b.id]);
     expect(bounds).toEqual({ x: 10, y: 20, w: 60, h: 40 });
@@ -113,29 +100,14 @@ describe('selectionTransform', () => {
 
   it('layersInMarquee returns intersecting unlocked layers', () => {
     const a = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '20mm', '20mm'),
     });
     const b = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '100mm',
-        '--translate-y': '100mm',
-        '--width': '10mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('100mm', '100mm', '10mm', '10mm'),
     });
     const locked = createLayer('rect', {
       locked: true,
-      cssVars: {
-        '--translate-x': '12mm',
-        '--translate-y': '12mm',
-        '--width': '5mm',
-        '--height': '5mm',
-      },
+      cssVars: boxCss('12mm', '12mm', '5mm', '5mm'),
     });
     const ids = layersInMarquee([a, b, locked], { x: 5, y: 5, w: 30, h: 30 });
     expect(ids).toEqual([a.id]);
@@ -143,25 +115,14 @@ describe('selectionTransform', () => {
 
   it('layersInMarquee uses rotated AABB', () => {
     const rotated = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '20mm',
-        '--height': '10mm',
-        '--rotate': '90deg',
-      },
+      cssVars: boxCss('0mm', '0mm', '20mm', '10mm', { '--rotate': '90deg' }),
     });
     expect(layersInMarquee([rotated], { x: 0, y: 12, w: 10, h: 4 })).toEqual([rotated.id]);
   });
 
   it('resizeSelection se grows width/height; Shift locks aspect', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '40mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '40mm', '20mm'),
     });
     const free = resizeSelection([layer], [layer.id], 'se', 20, 10, { aspectLock: false });
     const grown = free.find((l) => l.id === layer.id)!;
@@ -176,13 +137,7 @@ describe('selectionTransform', () => {
 
   it('rotateSelection adds degrees; Shift snaps to 15°', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '20mm',
-        '--height': '20mm',
-        '--rotate': '0deg',
-      },
+      cssVars: boxCss('10mm', '10mm', '20mm', '20mm', { '--rotate': '0deg' }),
     });
     const rotated = rotateSelection([layer], [layer.id], 22, { snap15: true });
     const next = rotated.find((l) => l.id === layer.id)!;
@@ -191,20 +146,10 @@ describe('selectionTransform', () => {
 
   it('snapMoveWithGuides snaps to neighbor edge within threshold', () => {
     const moving = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '48mm',
-        '--translate-y': '10mm',
-        '--width': '20mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('48mm', '10mm', '20mm', '10mm'),
     });
     const other = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '20mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '20mm', '10mm'),
     });
     const result = snapMoveWithGuides(
       [moving, other],
@@ -220,13 +165,7 @@ describe('selectionTransform', () => {
 
   it('selectionBounds includes rotated AABB', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '20mm',
-        '--height': '10mm',
-        '--rotate': '90deg',
-      },
+      cssVars: boxCss('0mm', '0mm', '20mm', '10mm', { '--rotate': '90deg' }),
     });
     const bounds = selectionBounds([layer], [layer.id])!;
     expect(bounds.w).toBeCloseTo(10, 5);
@@ -235,12 +174,7 @@ describe('selectionTransform', () => {
 
   it('resizeSelection fromCenter grows symmetrically', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '20mm', '20mm'),
     });
     const next = resizeSelection([layer], [layer.id], 'e', 5, 0, { fromCenter: true });
     const moved = next.find((l) => l.id === layer.id)!;
@@ -250,20 +184,10 @@ describe('selectionTransform', () => {
 
   it('resizeSelection scales multiple layers relative to group bbox', () => {
     const a = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '20mm', '20mm'),
     });
     const b = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '20mm',
-        '--translate-y': '0mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('20mm', '0mm', '20mm', '20mm'),
     });
     const next = resizeSelection([a, b], [a.id, b.id], 'e' as HandlePos, 20, 0, { aspectLock: false });
     expect(parseMm(next.find((l) => l.id === a.id)!.cssVars['--width'])).toBeCloseTo(30, 5);
@@ -274,23 +198,12 @@ describe('selectionTransform', () => {
   it('resizeSelection scales group descendants with the group box', () => {
     const group = createLayer('group', {
       id: 'g1',
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '40mm',
-        '--height': '20mm',
-        '--background-color': 'transparent',
-      },
+      cssVars: boxCss('10mm', '10mm', '40mm', '20mm', { '--background-color': 'transparent' }),
     });
     const child = createLayer('rect', {
       id: 'c1',
       parentId: 'g1',
-      cssVars: {
-        '--translate-x': '20mm',
-        '--translate-y': '10mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('20mm', '10mm', '20mm', '20mm'),
     });
     const next = resizeSelection([group, child], ['g1'], 'e', 40, 0, { aspectLock: false });
     expect(parseMm(next.find((l) => l.id === 'g1')!.cssVars['--width'])).toBeCloseTo(80, 5);
@@ -301,23 +214,12 @@ describe('selectionTransform', () => {
   it('rotateSelection rotates group descendants around selection center', () => {
     const group = createLayer('group', {
       id: 'g1',
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '40mm',
-        '--height': '20mm',
-        '--background-color': 'transparent',
-      },
+      cssVars: boxCss('0mm', '0mm', '40mm', '20mm', { '--background-color': 'transparent' }),
     });
     const child = createLayer('rect', {
       id: 'c1',
       parentId: 'g1',
-      cssVars: {
-        '--translate-x': '20mm',
-        '--translate-y': '0mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('20mm', '0mm', '20mm', '20mm'),
     });
     const next = rotateSelection([group, child], ['g1'], 90);
     const g = next.find((l) => l.id === 'g1')!;
@@ -331,23 +233,13 @@ describe('selectionTransform', () => {
   it('resizeSelection relayouts grid image slots into the new box', () => {
     const grid = createLayer('grid', {
       meta: { cols: 2, rows: 2, gapMm: 2 },
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '100mm',
-        '--height': '80mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '100mm', '80mm'),
     });
     const slots = [0, 1, 2, 3].map((i) =>
       createLayer('imageSlot', {
         parentId: grid.id,
         meta: { index: i },
-        cssVars: {
-          '--translate-x': '10mm',
-          '--translate-y': '10mm',
-          '--width': '40mm',
-          '--height': '30mm',
-        },
+        cssVars: boxCss('10mm', '10mm', '40mm', '30mm'),
       }),
     );
     const before = applyGridToImageSlots([grid, ...slots], grid.id);
@@ -368,12 +260,7 @@ describe('selectionTransform', () => {
   it('resizeSelection of one grid imageSlot does not change sibling slots', () => {
     const grid = createLayer('grid', {
       meta: { cols: 2, rows: 2, gapMm: 0 },
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '100mm',
-        '--height': '80mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '100mm', '80mm'),
     });
     const slots = [0, 1, 2, 3].map((i) =>
       createLayer('imageSlot', {
