@@ -28,6 +28,7 @@ interface MenuItem {
   provider: string;
   model: string;
   label: string;
+  detail?: string;
 }
 
 const MENU_HEIGHT = 420;
@@ -47,7 +48,10 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   const [models, setModels] = useState<Record<string, ProviderModels>>({});
   const [highlighted, setHighlighted] = useState(0);
 
-  const currentProvider = providers.find((item) => item.id === value.provider) ?? providers[0];
+  const standard = useMemo(() => providers.filter((item) => !item.custom), [providers]);
+  const customs = useMemo(() => providers.filter((item) => item.custom), [providers]);
+  const selectedProvider = providers.find((item) => item.id === value.provider);
+  const currentProvider = standard.find((item) => item.id === value.provider) ?? standard[0];
 
   const load = useCallback(async (id: string) => {
     setModels((prev) => ({ ...prev, [id]: { loading: true, models: prev[id]?.models ?? [], error: null } }));
@@ -70,8 +74,8 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   }, []);
 
   useEffect(() => {
-    if (isOpen) providers.forEach((item) => void load(item.id));
-  }, [isOpen, providers, load]);
+    if (isOpen) standard.forEach((item) => void load(item.id));
+  }, [isOpen, standard, load]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -84,16 +88,25 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   }, [disabled, close]);
 
   const term = query.trim();
-  const groups = useMemo(() => providers.map((item) => {
-    const state = models[item.id] ?? { loading: true, models: [], error: null };
-    const unique = [...new Set(state.models)];
-    const matches = term ? unique.filter((model) => model.toLowerCase().includes(term.toLowerCase())) : unique;
-    const entries: MenuItem[] = matches.map((model) => ({ provider: item.id, model, label: model }));
-    if (term && item.id === currentProvider?.id && !unique.includes(term)) {
-      entries.push({ provider: item.id, model: term, label: `Usar «${term}»` });
-    }
-    return { provider: item, state, entries };
-  }), [providers, models, term, currentProvider?.id]);
+  const groups = useMemo(() => {
+    const needle = term.toLowerCase();
+    const listed = standard.map((item) => {
+      const state = models[item.id] ?? { loading: true, models: [], error: null };
+      const unique = [...new Set(state.models)];
+      const matches = needle ? unique.filter((model) => model.toLowerCase().includes(needle)) : unique;
+      const entries: MenuItem[] = matches.map((model) => ({ provider: item.id, model, label: model }));
+      if (term && item.id === currentProvider?.id && !unique.includes(term)) {
+        entries.push({ provider: item.id, model: term, label: `Usar «${term}»` });
+      }
+      return { id: item.id, label: item.label, state, entries, custom: false };
+    });
+    const customEntries: MenuItem[] = customs
+      .filter((item) => !needle || item.label.toLowerCase().includes(needle) || item.default_model.toLowerCase().includes(needle))
+      .map((item) => ({ provider: item.id, model: item.default_model, label: item.label, detail: item.default_model }));
+    return customEntries.length
+      ? [...listed, { id: 'custom', label: 'Personalizados', state: { loading: false, models: [], error: null }, entries: customEntries, custom: true }]
+      : listed;
+  }, [standard, customs, models, term, currentProvider?.id]);
   const items = useMemo(() => groups.flatMap((group) => group.entries), [groups]);
   const loading = groups.some((group) => group.state.loading);
 
@@ -146,7 +159,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
     );
   }
 
-  const modelLabel = value.model || currentProvider?.default_model || 'Elegir modelo';
+  const modelLabel = (selectedProvider?.custom && selectedProvider.label) || value.model || currentProvider?.default_model || 'Elegir modelo';
   let index = -1;
 
   return (
@@ -159,7 +172,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-label="Elegir proveedor y modelo"
-        title={`${currentProvider?.label ?? ''} · ${modelLabel}`}
+        title={`${selectedProvider?.label ?? currentProvider?.label ?? ''} · ${value.model || modelLabel}`}
         className={`inline-flex h-7 max-w-full items-center gap-1 rounded-md px-2 text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 ${
           isOpen
             ? 'bg-[var(--bg-input)] text-[var(--text-primary)]'
@@ -220,11 +233,11 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
           </div>
 
           <div role="listbox" id={listId} aria-label="Modelos" aria-busy={loading} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            {groups.map(({ provider, state, entries }, groupIndex) => (
-              <Fragment key={provider.id}>
+            {groups.map(({ id, label, state, entries, custom }, groupIndex) => (
+              <Fragment key={id}>
                 {groupIndex > 0 && <div role="separator" className="my-1 h-px bg-[var(--border-subtle)]" />}
-                <div role="group" aria-label={provider.label}>
-                  <p className="px-2 py-1.5 text-[12px] font-medium text-[var(--text-muted)]">{provider.label}</p>
+                <div role="group" aria-label={label}>
+                  <p className="px-2 py-1.5 text-[12px] font-medium text-[var(--text-muted)]">{label}</p>
                   {state.loading && state.models.length === 0 && (
                     <div className="space-y-1 px-2 pb-1" aria-hidden="true">
                       {[0, 1].map((row) => (
@@ -250,12 +263,15 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
                           itemIndex === highlighted ? 'bg-[var(--bg-input)]' : ''
                         }`}
                       >
-                        <span className="truncate">{item.label}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate">{item.label}</span>
+                          {item.detail && <span className="block truncate font-mono text-[11px] text-[var(--text-muted)]">{item.detail}</span>}
+                        </span>
                         {selected && <Check size={14} className="absolute right-2 shrink-0" />}
                       </button>
                     );
                   })}
-                  {!state.loading && entries.length === 0 && (
+                  {!custom && !state.loading && entries.length === 0 && (
                     <p className="px-2 pb-1.5 text-[12px] leading-relaxed text-[var(--text-muted)]">
                       {state.error
                         ? state.error
@@ -270,7 +286,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
                   {state.error && (
                     <button
                       type="button"
-                      onClick={() => void load(provider.id)}
+                      onClick={() => void load(id)}
                       className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                     >
                       <RefreshCw size={11} /> Reintentar

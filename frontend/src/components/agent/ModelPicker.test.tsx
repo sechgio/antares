@@ -106,3 +106,24 @@ it('permite recorrer la lista con teclado y señala la selección actual', async
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();
 });
+
+it('agrupa los modelos personalizados y los elige sin consultar su servicio', async () => {
+  const custom: AiProviderSpec = {
+    ...providers[1], id: 'custom-mi-gateway-1a2b3c', label: 'Mi gateway', default_model: 'mi-modelo', custom: true, api: 'openai',
+  };
+  const list = mockStatus(['llama3.1']);
+  const change = vi.fn();
+  render(<ModelPicker providers={[...providers, custom]} value={{ provider: custom.id, model: 'mi-modelo' }} onChange={change} />);
+  const trigger = screen.getByLabelText('Elegir proveedor y modelo');
+  expect(trigger).toHaveTextContent('Mi gateway');
+  fireEvent.click(trigger);
+
+  const dialog = screen.getByRole('dialog', { name: 'Modelos disponibles' });
+  const option = within(within(dialog).getByRole('group', { name: 'Personalizados' })).getByRole('option', { name: /Mi gateway/ });
+  expect(option).toHaveAttribute('aria-selected', 'true');
+  expect(option).toHaveTextContent('mi-modelo');
+  await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+  expect(list).not.toHaveBeenCalledWith(custom.id);
+  fireEvent.click(option);
+  expect(change).toHaveBeenCalledWith({ provider: custom.id, model: 'mi-modelo' });
+});
