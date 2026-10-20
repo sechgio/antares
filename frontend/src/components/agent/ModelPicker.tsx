@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Loader2, RefreshCw, Search, Cpu } from 'lucide-react';
+import { Check, ChevronDown, Loader2, Plus, RefreshCw, Search } from 'lucide-react';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
@@ -48,6 +48,19 @@ function remember(choice: ModelChoice): void {
     localStorage.setItem(RECENTS_KEY, JSON.stringify(next.slice(0, MAX_RECENTS)));
   } catch {
   }
+}
+
+function ProviderMark({ id, label, size = 20 }: { id: string; label: string; size?: number }) {
+  const hue = [...id].reduce((sum, char) => sum + char.charCodeAt(0) * 37, 0) % 360;
+  return (
+    <span
+      aria-hidden="true"
+      className="flex shrink-0 items-center justify-center rounded-md text-[10px] font-semibold uppercase leading-none"
+      style={{ width: size, height: size, background: `hsl(${hue} 55% 50% / 0.18)`, color: `hsl(${hue} 60% 62%)` }}
+    >
+      {label.trim().charAt(0) || '?'}
+    </span>
+  );
 }
 
 export default function ModelPicker({ providers, value, onChange, disabled = false, className }: ModelPickerProps) {
@@ -131,6 +144,12 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
     [recents, filtered, custom, activeProvider],
   );
 
+  const recentCount = items.filter((item) => item.recent).length;
+  const sections = [
+    { id: 'recent', title: 'Recientes', from: 0, to: recentCount },
+    { id: 'models', title: provider?.label ?? 'Modelos', from: recentCount, to: items.length },
+  ].filter((section) => section.to > section.from);
+
   useEffect(() => {
     setHighlighted(0);
   }, [query, activeProvider, items.length]);
@@ -198,7 +217,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
             : 'border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-[var(--border-active)] hover:text-[var(--text-primary)]'
         }`}
       >
-        <Cpu size={13} className="shrink-0 text-[var(--text-muted)]" />
+        <ProviderMark id={value.provider || provider?.id || ''} label={providers.find((item) => item.id === value.provider)?.label ?? provider?.label ?? ''} size={18} />
         <span className="truncate font-medium text-[var(--text-primary)]">{modelLabel}</span>
         <ChevronDown size={12} className={`shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180 text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'}`} />
       </button>
@@ -232,8 +251,8 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
               && !triggerRef.current?.contains(event.relatedTarget)) close();
           }}
         >
-          <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-2.5">
-            <Search size={13} className="shrink-0 text-[var(--text-muted)]" />
+          <div className="flex items-center gap-2.5 border-b border-[var(--border-subtle)] px-3.5 py-3">
+            <Search size={15} className="shrink-0 text-[var(--text-muted)]" />
             <input
               ref={searchRef}
               value={query}
@@ -247,25 +266,28 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
               aria-expanded="true"
               aria-controls={!state.loading || state.models.length > 0 ? listId : undefined}
               aria-activedescendant={(!state.loading || state.models.length > 0) && items[highlighted] ? `${listId}-${highlighted}` : undefined}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              className="min-w-0 flex-1 bg-transparent text-[14px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
             />
-            {state.loading && <Loader2 size={13} className="shrink-0 animate-spin text-[var(--text-muted)]" />}
+            {state.loading
+              ? <Loader2 size={14} className="shrink-0 animate-spin text-[var(--text-muted)]" />
+              : <kbd className="shrink-0 rounded-md border border-[var(--border-subtle)] px-1.5 py-0.5 font-sans text-[10px] text-[var(--text-muted)]">Esc</kbd>}
           </div>
 
           {providers.length > 1 && (
-            <div className="flex gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-2 py-1.5 custom-scrollbar">
+            <div className="flex gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-2.5 py-2 custom-scrollbar">
               {providers.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   aria-pressed={item.id === activeProvider}
                   onClick={() => setActiveProvider(item.id)}
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  className={`flex shrink-0 items-center gap-1.5 rounded-full py-1 pl-1.5 pr-2.5 text-[12px] font-medium transition-colors ${
                     item.id === activeProvider
-                      ? 'bg-[var(--bg-input)] text-[var(--text-primary)]'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      ? 'bg-[var(--bg-input)] text-[var(--text-primary)] ring-1 ring-[var(--border-medium)]'
+                      : 'text-[var(--text-muted)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
                   }`}
                 >
+                  <ProviderMark id={item.id} label={item.label} size={16} />
                   {item.label}
                 </button>
               ))}
@@ -281,35 +303,38 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
               </div>
             ) : (
               <>
-                {recents.length > 0 && (
-                  <p className="px-2 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                    Recientes
-                  </p>
-                )}
                 <div role="listbox" id={listId} aria-label="Modelos">
-                {items.map((item, index) => {
-                  const selected = value.provider === item.provider && value.model === item.model;
-                  return (
-                    <button
-                      key={`${item.recent ? 'recent' : 'model'}:${item.provider}:${item.model}`}
-                      type="button"
-                      role="option"
-                      id={`${listId}-${index}`}
-                      aria-selected={selected}
-                      tabIndex={-1}
-                      onMouseEnter={() => setHighlighted(index)}
-                      onClick={() => choose(item.provider, item.model)}
-                      className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
-                        index === highlighted ? 'bg-[var(--bg-input)]' : ''
-                      }`}
-                    >
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-surface)] text-[var(--text-muted)]"><Cpu size={13} /></span>
-                      <span className="min-w-0 flex-1 text-[13px] text-[var(--text-primary)]"><span className="block truncate">{item.label}</span><span className="block text-[10px] text-[var(--text-muted)]">{provider?.label}</span></span>
-                      {item.recent && <span className="shrink-0 text-[10px] text-[var(--text-muted)]">reciente</span>}
-                      {selected && <Check size={13} className="shrink-0 text-[var(--accent-primary-hover)]" />}
-                    </button>
-                  );
-                })}
+                  {sections.map((section) => (
+                    <div key={section.id} role="group" aria-label={section.title} className="pb-1">
+                      <p className="px-2.5 pb-1 pt-2 text-[11px] font-medium text-[var(--text-muted)]">{section.title}</p>
+                      {items.slice(section.from, section.to).map((item, offset) => {
+                        const index = section.from + offset;
+                        const selected = value.provider === item.provider && value.model === item.model;
+                        const isCustom = !item.recent && item.label !== item.model;
+                        return (
+                          <button
+                            key={`${item.recent ? 'recent' : 'model'}:${item.provider}:${item.model}`}
+                            type="button"
+                            role="option"
+                            id={`${listId}-${index}`}
+                            aria-selected={selected}
+                            tabIndex={-1}
+                            onMouseEnter={() => setHighlighted(index)}
+                            onClick={() => choose(item.provider, item.model)}
+                            className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${
+                              index === highlighted ? 'bg-[var(--bg-input)]' : ''
+                            }`}
+                          >
+                            {isCustom
+                              ? <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-md border border-dashed border-[var(--border-medium)] text-[var(--text-muted)]"><Plus size={12} /></span>
+                              : <ProviderMark id={item.provider} label={providers.find((entry) => entry.id === item.provider)?.label ?? item.provider} />}
+                            <span className={`min-w-0 flex-1 truncate text-[13px] ${selected ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{item.label}</span>
+                            {selected && <Check size={14} className="shrink-0 text-[var(--accent-primary-hover)]" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
                 {items.length === 0 && !custom && (
                   <p className="px-2 py-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
@@ -336,8 +361,12 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
             )}
           </div>
 
-          <div className="border-t border-[var(--border-subtle)] px-3 py-2 text-[10px] leading-relaxed text-[var(--text-muted)]">
-            Se aplica a los siguientes mensajes. ↑ ↓ para navegar · ↵ elegir
+          <div className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] px-3.5 py-2 text-[11px] text-[var(--text-muted)]">
+            <span>Se aplica a los siguientes mensajes</span>
+            <span aria-hidden="true" className="flex shrink-0 items-center gap-1.5">
+              <kbd className="rounded-md border border-[var(--border-subtle)] px-1.5 font-sans">↑↓</kbd>
+              <kbd className="rounded-md border border-[var(--border-subtle)] px-1.5 font-sans">↵</kbd>
+            </span>
           </div>
         </div>,
         document.body,
