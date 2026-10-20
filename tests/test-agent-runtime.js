@@ -388,6 +388,21 @@ async function main() {
 
   {
     const { bridge } = makeBridge();
+    const { fauxThinking, fauxText } = await import('@earendil-works/pi-ai');
+    await openFaux([fauxAssistantMessage([fauxThinking('Comparo las dos plantillas'), fauxText('Usa la B')])], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: '¿cuál plantilla?' });
+    assert(await waitIdle(session.id), 'el turno con razonamiento termina');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const answer = messages.find((m) => m.role === 'assistant');
+    assert(answer.reasoning === 'Comparo las dos plantillas' && answer.content === 'Usa la B',
+      'el razonamiento del modelo viaja aparte del texto de la respuesta');
+    assert(!('reasoning' in messages.find((m) => m.role === 'user')), 'solo las respuestas llevan razonamiento');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
     await openFaux([fauxAssistantMessage('una vez')], bridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const first = await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hola', request_id: 'req-1' });
@@ -856,6 +871,49 @@ async function main() {
     assert(hits.length >= 1 && hits.every((h) => h.url === '/v1/chat/completions'), 'endpoint Chat Completions (no Responses)');
     assert(hits[0].auth === 'Bearer sk-wire', 'Authorization Bearer hacia el proveedor');
     assert(JSON.parse(hits[0].body).stream === true, 'streaming habilitado en el wire');
+    server.close();
+    await runtime.shutdown();
+  }
+
+  {
+    const hits = [];
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', async () => {
+        hits.push(JSON.parse(body));
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        const chunk = (delta) => `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`;
+        res.write(chunk({ role: 'assistant' }));
+        res.write(chunk({ reasoning_content: 'Pienso ' }));
+        await sleep(200);
+        res.write(chunk({ reasoning_content: 'la respuesta' }));
+        await sleep(300);
+        res.write(chunk({ content: 'Listo' }));
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const { bridge } = makeBridge();
+    const wiredBridge = async (method, params) => method === 'agent_internal_provider'
+      ? { provider: 'openai', style: 'openai_chat', base_url: `http://127.0.0.1:${server.address().port}/v1`, api_key: 'sk-wire', auth_type: 'api_key', extra_headers: {}, default_model: 'deepseek-r1-mock' }
+      : bridge(method, params);
+    const { MemoryStorage } = await import('@earendil-works/pi-durable');
+    await runtime.open({ storage: new MemoryStorage(), bridge: wiredBridge, skipImport: true });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'openai', model: 'deepseek-r1-mock' });
+    await runtime.handlers.agent_messages_list({ session_id: session.id });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'piensa' });
+    assert(await waitFor(async () => {
+      const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+      return listed.messages.some((m) => m.partial && m.reasoning === 'Pienso la respuesta' && !m.content);
+    }, 5000), 'el razonamiento llega en vivo antes de la respuesta');
+    assert(await waitIdle(session.id), 'el turno con razonamiento en streaming termina');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const answer = messages.at(-1);
+    assert(answer.content === 'Listo' && answer.reasoning === 'Pienso la respuesta' && !answer.partial, 'la respuesta final conserva el razonamiento');
+    assert(typeof answer.reasoning_ms === 'number' && answer.reasoning_ms >= 150, 'el razonamiento lleva el tiempo que tardó el modelo');
     server.close();
     await runtime.shutdown();
   }

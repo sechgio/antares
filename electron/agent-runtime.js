@@ -337,7 +337,18 @@ async function messagesList(params) {
   const { messages, pending, usage } = await projection.projectMessages(conv, session);
   const { artifacts, questions, context } = await bridge('agent_internal_artifacts', { session_id: sessionId });
   const partial = projection.partialText(session.conversationId);
-  if (partial) messages.push({ role: 'assistant', content: partial, partial: true, ts: Date.now() });
+  const partialReasoning = projection.partialReasoning(session.conversationId);
+  if (partial || partialReasoning) {
+    const reasoningMs = projection.partialReasoningMs(session.conversationId, partialReasoning);
+    messages.push({
+      role: 'assistant',
+      content: partial,
+      ...(partialReasoning ? { reasoning: partialReasoning } : {}),
+      ...(reasoningMs !== undefined ? { reasoning_ms: reasoningMs } : {}),
+      partial: true,
+      ts: Date.now(),
+    });
+  }
   return {
     messages,
     running: projection.isRunning(session.conversationId),
