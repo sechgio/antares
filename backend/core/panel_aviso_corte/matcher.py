@@ -292,9 +292,6 @@ def build_panels(
         )
         panels_by_row.append((first_row_idx, panel))
 
-    # Los paneles con imágenes se construyen en un segundo pase porque el
-    # agrupamiento cruza filas: sin este reordenamiento las filas vacías
-    # quedarían todas al principio del PDF en vez de su lugar en la planilla.
     panels = [panel for _, panel in sorted(panels_by_row, key=lambda item: item[0])]
 
     unmatched = [img for img in image_names if img not in assigned_images]

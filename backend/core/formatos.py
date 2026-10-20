@@ -245,7 +245,6 @@ _MAPPING_POINT_MAX = 20000.0
 _MAPPING_PADDING_MAX = 12
 _MAPPING_MCID_MAX = 64
 
-# clave: (mínimo, máximo, defecto, es_entero)
 _MAPPING_NUMERIC_FIELDS: dict[str, tuple[float, float, float, bool]] = {
     "page": (0, MAX_UPLOAD_PDF_PAGES - 1, 0, True),
     "x": (0, _MAPPING_POINT_MAX, 0, False),
@@ -279,9 +278,6 @@ def _coerce_mapping_number(value: object, lo: float, hi: float, default: float, 
 
 
 def _sanitize_mapping(mapping: object) -> dict[str, object]:
-    """Ajusta el mapping que llega del renderer al rango que sus consumidores pueden
-    escribir: indexa las páginas del PDF, alimenta el `zfill` del nombre de archivo y
-    se interpola en el stream del overlay."""
     if not isinstance(mapping, dict):
         msg = "El mapping debe ser un objeto"
         raise ValueError(msg)

@@ -1,9 +1,5 @@
 'use strict';
 
-// Proyección del runtime del agente hacia el contrato público: watchEvents de
-// pi-durable alimenta el estado en vivo (texto parcial, herramientas en curso)
-// y las entradas durables se traducen al formato de messages_list.
-
 const {
   shared,
   bridge,
@@ -13,8 +9,6 @@ const {
 
 const NOTICE_KIND = shared.NOTICE_KIND;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
-
-// ---------- watchEvents: estado en vivo para la UI ----------
 
 async function ensureWatcher(session, context) {
   const convId = session.conversationId;
@@ -81,7 +75,7 @@ function applyEvent(convId, event) {
       if (sessionId) {
         commitSessions((sessions) => {
           const session = sessions[sessionId];
-          if (session) session.last_error = String(event.message || '').slice(0, 300) || session.last_error;
+          if (session) session.last_error = require('./agent-execution').sanitizeProviderError(event.message).slice(0, 300) || session.last_error;
         }).catch(() => {});
       }
       break;
@@ -111,13 +105,19 @@ function partialText(convId) {
     .join('');
 }
 
-// ---------- proyección del transcript al contrato público ----------
-
 function textOf(message) {
   if (!message) return '';
   if (typeof message.content === 'string') return message.content;
   return (message.content || [])
     .filter((block) => block && block.type === 'text')
+    .map((block) => block.text || '')
+    .join('');
+}
+
+function userTextOf(message) {
+  if (!message || typeof message.content === 'string') return textOf(message);
+  return (message.content || [])
+    .filter((block) => block && block.type === 'text' && !String(block.text || '').startsWith(shared.CONTEXT_MARKER))
     .map((block) => block.text || '')
     .join('');
 }
@@ -136,7 +136,7 @@ async function allEntries(conv) {
     entries.push(...page.items);
     cursor = page.nextCursor;
   } while (cursor);
-  return entries.reverse(); // oldest → newest
+  return entries.reverse();
 }
 
 async function projectMessages(conv, session) {
@@ -155,10 +155,15 @@ async function projectMessages(conv, session) {
   const slotByCall = new Map((live.tools || []).map((slot) => [slot.callId, slot]));
 
   const messages = [];
+  const usage = { input: 0, output: 0 };
   for (const entry of entries) {
     const msg = entry.model && entry.model[0];
+    if (entry.kind === 'pi.assistant' && msg && msg.usage) {
+      usage.input += Number(msg.usage.input) || 0;
+      usage.output += Number(msg.usage.output) || 0;
+    }
     if (entry.kind === 'pi.user') {
-      messages.push({ role: 'user', content: textOf(msg), ts: entryTs(entry, msg) });
+      messages.push({ role: 'user', content: userTextOf(msg), ts: entryTs(entry, msg) });
       continue;
     }
     if (entry.kind === NOTICE_KIND) {
@@ -189,7 +194,7 @@ async function projectMessages(conv, session) {
       continue;
     }
   }
-  return { messages, pending };
+  return { messages, pending, usage: usage.input + usage.output > 0 ? usage : null };
 }
 
 function mergeLegacyCalls(legacy, projected) {
@@ -217,6 +222,11 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
     const diagnostics = (result.entry.data && result.entry.data.diagnostics) || [];
     const blocked = result.msg.isError && diagnostics.some((d) => d && (d.code === 'blocked' || d.code === 'tool_unavailable'));
     base.status = !result.msg.isError ? 'done' : blocked ? 'denied' : 'failed';
+    try {
+      const receipt = JSON.parse(base.result);
+      if (receipt.queued === true || receipt.submitted === true) base.status = 'submitted';
+      else if (receipt.uncertain === true || receipt.interrupted === true) base.status = 'interrupted';
+    } catch { }
     return base;
   }
   if (pendingByCall.has(call.id)) {

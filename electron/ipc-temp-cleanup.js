@@ -54,9 +54,6 @@ async function _sweepIpcTempDirsOnce(nowMs) {
   return removed;
 }
 
-// `sweepIpcTempDirs` also runs the canvas asset GC, which reads and scans every
-// canvas document/history/spill JSON. It is called from per-request IPC paths, so
-// it self-limits to one full pass per interval instead of one per call.
 let _sweepInFlight = null;
 let _lastSweepStartedAt = 0;
 

@@ -14,7 +14,6 @@ interface WorkspaceSlice {
   saveCurrent: () => Promise<TechnicalReport | null>;
 }
 
-/** Acciones de logos y exportación PDF de TechnicalReportsApp. */
 export function useTechnicalReportsActions(workspace: WorkspaceSlice) {
   const { addToast } = useToast();
   const { formData, hasChanges, reports, runOperation, saveCurrent } =

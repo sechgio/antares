@@ -4,9 +4,6 @@ import type { Atom } from '../radio/core';
 export { atom, fetchJson, httpsUrl, openExternal, timeoutSignal, useValue };
 export type { Atom };
 
-/* Una fuente devuelve ítems navegables/buscables; resolve() convierte el ítem
-   elegido en la cola de pistas reproducibles (Jamendo: la propia lista;
-   Archive: los archivos del ítem). */
 export interface StreamItem {
   id: string;
   title: string;

@@ -26,7 +26,6 @@ interface CampoExportParams {
   exportablePanelCount: number;
 }
 
-/** Exportaciones PDF (individual/consolidada) y atajo Ctrl+Enter de ReportesCampoApp. */
 export function useCampoExport(params: CampoExportParams) {
   const { addToast } = useToast();
   const {

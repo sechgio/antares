@@ -27,7 +27,6 @@ function cleanup() {
 cleanup();
 
 function testUpgradeFailureIsTelemetered({ name, namespace, payload }) {
-  // Inyecta safeStorage para probar la migración v1 a v2 sin Electron.
   secure.writeSecureJson(name, namespace, payload);
 
   const appLog = require('../electron/app-log');

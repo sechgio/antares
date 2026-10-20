@@ -1,5 +1,3 @@
-// El resultado de los tests depende del exit code; la salida de consola es informativa.
-
 const path = require('path');
 const { EventEmitter } = require('events');
 
@@ -63,7 +61,6 @@ async function waitFor(predicate, maxTurns = 500) {
 
 function _resolveRepoModule(spec) {
   if (path.isAbsolute(spec)) return require.resolve(spec);
-  // Busca paquetes en node_modules y, como fallback, módulos relativos a la raíz del repo.
   try {
     return require.resolve(spec);
   } catch {
@@ -81,7 +78,6 @@ function evictModule(spec) {
   delete require.cache[_resolveRepoModule(spec)];
 }
 
-// Los módulos autoimg comparten estado en require.cache; se purgan por prefijo.
 function clearAutoimgModules() {
   for (const key of Object.keys(require.cache)) {
     if (key.includes(`${path.sep}electron${path.sep}autoimg-`)) {

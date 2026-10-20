@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, Menu, ipcMain, Tray, Notification } = require('electron');
 const { createWindow } = require('./window-manager');
 const { raceTimeout } = require('./async-utils');
 const { startPythonBackend, killPython } = require('./backend-spawner');
@@ -48,7 +48,6 @@ process.on('uncaughtException', async (err) => {
   process.exit(1);
 });
 
-// Los 'Tab' ya los cubre render-process-gone del webContents de la ventana.
 app.on('child-process-gone', (_event, details) => {
   try {
     if (details && details.type === 'Tab') return;
@@ -62,6 +61,49 @@ app.on('child-process-gone', (_event, details) => {
 });
 
 const isDev = !app.isPackaged;
+const ownsRuntime = app.requestSingleInstanceLock();
+if (!ownsRuntime) app.quit();
+let _tray = null;
+const _trayStates = new Map();
+let _trayPolling = false;
+
+async function _notifyAgentActivity() {
+  if (!_tray || _trayPolling || _shutdownStarted) return;
+  _trayPolling = true;
+  try {
+    const win = require('./window-manager').getMainWindow();
+    const states = await require('./agent-runtime').activitySnapshot();
+    for (const item of states) {
+      const previous = _trayStates.get(item.id);
+      _trayStates.set(item.id, item.status);
+      if (previous === item.status || win?.isVisible() || !Notification.isSupported()) continue;
+      const needsInput = item.status === 'waiting_input' || item.status === 'waiting_approval';
+      const ended = ['running', 'waiting_input', 'waiting_approval'].includes(previous) && ['completed', 'failed', 'uncertain'].includes(item.status);
+      const needsReview = item.status === 'uncertain';
+      if (!needsInput && !ended && !needsReview) continue;
+      const body = item.status === 'waiting_approval' ? 'Necesita tu aprobación' : item.status === 'waiting_input' ? 'Necesita datos para continuar'
+        : item.status === 'failed' || needsReview ? 'El encargo requiere revisión' : 'El encargo terminó';
+      const notification = new Notification({ title: item.title, body });
+      notification.on('click', _showMainWindow);
+      notification.show();
+    }
+  } catch (err) { console.warn('[main] agent tray status failed:', err?.message); }
+  finally { _trayPolling = false; }
+}
+
+function _showMainWindow() {
+  let win = require('./window-manager').getMainWindow();
+  if (!win || win.isDestroyed()) {
+    createWindow(isDev);
+    _installWindowCloseGuard();
+    win = require('./window-manager').getMainWindow();
+  }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+app.on('second-instance', _showMainWindow);
 const { isTrustedRendererFrame } = require('./renderer-trust');
 const CANVAS_ASSET_GC_INITIAL_DELAY_MS = 45_000;
 const CANVAS_ASSET_GC_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -88,6 +130,7 @@ registerRendererObservability(ipcMain);
 registerIpcHandlers();
 
 app.whenReady().then(async () => {
+  if (!ownsRuntime) return;
   try {
     setAppContext({ appVersion: app.getVersion() });
     const logsDir = initAppLogs();
@@ -100,6 +143,16 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   createWindow(isDev);
   _installWindowCloseGuard();
+  _tray = new Tray(require('node:path').join(__dirname, '..', 'assets', 'icon.ico'));
+  _tray.setToolTip('Antares');
+  _tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Mostrar Antares', click: _showMainWindow },
+    { type: 'separator' },
+    { label: 'Salir', click: () => app.quit() },
+  ]));
+  _tray.on('double-click', _showMainWindow);
+  const agentTrayTimer = setInterval(_notifyAgentActivity, 2000);
+  agentTrayTimer.unref?.();
   startPythonBackend(isDev).catch((err) => {
     console.error('[main] startPythonBackend threw:', err);
   });
@@ -122,6 +175,8 @@ let _canvasFlushResolver = null;
 function _shutdownOnce() {
   if (_shutdownStarted) return;
   _shutdownStarted = true;
+  if (!ownsRuntime) return;
+  if (_tray) { _tray.destroy(); _tray = null; }
   appendLogLine('INFO', '[main] app quit');
   appendLogEvent('INFO', 'app.shutdown', { component: 'electron' });
   try {
@@ -137,9 +192,6 @@ function _shutdownOnce() {
     console.warn('[main] cleanupAutoUpdater threw during shutdown:', err && err.message);
   }
   try {
-    // Cierre best-effort: watchers y harness del agente nativo. Las escrituras
-    // SQLite de pi-durable son síncronas (node:sqlite), así que el estado ya
-    // es durable; esto solo libera recursos si el runtime llegó a abrirse.
     require('./agent-runtime').shutdown().catch(() => {});
   } catch (err) {
     console.warn('[main] agent runtime shutdown threw:', err && err.message);
@@ -149,7 +201,6 @@ function _shutdownOnce() {
   } catch (err) {
     console.warn('[main] killPython threw during shutdown:', err && err.message);
   }
-  // will-quit/exit/SIGINT requieren un flush síncrono para conservar los logs pendientes.
   try {
     flushLogQueueSync();
   } catch {}
@@ -162,6 +213,10 @@ function _installWindowCloseGuard() {
     win.on('close', (event) => {
       if (_allowQuit || _shutdownStarted) return;
       event.preventDefault();
+      if (_tray && !_isQuittingDeferred) {
+        win.hide();
+        return;
+      }
       if (_isQuittingDeferred) return;
       _isQuittingDeferred = true;
       void _flushCanvasAndQuit(win);
@@ -222,9 +277,6 @@ if (typeof ipcMain.on === 'function') {
   });
 }
 
-// Debe superar el tier "long" del catálogo IPC (canvas_save/canvas_save_history,
-// 300 s): si el flush vence antes que el save en vuelo, el quit mata al backend
-// a mitad de escritura y se pierde la última edición.
 const CANVAS_FLUSH_TIMEOUT_MS = 310000;
 
 async function _cleanupStagedFiles() {
@@ -294,6 +346,7 @@ async function _flushCanvasAndQuit(win) {
 }
 
 app.on('before-quit', (event) => {
+  if (!ownsRuntime) { _allowQuit = true; return; }
   if (_allowQuit) return;
   if (_isQuittingDeferred) {
     event.preventDefault();
@@ -318,12 +371,9 @@ process.on('SIGINT', () => { _shutdownOnce(); process.exit(0); });
 process.on('SIGTERM', () => { _shutdownOnce(); process.exit(0); });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (!_tray && process.platform !== 'darwin') app.quit();
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow(isDev);
-    _installWindowCloseGuard();
-  }
+  if (ownsRuntime) _showMainWindow();
 });

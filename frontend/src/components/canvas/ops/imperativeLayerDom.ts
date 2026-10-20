@@ -2,6 +2,22 @@ import { expandWithDescendants } from './layerTree';
 import { layerGeometry } from './layerGeometry';
 import type { CanvasLayer } from '../types';
 
+const layerElCache = new WeakMap<HTMLElement, Map<string, HTMLElement>>();
+
+function findLayerEl(root: HTMLElement, id: string): HTMLElement | null {
+  let cache = layerElCache.get(root);
+  if (!cache) {
+    cache = new Map();
+    layerElCache.set(root, cache);
+  }
+  const cached = cache.get(id);
+  if (cached && root.contains(cached) && cached.dataset.layerId === id) return cached;
+  const el = root.querySelector<HTMLElement>(`[data-layer-id="${id}"]`);
+  if (el) cache.set(id, el);
+  else cache.delete(id);
+  return el;
+}
+
 function forGestureLayerEls(
   root: HTMLElement,
   layers: CanvasLayer[],
@@ -13,7 +29,7 @@ function forGestureLayerEls(
   for (const id of idSet) {
     const layer = byId.get(id);
     if (!layer || layer.type === 'frame') continue;
-    const el = root.querySelector<HTMLElement>(`[data-layer-id="${id}"]`);
+    const el = findLayerEl(root, id);
     if (!el) continue;
     visit(el, layer);
   }
@@ -64,6 +80,7 @@ export function clearLayerDomGestureStyles(
     el.style.willChange = '';
     if (el.style.transformOrigin) el.style.transformOrigin = '';
   });
+  layerElCache.delete(root);
 }
 
 export function setCanvasGestureActive(active: boolean): void {

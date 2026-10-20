@@ -93,7 +93,7 @@ async function main() {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ access_token: 'fresh-token', expires_in: 3600 }),
+        json: async () => ({ access_token: 'fresh-token', expires_in: 3600, scope: 'verified-sheets-scope' }),
       };
     };
 
@@ -106,6 +106,7 @@ async function main() {
     assert(refreshCalls === 1, 'refresh concurrente se deduplica en una sola llamada');
     assert(tokens.every((value) => value?.access_token === 'fresh-token'), 'todos reciben el token nuevo');
     assert(savedScopes.length === 1 && savedScopes[0].userKey === 'user-key', 'refresh guarda en el scope capturado');
+    assert(tokens.every((value) => value?.scope === 'verified-sheets-scope'), 'refresh conserva los scopes devueltos por Google');
 
     currentTokens = { access_token: 'expired-a', refresh_token: 'refresh-a', expiry_date: 0 };
     savedScopes.length = 0;
@@ -165,8 +166,6 @@ async function main() {
     assert((await invalidA) === null, 'invalid_grant obsoleto no rompe la sesión B');
     assert(clearedScopes.length === 1 && clearedScopes[0] === 'user-a', 'invalid_grant limpia solo A');
 
-    // OAuth A -> B: si el intercambio no trae refresh_token, no se debe
-    // importar el refresh token de A ni activar/escribir la sesión B.
     activeUserKey = 'user-a';
     activeUserGeneration += 1;
     currentTokens = { access_token: 'access-a', refresh_token: 'refresh-A', expiry_date: Date.now() + 3600000 };
@@ -226,7 +225,6 @@ async function main() {
     assert(connected.refresh_token === 'refresh-B', 'OAuth normal conserva el refresh token nuevo');
     assert(persistedByScope.get('user-b')?.refresh_token === 'refresh-B', 'OAuth normal guarda el token de B en B');
 
-    // Una renovación posterior de B debe enviar solo el refresh token de B.
     currentTokens = { access_token: 'expired-b', refresh_token: 'refresh-B', expiry_date: 0 };
     let refreshBody = null;
     global.fetch = async (url, options = {}) => {

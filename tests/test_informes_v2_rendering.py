@@ -122,7 +122,6 @@ def test_render_report_html_reservorios2_template() -> None:
     assert "canastilla oxidada" in html
     assert "cambiar canastilla" in html
     assert html.count('class="page"') == 1
-    # el grupo ESCALERA/LOZA DE TECHO comparte celda de descripción
     assert html.count("ESCALERA") == 1
     assert html.count("LOZA DE TECHO") == 1
     assert html.count('<td class="r2-sub">INTERIOR</td>') == 3
@@ -218,7 +217,6 @@ def test_shared_selectors_between_plantillas_no_se_pisan() -> None:
     templates = pathlib.Path(__file__).resolve().parent.parent / "backend" / "templates" / "informes_v2"
     clasica = _css_rules((templates / "informe_v2.html").read_text(encoding="utf-8"))
     r2 = _css_rules((templates / "reservorios_2.html").read_text(encoding="utf-8"))
-    # El export consolidado concatena documentos: los selectores compartidos compiten por orden.
     for selector in sorted(set(clasica) & set(r2)):
         for prop in sorted(set(clasica[selector]) & set(r2[selector])):
             assert clasica[selector][prop] == r2[selector][prop], (

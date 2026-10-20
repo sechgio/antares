@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * IPC nativo de Conexiones (Flujos → Conexiones): providers del catálogo
- * compartido + sesión OAuth genérica por proveedor.
- */
-
 const { CONNECTIONS_METHODS } = require('./connections-ipc-methods');
 const session = require('./connections-session');
 const { listProviders, listCategories } = require('./connections-providers');
@@ -74,11 +69,6 @@ async function handleConnectionsCall(method, params = {}) {
         const result = await session.disconnect(provider);
         emit('connections.changed', { provider, connected: false });
         return { handled: true, result };
-      }
-
-      case 'connections_status': {
-        const provider = String(params.provider || '');
-        return { handled: true, result: await session.getStatus(provider) };
       }
 
       default:

@@ -130,7 +130,6 @@ describe("filterImagesForRecord", () => {
 
   it("filtra por recordId, deduplica y ordena natural", () => {
     const data = [{ ID: "42" }];
-    // matchesRecordId: stem exacto ('42.png') o stem sin sufijo _N ('42_2.png'→'42')
     const images = files(
       "42_2.png",
       "otra.png",

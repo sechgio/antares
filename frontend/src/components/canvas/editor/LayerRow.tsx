@@ -119,8 +119,6 @@ export const LayerRow = memo(function LayerRow({
   onDropHover,
 }: LayerRowProps) {
   const dragGhostRef = useRef<HTMLDivElement | null>(null);
-  // La lista de capas está ventaneada: si la fila se desmonta a mitad de drag no
-  // llega un dragend y el fantasma que se colgó en document.body quedaría ahí.
   useEffect(() => () => dragGhostRef.current?.remove(), []);
   const hidden = layer.visible === false;
   const locked = Boolean(layer.locked);

@@ -239,7 +239,7 @@
         "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
         "token_url": "https://oauth2.googleapis.com/token",
         "token_auth": "form",
-        "scopes": ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/spreadsheets.readonly", "https://www.googleapis.com/auth/calendar.readonly"],
+        "scopes": ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/spreadsheets.readonly", "https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/calendar.readonly"],
         "callback_port": 42846,
         "callback_path": "/callback",
         "requires_client_secret": true,
@@ -374,7 +374,7 @@
     },
     "microsoft": {
       "label": "Microsoft",
-      "description": "Cuenta Microsoft, To Do y Graph API",
+      "description": "Cuenta Microsoft, OneDrive, Excel, To Do y Graph API",
       "docs": "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps",
       "category": "productividad",
       "auth": {
@@ -382,7 +382,7 @@
         "authorize_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
         "token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
         "token_auth": "form",
-        "scopes": ["offline_access", "User.Read", "Tasks.ReadWrite"],
+        "scopes": ["offline_access", "User.Read", "Tasks.ReadWrite", "Files.ReadWrite"],
         "callback_port": 42844,
         "callback_path": "/callback",
         "requires_client_secret": false,

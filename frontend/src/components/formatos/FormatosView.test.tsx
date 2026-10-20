@@ -17,6 +17,18 @@ function renderFormatosView() {
 }
 
 describe('FormatosView', () => {
+  it('abre el formato solicitado desde una tarjeta de Agent después de cargar el catálogo', async () => {
+    invalidateApiCache();
+    sessionStorage.setItem('agent:open:formatos', 'second');
+    vi.spyOn(window.electronAPI!, 'invoke').mockImplementation(async (method: string) => {
+      if (method === 'formatos_list') return { formats: [{ id: 'first', nombre: 'Primero' }, { id: 'second', nombre: 'Segundo' }] };
+      return {};
+    });
+    renderFormatosView();
+    const selected = await screen.findByRole('button', { name: /Segundo/ });
+    await waitFor(() => expect(selected.className).toContain('bg-[var(--accent-primary)]'));
+    expect(sessionStorage.getItem('agent:open:formatos')).toBeNull();
+  });
   beforeEach(() => {
     invalidateApiCache();
   });

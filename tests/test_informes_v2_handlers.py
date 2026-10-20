@@ -71,7 +71,6 @@ def test_import_file_and_download_template(monkeypatch, tmp_path) -> None:
     assert result["imported_count"] == 1
     assert HANDLERS["informes_v2_list"]({"summary": True})["items"][0]["header"]["photo_id"] == "R-1"
 
-    # Con plantilla seleccionada, las hojas importadas nacen con esa plantilla.
     result = HANDLERS["informes_v2_import_file"](
         {"filename": "datos.csv", "content_b64": content, "plantilla": "reservorios2"}
     )

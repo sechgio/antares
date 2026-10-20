@@ -46,8 +46,6 @@ const _stagedSessions = new Map();
 let _stagedRoot = null;
 let _sweepTimer = null;
 
-// Solo los fallos con señal de abuso (binding/symlink) se reportan: expiración y
-// token desconocido son rutina (TTL de 30 min) y serían ruido en el jsonl.
 function _logCapabilityDenial(reason) {
   try {
     require('./app-log').appendLogEvent('WARN', 'security.rejected', {

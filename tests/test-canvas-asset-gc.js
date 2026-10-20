@@ -41,7 +41,6 @@ async function main() {
       'utf8',
     );
 
-    // El marcador protege assets aún no referenciados después de vencer la gracia del mtime.
     const pendingAsset = await putCanvasAsset(Buffer.from('pending-asset-eeeeeeee'));
     const pendingAssetPath = path.join(assetsDir(), pendingAsset.asset_id);
     const pendingOld = (Date.now() - GC_GRACE_MS - 60_000) / 1000;
@@ -66,7 +65,6 @@ async function main() {
     const orphanPath = path.join(assetsDir(), orphan.asset_id);
     const old = (Date.now() - GC_GRACE_MS - 60_000) / 1000;
     fs.utimesSync(orphanPath, old, old);
-    // Vence también el marcador del huérfano para permitir su recolección.
     await fsp.writeFile(
       pendingFile,
       JSON.stringify([{ id: orphan.asset_id, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }]),
@@ -116,7 +114,6 @@ async function main() {
     const youngPath = path.join(assetsDir(), young.asset_id);
     await gcOrphanCanvasAssets({ nowMs: Date.now(), graceMs: GC_GRACE_MS });
     assert.ok(fs.existsSync(youngPath), 'young unreferenced asset kept by pending marker');
-    // Al vencer el marcador, la gracia del mtime aún protege el asset reciente.
     await fsp.writeFile(
       pendingFile,
       JSON.stringify([{ id: young.asset_id, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }]),

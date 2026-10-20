@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from '../App';
 import { findSidebarTab } from './sidebarNav';
 import { TAB_DEFINITIONS } from '../navigation';
+import { connectionsApi } from '../api/connectionsApi';
+import { aiProvidersApi } from '../api/aiProvidersApi';
+import { mcpApi } from '../api/mcpApi';
 
 const { mockSupabase } = vi.hoisted(() => {
   const empty = { data: [] as unknown[], error: null };
@@ -158,7 +161,14 @@ describe('App', () => {
     }
   }, 90000);
 
-  it('opens settings lazily from the account menu', async () => {
+  it('opens connections and providers as independent sections below plugins in settings', async () => {
+    vi.spyOn(connectionsApi, 'connectionsProviders').mockResolvedValue({ providers: [], categories: [] });
+    vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [] });
+    vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({ servers: [{
+      id: 'test-server', name: 'Servidor de prueba', transport: 'stdio', url: '',
+      command: 'test', args: [], secret_keys: [], tools_count: null,
+    }] });
+    const deleteServer = vi.spyOn(mcpApi, 'mcpServerDelete');
     render(<App />);
     await findSidebarTab('Conversión');
 
@@ -167,5 +177,30 @@ describe('App', () => {
     fireEvent.click(screen.getByTestId('sidebar-account-button'));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Configuración' }));
     expect(await screen.findByTestId('settings-modal', {}, { timeout: 8000 })).toBeInTheDocument();
+
+    const sections = within(screen.getByTestId('settings-modal-sidebar')).getAllByRole('button');
+    const pluginsIndex = sections.indexOf(screen.getByTestId('settings-section-plugins'));
+    expect(sections[pluginsIndex + 1]).toBe(screen.getByTestId('settings-section-connections'));
+    expect(sections[pluginsIndex + 2]).toBe(screen.getByTestId('settings-section-providers'));
+
+    fireEvent.click(screen.getByTestId('settings-section-plugins'));
+    fireEvent.keyDown(screen.getByTestId('settings-section-plugins'), { key: 'ArrowDown' });
+    expect(screen.getByTestId('settings-section-connections')).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByRole('textbox', { name: 'Buscar conexiones' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Servidores MCP' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Secciones de Conexiones' })).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar Servidor de prueba' }));
+    const confirmation = await screen.findByRole('alertdialog', { name: 'Eliminar servidor' });
+    expect(screen.getByTestId('settings-modal-overlay')).toHaveClass('z-[90]');
+    fireEvent.keyDown(confirmation, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-modal-overlay')).toHaveClass('z-[120]');
+    expect(deleteServer).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('settings-section-providers'));
+    expect(await screen.findByText('Elige un servicio')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Buscar conexiones' })).not.toBeInTheDocument();
   });
 });

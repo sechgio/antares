@@ -6,7 +6,6 @@ import Button from '@/components/ui/Button';
 import { usePluginEnabled } from '../../plugins';
 import { cn } from '@/lib/utils';
 
-// Los plugins se cargan aparte para excluir dnd-kit del bundle inicial.
 const TitleBarPlugins = lazy(() => import('./TitleBarPlugins'));
 
 const WINDOW_BUTTON = 'app-titlebar-button flex size-8 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors';

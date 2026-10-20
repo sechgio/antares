@@ -107,20 +107,22 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByTestId('sidebar-group-herramientas'));
 
     expect(screen.getByRole('heading', { name: 'Herramientas' })).toBeInTheDocument();
-    expect(within(panel()).getByRole('button', { name: 'Flujos' })).toBeInTheDocument();
+    expect(within(panel()).getByRole('button', { name: 'Optimizador' })).toBeInTheDocument();
     expect(onTabChange).not.toHaveBeenCalled();
   });
 
   it('reaches every navigation section through its rail group', () => {
-    renderSidebar();
+    const onTabChange = vi.fn();
+    renderSidebar({ onTabChange });
 
     const seen = new Set<string>();
     for (const id of GROUP_IDS) {
       fireEvent.click(screen.getByTestId(`sidebar-group-${id}`));
       for (const node of within(panel()).getAllByRole('button')) seen.add(node.textContent ?? '');
     }
+    const opened = onTabChange.mock.calls.map(([tab]) => TAB_DEFINITIONS.find((item) => item.id === tab)?.label ?? '');
 
-    expect([...seen].sort()).toEqual(TAB_DEFINITIONS.map((tab) => tab.label).sort());
+    expect([...seen, ...opened].sort()).toEqual(TAB_DEFINITIONS.map((tab) => tab.label).sort());
   });
 
   it('shows group name tooltips on the rail', () => {
@@ -179,6 +181,27 @@ describe('Sidebar', () => {
     }
   });
 
+  it('opens Agent from its rail icon without peeking or opening the panel', () => {
+    const onTabChange = vi.fn();
+    renderSidebar({ onTabChange });
+    const sidebar = screen.getByTestId('app-sidebar');
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+    const agentIcon = screen.getByTestId('sidebar-group-agent');
+    fireEvent.mouseEnter(agentIcon);
+    fireEvent.focus(agentIcon);
+
+    const peek = screen.getByTestId('sidebar-peek');
+    expect(peek).toHaveAttribute('aria-hidden', 'true');
+    expect(sidebar).toHaveAttribute('data-expanded', 'false');
+
+    fireEvent.click(agentIcon);
+
+    expect(onTabChange).toHaveBeenCalledWith('agent');
+    expect(sidebar).toHaveAttribute('data-expanded', 'false');
+    expect(peek).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('pins the peeked panel from its header button', () => {
     renderSidebar();
     fireEvent.click(screen.getByTestId('sidebar-toggle'));
@@ -197,9 +220,9 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByTestId('sidebar-toggle'));
 
     fireEvent.mouseEnter(screen.getByTestId('sidebar-group-herramientas'));
-    fireEvent.click(within(screen.getByTestId('sidebar-peek')).getByRole('button', { name: 'Flujos' }));
+    fireEvent.click(within(screen.getByTestId('sidebar-peek')).getByRole('button', { name: 'Ubicaciones' }));
 
-    expect(onTabChange).toHaveBeenCalledWith('flows');
+    expect(onTabChange).toHaveBeenCalledWith('ubicaciones');
     expect(screen.getByTestId('sidebar-peek')).toHaveAttribute('aria-hidden', 'true');
   });
 

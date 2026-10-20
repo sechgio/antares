@@ -1,8 +1,3 @@
-/**
- * Acceso a PRs mediante `gh`, compartido por las auditorías de revisión.
- * Pagina por REST para evitar los 499 de GraphQL mientras GitHub calcula el diff.
- */
-
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -30,7 +25,6 @@ function settle(promise) {
   );
 }
 
-// Reintenta fallos 499/5xx transitorios.
 async function withRetry(fn, attempts = FETCH_ATTEMPTS, baseDelayMs = 500) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -100,8 +94,6 @@ async function fetchListPages(urls) {
   return { items, partial };
 }
 
-// Página a página: la primera corta agota la lista con una sola llamada. `truncated` avisa de que
-// quedaron datos sin leer, porque un ratio calculado sobre ellos mentiría.
 async function fetchPagedList(base, maxPages) {
   const items = [];
   for (let page = 1; page <= maxPages; page++) {
@@ -150,8 +142,6 @@ async function fetchComments(repo, number) {
   return { items: items.map(normalizeComment), truncated };
 }
 
-// Meta, primera página de archivos, revisiones y comentarios salen en paralelo; el resto de
-// páginas de archivos se pide después, también en paralelo.
 async function fetchPrData(number, repo) {
   const filesBase = `repos/${repo}/pulls/${number}/files`;
   const [meta, firstFiles, reviews, comments] = await Promise.all([
@@ -224,9 +214,6 @@ function selectPolicyComment(comments) {
   return { update: marked[marked.length - 1] || null, remove: marked.slice(0, -1) };
 }
 
-// El head puede avanzar mientras se audita (un push nuevo cancela esta corrida). Publicar entonces
-// dejaría un informe apuntando a un commit que ya no es el del PR: lo decide el run más reciente.
-// Puro para poder probarlo sin gh; si no se puede comprobar, se publica (falla abierta).
 function shouldPublishReport(auditedSha, currentSha) {
   return !auditedSha || !currentSha || auditedSha === currentSha;
 }
@@ -240,8 +227,6 @@ async function currentHeadSha(repo, number) {
   }
 }
 
-// Un único informe por PR: actualiza en el sitio y borra duplicados, sin volver a paginar la conversación.
-// Los duplicados solo se detectan dentro de `MAX_COMMENT_PAGES` páginas de comentarios.
 async function upsertPolicyComment(repo, pr, report) {
   const { update, remove } = selectPolicyComment(pr.comments);
   for (const stale of remove) {

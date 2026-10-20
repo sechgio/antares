@@ -45,7 +45,6 @@ export default function ModalShell({
     if (!open || closeDisabled) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
-      // Let a nested date/status/priority picker consume Escape first.
       if (dialogRef.current?.querySelector('[aria-expanded="true"]')) return;
       e.preventDefault();
       onClose();

@@ -130,8 +130,6 @@ function loadPresets(): SavedPreset[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    // El try solo cubría sintaxis: un array con otra forma se esparcía al
-    // cargar sin validar.
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(isSavedPreset);
   } catch {}

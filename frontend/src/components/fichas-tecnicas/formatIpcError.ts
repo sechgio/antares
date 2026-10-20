@@ -1,9 +1,5 @@
 import { errorMessage } from "@/utils/errors";
 
-/**
- * Mensaje de error IPC con ayuda contextual para el caso clásico de
- * preload desactualizado tras HMR (método no permitido / desconocido).
- */
 export function formatIpcError(error: unknown, fallback: string): string {
   const message = errorMessage(error, String(error || fallback));
   if (

@@ -65,8 +65,6 @@ export function useDueNotifications(enabled = true, assigneeId?: string, session
     setError(null);
     notifiedIdsRef.current.clear();
     if (!enabled) {
-      // Invalida la respuesta que estuviera en vuelo: sin esto, un fetch pedido
-      // con la sesión anterior rellena la campana justo después del cierre.
       inFlightRef.current += 1;
       setItems([]);
       setError(null);

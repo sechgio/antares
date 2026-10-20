@@ -1,17 +1,7 @@
 #!/usr/bin/env node
-/**
- * Auditoría de la política de revisión de un PR: intención, tamaño, alcance, tests, aprobación, taxonomía.
- *
- * Severidades: solo los checks `blocking` pueden tumbar el job. Bloquean la intención vacía y el
- * tamaño grande sin declarar (etiqueta `size/exempt`); el resto son señales para el revisor humano.
- * La puerta falla abierta ante problemas de infraestructura (sin `gh`, API caída, PR cerrado) y
- * falla cerrada ante errores de uso (repo o número de PR imposibles).
- *
- *   node scripts/review-policy-check.js --pr 42 [--comment] [--json]
- *
- * Exit 1 solo cuando un check bloqueante falla, o ante un error de uso.
+/** node scripts/review-policy-check.js --pr 42 [--comment] [--json]
+ * Exit 1 ante checks bloqueantes o uso inválido; 0 sin infraestructura o con PR cerrado.
  */
-
 const { parseCliArgs, detectRepo } = require('./lib/loop-utils');
 const {
   COMMENT_MARKER,
@@ -67,8 +57,6 @@ function isGeneratedPath(filePath) {
 }
 
 function isNewFile(file) {
-  // Sin `status` no se puede afirmar que el archivo sea nuevo: REST siempre lo manda, así que un
-  // payload sin él es un archivo modificado del que faltan datos, no un archivo creado.
   return String((file && file.status) || '').toLowerCase() === 'added';
 }
 
@@ -126,7 +114,6 @@ function taxonomyCompliance(comments, authorLogin) {
   return { total: list.length, prefixed, ratio: prefixed / list.length };
 }
 
-// Texto de una sección `## heading` hasta la siguiente del mismo nivel.
 // `(?![\s\S])` en lugar de `$`: en modo multilínea `$` también encaja al final de cada línea.
 function sectionText(body, heading) {
   const match = String(body || '').match(
@@ -154,8 +141,6 @@ function summarizeFiles(files) {
   return { generatedLines, bigNewFiles };
 }
 
-// Tamaño comparable: GitHub omite `additions`/`deletions` cuando el diff es demasiado grande
-// para calcularlo, y un PR solo de lockfiles no debe contar como grande.
 function effectiveChangedLines(data) {
   const files = (data && data.files) || [];
   const raw = (Number(data && data.additions) || 0) + (Number(data && data.deletions) || 0);
@@ -166,7 +151,6 @@ function effectiveChangedLines(data) {
 
 function evaluatePolicy(pr, meta = {}) {
   const data = pr || {};
-  // `commentsComplete: false` = la conversación viene truncada y el ratio mentiría.
   const commentsComplete = meta.commentsComplete !== false;
   const files = data.files || [];
   const body = String(data.body || '').trim();
@@ -174,14 +158,12 @@ function evaluatePolicy(pr, meta = {}) {
   const labels = (data.labels || []).map((l) => (l && l.name) || l).filter(Boolean);
   const { raw: changedLines, generated: generatedLines, effective: effectiveLines } = effectiveChangedLines(data);
   const changedFiles = Number(data.changedFiles) || files.length;
-  // Sin recuento de líneas (GitHub no lo calcula) o sin el listado completo de archivos, el tamaño no se puede afirmar.
   const sizeUnknown =
     (data.additions == null && data.deletions == null) || (Boolean(meta.partial) && files.length < changedFiles);
   const { bigNewFiles } = summarizeFiles(files);
   const sizeExempt = labels.includes(EXEMPT_LABEL);
   const checks = [];
 
-  // Un check no bloqueante nunca produce `fail`; un borrador tampoco.
   const add = (id, label, status, detail, blocking = false) => {
     const fails = blocking && status === 'fail' && !isDraft;
     checks.push({
@@ -196,7 +178,6 @@ function evaluatePolicy(pr, meta = {}) {
   const intentLen = effectiveBodyLength(body);
   const intentOk = intentLen >= MIN_BODY_CHARS;
   const botAuthor = isBot(data.author);
-  // Un PR de bot o un diff que solo toca archivos generados (lockfile, snapshot) no necesita prosa.
   const onlyGenerated = files.length > 0 && files.every((f) => isGeneratedPath(f.path));
   if (botAuthor || onlyGenerated) {
     add(

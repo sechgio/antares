@@ -118,7 +118,6 @@ try {
 assert.strictEqual(l.getDroppedEventCount(), dropsBeforeEventFailures + 2, 'cada fallo mantiene su cuenta acumulada');
 console.log('eventos descartados acumulados tras fallos de escritura: OK');
 
-// flush debe seguir el encadenado si llega otro lote mientras el anterior escribe.
 const raceDir = path.join(process.env.LOCALAPPDATA, 'flush-race');
 const raceFile = path.join(raceDir, 'antares-2026-09-18.log');
 const realAppendFile = fs.promises.appendFile.bind(fs.promises);
@@ -171,7 +170,6 @@ try {
 }
 console.log('flush espera lotes encadenados: OK');
 
-// El límite incluye los lotes ya extraídos del pending pero aún sin escribir.
 const boundedDir = path.join(process.env.LOCALAPPDATA, 'bounded-queue');
 const boundedFile = path.join(boundedDir, 'antares-bounded.log');
 const originalBoundedAppend = fs.promises.appendFile;

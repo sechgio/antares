@@ -12,8 +12,6 @@ const LOGO_RIGHT_KEY = "antares_preview_logo_right";
 export function usePersistedLogos(onError: (message: string) => void) {
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [logoRight, setLogoRight] = useState<string | null>(null);
-  // El llamador pasa una flecha inline: sin ref el efecto correría en cada
-  // render y reintentaría el guardado (y el toast) sin parar.
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
@@ -25,8 +23,6 @@ export function usePersistedLogos(onError: (message: string) => void) {
   }, []);
 
   useEffect(() => {
-    // El guardado anterior tragaba el error de cuota: el logo se mostraba
-    // activo pero desaparecía al recargar.
     const failed: string[] = [];
     if (logoLeft) {
       if (!savePersistedLogo(LOGO_LEFT_KEY, logoLeft, "logo-left")) failed.push("izquierdo");

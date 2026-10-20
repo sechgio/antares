@@ -45,7 +45,6 @@ def test_normalize_date_str_formatos() -> None:
 
 def test_compile_match_rule_solo_regex_y_validaciones() -> None:
     assert compile_match_rule(_rule(strategy="exact")) is None
-    # __post_init__ rechaza reglas inválidas al construirlas.
     with pytest.raises(InvalidMatchRuleError):
         _rule(strategy="regex", regex_pattern="([")
     with pytest.raises(InvalidMatchRuleError):
@@ -53,7 +52,6 @@ def test_compile_match_rule_solo_regex_y_validaciones() -> None:
     compiled = compile_match_rule(_rule(strategy="regex", regex_pattern=r"foto-(?P<clave>\d+)"))
     assert compiled is not None
 
-    # Modifica el fixture después de __post_init__ para comprobar la revalidación.
     rule = _rule(strategy="regex", regex_pattern=r"foto-(?P<clave>\d+)")
     object.__setattr__(rule, "regex_pattern", "([")
     with pytest.raises(InvalidMatchRuleError, match="inválida"):
@@ -86,7 +84,6 @@ def test_build_panels_columna_no_encontrada_usa_nombre_directo() -> None:
     src = _source(["Clave"], [{"Clave": "A1"}])
     rule = _rule(key_column="columna inexistente")
     result = build_panels(src, rule, ["A1_foto.jpg"], None, "include_empty")
-    # clave no encontrada → cell_value "" → sin match, pero fila contada
     assert result.summary.total_rows == 1
 
 
@@ -121,7 +118,6 @@ def test_build_panels_include_empty_intercala_vacios_en_su_fila() -> None:
         None,
         "include_empty",
     )
-    # La hoja vacía de B conserva su posición entre las imágenes agrupadas de A y C.
     assert [p.source_row_index for p in result.panels] == [0, 1, 2]
     assert [len(p.imagenes) for p in result.panels] == [4, 0, 1]
     assert [p.cuadrante for p in result.panels] == ["C-A", "C-B", "C-C"]

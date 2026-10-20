@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api';
+import { registerAgentCanvasEditor } from '../agent/canvasEditor';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import './canvas.css';
 import { createLayer } from './constants';
@@ -142,7 +143,6 @@ const GeneratePanel = lazy(() => import('./editor/GeneratePanel'));
 
 type PlaceableTool = Exclude<CanvasTool, 'select' | 'hand'>;
 
-// Chords de Canvas que el shell también registra en App (ver claimShellShortcuts).
 const CANVAS_OWNED_SHELL_CHORDS = ['ctrl+0', 'ctrl+shift+i', 'ctrl+shift+v'] as const;
 
 const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = {
@@ -342,8 +342,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const renameBaselineRef = useRef<typeof history.document | null>(null);
 
-  // Incluye los baselines: updateSilent no marca hasUnsavedEdits y un pull remoto
-  // debe detectar también la edición inline pendiente para ofrecer conflicto.
   const isOpenDirty = useCallback(
     () =>
       isOpenDocumentDirty(
@@ -375,7 +373,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             const serialized = await serializeDocumentImages(mem);
             const res = await api.canvasSave(serialized, { touch: true, slim: true });
             const saved = normalizeDocument({ ...serialized, ...res.document });
-            // Adopta el updatedAt del backend para las siguientes comparaciones LWW.
             if (historyDocRef.current.id === saved.id) {
               history.updateSilent(applySavedDocumentKeepingImages(mem, saved));
               history.markSaved();
@@ -524,7 +521,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const timer = window.setTimeout(() => flushAutosaveRef.current(), delay);
     return () => {
       window.clearTimeout(timer);
-      // Cancela el retry anterior; el efecto rearma el debounce si quedan cambios pendientes.
       if (autosaveRetryTimerRef.current != null) {
         window.clearTimeout(autosaveRetryTimerRef.current);
         autosaveRetryTimerRef.current = null;
@@ -795,8 +791,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   useEffect(() => {
     if (!active) return;
-    // Canvas posee Ctrl+0, Ctrl+Shift+I y Ctrl+Shift+V: mientras está activo el
-    // shell debe ceder esos chords en lugar de navegar a otra pestaña.
     claimShellShortcuts('canvas', CANVAS_OWNED_SHELL_CHORDS);
     return () => claimShellShortcuts('canvas', null);
   }, [active]);
@@ -1121,6 +1115,34 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const onOpenDocRef = useRef(onOpenDoc);
   onOpenDocRef.current = onOpenDoc;
+  useEffect(() => {
+    const openRequested = () => {
+      const id = sessionStorage.getItem('agent:open:canvas');
+      if (!id) return;
+      sessionStorage.removeItem('agent:open:canvas');
+      void onOpenDocRef.current(id);
+    };
+    openRequested();
+    window.addEventListener('agent:open-module', openRequested);
+    return () => window.removeEventListener('agent:open-module', openRequested);
+  }, []);
+  useEffect(() => registerAgentCanvasEditor({
+    get: () => history.documentRef.current,
+    dirty: isOpenDirty,
+    open: (id) => { void onOpenDocRef.current(id); },
+    apply: async (values, expected) => {
+      const current = history.documentRef.current;
+      if (isOpenDirty()) throw new Error('Canvas tiene cambios sin guardar');
+      if (current.updatedAt !== expected) throw new Error('El documento cambió; vuelve a consultar su revisión');
+      const keys = new Set(current.layers.filter((layer) => layer.type === 'field').map((layer) => layer.meta?.key));
+      if (Object.keys(values).some((key) => !keys.has(key))) throw new Error('El documento no contiene todos los campos solicitados');
+      const next = { ...current, layers: current.layers.map((layer) => layer.type === 'field' && layer.meta?.key && Object.prototype.hasOwnProperty.call(values, layer.meta.key)
+        ? { ...layer, value: values[layer.meta.key] == null ? '' : String(values[layer.meta.key]) } : layer) };
+      history.setDocument(next);
+      if (!await onSave({ silent: true })) throw new Error('No se pudo guardar Canvas; la edición se conserva para revisarla');
+      return { id: current.id, updatedAt: history.documentRef.current.updatedAt, fields_changed: Object.keys(values).length };
+    },
+  }), [history, isOpenDirty, onSave]);
   const onNewRef = useRef(onNew);
   onNewRef.current = onNew;
   onDeleteDocRef.current = onDeleteDoc;

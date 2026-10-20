@@ -6,7 +6,6 @@ import { createArtboardPathGapGestures } from '../editor/artboardTransformGestur
 import type { PointerGestureSessionOptions } from '../ops/pointerGestureSession';
 import type { CanvasLayer } from '../types';
 
-// Captura las opciones para invocar onAbort sin simular pointercancel en React.
 function sessionRecorder() {
   let options: PointerGestureSessionOptions | null = null;
   const pointerGestures = {

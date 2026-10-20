@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { CanvasContextMenuState } from '../editor/ContextMenu';
 import type { ViewportNavApi } from '../editor/DesignStage';
@@ -10,6 +10,7 @@ import {
   deleteLayers,
   distributeLayers,
   duplicateLayers,
+  duplicateRepeatOffset,
   groupLayers,
   sendBackward,
   sendToBack,
@@ -148,6 +149,7 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
     gestureBaselineRef,
     panelBaselineRef,
   } = input;
+  const lastDuplicateRef = useRef<{ sourceIds: string[]; newIds: string[] } | null>(null);
 
   useEffect(() => {
     onKeyDownRef.current = (e: KeyboardEvent) => {
@@ -167,7 +169,13 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
       const runDuplicate = () => {
         const ids = getEditableIds();
         if (!ids.length) return;
-        const { layers, newIds } = duplicateLayers(historyDoc.layers, ids);
+        const repeat = duplicateRepeatOffset(historyDoc.layers, ids, lastDuplicateRef.current);
+        const { layers, newIds } = duplicateLayers(
+          historyDoc.layers,
+          ids,
+          repeat ? { offsetMm: repeat.dx, offsetYMm: repeat.dy } : undefined,
+        );
+        lastDuplicateRef.current = { sourceIds: ids, newIds };
         setAllLayers(assignUniqueLogoSides(layers, newIds));
         setSelectedIds(newIds);
       };
@@ -413,6 +421,13 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
         e.preventDefault();
         if (nav) nav.animateTo({ zoom: 1, pan: nav.getPan() });
       }
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey && (e.code === 'Equal' || e.code === 'Minus')) {
+        e.preventDefault();
+        if (nav) {
+          const direction = e.code === 'Equal' ? 'in' : 'out';
+          nav.animateTo({ zoom: nextZoomPreset(nav.getZoom(), direction), pan: nav.getPan() });
+        }
+      }
       if (e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'Digit1') {
         e.preventDefault();
         zoomToFit();
@@ -449,7 +464,18 @@ export function useCanvasKeyboard(input: CanvasKeyboardInput): void {
 
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (e.defaultPrevented || isLayerListKeyboardTarget(e.target)) return;
-        if (!editableIds.length) return;
+        if (!editableIds.length) {
+          if (selectedIds.length) return;
+          const nav = viewportNavRef.current;
+          if (!nav) return;
+          e.preventDefault();
+          const stepPx = e.shiftKey ? 200 : 50;
+          const pan = nav.getPan();
+          const dirX = e.key === 'ArrowLeft' ? 1 : e.key === 'ArrowRight' ? -1 : 0;
+          const dirY = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0;
+          nav.setPan({ x: pan.x + dirX * stepPx, y: pan.y + dirY * stepPx });
+          return;
+        }
         e.preventDefault();
         const step = e.altKey ? 0.1 : e.shiftKey ? 10 : 1;
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;

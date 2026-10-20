@@ -1,23 +1,17 @@
 import { useId } from 'react';
 
-/**
- * Avatar determinista por semilla (id de conversación) con motivo de papel
- * doblado, al estilo del espacio de agentes de BoardUI. Misma semilla → mismo
- * color y misma orientación; no hay estado ni recursos externos.
- */
-
 export interface AgentAvatarPalette {
   from: string;
   to: string;
 }
 
 const PALETTES: AgentAvatarPalette[] = [
-  { from: '#5E6AD2', to: '#8B93FF' }, // índigo
-  { from: '#0E7490', to: '#22C7A9' }, // teal
-  { from: '#B45309', to: '#F59E0B' }, // ámbar
-  { from: '#BE123C', to: '#FB7185' }, // rosa
-  { from: '#6D28D9', to: '#A78BFA' }, // violeta
-  { from: '#0369A1', to: '#38BDF8' }, // celeste
+  { from: '#5E6AD2', to: '#8B93FF' },
+  { from: '#0E7490', to: '#22C7A9' },
+  { from: '#B45309', to: '#F59E0B' },
+  { from: '#BE123C', to: '#FB7185' },
+  { from: '#6D28D9', to: '#A78BFA' },
+  { from: '#0369A1', to: '#38BDF8' },
 ];
 
 function hashSeed(seed: string): number {
@@ -36,7 +30,6 @@ export function agentAvatarVariant(seed: string): { palette: AgentAvatarPalette;
   };
 }
 
-// Página con la esquina superior derecha doblada hacia dentro.
 const SHAPE_PATH = 'M10 2H32L46 16V38A8 8 0 0 1 38 46H10A8 8 0 0 1 2 38V10A8 8 0 0 1 10 2Z';
 const FOLD_PATH = 'M32 2L46 16L32 16Z';
 

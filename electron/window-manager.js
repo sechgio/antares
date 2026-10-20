@@ -144,9 +144,6 @@ function createWindow(isDev) {
     }
   });
 
-  // La CSP de producción fija `script-src 'self'` y renderer-trust rechaza el frame
-  // `data:`, así que la página de fallo no puede tener un botón: el único disparador
-  // alcanzable es una tecla capturada en el proceso principal.
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (input.type !== 'keyDown') return;
@@ -177,8 +174,6 @@ function createWindow(isDev) {
     loadFailureRecoveryAttempts = 0;
   });
 
-  // A load that neither finishes nor reports did-fail-load would leave the
-  // window hidden forever; reveal it (or the failure page) as a fallback.
   const loadWatchdog = setTimeout(() => {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
     appendLogEvent('WARN', 'renderer.lifecycle', {

@@ -21,8 +21,6 @@ class ProcessState:
     _lock: threading.RLock = field(default_factory=threading.RLock)
 
 
-# Estado del proceso de conversión en curso; lo leen los handlers de
-# status/cancel y lo escribe el runner de conversion_job.
 process_state = ProcessState()
 
 

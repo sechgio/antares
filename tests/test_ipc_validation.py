@@ -350,7 +350,7 @@ class _CountingByteStdout:
             self.buffer_write_count += 1
             return original_write(data)
 
-        self.buffer.write = counting_write  # type: ignore[method-assign]
+        self.buffer.write = counting_write
 
     def write(self, _data: str) -> int:
         self.text_write_count += 1

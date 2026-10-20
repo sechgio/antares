@@ -39,7 +39,7 @@ const SCOPES = [
 let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
 let _pendingOAuthState = null;
-let _callbackFlow = null; // { stop } del listener de este intento
+let _callbackFlow = null;
 
 function _generateCodeVerifier() {
   return crypto.randomBytes(32).toString('base64url');
@@ -179,6 +179,7 @@ async function exchangeCode(code, redirectUri) {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
+    ...(typeof data.scope === 'string' ? { scope: data.scope } : {}),
   };
   const email = await _resolveGoogleEmail(tokens.access_token);
   if (!email) {
@@ -223,8 +224,6 @@ async function getAuthStatus() {
     const info = await res.json();
     const email = info.email || undefined;
     if (email) {
-      // Solo escribir cuando algo cambió: este método se llama en cada poll de
-      // status y saveTokens/setActiveUser golpean el disco cifrado cada vez.
       const stored = store.loadTokens();
       const tokensUnchanged = stored
         && stored.access_token === tokens.access_token
@@ -236,6 +235,7 @@ async function getAuthStatus() {
           access_token: tokens.access_token,
           refresh_token: tokens.refresh_token,
           expiry_date: tokens.expiry_date,
+          ...(typeof tokens.scope === 'string' ? { scope: tokens.scope } : {}),
         });
       }
     }
@@ -245,9 +245,6 @@ async function getAuthStatus() {
       email_masked: email ? maskEmail(email) : undefined,
     };
   } catch {
-    // userinfo inalcanzable (red cortada, timeout, 5xx) con tokens válidos en
-    // disco != sesión cerrada: reportar autenticado pero degradado en vez de
-    // tumbar toda la UI.
     if (tokens.access_token) {
       const email = getActiveEmail() || undefined;
       return {
@@ -366,9 +363,6 @@ async function openSpreadsheet(rawId) {
       created_tabs,
     };
   } catch (err) {
-    // Sin tabs provisionadas la hoja no está vinculada: desmarcar para que
-    // linked sea false y el próximo intento vuelva a abrir (ver
-    // restorePersistedSheet).
     _sheetId = null;
     _sheetMeta = null;
     throw err;
@@ -399,8 +393,6 @@ async function restorePersistedSheet() {
   try {
     await openSpreadsheet(stored.sheet_id);
   } catch {
-    // Reapertura fallida (token expirado, hoja eliminada o permisos): no marcar
-    // _sheetId para que linked sea false y el próximo intento vuelva a abrir.
   }
   return getStoredSheetConfig();
 }

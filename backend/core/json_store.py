@@ -81,10 +81,8 @@ def migrate_legacy_json_store(
             try:
                 target_items = _read_items(target, normalizer)
             except json.JSONDecodeError:
-                # Let JsonDocumentStore._load create its existing corruption backup and error.
                 return
             except (KeyError, TypeError, ValueError, DatabaseError):
-                # Do not replace an unexpected user file with legacy data.
                 return
 
         merged = dict(legacy_items)

@@ -170,8 +170,6 @@ def canvas_list(params: dict[str, Any]) -> dict[str, Any]:
 def canvas_bootstrap(params: dict[str, Any]) -> dict[str, Any]:
     store = _canvas_core.get_canvas_store()
     documents = store.list_documents()
-    # El listado viene ordenado por stem (uuid): bootstrap debe reabrir el
-    # documento editado más recientemente, no el primero por nombre.
     latest = max(documents, key=lambda d: d.get("updatedAt") or "", default=None)
     document = store.get(str(latest["id"])) if latest else None
     return {"documents": documents, "document": document}
@@ -204,7 +202,6 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
     document = params["document"]
     if not isinstance(document, dict):
         raise ValidationError("document debe ser un objeto")
-    # CanvasStore valida el tamaño al serializar; aquí solo se comprueba la memoria.
     _check_memory_pressure_or_spill(None if "expected_updated_at" in params else document, context="canvas_save")
     touch = params.get("touch", True)
     if not isinstance(touch, bool):
@@ -221,7 +218,6 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
         raise ValidationError(str(exc), details=details) from exc
     _cleanup_spill(str(document.get("id") or "unknown"))
     if params.get("slim"):
-        # El cliente ya tiene el contenido; devolver solo metadatos evita duplicarlo por IPC.
         return {"document": _document_meta(saved), "slim": True}
     return {"document": saved}
 
@@ -276,8 +272,6 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Demasiados contextos (máx 50)")
     pages = document.get("pages") or []
     pair_context_pages = bool(params.get("pair_context_pages", False))
-    # Misma condición que usa CanvasCmykRenderer.render: pareado se emite una
-    # página por contexto, si no el producto contexto x página.
     if pair_context_pages and len(contexts) == len(pages):
         output_pages = len(pages)
     else:
@@ -366,7 +360,6 @@ def canvas_save_history(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(past, list) or not isinstance(future, list):
         msg = "past and future must be arrays"
         raise ValueError(msg)
-    # CanvasStore valida el tamaño del historial retenido al serializar.
     _check_history_memory_pressure(doc_id, past, future)
     store = _canvas_core.get_canvas_store()
     try:

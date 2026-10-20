@@ -22,7 +22,6 @@ interface UseCanvasQuitFlushOptions {
   panelBaselineRef: MutableRefObject<CanvasDocument | null>;
   gestureBaselineRef: MutableRefObject<CanvasDocument | null>;
   renameBaselineRef: MutableRefObject<CanvasDocument | null>;
-  // Evalúa hasUnsavedEdits y los baselines al leer.
   isOpenDirty: () => boolean;
 }
 
@@ -39,7 +38,6 @@ export function useCanvasQuitFlush({
   isOpenDirty,
 }: UseCanvasQuitFlushOptions): void {
   const flushRef = useRef<() => Promise<void>>(async () => {});
-  // El ref evita rearmar el flush si cambia la identidad del getter.
   const isOpenDirtyRef = useRef(isOpenDirty);
   isOpenDirtyRef.current = isOpenDirty;
 
@@ -54,9 +52,6 @@ export function useCanvasQuitFlush({
         | 'inline_edit_failed'
         | 'rename_commit_failed';
       let flushFailed: FlushFailure | undefined;
-      // Los cuatro commits previos se intentan aunque fallen, pero cada fallo
-      // deja un reason distinto: sin él, un flush incompleto se reportaba como
-      // éxito y no había forma de saber qué paso se quedó atrás.
       let commitFailed: FlushFailure | undefined;
       try {
         if (panelBaselineRef.current) onPanelCommitLive();
@@ -118,7 +113,6 @@ export function useCanvasQuitFlush({
           }
         }
       }
-      // El flush se espera antes del ack; si falla queda evidencia en el JSONL.
       reportFrontendEvent({
         event: 'canvas.quit_flush',
         level: flushFailed ? 'ERROR' : 'INFO',

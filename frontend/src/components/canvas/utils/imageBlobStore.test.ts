@@ -81,7 +81,7 @@ describe("trackImageRef / collectImageRefs", () => {
     ]);
     expect(live.has(reg.url)).toBe(true);
     expect(live.has("blob:logo1")).toBe(true);
-    expect(live.size).toBe(3); // reg.url + reg.blobId + blob:logo1
+    expect(live.size).toBe(3);
   });
 
   it("collectImageRefsFromHistory lee diff steps y snapshots", () => {
@@ -456,7 +456,7 @@ describe("pin/release/sweep", () => {
     releaseImageBlob(reg.url);
     expect(getBlobUrl(reg.blobId)).toBe(reg.url);
     unpin();
-    unpin(); // idempotente
+    unpin();
     releaseImageBlob(reg.url);
     expect(revoked).toContain(reg.url);
   });

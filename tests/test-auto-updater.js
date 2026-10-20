@@ -80,7 +80,6 @@ async function run() {
     }),
   ];
 
-  // Captura los timers para probar arranque, sondeo y timeout sin esperar intervalos reales.
   const timers = { timeouts: [], intervals: [], cleared: [] };
   const realTimers = {
     setTimeout: global.setTimeout,

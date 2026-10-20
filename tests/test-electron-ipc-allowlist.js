@@ -69,7 +69,6 @@ function main() {
   const preloadSource = fs.readFileSync(PRELOAD_PATH, 'utf8');
   const catalog = require(CATALOG_PATH);
 
-  // Revisa también api/*.ts: los wrappers usan _invoke y autoimgApi recibe invoke inyectado.
   const apiMethods = extractApiMethods(apiSource);
   for (const file of fs.readdirSync(API_DIR).filter((f) => f.endsWith('.ts'))) {
     const moduleSource = fs.readFileSync(path.join(API_DIR, file), 'utf8');
@@ -77,18 +76,17 @@ function main() {
     for (const m of extractApiMethods(moduleSource, /\binvoke\b/g)) apiMethods.add(m);
   }
   const preloadMethods = extractPreloadMethods(preloadSource);
-  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'autoimg_scan_all']);
+  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
-  if (!apiMethods.has('flows_pdf_preview') || !catalog.isIdempotent('flows_pdf_preview')
-      || catalog.METHODS.flows_pdf_preview.lane !== 'heavy'
-      || catalog.METHODS.flows_pdf_preview.flowCallable === true
-      || JSON.stringify(catalog.READ_FILE_TOKEN_SCHEMAS.get('flows_pdf_preview')) !== JSON.stringify([['spreadsheet_path']])) {
-    throw new Error('La vista previa guiada debe conservar capacidades y ser una lectura heavy del renderer.');
-  }
-
-  const refreshMethod = 'flows_connection_token_refresh';
+  const refreshMethod = 'connections_token_refresh';
   if (!catalog.INTERNAL_METHODS.has(refreshMethod) || knownUsedMethods.has(refreshMethod)) {
     throw new Error('El refresco de conexiones debe ser interno, sin acceso del renderer.');
+  }
+  for (const method of ['agent_internal_approval_ensure', 'agent_internal_dispatch']) {
+    if (!catalog.INTERNAL_METHODS.has(method) || knownUsedMethods.has(method)
+      || catalog.METHODS[method].inputSchema.properties.context.type !== 'object') {
+      throw new Error('El contexto de aprobación debe viajar únicamente por el puente privado del agente.');
+    }
   }
 
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
@@ -103,9 +101,6 @@ function main() {
     }
     if (entry.timeout !== undefined && !VALID_TIMEOUTS.has(entry.timeout)) {
       invalidEntries.push(`${name}: timeout inválido (${entry.timeout})`);
-    }
-    if (entry.flowCallable !== undefined && (typeof entry.flowCallable !== 'boolean' || !entry.handler.startsWith('backend:'))) {
-      invalidEntries.push(`${name}: flowCallable debe ser booleano y pertenecer al backend`);
     }
     if (entry.lane !== undefined) {
       if (!entry.handler.startsWith('backend:')) {
@@ -129,8 +124,7 @@ function main() {
     ['db_import', 300_000],
     ['process_start', 900_000],
     ['canvas_export_cmyk_pdf', 900_000],
-    ['flows_print_pdf', 900_000],
-    ['flows_pdf_preview', 900_000],
+    ['print_pdf', 900_000],
     ['html_to_pdf', 900_000],
   ].filter(([m, ms]) => catalog.timeoutMsFor(m) !== ms);
 

@@ -1,0 +1,383 @@
+"""Registro de servidores MCP del usuario para el agente.
+
+Los servidores se guardan en ``mcp_servers.json`` dentro de datos de usuario;
+los secretos (cabeceras HTTP, env de procesos stdio) viven en el vault sellado
+de ``core.integrations.vault`` y nunca salen del backend — el listado público solo
+expone los nombres de las claves.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import threading
+import time
+import urllib.parse
+from collections.abc import Callable
+from pathlib import Path
+
+from backend.core.integrations import http_guard, mcp_client, vault
+from backend.core.integrations.types import JsonObject
+from backend.utils.atomic_write import atomic_write_json
+from backend.utils.paths import user_data_path
+
+_lock = threading.RLock()
+_TOOLS_TTL_S = 300.0
+_tools_cache: dict[str, tuple[float, list[JsonObject]]] = {}
+
+_ID_RE = re.compile(r"[^a-z0-9_-]+")
+_TOOL_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]+")
+MAX_SERVERS = 20
+_MAX_SECRET_CHARS = 4000
+
+
+def _servers_path() -> Path:
+    return user_data_path("mcp_servers.json")
+
+
+def _secrets_path(server_id: str) -> Path:
+    return user_data_path(f"mcp/{server_id}-secrets.json")
+
+
+def _slug(name: str) -> str:
+    slug = _ID_RE.sub("-", name.lower()).strip("-")
+    return slug[:48] or "servidor"
+
+
+def _is_loopback_url(url: str) -> bool:
+    """``http://`` solo se tolera hacia loopback: el tráfico no sale de la máquina."""
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _load() -> list[JsonObject]:
+    path = _servers_path()
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [s for s in data.get("servers", []) if isinstance(s, dict)]
+
+
+def _save(servers: list[JsonObject]) -> None:
+    atomic_write_json(_servers_path(), {"servers": servers})
+
+
+def _public(server: JsonObject) -> JsonObject:
+    secrets = vault.open_sealed(f"mcp:{server['id']}", _secrets_path(server["id"])) or {}
+    return {
+        "id": server["id"],
+        "name": server["name"],
+        "transport": server["transport"],
+        "url": server.get("url", ""),
+        "command": server.get("command", ""),
+        "args": server.get("args", []),
+        "secret_keys": sorted((secrets.get("headers") or {}).keys() or (secrets.get("env") or {}).keys()),
+        "tools_count": server.get("tools_count"),
+        "disabled_tools": server.get("disabled_tools", []),
+    }
+
+
+def list_servers() -> list[JsonObject]:
+    with _lock:
+        return [_public(s) for s in _load()]
+
+
+def get_server(server_id: str) -> JsonObject:
+    for s in _load():
+        if s.get("id") == server_id:
+            return s
+    raise ValueError(f"Servidor MCP desconocido: {server_id}")
+
+
+def add_server(
+    name: str,
+    transport: str,
+    *,
+    url: str = "",
+    command: str = "",
+    args: list[str] | None = None,
+    secrets: JsonObject | None = None,
+) -> JsonObject:
+    """Registra un servidor. ``secrets``: {'headers'|'env': {clave: valor}}."""
+    name = name.strip()
+    if not name or len(name) > 80:
+        raise ValueError("Nombre de servidor inválido")
+    if transport not in ("http", "stdio"):
+        raise ValueError("transport debe ser http o stdio")
+    if transport == "http":
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            raise ValueError("La URL del servidor debe empezar por http(s)://")
+        if url.startswith("http://") and not (_is_loopback_url(url) or http_guard._private_hosts_allowed()):
+            raise ValueError(
+                "Las URLs http:// envían las credenciales sin cifrar; usa https:// "
+                "(http:// solo se admite en localhost)"
+            )
+    else:
+        command = command.strip()
+        if not command:
+            raise ValueError("El servidor stdio requiere un comando")
+    with _lock:
+        servers = _load()
+        if len(servers) >= MAX_SERVERS:
+            raise ValueError(f"Máximo {MAX_SERVERS} servidores MCP")
+        base = _slug(name)
+        server_id = base
+        i = 2
+        while any(s.get("id") == server_id for s in servers):
+            server_id = f"{base}-{i}"
+            i += 1
+        server: JsonObject = {
+            "id": server_id,
+            "name": name,
+            "transport": transport,
+            "url": url,
+            "command": command,
+            "args": [str(a) for a in (args or [])][:32],
+        }
+        servers.append(server)
+        _save(servers)
+        if secrets:
+            flat: dict[str, dict[str, str]] = {}
+            for group in ("headers", "env"):
+                values = secrets.get(group)
+                if isinstance(values, dict):
+                    flat[group] = {
+                        str(k): str(v)[:_MAX_SECRET_CHARS] for k, v in list(values.items())[:16] if str(v).strip()
+                    }
+            if any(flat.values()):
+                vault.seal(f"mcp:{server_id}", _secrets_path(server_id), flat)
+        return _public(server)
+
+
+def remove_server(server_id: str) -> JsonObject:
+    with _lock:
+        servers = _load()
+        kept = [s for s in servers if s.get("id") != server_id]
+        if len(kept) == len(servers):
+            raise ValueError(f"Servidor MCP desconocido: {server_id}")
+        _save(kept)
+        _tools_cache.pop(server_id, None)
+    with contextlib.suppress(OSError):
+        _secrets_path(server_id).unlink(missing_ok=True)
+    return {"deleted": True, "id": server_id}
+
+
+def _secrets(server_id: str) -> JsonObject:
+    return vault.open_sealed(f"mcp:{server_id}", _secrets_path(server_id)) or {}
+
+
+def _stdio_env(secrets: JsonObject) -> dict[str, str]:
+    runtime_keys = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "USERPROFILE",
+                    "HOME", "APPDATA", "LOCALAPPDATA", "LANG", "LC_ALL", "LC_CTYPE", "NODE_EXTRA_CA_CERTS"}
+    env = {key: value for key, value in os.environ.items() if key.upper() in runtime_keys}
+    for k, v in (secrets.get("env") or {}).items():
+        env[str(k)] = str(v)
+    return env
+
+
+def _redact(value: object, secrets: JsonObject) -> object:
+    if isinstance(value, dict):
+        return {str(_redact(key, secrets)): _redact(child, secrets) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_redact(child, secrets) for child in value]
+    if not isinstance(value, str):
+        return value
+    for group in ("headers", "env"):
+        for secret in (secrets.get(group) or {}).values():
+            if isinstance(secret, str) and secret:
+                value = value.replace(secret, "<REDACTED>")
+                if secret.lower().startswith("bearer ") and len(secret[7:]) >= 8:
+                    value = value.replace(secret[7:], "<REDACTED>")
+    return value
+
+
+def approval_context(server_id: str, advertised_name: str, *, force: bool = True) -> JsonObject:
+    """Config y schema actuales, sin exponer credenciales en una aprobación."""
+    server = get_server(server_id)
+    try:
+        tools = list_tools(server_id, force=force)
+    except Exception:
+        raise ValueError("No se pudo verificar la herramienta MCP; comprueba su conexión antes de aprobar") from None
+    real_name = _resolve_tool_name(server_id, advertised_name, advertised=True)
+    tool = next(t for t in tools if t["name"] == real_name)
+    if not tool.get("enabled", True):
+        raise ValueError("La herramienta MCP está deshabilitada; selecciónala en Conexiones")
+    config = {k: server.get(k) for k in ("id", "transport", "url", "command", "args", "tool_revision")}
+    canonical = json.dumps({"config": config, "tool": tool, "credentials": _secrets(server_id)},
+                           sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return {"account": f"MCP: {server['name']}", "server_id": server_id, "tool": real_name,
+            "tool_version": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
+
+
+def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
+    server = get_server(server_id)
+    with _lock:
+        cached = _tools_cache.get(server_id)
+        if cached and not force and time.time() - cached[0] < _TOOLS_TTL_S:
+            return [{**tool, "enabled": tool["name"] not in server.get("disabled_tools", [])} for tool in cached[1]]
+    secrets = _secrets(server_id)
+    if server["transport"] == "http":
+        tools = mcp_client.list_tools_http(server["url"], secrets.get("headers") or {})
+    else:
+        tools = mcp_client.list_tools_stdio(server["command"], server.get("args") or [], _stdio_env(secrets))
+    clean = []
+    for tool in tools:
+        t = _redact(tool, secrets)
+        if not isinstance(t, dict) or not t.get("name") or t["name"] != tool.get("name"):
+            continue
+        clean.append({
+            "name": str(t["name"]),
+            "description": str(t.get("description") or "")[:300],
+            "inputSchema": t.get("inputSchema") if isinstance(t.get("inputSchema"), dict) else {"type": "object", "properties": {}},
+        })
+    with _lock:
+        _tools_cache[server_id] = (time.time(), clean)
+        servers = _load()
+        for s in servers:
+            if s.get("id") == server_id:
+                s["tools_count"] = len(clean)
+        _save(servers)
+    server = get_server(server_id)
+    return [{**tool, "enabled": tool["name"] not in server.get("disabled_tools", [])} for tool in clean]
+
+
+def set_tool_enabled(server_id: str, tool: str, enabled: bool) -> JsonObject:
+    tools = list_tools(server_id)
+    if not any(item["name"] == tool for item in tools):
+        raise ValueError("La herramienta MCP ya no está disponible; vuelve a listar el servidor")
+    with _lock:
+        servers = _load()
+        server = next((s for s in servers if s["id"] == server_id), None)
+        if server is None:
+            raise ValueError("El servidor MCP se desconectó")
+        disabled = set(server.get("disabled_tools") or [])
+        if (tool not in disabled) != enabled:
+            if enabled:
+                disabled.discard(tool)
+            else:
+                disabled.add(tool)
+            server["disabled_tools"] = sorted(disabled)
+            server["tool_revision"] = int(server.get("tool_revision") or 0) + 1
+            _save(servers)
+    return {"name": tool, "enabled": enabled}
+
+
+def call_tool(
+    server_id: str, tool: str, args: JsonObject, *, advertised: bool = False,
+    cancelled: Callable[[], bool] | None = None,
+    approved_context: JsonObject | None = None,
+) -> JsonObject:
+    with _lock:
+        if approved_context is not None and approval_context(server_id, tool, force=False) != approved_context:
+            raise ValueError("La configuración MCP cambió después de aprobar; solicita una nueva aprobación")
+        server = get_server(server_id)
+        secrets = _secrets(server_id)
+        tool = _resolve_tool_name(server_id, tool, advertised=advertised)
+        if tool in server.get("disabled_tools", []):
+            raise ValueError("La herramienta MCP está deshabilitada; selecciónala en Conexiones")
+    try:
+        if server["transport"] == "http":
+            result = mcp_client.call_tool_http(server["url"], secrets.get("headers") or {}, tool, args,
+                                              **({"cancelled": cancelled} if cancelled else {}))
+        else:
+            result = mcp_client.call_tool_stdio(
+                server["command"], server.get("args") or [], _stdio_env(secrets), tool, args,
+                **({"cancelled": cancelled} if cancelled else {}),
+            )
+    except mcp_client.McpCancelled:
+        raise
+    except mcp_client.McpUncertain as err:
+        if advertised:
+            raise mcp_client.McpUncertain(str(_redact(str(err), secrets))) from None
+        raise
+    except Exception as err:
+        if advertised:
+            raise ValueError(_redact(str(err), secrets)) from None
+        raise
+    if advertised:
+        cleaned = _redact(result, secrets)
+        if isinstance(cleaned, dict):
+            result = cleaned
+    return mcp_client.normalize_result(result)
+
+
+def agent_tool_name(server_id: str, tool: str) -> str:
+    """Nombre anunciado al LLM: un function name válido (<=64, [A-Za-z0-9_-])."""
+    alias = f"{server_id[:19]}-{hashlib.sha256(server_id.encode()).hexdigest()[:12]}"
+    prefix = f"mcp2__{alias}__"
+    clean = _TOOL_NAME_RE.sub('-', tool)
+    if tool:
+        clean = f"{clean[:64 - len(prefix) - 13]}-{hashlib.sha256(tool.encode()).hexdigest()[:12]}"
+    return prefix + clean
+
+
+def _resolve_tool_name(server_id: str, name: str, *, advertised: bool = False) -> str:
+    """Traduce el nombre anunciado al agente al real de la tool.
+
+    Devuelve ``name`` intacto si ya es el nombre real o si no se puede listar
+    el servidor (el error real lo da la propia llamada).
+    """
+    try:
+        tools = list_tools(server_id)
+    except Exception:
+        if advertised:
+            raise ValueError("No se pudo verificar la herramienta MCP aprobada") from None
+        return name
+    if not advertised and any(str(tool.get("name") or "") == name for tool in tools):
+        return name
+    full_name = name if advertised else f"mcp__{server_id}__{name}"
+    matches = []
+    for t in tools:
+        real = str(t.get("name") or "")
+        legacy = f"mcp__{server_id}__{_TOOL_NAME_RE.sub('-', real)}"[:64]
+        if agent_tool_name(server_id, real) == full_name or legacy == full_name:
+            matches.append(real)
+    if len(matches) > 1:
+        raise ValueError("Nombre MCP ambiguo; vuelve a solicitar la herramienta antes de aprobar")
+    if matches:
+        return matches[0]
+    if advertised:
+        raise ValueError("La herramienta MCP aprobada ya no está disponible")
+    return name
+
+
+def parse_agent_tool(name: str) -> tuple[str, str] | None:
+    """Resuelve nombres MCP actuales y antiguos; rechaza identidades ambiguas."""
+    if name.startswith("mcp2__"):
+        for server in list_servers():
+            server_id = str(server["id"])
+            prefix = agent_tool_name(server_id, "")
+            if name.startswith(prefix) and name[len(prefix):]:
+                return server_id, name[len(prefix):]
+        return None
+    if not name.startswith("mcp__"):
+        return None
+    matches = []
+    for server in list_servers():
+        prefix = f"mcp__{server['id']}__"
+        if name.startswith(prefix) and name[len(prefix):]:
+            matches.append((str(server["id"]), name[len(prefix):]))
+    if len(matches) > 1:
+        raise ValueError("Nombre MCP ambiguo; vuelve a solicitar la herramienta antes de aprobar")
+    if matches:
+        return matches[0]
+    rest = name[5:]
+    if "__" not in rest:
+        return None
+    server_id, tool = rest.split("__", 1)
+    if not server_id or not tool:
+        return None
+    return server_id, tool

@@ -40,7 +40,6 @@ function run() {
     'á中文🚀e\u0301', '\ud800', '\udfff', '"'.repeat(1000), '\u0000'.repeat(1000),
   ];
   for (const value of strings) {
-    // Preserve the existing estimate, including its handling of lone surrogates.
     let expected = Buffer.byteLength(value, 'utf8') + 2;
     for (let i = 0; i < value.length; i += 1) {
       const code = value.charCodeAt(i);

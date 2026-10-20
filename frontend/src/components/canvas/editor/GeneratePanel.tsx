@@ -222,8 +222,6 @@ export default function GeneratePanel({
         contexts.push({ data, images: urls, ...logos, imageMeta });
       }
       } catch (err) {
-        // Si la construcción aborta a mitad, las URLs creadas no llegan al ref
-        // de revocación del preview: hay que liberarlas aquí.
         for (const u of pendingObjectUrls) URL.revokeObjectURL(u);
         throw err;
       }

@@ -209,8 +209,6 @@ export function createSpotifyController(): SpotifyController {
 
   function schedulePoll() {
     window.clearTimeout(timer);
-    // Sin sesión lista no hay nada que sondear: la cadena se rearma cuando el
-    // estado pasa a 'ready' (refreshSession o el notify de auth).
     if (disposed || session.get() !== 'ready') return;
     timer = window.setTimeout(async () => {
       await poll();

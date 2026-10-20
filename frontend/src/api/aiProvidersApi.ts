@@ -14,19 +14,42 @@ export interface AiProviderSpec {
   key_masked: string | null;
   base_url: string;
   needs_key: boolean;
+  custom?: boolean;
+  /** Estilo de API elegido para un modelo personalizado. */
+  api?: string;
+  /** Archivo custom ilegible, listado solo para poder eliminarlo. */
+  invalid?: boolean;
+}
+
+export type AiProviderApiFormat = 'openai' | 'anthropic';
+
+export interface AiProviderCustomInput {
+  id?: string;
+  label: string;
+  api: AiProviderApiFormat;
+  base_url: string;
+  model: string;
+  api_key?: string;
+  /** Quita la clave guardada al editar; un api_key nuevo tiene prioridad. */
+  remove_key?: boolean;
 }
 
 export interface AiProviderStatus extends AiProviderSpec {
   reachable: boolean;
   models_count: number | null;
+  models: string[];
   error: string | null;
 }
 
 export const aiProvidersApi = {
-  aiProvidersList: () => _invoke<{ providers: AiProviderSpec[] }>('ai_providers_list'),
+  aiProvidersList: (p?: { include_invalid?: boolean }) =>
+    _invoke<{ providers: AiProviderSpec[] }>('ai_providers_list', p ?? {}),
 
   aiProviderSave: (p: { provider: string; api_key?: string; base_url?: string; model?: string }) =>
     _invoke<{ provider: AiProviderSpec }>('ai_provider_save', p),
+
+  aiProviderCustomSave: (p: AiProviderCustomInput) =>
+    _invoke<{ id: string; provider: AiProviderSpec }>('ai_provider_custom_save', { ...p }),
 
   aiProviderDelete: (provider: string) =>
     _invoke<{ deleted: boolean }>('ai_provider_delete', { provider }),

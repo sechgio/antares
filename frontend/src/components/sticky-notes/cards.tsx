@@ -43,8 +43,6 @@ const TINT_LABELS: Record<StickyTint, string> = {
 const iconBtn =
   'flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]';
 
-// ── Bandeja (tarjeta única por defecto) ─────────────────────────────────────
-
 export function StackCard({ ready }: { ready: boolean }) {
   const notes = useAtomValue($notes);
   const activeId = useAtomValue($activeStackId);
@@ -301,8 +299,6 @@ function StackEditor({ note }: { note: StickyNote }) {
   );
 }
 
-// ── Ventana de pila (breakouts fusionadas por solape) ───────────────────────
-
 export function PileCard({ pileId }: { pileId: string }) {
   const notes = useAtomValue($notes);
   const activeMap = useAtomValue($activePileNote);
@@ -432,8 +428,6 @@ export function PileCard({ pileId }: { pileId: string }) {
     </div>
   );
 }
-
-// ── Flotante / nota separada ────────────────────────────────────────────────
 
 export function BreakoutCard({ noteId }: { noteId: string }) {
   const notes = useAtomValue($notes);

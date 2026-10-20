@@ -14,7 +14,14 @@ import { notifyPushHealth } from './pushHealth';
 import { reportFrontendError, reportFrontendEvent } from '../../../utils/observability';
 import { errorMessage } from '@/utils/errors';
 import { withTimeout } from '@/utils/async';
-import { pendingCanvasDeletes, recordPendingCanvasDelete, clearPendingCanvasDelete } from './cloudQueue';
+import {
+  pendingCanvasDeletes,
+  recordPendingCanvasDelete,
+  clearPendingCanvasDelete,
+  pendingCanvasPushes,
+  recordPendingCanvasPush,
+  clearPendingCanvasPush,
+} from './cloudQueue';
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
@@ -127,8 +134,6 @@ export async function pushCanvasDocumentResult(
     countCanvasAssetRefs,
   } = await import('../utils/imageBlobStore');
   if (countCanvasAssetRefs(doc) > 0) {
-    // canvasAssetInfo permite acotar el tamaño del JSON con los assets embebidos;
-    // sin él, comprueba el tamaño exacto después de la expansión.
     await assertCanvasAssetExpansionWithinBytes(doc, MAX_CLOUD_CANVAS_DOCUMENT_BYTES);
     doc = await embedCanvasAssetsAsDataUrls(doc, { strict: true });
     if (!window.electronAPI?.canvasAssetInfo) assertCloudCanvasDocumentSize(doc);
@@ -228,8 +233,6 @@ export async function pushCanvasDocumentResult(
   );
   if (error) throw new Error(error.message);
   if (!upserted || upserted.length === 0) {
-    // The LWW trigger suppressed the write: a newer remote row won. Preserve the
-    // local version best-effort and report the rejection honestly.
     try {
       const appendRes = (await withTimeout(
         (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<{ data: unknown; error: { message: string; code?: string; details?: string } | null }>)(
@@ -335,7 +338,6 @@ async function replayPendingCanvasDeletes(): Promise<void> {
     try {
       const local = await api.canvasGet(id);
       if (local?.document) {
-        // El proceso anterior terminó antes de completar el borrado local.
         clearPendingCanvasDelete(id);
         continue;
       }
@@ -472,8 +474,6 @@ export async function pullCanvasDocument(
     return { kind: 'unchanged', remoteUpdatedAt };
   }
 
-  // Only fetch the (potentially multi-MB) document column when the remote
-  // snapshot is actually newer than the local one.
   const { data, error } = await withTimeout(
     supabase
       .from('canvas_documents')
@@ -509,8 +509,6 @@ export async function pullCanvasDocument(
     '../utils/imageBlobStore'
   );
   await assertDocumentImagesResolvable(remote.document);
-  // Convierte data: URLs a canvas-asset: antes de guardar para evitar el límite
-  // local de 16 MiB; la hidratación resuelve esas referencias a blob: URLs.
   const storedRemote = await persistDataUrlsAsCanvasAssets(remote.document);
   if (pendingCanvasDeletes().includes(documentId)) return { kind: 'unchanged' };
   const current = options.getOpenState?.();
@@ -559,11 +557,21 @@ const pendingPushById = new Map<
 let pushFlushQueued = false;
 let pushFlushPromise: Promise<void> | null = null;
 
+function hydratePendingCanvasPushes(): void {
+  const deletedIds = new Set(pendingCanvasDeletes());
+  for (const pending of pendingCanvasPushes()) {
+    if (deletedIds.has(pending.id)) {
+      pendingPushById.delete(pending.id);
+      clearPendingCanvasPush(pending.id);
+    } else if (!pendingPushById.has(pending.id)) {
+      pendingPushById.set(pending.id, pending);
+    }
+  }
+}
+
 function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
   return {
     openDocumentId: b.openDocumentId ?? a?.openDocumentId,
-    // No heredar el snapshot openDocument del sync anterior: puede estar viejo
-    // y resolverConflictLocalDoc recarga por id cuando falta.
     openDocument: b.openDocument,
     openDirty: Boolean(a?.openDirty || b.openDirty),
     getOpenState: b.getOpenState ?? a?.getOpenState,
@@ -857,7 +865,6 @@ const pushRetry = new TimerScheduler(() => {
   void flushPendingPushes().catch(() => {});
 });
 
-// Reintenta sin tope con backoff de hasta 2 min; guardar o enfocar adelanta el reintento.
 function schedulePendingPushRetry(): void {
   if (pushRetry.pending) return;
   const delay = Math.min(PUSH_RETRY_BASE_MS * 2 ** pushRetry.attempts, PUSH_RETRY_MAX_DELAY_MS);
@@ -873,6 +880,7 @@ function flushPendingPushes(): Promise<void> {
   const flush = opChain.then(async () => {
     pushFlushQueued = false;
     try {
+      hydratePendingCanvasPushes();
       await replayPendingCanvasDeletes();
     } catch (err) {
       schedulePendingPushRetry();
@@ -889,13 +897,15 @@ function flushPendingPushes(): Promise<void> {
         const result = await pushCanvasDocumentResult(doc, item.options);
         if (!result.accepted) {
           firstError ??= new Error('El servidor conservó una versión más reciente del documento');
-          continue;
+        } else {
+          await publishAcceptedPush(result);
         }
-        await publishAcceptedPush(result);
+        if (!pendingPushById.has(item.id)) clearPendingCanvasPush(item.id);
       } catch (err) {
         firstError ??= err;
         if (!pendingPushById.has(item.id)) {
           pendingPushById.set(item.id, { id: item.id, options: item.options });
+          recordPendingCanvasPush({ id: item.id, options: item.options });
         }
       }
     }
@@ -925,18 +935,21 @@ export function queueCanvasCloudPush(
   options?: { forceResurrect?: boolean },
 ): Promise<void> {
   pendingPushById.set(doc.id, { id: doc.id, doc, options });
+  recordPendingCanvasPush({ id: doc.id, options });
   return flushPendingPushes();
 }
 
 export function _resetCanvasPushQueueForTests(): void {
   pendingPushById.clear();
   pushRetry.cancel();
+  for (const pending of pendingCanvasPushes()) clearPendingCanvasPush(pending.id);
 }
 
 export function queueCanvasCloudDelete(id: string): Promise<void> {
   recordPendingCanvasDelete(id);
   const next = opChain.then(async () => {
     pendingPushById.delete(id);
+    clearPendingCanvasPush(id);
     if (pendingPushById.size === 0) {
       pushRetry.cancel();
       notifyPushHealth(false);

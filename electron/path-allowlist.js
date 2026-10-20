@@ -2,10 +2,6 @@ const fs = require('fs');
 const path = require('path');
 
 const _allowedReadPaths = new Set();
-// Debe cubrir un escaneo de carpeta completo (dialog_folder registra cada
-// archivo): con un tope menor, las entradas más viejas se eviccionan y los
-// consumidores de path crudo (is_video, thumbnails) rechazan archivos que el
-// usuario sí seleccionó.
 const MAX_ALLOWED_READ_PATHS = 50000;
 
 function isPathInside(parent, child) {
@@ -49,8 +45,6 @@ function hasSymlinkAncestor(resolved) {
     try {
       if (fs.lstatSync(parent).isSymbolicLink()) return true;
     } catch (err) {
-      // Missing ancestors are fine (the tree may not exist yet); anything else
-      // means the path cannot be verified, so fail closed.
       if (!err || err.code !== 'ENOENT') throw err;
     }
     current = parent;
@@ -91,8 +85,6 @@ function assertAllowedReadPath(rawPath) {
   if (!_allowedReadPaths.has(resolved)) {
     throw new Error('path not allowed');
   }
-  // A swapped symlink ancestor makes a registered lexical path resolve outside
-  // the intended tree; write paths already enforce the same policy.
   if (hasSymlinkAncestor(resolved)) {
     throw new Error('symbolic links not allowed');
   }

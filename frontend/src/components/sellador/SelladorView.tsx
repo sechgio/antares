@@ -498,8 +498,6 @@ export default function SelladorView() {
   ]);
 
   const updatePositionRect = useCallback((index: number, rect: StampRect) => {
-    // El editor ya manda el rect limitado, pero la entrada numérica del panel
-    // no: limitar aquí cubre ambos caminos.
     const next = pageSize ? clampStampRect(rect, pageSize) : rect;
     setPositions((current) =>
       current.map((pos, i) => (i === index ? { ...pos, rect: next } : pos)),
@@ -563,8 +561,6 @@ export default function SelladorView() {
   };
 
   const clearStamp = () => {
-    // La URL anterior la revoca el efecto sobre stampPreviewUrl (cambio y
-    // unmount); revocarla aquí también era un doble revoke latente.
     setStampFile(null);
     setStampPreviewUrl(null);
     setPositions([]);

@@ -1,7 +1,3 @@
-/* Archive: grupo segmentado de celda única — icono enmarcado, nombre y
-   transporte comparten un contenedor hairline; opuesto a la píldora con
-   acento de las demás fuentes. Monocromo; el acento cálido solo marca lo
-   que suena. */
 .antares-archive-bar{display:flex;align-items:center;height:100%;color:var(--text-muted);--archive-accent:#c9a86a}
 .antares-archive-group{display:flex;align-items:stretch;height:22px;border:1px solid color-mix(in srgb,var(--text-muted) 30%,transparent);border-radius:5px;overflow:hidden;color:var(--text-secondary);background:color-mix(in srgb,var(--bg-elevated) 35%,transparent)}
 .antares-archive-group>*{display:flex;align-items:stretch;min-width:0}

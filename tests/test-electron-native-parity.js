@@ -36,7 +36,6 @@ function main() {
   );
   const source = new Set(sourceNative);
 
-  // Una proyección incompleta del catálogo deja métodos inalcanzables.
   const catalogNatives = byHandler('native:dialog');
   assert(
     setsEqual(new Set(dialogNative), catalogNatives),
@@ -45,7 +44,6 @@ function main() {
   assert(setsEqual(ALLOWED_RENDERER_METHODS, new Set(Object.keys(catalog))),
     'ALLOWED_RENDERER_METHODS == todos los métodos del catálogo');
 
-  // Un nativo sin rama propia cae al diálogo de apertura por defecto.
   const dialogSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'dialog-handlers.js'), 'utf8');
   const branches = new Set([...dialogSrc.matchAll(/method === '([^']+)'/g)].map((m) => m[1]));
   const openDialogFallthrough = new Set(['dialog_files', 'dialog_dest']);

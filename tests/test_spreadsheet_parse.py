@@ -160,7 +160,6 @@ def test_parse_csv_via_hint_with_tmp_suffix(tmp_path: Path) -> None:
 
 
 def test_parse_csv_reads_semicolon_delimited_file(tmp_path: Path) -> None:
-    """Detecta ';' en CSV de Excel para preservar las columnas usadas por los mapeos."""
     staged = tmp_path / "datos-semi.csv.tmp"
     staged.write_text("A;B\n1;2\n", encoding="utf-8-sig")
 
@@ -170,7 +169,6 @@ def test_parse_csv_reads_semicolon_delimited_file(tmp_path: Path) -> None:
 
 
 def test_parse_csv_reads_windows_ansi_file(tmp_path: Path) -> None:
-    """Lee CSV de Excel en cp1252 sin exigir UTF-8."""
     staged = tmp_path / "datos-ansi.csv.tmp"
     staged.write_text("Localidad;Provincia\nChascomús;Buenos Aires\n", encoding="cp1252")
 

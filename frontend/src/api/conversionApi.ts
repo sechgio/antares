@@ -100,5 +100,4 @@ export const conversionApi = {
   cancelProcess: () => _invoke<{ cancelled: boolean }>('process_cancel'),
 
   preview: (body: PreviewBody) => _invoke<PreviewResult>('preview', body),
-  isVideo: (path: string) => _invoke<{ is_video: boolean }>('is_video', { path }),
 };

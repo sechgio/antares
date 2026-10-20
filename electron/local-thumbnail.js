@@ -397,7 +397,6 @@ async function createLocalImageDataUrl(filePath) {
   if (!buf || !buf.length) {
     throw new Error('unable to load image');
   }
-  // El stat previo no es suficiente: el archivo pudo crecer entre stat y read.
   if (buf.length > MAX_LOCAL_IMAGE_BYTES) {
     throw new Error('image too large');
   }

@@ -483,6 +483,13 @@
   .animate-shimmer {
     animation: shimmer 1.5s infinite linear;
   }
+  .agent-popover-in {
+    transform-origin: top left;
+    animation: agentPopoverIn 140ms var(--ease-out);
+  }
+  .agent-trace-in {
+    animation: agentTraceIn 180ms var(--ease-out);
+  }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
@@ -528,6 +535,16 @@
 @keyframes shimmer {
   from { transform: translateX(-100%); }
   to { transform: translateX(100%); }
+}
+
+@keyframes agentPopoverIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes agentTraceIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes pulse {
@@ -586,6 +603,13 @@
   color: transparent;
   animation: lg-shimmer 6s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .agent-popover-in,
+  .agent-trace-in {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-surface="autoimg"] *,
   [data-surface="autoimg"] *::before,

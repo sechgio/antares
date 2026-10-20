@@ -75,7 +75,6 @@ export function buildExportHtml(
       background: #fff;
       color: #000;
     }
-    /* Sin height/overflow fijos. Si no, se corta el borde inferior del panel. */
     .ev-sheet-page {
       width: ${TABLE_WIDTH_CM}cm;
       overflow: visible;

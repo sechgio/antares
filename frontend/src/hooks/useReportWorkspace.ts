@@ -79,6 +79,7 @@ export interface ReportWorkspaceOptions<TReport> {
   draftKey?: string;
   initialMobileTab?: ReportWorkspaceMobileTab;
   focusPreviewOnOpen?: boolean;
+  agentModule?: string;
 }
 
 function defaultFormatError(error: unknown, fallback: string): string {
@@ -275,20 +276,30 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
     });
   }, [addToast, dialog, formData, formatError, hasChanges, labels, markClean, normalizeItem, options.focusPreviewOnOpen, options.saveBeforeSelect, refreshReports, reportApi, runOperation]);
 
+  useEffect(() => {
+    if (!options.agentModule) return;
+    const key = `agent:open:${options.agentModule}`;
+    const openRequested = () => {
+      const id = sessionStorage.getItem(key);
+      if (!id) return;
+      sessionStorage.removeItem(key);
+      void selectReport(id);
+    };
+    openRequested();
+    window.addEventListener('agent:open-module', openRequested);
+    return () => window.removeEventListener('agent:open-module', openRequested);
+  }, [options.agentModule, selectReport]);
+
   const createReport = useCallback(async (seed?: Partial<TReport>) => {
     const gen = ++sessionGenRef.current;
     await runOperation(async () => {
       try {
         const created = normalizeItem(await reportApi.create());
-        // Un fallo del refresh no debe reportar "No se pudo crear" cuando el
-        // informe ya existe: la lista solo queda stale hasta el próximo refresh.
         await maybeRefreshReports();
         if (gen === sessionGenRef.current) {
           const report = seed ? normalizeItem({ ...created, ...seed }) : created;
           setSelectedId(report.id);
           setFormData(report);
-          // La semilla se aplica en memoria: el informe en disco sigue con sus valores
-          // por defecto hasta que se guarde, así que cuenta como cambio pendiente.
           if (seed) setDirtyCount(1);
           else markClean();
           if (options.focusPreviewOnOpen) setMobileTab('preview');
@@ -375,8 +386,6 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
   }, [addToast, dialog, formatError, labels, markClean, options.draftKey, reportApi, runOperation]);
 
   const importFile = useCallback(async (file: File, extra?: Record<string, unknown>) => {
-    // selectReport pide confirmación con cambios sin guardar; importar también
-    // reemplaza el formulario, así que aplica la misma guarda.
     if (hasChanges) {
       const proceed = await dialog.confirm({
         title: labels.dirtyTitle,
