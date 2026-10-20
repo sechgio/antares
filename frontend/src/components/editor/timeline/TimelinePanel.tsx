@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { Film, Lock, Maximize2, Music, Scissors, Trash2, Upload, ZoomIn, ZoomOut } from 'lucide-react';
 import { clipDurationUs, type Clip, type EditorProject } from '../types';
 import { clipAt, timelineEndUs, type TimelineOperation } from './operations';
 import { fitZoomIndex, formatTimecode, rulerTicks, snapToFrame, zoomLevels } from './scale';
 
-const HEADER_WIDTH = 88;
-const RULER_HEIGHT = 24;
-const TRACK_HEIGHT = { video: 56, audio: 40 } as const;
+const HEADER_WIDTH = 104;
+const RULER_HEIGHT = 26;
+const TRACK_HEIGHT = { video: 64, audio: 44 } as const;
 const TAIL_PX = 240;
 export const ASSET_DRAG_TYPE = 'application/x-antares-asset';
 
 const CLIP_TONE: Record<Clip['kind'], string> = {
-  video: 'border-[var(--accent-blue)] bg-[color-mix(in_srgb,var(--accent-blue)_25%,transparent)]',
-  image: 'border-[var(--accent-blue)] bg-[color-mix(in_srgb,var(--accent-blue)_25%,transparent)]',
-  audio: 'border-[var(--accent-green)] bg-[color-mix(in_srgb,var(--accent-green)_25%,transparent)]',
-  text: 'border-[var(--accent-secondary)] bg-[color-mix(in_srgb,var(--accent-secondary)_25%,transparent)]',
+  video: 'border-[color-mix(in_srgb,var(--accent-blue)_55%,transparent)] bg-[color-mix(in_srgb,var(--accent-blue)_22%,var(--bg-surface))]',
+  image: 'border-[color-mix(in_srgb,var(--accent-secondary)_55%,transparent)] bg-[color-mix(in_srgb,var(--accent-secondary)_22%,var(--bg-surface))]',
+  audio: 'border-[color-mix(in_srgb,var(--accent-green)_55%,transparent)] bg-[color-mix(in_srgb,var(--accent-green)_20%,var(--bg-surface))]',
+  text: 'border-[color-mix(in_srgb,var(--accent-orange)_55%,transparent)] bg-[color-mix(in_srgb,var(--accent-orange)_22%,var(--bg-surface))]',
 };
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -134,7 +135,7 @@ export function TimelinePanel({
 
   return (
     <section
-      className="flex h-64 shrink-0 flex-col border-t border-[var(--border-medium)] bg-[var(--bg-elevated)]"
+      className="flex h-60 shrink-0 flex-col border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]"
       aria-label="Línea de tiempo"
       data-testid="editor-timeline"
       onDragOver={(event) => {
@@ -148,50 +149,63 @@ export function TimelinePanel({
         }
       }}
     >
-      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-[var(--border-subtle)] px-2 text-xs">
-        <ToolButton label="Dividir" shortcut="Ctrl+K" disabled={!splitTarget} onClick={split}>
-          Dividir
-        </ToolButton>
-        <ToolButton label="Eliminar" shortcut="Supr" disabled={!selectedClip} onClick={remove}>
-          Eliminar
-        </ToolButton>
-        <div className="flex-1 text-center font-mono tabular-nums" data-testid="editor-timecode">
+      <div className="grid h-9 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-[var(--border-subtle)] px-2">
+        <div className="flex items-center gap-0.5">
+          <ToolButton label="Dividir" shortcut="Ctrl+K" disabled={!splitTarget} onClick={split}>
+            <Scissors className="h-3.5 w-3.5" aria-hidden />
+          </ToolButton>
+          <ToolButton label="Eliminar" shortcut="Supr" disabled={!selectedClip} onClick={remove}>
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+          </ToolButton>
+        </div>
+        <div className="font-mono text-[11px] tabular-nums" data-testid="editor-timecode">
           <span className="text-[var(--accent-primary)]">{formatTimecode(playheadUs, fps)}</span>
           <span className="text-[var(--text-muted)]"> / {formatTimecode(durationUs, fps)}</span>
         </div>
-        <ToolButton label="Ajustar a la vista" shortcut="Shift+Z" onClick={zoomFit}>
-          Ajustar
-        </ToolButton>
-        <ToolButton label="Alejar" shortcut="-" onClick={() => zoomBy(-1)}>
-          −
-        </ToolButton>
-        <input
-          type="range"
-          aria-label="Zoom de la línea de tiempo"
-          className="w-24 accent-[var(--accent-primary)]"
-          min={0}
-          max={levels.length - 1}
-          value={zoomIndex}
-          onChange={(event) => setZoomIndex(Number(event.target.value))}
-        />
-        <ToolButton label="Acercar" shortcut="+" onClick={() => zoomBy(1)}>
-          +
-        </ToolButton>
+        <div className="flex items-center justify-end gap-0.5">
+          <ToolButton label="Ajustar a la vista" shortcut="Shift+Z" onClick={zoomFit}>
+            <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+          </ToolButton>
+          <span className="mx-1 h-4 w-px bg-[var(--border-subtle)]" aria-hidden />
+          <ToolButton label="Alejar" shortcut="-" onClick={() => zoomBy(-1)}>
+            <ZoomOut className="h-3.5 w-3.5" aria-hidden />
+          </ToolButton>
+          <input
+            type="range"
+            aria-label="Zoom de la línea de tiempo"
+            className="mx-1 h-1 w-24 cursor-pointer accent-[var(--accent-primary)]"
+            min={0}
+            max={levels.length - 1}
+            value={zoomIndex}
+            onChange={(event) => setZoomIndex(Number(event.target.value))}
+          />
+          <ToolButton label="Acercar" shortcut="+" onClick={() => zoomBy(1)}>
+            <ZoomIn className="h-3.5 w-3.5" aria-hidden />
+          </ToolButton>
+        </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="shrink-0 border-r border-[var(--border-subtle)]" style={{ width: HEADER_WIDTH }}>
-          <div style={{ height: RULER_HEIGHT }} />
-          {tracks.map((track) => (
-            <div
-              key={track.id}
-              className="flex items-center px-3 text-[11px] text-[var(--text-muted)]"
-              style={{ height: TRACK_HEIGHT[track.kind] }}
-            >
-              {track.kind === 'video' ? 'Video' : 'Audio'}
-              {track.locked && ' · bloqueada'}
-            </div>
-          ))}
+      <div className="flex min-h-0 flex-1 bg-[var(--bg-base)]">
+        <div
+          className="shrink-0 border-r border-[var(--border-subtle)] bg-[var(--bg-surface)]"
+          style={{ width: HEADER_WIDTH }}
+        >
+          <div className="border-b border-[var(--border-subtle)]" style={{ height: RULER_HEIGHT }} />
+          {!empty &&
+            tracks.map((track) => {
+              const Icon = track.kind === 'video' ? Film : Music;
+              return (
+                <div
+                  key={track.id}
+                  className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-3 text-[11px] text-[var(--text-muted)]"
+                  style={{ height: TRACK_HEIGHT[track.kind] }}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden />
+                  <span>{track.kind === 'video' ? 'Video' : 'Audio'}</span>
+                  {track.locked && <Lock className="ml-auto h-3 w-3" aria-label="Pista bloqueada" />}
+                </div>
+              );
+            })}
         </div>
 
         <div
@@ -203,7 +217,7 @@ export function TimelinePanel({
         >
           <div className="relative" style={{ width: contentWidth, height: '100%' }}>
             <div
-              className="relative cursor-pointer border-b border-[var(--border-subtle)]"
+              className="relative cursor-pointer select-none border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]"
               style={{ height: RULER_HEIGHT }}
               data-testid="editor-ruler"
               onMouseDown={(event) => onSeek(toUs(xFromEvent(event)))}
@@ -211,11 +225,11 @@ export function TimelinePanel({
               {ticks.map((tick) => (
                 <div
                   key={tick.us}
-                  className="absolute bottom-0 w-px bg-[var(--border-medium)]"
-                  style={{ left: toX(tick.us), height: tick.major ? 10 : 5 }}
+                  className={`absolute bottom-0 w-px ${tick.major ? 'bg-[var(--text-muted)]' : 'bg-[var(--border-medium)]'}`}
+                  style={{ left: toX(tick.us), height: tick.major ? 8 : 4 }}
                 >
                   {tick.major && (
-                    <span className="absolute bottom-2.5 left-1 whitespace-nowrap text-[10px] text-[var(--text-muted)]">
+                    <span className="absolute bottom-2 left-1 whitespace-nowrap text-[10px] tabular-nums text-[var(--text-muted)]">
                       {formatTimecode(tick.us, fps).slice(0, 5)}
                     </span>
                   )}
@@ -226,10 +240,11 @@ export function TimelinePanel({
             {empty ? (
               <button
                 type="button"
-                className="absolute left-4 right-4 top-1/2 flex h-[70px] -translate-y-1/2 items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border-medium)] text-xs text-[var(--text-secondary)] hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)]"
-                style={{ marginTop: RULER_HEIGHT / 2 }}
+                className="absolute left-4 right-4 flex h-[70px] items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border-medium)] text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)]"
+                style={{ top: `calc(50% + ${RULER_HEIGHT / 2}px - 35px)` }}
                 onClick={onImport}
               >
+                <Upload className="h-4 w-4" aria-hidden />
                 Arrastra medios aquí o pulsa para importar
               </button>
             ) : (
@@ -249,21 +264,31 @@ export function TimelinePanel({
                     .map((clip) => {
                       const selected = clip.id === selectedClipId;
                       const asset = project.assets.find((a) => a.id === clip.assetId);
-                      const label = clip.kind === 'text' ? clip.text?.content || 'Texto' : asset?.displayName ?? 'Clip';
+                      const label =
+                        clip.kind === 'text' ? clip.text?.content || 'Texto' : asset?.displayName ?? 'Clip';
+                      const width = Math.max(4, toX(clipDurationUs(clip)));
                       return (
                         <button
                           key={clip.id}
                           type="button"
                           aria-pressed={selected}
+                          aria-label={label}
                           title={label}
-                          className={`absolute top-1 bottom-1 overflow-hidden rounded-md border px-2 text-left text-[11px] text-[var(--text-primary)] ${CLIP_TONE[clip.kind]} ${
-                            selected ? 'ring-2 ring-[var(--accent-primary)]' : ''
+                          className={`absolute top-1 bottom-1 flex flex-col justify-between overflow-hidden rounded-md border px-2 py-1 text-left transition-[filter] hover:brightness-125 ${CLIP_TONE[clip.kind]} ${
+                            selected ? 'z-10 border-white shadow-[0_0_0_1px_white]' : ''
                           }`}
-                          style={{ left: toX(clip.timelineStartUs), width: Math.max(4, toX(clipDurationUs(clip))) }}
+                          style={{ left: toX(clip.timelineStartUs), width }}
                           onMouseDown={(event) => event.stopPropagation()}
                           onClick={() => onSelectClip(selected ? null : clip.id)}
                         >
-                          <span className="block truncate">{label}</span>
+                          <span className="block truncate text-[11px] font-medium text-[var(--text-primary)]">
+                            {label}
+                          </span>
+                          {width > 72 && track.kind === 'video' && (
+                            <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">
+                              {formatTimecode(clipDurationUs(clip), fps).slice(0, 5)}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -271,18 +296,22 @@ export function TimelinePanel({
               ))
             )}
 
-            {hoverUs !== null && (
+            {!empty && hoverUs !== null && (
               <div
-                className="pointer-events-none absolute top-0 bottom-0 border-l border-dashed border-[var(--accent-yellow)]"
+                className="pointer-events-none absolute top-0 bottom-0 z-20 border-l border-dashed border-[var(--accent-yellow)] opacity-70"
                 style={{ left: toX(hoverUs) }}
               />
             )}
             <div
-              className="pointer-events-none absolute top-0 bottom-0 w-px bg-[var(--accent-primary)]"
+              hidden={empty}
+              className="pointer-events-none absolute top-0 bottom-0 z-30 w-px bg-[var(--text-primary)]"
               style={{ left: toX(playheadUs) }}
               data-testid="editor-playhead"
             >
-              <div className="absolute -left-[7px] top-0 h-3.5 w-3.5 rounded-b-sm bg-[var(--accent-primary)]" />
+              <div
+                className="absolute -left-[6px] top-0 h-3.5 w-[13px] bg-[var(--text-primary)]"
+                style={{ clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)' }}
+              />
             </div>
           </div>
         </div>
@@ -310,7 +339,7 @@ function ToolButton({
       aria-label={label}
       title={`${label} (${shortcut})`}
       disabled={disabled}
-      className="h-6 min-w-6 rounded px-2 text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] disabled:opacity-40"
+      className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-35"
       onClick={onClick}
     >
       {children}
