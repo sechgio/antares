@@ -355,7 +355,9 @@ it('muestra el contexto de la conversación y permite retirar un archivo concedi
   expect(screen.getByText('Sellador')).toBeInTheDocument();
   expect(screen.getByText('informe.pdf')).toBeInTheDocument();
   expect(screen.getByText('ana@example.com')).toBeInTheDocument();
-  expect(screen.getByText('1,5 k / 200 tokens')).toBeInTheDocument();
+  const usage = screen.getByRole('button', { name: 'Contexto usado' });
+  fireEvent.mouseEnter(usage);
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Entrada1,5 kSalida200');
   await act(async () => { fireEvent.click(screen.getByLabelText('Retirar acceso a informe.pdf')); });
   expect(remove).toHaveBeenCalledWith('s1', 'C:\\docs\\informe.pdf');
 });

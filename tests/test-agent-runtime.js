@@ -702,6 +702,22 @@ async function main() {
   }
 
   {
+    const { bridge } = makeBridge();
+    await openFaux([fauxAssistantMessage('listo'), fauxAssistantMessage('hecho')], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primera consulta' });
+    assert(await waitIdle(session.id), 'el primer turno termina');
+    const first = (await runtime.handlers.agent_messages_list({ session_id: session.id })).usage;
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'segunda consulta' });
+    assert(await waitIdle(session.id), 'el segundo turno termina');
+    const { usage } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(first.context > 0 && usage.input > first.input, 'el total acumula los turnos');
+    assert(usage.context >= first.input, 'el contexto del último turno incluye el historial reenviado');
+    assert(usage.context < first.context + first.input, 'el contexto no acumula los turnos anteriores');
+    await runtime.shutdown();
+  }
+
+  {
     const { bridge, state } = makeBridge();
     await openFaux([fauxAssistantMessage('listo')], bridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });

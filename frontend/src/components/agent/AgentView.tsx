@@ -11,6 +11,7 @@ import Button from '../ui/Button';
 import ThemedSelect from '../ui/ThemedSelect';
 import AgentAvatar from './AgentAvatar';
 import ModelPicker from './ModelPicker';
+import ContextUsage from './ContextUsage';
 import ArtifactCard from './ArtifactCard';
 import QuestionCard from './QuestionCard';
 import MemoryMenu from './MemoryMenu';
@@ -124,7 +125,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [context, setContext] = useState<AgentContext | null>(null);
-  const [usage, setUsage] = useState<{ input: number; output: number } | null>(null);
+  const [usage, setUsage] = useState<{ input: number; output: number; context?: number } | null>(null);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
   const [provider, setProvider] = useState('');
@@ -781,7 +782,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         {session && (
           <ContextChips
             context={context}
-            usage={usage}
             onRemoveFile={async (path) => {
               try {
                 await agentApi.agentContextRemoveFile(session.id, path);
@@ -994,6 +994,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 )}
               </div>
               <div className="ml-auto flex min-w-0 items-center gap-2">
+                <ContextUsage usage={usage} model={session?.model ?? model} />
                 {readyProviders.length > 0 ? (
                   <ModelPicker
                     providers={readyProviders}
