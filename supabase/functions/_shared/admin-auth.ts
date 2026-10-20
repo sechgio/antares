@@ -15,11 +15,6 @@ export type AdminAuthResult =
   | { ok: true; userClient: SupabaseClient; callerUser: User }
   | { ok: false; response: Response };
 
-/**
- * Gate compartido de las funciones admin-*: exige Bearer token válido y un
- * perfil `is_admin` no deshabilitado. Devuelve el cliente autenticado del
- * llamador o la Response de rechazo ya construida.
- */
 export async function requireAdmin(
   req: Request,
   cors: Record<string, string>,

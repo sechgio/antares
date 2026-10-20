@@ -1,14 +1,8 @@
 interface ConcurrencyLimiter {
   <T>(fn: () => Promise<T>): Promise<T>;
-  /** Descarta la cola y pone el contador a cero (las tareas en vuelo siguen); para tests. */
   reset(): void;
 }
 
-/**
- * Gate FIFO de concurrencia con estado propio: corre `fn` de inmediato si hay
- * cupo, si no la encola (hasta `maxQueue` esperando; sin tope si no se indica)
- * y la drena al liberarse un slot.
- */
 export function createConcurrencyLimiter(
   limit: number,
   options: { maxQueue?: number; capacityError?: () => Error } = {},

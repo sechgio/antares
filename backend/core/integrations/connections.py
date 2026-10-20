@@ -1,11 +1,3 @@
-"""Vault de conexiones del backend: espejo de los tokens que Electron
-gestiona vía OAuth (``electron/connections-*.js``) y refresco autónomo para
-los nodos ``http_request`` con ``connection_ref``.
-
-Los specs de los proveedores viven en ``shared/connections-catalog.json`` —
-el mismo documento que usa Electron para el flujo OAuth.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -148,7 +140,6 @@ def _refresh(provider: str, spec: JsonObject, tokens: JsonObject, generation: in
 
 
 def fresh_tokens(provider: str) -> JsonObject:
-    """Copia de tokens vigentes, renovados únicamente por el backend."""
     get_provider(provider)
     with _state_lock:
         refresh_lock = _refresh_locks.setdefault(provider, threading.Lock())

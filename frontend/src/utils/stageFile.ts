@@ -3,7 +3,6 @@ import { errorMessage } from '@/utils/errors';
 
 const STAGE_CHUNK_BYTES = 6 * 1024 * 1024;
 
-// Electron expires staged capabilities after 30 minutes.
 const SHARED_TOKEN_MAX_AGE_MS = 20 * 60 * 1000;
 
 const SHARED_TOKEN_IDLE_MS = 2 * 60 * 1000;
@@ -64,11 +63,8 @@ export function cleanupStagedToken(token: string): void {
   }
 }
 
-/** Handle over a staged copy. `release()` must be called exactly once. */
 export type StagedFileHandle = {
-  /** Read capability for the staged copy, or `null` when staging is unavailable. */
   readonly token: string | null;
-  /** Drops this caller's reference; the staged copy is deleted once idle. */
   release: () => void;
 };
 
@@ -94,7 +90,6 @@ function disposeEntry(file: File, entry: SharedStagedEntry): void {
   if (entry.token) cleanupStagedToken(entry.token);
 }
 
-/** Shares one staged capability per File. Release the handle in cleanup or `finally`. */
 export async function acquireStagedFile(file: File): Promise<StagedFileHandle> {
   let entry: SharedStagedEntry | undefined = sharedStagedByFile.get(file);
   if (entry?.disposed) entry = undefined;

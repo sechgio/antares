@@ -17,6 +17,7 @@ export const TAB_DEFINITIONS = [
   { id: 'evidenciaVolanteo', label: 'Evidencia Volanteo', fullBleed: true },
   { id: 'autoimg', label: 'AutoIMG', fullBleed: true },
   { id: 'fichasTecnicas', label: 'Fichas Técnicas', fullBleed: true },
+  { id: 'editor', label: 'Editor', fullBleed: true },
   { id: 'design', label: 'Design', fullBleed: true },
 ] as const;
 

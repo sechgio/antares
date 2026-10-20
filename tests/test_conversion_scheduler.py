@@ -7,31 +7,12 @@ from pathlib import Path
 
 from backend.core.jobs import Job
 from backend.handlers import conversion, conversion_job
+from tests.conversion_fixtures import ImmediateFuture as _ImmediateFuture
+from tests.conversion_fixtures import RecordingScheduler
 
 
-class _ImmediateFuture:
-    def __init__(self, result):
-        self._result = result
-
-    def result(self):
-        return self._result
-
-    def cancelled(self):
-        return False
-
-    def cancel(self):
-        return False
-
-
-class _RecordingScheduler:
-    def __init__(self) -> None:
-        self.submitted: list[tuple[str, str, bool]] = []
-
-    def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
-        self.submitted.append(task)
-        return _ImmediateFuture(fn(task))
-
-    def submit_light(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+class _RecordingScheduler(RecordingScheduler):
+    def submit_light(self, fn, /, *args, **kwargs):
         return _ImmediateFuture(fn(*args, **kwargs))
 
 
@@ -44,7 +25,7 @@ def test_conversion_prepares_work_incrementally(monkeypatch) -> None:
     monkeypatch.setattr(conversion_job, "convertir_imagen", lambda *args, **kwargs: None)
     monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 2)
 
-    def fake_lookup(codes):  # type: ignore[no-untyped-def]
+    def fake_lookup(codes):
         seen_batches.append(list(codes))
         return {}
 
@@ -74,7 +55,7 @@ def test_conversion_prefetches_next_chunk_while_heavy_runs(monkeypatch) -> None:
     lock = threading.Lock()
 
     class _OverlapScheduler:
-        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):
             future: Future = Future()
 
             def _run() -> None:
@@ -94,7 +75,7 @@ def test_conversion_prefetches_next_chunk_while_heavy_runs(monkeypatch) -> None:
             threading.Thread(target=_run, daemon=True).start()
             return future
 
-        def submit_light(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+        def submit_light(self, fn, /, *args, **kwargs):
             if first_heavy_started.is_set() and not release_heavy.is_set():
                 prepare_during_heavy.set()
             return _ImmediateFuture(fn(*args, **kwargs))
@@ -145,7 +126,7 @@ def test_conversion_cancel_discards_prefetched_chunk(monkeypatch, tmp_path) -> N
     written: list[str] = []
 
     class _CancelScheduler:
-        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):
             future: Future = Future()
 
             def _run() -> None:
@@ -163,10 +144,10 @@ def test_conversion_cancel_discards_prefetched_chunk(monkeypatch, tmp_path) -> N
             threading.Thread(target=_run, daemon=True).start()
             return future
 
-        def submit_light(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+        def submit_light(self, fn, /, *args, **kwargs):
             return _ImmediateFuture(fn(*args, **kwargs))
 
-    def tracking_copy(src, dest):  # type: ignore[no-untyped-def]
+    def tracking_copy(src, dest):
         written.append(str(dest))
         Path(dest).write_bytes(b"x")
         return Path(dest)
@@ -211,7 +192,7 @@ def test_conversion_cancel_releases_visible_state_without_waiting_for_slow_worke
     release = threading.Event()
 
     class _SlowScheduler:
-        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):
             future: Future = Future()
 
             def _complete_later() -> None:
@@ -255,7 +236,7 @@ def test_progress_notifications_throttled_by_interval(monkeypatch, tmp_path) -> 
     notifies: list[dict] = []
 
     class _Immediate:
-        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):
             fut = Future()
             fut.set_result(fn(task))
             return fut
@@ -306,7 +287,7 @@ def test_save_run_receives_duration_ms(monkeypatch, tmp_path) -> None:
     captured: dict = {}
 
     class _Immediate:
-        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):
             fut = Future()
             fut.set_result(fn(task))
             return fut
@@ -315,7 +296,7 @@ def test_save_run_receives_duration_ms(monkeypatch, tmp_path) -> None:
         def heavy_capacity(self) -> int:
             return 2
 
-    def fake_save_run(**kwargs):  # type: ignore[no-untyped-def]
+    def fake_save_run(**kwargs):
         captured.update(kwargs)
         return 1
 
@@ -348,13 +329,13 @@ def test_save_run_receives_duration_ms(monkeypatch, tmp_path) -> None:
     assert captured["duration_ms"] >= 0
     completes: list[tuple[int, int]] = []
 
-    def fake_notify(job, ok, err, **_kwargs):  # type: ignore[no-untyped-def]
+    def fake_notify(job, ok, err, **_kwargs):
         completes.append((ok, err))
 
     monkeypatch.setattr(conversion_job, "_notify_complete", fake_notify)
     monkeypatch.setattr(conversion_job, "_calculate_chunk_size", lambda: 1)
 
-    def boom(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+    def boom(*_args, **_kwargs):
         raise RuntimeError("mapping exploded")
 
     monkeypatch.setattr(
@@ -396,7 +377,7 @@ def test_conversion_crash_reporta_los_archivos_ya_procesados(monkeypatch, tmp_pa
     real_prepare = conversion_job._prepare_chunk_tasks
     attempts: list[int] = []
 
-    def flaky_prepare(*args, **kwargs):  # type: ignore[no-untyped-def]
+    def flaky_prepare(*args, **kwargs):
         attempts.append(1)
         if len(attempts) > 1:
             raise RuntimeError("fallo de lectura")

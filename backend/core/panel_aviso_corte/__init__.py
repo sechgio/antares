@@ -1,4 +1,3 @@
-
 from .errors import (
     InvalidExcelError,
     InvalidMatchRuleError,

@@ -1,9 +1,3 @@
-"""Firma HMAC de rutas autorizadas por los diálogos de Antares.
-
-El motor de PDFs guiados solo acepta carpetas y archivos cuya lista lleva una
-firma emitida por el backend; la clave es local y aleatoria por perfil.
-"""
-
 from __future__ import annotations
 
 import hashlib

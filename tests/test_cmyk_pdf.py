@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import base64
@@ -14,6 +13,7 @@ from backend.core.canvas.models import create_empty_document
 from backend.core.cmyk_pdf.color import css_color_to_cmyk, hex_to_rgb, rgb_to_cmyk
 from backend.core.cmyk_pdf.renderer import CanvasCmykRenderer
 from backend.handlers.canvas import canvas_export_cmyk_pdf
+from tests.canvas_fixtures import box_css, canvas_layer
 
 
 def test_hex_to_rgb():
@@ -62,33 +62,16 @@ def test_canvas_cmyk_renderer():
             "type": "rect",
             "name": "Rectángulo Imprenta",
             "pageIndex": 0,
-            "cssVars": {
-                "--width": "100mm",
-                "--height": "50mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--background-color": "#FF0000",
-                "--border-color": "#000000",
-                "--border-width": "1mm",
-            },
+            "cssVars": box_css("10mm", "10mm", "100mm", "50mm", {"--background-color": "#FF0000", "--border-color": "#000000", "--border-width": "1mm"}),
         }
     )
     doc["layers"].append(
-        {
-            "id": "layer-text",
-            "type": "text",
-            "name": "Texto Imprenta",
-            "value": "Hola Imprenta CMYK",
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "80mm",
-                "--height": "20mm",
-                "--translate-x": "20mm",
-                "--translate-y": "70mm",
-                "--color": "#0000FF",
-                "--font-size": "14pt",
-            },
-        }
+        canvas_layer(
+            "layer-text", "text", "Texto Imprenta",
+            box_css("20mm", "70mm", "80mm", "20mm", {"--color": "#0000FF", "--font-size": "14pt"}),
+            value="Hola Imprenta CMYK",
+            pageIndex=0,
+        )
     )
 
     renderer = CanvasCmykRenderer(document=doc, bleed_mm=3.0, show_crop_marks=True)
@@ -132,12 +115,7 @@ def test_cmyk_renderer_bbox_fallback_for_unsupported_types():
             "type": "group",
             "name": "Grupo",
             "pageIndex": 0,
-            "cssVars": {
-                "--width": "10mm",
-                "--height": "10mm",
-                "--translate-x": "0mm",
-                "--translate-y": "0mm",
-            },
+            "cssVars": box_css("0mm", "0mm", "10mm", "10mm"),
         }
     )
 
@@ -249,29 +227,14 @@ def test_cmyk_renderer_z_order_background_does_not_cover_text():
             "type": "rect",
             "name": "Fondo",
             "pageIndex": 0,
-            "cssVars": {
-                "--width": "100mm",
-                "--height": "100mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--background-color": "#000000",
-            },
+            "cssVars": box_css("10mm", "10mm", "100mm", "100mm", {"--background-color": "#000000"}),
         },
-        {
-            "id": "layer-text",
-            "type": "text",
-            "name": "Texto",
-            "value": "HOLA",
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "80mm",
-                "--height": "20mm",
-                "--translate-x": "20mm",
-                "--translate-y": "20mm",
-                "--color": "#FFFFFF",
-                "--font-size": "14pt",
-            },
-        },
+        canvas_layer(
+            "layer-text", "text", "Texto",
+            box_css("20mm", "20mm", "80mm", "20mm", {"--color": "#FFFFFF", "--font-size": "14pt"}),
+            value="HOLA",
+            pageIndex=0,
+        ),
     ]
 
     raw = _page0_contents(CanvasCmykRenderer(document=doc).render())
@@ -288,33 +251,18 @@ def test_cmyk_renderer_z_order_background_does_not_cover_text():
 def test_cmyk_renderer_z_order_text_below_rect():
     doc = create_empty_document(name="Z-order inverse")
     doc["layers"] = [
-        {
-            "id": "layer-text",
-            "type": "text",
-            "name": "Texto",
-            "value": "HOLA",
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "80mm",
-                "--height": "20mm",
-                "--translate-x": "20mm",
-                "--translate-y": "20mm",
-                "--color": "#FFFFFF",
-                "--font-size": "14pt",
-            },
-        },
+        canvas_layer(
+            "layer-text", "text", "Texto",
+            box_css("20mm", "20mm", "80mm", "20mm", {"--color": "#FFFFFF", "--font-size": "14pt"}),
+            value="HOLA",
+            pageIndex=0,
+        ),
         {
             "id": "layer-fg",
             "type": "rect",
             "name": "Cubre",
             "pageIndex": 0,
-            "cssVars": {
-                "--width": "100mm",
-                "--height": "100mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--background-color": "#000000",
-            },
+            "cssVars": box_css("10mm", "10mm", "100mm", "100mm", {"--background-color": "#000000"}),
         },
     ]
 
@@ -336,51 +284,24 @@ def test_cmyk_renderer_resolves_runtime_content_from_context():
 
         doc = create_empty_document(name="Runtime content")
         doc["layers"] = [
-            {
-                "id": "layer-nombre",
-                "type": "text",
-                "name": "Nombre",
-                "value": "{{nombre}}",
-                "pageIndex": 0,
-                "cssVars": {
-                    "--width": "80mm",
-                    "--height": "15mm",
-                    "--translate-x": "10mm",
-                    "--translate-y": "10mm",
-                    "--color": "#000000",
-                    "--font-size": "12pt",
-                },
-            },
-            {
-                "id": "layer-tel",
-                "type": "field",
-                "name": "Teléfono",
-                "value": "",
-                "pageIndex": 0,
-                "meta": {"key": "telefono"},
-                "cssVars": {
-                    "--width": "80mm",
-                    "--height": "15mm",
-                    "--translate-x": "10mm",
-                    "--translate-y": "30mm",
-                    "--color": "#000000",
-                    "--font-size": "12pt",
-                },
-            },
-            {
-                "id": "layer-foto",
-                "type": "imageSlot",
-                "name": "Foto",
-                "value": "",
-                "pageIndex": 0,
-                "meta": {"index": 0},
-                "cssVars": {
-                    "--width": "40mm",
-                    "--height": "40mm",
-                    "--translate-x": "10mm",
-                    "--translate-y": "50mm",
-                },
-            },
+            canvas_layer(
+                "layer-nombre", "text", "Nombre",
+                box_css("10mm", "10mm", "80mm", "15mm", {"--color": "#000000", "--font-size": "12pt"}),
+                value="{{nombre}}",
+                pageIndex=0,
+            ),
+            canvas_layer(
+                "layer-tel", "field", "Teléfono",
+                box_css("10mm", "30mm", "80mm", "15mm", {"--color": "#000000", "--font-size": "12pt"}),
+                pageIndex=0,
+                meta={"key": "telefono"},
+            ),
+            canvas_layer(
+                "layer-foto", "imageSlot", "Foto",
+                box_css("10mm", "50mm", "40mm", "40mm"),
+                pageIndex=0,
+                meta={"index": 0},
+            ),
         ]
 
         ctx = {
@@ -415,21 +336,12 @@ def test_cmyk_renderer_multiple_contexts_and_pages():
         {"id": "page-2", "name": "Página 2"},
     ]
     doc["layers"] = [
-        {
-            "id": "layer-v",
-            "type": "text",
-            "name": "Valor",
-            "value": "{{v}}",
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "80mm",
-                "--height": "15mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--color": "#000000",
-                "--font-size": "12pt",
-            },
-        },
+        canvas_layer(
+            "layer-v", "text", "Valor",
+            box_css("10mm", "10mm", "80mm", "15mm", {"--color": "#000000", "--font-size": "12pt"}),
+            value="{{v}}",
+            pageIndex=0,
+        ),
     ]
 
     pdf_bytes = CanvasCmykRenderer(
@@ -454,51 +366,24 @@ def test_cmyk_renderer_pair_context_pages():
         {"id": "page-3", "name": "Página 3"},
     ]
     doc["layers"] = [
-        {
-            "id": "layer-a",
-            "type": "text",
-            "name": "A",
-            "value": "{{v}}",
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "80mm",
-                "--height": "15mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--color": "#000000",
-                "--font-size": "12pt",
-            },
-        },
-        {
-            "id": "layer-b",
-            "type": "text",
-            "name": "B",
-            "value": "{{v}}",
-            "pageIndex": 1,
-            "cssVars": {
-                "--width": "80mm",
-                "--height": "15mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--color": "#000000",
-                "--font-size": "12pt",
-            },
-        },
-        {
-            "id": "layer-c",
-            "type": "text",
-            "name": "C",
-            "value": "{{v}}",
-            "pageIndex": 2,
-            "cssVars": {
-                "--width": "80mm",
-                "--height": "15mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--color": "#000000",
-                "--font-size": "12pt",
-            },
-        },
+        canvas_layer(
+            "layer-a", "text", "A",
+            box_css("10mm", "10mm", "80mm", "15mm", {"--color": "#000000", "--font-size": "12pt"}),
+            value="{{v}}",
+            pageIndex=0,
+        ),
+        canvas_layer(
+            "layer-b", "text", "B",
+            box_css("10mm", "10mm", "80mm", "15mm", {"--color": "#000000", "--font-size": "12pt"}),
+            value="{{v}}",
+            pageIndex=1,
+        ),
+        canvas_layer(
+            "layer-c", "text", "C",
+            box_css("10mm", "10mm", "80mm", "15mm", {"--color": "#000000", "--font-size": "12pt"}),
+            value="{{v}}",
+            pageIndex=2,
+        ),
     ]
 
     pdf_bytes = CanvasCmykRenderer(
@@ -529,14 +414,7 @@ def test_cmyk_renderer_rotated_rect():
             "type": "rect",
             "name": "Rotado",
             "pageIndex": 0,
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "20mm",
-                "--translate-x": "20mm",
-                "--translate-y": "20mm",
-                "--rotate": "45deg",
-                "--background-color": "#FF0000",
-            },
+            "cssVars": box_css("20mm", "20mm", "40mm", "20mm", {"--rotate": "45deg", "--background-color": "#FF0000"}),
         }
     ]
 
@@ -547,22 +425,14 @@ def test_cmyk_renderer_rotated_rect():
 def test_cmyk_renderer_rotated_text_90():
     doc = create_empty_document(name="Rotate text")
     doc["layers"] = [
-        {
-            "id": "layer-text",
-            "type": "text",
-            "name": "Girado",
-            "value": "ROTATE90",
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "60mm",
-                "--height": "20mm",
-                "--translate-x": "20mm",
-                "--translate-y": "40mm",
-                "--rotate": "90deg",
-                "--color": "#000000",
-                "--font-size": "12pt",
-            },
-        }
+        canvas_layer(
+            "layer-text",
+            "text",
+            "Girado",
+            box_css("20mm", "40mm", "60mm", "20mm", {"--rotate": "90deg", "--color": "#000000", "--font-size": "12pt"}),
+            value="ROTATE90",
+            pageIndex=0,
+        )
     ]
 
     pdf_bytes = CanvasCmykRenderer(document=doc).render()
@@ -582,20 +452,12 @@ def test_cmyk_renderer_image_object_fit_cover():
 
         doc = create_empty_document(name="Object fit")
         doc["layers"] = [
-            {
-                "id": "layer-img",
-                "type": "image",
-                "name": "Foto",
-                "value": png_path,
-                "pageIndex": 0,
-                "cssVars": {
-                    "--width": "100mm",
-                    "--height": "50mm",
-                    "--translate-x": "10mm",
-                    "--translate-y": "10mm",
-                    "--object-fit": "cover",
-                },
-            }
+            canvas_layer(
+                "layer-img", "image", "Foto",
+                box_css("10mm", "10mm", "100mm", "50mm", {"--object-fit": "cover"}),
+                value=png_path,
+                pageIndex=0,
+            )
         ]
 
         pdf_bytes = CanvasCmykRenderer(document=doc).render(local_image_paths={png_path: png_path})
@@ -622,19 +484,11 @@ def test_cmyk_renderer_caches_repeated_image_bytes(monkeypatch):
 
         doc = create_empty_document(name="Cached logo")
         doc["pages"] = [{"id": f"page-{i}", "name": f"Página {i + 1}"} for i in range(3)]
-        logo_layer = {
-            "id": "layer-logo",
-            "type": "image",
-            "name": "Logo",
-            "value": png_path,
-            "cssVars": {
-                "--width": "30mm",
-                "--height": "15mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-                "--object-fit": "contain",
-            },
-        }
+        logo_layer = canvas_layer(
+                         "layer-logo", "image", "Logo",
+                         box_css("10mm", "10mm", "30mm", "15mm", {"--object-fit": "contain"}),
+                         value=png_path,
+                     )
         doc["layers"] = [{**logo_layer, "pageIndex": i} for i in range(3)]
 
         convert_calls = 0
@@ -729,23 +583,25 @@ def test_cmyk_renderer_rejects_images_above_pixel_budget(monkeypatch):
 def test_cmyk_renderer_text_align_and_font():
     doc = create_empty_document(name="Align font")
     doc["layers"] = [
-        {
-            "id": "layer-text",
-            "type": "text",
-            "name": "Centrado",
-            "value": "CENTERFONT",
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "80mm",
-                "--height": "20mm",
-                "--translate-x": "20mm",
-                "--translate-y": "30mm",
-                "--text-align": "center",
-                "--font-family": "Times New Roman",
-                "--color": "#000000",
-                "--font-size": "12pt",
-            },
-        }
+        canvas_layer(
+            "layer-text",
+            "text",
+            "Centrado",
+            box_css(
+                "20mm",
+                "30mm",
+                "80mm",
+                "20mm",
+                {
+                    "--text-align": "center",
+                    "--font-family": "Times New Roman",
+                    "--color": "#000000",
+                    "--font-size": "12pt",
+                },
+            ),
+            value="CENTERFONT",
+            pageIndex=0,
+        )
     ]
 
     pdf_bytes = CanvasCmykRenderer(document=doc).render()
@@ -765,19 +621,9 @@ def test_cmyk_renderer_opens_data_url_without_disk_path():
 
     doc = create_empty_document(name="Data URL image")
     doc["layers"] = [
-        {
-            "id": "layer-img",
-            "type": "image",
-            "name": "Inline",
-            "value": data_url,
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "40mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-            },
-        }
+        canvas_layer(
+            "layer-img", "image", "Inline", box_css("10mm", "10mm", "40mm", "40mm"), value=data_url, pageIndex=0
+        )
     ]
 
     pdf_bytes = CanvasCmykRenderer(document=doc).render()
@@ -804,19 +650,12 @@ def test_cmyk_renderer_resolves_canvas_asset_ref(tmp_path, monkeypatch):
 
     doc = create_empty_document(name="Asset ref")
     doc["layers"] = [
-        {
-            "id": "layer-img",
-            "type": "image",
-            "name": "Asset",
-            "value": f"canvas-asset:{asset_id}",
-            "pageIndex": 0,
-            "cssVars": {
-                "--width": "40mm",
-                "--height": "40mm",
-                "--translate-x": "10mm",
-                "--translate-y": "10mm",
-            },
-        }
+        canvas_layer(
+            "layer-img", "image", "Asset",
+            box_css("10mm", "10mm", "40mm", "40mm"),
+            value=f"canvas-asset:{asset_id}",
+            pageIndex=0,
+        )
     ]
 
     pdf_bytes = CanvasCmykRenderer(document=doc).render()

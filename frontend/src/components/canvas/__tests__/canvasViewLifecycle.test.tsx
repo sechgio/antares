@@ -162,6 +162,8 @@ import CanvasView from '../CanvasView';
 import { useCanvasBootstrap } from '../hooks/useCanvasBootstrap';
 import { queueCanvasCloudPush } from '../sync/cloudQueue';
 import { loadCanvasPresets } from '../presets/loadPresets';
+import { boxCss } from './fixtures';
+
 
 function makeDoc(id: string, name = id): CanvasDocument {
   const doc = createEmptyDocument(name);
@@ -983,7 +985,6 @@ describe('CanvasView lifecycle', () => {
 
     const ev = { returnValue: '', preventDefault: vi.fn() } as unknown as BeforeUnloadEvent;
     handler(ev);
-    // app.flush-canvas-before-quit controla el cierre; beforeunload solo inicia un save de respaldo.
     expect(ev.preventDefault).not.toHaveBeenCalled();
     await act(async () => {
       await Promise.resolve();
@@ -1000,12 +1001,7 @@ describe('CanvasView lifecycle', () => {
       name: 'PDF rect',
       value: '',
       pageIndex: 0,
-      cssVars: {
-        '--width': '10mm',
-        '--height': '10mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '10mm', '10mm'),
     };
     const report = {
       importedCount: 1,

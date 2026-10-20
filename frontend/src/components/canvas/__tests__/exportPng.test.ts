@@ -7,6 +7,8 @@ import {
 } from '../ops/exportPng';
 import { createLayer } from '../constants';
 import { createEmptyDocument } from '../types';
+import { boxCss } from './fixtures';
+
 
 const { toPngSpy } = vi.hoisted(() => ({
   toPngSpy: vi.fn<(node: HTMLElement) => Promise<string>>(),
@@ -72,39 +74,19 @@ describe('exportPagePng', () => {
     doc.layers = [
       createLayer('rect', {
         id: 'left',
-        cssVars: {
-          '--translate-x': '5mm',
-          '--translate-y': '150mm',
-          '--width': '10mm',
-          '--height': '10mm',
-        },
+        cssVars: boxCss('5mm', '150mm', '10mm', '10mm'),
       }),
       createLayer('rect', {
         id: 'center',
-        cssVars: {
-          '--translate-x': '100mm',
-          '--translate-y': '150mm',
-          '--width': '10mm',
-          '--height': '10mm',
-        },
+        cssVars: boxCss('100mm', '150mm', '10mm', '10mm'),
       }),
       createLayer('rect', {
         id: 'operand',
-        cssVars: {
-          '--translate-x': '50mm',
-          '--translate-y': '150mm',
-          '--width': '10mm',
-          '--height': '10mm',
-        },
+        cssVars: boxCss('50mm', '150mm', '10mm', '10mm'),
       }),
       createLayer('rect', {
         id: 'right',
-        cssVars: {
-          '--translate-x': '195mm',
-          '--translate-y': '150mm',
-          '--width': '10mm',
-          '--height': '10mm',
-        },
+        cssVars: boxCss('195mm', '150mm', '10mm', '10mm'),
       }),
       createLayer('boolean', {
         id: 'composed',

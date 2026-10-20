@@ -42,6 +42,8 @@ const SMOKE_METHODS = [
   'sellador_inspect_pdf',
   'sellador_render_page',
   'spreadsheet_export_volantes_template',
+  'editor_bootstrap',
+  'editor_export_start',
 ];
 
 function assertSmokeMethodsInCatalog() {
@@ -81,6 +83,9 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
     let ready = false;
     let templateCount = 0;
     let renderPreview = null;
+    let editorJobId = null;
+    let editorStartedAt = 0;
+    let pollTimer = null;
 
     const sendRequest = (id, method, params) => {
       proc.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
@@ -90,6 +95,10 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
       const done = () => (err ? reject(err) : resolve(result));
       if (proc.exitCode !== null || proc.signalCode !== null) {
         done();
@@ -221,9 +230,78 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
             ));
             return;
           }
+          editorSmoke = { stage: 'bootstrap' };
+          sendRequest('editor-bootstrap', 'editor_bootstrap', {});
+          continue;
+        }
+        if (msg.id === 'editor-bootstrap') {
+          const result = msg.result;
+          if (msg.error || !result || !Array.isArray(result.projects)) {
+            finish(new Error(
+              `editor_bootstrap smoke failed: ${JSON.stringify(msg.error || result || null)}`,
+            ));
+            return;
+          }
+          sendRequest('editor-export', 'editor_export_start', {
+            document: {
+              id: 'smoke',
+              schemaVersion: 1,
+              name: 'Smoke',
+              revision: 1,
+              canvas: { width: 320, height: 240, background: '#000000' },
+              assets: [],
+              tracks: [{ id: 't1', kind: 'video', order: 0 }],
+              clips: [],
+              exportSettings: { format: 'mp4', width: 320, height: 240, fps: 25 },
+            },
+            outputPath: path.join(smokePdf.directory, 'editor-smoke-ñ.mp4'),
+          });
+          continue;
+        }
+        if (msg.id === 'editor-export') {
+          const result = msg.result;
+          if (msg.error || !result || !result.started || !result.jobId) {
+            finish(new Error(
+              `editor_export_start smoke failed: ${JSON.stringify(msg.error || result || null)}`,
+            ));
+            return;
+          }
+          editorJobId = result.jobId;
+          editorStartedAt = Date.now();
+          const poll = () => {
+            sendRequest('editor-job', 'editor_job_status', { jobId: editorJobId });
+          };
+          pollTimer = setInterval(poll, 1000);
+          poll();
+          continue;
+        }
+        if (msg.id === 'editor-job') {
+          const result = msg.result;
+          if (msg.error || !result) {
+            finish(new Error(
+              `editor_job_status smoke failed: ${JSON.stringify(msg.error || result || null)}`,
+            ));
+            return;
+          }
+          if (result.running) {
+            if (Date.now() - editorStartedAt > 120_000) {
+              finish(new Error('editor export job smoke timed out after 120s'));
+            }
+            return;
+          }
+          clearInterval(pollTimer);
+          pollTimer = null;
+          const output = path.join(smokePdf.directory, 'editor-smoke-ñ.mp4');
+          if (!fs.existsSync(output)) {
+            finish(new Error(
+              `editor export smoke no produjo salida: ${JSON.stringify(result)}`,
+            ));
+            return;
+          }
           console.log(
             `[build-backend] Post-build smoke OK: templates_list=${templateCount} ` +
-            `canvas_list=ok sellador_render_page=ok volantes_template=pandas+openpyxl`,
+            `canvas_list=ok sellador_render_page=ok volantes_template=pandas+openpyxl ` +
+            `editor_bootstrap=ok editor_export=ok (${fs.statSync(output).size} bytes)`,
           );
           finish(null, {
             count: templateCount,
@@ -249,4 +327,4 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
   }
 }
 
-module.exports = { frozenBackendEnv, verifyFrozenBackendTemplates };
+module.exports = { verifyFrozenBackendTemplates };

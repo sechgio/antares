@@ -6,6 +6,7 @@ import { canvasApi } from './api/canvasApi';
 import { catalogApi } from './api/catalogApi';
 import { connectionsApi } from './api/connectionsApi';
 import { conversionApi } from './api/conversionApi';
+import { editorApi } from './api/editorApi';
 import { _invoke } from './api/core';
 import { designApi } from './api/designApi';
 import { evidenciaVolanteoApi } from './api/evidenciaVolanteoApi';
@@ -90,6 +91,7 @@ export function _resetCanvasHistoryTransportForTests(): void {
 export const api = {
   ...systemApi,
   ...conversionApi,
+  ...editorApi,
   ...catalogApi,
   ...historyApi,
   ...formatosApi,

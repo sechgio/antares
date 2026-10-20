@@ -3,6 +3,8 @@ import { api } from '../../../api';
 import { exportCanvasPdf } from '../export/exportPdf';
 import { createEmptyDocument, newId } from '../types';
 import type { FillContext } from '../runtime/renderHtml';
+import { boxCss } from './fixtures';
+
 
 vi.mock('../../../api', () => ({
   api: {
@@ -127,12 +129,7 @@ describe('exportCanvasPdf with CMYK color mode', () => {
         value: '',
         pageIndex: 0,
         meta: { index: i },
-        cssVars: {
-          '--width': '40mm',
-          '--height': '40mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '40mm', '40mm'),
       });
     }
     (api.canvasExportCmykPdf as ReturnType<typeof vi.fn>).mockResolvedValue({

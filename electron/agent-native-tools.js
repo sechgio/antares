@@ -323,4 +323,4 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
   return out.result;
 }
 
-module.exports = { nativeToolSpecs, nativeToolContext, runNativeTool, draftName, AUTOIMG_READS, AUTOIMG_EFFECTS, REPORT_EXPORTS };
+module.exports = { nativeToolSpecs, nativeToolContext, runNativeTool, draftName };

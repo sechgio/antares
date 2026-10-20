@@ -4,7 +4,7 @@ import { layerBounds } from './layerBounds';
 
 type BBox = { x: number; y: number; w: number; h: number };
 
-export interface SpatialIndex {
+interface SpatialIndex {
   query(rect: BBox): string[];
   hitTest(x: number, y: number): string[];
 }

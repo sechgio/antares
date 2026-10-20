@@ -16,6 +16,8 @@ import {
   togglePathClosed,
   lineIntersectsPolygon,
 } from '../ops/pathGeometry';
+import { boxCss } from './fixtures';
+
 
 describe('pathGeometry', () => {
   it('pathFromDrag stores diagonal endpoints in local coords', () => {
@@ -49,13 +51,7 @@ describe('pathGeometry', () => {
 
   it('ensureLinePath migrates legacy lines without mutating already-pathed lines', () => {
     const legacy = createLayer('line', {
-      cssVars: {
-        '--width': '50mm',
-        '--height': '1mm',
-        '--translate-x': '5mm',
-        '--translate-y': '5mm',
-        '--background-color': '#000000',
-      },
+      cssVars: boxCss('5mm', '5mm', '50mm', '1mm', { '--background-color': '#000000' }),
       meta: {},
     });
     delete legacy.meta!.path;
@@ -69,17 +65,13 @@ describe('pathGeometry', () => {
 
   it('ensureLinePath keeps stroke-height box and centers path (no MIN_BBOX inflation)', () => {
     const legacy = createLayer('line', {
-      cssVars: {
-        '--width': '198.75mm',
-        '--height': '0.26mm',
-        '--translate-x': '6.03mm',
-        '--translate-y': '78.83mm',
+      cssVars: boxCss('6.03mm', '78.83mm', '198.75mm', '0.26mm', {
         '--border-width': '1px',
         '--border-color': '#0D43FB',
         '--stroke-visible': '1',
         '--background-color': 'transparent',
         '--fill-visible': '0',
-      },
+      }),
       meta: {},
     });
     delete legacy.meta!.path;

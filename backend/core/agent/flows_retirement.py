@@ -1,14 +1,3 @@
-"""Retirada única de Flujos: borra su estado, sus tareas programadas y los PDFs
-cuya procedencia queda demostrada por una ejecución registrada.
-
-Un PDF solo se borra si su ruta exacta figura como ``saved_path``/``saved_paths``
-de un productor PDF registrado en el grafo del run, no fue reutilizado y no se
-escribió antes de iniciar ni después de terminar ese paso. El resto queda
-en el manifiesto como pendiente. El manifiesto se persiste antes de los efectos
-y conserva los recursos restantes; la carpeta de estado se borra al final salvo
-que contenga una salida pendiente.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -31,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 _TASK_PREFIX = "AntaresFlow-"
 _HEADLESS_MUTEX = "Local\\AntaresFlowsHeadless"
+_SYNCHRONIZE = 0x00100000
 _PDF_OUTPUT_METHODS = (
     "flows_render_pdf", "canvas_export_cmyk_pdf", "formatos_generate",
     "evidencia_volanteo_render", "panel_aviso_corte_render_pdf", "sellador_apply",
@@ -81,7 +71,7 @@ def _headless_running() -> bool:
     import ctypes
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    handle = kernel32.OpenMutexW(0x00100000, False, _HEADLESS_MUTEX)  # SYNCHRONIZE
+    handle = kernel32.OpenMutexW(_SYNCHRONIZE, False, _HEADLESS_MUTEX)
     if not handle:
         return False
     kernel32.CloseHandle(handle)

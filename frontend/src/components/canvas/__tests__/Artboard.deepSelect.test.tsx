@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import Artboard from '../editor/Artboard';
 import { createEmptyDocument, type CanvasLayer } from '../types';
+import { boxCss } from './fixtures';
+
 
 function rectAt(id: string, xMm: number, yMm: number, parentId?: string): CanvasLayer {
   return createLayer('rect', {
@@ -74,12 +76,7 @@ describe('Artboard group isolation (enter group)', () => {
   function withGroup() {
     const group = createLayer('group', {
       id: 'g1',
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '50mm',
-        '--height': '50mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '50mm', '50mm'),
     });
     const child = rectAt('child', 15, 15, 'g1');
     const outsider = rectAt('outsider', 10, 10);

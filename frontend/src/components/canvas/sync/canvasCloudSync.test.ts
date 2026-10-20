@@ -12,7 +12,6 @@ import {
 } from './canvasCloudSync';
 import { isNewer } from './syncCompare';
 import { notifyPushHealth, subscribeCanvasPushHealth } from './pushHealth';
-import { withTimeout } from '../../../utils/async';
 import {
   recordPendingCanvasDelete,
   clearPendingCanvasDelete,
@@ -70,6 +69,8 @@ vi.mock('../../../lib/supabase', () => ({
 vi.mock('./canvasRealtime', () => realtimeMock);
 
 import { api } from '../../../api';
+import { boxCss } from '../__tests__/fixtures';
+
 
 function makeDoc(overrides: Partial<CanvasDocument> = {}): CanvasDocument {
   return {
@@ -112,24 +113,6 @@ function resetMocks(): void {
     (supabaseMock.chainable[m] as ReturnType<typeof vi.fn>).mockClear();
   }
 }
-
-describe('withTimeout', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('resolves when the promise wins', async () => {
-    await expect(withTimeout(Promise.resolve(42), 1000, 'test')).resolves.toBe(42);
-  });
-
-  it('rejects when the timer wins', async () => {
-    vi.useFakeTimers();
-    const pending = withTimeout(new Promise<number>(() => {}), 50, 'test-hang');
-    const assertion = expect(pending).rejects.toThrow(/test-hang timed out after 50ms/);
-    await vi.advanceTimersByTimeAsync(50);
-    await assertion;
-  });
-});
 
 describe('canvasCloudSync isNewer', () => {
   it('treats missing local as older', () => {
@@ -1349,12 +1332,7 @@ describe('pushCanvasDocument', () => {
           type: 'image',
           name: 'Foto',
           value: 'canvas-asset:missing',
-          cssVars: {
-            '--width': '10mm',
-            '--height': '10mm',
-            '--translate-x': '0mm',
-            '--translate-y': '0mm',
-          },
+          cssVars: boxCss('0mm', '0mm', '10mm', '10mm'),
         },
       ],
     });

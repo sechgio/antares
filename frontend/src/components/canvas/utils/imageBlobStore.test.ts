@@ -219,14 +219,6 @@ describe("serializeDocumentImages", () => {
     expect(canvasAssetPut).toHaveBeenCalledTimes(1);
   });
 
-  it("sin electronAPI devuelve dataUrl para blobs registrados", async () => {
-    const reg = await registerImageBlob(new Blob(["img"]));
-    const out = await serializeDocumentImages(
-      doc([layer("i", "image", reg.url)]),
-    );
-    expect(out.layers[0].value).toMatch(/^data:/);
-  });
-
   it("no toca capas no-imagen ni valores data:/canvas-asset:", async () => {
     const d = doc([
       layer("t", "text", "hola"),

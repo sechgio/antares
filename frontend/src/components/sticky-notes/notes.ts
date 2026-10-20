@@ -210,7 +210,6 @@ export function uniquePileIds(): string[] {
   return [...ids];
 }
 
-/** Nota visible de una pila: la activa si sigue siendo miembro, si no la más alta. */
 export function pileTopNote(pileId: string): StickyNote | null {
   const members = notesInPile(pileId).sort(
     (a, b) => (b.zRank || 0) - (a.zRank || 0) || b.updatedAt - a.updatedAt,
@@ -238,7 +237,6 @@ function setActivePileNote(pileId: string, noteId: string): void {
   $activePileNote.set({ ...$activePileNote.get(), [pileId]: noteId });
 }
 
-/** Sube una flotante al frente (orden DOM) o dentro de su pila. */
 export function focusBreakout(id: string): void {
   const n = getNote(id);
   if (!n || n.surface !== 'breakout' || !n.open) return;
@@ -336,7 +334,6 @@ export function mergeNoteIds(ids: string[]): boolean {
   return true;
 }
 
-/** Tras soltar un arrastre: floats/pilas solapadas se compilan en una pila. */
 export function maybeMergeOverlapping(): void {
   const now = Date.now();
   if (now < mergeSuppressedUntil) return;
@@ -386,7 +383,6 @@ export function maybeMergeOverlapping(): void {
   }
 }
 
-/** La capa llama esto al terminar un arrastre real; difiere para estabilizar posiciones. */
 export function requestMergeCheck(): void {
   setTimeout(() => {
     maybeMergeOverlapping();
@@ -408,11 +404,6 @@ function dissolvePileIfSingleton(pileId: string): void {
   schedulePersist();
 }
 
-/**
- * Saca una nota de su pila a flotante libre.
- * Suprime el auto-merge después: el nuevo float aparece cerca de la pila
- * y el pointerup podría reabsorberla.
- */
 export function splitFromPile(id: string): void {
   const n = getNote(id);
   if (!n?.pileId) return;
@@ -592,7 +583,6 @@ export function stackAll(): void {
   notify('Todas las notas recogidas');
 }
 
-/** Devuelve todas las notas de una pila a la bandeja principal. */
 export function stackPile(pileId: string): void {
   if (!pileId) return;
   updateNotes((list) =>
@@ -609,11 +599,6 @@ export function stackPile(pileId: string): void {
   if (top) $activeStackId.set(top.id);
 }
 
-/**
- * Pone exactamente una nota en el escritorio como flotante libre.
- * Nunca saca en lote. Un pileId obsoleto en una nota apilada se limpia, no se
- * trata como separación de pila.
- */
 export function breakOut(id: string): void {
   const n = getNote(id);
   if (!n || !n.open) return;

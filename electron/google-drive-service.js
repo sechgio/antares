@@ -279,7 +279,6 @@ async function fetchThumbnailDataUrl(thumbnailLink, accessToken, session = null)
     }
   }
   if (res.status === 403) {
-    // Thumbnail accesible sin auth (o sin permiso): intento anónimo.
     res = await fetchWithRetry(url);
   }
   if (!res.ok) throw new Error(`Thumb HTTP ${res.status}`);

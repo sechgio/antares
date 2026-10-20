@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from backend.core.fichas_tecnicas.models import create_empty_ficha

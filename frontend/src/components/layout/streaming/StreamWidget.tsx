@@ -36,7 +36,7 @@ export const STREAM_STRINGS = {
   playTrack: 'Reproducir',
 } as const;
 
-export interface StreamListStrings {
+interface StreamListStrings {
   search: string;
   searching: string;
   results: string;
@@ -47,7 +47,7 @@ export interface StreamListStrings {
   keyHint?: string;
 }
 
-export interface StreamTransportStrings {
+interface StreamTransportStrings {
   previous: string;
   pause: string;
   play: string;
@@ -128,7 +128,7 @@ interface ItemListState<I extends StreamItem> {
   isError: boolean;
 }
 
-export function useStreamItemSearch<I extends StreamItem>(
+function useStreamItemSearch<I extends StreamItem>(
   query: string,
   blocked: boolean,
   source: Pick<StreamListSource<I>, 'browse' | 'search'>,

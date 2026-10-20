@@ -12,12 +12,10 @@ const CORNER_PRESETS: StampCornerPreset[] = [
   "top-left",
 ];
 
-/** Preset de esquina para la siguiente posición nueva (rota en orden). */
 export function nextPositionPreset(positionsLength: number): StampCornerPreset {
   return CORNER_PRESETS[positionsLength % CORNER_PRESETS.length];
 }
 
-/** Slots resueltos según modo de asignación (ciclo automático o manual). */
 export function resolveAssignmentSlots(
   mode: PositionAssignmentMode,
   effectiveCount: number,
@@ -30,7 +28,6 @@ export function resolveAssignmentSlots(
   return ensureSlotIndices(effectiveCount, slotIndices, positionsCount);
 }
 
-/** Elimina una posición y renumera las restantes como "Posición N". */
 export function positionsAfterRemove(
   positions: StampPosition[],
   index: number,
@@ -40,7 +37,6 @@ export function positionsAfterRemove(
     .map((pos, i) => ({ ...pos, name: `Posición ${i + 1}` }));
 }
 
-/** Índice activo tras eliminar `index`: cae a la posición anterior si era el activo. */
 export function activeIndexAfterRemove(current: number, index: number): number {
   if (current === index) return Math.max(0, index - 1);
   if (current > index) return current - 1;

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +7,7 @@ import pytest
 from backend.core import conversion_probe
 from backend.core.jobs import Job
 from backend.handlers import conversion, conversion_job
+from tests.conversion_fixtures import RecordingScheduler as _RecordingScheduler
 
 
 @pytest.mark.parametrize(
@@ -64,29 +64,6 @@ def test_preview_reinicia_secuencia_por_fila_en_orden_del_lote(monkeypatch, tmp_
         "69841278_002.jpg",
         "69841278_003.jpg",
     ]
-
-
-class _ImmediateFuture:
-    def __init__(self, result):
-        self._result = result
-
-    def result(self):
-        return self._result
-
-    def cancelled(self):
-        return False
-
-    def cancel(self):
-        return False
-
-
-class _RecordingScheduler:
-    def __init__(self) -> None:
-        self.submitted = []
-
-    def submit_heavy(self, fn, task, *, block=False, cancel_check=None):
-        self.submitted.append(task)
-        return _ImmediateFuture(fn(task))
 
 
 def test_conversion_mantiene_secuencia_por_fila_entre_bloques(monkeypatch, tmp_path) -> None:

@@ -444,14 +444,11 @@ async function disconnect(provider) {
 
 module.exports = {
   scopeGranted,
-  oauthConfigStatus,
   saveOAuthConfig,
   loadOAuthConfig,
   loadTokens,
   getValidTokens,
-  refreshTokens,
   beginConnect,
-  cancelConnect,
   probeAccount,
   getStatus,
   disconnect,

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,29 +5,7 @@ from pathlib import Path
 from backend.core.config_fields import save_fields
 from backend.core.jobs import Job
 from backend.handlers import conversion, conversion_job
-
-
-class _ImmediateFuture:
-    def __init__(self, result):
-        self._result = result
-
-    def result(self):
-        return self._result
-
-    def cancelled(self):
-        return False
-
-    def cancel(self):
-        return False
-
-
-class _RecordingScheduler:
-    def __init__(self) -> None:
-        self.submitted: list[tuple[str, Path, bool]] = []
-
-    def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
-        self.submitted.append(task)
-        return _ImmediateFuture(fn(task))
+from tests.conversion_fixtures import RecordingScheduler as _RecordingScheduler
 
 
 def _setup_fields(monkeypatch, tmp_path, fields):

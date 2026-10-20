@@ -100,7 +100,6 @@ _MAX_FILE_BYTES = 100 * 1024 * 1024
 
 
 def read_file(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonObject:
-    """Contenido de un archivo concedido o borrador, con su procedencia (ruta y revisión)."""
     value = params.get("path")
     if not isinstance(value, str) or not value:
         raise ValueError("Indica la ruta del archivo")
@@ -279,7 +278,6 @@ def _public(result: JsonObject) -> JsonObject:
 
 
 def generate(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> tuple[JsonObject, JsonObject | None]:
-    """Genera el PDF en los borradores; devuelve (resultado, artefacto registrado o None)."""
     workflow, sources = _workflow_params(params, grants, root)
     prepared = pdf_workflow.prepare(workflow)
     if not prepared.get("ready"):
@@ -316,7 +314,6 @@ def _verify_pdf(path: Path) -> JsonObject:
 
 
 def render_plan(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonObject:
-    """Entradas verificadas para el renderer existente; nunca se envían al modelo."""
     family, template_id = _template(params)
     if family == "formato" or params.get("color_mode") == "cmyk":
         result, artifact = generate(params, grants, root)

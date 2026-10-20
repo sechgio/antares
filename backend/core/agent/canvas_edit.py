@@ -1,12 +1,3 @@
-"""Edición controlada de documentos de Canvas por el agente.
-
-El agente no escribe documentos JSON completos: solo rellena el valor de capas
-de campo que ya existen (``meta.key``) y guarda contra la revisión que leyó
-(``expected_updated_at``). Si el documento cambió entretanto —por el editor o
-por la sincronización— el guardado falla con un conflicto visible y nada se
-sobrescribe.
-"""
-
 from __future__ import annotations
 
 import copy

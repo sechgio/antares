@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-/** node scripts/review-policy-check.js --pr 42 [--comment] [--json]
- * Exit 1 ante checks bloqueantes o uso inválido; 0 sin infraestructura o con PR cerrado.
- */
 const { parseCliArgs, detectRepo } = require('./lib/loop-utils');
 const {
   COMMENT_MARKER,
@@ -489,7 +486,6 @@ module.exports = {
   effectiveChangedLines,
   isBot,
   hasThirdPartyApproval,
-  humanComments,
   taxonomyCompliance,
   evaluatePolicy,
   renderReport,

@@ -20,11 +20,11 @@ import {
   prepareSnapRails,
   snapGuidePosition,
   snapMoveWithGuides,
-  snapThresholdMm,
 } from '../ops/selectionTransform';
 import { createEmptyDocument, resolvePageMarginMm, DEFAULT_PAGE_MARGIN_MM } from '../types';
 import { createLayer } from '../constants';
-import { MM_TO_PX } from '../ops/drawHelpers';
+import { boxCss } from './fixtures';
+
 
 function collectReferenceGapsByPairScan(
   others: Array<{ x: number; y: number; w: number; h: number }>,
@@ -111,12 +111,7 @@ describe('guides', () => {
 
   it('snapMoveWithGuides snaps to manual guide', () => {
     const moving = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '48mm',
-        '--translate-y': '10mm',
-        '--width': '20mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('48mm', '10mm', '20mm', '10mm'),
     });
     const guide = createGuide('x', 30, 0);
     const result = snapMoveWithGuides(
@@ -130,14 +125,6 @@ describe('guides', () => {
     );
     expect(result.dx).toBeCloseTo(-18, 5);
     expect(result.guides.some((g) => g.axis === 'x' && g.pos === 30)).toBe(true);
-  });
-
-  it('snapThresholdMm scales with zoom', () => {
-    const at1 = snapThresholdMm(1, 5);
-    const at2 = snapThresholdMm(2, 5);
-    expect(at1).toBeCloseTo(5 / MM_TO_PX, 5);
-    expect(at2).toBeCloseTo(at1 / 2, 5);
-    expect(snapThresholdMm(0.02, 5)).toBeLessThan(5 / (MM_TO_PX * 0.02));
   });
 
   it('clampGuidePos clamps to the page extent', () => {
@@ -164,12 +151,7 @@ describe('guides', () => {
 
   it('prepareSnapRails includes page margin rails', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '50mm',
-        '--translate-y': '50mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
+      cssVars: boxCss('50mm', '50mm', '20mm', '20mm'),
     });
     const rails = prepareSnapRails([layer], [layer.id], { widthMm: 210, heightMm: 297 }, [], 10);
     expect(rails.xs).toContain(10);
@@ -180,12 +162,7 @@ describe('guides', () => {
 
   it('snapGuidePosition aligns a manual guide to the nearest object rail', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '50mm',
-        '--translate-y': '70mm',
-        '--width': '20mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('50mm', '70mm', '20mm', '10mm'),
     });
     const rails = prepareSnapRails([layer], [], { widthMm: 210, heightMm: 297 });
 

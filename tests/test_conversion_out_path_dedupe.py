@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -101,7 +100,7 @@ def test_dedupe_uses_disk_keys_without_exists(tmp_path, monkeypatch) -> None:
     exists_calls = {"n": 0}
     real_exists = Path.exists
 
-    def counting_exists(self):  # type: ignore[no-untyped-def]
+    def counting_exists(self):
         exists_calls["n"] += 1
         return real_exists(self)
 

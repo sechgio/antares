@@ -1,6 +1,7 @@
 const { EventEmitter } = require('events');
 
-const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
+const { assert, finish, evictModule } = require('./helpers/harness');
+const { loadIpcRouter: loadRouterFixture } = require('./helpers/ipc-router');
 
 function makeFakeProc(pid) {
   const proc = new EventEmitter();
@@ -26,35 +27,16 @@ function loadIpcRouter({
   incrementPendingRequests,
   decrementPendingRequests,
 }) {
-  stubModule('electron', {
-    ipcMain: { handle: () => {}, removeHandler: () => {} },
-    dialog: {},
-    app: { isPackaged: true },
+  return loadRouterFixture({
+    backend: {
+      getProcess: () => currentProc.ref,
+      waitForReady: waitForReady || (async () => true),
+      incrementPendingRequests: incrementPendingRequests || (() => {}),
+      decrementPendingRequests: decrementPendingRequests || (() => {}),
+      noteJobActivity: noteJobActivity || (() => {}),
+      clearJobActivity,
+    },
   });
-
-  stubModule('electron/backend-spawner', {
-    getProcess: () => currentProc.ref,
-    isReady: () => true,
-    waitForReady: waitForReady || (async () => true),
-    getState: () => 'ready',
-    getLastError: () => null,
-    getStderrTail: () => '',
-    manualRestart: async () => true,
-    incrementPendingRequests: incrementPendingRequests || (() => {}),
-    decrementPendingRequests: decrementPendingRequests || (() => {}),
-    noteJobActivity: noteJobActivity || (() => {}),
-    clearJobActivity,
-    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-  });
-
-  stubModule('electron/window-manager', {
-    getMainWindow: () => null,
-    getIsDev: () => true,
-  });
-
-  const routerPath = require.resolve('../electron/ipc-router');
-  evictModule('electron/ipc-router');
-  return require(routerPath);
 }
 
 async function run() {

@@ -14,7 +14,6 @@ interface RowItem {
   photoInfo: PhotoInfo;
 }
 
-/** Mapa fila → fotos matcheadas por el id normalizado de su columna clave. */
 export function buildRowPhotoMap(
   data: Record<string, unknown>[],
   idColumn: string,
@@ -48,7 +47,6 @@ export function computePhotoStats(
   };
 }
 
-/** Filtra por fotos y texto, y ordena por #, fotos o columna (numérica si aplica). */
 export function filterAndSortRows(params: {
   data: Record<string, unknown>[];
   headers: string[];
@@ -116,7 +114,6 @@ export function filterAndSortRows(params: {
   return items;
 }
 
-/** Ciclo de click en cabecera: asc → desc → sin orden. */
 export function cycleSort(
   currentCol: string | null,
   currentDir: SortDirection,
@@ -129,7 +126,6 @@ export function cycleSort(
   return { sortCol: clicked, sortDir: "asc" };
 }
 
-/** Toggle de visibilidad de columna; no permite ocultar la última visible. */
 export function toggleHiddenColumn(
   hidden: Set<string>,
   header: string,
@@ -141,7 +137,6 @@ export function toggleHiddenColumn(
   return next;
 }
 
-/** CSV con BOM y quoting; filas = filas filtradas + '#' + 'Fotos'. */
 export function buildCsvContent(
   visibleHeaders: string[],
   items: RowItem[],

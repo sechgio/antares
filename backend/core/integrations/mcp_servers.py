@@ -1,11 +1,3 @@
-"""Registro de servidores MCP del usuario para el agente.
-
-Los servidores se guardan en ``mcp_servers.json`` dentro de datos de usuario;
-los secretos (cabeceras HTTP, env de procesos stdio) viven en el vault sellado
-de ``core.integrations.vault`` y nunca salen del backend — el listado público solo
-expone los nombres de las claves.
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -49,7 +41,6 @@ def _slug(name: str) -> str:
 
 
 def _is_loopback_url(url: str) -> bool:
-    """``http://`` solo se tolera hacia loopback: el tráfico no sale de la máquina."""
     host = (urllib.parse.urlsplit(url).hostname or "").lower()
     if host == "localhost" or host.endswith(".localhost"):
         return True
@@ -110,7 +101,6 @@ def add_server(
     args: list[str] | None = None,
     secrets: JsonObject | None = None,
 ) -> JsonObject:
-    """Registra un servidor. ``secrets``: {'headers'|'env': {clave: valor}}."""
     name = name.strip()
     if not name or len(name) > 80:
         raise ValueError("Nombre de servidor inválido")
@@ -205,7 +195,6 @@ def _redact(value: object, secrets: JsonObject) -> object:
 
 
 def approval_context(server_id: str, advertised_name: str, *, force: bool = True) -> JsonObject:
-    """Config y schema actuales, sin exponer credenciales en una aprobación."""
     server = get_server(server_id)
     try:
         tools = list_tools(server_id, force=force)
@@ -325,11 +314,6 @@ def agent_tool_name(server_id: str, tool: str) -> str:
 
 
 def _resolve_tool_name(server_id: str, name: str, *, advertised: bool = False) -> str:
-    """Traduce el nombre anunciado al agente al real de la tool.
-
-    Devuelve ``name`` intacto si ya es el nombre real o si no se puede listar
-    el servidor (el error real lo da la propia llamada).
-    """
     try:
         tools = list_tools(server_id)
     except Exception:
@@ -355,7 +339,6 @@ def _resolve_tool_name(server_id: str, name: str, *, advertised: bool = False) -
 
 
 def parse_agent_tool(name: str) -> tuple[str, str] | None:
-    """Resuelve nombres MCP actuales y antiguos; rechaza identidades ambiguas."""
     if name.startswith("mcp2__"):
         for server in list_servers():
             server_id = str(server["id"])

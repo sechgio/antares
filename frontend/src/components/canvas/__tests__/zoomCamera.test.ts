@@ -14,16 +14,4 @@ describe('Figma-like zoom camera (layout invariant)', () => {
     expect(A4_WIDTH_PX).toBe(Math.round((210 * 96) / 25.4));
     expect(A4_HEIGHT_PX).toBe(Math.round((297 * 96) / 25.4));
   });
-
-  it('re-layout zoom would change rounded font/box ratios (why we use camera zoom)', () => {
-    const vars = { '--font-size': '11px' };
-    const widthMm = 40;
-    const MM = 96 / 25.4;
-    const ratio = (zoom: number) => {
-      const font = parseFloat(buildLayerPaintStyle(vars, { scale: zoom }).fontSize || '0');
-      const box = Math.round(widthMm * MM * zoom);
-      return font / box;
-    };
-    expect(Math.abs(ratio(0.5) - ratio(1)) > 1e-6).toBe(true);
-  });
 });

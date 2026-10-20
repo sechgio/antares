@@ -71,7 +71,6 @@ export function createFlyerRecord(today: string): FlyerRecord {
   };
 }
 
-/** Tras borrar el registro seleccionado, la selección cae al primero restante. */
 export function nextSelectedIdAfterDelete(
   remaining: FlyerRecord[],
   deletedId: string,

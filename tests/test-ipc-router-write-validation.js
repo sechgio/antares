@@ -2,46 +2,23 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 
-const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
+const { assert, finish, evictModule } = require('./helpers/harness');
+const { loadIpcRouter } = require('./helpers/ipc-router');
 
 function loadRouter({ documentsDir, downloadsDir, userDataDir }) {
-  stubModule('electron', {
-    ipcMain: { handle: () => {}, removeHandler: () => {} },
-    dialog: {},
-    app: {
-      isPackaged: true,
-      getPath: (name) => {
-        if (name === 'documents') return documentsDir;
-        if (name === 'downloads') return downloadsDir;
-        if (name === 'userData') return userDataDir;
-        throw new Error(`unknown path: ${name}`);
+  return loadIpcRouter({
+    electron: {
+      app: {
+        isPackaged: true,
+        getPath: (name) => {
+          if (name === 'documents') return documentsDir;
+          if (name === 'downloads') return downloadsDir;
+          if (name === 'userData') return userDataDir;
+          throw new Error(`unknown path: ${name}`);
+        },
       },
     },
   });
-
-  stubModule('electron/backend-spawner', {
-    getProcess: () => null,
-    isReady: () => true,
-    waitForReady: async () => true,
-    getState: () => 'ready',
-    getLastError: () => null,
-    getStderrTail: () => '',
-    manualRestart: async () => true,
-    incrementPendingRequests: () => {},
-    decrementPendingRequests: () => {},
-    noteJobActivity: () => {},
-    clearJobActivity: () => {},
-    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-  });
-
-  stubModule('electron/window-manager', {
-    getMainWindow: () => null,
-    getIsDev: () => true,
-  });
-
-  const routerPath = require.resolve('../electron/ipc-router');
-  evictModule('electron/ipc-router');
-  return require(routerPath);
 }
 
 async function run() {

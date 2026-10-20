@@ -15,22 +15,19 @@ export interface AiProviderSpec {
   base_url: string;
   needs_key: boolean;
   custom?: boolean;
-  /** Estilo de API elegido para un modelo personalizado. */
   api?: string;
-  /** Archivo custom ilegible, listado solo para poder eliminarlo. */
   invalid?: boolean;
 }
 
 export type AiProviderApiFormat = 'openai' | 'anthropic';
 
-export interface AiProviderCustomInput {
+interface AiProviderCustomInput {
   id?: string;
   label: string;
   api: AiProviderApiFormat;
   base_url: string;
   model: string;
   api_key?: string;
-  /** Quita la clave guardada al editar; un api_key nuevo tiene prioridad. */
   remove_key?: boolean;
 }
 

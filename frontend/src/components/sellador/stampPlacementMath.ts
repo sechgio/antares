@@ -8,7 +8,6 @@ interface ClientBounds {
   height: number;
 }
 
-/** Convierte coordenadas de cliente (px de pantalla) a puntos PDF. */
 export function clientPointToPdfPoint(
   clientX: number,
   clientY: number,
@@ -22,10 +21,6 @@ export function clientPointToPdfPoint(
   };
 }
 
-/**
- * Calcula el rect destino de un drag activo: 'move' traslada por delta,
- * 'resize' ajusta width preservando el aspect ratio del origen.
- */
 export function computeDragRect(
   mode: StampDragMode,
   origin: StampRect,
@@ -44,7 +39,6 @@ export function computeDragRect(
   return clampStampRect({ ...origin, width: nextWidth, height: nextWidth / aspect }, pageSize);
 }
 
-/** Rect resultante de soltar el sello centrado sobre el punto de drop. */
 export function computeDropRect(
   rect: StampRect,
   point: { x: number; y: number },
@@ -63,7 +57,6 @@ export function computeDropRect(
   );
 }
 
-/** Convierte un rect PDF a posición CSS en porcentajes de la página. */
 export function rectToOverlayPercent(
   rect: StampRect,
   pageSize: PdfPageSize,

@@ -1,9 +1,3 @@
-"""Low-level python-docx layout helpers shared by document renderers.
-
-python-docx is imported lazily inside each helper so importing this module
-never pulls the heavy dependency at process start.
-"""
-
 from __future__ import annotations
 
 from typing import Any

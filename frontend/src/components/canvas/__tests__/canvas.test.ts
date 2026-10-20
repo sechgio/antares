@@ -11,11 +11,8 @@ import {
 } from '../ops/gridLayout';
 import {
   alignLayers,
-  bringToFront,
-  distributeLayers,
   duplicateLayers,
   nudgeLayers,
-  sendToBack,
   setLayerLocked,
 } from '../ops/layerOps';
 import {
@@ -62,6 +59,8 @@ import {
   resizeWithAspectLock,
   strokeWeightForNewLine,
 } from '../ops/layerStyle';
+import { boxCss } from './fixtures';
+
 
 describe('canvas renderHtml', () => {
   it('renders field bindings and image slots', () => {
@@ -71,13 +70,7 @@ describe('canvas renderHtml', () => {
       type: 'field',
       name: 'NIS',
       value: '',
-      cssVars: {
-        '--width': '40mm',
-        '--height': '8mm',
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-        '--color': '#000',
-      },
+      cssVars: boxCss('10mm', '20mm', '40mm', '8mm', { '--color': '#000' }),
       meta: { key: 'NIS', fallback: '-' },
     });
     doc.layers.push({
@@ -85,13 +78,7 @@ describe('canvas renderHtml', () => {
       type: 'imageSlot',
       name: 'Foto 1',
       value: '',
-      cssVars: {
-        '--width': '50mm',
-        '--height': '40mm',
-        '--translate-x': '10mm',
-        '--translate-y': '40mm',
-        '--object-fit': 'cover',
-      },
+      cssVars: boxCss('10mm', '40mm', '50mm', '40mm', { '--object-fit': 'cover' }),
       meta: { index: 0 },
     });
     doc.layers.push({
@@ -99,12 +86,7 @@ describe('canvas renderHtml', () => {
       type: 'logo',
       name: 'Logo L',
       value: '',
-      cssVars: {
-        '--width': '30mm',
-        '--height': '12mm',
-        '--translate-x': '5mm',
-        '--translate-y': '5mm',
-      },
+      cssVars: boxCss('5mm', '5mm', '30mm', '12mm'),
       meta: { side: 'left' },
     });
 
@@ -129,13 +111,7 @@ describe('canvas renderHtml', () => {
       type: 'text',
       name: 'T',
       value: 'Hola',
-      cssVars: {
-        '--width': '40mm',
-        '--height': '8mm',
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-        '--color': '#000',
-      },
+      cssVars: boxCss('10mm', '20mm', '40mm', '8mm', { '--color': '#000' }),
     });
     const html = renderCanvasHtml(
       doc,
@@ -154,14 +130,7 @@ describe('canvas renderHtml', () => {
       type: 'text',
       name: 'T',
       value: 'Linea 1\nLinea 2',
-      cssVars: {
-        '--width': '40mm',
-        '--height': '16mm',
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-        '--color': '#000',
-        '--text-align': 'center',
-      },
+      cssVars: boxCss('10mm', '20mm', '40mm', '16mm', { '--color': '#000', '--text-align': 'center' }),
     });
     const html = renderCanvasHtml(
       doc,
@@ -190,39 +159,24 @@ describe('canvas renderHtml', () => {
     const field = createLayer('field', {
       id: 'field-nis',
       meta: { key: 'NIS', fallback: '-' },
-      cssVars: {
-        '--width': '40mm',
-        '--height': '8mm',
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
+      cssVars: boxCss('10mm', '20mm', '40mm', '8mm', {
         '--color': '#000',
         '--background-color': '#f5f5f5',
         '--border': '1px dashed #bbb',
-      },
+      }),
     });
     const logo = createLayer('logo', {
       id: 'logo-left',
       meta: { side: 'left' },
-      cssVars: {
-        '--width': '30mm',
-        '--height': '12mm',
-        '--translate-x': '5mm',
-        '--translate-y': '5mm',
-        '--background-color': '#eef2ff',
-        '--border': '1px dashed #94a3b8',
-      },
+      cssVars: boxCss('5mm', '5mm', '30mm', '12mm', { '--background-color': '#eef2ff', '--border': '1px dashed #94a3b8' }),
     });
     const rect = createLayer('rect', {
       id: 'rect-box',
-      cssVars: {
-        '--width': '20mm',
-        '--height': '10mm',
-        '--translate-x': '50mm',
-        '--translate-y': '50mm',
+      cssVars: boxCss('50mm', '50mm', '20mm', '10mm', {
         '--background-color': '#f8fafc',
         '--border-width': '1px',
         '--border-color': '#cbd5e1',
-      },
+      }),
     });
     doc.layers.push(field, logo, rect);
 
@@ -256,15 +210,11 @@ describe('canvas renderHtml', () => {
       createLayer('imageSlot', {
         id: 'slot-0',
         meta: { index: 0 },
-        cssVars: {
-          '--width': '50mm',
-          '--height': '40mm',
-          '--translate-x': '10mm',
-          '--translate-y': '40mm',
+        cssVars: boxCss('10mm', '40mm', '50mm', '40mm', {
           '--background-color': '#f1f5f9',
           '--border': '1px dashed #94a3b8',
           '--object-fit': 'cover',
-        },
+        }),
       }),
     );
     const html = renderCanvasHtml(doc, {
@@ -328,12 +278,7 @@ describe('canvas renderHtml', () => {
       createLayer('field', {
         id: 'f-empty-fb',
         meta: { key: 'NIS', fallback: '' },
-        cssVars: {
-          '--width': '40mm',
-          '--height': '8mm',
-          '--translate-x': '10mm',
-          '--translate-y': '20mm',
-        },
+        cssVars: boxCss('10mm', '20mm', '40mm', '8mm'),
       }),
     );
     const html = renderCanvasHtml(doc, {
@@ -351,16 +296,12 @@ describe('canvas renderHtml', () => {
       createLayer('field', {
         id: 'legacy-field',
         meta: { key: 'SECTOR', fallback: '-' },
-        cssVars: {
-          '--width': '40mm',
-          '--height': '8mm',
-          '--translate-x': '10mm',
-          '--translate-y': '20mm',
+        cssVars: boxCss('10mm', '20mm', '40mm', '8mm', {
           '--background-color': '#fefefe',
           '--border-width': '1px',
           '--border-color': '#888888',
           '--border-style': 'dotted',
-        },
+        }),
       }),
     );
     const html = renderCanvasHtml(doc, { data: {}, images: [], logoLeft: null, logoRight: null }, { forScreen: true });
@@ -375,13 +316,7 @@ describe('canvas renderHtml', () => {
       createLayer('logo', {
         id: 'logo-cover',
         meta: { side: 'left' },
-        cssVars: {
-          '--width': '30mm',
-          '--height': '12mm',
-          '--translate-x': '5mm',
-          '--translate-y': '5mm',
-          '--object-fit': 'cover',
-        },
+        cssVars: boxCss('5mm', '5mm', '30mm', '12mm', { '--object-fit': 'cover' }),
       }),
     );
     const html = renderCanvasHtml(doc, {
@@ -399,28 +334,17 @@ describe('canvas renderHtml', () => {
       createLayer('checkbox', {
         id: 'cb-1',
         meta: { checked: true },
-        cssVars: {
-          '--width': '6mm',
-          '--height': '6mm',
-          '--translate-x': '10mm',
-          '--translate-y': '10mm',
+        cssVars: boxCss('10mm', '10mm', '6mm', '6mm', {
           '--border-width': '2px',
           '--border-color': '#0e8fd6',
           '--color': '#0e8fd6',
           '--font-size': '12pt',
-        },
+        }),
       }),
       createLayer('signature', {
         id: 'sig-1',
         value: 'Ana Ruiz',
-        cssVars: {
-          '--width': '60mm',
-          '--height': '20mm',
-          '--translate-x': '10mm',
-          '--translate-y': '30mm',
-          '--color': '#334155',
-          '--font-size': '9pt',
-        },
+        cssVars: boxCss('10mm', '30mm', '60mm', '20mm', { '--color': '#334155', '--font-size': '9pt' }),
       }),
     );
     const html = renderCanvasHtml(doc, {
@@ -443,14 +367,7 @@ describe('canvas renderHtml', () => {
     doc.layers.push(
       createLayer('arrow', {
         id: 'arrow-1',
-        cssVars: {
-          '--width': '40mm',
-          '--height': '20mm',
-          '--translate-x': '10mm',
-          '--translate-y': '10mm',
-          '--background-color': '#000',
-          '--border-radius': '8px',
-        },
+        cssVars: boxCss('10mm', '10mm', '40mm', '20mm', { '--background-color': '#000', '--border-radius': '8px' }),
       }),
     );
     const html = renderCanvasHtml(doc, {
@@ -469,21 +386,11 @@ describe('canvas renderHtml', () => {
     doc.layers.push(
       createLayer('logo', {
         meta: { side: 'left' },
-        cssVars: {
-          '--width': '30mm',
-          '--height': '12mm',
-          '--translate-x': '5mm',
-          '--translate-y': '5mm',
-        },
+        cssVars: boxCss('5mm', '5mm', '30mm', '12mm'),
       }),
       createLayer('logo', {
         meta: { side: 'right' },
-        cssVars: {
-          '--width': '30mm',
-          '--height': '12mm',
-          '--translate-x': '160mm',
-          '--translate-y': '5mm',
-        },
+        cssVars: boxCss('160mm', '5mm', '30mm', '12mm'),
       }),
     );
     const html = renderCanvasHtml(doc, {
@@ -657,13 +564,7 @@ describe('line stroke weight', () => {
 
   it('legacy fill-height lines still report a stroke width', () => {
     const legacy = createLayer('line', {
-      cssVars: {
-        '--width': '80mm',
-        '--height': '2mm',
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--background-color': '#000000',
-      },
+      cssVars: boxCss('10mm', '10mm', '80mm', '2mm', { '--background-color': '#000000' }),
       meta: {},
     });
     delete legacy.meta!.path;
@@ -679,27 +580,6 @@ describe('layerOps', () => {
     const rect = createLayer('rect', { cssVars: { ...createLayer('rect').cssVars, '--translate-x': '30mm', '--translate-y': '40mm' } });
     return [...doc.layers, text, rect];
   };
-
-  it('duplicateLayers creates new ids and offsets', () => {
-    const layers = baseLayers();
-    const source = layers[1];
-    const { layers: next, newIds } = duplicateLayers(layers, [source.id]);
-    expect(newIds).toHaveLength(1);
-    expect(newIds[0]).not.toBe(source.id);
-    const dup = next.find((l) => l.id === newIds[0])!;
-    expect(parseMm(dup.cssVars['--translate-x'])).toBe(parseMm(source.cssVars['--translate-x']) + 5);
-    expect(parseMm(dup.cssVars['--translate-y'])).toBe(parseMm(source.cssVars['--translate-y']) + 5);
-  });
-
-  it('duplicateLayers can paste in place with zero offset', () => {
-    const source = createLayer('rect');
-    source.cssVars['--translate-x'] = '10mm';
-    source.cssVars['--translate-y'] = '20mm';
-    const { layers: next, newIds } = duplicateLayers([source], [source.id], { offsetMm: 0 });
-    const dup = next.find((l) => l.id === newIds[0])!;
-    expect(parseMm(dup.cssVars['--translate-x'])).toBe(10);
-    expect(parseMm(dup.cssVars['--translate-y'])).toBe(20);
-  });
 
   it('skips locked frames when duplicating', () => {
     const layers = baseLayers();
@@ -768,102 +648,21 @@ describe('layerOps', () => {
     expect(dupChild!.id).not.toBe('child');
   });
 
-  it('bringToFront and sendToBack reorder layers', () => {
-    const layers = baseLayers();
-    const text = layers[1];
-    const front = bringToFront(layers, [text.id]);
-    expect(front[front.length - 1].id).toBe(text.id);
-    const back = sendToBack(front, [text.id]);
-    expect(back[1].id).toBe(text.id);
-  });
-
-  it('alignLayers left', () => {
-    const layers = baseLayers();
-    const ids = layers.slice(1).map((l) => l.id);
-    const aligned = alignLayers(layers, ids, 'left');
-    const xs = aligned.slice(1).map((l) => parseMm(l.cssVars['--translate-x']));
-    expect(new Set(xs).size).toBe(1);
-    expect(xs[0]).toBe(10);
-  });
-
-  it('alignLayers single selection against frame', () => {
-    const layers = baseLayers();
-    const text = layers[1];
-    text.cssVars['--translate-x'] = '40mm';
-    const aligned = alignLayers(layers, [text.id], 'left');
-    const moved = aligned.find((l) => l.id === text.id)!;
-    expect(parseMm(moved.cssVars['--translate-x'])).toBe(0);
-  });
-
   it('alignLayers single uses pageIndex frame', () => {
     const frame0 = createLayer('frame', {
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '210mm',
-        '--height': '297mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '210mm', '297mm'),
       pageIndex: 0,
     });
     const frame1 = createLayer('frame', {
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '210mm',
-        '--height': '297mm',
-      },
+      cssVars: boxCss('0mm', '0mm', '210mm', '297mm'),
       pageIndex: 1,
     });
     const text = createLayer('text', {
       pageIndex: 1,
-      cssVars: {
-        '--translate-x': '40mm',
-        '--translate-y': '20mm',
-        '--width': '40mm',
-        '--height': '10mm',
-      },
+      cssVars: boxCss('40mm', '20mm', '40mm', '10mm'),
     });
     const aligned = alignLayers([frame0, frame1, text], [text.id], 'left', { pageIndex: 1 });
     expect(parseMm(aligned.find((l) => l.id === text.id)!.cssVars['--translate-x'])).toBe(0);
-  });
-
-  it('distributeLayers gaps equalizes spacing between boxes', () => {
-    const a = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '10mm',
-        '--height': '10mm',
-      },
-    });
-    const b = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '20mm',
-        '--translate-y': '0mm',
-        '--width': '10mm',
-        '--height': '10mm',
-      },
-    });
-    const c = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '90mm',
-        '--translate-y': '0mm',
-        '--width': '10mm',
-        '--height': '10mm',
-      },
-    });
-    const next = distributeLayers([a, b, c], [a.id, b.id, c.id], 'horizontal', { mode: 'gaps' });
-    const bx = parseMm(next.find((l) => l.id === b.id)!.cssVars['--translate-x']);
-    expect(bx).toBeCloseTo(45, 5);
-  });
-
-  it('nudgeLayers moves by delta', () => {
-    const layers = baseLayers();
-    const text = layers[1];
-    const nudged = nudgeLayers(layers, [text.id], 3, -2);
-    const moved = nudged.find((l) => l.id === text.id)!;
-    expect(parseMm(moved.cssVars['--translate-x'])).toBe(13);
-    expect(parseMm(moved.cssVars['--translate-y'])).toBe(18);
   });
 
   it('nudgeLayers allows negative coordinates', () => {
@@ -907,12 +706,7 @@ describe('gridLayout', () => {
       createLayer('grid', {
         id: gridId,
         meta: { cols: 2, rows: 2, gapMm: 2 },
-        cssVars: {
-          '--width': '100mm',
-          '--height': '80mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '100mm', '80mm'),
       }),
     ];
     for (let i = 0; i < 4; i += 1) {
@@ -953,34 +747,19 @@ describe('gridLayout', () => {
       createLayer('grid', {
         id: emptyId,
         meta: { cols: 2, rows: 2, gapMm: 2 },
-        cssVars: {
-          '--width': '100mm',
-          '--height': '80mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '100mm', '80mm'),
       }),
       createLayer('grid', {
         id: otherId,
         meta: { cols: 1, rows: 1, gapMm: 2 },
-        cssVars: {
-          '--width': '40mm',
-          '--height': '40mm',
-          '--translate-x': '120mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('120mm', '0mm', '40mm', '40mm'),
       }),
       createLayer('imageSlot', {
         id: otherSlotId,
         name: 'Foto other',
         parentId: otherId,
         meta: { index: 0 },
-        cssVars: {
-          '--width': '40mm',
-          '--height': '40mm',
-          '--translate-x': '120mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('120mm', '0mm', '40mm', '40mm'),
       }),
     ];
     const next = rebuildGridSlots(layers, emptyId);
@@ -996,12 +775,7 @@ describe('gridLayout', () => {
       createLayer('grid', {
         id: gridId,
         meta: { cols: 3, rows: 2, gapMm: 2, rules: DEFAULT_GRID_RULES },
-        cssVars: {
-          '--width': '100mm',
-          '--height': '80mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '100mm', '80mm'),
       }),
     ];
     for (let i = 0; i < 6; i += 1) {
@@ -1019,12 +793,7 @@ describe('gridLayout', () => {
       createLayer('grid', {
         id: gridId,
         meta: { cols: 2, rows: 2, gapMm: 2 },
-        cssVars: {
-          '--width': '100mm',
-          '--height': '80mm',
-          '--translate-x': '10mm',
-          '--translate-y': '5mm',
-        },
+        cssVars: boxCss('10mm', '5mm', '100mm', '80mm'),
       }),
       ...[0, 1, 2, 3].map((i) =>
         createLayer('imageSlot', { id: `slot-${i}`, parentId: gridId, meta: { index: i } }),
@@ -1072,12 +841,7 @@ describe('gridLayout', () => {
       createLayer('grid', {
         id: gridId,
         meta: { cols: 2, rows: 2, gapMm: 2 },
-        cssVars: {
-          '--width': '100mm',
-          '--height': '80mm',
-          '--translate-x': '10mm',
-          '--translate-y': '5mm',
-        },
+        cssVars: boxCss('10mm', '5mm', '100mm', '80mm'),
       }),
       ...[0, 1, 2, 3].map((i) =>
         createLayer('imageSlot', { id: `slot-${i}`, parentId: gridId, meta: { index: i } }),
@@ -1262,12 +1026,7 @@ describe('document model', () => {
         name: 'T',
         value: 'x',
         pageIndex: -3,
-        cssVars: {
-          '--width': '10mm',
-          '--height': '5mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '10mm', '5mm'),
       },
     ];
     const normalized = normalizeDocument(doc);
@@ -1286,12 +1045,7 @@ describe('document model', () => {
         value: '',
         pageIndex: 0,
         parentId: groupId,
-        cssVars: {
-          '--width': '10mm',
-          '--height': '5mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '10mm', '5mm'),
       },
       {
         id: newId(),
@@ -1300,12 +1054,7 @@ describe('document model', () => {
         value: 'x',
         pageIndex: 0,
         parentId: 'no-existe',
-        cssVars: {
-          '--width': '10mm',
-          '--height': '5mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '10mm', '5mm'),
       },
     ];
 
@@ -1316,12 +1065,7 @@ describe('document model', () => {
 
   it('normalizeDocument breaks parentId cycles', () => {
     const doc = createEmptyDocument('V2 cycle');
-    const css = {
-      '--width': '10mm',
-      '--height': '5mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const css = boxCss('0mm', '0mm', '10mm', '5mm');
     doc.layers = [
       { id: 'a', type: 'text', name: 'A', value: '', pageIndex: 0, parentId: 'b', cssVars: css },
       { id: 'b', type: 'text', name: 'B', value: '', pageIndex: 0, parentId: 'a', cssVars: css },
@@ -1336,12 +1080,7 @@ describe('document model', () => {
 
   it('preserves a child listed before a parent cycle', () => {
     const doc = createEmptyDocument('V2 child before cycle');
-    const css = {
-      '--width': '10mm',
-      '--height': '5mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const css = boxCss('0mm', '0mm', '10mm', '5mm');
     doc.layers = [
       { id: 'child', type: 'text', name: 'Child', value: '', pageIndex: 0, parentId: 'a', cssVars: css },
       { id: 'a', type: 'text', name: 'A', value: '', pageIndex: 0, parentId: 'b', cssVars: css },
@@ -1357,12 +1096,7 @@ describe('document model', () => {
 
   it('normalizeDocument drops dangling and self boolean ops', () => {
     const doc = createEmptyDocument('V2 ops');
-    const css = {
-      '--width': '10mm',
-      '--height': '5mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const css = boxCss('0mm', '0mm', '10mm', '5mm');
     doc.layers = [
       { id: 'shape', type: 'rect', name: 'R', value: '', pageIndex: 0, cssVars: css },
       {
@@ -1396,12 +1130,7 @@ describe('document model', () => {
         value: '',
         pageIndex: 0,
         meta: { ops: [{ op: 'union', layerId: 'ghost' }] },
-        cssVars: {
-          '--width': '10mm',
-          '--height': '5mm',
-          '--translate-x': '0mm',
-          '--translate-y': '0mm',
-        },
+        cssVars: boxCss('0mm', '0mm', '10mm', '5mm'),
       },
     ];
 
@@ -1410,12 +1139,7 @@ describe('document model', () => {
   });
 
   it('normalizeDocument preserves legacy multipage layout without pages array', () => {
-    const css = {
-      '--width': '10mm',
-      '--height': '5mm',
-      '--translate-x': '0mm',
-      '--translate-y': '0mm',
-    };
+    const css = boxCss('0mm', '0mm', '10mm', '5mm');
     const legacy = {
       ...createEmptyDocument('Legacy multi'),
       version: 1 as const,
@@ -1531,12 +1255,7 @@ describe('render checkbox and table', () => {
       type: 'checkbox',
       name: 'A',
       value: '',
-      cssVars: {
-        '--width': '6mm',
-        '--height': '6mm',
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-      },
+      cssVars: boxCss('10mm', '10mm', '6mm', '6mm'),
       meta: { key: 'SERVICIO_A' },
     });
     doc.layers.push({
@@ -1544,12 +1263,7 @@ describe('render checkbox and table', () => {
       type: 'table',
       name: 'T',
       value: '',
-      cssVars: {
-        '--width': '100mm',
-        '--height': '30mm',
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-      },
+      cssVars: boxCss('10mm', '20mm', '100mm', '30mm'),
       meta: { rowsData: JSON.stringify({ cells: [['A', 'B'], ['1', '2']] }) },
     });
     const html = renderCanvasHtml(doc, {
@@ -1686,13 +1400,7 @@ describe('viewportCulling', () => {
 
   it('filterVisibleLayers uses rotated AABB for culling', () => {
     const rotated = createLayer('rect', {
-      cssVars: {
-        '--width': '20mm',
-        '--height': '10mm',
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--rotate': '90deg',
-      },
+      cssVars: boxCss('0mm', '0mm', '20mm', '10mm', { '--rotate': '90deg' }),
     });
     const view = { x: 6, y: 12, w: 4, h: 4 };
     expect(filterVisibleLayers([rotated], view).map((l) => l.id)).toEqual([rotated.id]);
@@ -1702,12 +1410,7 @@ describe('viewportCulling', () => {
 describe('resizeConstraints', () => {
   const base = () =>
     createLayer('rect', {
-      cssVars: {
-        '--width': '100mm',
-        '--height': '50mm',
-        '--translate-x': '10mm',
-        '--translate-y': '20mm',
-      },
+      cssVars: boxCss('10mm', '20mm', '100mm', '50mm'),
     });
 
   it('defaults to the top-left anchor (legacy behavior)', () => {

@@ -8,12 +8,6 @@ interface HtmlToPdfFn {
   }>;
 }
 
-/**
- * Utilidad compartida de exportación a PDF de reportes: renderiza el HTML, lo
- * convierte a PDF vía IPC, descarga el base64 resultante y registra la
- * generación en el historial. Devuelve la respuesta del render para que el
- * llamador componga su propio toast.
- */
 export async function renderPdfDownload<R extends { html: string; filename: string }>(options: {
   render: () => Promise<R>;
   htmlToPdf: HtmlToPdfFn;

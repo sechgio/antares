@@ -1,6 +1,7 @@
 const { EventEmitter } = require('events');
 
-const { assert, finish, stubModule, evictModule } = require('./helpers/harness');
+const { assert, finish } = require('./helpers/harness');
+const { loadIpcRouter } = require('./helpers/ipc-router');
 
 function makeProc(pid) {
   const proc = new EventEmitter();
@@ -20,35 +21,20 @@ function loadRouter({ currentProc, incrementPendingRequests, decrementPendingReq
     else process.env[key] = value;
   }
 
-  stubModule('electron', {
-    ipcMain: { handle: () => {}, removeHandler: () => {} },
-    dialog: {},
-    app: { isPackaged: !isDev },
+  const router = loadIpcRouter({
+    electron: {
+      app: { isPackaged: !isDev },
+    },
+    backend: {
+      getProcess: () => currentProc.ref,
+      incrementPendingRequests,
+      decrementPendingRequests,
+    },
+    windowManager: {
+      getMainWindow: () => mainWindow,
+      getIsDev: () => isDev,
+    },
   });
-
-  stubModule('electron/backend-spawner', {
-    getProcess: () => currentProc.ref,
-    isReady: () => true,
-    waitForReady: async () => true,
-    getState: () => 'ready',
-    getLastError: () => null,
-    getStderrTail: () => '',
-    manualRestart: async () => true,
-    incrementPendingRequests,
-    decrementPendingRequests,
-    noteJobActivity: () => {},
-    clearJobActivity: () => {},
-    STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
-  });
-
-  stubModule('electron/window-manager', {
-    getMainWindow: () => mainWindow,
-    getIsDev: () => isDev,
-  });
-
-  const routerPath = require.resolve('../electron/ipc-router');
-  evictModule('electron/ipc-router');
-  const router = require(routerPath);
 
   for (const [key, value] of oldEnv) {
     if (value === undefined) delete process.env[key];

@@ -9,20 +9,18 @@ import {
   updateStyle,
 } from '../ops/sharedStyles';
 import { createEmptyDocument, normalizeDocument } from '../types';
+import { boxCss } from './fixtures';
+
 
 describe('sharedStyles', () => {
   it('createStyleFromLayer picks only color keys', () => {
     const layer = createLayer('rect', {
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '40mm',
-        '--height': '20mm',
+      cssVars: boxCss('10mm', '10mm', '40mm', '20mm', {
         '--background-color': '#FF0000',
         '--fill-opacity': '80',
         '--fill-visible': '1',
         '--color': '#111111',
-      },
+      }),
     });
     const style = createStyleFromLayer(layer, 'color');
     expect(style.kind).toBe('color');
@@ -35,13 +33,7 @@ describe('sharedStyles', () => {
   it('applyStyleToLayers writes cssVars and fillStyleId', () => {
     const a = createLayer('rect', {
       id: 'a',
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '10mm',
-        '--height': '10mm',
-        '--background-color': '#FFFFFF',
-      },
+      cssVars: boxCss('0mm', '0mm', '10mm', '10mm', { '--background-color': '#FFFFFF' }),
     });
     const style = createStyleFromLayer(
       createLayer('rect', {
@@ -64,36 +56,15 @@ describe('sharedStyles', () => {
     let doc = createEmptyDocument();
     const a = createLayer('rect', {
       id: 'a',
-      cssVars: {
-        '--translate-x': '0mm',
-        '--translate-y': '0mm',
-        '--width': '10mm',
-        '--height': '10mm',
-        '--background-color': '#111111',
-        '--fill-visible': '1',
-      },
+      cssVars: boxCss('0mm', '0mm', '10mm', '10mm', { '--background-color': '#111111', '--fill-visible': '1' }),
     });
     const b = createLayer('rect', {
       id: 'b',
-      cssVars: {
-        '--translate-x': '20mm',
-        '--translate-y': '0mm',
-        '--width': '10mm',
-        '--height': '10mm',
-        '--background-color': '#111111',
-        '--fill-visible': '1',
-      },
+      cssVars: boxCss('20mm', '0mm', '10mm', '10mm', { '--background-color': '#111111', '--fill-visible': '1' }),
     });
     const c = createLayer('rect', {
       id: 'c',
-      cssVars: {
-        '--translate-x': '40mm',
-        '--translate-y': '0mm',
-        '--width': '10mm',
-        '--height': '10mm',
-        '--background-color': '#EEEEEE',
-        '--fill-visible': '1',
-      },
+      cssVars: boxCss('40mm', '0mm', '10mm', '10mm', { '--background-color': '#EEEEEE', '--fill-visible': '1' }),
     });
     doc = { ...doc, layers: [...doc.layers, a, b, c] };
     doc = createAndLinkStyle(doc, 'a', 'color');

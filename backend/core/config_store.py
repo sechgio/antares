@@ -1,10 +1,3 @@
-"""Shared load/cache/save cycle for single-file JSON config stores.
-
-Each config module keeps its own ``_config_file()`` seam (tests monkeypatch it)
-and supplies ``parse``/``serialize`` callbacks for its payload shape; the store
-owns the repeated path-keyed caching, read+fallback and atomic write cycle.
-"""
-
 from __future__ import annotations
 
 import json
