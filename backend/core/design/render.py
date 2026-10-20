@@ -1,10 +1,3 @@
-"""Design → HTML.
-
-El render **nunca** interpola marcado ni CSS del modelo: los textos se escapan
-con ``html.escape``, los colores y fuentes llegan validados por
-``models.normalize_*`` y el layout se elige de una allowlist. El HTML que sale
-aquí es el que se sanitiza antes de renderizar y el que WeasyPrint imprime.
-"""
 
 from __future__ import annotations
 
@@ -65,13 +58,10 @@ li::before {{ content: ""; position: absolute; left: 0; top: {bullet_top}em;
 
 
 def _font_stack(name: str) -> str:
-    # `name` ya viene de la allowlist del schema; las comillas cierran el literal
-    # para que un nombre con espacios no rompa la declaración CSS.
     return f'"{name}"'
 
 
 def _px_ratio(width_mm: float, height_mm: float) -> float:
-    """Escala tipográfica según el ancho de la página (A4 ≈ 1.0)."""
     ratio: float = (width_mm / 210.0) ** 0.5 * 0.98
     return max(0.72, min(1.45, ratio))
 
@@ -145,8 +135,6 @@ def _slide_html(slide: JsonObject, theme: JsonObject, *, notes: bool = False) ->
 
     head = f'<div class="title">{title}</div><div style="height:5mm"></div>' if title else ""
     items = list(slide.get("bullets") or [])
-    # `body` es texto corrido: si el modelo solo lo escribió ahí y dejó
-    # `bullets` vacío, se muestra como un único punto para no perder contenido.
     if not items and body:
         items = [body]
     bullets = _bullets_html(items)

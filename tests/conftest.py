@@ -1,5 +1,3 @@
-"""Helpers compartidos para tests que lanzan el backend real por IPC."""
-
 from __future__ import annotations
 
 import json
@@ -22,7 +20,6 @@ def drain_stderr(proc: subprocess.Popen, sink: list[str]) -> None:
 
 
 def spawn_backend(env: dict[str, str] | None = None) -> tuple[subprocess.Popen, list[str]]:
-    """Lanza `python -m backend.main` con pipes UTF-8 y stderr drenado."""
     proc = subprocess.Popen(
         [sys.executable, "-m", "backend.main"],
         cwd=str(BACKEND_ROOT),
@@ -39,7 +36,6 @@ def spawn_backend(env: dict[str, str] | None = None) -> tuple[subprocess.Popen, 
 
 
 def await_ready(proc: subprocess.Popen, stderr_lines: list[str], timeout: float = 10.0) -> None:
-    """Espera la notificación `ready`; falla en EOF, db_init_failed o timeout."""
     buffer = ""
     start = time.time()
     while time.time() - start < timeout:

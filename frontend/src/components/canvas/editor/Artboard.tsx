@@ -470,7 +470,6 @@ function Artboard({
       setCanvasGestureActive(false);
       setGuidesIfChanged([]);
       setDistanceLabelsIfChanged([]);
-      // Notifica el aborto al dueño del baseline: updateSilent ya aplicó el preview al documento.
       onCancelGestureRef.current?.();
     },
     [setGuidesIfChanged, setDistanceLabelsIfChanged],

@@ -131,8 +131,6 @@ async function run() {
     assert(quitCalls === 1, 'accepted ACK allows deferred quit to complete');
     assert(killedPython === 1, 'shutdown is run exactly once');
 
-    // Second module load: renderer dies mid-flush -> quit must not wait for the
-    // full CANVAS_FLUSH_TIMEOUT_MS grace period.
     evictModule('electron/main.js');
     require('../electron/main.js');
     const beforeQuit2 = app.listeners('before-quit').at(-1);

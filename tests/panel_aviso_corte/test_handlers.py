@@ -21,7 +21,8 @@ def _panel_payload() -> dict[str, object]:
     }
 
 
-def test_render_pdf_forwards_export_mode(monkeypatch) -> None:
+@pytest.mark.parametrize("export_mode", ["skip_empty", "desconocido", None])
+def test_render_pdf_forwards_export_mode(monkeypatch, export_mode) -> None:
     captured: dict[str, object] = {}
 
     def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
@@ -37,7 +38,7 @@ def test_render_pdf_forwards_export_mode(monkeypatch) -> None:
             "images": {},
             "image_paths": {},
             "format": "pdf",
-            "export_mode": "skip_empty",
+            "export_mode": export_mode,
         },
     )
 
@@ -57,7 +58,8 @@ def test_compute_match_rejects_over_max_excel_rows(monkeypatch) -> None:
         )
 
 
-def test_render_docx_forwards_export_mode(monkeypatch) -> None:
+@pytest.mark.parametrize("export_mode", ["skip_empty", "include_empty", "desconocido", None])
+def test_render_docx_forwards_export_mode(monkeypatch, export_mode) -> None:
     captured: dict[str, object] = {}
 
     def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
@@ -73,11 +75,11 @@ def test_render_docx_forwards_export_mode(monkeypatch) -> None:
             "images": {},
             "image_paths": {},
             "format": "docx",
-            "export_mode": "include_empty",
+            "export_mode": export_mode,
         },
     )
 
-    assert captured["export_mode"] == "include_empty"
+    assert captured["export_mode"] == ("include_empty" if export_mode == "include_empty" else "skip_empty")
 
 
 def test_render_pdf_forwards_template_id(monkeypatch) -> None:

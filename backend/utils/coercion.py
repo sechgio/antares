@@ -4,13 +4,10 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-# Agrupación de miles en español: punto seguido de tres dígitos exactos. Con
-# menos o más decimales ("1.25", "12.5000") el punto sigue siendo decimal.
 _THOUSANDS_GROUPS = re.compile(r"^-?\d{1,3}(?:\.\d{3})+$")
 
 
 def _numeric_text(value: Any) -> Any:
-    """Reescribe una celda escrita a mano a la sintaxis que entiende float()."""
     if not isinstance(value, str):
         return value
     text = value.strip()

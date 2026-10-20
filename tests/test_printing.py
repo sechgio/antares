@@ -179,7 +179,7 @@ def test_printer_list_is_cached_within_ttl(monkeypatch):
     expected = [{"name": "Uno", "default": False}]
     assert printing.list_printers() == expected
     assert printing.list_printers() == expected
-    assert spool.enum_calls == 2  # una enumeración = probe + fill
+    assert spool.enum_calls == 2
 
 
 def test_printer_list_cache_expires(monkeypatch):
@@ -189,7 +189,7 @@ def test_printer_list_cache_expires(monkeypatch):
     monkeypatch.setattr(printing, "_PRINTERS_CACHE_TTL_SECONDS", 0)
     assert printing.list_printers() == [{"name": "Uno", "default": False}]
     assert printing.list_printers() == [{"name": "Uno", "default": False}]
-    assert spool.enum_calls == 4  # TTL=0: cada llamada re-enumera
+    assert spool.enum_calls == 4
 
 
 def test_printer_list_cache_reset(monkeypatch):

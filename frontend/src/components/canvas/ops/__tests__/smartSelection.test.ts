@@ -139,7 +139,6 @@ describe('tidySmartSequence', () => {
     const nc = next.find((l) => l.id === 'c')!;
     expect(x(na)).toBe(10);
     expect(x(nc)).toBe(60);
-    // span 10..70, sizes 10*3 → gap = (60 - 30) / 2 = 15 → b at 35
     expect(x(nb)).toBe(35);
   });
 

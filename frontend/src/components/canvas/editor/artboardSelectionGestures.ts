@@ -116,7 +116,6 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
       snapshot = layers;
       moveIds = newIds;
       onSelectIdsRef.current(newIds);
-      // Solo el primer frame necesita commit de React para crear las copias; luego se mueven por DOM.
       applyGestureLayers(snapshot);
     };
 

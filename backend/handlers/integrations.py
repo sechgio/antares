@@ -1,5 +1,3 @@
-"""Configuración de proveedores IA (BYOK) y espejo de tokens OAuth de Conexiones."""
-
 from __future__ import annotations
 
 from backend.core.exceptions import ValidationError
@@ -12,7 +10,6 @@ from backend.handlers.common import validate_params, with_locale
 @with_locale
 @validate_params("provider", "tokens")
 def _connection_token_put(params: JsonObject) -> JsonObject:
-    """Espeja en el vault del backend los tokens OAuth gestionados por Electron."""
     provider = str(params["provider"])
     tokens = params["tokens"]
     if not isinstance(tokens, dict) or not isinstance(tokens.get("access_token"), str):
@@ -44,8 +41,6 @@ def _connection_token_refresh(params: JsonObject) -> JsonObject:
 def _ai_providers_list(params: JsonObject) -> JsonObject:
     specs = _ai_providers.load_provider_specs()
     providers: list[JsonObject] = []
-    # El catálogo va primero: Agente y Diseño eligen el primer proveedor listo
-    # como predeterminado y un modelo personalizado no debe desplazarlo.
     for pid in sorted(specs, key=lambda pid: (bool(specs[pid].get("custom")), pid)):
         spec = specs[pid]
         entry: JsonObject = {

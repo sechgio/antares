@@ -134,8 +134,6 @@ export async function pushCanvasDocumentResult(
     countCanvasAssetRefs,
   } = await import('../utils/imageBlobStore');
   if (countCanvasAssetRefs(doc) > 0) {
-    // canvasAssetInfo permite acotar el tamaño del JSON con los assets embebidos;
-    // sin él, comprueba el tamaño exacto después de la expansión.
     await assertCanvasAssetExpansionWithinBytes(doc, MAX_CLOUD_CANVAS_DOCUMENT_BYTES);
     doc = await embedCanvasAssetsAsDataUrls(doc, { strict: true });
     if (!window.electronAPI?.canvasAssetInfo) assertCloudCanvasDocumentSize(doc);
@@ -235,8 +233,6 @@ export async function pushCanvasDocumentResult(
   );
   if (error) throw new Error(error.message);
   if (!upserted || upserted.length === 0) {
-    // The LWW trigger suppressed the write: a newer remote row won. Preserve the
-    // local version best-effort and report the rejection honestly.
     try {
       const appendRes = (await withTimeout(
         (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<{ data: unknown; error: { message: string; code?: string; details?: string } | null }>)(
@@ -342,7 +338,6 @@ async function replayPendingCanvasDeletes(): Promise<void> {
     try {
       const local = await api.canvasGet(id);
       if (local?.document) {
-        // El proceso anterior terminó antes de completar el borrado local.
         clearPendingCanvasDelete(id);
         continue;
       }
@@ -479,8 +474,6 @@ export async function pullCanvasDocument(
     return { kind: 'unchanged', remoteUpdatedAt };
   }
 
-  // Only fetch the (potentially multi-MB) document column when the remote
-  // snapshot is actually newer than the local one.
   const { data, error } = await withTimeout(
     supabase
       .from('canvas_documents')
@@ -516,8 +509,6 @@ export async function pullCanvasDocument(
     '../utils/imageBlobStore'
   );
   await assertDocumentImagesResolvable(remote.document);
-  // Convierte data: URLs a canvas-asset: antes de guardar para evitar el límite
-  // local de 16 MiB; la hidratación resuelve esas referencias a blob: URLs.
   const storedRemote = await persistDataUrlsAsCanvasAssets(remote.document);
   if (pendingCanvasDeletes().includes(documentId)) return { kind: 'unchanged' };
   const current = options.getOpenState?.();
@@ -581,8 +572,6 @@ function hydratePendingCanvasPushes(): void {
 function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
   return {
     openDocumentId: b.openDocumentId ?? a?.openDocumentId,
-    // No heredar el snapshot openDocument del sync anterior: puede estar viejo
-    // y resolverConflictLocalDoc recarga por id cuando falta.
     openDocument: b.openDocument,
     openDirty: Boolean(a?.openDirty || b.openDirty),
     getOpenState: b.getOpenState ?? a?.getOpenState,
@@ -876,7 +865,6 @@ const pushRetry = new TimerScheduler(() => {
   void flushPendingPushes().catch(() => {});
 });
 
-// Reintenta sin tope con backoff de hasta 2 min; guardar o enfocar adelanta el reintento.
 function schedulePendingPushRetry(): void {
   if (pushRetry.pending) return;
   const delay = Math.min(PUSH_RETRY_BASE_MS * 2 ** pushRetry.attempts, PUSH_RETRY_MAX_DELAY_MS);

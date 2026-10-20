@@ -68,8 +68,6 @@ export default function InformesV2App() {
     return matchPhotosForId(photos, formData.header.photo_id);
   }, [formData, photos]);
 
-  // El switcher actúa como vista: sin informe abierto fija la plantilla por defecto;
-  // con informe abierto cambia la plantilla de ese informe.
   const [plantillaDefault, setPlantillaDefault] = useState<PlantillaId>('clasica');
   const plantillaSeleccionada = formData?.plantilla ?? plantillaDefault;
   const previewVacio = useMemo(
@@ -80,7 +78,6 @@ export default function InformesV2App() {
     [plantillaSeleccionada],
   );
 
-  // «Nuevo» crea la hoja con la plantilla seleccionada; con la clásica no hay que sembrar nada.
   const crearNuevo = useCallback(() => {
     void createReport(
       plantillaSeleccionada !== 'clasica' ? { plantilla: plantillaSeleccionada } : undefined,

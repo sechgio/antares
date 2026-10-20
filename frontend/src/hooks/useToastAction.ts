@@ -12,8 +12,6 @@ interface ToastActionOptions {
   rethrow?: boolean;
 }
 
-// Ejecuta una acción async y publica el resultado vía toast: `success` al
-// resolver, `errorMessage(err, error)` al rechazar.
 export function useToastAction() {
   const { addToast } = useToast();
   return useCallback(

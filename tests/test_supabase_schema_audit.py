@@ -1,16 +1,3 @@
-"""Static audit of the cumulative Supabase schema defined by migrations.
-
-Replays ``supabase/migrations/*.sql`` in order at the statement level and
-asserts on the *final* effective state (grants, RLS, policies, triggers),
-not on file contents. This is the regression guard for findings from the
-Supabase audit: it fails if a future migration forgets to revoke PUBLIC
-EXECUTE on a new function, drops a guard trigger, adds a tautological
-policy, or widens the client-callable RPC surface.
-
-It does not replace replaying against a real Postgres (``supabase db
-reset``); it verifies the declared intent of the migration files.
-"""
-
 from __future__ import annotations
 
 import re
@@ -21,9 +8,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MIGRATIONS_DIR = REPO_ROOT / "supabase" / "migrations"
 CONFIG_TOML = REPO_ROOT / "supabase" / "config.toml"
 
-# RPCs invoked by the renderer (supabase.rpc / functions.invoke handlers) or by
-# Edge Functions via the caller's JWT. Anything beyond this set exposed to
-# `authenticated` is surface area that needs an explicit reason to exist.
 EXPECTED_PUBLIC_AUTHENTICATED_RPCS = {
     "is_active_user",
     "is_admin",
@@ -80,8 +64,6 @@ EXPECTED_CANVAS_DOCUMENT_TRIGGERS = {
 
 
 def _split_statements(sql: str) -> list[str]:
-    """Split on top-level semicolons, respecting $$ dollar-quoted bodies and
-    -- line comments."""
     statements: list[str] = []
     buf: list[str] = []
     in_dollar = False
@@ -115,8 +97,6 @@ def _split_statements(sql: str) -> list[str]:
 
 
 def _normalize_signature(args: str) -> tuple[str, ...]:
-    """Reduce an argument list to its type list so that
-    ``(p_user_id uuid, p_is_admin boolean)`` and ``(uuid, boolean)`` key alike."""
     types: list[str] = []
     for raw in args.split(","):
         part = raw.strip()
@@ -152,17 +132,11 @@ class SchemaState:
     tables: set[str] = field(default_factory=set)
     dropped_tables: set[str] = field(default_factory=set)
     rls_enabled: set[str] = field(default_factory=set)
-    # table -> role -> set of privileges ('select','insert','update','delete','all')
     table_grants: dict[str, dict[str, set[str]]] = field(default_factory=dict)
-    # (schema, name, sig) -> definition text
     functions: dict[tuple[str, str, tuple[str, ...]], str] = field(default_factory=dict)
-    # (schema, name, sig) -> roles with EXECUTE
     func_execute: dict[tuple[str, str, tuple[str, ...]], set[str]] = field(default_factory=dict)
-    # (table, policy_name) -> Policy
     policies: dict[tuple[str, str], Policy] = field(default_factory=dict)
-    # (table, trigger_name)
     triggers: set[tuple[str, str]] = field(default_factory=set)
-    # schema -> roles with USAGE
     schema_usage: dict[str, set[str]] = field(default_factory=dict)
     publication: set[str] = field(default_factory=set)
     statements: list[str] = field(default_factory=list)
@@ -181,8 +155,6 @@ def _apply_statement(state: SchemaState, stmt: str) -> None:
         return
     low = s.lower()
 
-    # Realtime publication membership also lives inside DO $$ ... $$ blocks;
-    # scan the raw text (idempotent guards in the SQL make order safe).
     for m in re.finditer(
         r"alter\s+publication\s+supabase_realtime\s+(add|drop)\s+table\s+(?:public\.)?(\w+)",
         low,
@@ -547,12 +519,6 @@ def test_deleted_profile_realtime_event_can_be_filtered_by_user_id() -> None:
 
 
 def test_espacios_task_activity_migration_invariants() -> None:
-    """Invariantes de detalle de las migraciones T03/T04 de Espacios.
-
-    Relevo de tests/test-espacios-t03-t04-migration.js: los asserts de RLS,
-    grants efectivos y publication ya los cubre este audit sobre el estado
-    final; aquí quedan solo los detalles internos que ese modelo no captura.
-    """
     migrations = {p.name: p.read_text(encoding="utf-8") for p in MIGRATIONS_DIR.glob("*.sql")}
     priority = migrations["20260915191815_espacios_tarea_priority.sql"].lower()
     feature = migrations["20260915191816_espacios_task_activity_and_my_tasks.sql"].lower()

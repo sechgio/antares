@@ -1,5 +1,3 @@
-"""Pruebas del vault de conexiones y de la renovación de tokens."""
-
 from __future__ import annotations
 
 import json

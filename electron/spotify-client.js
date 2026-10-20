@@ -1,4 +1,3 @@
-// Cliente Spotify Web API usado por los métodos nativos spotify_*.
 const {
   API_BASE,
   REAUTH_REQUIRED_MESSAGE,

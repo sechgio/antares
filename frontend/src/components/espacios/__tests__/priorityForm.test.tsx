@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import TaskForm from '../components/TaskForm';
 import type { Tarea } from '../types';
 
-// These unit tests isolate form state from the shared popover and modal primitives.
 vi.mock('../components/ModalShell', () => ({
   default: ({ open, children, footer }: { open: boolean; children: ReactNode; footer: ReactNode }) =>
     open ? <div role="dialog">{children}{footer}</div> : null,

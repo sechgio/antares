@@ -32,7 +32,6 @@ describe('CommandPalette', () => {
     const input = screen.getByLabelText('Buscar acción');
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
-    // 'copy' is disabled, so second runnable is zoom:fit
     expect(onRun).toHaveBeenCalledWith('zoom:fit');
   });
 

@@ -28,8 +28,6 @@ function _upperCell(value) {
   return String(value || '').trim().toUpperCase();
 }
 
-// Índice de la primera fila de datos: 1 cuando la fila 0 abre con el nombre
-// canónico de la primera columna; si no, la fila 0 ya son datos.
 function tabStartIndex(values, header) {
   const row = (values || [])[0];
   return Array.isArray(row) && _upperCell(row[0]) === String(header[0]).toUpperCase() ? 1 : 0;
@@ -39,10 +37,6 @@ function _bdImgHasHeader(rows) {
   return rows.length > 0 && _upperCell(rows[0]?.[0]) === BD_IMG_HEADER[0];
 }
 
-// Falla ruidosa cuando la fila 0 trae un nombre de columna esperado en otra
-// posición: seguir posicionalmente reordenaría los valores entre columnas.
-// Nombres alternativos (p.ej. "DIR" por "DIRECCION") son válidos mientras no
-// usen un nombre reservado fuera de su columna.
 function assertBdImgLayout(values, header = BD_IMG_HEADER) {
   const row = (values || [])[0];
   if (!Array.isArray(row) || !row.length) return;
@@ -56,8 +50,6 @@ function assertBdImgLayout(values, header = BD_IMG_HEADER) {
     if (idx !== i && !misplaced) misplaced = { name: header[idx], at: i, expected: idx };
   }
   if (!misplaced) return;
-  // Una fila de datos con un valor que coincide con un nombre de columna no
-  // es encabezado: exigir 2+ coincidencias o que la fila abra con un nombre.
   const headerLike = hits >= 2 || indexByName.has(_upperCell(row[0]));
   if (headerLike) {
     throw new Error(

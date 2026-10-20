@@ -76,7 +76,6 @@ def _delete_os_task(name: str) -> None:
 
 
 def _headless_running() -> bool:
-    """True si sigue vivo un ``--flow-run`` de una versión anterior."""
     if sys.platform != "win32":
         return False
     import ctypes
@@ -118,7 +117,6 @@ def _output_candidates(runs: dict[str, JsonObject]) -> list[tuple[str, float | N
 
 
 def _delete_output(raw: str, finished: float | None, started: float | None) -> str | None:
-    """Borra el PDF si su procedencia es demostrable; si no, devuelve el motivo."""
     path = Path(raw)
     if not path.is_absolute():
         return "ruta no absoluta"

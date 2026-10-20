@@ -6,7 +6,6 @@ const STAGE_CHUNK_BYTES = 6 * 1024 * 1024;
 // Electron expires staged capabilities after 30 minutes.
 const SHARED_TOKEN_MAX_AGE_MS = 20 * 60 * 1000;
 
-// Consecutive render batches can reuse the upload for two minutes.
 const SHARED_TOKEN_IDLE_MS = 2 * 60 * 1000;
 
 type StagedElectronApi = {
@@ -107,8 +106,6 @@ export async function acquireStagedFile(file: File): Promise<StagedFileHandle> {
     if (entry.refs === 0) {
       disposeEntry(file, entry);
     } else if (sharedStagedByFile.get(file) === entry) {
-      // Still referenced: leave the entry for its holders, but stop handing
-      // out a token past its absolute age.
       sharedStagedByFile.delete(file);
     }
     entry = undefined;

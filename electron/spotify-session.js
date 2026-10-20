@@ -45,7 +45,7 @@ const REAUTH_REQUIRED_MESSAGE =
 
 let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
-let _callbackFlow = null; // { stop } del listener de este intento
+let _callbackFlow = null;
 let _refreshPromise = null;
 let _cachedTokens;
 
@@ -201,8 +201,6 @@ async function getValidTokens() {
   return tokens;
 }
 
-// El cliente envuelve el fallo en SpotifyAuthRequiredError; aquí propagamos el
-// error de refresh tal cual para no crear un require circular.
 async function forceRefreshTokens() {
   return refreshAccessToken();
 }

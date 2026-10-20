@@ -30,7 +30,7 @@ def test_process_snapshot_con_psutil_reporta_metricas(monkeypatch) -> None:
         def num_threads(self):
             return 9
 
-    fake.Process = _Proc  # type: ignore[attr-defined]
+    fake.Process = _Proc
     monkeypatch.setitem(sys.modules, "psutil", fake)
     snap = diagnostics._process_snapshot()
     assert snap["rss_bytes"] == 123456

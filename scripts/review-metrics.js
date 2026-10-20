@@ -1,10 +1,10 @@
 #!/usr/bin/env node
+
 /**
  * Métricas sobre PRs mergeados. Sin gh: sale 0.
  *
  *   node scripts/review-metrics.js [--days 14] [--strict] [--json] [--repo o/n]
  */
-
 const { fs } = require('fs');
 const { detectRepo, gh, parseCliArgs } = require('./lib/loop-utils');
 const {
@@ -70,8 +70,6 @@ function nonAuthorApprovals(pr) {
   );
 }
 
-// Una ronda de retrabajo es lo que tuvo que rehacer el autor: dos revisores pidiendo lo mismo
-// cuentan como una sola, y de cada revisor manda su última review.
 function reworkRounds(pr) {
   const authorLogin = pr.author && pr.author.login;
   const latest = new Map();
@@ -200,8 +198,6 @@ function fetchMergedPrs(repo, days) {
   return JSON.parse(out);
 }
 
-// Solo los PRs que pasan del umbral necesitan el detalle de archivos para saber si el tamaño
-// es real o lo infla un lockfile. Si la llamada falla se conserva el tamaño bruto.
 function withEffectiveSizes(repo, prs) {
   return prs.map((pr) => {
     if (effectiveChangedLines(pr).raw <= SIZE_WARN) return pr;

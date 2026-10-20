@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * Falla si type:ignore, any, dict[str, Any] sin allowlist en backend
  * o archivos grandes suben respecto al techo de .quality-baseline.json. Sin baseline sale 0.
@@ -7,7 +8,6 @@
  *   node scripts/quality-ratchet.js [--json]
  *   node scripts/quality-ratchet.js --update [--force]
  */
-
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -36,7 +36,6 @@ const METRICS = [
 
 const TYPE_IGNORE_RE = /#\s*type:\s*ignore/;
 const ANY_RE = /:\s*any\b|<any>|[=,]\s*any\s*>|\bas\s+any\b/;
-// Paridad con scripts/check_any_guard.py: ocurrencias por línea, exenta con allowlist/type: ignore/noqa.
 const DICT_ANY_RE = /dict\[str,\s*Any\]/g;
 const DICT_ANY_ALLOW_RE = /#\s*(allowlist|type:\s*ignore|noqa\b)/i;
 
@@ -208,7 +207,6 @@ function readCommittedBaseline() {
   }
 }
 
-// Usa el techo de HEAD para impedir que un aumento local eluda el check.
 function chooseBaseline({ committed, local }) {
   if (committed) return { baseline: committed, source: 'HEAD' };
   if (local) return { baseline: local, source: 'worktree' };

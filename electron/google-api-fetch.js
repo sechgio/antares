@@ -6,8 +6,6 @@ const {
   refreshAccessToken,
 } = require('./google-session');
 
-// Authenticated Google API request: bearer header, one refresh-and-retry on
-// 401, session asserts around each flight. Callers own status/body handling.
 async function googleApiFetch(
   url,
   options = {},

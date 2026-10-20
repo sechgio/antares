@@ -133,7 +133,6 @@ function createAsyncLogWriter({
       flushScheduled = false;
       const entries = pendingEntries;
       pendingEntries = [];
-      // El .catch impide que un rechazo envenene la cadena y desactive el logging.
       drainPromise = drainPromise.then(() => writeBatch(entries)).catch(() => {}).finally(() => {
         queuedEntryCount -= entries.length;
       });
@@ -170,8 +169,6 @@ function createAsyncLogWriter({
     return safeBasePath;
   }
 
-  // Ultimo recurso en cierre/crash: persiste solo lo aun no capturado por la cola
-  // asincrona (los lotes en vuelo se pierden; mejor que perder todo el pending).
   function flushSync() {
     const entries = pendingEntries;
     pendingEntries = [];

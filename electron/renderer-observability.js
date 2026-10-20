@@ -122,7 +122,6 @@ function recordRendererEvent(payload) {
   return safe;
 }
 
-// Añadir un canal del renderer es una fila aquí, no una copia del gate de confianza.
 const RENDERER_IPC_CHANNELS = [
   { channel: 'renderer-error', record: recordRendererError },
   { channel: 'renderer-event', record: recordRendererEvent },

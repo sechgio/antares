@@ -32,6 +32,5 @@ class LazySingleton(Generic[T]):
         return instance
 
     def reset(self) -> None:
-        """Drop the cached instance so the next ``get()`` creates a new one."""
         with self._lock:
             self._instance = None

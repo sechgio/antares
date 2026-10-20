@@ -171,7 +171,6 @@ async function main() {
   const unknown = await isolated.exports.createLocalThumbnail(fakeSource, 71, countingImage);
   assert(unknown.dataUrl && decodeCalls === 2, 'unrecognized magic falls through to decode (fail-open)');
 
-  // stat dice 4 bytes pero readFile devuelve 12 MB+: la carrera stat→read debe rechazarse.
   fakeFileContent = Buffer.alloc(12 * 1024 * 1024 + 1);
   let raceError = null;
   try {

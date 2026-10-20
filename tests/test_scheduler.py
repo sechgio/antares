@@ -313,7 +313,6 @@ def test_submit_light_does_not_inflate_submitted_when_executor_submit_raises() -
 
 
 def test_metrics_probes_ram_without_holding_the_lock(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Consultar la RAM fuera de _lock evita bloquear a los workers que esperan slots heavy."""
     import psutil
 
     from backend.core.scheduler import WorkScheduler
@@ -326,7 +325,6 @@ def test_metrics_probes_ram_without_holding_the_lock(monkeypatch: pytest.MonkeyP
     observed: dict[str, bool] = {}
 
     def fake_virtual_memory() -> _Vm:
-        # Usa otro hilo: la reentrada de RLock ocultaría que metrics() retiene el lock.
         seen: dict[str, bool] = {}
 
         def probe() -> None:

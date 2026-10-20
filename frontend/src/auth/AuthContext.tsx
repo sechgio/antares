@@ -87,8 +87,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const revokeDisabledSession = useCallback((userId: string) => {
     const client = clientRef.current;
-    // Invalidate profile checks already in flight so they cannot restore a
-    // session after the account has been revoked.
     authGenRef.current += 1;
     _profileInflight.delete(userId);
     if (mountedRef.current) {

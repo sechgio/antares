@@ -1,5 +1,3 @@
-"""Canvas desde el agente: solo campos existentes y contra la revisión leída."""
-
 from __future__ import annotations
 
 import pytest

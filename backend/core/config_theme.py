@@ -96,8 +96,6 @@ def _parse_theme_payload(data: Any) -> dict[str, str] | None:
     return None
 
 
-# El tema se re-lee en cada llamada (sin cache): el archivo puede cambiar por
-# fuera del proceso y load_theme siempre debe reflejar el disco.
 _store: JsonConfigStore[dict[str, str]] = JsonConfigStore(
     lambda: _config_file(),
     default=lambda: dict(DEFAULT_THEME),

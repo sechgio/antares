@@ -495,8 +495,6 @@ export function useEspaciosSync(userId: string | undefined) {
         throw new Error('No se pudo crear la tarea (respuesta vacía de Supabase)');
       }
       emitDueNotificationsInvalidate();
-      // El undo puede devolver la tarea a un proyecto que ya no está visible:
-      // pintarla o recargarla aquí sustituiría la lista del proyecto activo.
       if (proyectoId !== activeProyectoId) return;
       setTareas((prev) => (prev.some((t) => t.id === tarea.id) ? prev : [...prev, tarea]));
       void loadTareas(proyectoId).catch((err) => {
@@ -720,9 +718,6 @@ export function useEspaciosSync(userId: string | undefined) {
   const activeEspacio = espacios.find((e) => e.id === activeEspacioId) ?? null;
   const activeProyecto = proyectos.find((p) => p.id === activeProyectoId) ?? null;
 
-  // El objeto se devuelve memoizado: sin esto, cada render de EspaciosApp
-  // cambiaba la identidad de todos los handlers que dependen de `sync` y
-  // invalidaba las filas memoizadas de las vistas virtualizadas.
   return useMemo(() => ({
     espacios,
     proyectos,

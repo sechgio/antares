@@ -1,4 +1,3 @@
-"""Revisión y efectos sobre el PDF registrado, comprobados por identidad y hash."""
 from __future__ import annotations
 
 import base64
@@ -136,8 +135,6 @@ def print_artifact(
     artifact, file, path = verified_file(store, session_id, params)
     if (artifact.get("reviewed") or {}).get(str(params.get("file_index", 0))) != file["sha256"]:
         raise ValueError("Revisa el PDF en el chat antes de imprimirlo")
-    # El spooler abre una copia propia de los bytes revisados; ningún exportador
-    # puede cambiar la ruta original entre la comprobación y el envío.
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != params.get("sha256"):
         raise ValueError("El PDF cambió desde la revisión")

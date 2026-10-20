@@ -28,7 +28,6 @@ describe('PositionPanel numeric rect fields', () => {
 
     fireEvent.change(width, { target: { value: '5' } });
     expect(onRectChange).toHaveBeenLastCalledWith(0, { x: 10, y: 20, width: 5, height: 50 });
-    // El padre sigue mostrando 100 (valor limitado): el borrador no se pisa.
     expect(width.value).toBe('5');
 
     fireEvent.blur(width);

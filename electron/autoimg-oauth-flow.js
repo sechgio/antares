@@ -43,8 +43,6 @@ function _errorHtml(message) {
 
 function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState, callbackPath = '/callback' }) {
   return new Promise((resolve, reject) => {
-    // Estado por intento: cada flujo posee su propio listener para que una
-    // segunda conexión (u otro proveedor) no derribe el callback del primero.
     let server = null;
     let timeoutId = null;
     let settled = false;
@@ -128,9 +126,6 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState,
       if (settled) return;
       const e = err instanceof Error ? err : new Error(String(err));
       if (listening) {
-        // El caller ya recibió la URL: un reject no llega a nadie y la UI
-        // quedaría esperando la autorización para siempre. Reportar como
-        // fallo del flujo vía onTimeout.
         finish(onTimeout, e);
       } else {
         settled = true;

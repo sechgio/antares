@@ -46,8 +46,6 @@ export function useTaskActivity(tareaId: string, userId: string) {
         fetchTaskActivity(tareaId),
       ]);
       if (request !== requestRef.current) return;
-      // El servidor manda: en la recarga los entrantes ganan, igual que en el
-      // resto de llamadas (mergeById pisa con su segundo argumento).
       setComments((current) => mergeById(current, nextComments));
       setActivity((current) => mergeById(current, nextActivity));
     } catch (loadError) {

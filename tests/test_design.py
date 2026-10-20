@@ -36,10 +36,8 @@ def test_normalize_document_drops_unknown_keys_and_rejects_hostile_theme() -> No
     doc = normalize_document(_hostile_payload())
     assert "clave_desconocida" not in doc
     assert doc["name"] == "Informe Q3"
-    # El color no es hex: cae al valor por defecto, no llega al CSS.
     assert doc["theme"]["accent"] == "#2563EB"
     assert doc["theme"]["background"] == "#ABC"
-    # La fuente está fuera de la allowlist del schema.
     assert doc["theme"]["headFont"] == "Cambria"
     assert doc["slides"][0]["layout"] == "bullets"
 
@@ -174,14 +172,10 @@ def test_handler_export_pdf_returns_base64_without_output_path(
     assert result["pdf_base64"]
     assert result["filename"] == "Informe Q3.pdf"
 
-# --- Control de calidad determinista ---
-
 def test_contrast_ratio_matches_wcag_reference_values() -> None:
     assert contrast_ratio("#000000", "#FFFFFF") == pytest.approx(21.0, abs=0.01)
     assert contrast_ratio("#FFFFFF", "#FFFFFF") == pytest.approx(1.0, abs=0.01)
-    # #767676 es el gris exacto en el umbral 4.5:1 de WCAG.
     assert contrast_ratio("#767676", "#FFFFFF") == pytest.approx(4.54, abs=0.01)
-    # Shorthand de 3 dígitos.
     assert contrast_ratio("#000", "#FFF") == pytest.approx(21.0, abs=0.01)
 
 
@@ -241,14 +235,11 @@ def test_preflight_flags_an_empty_slide() -> None:
     assert any(f["kind"] == "empty-slide" for f in report["findings"])
 
 
-# --- Memoria de diseño ---
-
 def test_render_block_is_empty_without_notes() -> None:
     assert render_block(default_memory()) == ""
 
 
 def test_render_block_passes_notes_through_as_plain_prompt_text() -> None:
-    """El bloque lo lee el modelo, no un navegador: escaparlo lo corromperia."""
     block = render_block({"notes": [{"id": "1", "text": "odio los degradados & el azul"}]})
     assert "- odio los degradados & el azul" in block
     assert "&amp;" not in block
@@ -342,11 +333,7 @@ def test_memory_handler_rejects_unknown_note(tmp_path, monkeypatch):
     assert "No existe" in str(excinfo.value)
 
 
-# --- Bucle de revision multimodal ---
-
-
 def test_review_turn_returns_empty_without_critique(monkeypatch):
-    """Si el modelo no ve defectos, el documento original se conserva."""
     import backend.core.design.generate as generate_module
 
     monkeypatch.setattr(
@@ -357,7 +344,6 @@ def test_review_turn_returns_empty_without_critique(monkeypatch):
 
 
 def test_review_turn_survives_a_provider_without_vision(monkeypatch):
-    """Un proveedor sin visión no debe tumbar la generación."""
     import backend.core.design.generate as generate_module
 
     def boom(*args, **kwargs):
@@ -411,8 +397,6 @@ def test_slide_images_respects_the_cap():
     images = generate_module._slide_images(write_pdf_sanitized(render_html(document)), 3)
     assert len(images) == 3
 
-# --- Notas del ponente y monotonía de maquetación ---
-
 def test_render_hides_notes_by_default_and_shows_them_on_demand() -> None:
     document = normalize_document(
         {
@@ -461,7 +445,6 @@ def test_preflight_reports_monotony_as_warning_not_error() -> None:
     )
     kinds = {f["kind"] for f in report["findings"]}
     assert "layout-monotony" in kinds
-    # La monotonía es gusto, no defecto objetivo: no debe marcar el diseño como inválido.
     assert all(f["severity"] == "warning" for f in report["findings"] if f["kind"] == "layout-monotony")
 
 

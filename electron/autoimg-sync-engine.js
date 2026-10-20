@@ -178,9 +178,6 @@ async function bootstrap({ refresh = true } = {}) {
   }
 }
 
-// Las mutaciones de FOLDERS/CONFIG hacen read-modify-write del mismo rango que
-// sync_to/scan_sync: sin el lock compartido una escritura pisa a la otra y la
-// última se pierde en silencio. Preferimos el error explícito de contención.
 const _addFolder = (params) => runLocked('folders', () => addFolder(params));
 const _removeFolder = (params) => runLocked('folders', () => removeFolder(params));
 const _toggleFolder = (params) => runLocked('folders', () => toggleFolder(params));

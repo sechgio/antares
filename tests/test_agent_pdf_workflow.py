@@ -1,5 +1,3 @@
-"""PDFs guiados: entradas autorizadas, lote completo y motores del proyecto."""
-
 from __future__ import annotations
 
 import base64
@@ -15,8 +13,6 @@ from backend.core.canvas.models import create_empty_document
 
 
 class guided:
-    """Entradas del motor guiado con la misma forma que los antiguos métodos IPC."""
-
     @staticmethod
     def _read_images(params):
         return pdf_workflow.prepare({**params, "preview_pdf": False})

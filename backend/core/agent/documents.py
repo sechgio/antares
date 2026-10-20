@@ -1,16 +1,3 @@
-"""Documentos del agente: catálogo de plantillas de las tres familias y generación.
-
-Reutiliza el motor guiado (``pdf_workflow``): plantillas HTML de Reportes,
-documentos de Canvas y Formatos PDF numerados. Las plantillas se descubren en
-cada llamada desde el catálogo de su familia, así que una plantilla nueva
-compatible queda disponible sin tocar el prompt. Los datos salen de una hoja
-CSV/XLSX que el humano nombró (o de un borrador de la conversación), de
-registros guardados de Antares o de filas que dicta el usuario; los campos que
-faltan se informan en lugar de inventarse. El PDF se genera en los borradores
-y queda registrado como artefacto con su hash, la revisión de la plantilla y
-sus fuentes.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -277,7 +264,6 @@ def prepare(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> Js
 
 
 def _public(result: JsonObject) -> JsonObject:
-    """Proyección para el modelo: sin contextos internos, rutas de fotos ni argumentos del motor."""
     keys = ("ready", "reason", "suggested_mappings", "required_fields", "field_labels",
             "match_key", "fingerprint", "output_names")
     public = {key: result[key] for key in keys if key in result}

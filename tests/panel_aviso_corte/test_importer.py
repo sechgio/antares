@@ -252,7 +252,7 @@ class TestUnreadableFile:
         with pytest.raises(
             InvalidExcelError, match=r"^No se pudo leer el archivo Excel:",
         ):
-            parse_excel_bytes("not bytes", "datos.xlsx")  # type: ignore[arg-type]
+            parse_excel_bytes("not bytes", "datos.xlsx")
 
 
 class TestInvalidHeader:

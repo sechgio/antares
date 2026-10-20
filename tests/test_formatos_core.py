@@ -127,7 +127,7 @@ def test_load_catalog_tolerates_corrupt_json_and_backfills(catalog_env, tmp_path
     catalog = tmp_path / "catalog.json"
     catalog.write_text("{corrupt", encoding="utf-8")
     formatos._load_catalog()
-    assert len(formatos._formats) >= 1  # builtins cargados
+    assert len(formatos._formats) >= 1
 
     without_flag = _entry("up1")
     del without_flag["has_mapping"]
@@ -173,7 +173,6 @@ def test_add_uploaded_format_happy_path_registers_entry(catalog_env) -> None:
     assert entry["id"].startswith("upload-")
     assert formatos._formats[entry["id"]]["origen"] == "uploaded"
     assert (formatos._UPLOADS_DIR / entry["storage_path"]).exists()
-    # persisted=False → no se escribe catalog.json
     assert not formatos._CATALOG_PATH.exists()
 
 

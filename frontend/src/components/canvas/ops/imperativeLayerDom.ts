@@ -4,7 +4,6 @@ import type { CanvasLayer } from '../types';
 
 const layerElCache = new WeakMap<HTMLElement, Map<string, HTMLElement>>();
 
-// Un gesto escribe los mismos nodos en cada frame: se reutilizan en vez de un querySelector por capa.
 function findLayerEl(root: HTMLElement, id: string): HTMLElement | null {
   let cache = layerElCache.get(root);
   if (!cache) {
@@ -81,7 +80,6 @@ export function clearLayerDomGestureStyles(
     el.style.willChange = '';
     if (el.style.transformOrigin) el.style.transformOrigin = '';
   });
-  // La caché vive solo durante el gesto: así no retiene nodos de capas borradas.
   layerElCache.delete(root);
 }
 

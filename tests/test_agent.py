@@ -19,7 +19,6 @@ def test_session_lifecycle(tmp_path):
     store.append_message(s["id"], {"role": "user", "content": "hola"})
     msgs = store.messages(s["id"])
     assert msgs[0]["content"] == "hola" and msgs[0]["ts"] > 0
-    # recarga desde disco
     assert _store(tmp_path).messages(s["id"])[0]["content"] == "hola"
     assert store.delete_session(s["id"]) is True
     assert _store(tmp_path).list_sessions() == []
@@ -35,7 +34,6 @@ def test_gated_methods_exclude_readonly_and_denied():
     assert gated <= set(backend_methods()) | set(agent_tools.SPECS)
     for banned in ("ai_provider_save", "connections_token_put", "db_clear"):
         assert banned not in gated
-    # hay métodos con efectos en el catálogo que sí quedan tras la puerta
     assert len(gated) > 0
 
 
@@ -99,7 +97,7 @@ def test_approval_flow(tmp_path):
     assert store.pending_approvals(s["id"])[0]["method"] == "flujos_x"
     decided = store.decide_approval(ap["id"], True)
     assert decided["status"] == "approved" and decided["decided_at"]
-    assert store.decide_approval(ap["id"], True) is None  # no doble decisión
+    assert store.decide_approval(ap["id"], True) is None
     assert store.pending_approvals(s["id"]) == []
 
 
@@ -229,11 +227,10 @@ def test_turn_pauses_on_gated_tool_and_decide_resumes(tmp_path, monkeypatch):
     )
     s = store.create_session("ollama", "m", "t")
     runner._run_loop(s["id"])
-    assert executed == []  # no ejecutó nada todavía
+    assert executed == []
     pending = store.pending_approvals(s["id"])
     assert len(pending) == 1 and pending[0]["method"] == gated
 
-    # Procesa la cola sin hilo para comprobar el resultado de la decisión.
     monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
     runner.decide(pending[0]["id"], True)
     assert executed == [(gated, {"k": 1})]
@@ -298,7 +295,6 @@ def test_anthropic_wire_groups_tool_results():
 
 
 def test_wire_synthesizes_missing_tool_results():
-    """Calls persistidas sin tool_result (turno interrumpido) no invalidan la request."""
     msgs = [
         {"role": "user", "content": "hola"},
         {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "name": "m1", "params": {}}]},
@@ -322,7 +318,6 @@ def test_chat_requires_configured_provider(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_chat.ai_providers, "user_data_path", lambda rel: tmp_path / rel)
     with pytest.raises(ValueError, match="API key"):
         agent_chat.chat("openai", "gpt-4o-mini", [])
-    # ollama no exige clave pero sí alcanzable; forzamos red falsa
     seen = {}
 
     def fake_post(url, headers, payload, on_delta=None):
@@ -336,8 +331,6 @@ def test_chat_requires_configured_provider(tmp_path, monkeypatch):
 
 
 def test_get_agent_runner_no_deadlock(tmp_path, monkeypatch):
-    """_store_lock guarda ambos singletons: get_agent_runner llama a get_agent_store
-    bajo el mismo lock; con un Lock() normal se autobloquea en el primer acceso."""
     monkeypatch.setattr(agent, "user_data_path", lambda rel: tmp_path / rel)
     monkeypatch.setattr(agent, "_store_singleton", None)
     monkeypatch.setattr(agent, "_runner_singleton", None)
@@ -355,7 +348,7 @@ def test_first_user_message_titles_session(tmp_path):
     store.append_message(s["id"], {"role": "user", "content": "  lista mis formatos  "})
     assert store.get_session(s["id"])["title"] == "lista mis formatos"
     store.append_message(s["id"], {"role": "user", "content": "otro"})
-    assert store.get_session(s["id"])["title"] == "lista mis formatos"  # no renombra
+    assert store.get_session(s["id"])["title"] == "lista mis formatos"
 
 
 def test_approval_accepts_without_waiting_and_serializes_session_tools(tmp_path, monkeypatch):
@@ -429,7 +422,6 @@ def test_approval_accepts_without_waiting_and_serializes_session_tools(tmp_path,
 
 
 def test_cancel_turn_stops_turn_and_marks_session(tmp_path, monkeypatch):
-    """Un turno bloqueado en el proveedor se detiene de forma cooperativa."""
     import time
 
     store = _store(tmp_path)
@@ -460,7 +452,6 @@ def test_cancel_turn_stops_turn_and_marks_session(tmp_path, monkeypatch):
     assert not runner.is_running(session["id"])
     messages = store.messages(session["id"])
     assert "detenido" in messages[-1]["content"]
-    # El turno siguiente parte con un token nuevo: la cancelación no se hereda.
     monkeypatch.setattr(agent, "chat", lambda *a, **k: {"text": "listo", "calls": []})
     runner.start_turn(session["id"], "otra vez")
     worker = runner._running.get(session["id"])
@@ -471,7 +462,6 @@ def test_cancel_turn_stops_turn_and_marks_session(tmp_path, monkeypatch):
 
 
 def test_interrupted_turn_gets_marked_once_on_runner_init(tmp_path):
-    """Un reinicio con turno a medias deja constancia en la conversación."""
     store = _store(tmp_path)
     interrupted = store.create_session("ollama", "m", "A medias")
     store.append_message(interrupted["id"], {"role": "user", "content": "sin respuesta"})
@@ -488,14 +478,12 @@ def test_interrupted_turn_gets_marked_once_on_runner_init(tmp_path):
     assert "interrumpido" in store2.messages(interrupted["id"])[-1]["content"]
     assert store2.messages(ok["id"])[-1]["content"] == "respuesta"
     assert store2.messages(waiting["id"])[-1]["content"] == "haz algo"
-    # Un segundo runner no duplica el marcador.
     store3 = _store(tmp_path)
     agent.AgentRunner(store3, lambda name: lambda params: {})
     assert sum("interrumpido" in m["content"] for m in store3.messages(interrupted["id"])) == 1
 
 
 def test_stale_approval_expires_and_cannot_be_decided(tmp_path):
-    """Una aprobación más vieja que el TTL ya no ejecuta la acción."""
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "S")
     approval = store.create_approval(session["id"], {"id": "c1", "name": "flows_delete", "params": {}})
@@ -508,7 +496,6 @@ def test_stale_approval_expires_and_cannot_be_decided(tmp_path):
 
 
 def test_stream_response_emits_accumulated_deltas():
-    """Los deltas SSE del protocolo OpenAI alimentan el texto parcial."""
     import io
 
     sse = (
@@ -523,7 +510,6 @@ def test_stream_response_emits_accumulated_deltas():
 
 
 def test_stream_response_emits_deltas_for_native_protocol():
-    """Los deltas de bloques del protocolo Anthropic también llegan."""
     import io
 
     sse = (
@@ -734,7 +720,6 @@ def test_cancel_removes_a_tool_still_queued_in_the_scheduler(tmp_path, monkeypat
 
 
 def test_tool_results_scrub_secrets():
-    """Los resultados de tools que viajan al LLM no llevan secretos ni grants."""
     scrubbed = agent_chat.scrub_secrets({"config": {
         "secret": "s3cr3t",
         "headers": {"Authorization": "Bearer x"},
@@ -745,7 +730,6 @@ def test_tool_results_scrub_secrets():
 
 
 def test_agent_decide_never_runs_denied_method(tmp_path, monkeypatch):
-    """Una aprobación manipulada para un método denegado no debe ejecutarse."""
     store = _store(tmp_path)
     session = store.create_session("provider-x", "model", "t")
     calls: list = []
@@ -763,7 +747,6 @@ def test_agent_decide_never_runs_denied_method(tmp_path, monkeypatch):
 
 
 def test_agent_decide_runs_approved_mcp_tool(tmp_path, monkeypatch):
-    """Una aprobación de tool MCP (mcp__srv__tool) sí debe ejecutarse al aprobar."""
     from backend.core.integrations import mcp_servers
 
     store = _store(tmp_path)

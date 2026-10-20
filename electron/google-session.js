@@ -102,9 +102,6 @@ async function _refreshAccessToken(tokens, session = captureAuthSession()) {
   if (!response.ok) {
     const errorBody = await response.text();
     if (isInvalidGrantResponse(errorBody)) {
-      // Otro refresh en serie pudo guardar tokens frescos mientras esta request
-      // vieja recibía invalid_grant: solo borrar si lo almacenado sigue siendo
-      // el refresh_token que acaba de fallar.
       const current = store.loadTokensForUserKey(sessionStoreKey(session));
       if (!current || current.refresh_token === tokens.refresh_token) {
         clearSessionTokens(session);

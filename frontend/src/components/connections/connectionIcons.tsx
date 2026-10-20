@@ -1,9 +1,3 @@
-/**
- * Glifos de marca (single-path, viewBox 0 0 24 24, fuente: simple-icons) para los
- * proveedores del catálogo de Conexiones. Si un proveedor no tiene glifo se usa
- * una baldosa con sus iniciales.
- */
-
 interface BrandGlyph {
   color: string;
   path: string;

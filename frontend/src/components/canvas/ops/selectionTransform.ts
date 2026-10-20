@@ -550,8 +550,6 @@ export function prepareSnapRails(
 
 const GUIDE_SPAN_EPS_MM = 0.01;
 
-// Limita la guía al tramo de la selección y de los objetos alineados en esa posición.
-// Sin objetos alineados (guías manuales o de página) devuelve {} y la guía cruza toda la página.
 function alignedGuideSpan(
   layers: CanvasLayer[],
   ids: string[],

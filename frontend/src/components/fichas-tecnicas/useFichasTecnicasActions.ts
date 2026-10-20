@@ -24,7 +24,6 @@ interface WorkspaceSlice {
   setMobileTab: Dispatch<SetStateAction<ReportWorkspaceMobileTab>>;
 }
 
-/** Acciones de logo, exportación PDF y modo foco de FichasTecnicasApp. */
 export function useFichasTecnicasActions(workspace: WorkspaceSlice) {
   const { addToast } = useToast();
   const dialog = useDialog();

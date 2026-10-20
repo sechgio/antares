@@ -675,7 +675,6 @@ async function mapDiffImageValues(
   return changed ? { ...diff, addedLayers, modifiedLayers } : diff;
 }
 
-// History steps are immutable; stable serialized identities let the transport reuse their prefix.
 const serializedHistorySteps = new WeakMap<HistoryStep, { step: HistoryStep; images: Map<string, string> }>();
 
 export async function serializeHistorySteps(steps: HistoryStep[]): Promise<HistoryStep[]> {

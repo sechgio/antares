@@ -40,7 +40,6 @@ import { useLocalStorageState } from '../../hooks/useLocalStorageState';
 import { useAnchoredPopover, type PopoverPosition } from '../../hooks/useAnchoredPopover';
 import Button from '@/components/ui/Button';
 
-// El import lazy mantiene Supabase fuera del bundle inicial del shell.
 const TaskNotificationsBell = lazy(() => import('./TaskNotificationsBell'));
 
 const SIDEBAR_STORAGE_KEY = 'antares_sidebar_expanded';
@@ -120,7 +119,6 @@ const NAV_GROUPS: { id: string; label: string; icon: IconComponent; tabs: TabId[
   },
 ];
 
-// Agent tiene una sola sección: su icono del riel la abre directo, sin abrir el panel.
 const RAIL_DIRECT_TABS: Partial<Record<string, TabId>> = { agent: 'agent' };
 
 const TAB_BY_ID = Object.fromEntries(TAB_DEFINITIONS.map((tab) => [tab.id, tab])) as Record<

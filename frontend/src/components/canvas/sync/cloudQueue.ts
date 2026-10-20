@@ -46,7 +46,6 @@ function persistPendingCanvasPushes(pending: PendingCanvasPush[]): void {
     if (pending.length) localStorage.setItem(PENDING_PUSHES_KEY, JSON.stringify(pending));
     else localStorage.removeItem(PENDING_PUSHES_KEY);
   } catch {
-    // El documento sigue guardado localmente y el envío permanece en memoria.
   }
 }
 

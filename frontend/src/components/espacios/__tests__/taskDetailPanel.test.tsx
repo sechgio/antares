@@ -12,7 +12,6 @@ vi.mock('../api/realtime', () => ({
   unsubscribeEspaciosSync: () => {},
 }));
 
-// Exercise the real shell, focus trap and portalled pickers (no primitive mocks).
 afterEach(cleanup);
 
 const task: Tarea = {

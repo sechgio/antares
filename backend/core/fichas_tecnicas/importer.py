@@ -178,9 +178,6 @@ def _row_to_ficha(row: dict[str, Any], number: int) -> dict[str, Any]:
 
 
 def import_fichas_from_bytes(filename: str, content: bytes) -> list[dict[str, Any]]:
-    # Los parsers son propios: el CSV conserva la heurística de delimitador y el
-    # XLSX lee cell.number_format para concentración (parse_xlsx_rows usa
-    # values_only y la perdería).
     return import_reports(
         filename,
         content,

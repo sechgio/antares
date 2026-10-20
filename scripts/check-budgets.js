@@ -43,8 +43,6 @@ function newestMtimeMs(dir) {
   return newest;
 }
 
-// Los budgets se miden sobre el bundle, así que un dist viejo aprobaría el check con
-// artefactos que ya no corresponden al código: se reconstruye antes de medir.
 function distMatchesSources() {
   if (!fs.existsSync(INDEX_HTML)) return false;
   const builtAt = fs.statSync(INDEX_HTML).mtimeMs;

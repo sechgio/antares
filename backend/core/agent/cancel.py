@@ -1,10 +1,3 @@
-"""Cancelación inmediata de operaciones en curso dentro de un run.
-
-``_await_or_cancel`` corre una llamada bloqueante (HTTP, chat del proveedor) en
-un hilo daemon y vuelve en cuanto el token del run se cancela; el hilo queda
-huérfano pero su resultado se descarta.
-"""
-
 from __future__ import annotations
 
 import threading
@@ -39,7 +32,7 @@ def await_or_cancel(fn: Callable[[], Any], token: Any, poll_s: float = 0.1) -> A
     def target() -> None:
         try:
             box["value"] = fn()
-        except BaseException as exc:  # se re-lanza abajo
+        except BaseException as exc:
             box["error"] = exc
 
     thread = threading.Thread(target=target, daemon=True)

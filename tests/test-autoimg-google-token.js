@@ -166,8 +166,6 @@ async function main() {
     assert((await invalidA) === null, 'invalid_grant obsoleto no rompe la sesión B');
     assert(clearedScopes.length === 1 && clearedScopes[0] === 'user-a', 'invalid_grant limpia solo A');
 
-    // OAuth A -> B: si el intercambio no trae refresh_token, no se debe
-    // importar el refresh token de A ni activar/escribir la sesión B.
     activeUserKey = 'user-a';
     activeUserGeneration += 1;
     currentTokens = { access_token: 'access-a', refresh_token: 'refresh-A', expiry_date: Date.now() + 3600000 };
@@ -227,7 +225,6 @@ async function main() {
     assert(connected.refresh_token === 'refresh-B', 'OAuth normal conserva el refresh token nuevo');
     assert(persistedByScope.get('user-b')?.refresh_token === 'refresh-B', 'OAuth normal guarda el token de B en B');
 
-    // Una renovación posterior de B debe enviar solo el refresh token de B.
     currentTokens = { access_token: 'expired-b', refresh_token: 'refresh-B', expiry_date: 0 };
     let refreshBody = null;
     global.fetch = async (url, options = {}) => {

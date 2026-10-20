@@ -56,7 +56,6 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
     try {
       setMemory((await api.designMemoryGet()).memory);
     } catch {
-      // La memoria accesoria no debe bloquear el panel.
     }
   }, []);
 
@@ -84,7 +83,6 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
       const res = await api.designList();
       setItems(res.designs ?? []);
     } catch {
-      // La lista es accesoria: si falla, el panel sigue siendo usable.
     }
   }, []);
 
@@ -112,9 +110,6 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
     const res = await api.designRenderHtml({ document: doc });
     setPreviewHtml(sanitizeHtmlForPreview(res.html));
     setSlideIndex(0);
-    // El control de calidad corre siempre, no bajo demanda: es barato y es
-    // donde se atrapan los defectos que la vista previa no enseña a ojo
-    // (texto que se sale del área segura, bloques que se solapan).
     try {
       const report = await api.designPreflight({ document: doc });
       setFindings(report.findings ?? []);
@@ -212,7 +207,6 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
 
   return (
     <div data-surface="design" className="flex h-full min-h-0 gap-4 p-4 text-[var(--text-primary)]">
-      {/* Columna de control */}
       <div className="flex w-[320px] shrink-0 flex-col gap-3 overflow-y-auto">
         <div>
           <h1 className="text-lg font-semibold">Design</h1>
@@ -264,8 +258,6 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
 
         {error && <p className="text-xs text-red-400">{error}</p>}
 
-        {/* Memoria de diseño: preferencias que el modelo respeta en cada
-            generación. Equivale a memory_write de Claude Design. */}
         <div className="flex flex-col gap-1 border-t border-[var(--border-subtle)] pt-3">
           <button
             onClick={() => setMemoryOpen((open) => !open)}
@@ -341,7 +333,6 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
         )}
       </div>
 
-      {/* Vista previa */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
         {previewHtml ? (
           <>
@@ -416,8 +407,6 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
                 className="h-full min-h-[420px] w-full rounded border border-[var(--border-subtle)] bg-white"
               />
             </div>
-            {/* Tira de diapositivas: el salto rápido que en Claude Design
-                resuelve el canvas remoto y aquí se resuelve con el IR. */}
             <div className="flex gap-1 overflow-x-auto border-t border-[var(--border-subtle)] px-3 py-2">
               {(document?.slides ?? []).map((slide, index) => {
                 const slideIssues = findings.filter((f) => f.slide === index + 1 && f.severity === 'error').length;

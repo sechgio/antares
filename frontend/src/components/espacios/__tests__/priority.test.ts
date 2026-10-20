@@ -44,6 +44,12 @@ describe('independent task priority', () => {
     expect(priorityRank(tarea, [approved])).toBe(3);
   });
 
+  it('never derives priority from due dates, completion or customized board columns', () => {
+    const overdueDoneNoPriority = task({ status: 'approved', due_date: '2000-01-01' });
+    expect(tareaPriority(overdueDoneNoPriority)).toBe('normal');
+    expect(priorityRank(overdueDoneNoPriority, [approved])).toBe(1);
+  });
+
   it('sorts priorities independently of dates', () => {
     expect(PRIORITY_OPTIONS.map(({ value }) => priorityRank(task({ priority: value })))).toEqual([0, 1, 2, 3]);
   });

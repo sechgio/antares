@@ -12,7 +12,6 @@ interface SheetRows {
   rowCount?: number;
 }
 
-/** Auto-mapeo de columnas del Excel a campos del reporte por id/label. */
 export function computeAutoMappings(headers: string[]): {
   mappings: Record<string, string>;
   idColumn: string;

@@ -372,7 +372,6 @@ describe('Artboard drag gestures', () => {
     const node = container.querySelector<HTMLElement>(`[data-layer-id="${moving.id}"]`)!;
     const mm = 96 / 25.4;
 
-    // Borde izquierdo en movimiento sobre el borde derecho del fijo (70 mm), sin coincidir con ninguna separación de referencia.
     fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
     fireEvent.pointerMove(window, { clientX: 100 + 50 * mm, clientY: 100 });
     act(() => tick());

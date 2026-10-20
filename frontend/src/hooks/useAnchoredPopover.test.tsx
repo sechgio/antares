@@ -152,7 +152,6 @@ describe('useAnchoredPopover', () => {
     render(<Harness direction="down" estimatedHeight={100} />);
     fireEvent.click(screen.getByText('trigger'));
 
-    // stays below: top = min(710 + 6, 768 - 100 - 8) = 660
     expect(screen.getByTestId('popup-trigger')).toHaveStyle({ top: '660px' });
   });
 
@@ -166,7 +165,6 @@ describe('useAnchoredPopover', () => {
     render(<Harness maxHeightCap={224} estimatedHeight={500} />);
     fireEvent.click(screen.getByText('trigger'));
 
-    // spaceBelow = 768 - 410 - 6 = 352 → maxHeight = min(224, max(80, 352)) = 224
     expect(screen.getByTestId('popup-trigger')).toHaveStyle({ maxHeight: '224px' });
   });
 

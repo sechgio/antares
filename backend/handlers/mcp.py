@@ -1,9 +1,3 @@
-"""Handlers IPC de servidores MCP (Conexiones).
-
-`mcp_tool_call` es interno: lo usan el runner y el agente, nunca el renderer
-(marca ``internal`` del catálogo).
-"""
-
 from __future__ import annotations
 
 from backend.core.exceptions import ValidationError
