@@ -61,6 +61,9 @@ extraResources:
   - from: dist/backend
     to: backend
     filter: ["**/*"]
+  - from: media
+    to: media
+    filter: ["**/*"]
 win:
   target:
     - target: nsis
