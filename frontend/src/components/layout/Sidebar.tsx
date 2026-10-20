@@ -40,7 +40,6 @@ import { useLocalStorageState } from '../../hooks/useLocalStorageState';
 import { useAnchoredPopover, type PopoverPosition } from '../../hooks/useAnchoredPopover';
 import Button from '@/components/ui/Button';
 
-// El import lazy mantiene Supabase fuera del bundle inicial del shell.
 const TaskNotificationsBell = lazy(() => import('./TaskNotificationsBell'));
 
 const SIDEBAR_STORAGE_KEY = 'antares_sidebar_expanded';
@@ -119,6 +118,8 @@ const NAV_GROUPS: { id: string; label: string; icon: IconComponent; tabs: TabId[
     tabs: ['agent'],
   },
 ];
+
+const RAIL_DIRECT_TABS: Partial<Record<string, TabId>> = { agent: 'agent' };
 
 const TAB_BY_ID = Object.fromEntries(TAB_DEFINITIONS.map((tab) => [tab.id, tab])) as Record<
   TabId,
@@ -301,6 +302,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
             const Icon = group.icon;
             const isShown = panelVisible && group.id === shownGroupId;
             const hasActive = group.id === activeGroupId;
+            const directTab = RAIL_DIRECT_TABS[group.id];
             return (
               <div key={group.id} className="flex flex-col items-center gap-1">
                 {index === 1 && <span className={RAIL_DIVIDER} aria-hidden />}
@@ -309,9 +311,9 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
                     data-testid={`sidebar-group-${group.id}`}
                     aria-label={group.label}
                     aria-pressed={isShown}
-                    onClick={() => showGroup(group.id)}
-                    onMouseEnter={() => peekGroup(group.id)}
-                    onFocus={() => peekGroup(group.id)}
+                    onClick={() => (directTab ? openTab(directTab) : showGroup(group.id))}
+                    onMouseEnter={directTab ? undefined : () => peekGroup(group.id)}
+                    onFocus={directTab ? undefined : () => peekGroup(group.id)}
                     className={cn(RAIL_ICON, isShown || (!panelVisible && hasActive) ? RAIL_ICON_ON : RAIL_ICON_IDLE)}
                   >
                     <Icon className="size-4" strokeWidth={1.75} />

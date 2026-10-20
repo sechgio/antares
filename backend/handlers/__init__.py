@@ -89,9 +89,6 @@ class HandlerRegistry:
         return self.warm(_CORE_HANDLER_MODULES)
 
     def warm_post_ready(self) -> None:
-        # No envolver warm() en serialized_import: _load_module adquiere
-        # module_lock y luego serialized_import, así que retener el lock global
-        # aquí crea un ciclo ABBA con resoluciones lazy concurrentes.
         try:
             self.warm(_POST_READY_HANDLER_MODULES)
         except Exception:
@@ -117,9 +114,6 @@ class HandlerRegistry:
                     log_event(logger, logging.ERROR, "handlers.warm_history_schema", outcome="failed", message="history schema background warm failed", exc_info=True)
 
             def _warm_heavy_deps() -> None:
-                # Imports fríos medidos: pandas ~1s, weasyprint ~1s, openpyxl
-                # ~0.5s, pymupdf/docx ~0.15s. Precargarlos en background evita
-                # el pico de 1-3s en el primer render/export del usuario.
                 warmed = []
                 for module_name in ("weasyprint", "pandas", "openpyxl", "pymupdf", "docx"):
                     try:

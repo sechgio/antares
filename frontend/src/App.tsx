@@ -170,7 +170,7 @@ function AppContent() {
   }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openAppearanceSettings = useCallback(() => openSettings('appearance'), [openSettings]);
-  const openProvidersSection = useCallback(() => openSettings('connections'), [openSettings]);
+  const openProvidersSection = useCallback(() => openSettings('providers'), [openSettings]);
   const openAgentModule = useCallback((module: string, id?: string) => {
     const tab = module === 'conversion' ? 'convert' : module;
     if (!TAB_DEFINITIONS.some((item) => item.id === tab)) return;
@@ -186,11 +186,6 @@ function AppContent() {
   }, [activeTab, canvasMounted]);
 
   useEffect(() => {
-    // El ack debe estar suscrito siempre: al abrir la pestaña Canvas el chunk
-    // lazy tarda en registrar su propio handler, y en esa ventana un cierre
-    // quedaba sin ack y detenía el quit 310 s. Si Canvas ya es dueño del flush,
-    // App se abstiene: el proceso principal acepta el primer ack, y el de App
-    // llegaría antes de que Canvas termine de guardar.
     return onNotify(async (method, params) => {
       if (method === 'agent.renderer-tool' && params && typeof params === 'object') {
         const request = params as Record<string, unknown>;
@@ -237,8 +232,6 @@ function AppContent() {
 
   useEffect(() => bootThemeFromBackend(api.getTheme), []);
 
-  // Las claves de ubicaciones legacy vivían en localStorage en claro; migrarlas
-  // al arranque (en idle) para no depender de que el usuario abra la vista.
   useEffect(() => {
     if (import.meta.env.MODE === 'test') return;
     const run = () => {

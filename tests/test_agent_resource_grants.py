@@ -1,5 +1,3 @@
-"""Archivos nombrados por el humano: concesión, revalidación y aprobación vinculada."""
-
 from __future__ import annotations
 
 import json

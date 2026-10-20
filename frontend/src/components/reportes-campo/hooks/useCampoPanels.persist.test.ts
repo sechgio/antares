@@ -356,7 +356,6 @@ describe('useCampoPanels persistence', () => {
             message: 'No se pudieron cargar los paneles guardados',
             type: 'error',
         });
-        // Se conserva el panel vacío local: el usuario puede seguir trabajando.
         expect(result.current.panels).toHaveLength(1);
     });
 });

@@ -5,6 +5,7 @@ import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
 import MessageMarkdown from './MessageMarkdown';
+import SubagentTrace from './SubagentTrace';
 import { METHOD_LABELS } from './methodLabels';
 
 export interface AgentIdentity {
@@ -55,10 +56,11 @@ function CallStatusIcon({ status }: { status: string }) {
 }
 
 function ToolCallStep({ call }: { call: AgentToolCall }) {
+  if (call.name === 'subagent_run') return <SubagentTrace call={call} />;
   const detail = call.result || null;
   const params = Object.keys(call.params).length > 0 ? JSON.stringify(call.params) : null;
   return (
-    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2">
+    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2">
       <div className="flex items-center gap-2 text-[12px]">
         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-secondary)]">
           <Wrench size={11} />
@@ -87,20 +89,11 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
 
 function UserBubble({ msg }: { msg: AgentMessage }) {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[min(560px,75%)] rounded-[20px] bg-[var(--bg-surface)] p-3 text-[14px] leading-5 text-[var(--text-primary)] shadow-[0_1px_0.5px_rgba(0,0,0,0.02),0_4px_2px_rgba(0,0,0,0.02)]">
+    <div className="agent-trace-in flex justify-end">
+      <div className="max-w-[min(600px,78%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-2.5 text-[14px] leading-[21px] text-[var(--text-primary)]">
         <p className="whitespace-pre-wrap break-words">{msg.content}</p>
       </div>
     </div>
-  );
-}
-
-function AgentLabel({ agent }: { agent: AgentIdentity }) {
-  return (
-    <span className="flex items-center gap-1.5 px-3 text-[13px] font-medium leading-[18px] text-[var(--text-secondary)]">
-      <AgentAvatar seed={agent.seed} name={agent.name} size={16} className="shrink-0" />
-      <span className="truncate">{agent.name}</span>
-    </span>
   );
 }
 
@@ -109,7 +102,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
+      className="flex size-5 items-center justify-center rounded-md text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
       aria-label={copied ? 'Copiado' : 'Copiar respuesta'}
       title={copied ? 'Copiado' : 'Copiar'}
       onClick={() => {
@@ -129,8 +122,8 @@ function ToolSteps({ calls }: { calls: AgentToolCall[] }) {
   if (calls.length <= 2) return <>{calls.map((c) => <ToolCallStep key={c.id} call={c} />)}</>;
   const done = calls.filter((c) => c.status === 'done').length;
   return (
-    <details className="group/steps rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2" open={attention}>
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-[12px] text-[var(--text-secondary)]">
+    <details className="group/steps rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2" open={attention}>
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]">
         <ChevronRight size={12} className="shrink-0 transition-transform group-open/steps:rotate-90" />
         <Wrench size={12} className="shrink-0" />
         {calls.length} pasos · {done} completados
@@ -141,30 +134,36 @@ function ToolSteps({ calls }: { calls: AgentToolCall[] }) {
 }
 
 function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdentity }) {
+  const calls = msg.tool_calls ?? [];
   return (
-    <div className="group flex flex-col items-start gap-1.5">
-      {msg.content && (
-        <div className="max-w-[min(560px,85%)] space-y-2 rounded-[20px] bg-[var(--bg-input)] p-3 text-[14px] leading-5 text-[var(--text-primary)]">
-          <MessageMarkdown text={msg.content} streaming={!!msg.partial} />
-        </div>
-      )}
-      {(msg.tool_calls ?? []).length > 0 && (
-        <div className="w-full max-w-[min(560px,85%)] space-y-1.5">
-          <ToolSteps calls={msg.tool_calls ?? []} />
-        </div>
-      )}
-      {msg.content && !msg.partial && (
-        <div className="flex items-center gap-1">
-          {agent && <AgentLabel agent={agent} />}
-          <CopyButton text={msg.content} />
-        </div>
-      )}
+    <div className="agent-trace-in group flex items-start gap-2.5">
+      {agent && <AgentAvatar seed={agent.seed} name={agent.name} size={22} className="mt-0.5 shrink-0" />}
+      <div className="min-w-0 flex-1 space-y-1.5">
+        {msg.content && (
+          <div className="flex items-center gap-1">
+            <span className="text-[12px] font-medium leading-5 text-[var(--text-secondary)]">
+              {agent?.name ?? 'Agente'}
+            </span>
+            {!msg.partial && <CopyButton text={msg.content} />}
+          </div>
+        )}
+        {msg.content && (
+          <div className="max-w-[min(620px,100%)] text-[14px] leading-[22px] text-[var(--text-primary)]">
+            <MessageMarkdown text={msg.content} streaming={!!msg.partial} />
+          </div>
+        )}
+        {calls.length > 0 && (
+          <div className="w-full max-w-[min(620px,100%)] space-y-1.5">
+            <ToolSteps calls={calls} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 export function MessageRow({ msg, agent }: { msg: AgentMessage; agent?: AgentIdentity }) {
-  if (msg.role === 'tool_result') return null; // ya se muestra dentro de la llamada
+  if (msg.role === 'tool_result') return null;
   return msg.role === 'user' ? <UserBubble msg={msg} /> : <AssistantBlock msg={msg} agent={agent} />;
 }
 

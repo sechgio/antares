@@ -154,7 +154,6 @@ function maybeResolveFileTokens(params, win, method) {
     );
   }
 
-  // Token stays in place; backend handlers read the resolved path/name via _resolved_file_token_*.
   for (const key of ['file_token', 'result_file_token', 'cache_token']) {
     const value = params[key];
     if (!READ_TOKEN_RE.test(String(value || ''))) continue;
@@ -254,8 +253,6 @@ async function cleanupStagedTokens(tokens, webContentsId = null) {
   await Promise.all(tokens.map((token) => cleanupStagedCapability(token, webContentsId)));
 }
 
-// El fallback Documentos/Descargas rechaza archivos ejecutables para impedir
-// que un renderer comprometido escriba código que Windows pueda ejecutar.
 const FORBIDDEN_FALLBACK_EXTENSIONS = new Set([
   '.bat', '.cmd', '.com', '.cpl', '.dll', '.exe', '.hta', '.jar', '.js', '.jse',
   '.lnk', '.msc', '.msi', '.msp', '.ocx', '.ps1', '.psm1', '.reg', '.scr',

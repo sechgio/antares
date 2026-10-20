@@ -107,8 +107,6 @@ export function columnPillFilled(columns: BoardColumn[], key: TareaStatus): bool
 
 export const OVERDUE_COLOR = 'var(--accent-red)';
 
-// Regla única de acento de tarea en vistas (Board/Gantt/Calendar): una tarea
-// vencida pinta rojo sin importar la columna.
 export function statusAccent(
   status: TareaStatus,
   overdue: boolean,

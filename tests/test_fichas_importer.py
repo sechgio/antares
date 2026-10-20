@@ -44,7 +44,6 @@ def test_parse_csv_descarta_filas_vacias() -> None:
 
 
 def test_parse_csv_bytes_arbitrarios_decodifican_via_latin1() -> None:
-    # latin-1 mapea los 256 bytes: la rama "indecodificable" es inalcanzable
     rows = parse_csv_bytes(b"a,b\n\xff,\xfe\n")
     assert len(rows) == 1
 

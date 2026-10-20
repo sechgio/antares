@@ -238,7 +238,11 @@ def _json_default(obj: Any) -> Any:
     raise TypeError(msg)
 
 
-_SKIP = object()
+class _Skip:
+    __slots__ = ()
+
+
+_SKIP = _Skip()
 
 _REQUEST_ID_RE = re.compile(r'"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|(-?\d+))')
 _REQUEST_ID_RE_BYTES = re.compile(rb'"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|(-?\d+))')
@@ -312,8 +316,8 @@ def _join_parts(parts: list[str | bytes]) -> str | bytes:
     if not parts:
         return ""
     if isinstance(parts[0], bytes):
-        return b"".join(parts)  # type: ignore[arg-type]
-    return "".join(parts)  # type: ignore[arg-type]
+        return b"".join(piece for piece in parts if isinstance(piece, bytes))
+    return "".join(piece for piece in parts if isinstance(piece, str))
 
 
 def _drain_line(stream: Any, binary: bool) -> int:
@@ -326,7 +330,7 @@ def _drain_line(stream: Any, binary: bool) -> int:
             return total
 
 
-def read_message() -> IPCMessage | None:
+def read_message() -> IPCMessage | _Skip | None:
     try:
         stdin = getattr(sys.stdin, "buffer", None)
         binary = stdin is not None
@@ -356,7 +360,7 @@ def read_message() -> IPCMessage | None:
                     error_code=-32600,
                     error_category="INVALID_REQUEST",
                 )
-            return _SKIP  # type: ignore[return-value]
+            return _SKIP
         if isinstance(line, bytes):
             line = line.decode("utf-8")
         data = json.loads(line)
@@ -371,10 +375,10 @@ def read_message() -> IPCMessage | None:
                 send_response(None, msg_id, error=exc)
             else:
                 logger.error("Invalid IPC message with no id: %s", exc)
-            return _SKIP  # type: ignore[return-value]
+            return _SKIP
     except json.JSONDecodeError as exc:
         logger.error("JSON inválido en stdin: %s", exc)
-        return _SKIP  # type: ignore[return-value]
+        return _SKIP
     except Exception:
         logger.error("Error leyendo stdin: %s", traceback.format_exc())
-        return _SKIP  # type: ignore[return-value]
+        return _SKIP

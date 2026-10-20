@@ -20,7 +20,6 @@ def _load_canvas_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
             return cast("dict[str, Any]", json.loads(p.read_text(encoding="utf-8")))  # allowlist: dict[str, Any]
     except Exception:
         pass
-    # Si el schema no es legible, usa el Literal de types.py para conservar la paridad.
     from typing import get_args
 
     from backend.core.canvas.types import CanvasLayerType
@@ -42,8 +41,6 @@ ALLOWED_LAYER_TYPES = frozenset(str(x) for x in _SCHEMA.get("layerTypes", []))
 ALLOWED_GUIDE_AXES = frozenset(str(x) for x in _SCHEMA.get("guideAxes", ["x", "y"]))
 A4_WIDTH_MM = int(_SCHEMA.get("a4", {}).get("widthMm", 210))
 A4_HEIGHT_MM = int(_SCHEMA.get("a4", {}).get("heightMm", 297))
-# Tope para la expansión de páginas al migrar documentos v1 (sin "pages"):
-# un pageIndex corrupto no debe materializar miles de páginas.
 MAX_LEGACY_MIGRATION_PAGES = 100
 
 
@@ -189,8 +186,6 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, 
             else:
                 cleaned[bool_key] = bool(value)
     if "rowsData" in raw and raw["rowsData"] is not None:
-        # Conserva solo JSON con "cells" lista, como parseTableData en el frontend;
-        # los datos inválidos se descartan para mostrar la grilla por defecto.
         rows_text = str(raw["rowsData"])
         try:
             parsed_rows = json.loads(rows_text)
@@ -619,7 +614,6 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
         if parent and (parent not in valid_ids or parent == layer["id"]):
             layer.pop("parentId", None)
 
-    # Rompe ciclos de parentId sin separar las capas que solo conducen hasta ellos.
     parent_of = {layer["id"]: layer.get("parentId") for layer in layers}
     visited: set[str] = set()
     cycle_nodes: set[str] = set()
@@ -647,8 +641,6 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
         if layer["id"] in cycle_nodes:
             layer.pop("parentId", None)
 
-    # Operandos booleanos que referencian capas inexistentes (o la propia
-    # capa): referencia colgada que LayerNode no puede resolver.
     for layer in layers:
         meta = layer.get("meta")
         if not isinstance(meta, dict):

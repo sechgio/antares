@@ -49,7 +49,6 @@ async function run() {
       assert(symlinkRejected, 'symbolic links should be rejected');
     }
 
-    // Rechaza rutas registradas si un ancestro se sustituye por un symlink o junction.
     const realDir = path.join(tempDir, 'real-dir');
     await fs.promises.mkdir(realDir);
     const nestedFile = path.join(realDir, 'nested.txt');

@@ -90,9 +90,6 @@ interface DueRealtimePayload {
   old: Record<string, unknown> | null;
 }
 
-// Due-notification state only depends on tareas with a due date (or tasks the
-// bell is already showing). Other table writes cannot change the list, so the
-// global subscription can skip the refetch for them. Unknown shapes fail open.
 export function shouldRefreshForDueChange(
   payload: DueRealtimePayload | null | undefined,
   notifiedTaskIds: ReadonlySet<string>,

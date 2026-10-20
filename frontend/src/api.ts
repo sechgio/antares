@@ -1,7 +1,3 @@
-// Fachada del bridge IPC: la maquinaria vive en api/core.ts y los wrappers por
-// dominio en api/<dominio>Api.ts. Este archivo compone y re-exporta para que
-// los consumidores puedan importar desde '../api'; los módulos de dominio
-// conservan también su ruta directa './api/<dominio>Api'.
 import { agentApi } from './api/agentApi';
 import { aiProvidersApi } from './api/aiProvidersApi';
 import { createAutoimgApi } from './api/autoimgApi';

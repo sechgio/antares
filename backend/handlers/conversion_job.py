@@ -22,8 +22,10 @@ from backend.utils.i18n import set_locale, t
 
 try:
     import psutil
+
+    _PSUTIL_AVAILABLE = True
 except ImportError:
-    psutil = None  # type: ignore[assignment]
+    _PSUTIL_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -228,8 +230,6 @@ def _run_conversion_job(job: Job) -> None:
                             "job_id": job_id,
                         }
 
-                # log_message escribe en stderr: dentro del lock serializaría los
-                # cierres de todos los workers detrás del pipe de logs.
                 if item_log is not None:
                     log_message(item_log[0], item_log[1], state=state)
 
@@ -330,8 +330,6 @@ def _drive_chunk_loop(
     handle_completion: Callable[[bool, str, str], None],
     disk_out_keys: set[str] | None,
 ) -> bool:
-    """Consume `files` por chunks con prefetch solapado del siguiente chunk,
-    límite de in-flight y cancelación cooperativa. Devuelve True si se canceló."""
     state = job.state
     job_id = job.id
     files = job.params.get("files", [])
@@ -582,7 +580,7 @@ def _notify_complete(
 
 def _calculate_chunk_size() -> int:
     size = 500
-    if psutil is not None:
+    if _PSUTIL_AVAILABLE:
         try:
             available_gb = psutil.virtual_memory().available / (1024 ** 3)
             target_ram_per_chunk = available_gb * 0.25

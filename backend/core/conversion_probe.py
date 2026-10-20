@@ -33,11 +33,6 @@ def _resolve_sequence_mode(params: dict[str, Any]) -> SequenceMode:
 
 
 def _resolve_file_mapping(params: dict[str, Any]) -> tuple[dict[str, str] | None, str]:  # allowlist: dict[str, Any]
-    """El `mapping` inline gana; si falta, parsea `mapping_path` con id/rename column.
-
-    Compartido por `preview` y `_run_conversion_job` para que ambos elijan
-    la misma fuente de renombrado.
-    """
     file_mapping = params.get("mapping") or None
     mapping_path = params.get("mapping_path") or ""
     if mapping_path and not file_mapping:
@@ -93,7 +88,7 @@ def _probe_key_columns(
 
 
 def _resolve_key_column(
-    key_column: str | None,
+    key_column: str,
     files: list[str],
     db_columns: list[str] | None = None,
     *,
@@ -103,7 +98,7 @@ def _resolve_key_column(
 
     columns = db_columns if db_columns is not None else get_field_names()
     if not columns:
-        return key_column  # type: ignore[return-value]
+        return key_column
     if len(columns) == 1:
         return columns[0]
 

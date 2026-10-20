@@ -36,8 +36,6 @@ const IPC_METHOD_TIMEOUTS: Record<IpcTimeoutTier, number> = ipcMethodCatalog.tim
 const IPC_METHOD_ENTRIES = ipcMethodCatalog.methods as Record<string, { timeout?: IpcTimeoutTier; handler?: string }>;
 const FE_STARTUP_BUFFER_MS = 60_000;
 const FE_TIMEOUT_BUFFER_MS = 10_000;
-// El buffer cubre cada arranque del backend; tras su primera respuesta
-// deja de aplicar hasta el siguiente reinicio.
 let _backendSeenReady = false;
 
 export function _resetBackendReadyForTests(): void {
@@ -76,9 +74,6 @@ export class AntaresAPIError extends Error {
 const RETRYABLE_DEFAULT_DELAY_MS = 2_000;
 const RETRY_AFTER_CAP_MS = 60_000;
 
-// Delay hint for rejections the backend/Electron raised before executing the
-// request (memory pressure, queue capacity), so retrying is safe regardless of
-// method idempotency. Duck-typed: mocked errors in tests aren't class instances.
 export function apiRetryAfterMs(err: unknown): number | null {
   if (typeof err !== 'object' || err === null) return null;
   const rec = err as { category?: unknown; details?: unknown };

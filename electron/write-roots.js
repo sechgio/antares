@@ -87,10 +87,6 @@ function _isUnderRegisteredWriteRoot(dir) {
   return false;
 }
 
-// Documentos/Descargas no es una raiz elegida por el usuario: es un fallback
-// para que una carpeta recordada siga funcionando aunque la lista persistida
-// de raices se haya rotado. Se expone aparte para que quien escriba por esa
-// via asuma las restricciones del caso.
 function _isUnderStandardUserDir(dir) {
   const resolvedDir = path.resolve(dir);
   try {

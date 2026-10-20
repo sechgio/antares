@@ -59,7 +59,6 @@ function loadPos(paneId: string, w: number, h: number): Position | null {
     const v = JSON.parse(localStorage.getItem(POS_KEY_PREFIX + paneId) || 'null') as Position | null;
     if (v && typeof v.x === 'number' && typeof v.y === 'number') return clampPos(v, w, h);
   } catch {
-    // posición inválida → vuelve al anchor
   }
   return null;
 }
@@ -68,7 +67,6 @@ function savePos(paneId: string, pos: Position): void {
   try {
     localStorage.setItem(POS_KEY_PREFIX + paneId, JSON.stringify(pos));
   } catch {
-    // sin persistencia de posición
   }
 }
 
@@ -83,11 +81,6 @@ interface FloatingCardProps {
   children: React.ReactNode;
 }
 
-/**
- * Tarjeta flotante arrastrable. Equivale a un pane `placement:'floating'` del
- * host de Hermes: arrastre libre dentro de la ventana, posición persistida y
- * merge por solape al soltar (`requestMergeCheck` solo tras arrastre real).
- */
 function FloatingCard({
   paneId,
   anchor,
@@ -173,7 +166,6 @@ function FloatingCard({
 }
 
 export default function StickyNotesLayer() {
-  // Suscripción a los átomos: los selectores leen de ellos en cada render.
   useAtomValue($notes);
   const ready = useAtomValue($ready);
   useAtomValue($activePileNote);
@@ -194,9 +186,6 @@ export default function StickyNotesLayer() {
   const free = freeBreakouts();
   const piles = uniquePileIds();
 
-  // Una sola lista ordenada por zRank: antes se renderizaban primero todas las
-  // libres y luego todas las pilas, así que el orden DOM (y el apilado)
-  // ignoraba el z global y enfocar una libre no la traía al frente.
   const orderedFloaters = [
     ...free.map((n) => ({
       key: `float-${n.id}`,

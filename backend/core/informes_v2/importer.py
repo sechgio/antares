@@ -182,8 +182,6 @@ def import_reports_from_bytes(
 
     def transform_row(row: ReportRow, fallback_report_number: int) -> InformePayload:
         report = transform_flat_to_nested(row, fallback_report_number, plantilla)
-        # Las columnas del archivo identifican la plantilla: una plantilla Nueva
-        # importada con el switch en Clásica (o al revés) nace con su formato.
         if any(key.startswith(R2_COLUMN_PREFIXES) for key in row) or is_tecnico_row(row):
             report["plantilla"] = "reservorios2"
         elif any(key.startswith(CLASICA_COLUMN_PREFIXES) for key in row):

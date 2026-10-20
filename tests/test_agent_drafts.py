@@ -1,5 +1,3 @@
-"""Borradores del agente: salidas internas por conversación y guardado aprobado."""
-
 from __future__ import annotations
 
 import json

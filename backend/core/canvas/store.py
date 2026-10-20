@@ -254,13 +254,6 @@ class CanvasStore:
 
     @staticmethod
     def _spill_comparison(spill_path: Path, target: Path) -> str:
-        """Decide what to do with a spill against its live document.
-
-        Returns ``_SPILL_RECOVER``, ``_SPILL_DISCARD`` or ``_SPILL_UNKNOWN``.
-        A spill is written when a save is refused under memory pressure, so it
-        can hold the only copy of an unsaved edit: an unreadable mtime must not
-        be reported as "stale", or the caller would delete that copy.
-        """
         try:
             if not target.exists():
                 return _SPILL_RECOVER
@@ -355,8 +348,6 @@ class CanvasStore:
                 logger.warning("Could not promote interrupted canvas spill %s: %s", tmp_path, exc)
 
         for spill_path in sorted(spill_dir.glob("*.json")):
-            # pending-assets.json lo escribe el GC de assets de Electron en este
-            # mismo directorio; no es un spill de documento.
             if spill_path.name == "pending-assets.json":
                 continue
             if spill_path.name.startswith(HISTORY_SPILL_PREFIX) or (
@@ -368,11 +359,6 @@ class CanvasStore:
                 self._recover_document_spill(spill_path)
 
     def _cleanup_orphan_tmp_files(self) -> None:
-        """Borra restos temporales de documentos e historiales.
-
-        Los spills recuperables se promueven antes de esta limpieza; los que
-        todavía no se pudieron leer se conservan para el próximo arranque.
-        """
         spill_dir = self.spill_dir
         directories = (self.docs_dir, self.history_dir, spill_dir)
         for directory in directories:
@@ -442,7 +428,6 @@ class CanvasStore:
             if not isinstance(raw, dict):
                 logger.warning("Canvas document %s is not a JSON object; treating as unreadable", path)
                 return None
-            # Los errores de normalización también cuentan como documento ilegible.
             try:
                 doc = normalize_document(raw)
             except (TypeError, ValueError) as exc:
@@ -509,8 +494,6 @@ class CanvasStore:
             path = self._history_path_for(str(doc_id))
             self.history_dir.mkdir(parents=True, exist_ok=True)
             try:
-                # Reutiliza los bytes de cada entrada con los separadores canónicos
-                # de encode_canvas_json, sin serializar de nuevo las pilas.
                 encoded_past = self._select_encoded_history_entries(past, max_history, str(doc_id))
                 encoded_future = self._select_encoded_history_entries(future, max_history, str(doc_id))
                 encoded = (

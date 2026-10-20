@@ -81,7 +81,6 @@ describe('InformesV2App', () => {
   });
 
   it('abre un informe guardado antes de existir la plantilla Reservorios 2', async () => {
-    // JSON.stringify descarta las claves undefined: así llega un informe previo a la plantilla
     const legacy = JSON.parse(
       JSON.stringify({
         ...report,
@@ -102,7 +101,6 @@ describe('InformesV2App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Nueva' }));
     expect(screen.getByRole('button', { name: 'Clásica' })).toHaveAttribute('aria-pressed', 'false');
-    // el texto vive en dos sitios: la fila del formulario y la tabla del preview
     expect((await screen.findAllByText('CAJA DE REGISTRO')).length).toBeGreaterThan(1);
     expect(document.querySelector('.r2-info')).toBeInTheDocument();
 
@@ -163,7 +161,6 @@ describe('InformesV2App', () => {
     expect(screen.getByRole('button', { name: 'Nueva' })).toHaveAttribute('aria-pressed', 'true');
     expect(document.querySelector('.r2-info')).toBeInTheDocument();
 
-    // la plantilla sembrada aún no está en disco: hay que guardarla
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
     });

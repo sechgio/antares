@@ -84,7 +84,7 @@ def test_lane_and_handler_projections() -> None:
     assert lane_for("canvas_export_cmyk_pdf") == "heavy"
     assert lane_for("process_start") == "light"
     assert lane_for("version") == "sync"
-    assert lane_for("html_to_pdf") == "light"  # método nativo: sin lane de backend
+    assert lane_for("html_to_pdf") == "light"
     assert lane_for("metodo_inexistente") == "light"
 
     assert handler_module_for("canvas_get") == "backend.handlers.canvas"

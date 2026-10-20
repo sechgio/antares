@@ -10,7 +10,7 @@ vi.mock('../../lib/pdfjs', () => ({
 import { loadPdfDocument, renderPdfPageToCanvas, renderPdfPageToDataUrl } from './pdfjs';
 import * as previewDpi from './previewDpi';
 
-const b64 = 'QUJD'; // "ABC" en base64
+const b64 = 'QUJD';
 
 function fakePage(width: number, height: number) {
   return {

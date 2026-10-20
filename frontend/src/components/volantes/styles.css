@@ -1895,7 +1895,6 @@ textarea.vgen-input {
     animation: vgen-fab-check-in 0.2s ease;
 }
 
-/* Skin del primitivo compartido app-date-picker para la superficie volantes. */
 .vgen-date-picker {
     width: 100%;
     position: relative;

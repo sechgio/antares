@@ -458,9 +458,6 @@ export default function EspaciosApp() {
     });
   }, []);
 
-  // Las vistas virtualizadas memoizan sus filas: estos handlers se pasan como
-  // props estables en lugar de flechas inline, para no invalidar cada fila en
-  // cada render (p. ej. al escribir en el buscador).
   const handleViewStatusChange = useCallback(
     (id: string, status: TareaStatus) =>
       patchTareaToast(id, { status }, 'No se pudo actualizar el estado'),

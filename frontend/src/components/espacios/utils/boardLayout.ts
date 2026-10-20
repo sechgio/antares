@@ -38,10 +38,6 @@ export function computeInsertSortOrder(
 
   if (overIndex >= 0) {
     const without = (items[targetStatus] ?? []).filter((id) => id !== tareaId);
-    // Mismo criterio que arrayMove de dnd-kit: insertar en el índice que la
-    // tarea destino ocupa en la columna completa, antes de retirar la movida.
-    // Resolverlo sobre `without` insertaba "antes de" la destino y descartaba
-    // en silencio los arrastres hacia abajo dentro de la propia columna.
     const insertAt = overIndex;
     const prevId = insertAt > 0 ? without[insertAt - 1] : null;
     const nextId = insertAt >= 0 ? without[insertAt] : null;

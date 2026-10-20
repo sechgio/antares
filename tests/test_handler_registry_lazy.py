@@ -272,7 +272,6 @@ def test_sync_resolve_during_post_ready_warm_does_not_deadlock(
 
     reader_thread = threading.Thread(target=do_reader, daemon=True)
     reader_thread.start()
-    # Deja que el reader tome module_lock(conversion) antes de liberar el warm.
     time.sleep(0.5)
     release_canvas.set()
 

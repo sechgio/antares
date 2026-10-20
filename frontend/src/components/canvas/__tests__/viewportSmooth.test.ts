@@ -96,7 +96,6 @@ describe('useSmoothViewport', () => {
     });
     act(() => tick(0));
     act(() => tick(100));
-    // Mid-flight frames live in the imperative channel; React state commits at the end.
     expect(result.current.getZoom()).toBeGreaterThan(1);
     expect(result.current.getZoom()).toBeLessThan(2);
     expect(result.current.getPan().x).toBeGreaterThan(0);

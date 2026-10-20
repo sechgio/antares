@@ -3,10 +3,7 @@ import { atom } from '../layout/radio/core';
 export { useValue as useAtomValue } from '../layout/radio/core';
 
 /**
- * sticky-notes — notas adhesivas dentro de la ventana.
  * Port del plugin de Hermes Desktop (VGFreakXBL/hermes-sticky-notes, MIT).
- * Una bandeja (stack) por defecto; las notas pueden separarse como flotantes
- * y arrastrarse hasta solaparse para formar pilas.
  */
 
 export type Anchor = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
@@ -32,7 +29,6 @@ export const MAX_BREAKOUT = 6;
 export const STACK_ANCHOR: Anchor = 'top-right';
 const OVERLAP_MERGE = 0.42;
 const MERGE_COOLDOWN_MS = 600;
-/** Tras separar/sacar una nota, bloquea el auto-merge para que no vuelva a la pila. */
 const SPLIT_MERGE_GRACE_MS = 2200;
 const BREAKOUT_ANCHORS: Anchor[] = ['top-left', 'bottom-right', 'bottom-left', 'top-right'];
 const STORAGE_KEY = 'sticky_notes.notes';
@@ -40,7 +36,6 @@ const STORAGE_KEY = 'sticky_notes.notes';
 export const $notes = atom<StickyNote[]>([]);
 export const $ready = atom(false);
 export const $activeStackId = atom<string | null>(null);
-/** pileId → nota activa dentro de esa pila */
 export const $activePileNote = atom<Record<string, string>>({});
 
 let lastMergeAt = 0;
@@ -128,8 +123,6 @@ export function loadNotes(): void {
   }
   const list = [...byId.values()];
   $notes.set(list);
-  // Igual que en el registro del plugin: toda nota abierta fuera del escritorio
-  // vuelve a la bandeja y pierde pileId (updateNotes aplica el saneado).
   updateNotes((l) =>
     l.map((n) =>
       n.open && n.surface !== 'breakout' ? { ...n, surface: 'stack' as const, rotation: 0 } : n,
@@ -142,7 +135,6 @@ export function loadNotes(): void {
   }
 }
 
-/** Test hook: reinicia el estado en memoria. */
 export function resetStickyNotesForTests(): void {
   loaded = false;
   $notes.set([]);
@@ -158,7 +150,6 @@ function persistNow(list: StickyNote[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
   } catch {
-    // Sin persistencia si el almacenamiento está lleno o bloqueado.
   }
 }
 
@@ -180,7 +171,6 @@ function flushPersist(): void {
 
 let unloadFlushRegistered = false;
 function ensureUnloadFlush(): void {
-  // Sin esto, cerrar antes de 200 ms tras la última tecla perdía la edición.
   if (unloadFlushRegistered || typeof window === 'undefined') return;
   unloadFlushRegistered = true;
   window.addEventListener('pagehide', flushPersist);
@@ -197,7 +187,6 @@ export function stackedNotes(): StickyNote[] {
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-/** Todas las notas del escritorio (flotantes libres + miembros de pila). */
 function breakoutNotes(): StickyNote[] {
   return $notes
     .get()
@@ -269,8 +258,6 @@ export function focusBreakout(id: string): void {
   $notes.set($notes.get().map((x) => (x.id === id ? { ...x, zRank: rank } : x)));
   schedulePersist();
 }
-
-// ── Solape → fusión en pila ─────────────────────────────────────────────────
 
 interface DeskRect {
   kind: 'float' | 'pile';
@@ -358,7 +345,6 @@ export function maybeMergeOverlapping(): void {
   const rects = readDeskRects();
   if (rects.length < 2) return;
 
-  // Union-find sobre entidades solapadas
   const parent = new Map(rects.map((_, i) => [i, i]));
   const find = (i: number): number => {
     let p = parent.get(i) ?? i;
@@ -396,7 +382,6 @@ export function maybeMergeOverlapping(): void {
   }
   if (merged) {
     lastMergeAt = now;
-    // Gracia breve para que el re-layout no provoque un segundo merge
     suppressMerge(400);
   }
 }
@@ -478,7 +463,6 @@ export function splitFromPile(id: string): void {
   notify(siblings.length ? 'Separada de la pila' : 'Nota desanclada');
 }
 
-/** Títulos por defecto que no cuentan como tema real. */
 export function isDefaultTitle(title: string): boolean {
   const t = (title || '').trim();
   if (!t) return true;
@@ -491,7 +475,6 @@ function oneLine(text: string): string {
     .trim();
 }
 
-/** Etiqueta legible para filas y chrome: título propio o primera línea del cuerpo. */
 export function noteTopic(n: { title?: string; body?: string }, max = 48): string {
   const title = oneLine(n?.title || '');
   const body = oneLine(n?.body || '');
@@ -500,7 +483,6 @@ export function noteTopic(n: { title?: string; body?: string }, max = 48): strin
   return topic;
 }
 
-/** Vista previa secundaria bajo el tema (cuerpo cuando hay título propio). */
 export function noteSubpreview(n: { title?: string; body?: string }, max = 56): string {
   const title = oneLine(n?.title || '');
   const body = oneLine(n?.body || '');
@@ -508,7 +490,6 @@ export function noteSubpreview(n: { title?: string; body?: string }, max = 56): 
   return body.length > max ? `${body.slice(0, Math.max(1, max - 1))}…` : body;
 }
 
-/** Al editar el cuerpo con título por defecto, la primera línea pasa a título. */
 function maybePromoteTitle(id: string, body: string): void {
   const n = getNote(id);
   if (!n || !isDefaultTitle(n.title)) return;
@@ -523,7 +504,6 @@ function maybePromoteTitle(id: string, body: string): void {
 
 export function updateNotes(mutator: (list: StickyNote[]) => StickyNote[]): void {
   const next = mutator($notes.get().slice());
-  // Sanitiza + deduplica por id (última escritura gana)
   const byId = new Map<string, StickyNote>();
   for (const n of next) {
     if (!n?.id) continue;
@@ -531,7 +511,6 @@ export function updateNotes(mutator: (list: StickyNote[]) => StickyNote[]): void
     if (x.surface !== 'breakout' && x.pileId) x = { ...x, pileId: null };
     byId.set(x.id, x);
   }
-  // Una pila nunca queda con un solo miembro: se disuelve a flotante libre.
   const pileCounts = new Map<string, number>();
   for (const x of byId.values()) {
     if (x.surface === 'breakout' && x.pileId) {

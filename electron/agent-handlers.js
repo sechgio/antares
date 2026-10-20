@@ -1,11 +1,7 @@
 'use strict';
 
-// Dispatch `native:agent`: los métodos públicos agent_* corren sobre el
-// runtime durable del proceso principal (electron/agent-runtime.js).
-
 const { nativeMethods } = require('../shared/ipc-method-catalog');
 
-// Proyección del catálogo IPC: el bucket `native:agent` define los métodos.
 const AGENT_METHODS = nativeMethods('agent');
 
 async function handleAgentCall(method, params) {

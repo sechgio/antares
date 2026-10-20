@@ -1,5 +1,3 @@
-"""The dependency audit must use the lock and propagate every failure."""
-
 import subprocess
 from pathlib import Path
 

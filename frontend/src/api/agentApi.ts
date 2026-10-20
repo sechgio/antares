@@ -67,7 +67,7 @@ export interface AgentToolSpec {
   name: string;
   enabled?: boolean;
   gated: boolean;
-  kind: 'backend' | 'mcp' | 'native';
+  kind: 'backend' | 'mcp' | 'native' | 'subagent';
   module?: string | null;
 }
 
@@ -109,7 +109,6 @@ export interface AgentContext {
   accounts: string[];
 }
 
-// Recuerdo del agente: la versión vigente y el historial con su fuente.
 export interface AgentMemoryItem {
   id: string;
   kind: 'preference' | 'fact' | 'procedure';

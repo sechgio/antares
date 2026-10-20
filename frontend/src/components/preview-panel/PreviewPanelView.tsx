@@ -560,8 +560,6 @@ export default function PreviewPanelView() {
     [headers],
   );
 
-  // El selector reconstruía las N opciones en cada render, incluida cada tecla
-  // del buscador: se memoiza (sin recortar la lista) para no asignarlas de nuevo.
   const rowOptions = useMemo(
     () =>
       data.map((row, idx) => ({

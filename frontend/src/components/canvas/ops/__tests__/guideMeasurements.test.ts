@@ -49,7 +49,7 @@ describe('measureGuideDistances', () => {
     expect(objLeft.x1).toBe(40);
     expect(objLeft.x2).toBe(50);
     expect(objLeft.valueMm).toBe(10);
-    expect(objLeft.y).toBe(40); // centro vertical de la caja
+    expect(objLeft.y).toBe(40);
   });
 
   it('con varias cajas elige el borde más cercano', () => {
@@ -136,7 +136,6 @@ describe('measureHoverGap', () => {
     expect(gap.valueMm).toBe(30);
     expect(gap.x1).toBe(70);
     expect(gap.x2).toBe(100);
-    // solapan en Y → sin hover-y de gap
     expect(labels.find((l) => l.id === 'hover-y')).toBeUndefined();
   });
 

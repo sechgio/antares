@@ -55,10 +55,6 @@ function _safeTokens(tokens) {
   };
 }
 
-// Caché en memoria del payload descifrado por (file,ns): evita releer y
-// desencriptar tokens.json en cada petición. Se invalida en cualquier escritura
-// o borrado que pase por este módulo, y al cambiar el usuario activo (la
-// migración de user-scope escribe por debajo de esta capa).
 const _tokenCache = new Map();
 const _tokenCacheKey = (paths) => `${paths.file}${paths.ns}`;
 

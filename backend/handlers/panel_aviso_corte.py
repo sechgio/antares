@@ -4,10 +4,10 @@ import base64
 import threading
 import uuid
 from collections import OrderedDict
-from typing import Any
+from typing import Any, cast
 
 from backend.core.panel_aviso_corte import build_panels, parse_excel_bytes, render_docx, render_pdf
-from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, ExcelSource, MatchRule
+from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, ExcelSource, ExportMode, MatchRule, MatchStrategy
 from backend.core.panel_aviso_corte.serialization import deserialize_panel
 from backend.handlers.common import validate_params, with_locale
 from backend.utils.atomic_write import atomic_output_file
@@ -61,11 +61,11 @@ def panel_aviso_corte_parse_excel(params: dict[str, Any]) -> dict[str, Any]:
 def panel_aviso_corte_compute_match(params: dict[str, Any]) -> dict[str, Any]:
     rows = params.get("rows", [])
     key_column = str(params.get("key_column", ""))
-    strategy = str(params.get("strategy", "prefix"))
+    strategy = cast("MatchStrategy", str(params.get("strategy", "prefix")))
     pattern = params.get("pattern")
     address_column = params.get("address_column")
     image_names = params.get("image_names", [])
-    export_mode = str(params.get("export_mode", "skip_empty"))
+    export_mode: ExportMode = "include_empty" if str(params.get("export_mode", "skip_empty")) == "include_empty" else "skip_empty"
     source_id = str(params.get("source_id") or "")
     excel_source = _cached_source(source_id) if source_id else None
     if excel_source is None and not rows:
@@ -92,8 +92,8 @@ def panel_aviso_corte_compute_match(params: dict[str, Any]) -> dict[str, Any]:
             normalized_columns=normalized_columns,
             rows=tuple(dict(r) for r in rows),
         )
-    rule = MatchRule(key_column=key_column, strategy=strategy, regex_pattern=pattern or None)  # type: ignore[arg-type]
-    result = build_panels(source=excel_source, rule=rule, image_names=image_names, address_column=address_column or None, export_mode=export_mode)  # type: ignore[arg-type]
+    rule = MatchRule(key_column=key_column, strategy=strategy, regex_pattern=pattern or None)
+    result = build_panels(source=excel_source, rule=rule, image_names=image_names, address_column=address_column or None, export_mode=export_mode)
     from backend.core.panel_aviso_corte.serialization import serialize_panel
     return {
         "panels": [serialize_panel(p) for p in result.panels],
@@ -124,14 +124,14 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     logos = {"left": logos_raw.get("left_b64") or None, "right": logos_raw.get("right_b64") or None}
     images = {str(k): str(v) for k, v in images_raw.items() if v is not None}
     image_paths = {str(k): str(v) for k, v in image_paths_raw.items() if v is not None}
-    export_mode = str(params.get("export_mode", "skip_empty"))
+    export_mode: ExportMode = "include_empty" if str(params.get("export_mode", "skip_empty")) == "include_empty" else "skip_empty"
     if fmt == "docx":
         content, filename = render_docx(
             panels=panels,
             logos=logos,
             images=images,
             image_paths=image_paths,
-            export_mode=export_mode,  # type: ignore[arg-type]
+            export_mode=export_mode,
             template_id=template_id,
         )
         mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -142,7 +142,7 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
             logos=logos,
             images=images,
             image_paths=image_paths,
-            export_mode=export_mode,  # type: ignore[arg-type]
+            export_mode=export_mode,
             template_id=template_id,
         )
         mime_type = "application/pdf"

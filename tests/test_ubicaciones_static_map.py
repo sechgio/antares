@@ -550,7 +550,7 @@ def test_consolidated_writer_falls_back_on_windows_sharing_violation(
     def fake_replace(src: str, dst: str) -> None:
         if dst.endswith("ubicaciones_consolidado.pdf"):
             err = OSError(0, "The process cannot access the file")
-            err.winerror = 32  # type: ignore[attr-defined]
+            err.winerror = 32
             raise err
         original_replace(src, dst)
 
@@ -637,8 +637,8 @@ def test_consolidated_mode_closes_rendered_images(monkeypatch: pytest.MonkeyPatc
             _track(converted)
             return converted
 
-        img.close = tracked_close  # type: ignore[method-assign]
-        img.convert = tracked_convert  # type: ignore[method-assign]
+        img.close = tracked_close
+        img.convert = tracked_convert
 
     def fake_render(datos: dict, formato: str, *, map_opts=None, custom_styles=None) -> Image.Image:
         img = Image.new("RGB", (10, 10), (255, 0, 0))
@@ -687,7 +687,7 @@ def test_consolidated_mode_failure_removes_temp_page_and_closes_images(
             closed[0] += 1
             orig_close()
 
-        img.close = tracked_close  # type: ignore[method-assign]
+        img.close = tracked_close
         return img
 
     real_mkstemp = tempfile.mkstemp

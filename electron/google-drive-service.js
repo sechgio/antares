@@ -271,7 +271,6 @@ async function fetchThumbnailDataUrl(thumbnailLink, accessToken, session = null)
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (res.status === 401) {
-    // Token caducado: refrescar y reintentar autenticado en vez de degradar a anónimo.
     const refreshed = session ? await getValidTokens(session) : null;
     if (refreshed?.access_token && refreshed.access_token !== accessToken) {
       res = await fetchWithRetry(url, {

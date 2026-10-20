@@ -454,9 +454,6 @@ class WorkScheduler:
                 "heavy_run_last_ms": self._heavy_run_last,
                 "heavy_run_max_ms": self._heavy_run_max,
             }
-        # Importar psutil y consultar la RAM son I/O bloqueante: se hacen fuera del
-        # lock, que es el mismo que _heavy_cond libera mientras los workers esperan
-        # un slot del lane heavy.
         try:
             import psutil
 

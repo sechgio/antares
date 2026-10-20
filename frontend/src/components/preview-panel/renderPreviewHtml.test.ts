@@ -232,7 +232,6 @@ describe("renderPreviewHtml — plantillas conocidas", () => {
     };
     const html = renderPreviewHtml({ customTemplate: t });
     expect(html).toContain("photo-grid-compat-fix");
-    // idempotente si ya viene
     const fixed = {
       name: "x.html",
       content:

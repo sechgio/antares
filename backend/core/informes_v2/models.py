@@ -31,8 +31,6 @@ MEDIDA_FIELDS = [
 PLANTILLA_VALUES = ["clasica", "reservorios2"]
 DEFAULT_PLANTILLA = "clasica"
 
-# Títulos fijos de la plantilla reservorios2. El frontend repite estos valores
-# en types.ts y tests/test_schema_parity_extended.py fija que no diverjan.
 R2_TITULO_LINEA1 = "Limpieza y Desinfección de Reservorios y Cisternas"
 R2_TITULO_LINEA2 = "Centro de Servicio Sur"
 
@@ -53,7 +51,6 @@ R2_CANASTILLA_LABELS = {
 }
 R2_CANASTILLA_ROWS = list(R2_CANASTILLA_LABELS)
 
-# (clave, descripción, subdescripción) en el orden del formato Reservorios_2.
 R2_INSPECCION_ITEMS = [
     ("caja_registro", "CAJA DE REGISTRO", ""),
     ("marco_tapa", "MARCO Y TAPA SANITARIA", ""),

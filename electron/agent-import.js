@@ -1,10 +1,5 @@
 'use strict';
 
-// Importación del historial JSON del agente (<datos>/ai-agent/) a la
-// transcripción durable de pi-durable. Idempotente por `legacy_id`, resumible
-// tras interrupción (progreso en el doc de sesiones) y de solo lectura sobre
-// los originales.
-
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -23,7 +18,6 @@ function _apiFor(style) {
 }
 
 function _resolveStyle(provider) {
-  // Estilo de chat declarado por el catálogo de proveedores compartido.
   try {
     const catalog = JSON.parse(fs.readFileSync(
       path.join(__dirname, '..', 'shared', 'ai-providers-catalog.json'), 'utf8'));
@@ -68,7 +62,7 @@ function _entryFor(msg, session, pendingCalls) {
   if (msg.role === 'tool_result') {
     const text = String(msg.content || '');
     let isError = false;
-    try { isError = !!JSON.parse(text).error; } catch { /* texto plano */ }
+    try { isError = !!JSON.parse(text).error; } catch {}
     return {
       kind: 'pi.tool-result',
       model: [{
@@ -83,9 +77,6 @@ function _entryFor(msg, session, pendingCalls) {
     };
   }
   if (msg.role === 'assistant') {
-    // Estados no terminales persistidos por un cierre no se reanudan: se
-    // normalizan a "interrupted" salvo que la aprobación siga pendiente
-    // (en ese caso la decisión sigue exigiéndose una única vez).
     const tool_calls = (msg.tool_calls || []).map((call) => {
       const next = { ...call };
       if (!TERMINAL_CALL_STATUSES.has(next.status) && !pendingCalls.has(next.id)) {

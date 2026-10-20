@@ -33,7 +33,6 @@ export function estimateCanvasDocumentBytes(doc: CanvasDocument): number {
   return estimateJsonBytes(doc, new Set<object>());
 }
 
-// Las revisiones son inmutables: reutiliza el delay para el mismo documento.
 const delayByDoc = new WeakMap<CanvasDocument, number>();
 
 export function autosaveDelayForDoc(doc: CanvasDocument | null | undefined): number {

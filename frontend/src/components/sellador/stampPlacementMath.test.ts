@@ -47,7 +47,6 @@ describe('computeDragRect', () => {
 
   it('resize respeta el mínimo MIN_STAMP_SIZE en ambos ejes', () => {
     const out = computeDragRect('resize', rect, start, { x: 50, y: 0 }, page);
-    // nextWidth=24 → height=12, pero clampStampRect fuerza mínimo 24
     expect(out.width).toBe(24);
     expect(out.height).toBe(24);
   });

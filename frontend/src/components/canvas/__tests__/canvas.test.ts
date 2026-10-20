@@ -1329,7 +1329,6 @@ describe('document model', () => {
     ];
 
     const normalized = normalizeDocument(doc);
-    // Rompe el ciclo en la primera capa, como backend/core/canvas/models.py.
     expect(normalized.layers[0]!.parentId).toBeUndefined();
     expect(normalized.layers[1]!.parentId).toBe('a');
     expect(normalized.layers[2]!.parentId).toBe('a');

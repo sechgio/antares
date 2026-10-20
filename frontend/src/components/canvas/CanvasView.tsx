@@ -143,7 +143,6 @@ const GeneratePanel = lazy(() => import('./editor/GeneratePanel'));
 
 type PlaceableTool = Exclude<CanvasTool, 'select' | 'hand'>;
 
-// Chords de Canvas que el shell también registra en App (ver claimShellShortcuts).
 const CANVAS_OWNED_SHELL_CHORDS = ['ctrl+0', 'ctrl+shift+i', 'ctrl+shift+v'] as const;
 
 const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = {
@@ -343,8 +342,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const renameBaselineRef = useRef<typeof history.document | null>(null);
 
-  // Incluye los baselines: updateSilent no marca hasUnsavedEdits y un pull remoto
-  // debe detectar también la edición inline pendiente para ofrecer conflicto.
   const isOpenDirty = useCallback(
     () =>
       isOpenDocumentDirty(
@@ -376,7 +373,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             const serialized = await serializeDocumentImages(mem);
             const res = await api.canvasSave(serialized, { touch: true, slim: true });
             const saved = normalizeDocument({ ...serialized, ...res.document });
-            // Adopta el updatedAt del backend para las siguientes comparaciones LWW.
             if (historyDocRef.current.id === saved.id) {
               history.updateSilent(applySavedDocumentKeepingImages(mem, saved));
               history.markSaved();
@@ -525,7 +521,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const timer = window.setTimeout(() => flushAutosaveRef.current(), delay);
     return () => {
       window.clearTimeout(timer);
-      // Cancela el retry anterior; el efecto rearma el debounce si quedan cambios pendientes.
       if (autosaveRetryTimerRef.current != null) {
         window.clearTimeout(autosaveRetryTimerRef.current);
         autosaveRetryTimerRef.current = null;
@@ -796,8 +791,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   useEffect(() => {
     if (!active) return;
-    // Canvas posee Ctrl+0, Ctrl+Shift+I y Ctrl+Shift+V: mientras está activo el
-    // shell debe ceder esos chords en lugar de navegar a otra pestaña.
     claimShellShortcuts('canvas', CANVAS_OWNED_SHELL_CHORDS);
     return () => claimShellShortcuts('canvas', null);
   }, [active]);

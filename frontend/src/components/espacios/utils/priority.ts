@@ -20,8 +20,6 @@ export function isTareaPriority(value: unknown): value is TareaPriority {
 
 export function tareaPriority(tarea: Pick<Tarea, 'status' | 'priority'>): TareaPriority {
   if (isTareaPriority(tarea.priority)) return tarea.priority;
-  // Read compatibility only: a persisted priority always wins over legacy status.
-  // Never derive priority from due dates, completion, or customized board columns.
   return tarea.status === 'urgent' ? 'urgent' : 'normal';
 }
 

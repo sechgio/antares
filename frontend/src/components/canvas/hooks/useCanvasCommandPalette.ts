@@ -34,7 +34,6 @@ import type {
   LayerCssVars,
 } from '../types';
 
-/** La paleta no tiene superficie de estado: los fallos van a observabilidad. */
 function reportExportError(err: unknown): void {
   reportFrontendError({
     kind: 'app_error',

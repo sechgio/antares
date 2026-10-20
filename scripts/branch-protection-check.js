@@ -7,7 +7,6 @@
  *
  *   node scripts/branch-protection-check.js [--repo o/n] [--branch main] [--apply] [--json]
  */
-
 const fs = require('fs');
 const path = require('path');
 const { REPO_OWNER, REPO_NAME, BASE_BRANCH, detectRepo, gh, ghApi, parseCliArgs } = require('./lib/loop-utils');

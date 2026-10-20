@@ -9,7 +9,6 @@ function throwIfAborted(signal) {
   if (signal?.aborted) throw abortError(signal);
 }
 
-// Resolves after ms; resolves early (without throwing) if signal aborts.
 function sleep(ms, signal) {
   if (ms <= 0 || signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
@@ -28,7 +27,6 @@ function sleep(ms, signal) {
   });
 }
 
-// Rejects with AbortError if signal aborts before ms elapse.
 function sleepAbortable(ms, signal) {
   if (ms <= 0) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -46,8 +44,6 @@ function sleepAbortable(ms, signal) {
   });
 }
 
-// Resolves to onTimeout() if `promise` does not settle within ms. The timer is
-// always cleared once the race settles.
 function raceTimeout(promise, ms, onTimeout) {
   let timer = null;
   const timeout = new Promise((resolve) => {

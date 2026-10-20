@@ -1,11 +1,3 @@
-"""Módulos de Antares para el agente: agrupación de herramientas y menciones.
-
-``shared/agent-modules.json`` agrupa los handlers del catálogo IPC por módulo
-visible, con su nombre en español, sus alias para ``@menciones`` y, si no hay
-adaptador, el motivo de que no esté disponible. Los IDs de módulo coinciden con
-las pestañas de la navegación y no cambian cuando cambia una etiqueta.
-"""
-
 from __future__ import annotations
 
 import json
@@ -77,7 +69,6 @@ def resolve_mentions(text: str) -> JsonObject:
 
 
 def mention_context(module_ids: list[str], tool_names: list[str]) -> str:
-    """Contexto que acompaña al mensaje: módulos mencionados y sus herramientas."""
     lines = []
     for module_id in module_ids:
         spec = catalog()[module_id]

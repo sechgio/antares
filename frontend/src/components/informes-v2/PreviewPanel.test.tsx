@@ -91,7 +91,6 @@ describe('Informes v2 PreviewPanel', () => {
     expect(screen.getByText('PROFUNDIDAD UTIL')).toBeInTheDocument();
     expect(screen.queryByText('ALTURA UTIL')).not.toBeInTheDocument();
     expect(screen.getByText('2.10')).toBeInTheDocument();
-    // el total de la columna 3" suma las filas de válvulas
     const valvulasTable = screen.getByText('DIÁMETRO DE VÁLVULAS').closest('table') as HTMLTableElement;
     const totalRow = valvulasTable.querySelector('.r2-total') as HTMLTableRowElement;
     expect(totalRow.querySelector('.r2-label')).toHaveTextContent('TOTAL');

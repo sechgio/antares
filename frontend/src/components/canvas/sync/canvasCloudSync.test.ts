@@ -1239,7 +1239,6 @@ describe('opChain push serialization', () => {
     await settled;
     expect(calls).toBe(1);
 
-    // Diez minutos virtuales superan el antiguo tope de reintentos con backoff de hasta 2 min.
     await vi.advanceTimersByTimeAsync(600_000);
     expect(calls).toBeGreaterThan(7);
     vi.useRealTimers();
@@ -1453,7 +1452,6 @@ describe('pushCanvasDocument', () => {
       data: null,
       error: { code: 'PGRST202', message: 'rpc missing' },
     });
-    // select() for the existing row, then upsert() suppressed by the LWW trigger.
     enqueue(null);
     enqueue([]);
 

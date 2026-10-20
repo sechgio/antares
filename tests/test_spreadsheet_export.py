@@ -60,8 +60,6 @@ def test_export_volantes_template_sin_pandas_lanza_importerror(monkeypatch) -> N
 
 
 def _fake_xls_book(monkeypatch, sheets: list[tuple[str, list[list[object]]]]) -> None:
-    """Simula xlrd.open_workbook con un libro falso."""
-
     class _Sheet:
         def __init__(self, name: str, rows: list[list[object]]) -> None:
             self.name = name
@@ -82,7 +80,7 @@ def _fake_xls_book(monkeypatch, sheets: list[tuple[str, list[list[object]]]]) ->
             return self._sheets[idx]
 
     xlrd = types.ModuleType("xlrd")
-    xlrd.open_workbook = lambda _path: _Book()  # type: ignore[attr-defined]
+    xlrd.open_workbook = lambda _path: _Book()
     monkeypatch.setitem(sys.modules, "xlrd", xlrd)
 
 

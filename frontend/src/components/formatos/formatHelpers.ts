@@ -32,7 +32,6 @@ export function buildGeneratedPdfName(
     : `${selected.id}_${desdeS}-${hastaS}.pdf`;
 }
 
-/** Valida que el rango sea generable y que la estrategia soporte preview. */
 export function formatCanPreview(
   format: FormatInfo,
   desde: number,

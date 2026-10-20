@@ -1,5 +1,3 @@
-// Contrato de los sobres que devuelve el transporte (api/reportsApi.ts):
-// definido una sola vez aquí, que es donde se adaptan a la forma de dominio.
 export interface ReportListEnvelope<TListItem = unknown> {
   items?: TListItem[];
   total?: number;
@@ -32,7 +30,6 @@ interface ReportListResult<TListItem> {
   total?: number;
 }
 
-// Adapta { items, total } a { reports, total } y extrae `item` de las respuestas individuales.
 export function createReportApi<TReport, TListItem>(
   spec: ReportApiSpec<TReport>,
 ) {

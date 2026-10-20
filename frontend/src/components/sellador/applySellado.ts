@@ -29,11 +29,6 @@ interface ApplySelladoParams {
   onToast: (message: string, type: "success" | "error") => void;
 }
 
-/**
- * Orquestación de "Aplicar y guardar": diálogo de salida, resolución de
- * fuentes (ruta directa, base64 o staging), sellado vía IPC e historial.
- * Los handles de staging se liberan siempre en `finally`.
- */
 export async function applySellado(params: ApplySelladoParams): Promise<void> {
   const {
     pdfFile,

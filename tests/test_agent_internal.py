@@ -1,11 +1,3 @@
-"""Puente privado Electron→Python del agente nativo (``agent_internal_*``).
-
-El runtime vive en Electron; estos handlers conservan en Python vault,
-allowlist, lanes del scheduler, validación de rutas y aprobaciones. El
-dispatch se reserva de forma atómica por ``(session_id, call_id)`` para que un
-replay nunca repita un efecto cuyo resultado quedó incierto.
-"""
-
 import json
 import threading
 import time
@@ -76,7 +68,6 @@ def test_provider_wire_base_url_per_style(monkeypatch):
     assert ollama["base_url"].endswith("/v1")
     assert ollama["auth_type"] == "none" and ollama["api_key"] is None
     assert ollama["style"] == "openai_chat"
-    # OpenAI/OpenRouter conservan Chat Completions.
     for name in ("openai", "openrouter"):
         monkeypatch.setattr(ai_providers, "get_config", lambda p, k="sk-test": {"api_key": k})
         info = _provider_info(name)
@@ -109,7 +100,6 @@ def test_approval_ensure_is_idempotent_per_call(store):
         {"approval_id": first["id"], "approve": True}
     )["approval"]
     assert decided["status"] == "approved"
-    # Una segunda decisión no cambia nada.
     with pytest.raises(ValidationError):
         agent_internal.HANDLERS["agent_internal_approval_decide"](
             {"approval_id": first["id"], "approve": False}
@@ -161,10 +151,9 @@ def test_dispatch_dedup_never_reexecutes(store, monkeypatch):
     monkeypatch.setattr(agent_internal._agent_chat, "readonly_methods", lambda: ["flows_list"])
 
     params = {"session_id": "s1", "call_id": "c1", "name": "flows_list", "params": {}}
-    assert _dispatch(**params)["result"] is None  # arranca en segundo plano
+    assert _dispatch(**params)["result"] is None
     out = _wait_result("c1")
     assert json.loads(out["result"]) == {"ok": 1}
-    # La repetición sirve lo persistido: no hay segunda ejecución.
     again = _dispatch(**params)
     assert json.loads(again["result"]) == {"ok": 1}
     assert executed == ["flows_list"]
@@ -184,7 +173,6 @@ def test_dispatch_gated_requires_bound_approved_approval(store, monkeypatch):
     approval = agent_internal.HANDLERS["agent_internal_approval_ensure"](
         {"session_id": "s1", "call_id": "c1", "method": "db_clear", "params": {}}
     )["approval"]
-    # La aprobación pendiente todavía no autoriza.
     still = json.loads(_dispatch(**{**params, "approval_id": approval["id"]})["result"])
     assert still.get("error")
     agent_internal.HANDLERS["agent_internal_approval_decide"](

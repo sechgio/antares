@@ -125,7 +125,6 @@ export function useProcessRunner(): ProcessRunnerHookResult {
     try {
       await api.cancelProcess();
     } catch {
-      // Si el cancel no llegó, el estado real lo descubre el pollStatus siguiente.
     }
     pollStatus();
   }, [pollStatus]);

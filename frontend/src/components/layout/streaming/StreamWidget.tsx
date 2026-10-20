@@ -113,8 +113,6 @@ export interface StreamRowProps<I extends StreamItem = StreamItem, T extends Str
   onChoose: (item: I, list: I[]) => void;
 }
 
-/* Lo mínimo que la lista necesita de una fuente: StreamSource lo satisface
-   estructuralmente; Audius aporta uno propio sin strings/branding. */
 export interface StreamListSource<I extends StreamItem, T extends StreamItem = StreamTrack> {
   id: string;
   keyMissing?: () => boolean;
@@ -162,9 +160,7 @@ interface StreamSearchBoxProps {
   label: string;
   pending?: boolean;
   pendingLabel?: string;
-  /** Radio/Audius/Spotify exponen data-filled en la caja de búsqueda. */
   dataFilled?: boolean;
-  /** Jamendo envuelve el input en una caja -search-field; Archive no. */
   fieldWrap?: boolean;
 }
 
@@ -209,13 +205,9 @@ interface StreamItemListProps<I extends StreamItem, T extends StreamItem = Strea
   source: StreamListSource<I, T>;
   t: StreamListStrings;
   Row: ComponentType<StreamRowProps<I, T>>;
-  /** Jamendo/Audius muestran el título de la sección sobre la lista. */
   listLabel?: boolean;
-  /** Jamendo envuelve el input en una caja -search-field; Archive no. */
   fieldWrap?: boolean;
-  /** Audius expone data-filled en la caja de búsqueda. */
   dataFilled?: boolean;
-  /** Audius usa "Buscando" como aria-label de la lista con texto. */
   listSearchLabel?: string;
 }
 

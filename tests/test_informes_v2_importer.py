@@ -310,12 +310,10 @@ def test_import_detects_clasica_from_columns() -> None:
 
 
 def test_import_plantilla_column_and_param_fallback() -> None:
-    # La columna Plantilla explícita gana al parámetro.
     content = b"ID;Estacion;Plantilla\nC-1;E 1;reservorios2\n"
     report = import_reports_from_bytes("datos.csv", content, "clasica")[0]
     assert report["plantilla"] == "reservorios2"
 
-    # Sin señal en el archivo, el parámetro de la UI decide.
     content = b"ID;Estacion\nC-1;E 1\n"
     report = import_reports_from_bytes("datos.csv", content, "reservorios2")[0]
     assert report["plantilla"] == "reservorios2"

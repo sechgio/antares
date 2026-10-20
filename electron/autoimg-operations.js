@@ -4,7 +4,6 @@ const { emit } = require('./autoimg-notify');
 
 const CANCELLABLE_OPERATIONS = new Set(['scan', 'scan_sync', 'sync_to', 'sync_from', 'rename']);
 
-// Estado mutable de la operación en curso, compartido por lock/cancel/status.
 const operationState = {
   active: null,
   cancelRequested: false,

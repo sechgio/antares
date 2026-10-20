@@ -1,9 +1,3 @@
-"""Persistencia de Designs en disco.
-
-Fuente de verdad: ``%LOCALAPPDATA%/Antares/design/documents/<id>.json`` (mismo
-patrón que Canvas). Escritura atómica y límite de tamaño para que un documento
-enorme o corrupto no pueda tumbar el arranque.
-"""
 
 from __future__ import annotations
 
@@ -40,8 +34,6 @@ class DesignStore:
 
     def _path_for(self, design_id: str) -> Path:
         safe = sanitizar_nombre(str(design_id).strip()) or "unknown"
-        # El id nunca cruza directorios: `sanitizar_nombre` quita separadores y
-        # el `Path.name` final descarta cualquier resto de ruta.
         return self._root / f"{Path(safe).name or 'unknown'}.json"
 
     def _ensure_root(self) -> None:

@@ -107,8 +107,6 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
           if (mountedRef.current) setPersistenceStatus('saved');
         })
         .catch(() => {
-          // saveSession ya reporta el fallo a observabilidad; aquí solo se evita
-          // la promesa rechazada sin manejar y se avisa en la interfaz.
           if (mountedRef.current) setPersistenceStatus('error');
         });
     }, SAVE_DEBOUNCE_MS);
@@ -131,8 +129,6 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
       mountedRef.current = false;
       const pending = pendingSaveRef.current;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      // El guardado con debounce se descartaba al desmontar: la última edición
-      // se perdía. Aquí se vuelca lo pendiente antes de salir.
       if (pending) void saveSession(pending).catch(() => {});
     };
   }, []);
@@ -154,9 +150,6 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
           setImages(restored.images);
         }
       } catch {
-        // Un fallo de lectura no deja la sesión inutilizable: se sigue con la
-        // sesión local y se avisa. El autoguardado espera a la primera edición
-        // para no sobrescribir con una sesión vacía lo que sigue en disco.
         if (!cancelled) {
           setRestoreFailed(true);
           reportFrontendError({

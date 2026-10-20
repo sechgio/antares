@@ -1,6 +1,3 @@
-// Single-slot timer + attempt counter shared by the canvas sync layers'
-// debounce/retry policies. At most one pending fire; callers own the delay
-// policy and the work callback.
 export class TimerScheduler {
   private timer: ReturnType<typeof setTimeout> | null = null;
   attempts = 0;

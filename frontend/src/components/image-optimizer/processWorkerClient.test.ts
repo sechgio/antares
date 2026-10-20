@@ -203,7 +203,6 @@ describe('process worker lifecycle', () => {
     const active = [runProcessInWorker(workerInput()), runProcessInWorker(workerInput())];
     const queued = runProcessInWorker(workerInput());
     [...active, queued].forEach((request) => request.catch(() => {}));
-    // Let the active requests finish `await acquireWorker` and register pending.
     await new Promise((resolve) => setTimeout(resolve, 0));
     const workersBefore = HangingWorker.instances.length;
 

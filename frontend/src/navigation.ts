@@ -28,7 +28,7 @@ export const FULL_BLEED_TABS = new Set<TabId>(
   TAB_DEFINITIONS.filter((tab) => tab.fullBleed).map((tab) => tab.id),
 );
 
-export type ConfigSectionId = 'appearance' | 'history' | 'panel' | 'petdex' | 'plugins' | 'connections';
+export type ConfigSectionId = 'appearance' | 'history' | 'panel' | 'petdex' | 'plugins' | 'connections' | 'providers';
 
 interface ConfigSectionDefinition {
   id: ConfigSectionId;
@@ -42,4 +42,5 @@ export const CONFIG_SECTION_DEFINITIONS: readonly ConfigSectionDefinition[] = [
   { id: 'petdex', label: 'Petdex' },
   { id: 'plugins', label: 'Plugins' },
   { id: 'connections', label: 'Conexiones' },
+  { id: 'providers', label: 'Proveedores' },
 ] as const;

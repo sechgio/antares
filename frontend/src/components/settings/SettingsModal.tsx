@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { History, Palette, X, Users, PawPrint, Puzzle, Plug, type LucideIcon } from 'lucide-react';
+import { History, Palette, X, Users, PawPrint, Puzzle, Plug, Cpu, type LucideIcon } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { CONFIG_SECTION_DEFINITIONS, type ConfigSectionId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
@@ -13,7 +13,8 @@ const HistoryView = React.lazy(() => import('../history/HistoryView'));
 const PanelView = React.lazy(() => import('./PanelView'));
 const PetdexView = React.lazy(() => import('./PetdexView'));
 const PluginsView = React.lazy(() => import('./PluginsView'));
-const ConnectionsView = React.lazy(() => import('../connections'));
+const ConnectionsView = React.lazy(() => import('../connections/ConnectionsView'));
+const ProvidersView = React.lazy(() => import('../connections/ProvidersView'));
 
 const sectionFallback = (
   <div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">
@@ -35,6 +36,7 @@ const SECTION_ICONS: Record<ConfigSectionId, LucideIcon> = {
   petdex: PawPrint,
   plugins: Puzzle,
   connections: Plug,
+  providers: Cpu,
 };
 
 const SECTION_LABEL_KEYS: Record<ConfigSectionId, string> = {
@@ -44,6 +46,7 @@ const SECTION_LABEL_KEYS: Record<ConfigSectionId, string> = {
   petdex: 'tab.petdex',
   plugins: 'tab.plugins',
   connections: 'tab.connections',
+  providers: 'tab.providers',
 };
 
 const SECTION_HINTS: Record<ConfigSectionId, string> = {
@@ -53,6 +56,7 @@ const SECTION_HINTS: Record<ConfigSectionId, string> = {
   petdex: 'Colecciona y activa mascotas animadas',
   plugins: 'Activa y desactiva plugins',
   connections: 'Gestiona cuentas externas y servidores MCP',
+  providers: 'Configura claves y modelos de IA',
 };
 
 const SECTION_OVERFLOW: Record<ConfigSectionId, string> = {
@@ -62,6 +66,7 @@ const SECTION_OVERFLOW: Record<ConfigSectionId, string> = {
   petdex: 'h-full overflow-y-auto',
   plugins: 'h-full overflow-y-auto',
   connections: 'h-full overflow-hidden',
+  providers: 'h-full overflow-hidden',
 };
 
 const SECTION_VIEWS: Record<ConfigSectionId, React.LazyExoticComponent<React.ComponentType>> = {
@@ -71,6 +76,7 @@ const SECTION_VIEWS: Record<ConfigSectionId, React.LazyExoticComponent<React.Com
   petdex: PetdexView,
   plugins: PluginsView,
   connections: ConnectionsView,
+  providers: ProvidersView,
 };
 
 export default function SettingsModal({ isOpen, section, onSectionChange, onClose }: SettingsModalProps) {

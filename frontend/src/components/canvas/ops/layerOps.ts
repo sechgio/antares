@@ -166,7 +166,6 @@ function topLeftMm(layers: CanvasLayer[], ids: string[]): { x: number; y: number
   return found ? { x, y } : null;
 }
 
-// Ctrl+D repite el desplazamiento de la última copia respecto a su origen, como en Figma.
 export function duplicateRepeatOffset(
   layers: CanvasLayer[],
   ids: string[],

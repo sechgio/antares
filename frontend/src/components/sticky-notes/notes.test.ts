@@ -62,7 +62,6 @@ describe('sticky-notes store', () => {
   it('breakOut on a stacked note with a stale pileId cleans it instead of splitting', () => {
     const a = createNote();
     updateNotes((list) => list.map((n) => (n.id === a.id ? { ...n, pileId: 'p_stale' } : n)));
-    // el saneado de updateNotes ya limpia pileId en notas apiladas
     expect(getNote(a.id)?.pileId).toBeNull();
     breakOut(a.id);
     expect(getNote(a.id)?.surface).toBe('breakout');

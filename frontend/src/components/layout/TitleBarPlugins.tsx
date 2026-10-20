@@ -58,7 +58,6 @@ function SortablePlugin({ id, children }: { id: TitleBarPluginId; children: Reac
           : 'cursor-grab'
       } ${isOver && !isDragging ? 'shadow-[inset_0_0_0_1px_var(--accent-primary)]' : ''}`}
       style={{
-        // Solo el chip arrastrado se mueve; los demás quedan fijos en su hueco.
         transform: isDragging ? `${CSS.Translate.toString(transform)} scale(1.03)` : undefined,
         transition: isDragging ? 'none' : 'transform 160ms ease',
         touchAction: 'none',
@@ -85,19 +84,13 @@ export default function TitleBarPlugins() {
   const rowRef = useRef<HTMLDivElement>(null);
   const rowBoundsRef = useRef<DOMRect | null>(null);
 
-  // Si el componente se desmonta a mitad de un drag (p.ej. plugin desactivado),
-  // el cursor grabbing no puede quedarse pegado al body.
   useEffect(() => () => document.body.classList.remove('cursor-grabbing'), []);
 
   const sensors = useSensors(
-    // El umbral evita que un click normal arme el drag; una vez activo, dnd-kit
-    // ya suprime el click residual que caería sobre los botones internos.
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Delimita el gesto a la barra de título: Y bloqueado (no sale de la franja)
-  // y X acotada de borde a borde de la ventana, para moverse libre por la barra.
   const restrictToRow: Modifier = ({ transform, draggingNodeRect }) => {
     const next = { ...transform, y: 0 };
     const bounds = rowBoundsRef.current;
@@ -116,10 +109,8 @@ export default function TitleBarPlugins() {
     const from = visible.indexOf(active.id as TitleBarPluginId);
     const to = visible.indexOf(over.id as TitleBarPluginId);
     if (from < 0 || to < 0) return;
-    // Intercambio: solo los dos chips implicados cambian de sitio.
     const queue = [...visible];
     [queue[from], queue[to]] = [queue[to], queue[from]];
-    // Los desactivados conservan su hueco en el orden guardado.
     setPluginOrder(order.map((id) => (enabled[id] ? queue.shift()! : id)));
   };
 

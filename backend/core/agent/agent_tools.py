@@ -1,9 +1,3 @@
-"""Herramientas propias del agente (no son métodos IPC): borradores y documentos.
-
-Se ejecutan en Python con la conversación como contexto: sus archivos
-concedidos, su carpeta de borradores y su registro de artefactos.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

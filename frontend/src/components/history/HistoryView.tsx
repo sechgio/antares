@@ -80,8 +80,6 @@ export default function HistoryView() {
       const page = rawRuns.slice(0, HISTORY_PAGE_SIZE);
 
       setHasMoreRuns(rawRuns.length > HISTORY_PAGE_SIZE);
-      // Sin efecto dentro del actualizador: en StrictMode puede invocarse dos
-      // veces y el setSelected quedaría duplicado.
       const nextRuns = reset ? page : [...runsRef.current, ...page];
       setRuns(nextRuns);
       if (selected && !nextRuns.some((run) => run.id === selected.id)) setSelected(null);
@@ -142,8 +140,6 @@ export default function HistoryView() {
 
 
   const toggleSelected = useCallback((id: number) => {
-    // Estable: MemoizedRunListItem es React.memo y cada tecla del buscador
-    // re-renderizaba todas las filas al cambiar la identidad del handler.
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {

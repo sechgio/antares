@@ -78,7 +78,6 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   });
 }
 
-// El stub impide que los clientes WebSocket abran conexiones reales durante los tests.
 if (typeof window !== 'undefined') {
   class WebSocketStub {
     static readonly CONNECTING = 0;

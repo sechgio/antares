@@ -56,6 +56,6 @@ def test_cached_config_path_memoiza_por_clave(monkeypatch, tmp_path) -> None:
 
     first = paths.cached_config_path("k1", "cfg.json")
     second = paths.cached_config_path("k1", "otro.json")
-    assert first == second  # segunda llamada ignora filename
+    assert first == second
     other = paths.cached_config_path("k2", "cfg2.json")
     assert other != first
