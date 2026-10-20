@@ -129,6 +129,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [running, setRunning] = useState(false);
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
+  const [modelBusy, setModelBusy] = useState(false);
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -341,9 +342,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const queuedForSession = queued.filter((i) => i.session === sessionId);
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
-  const sessionProviderLabel = session
-    ? (providers.find((p) => p.id === session.provider)?.label ?? session.provider)
-    : '';
   const toolGroups = useMemo(
     () => ({
       direct: tools.filter((t) => !t.gated && t.kind !== 'mcp').map((t) => t.name),
@@ -451,7 +449,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
   const send = async () => {
     const content = draft.trim();
-    if (!content || !sessionId) return;
+    if (!content || !sessionId || modelBusy) return;
     setDraft('');
     atBottomRef.current = true;
     const failed = failedSendRef.current;
@@ -469,7 +467,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   useEffect(() => {
-    if (!sessionId || running || stopping || pending.length > 0) return;
+    if (!sessionId || running || stopping || modelBusy || pending.length > 0) return;
     const next = queued.find((i) => i.session === sessionId && !i.failed);
     if (!next) return;
     const sending = { ...next, failed: true };
@@ -478,7 +476,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       const ok = await sendToSession(sessionId, next.text, next.requestId, next.attachments ?? []);
       if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
-  }, [sessionId, running, stopping, pending.length, queued]);
+  }, [sessionId, running, stopping, modelBusy, pending.length, queued]);
 
   const sendCorrection = async (item: (typeof queued)[number]) => {
     setQueued((q) => q.filter((i) => i !== item));
@@ -533,9 +531,29 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? (session.title || 'Agente de Antares') }
     : undefined;
 
+  const changeModel = async (next: { provider: string; model: string }) => {
+    if (modelBusy || running || pending.length > 0) return;
+    if (!session) {
+      setProvider(next.provider);
+      setModel(next.model);
+      return;
+    }
+    setModelBusy(true);
+    try {
+      const res = await agentApi.agentSessionModelSet(session.id, next.provider, next.model);
+      setSessions((prev) => prev.map((item) => item.id === res.session.id ? res.session : item));
+      setProvider(next.provider);
+      setModel(next.model);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo cambiar el modelo'), type: 'error' });
+    } finally {
+      setModelBusy(false);
+    }
+  };
+
   return (
     <div
-      className="relative flex h-full min-h-0 gap-4 bg-[var(--bg-surface)] p-3"
+      className="agent-workspace relative flex h-full min-h-0 gap-3 bg-[var(--bg-surface)] p-2.5"
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
           e.preventDefault();
@@ -558,7 +576,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           }}
         />
       )}
-      <aside className="hidden h-full w-[260px] shrink-0 flex-col rounded-[24px] border border-[var(--bg-surface)] bg-[var(--bg-base)] p-[7px] shadow-[0_1px_0_rgba(0,0,0,0.02),0_1px_12px_rgba(0,0,0,0.06)] md:flex">
+      <aside aria-label="Agentes y conversaciones" className="agent-sidebar hidden h-full w-[224px] shrink-0 flex-col rounded-[24px] border border-[var(--border-subtle)] bg-[var(--bg-base)] p-[7px] md:flex">
         <div className="flex shrink-0 items-center gap-2 p-1">
           {searchOpen ? (
             <label className="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-full bg-[var(--bg-input)] px-3">
@@ -640,16 +658,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </button>
           )}
           {profiles.map((profile) => (
-            <div key={profile.id} className="group flex h-[54px] shrink-0 items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]">
-              <AgentAvatar seed={profile.id} name={profile.name} size={40} className="shrink-0" />
+            <div key={profile.id} className={`group flex h-[50px] shrink-0 items-center gap-2 rounded-xl p-1.5 transition-colors ${activeProfile?.id === profile.id ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'}`}>
+              <AgentAvatar seed={profile.id} name={profile.name} size={32} className="shrink-0" />
               <button
                 type="button"
                 className="flex min-w-0 flex-1 flex-col text-left"
                 title={`Nueva conversación con ${profile.name}`}
                 onClick={() => void newSession(profile)}
               >
-                <span className="truncate text-[14px] font-medium leading-5 text-[var(--text-primary)]">{profile.name}</span>
-                <span className="truncate text-[13px] leading-5 text-[var(--text-muted)]">{profile.description || 'Agente personalizado'}</span>
+                <span className="truncate text-[13px] font-medium leading-5 text-[var(--text-primary)]">{profile.name}</span>
+                <span className="truncate text-[11px] leading-4 text-[var(--text-muted)]">{profile.description || 'Agente personalizado'}</span>
               </button>
               <button
                 type="button"
@@ -693,16 +711,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] bg-[var(--bg-base)]">
-        <nav aria-label="Conversaciones" className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] p-3 md:hidden">
+      <main aria-label="Conversación del agente" className="agent-conversation flex min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] bg-[var(--bg-base)]">
+        <nav aria-label="Conversaciones" className="grid shrink-0 grid-cols-[minmax(0,1fr)_repeat(4,auto)] items-center gap-2 border-b border-[var(--border-subtle)] p-3 md:hidden">
           <ThemedSelect value={sessionId} onChange={setSessionId} placeholder="Elegir conversación"
             options={sessions.map((item) => ({ value: item.id, label: item.title || 'Conversación' }))}
-            aria-label="Conversación activa" className="min-w-0 flex-1" />
+            aria-label="Conversación activa" className="col-span-full min-w-0" />
           {profiles.length > 0 && (
             <ThemedSelect value="" placeholder="Usar agente…" aria-label="Usar agente"
               options={profiles.map((item) => ({ value: item.id, label: item.name }))}
               onChange={(id) => { const chosen = profiles.find((item) => item.id === id); if (chosen) void newSession(chosen); }}
-              className="w-36 shrink-0" />
+              className="min-w-0" />
           )}
           <Button size="sm" variant="secondary" aria-label="Crear conversación" onClick={() => void newSession()}><Plus size={14} /></Button>
           <Button size="sm" variant="secondary" aria-label="Nuevo agente" onClick={() => setEditing('new')}><Pencil size={14} /></Button>
@@ -710,7 +728,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           {onConfigureProvider && <Button size="sm" variant="secondary" aria-label="Configurar proveedor" onClick={onConfigureProvider}><Settings2 size={14} /></Button>}
         </nav>
         {session && (
-          <header className="flex shrink-0 items-center gap-2 px-3 pt-3">
+          <header className="flex shrink-0 items-center gap-2 px-4 pb-2 pt-3">
             <div className="flex h-[31px] min-w-0 items-center gap-2 rounded-full pl-2 pr-3 transition-colors hover:bg-[var(--bg-input)]">
               <AgentAvatar seed={session.profile?.id ?? session.id} name={session.title || 'Conversación'} size={20} className="shrink-0" />
               <span className="truncate text-[13px] font-medium leading-[18px] text-[var(--text-secondary)]">
@@ -768,7 +786,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           />
         )}
 
-        <div ref={listRef} onScroll={onListScroll} className="custom-scrollbar flex-1 space-y-4 overflow-y-auto px-3 pb-4 pt-2">
+        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-5 pt-3 md:px-6">
           {showHero ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
@@ -777,14 +795,14 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 size={64}
               />
               <div>
-                <h2 className="text-[15px] font-semibold leading-6 text-[var(--text-primary)]">
-                  {activeProfile ? activeProfile.name : sessionId ? '¿En qué trabajamos hoy?' : 'Agente de Antares'}
+                <h2 className="text-[22px] font-medium leading-8 tracking-tight text-[var(--text-primary)]">
+                  {activeProfile ? activeProfile.name : '¿En qué trabajamos hoy?'}
                 </h2>
                 <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-[19px] text-[var(--text-secondary)]">
                   {readyProviders.length === 0
                     ? 'Configura un proveedor en «Proveedores» para empezar.'
                     : activeProfile?.description
-                      || 'Conversa con la app: consulta su estado con herramientas de lectura y aprueba cada acción con efectos antes de que se ejecute.'}
+                      || 'Consulta tus documentos, prepara reportes y trabaja con tus agentes.'}
                 </p>
               </div>
               {readyProviders.length === 0 && onConfigureProvider && (
@@ -890,7 +908,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </div>
           )}
-          <div className="rounded-[20px] border border-transparent bg-[var(--bg-surface)] p-2.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.02),0_4px_2px_rgba(0,0,0,0.02)] transition-colors focus-within:border-[var(--border-subtle)]">
+          <div className="rounded-[20px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2.5 transition-colors focus-within:border-[var(--border-medium)]">
             {attachments.length > 0 && (
               <div className="mb-1.5 flex flex-wrap gap-1.5 px-1" aria-label="Adjuntos">
                 {attachments.map((item) => (
@@ -934,7 +952,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               aria-label="Mensaje para el agente"
               className="max-h-36 w-full resize-none bg-transparent px-1.5 pt-1.5 text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
             />
-            <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   type="button"
@@ -958,7 +976,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 </button>
                 {session && (
                   <span
-                    className="flex h-[30px] shrink-0 items-center gap-1.5 rounded-full pl-2 pr-2.5 text-[14px] text-[var(--text-secondary)]"
+                    className="hidden h-[30px] shrink-0 items-center gap-1.5 rounded-full pl-1 pr-2 text-[11px] text-[var(--text-secondary)] sm:flex"
                     title="Las acciones que modifican datos se pausan hasta que las apruebes"
                   >
                     <ShieldCheck
@@ -969,22 +987,19 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   </span>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {!session && readyProviders.length > 0 ? (
+              <div className="ml-auto flex min-w-0 items-center gap-2">
+                {readyProviders.length > 0 ? (
                   <ModelPicker
                     providers={readyProviders}
-                    value={{ provider, model }}
-                    onChange={(next) => {
-                      setProvider(next.provider);
-                      setModel(next.model);
-                    }}
+                    value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
+                    onChange={(next) => void changeModel(next)}
+                    disabled={modelBusy || running || stopping || pending.length > 0}
+                    className="min-w-0 max-w-[min(40vw,240px)]"
                   />
                 ) : (
                   <span className="hidden h-8 max-w-56 items-center gap-1.5 truncate rounded-full px-2 text-[12px] text-[var(--text-muted)] sm:flex">
                     <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
-                    {session
-                      ? session.model || sessionProviderLabel
-                      : model || providerLabel || 'Proveedor IA'}
+                    {session?.model || model || providerLabel || 'Proveedor IA'}
                   </span>
                 )}
                 {(running || pending.length > 0) && (
@@ -1001,9 +1016,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 )}
                 <button
                   type="button"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-all duration-150 hover:bg-[var(--accent-primary-hover)] active:scale-[0.96] disabled:bg-[var(--bg-input)] disabled:text-[var(--text-muted)]"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--accent-primary-hover)] active:scale-[0.96] motion-reduce:transform-none disabled:bg-[var(--bg-input)] disabled:text-[var(--text-muted)]"
                   onClick={() => void send()}
-                  disabled={!sessionId || !draft.trim()}
+                  disabled={!sessionId || !draft.trim() || modelBusy}
                   aria-label="Enviar"
                 >
                   <ArrowUp size={16} />

@@ -58,3 +58,22 @@ it('expone el error del subagente y permite plegar la traza', () => {
   fireEvent.click(toggle);
   expect(toggle).toHaveAttribute('aria-expanded', 'false');
 });
+
+it.each([['queued', 'en cola'], ['pending', 'pendiente'], ['submitted', 'enviada']] as const)(
+  'no anima una delegación %s como si estuviera ejecutándose', (status, label) => {
+    render(<SubagentTrace call={call({ status, result: undefined })} />);
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.queryByText('delegando')).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Investigador' })).toHaveAttribute('data-working', 'false');
+  },
+);
+
+it('detiene la animación al terminar y oculta el contenido plegado de la navegación', () => {
+  const { rerender } = render(<SubagentTrace call={call({ status: 'running', result: undefined })} />);
+  expect(screen.getByRole('img', { name: 'Investigador' })).toHaveAttribute('data-working', 'true');
+  rerender(<SubagentTrace call={call()} />);
+  expect(screen.getByRole('img', { name: 'Investigador' })).toHaveAttribute('data-working', 'false');
+  expect(screen.queryByRole('list')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Delegación en Investigador' }));
+  expect(screen.getByRole('list')).toBeVisible();
+});

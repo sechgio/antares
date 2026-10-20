@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Loader2, RefreshCw, Search, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, Loader2, RefreshCw, Search, Cpu } from 'lucide-react';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
@@ -59,6 +59,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
     maxHeightCap: MENU_HEIGHT,
   });
   const searchRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
   const [query, setQuery] = useState('');
   const [activeProvider, setActiveProvider] = useState(value.provider || providers[0]?.id || '');
   const [models, setModels] = useState<Record<string, ProviderModels>>({});
@@ -99,6 +100,10 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   }, [isOpen]);
 
   useEffect(() => {
+    if (disabled) close();
+  }, [disabled, close]);
+
+  useEffect(() => {
     if (isOpen) updatePosition();
   }, [isOpen, activeProvider, state.models.length, query, updatePosition]);
 
@@ -128,7 +133,11 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
 
   useEffect(() => {
     setHighlighted(0);
-  }, [query, activeProvider]);
+  }, [query, activeProvider, items.length]);
+
+  useEffect(() => {
+    if (isOpen) document.getElementById(`${listId}-${highlighted}`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [highlighted, isOpen, listId]);
 
   const choose = (nextProvider: string, model: string) => {
     const choice = { provider: nextProvider, model };
@@ -156,6 +165,10 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
       const item = items[highlighted];
       if (item) choose(item.provider, item.model);
     }
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      setHighlighted(event.key === 'Home' ? 0 : Math.max(0, items.length - 1));
+    }
   };
 
   if (providers.length === 0) {
@@ -178,14 +191,14 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-label="Elegir proveedor y modelo"
-        title={`${provider?.label ?? ''} · ${modelLabel}`}
+        title={`${providers.find((item) => item.id === value.provider)?.label ?? ''} · ${modelLabel}`}
         className={`flex h-8 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-[12px] transition-colors disabled:opacity-50 ${
           isOpen
             ? 'border-[var(--accent-primary)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
             : 'border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-[var(--border-active)] hover:text-[var(--text-primary)]'
         }`}
       >
-        <Sparkles size={12} className="shrink-0 text-[var(--accent-primary-hover)]" />
+        <Cpu size={13} className="shrink-0 text-[var(--text-muted)]" />
         <span className="truncate font-medium text-[var(--text-primary)]">{modelLabel}</span>
         <ChevronDown size={12} className={`shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180 text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'}`} />
       </button>
@@ -195,7 +208,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
           ref={popupRef}
           role="dialog"
           aria-label="Modelos disponibles"
-          className="agent-popover-in fixed z-[300] flex flex-col overflow-hidden rounded-2xl border shadow-xl"
+          className="agent-popover-in agent-model-menu fixed z-[300] flex flex-col overflow-hidden rounded-2xl border shadow-xl"
           style={{
             top: position?.top ?? -9999,
             left: position?.left ?? -9999,
@@ -204,9 +217,20 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
             visibility: position ? 'visible' : 'hidden',
             background: 'var(--bg-elevated)',
             borderColor: 'var(--border-medium)',
-            boxShadow: '0 18px 48px rgba(0,0,0,0.28), 0 2px 10px rgba(0,0,0,0.16)',
+            transformOrigin: position && triggerRef.current && position.top < triggerRef.current.getBoundingClientRect().top ? 'bottom right' : 'top right',
           }}
           onMouseDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              close();
+              triggerRef.current?.focus();
+            }
+          }}
+          onBlur={(event) => {
+            if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)
+              && !triggerRef.current?.contains(event.relatedTarget)) close();
+          }}
         >
           <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-2.5">
             <Search size={13} className="shrink-0 text-[var(--text-muted)]" />
@@ -218,6 +242,11 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
               placeholder="Buscar modelo…"
               spellCheck={false}
               aria-label="Buscar modelo"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded="true"
+              aria-controls={!state.loading || state.models.length > 0 ? listId : undefined}
+              aria-activedescendant={(!state.loading || state.models.length > 0) && items[highlighted] ? `${listId}-${highlighted}` : undefined}
               className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
             />
             {state.loading && <Loader2 size={13} className="shrink-0 animate-spin text-[var(--text-muted)]" />}
@@ -243,7 +272,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
             </div>
           )}
 
-          <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-1.5">
+          <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-1.5" aria-busy={state.loading}>
             {state.loading && state.models.length === 0 ? (
               <div className="space-y-1.5 p-1" aria-hidden="true">
                 {[0, 1, 2].map((row) => (
@@ -257,25 +286,31 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
                     Recientes
                   </p>
                 )}
+                <div role="listbox" id={listId} aria-label="Modelos">
                 {items.map((item, index) => {
-                  const selected = !item.recent && value.provider === item.provider && value.model === item.model;
+                  const selected = value.provider === item.provider && value.model === item.model;
                   return (
                     <button
                       key={`${item.recent ? 'recent' : 'model'}:${item.provider}:${item.model}`}
                       type="button"
-                      aria-pressed={selected}
+                      role="option"
+                      id={`${listId}-${index}`}
+                      aria-selected={selected}
+                      tabIndex={-1}
                       onMouseEnter={() => setHighlighted(index)}
                       onClick={() => choose(item.provider, item.model)}
                       className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
                         index === highlighted ? 'bg-[var(--bg-input)]' : ''
                       }`}
                     >
-                      <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--text-primary)]">{item.label}</span>
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-surface)] text-[var(--text-muted)]"><Cpu size={13} /></span>
+                      <span className="min-w-0 flex-1 text-[13px] text-[var(--text-primary)]"><span className="block truncate">{item.label}</span><span className="block text-[10px] text-[var(--text-muted)]">{provider?.label}</span></span>
                       {item.recent && <span className="shrink-0 text-[10px] text-[var(--text-muted)]">reciente</span>}
                       {selected && <Check size={13} className="shrink-0 text-[var(--accent-primary-hover)]" />}
                     </button>
                   );
                 })}
+                </div>
                 {items.length === 0 && !custom && (
                   <p className="px-2 py-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
                     {state.error
@@ -302,7 +337,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
           </div>
 
           <div className="border-t border-[var(--border-subtle)] px-3 py-2 text-[10px] leading-relaxed text-[var(--text-muted)]">
-            Se aplica a la próxima conversación.
+            Se aplica a los siguientes mensajes. ↑ ↓ para navegar · ↵ elegir
           </div>
         </div>,
         document.body,

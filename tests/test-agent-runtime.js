@@ -15,7 +15,7 @@ const PUBLIC_METHODS = [
   'agent_sessions_list', 'agent_session_create', 'agent_session_delete',
   'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set',
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
-  'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename',
+  'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -176,6 +176,45 @@ async function main() {
   const { fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
 
   {
+    const { bridge } = makeBridge();
+    const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+    const { fauxProvider } = await import('@earendil-works/pi-ai');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-model-'));
+    const dbPath = path.join(dir, 'agent.sqlite');
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const faux = fauxProvider();
+    runtime._internal._providerOverrides.set('faux', faux.provider);
+    faux.setResponses([fauxAssistantMessage('respuesta anterior')]);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primera consulta' });
+    assert(await waitIdle(session.id), 'el turno anterior termina antes de elegir modelo');
+    const next = fauxProvider({ provider: 'otro', models: [{ id: 'otro-modelo' }] });
+    runtime._internal._providerOverrides.set('otro', next.provider);
+    next.setResponses([fauxAssistantMessage('respuesta del nuevo modelo')]);
+    const changed = await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'otro', model: next.models[0].id });
+    assert(changed.session.id === session.id && changed.session.provider === 'otro', 'cambiar proveedor conserva la conversación');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'segunda consulta' });
+    assert(await waitIdle(session.id), 'el turno usa el proveedor elegido');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(messages.some((m) => m.content === 'respuesta anterior') && messages.at(-1).content === 'respuesta del nuevo modelo',
+      'conserva el historial y la respuesta procede del nuevo proveedor');
+    assert(faux.state.callCount === 1 && next.state.callCount === 1, 'cada proveedor atiende solo su turno');
+    let invalid;
+    try { await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'otro', model: '' }); } catch (err) { invalid = err; }
+    assert(invalid, 'rechaza un modelo vacío');
+    await runtime.shutdown();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const restored = (await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id);
+    assert(restored.provider === 'otro' && restored.model === 'otro-modelo', 'el modelo elegido sobrevive al reinicio de SQLite');
+    const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+    const map = await runtime._internal.state().harness.snapshot(runtime._internal.state().SessionsDoc, context);
+    const conv = await runtime._internal.state().harness.conversation(map.sessions[session.id].conversationId, context);
+    assert((await conv.agent(context)).model.modelId === 'otro-modelo', 'la configuración durable del runtime conserva el modelo');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
     const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-tools-'));
     const dbPath = path.join(dir, 'agent.sqlite');
@@ -323,6 +362,11 @@ async function main() {
     assert(sawPending, 'la herramienta gated queda pendiente de aprobación');
 
     const ap = (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals[0];
+    let busyModel;
+    try { await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'faux', model: 'otro-modelo' }); } catch (err) { busyModel = err; }
+    assert(busyModel && /termine el turno/.test(busyModel.message), 'no cambia el modelo mientras un turno espera aprobación');
+    assert((await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id).model === 'faux-1',
+      'el rechazo conserva el modelo original');
     await runtime.handlers.agent_approve({ approval_id: ap.id });
     assert(await waitIdle(session.id), 'el turno termina tras aprobar');
 

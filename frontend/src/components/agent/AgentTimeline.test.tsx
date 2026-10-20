@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import { ApprovalCard, MessageRow } from './AgentTimeline';
+import { ApprovalCard, MessageRow, ThinkingRow } from './AgentTimeline';
 
 it('muestra cuenta y recursos revisados antes de una decisión explícita', () => {
   const decide = vi.fn();
@@ -42,4 +42,15 @@ it('dibuja la delegación en otro agente como una traza con sus pasos', () => {
   expect(screen.getByText('Listar documentos de Canvas')).toBeInTheDocument();
   expect(screen.getByText('Encontré dos.')).toBeInTheDocument();
   expect(screen.getByText('completado')).toBeInTheDocument();
+});
+
+it('anima al agente solo durante la respuesta y mantiene un estado textual de trabajo', () => {
+  const agent = { seed: 'antares', name: 'Antares' };
+  const { rerender } = render(<MessageRow agent={agent} msg={{ role: 'assistant', content: 'Preparando', partial: true, ts: 1 }} />);
+  expect(screen.getByRole('img', { name: 'Antares' })).toHaveAttribute('data-working', 'true');
+  rerender(<MessageRow agent={agent} msg={{ role: 'assistant', content: 'Listo', ts: 1 }} />);
+  expect(screen.getByRole('img', { name: 'Antares' })).toHaveAttribute('data-working', 'false');
+  rerender(<ThinkingRow agent={agent} elapsedSeconds={61} />);
+  expect(screen.getByRole('status')).toHaveTextContent('El agente está trabajando');
+  expect(screen.getByRole('status')).toHaveTextContent('1m 1s');
 });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, Check, ChevronRight, Loader2, Waypoints } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, Clock3, Loader2, ShieldCheck, Waypoints } from 'lucide-react';
 import type { AgentToolCall } from '../../api/agentApi';
 import AgentAvatar from './AgentAvatar';
 import { METHOD_LABELS } from './methodLabels';
@@ -56,6 +56,7 @@ const STATUS_LABEL: Record<string, string> = {
   interrupted: 'interrumpida',
   queued: 'en cola',
   pending: 'pendiente',
+  submitted: 'enviada',
 };
 
 function statusTone(status: string, live: boolean): string {
@@ -86,8 +87,7 @@ function rawError(result: string | null | undefined): string | null {
 
 export default function SubagentTrace({ call }: { call: AgentToolCall }) {
   const receipt = parseSubagentReceipt(call.result);
-  const terminal = ['done', 'denied', 'failed', 'interrupted'].includes(call.status);
-  const live = !terminal;
+  const live = call.status === 'running';
   const status = receipt?.status ?? call.status;
   const name = receipt?.agent.name
     || (typeof call.params.agent === 'string' && call.params.agent.trim() ? call.params.agent : 'Subagente');
@@ -109,8 +109,7 @@ export default function SubagentTrace({ call }: { call: AgentToolCall }) {
         aria-label={`Delegación en ${name}`}
       >
         <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)]">
-          <AgentAvatar seed={receipt?.agent.id ?? name} name={name} size={14} />
-          {live && <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-[var(--accent-primary)]" />}
+          <AgentAvatar seed={receipt?.agent.id ?? name} name={name} size={22} working={live} />
         </span>
         <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
           <span className="truncate text-[12px] font-medium text-[var(--text-primary)]">{name}</span>
@@ -121,7 +120,11 @@ export default function SubagentTrace({ call }: { call: AgentToolCall }) {
             ? <Loader2 size={11} className="animate-spin" />
             : status === 'done'
               ? <Check size={11} />
-              : <AlertTriangle size={11} />}
+              : status === 'pending'
+                ? <ShieldCheck size={11} />
+                : status === 'queued' || status === 'submitted'
+                  ? <Clock3 size={11} />
+                  : <AlertTriangle size={11} />}
           {live ? 'delegando' : STATUS_LABEL[status] ?? status}
         </span>
         {elapsed && <span className="shrink-0 tabular-nums text-[10px] text-[var(--text-muted)]">{elapsed}</span>}
@@ -142,7 +145,7 @@ export default function SubagentTrace({ call }: { call: AgentToolCall }) {
       <div
         className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
-        <div className="overflow-hidden">
+        <div className="agent-subagent-body overflow-hidden" inert={!open} aria-hidden={!open}>
           {steps.length > 0 && (
             <ol className="relative mt-2 space-y-1.5">
               <span aria-hidden="true" className="absolute bottom-1.5 left-[7px] top-1.5 w-px bg-[var(--border-medium)]" />

@@ -47,7 +47,7 @@ const CALL_STATUS_LABEL: Record<string, string> = {
 };
 
 function CallStatusIcon({ status }: { status: string }) {
-  if (status === 'submitted') return <Clock3 size={12} className="text-[var(--text-muted)]" />;
+  if (status === 'submitted' || status === 'queued') return <Clock3 size={12} className="text-[var(--text-muted)]" />;
   if (status === 'done') return <Check size={12} className="text-[var(--accent-green)]" />;
   if (status === 'denied' || status === 'failed') return <X size={12} className="text-[var(--accent-red)]" />;
   if (status === 'interrupted') return <AlertTriangle size={12} className="text-[var(--accent-yellow)]" />;
@@ -90,7 +90,7 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
 function UserBubble({ msg }: { msg: AgentMessage }) {
   return (
     <div className="agent-trace-in flex justify-end">
-      <div className="max-w-[min(600px,78%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-2.5 text-[14px] leading-[21px] text-[var(--text-primary)]">
+      <div className="agent-message-user max-w-[min(600px,85%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-2.5 text-[14px] leading-[21px] text-[var(--text-primary)]">
         <p className="whitespace-pre-wrap break-words">{msg.content}</p>
       </div>
     </div>
@@ -137,10 +137,10 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
   const calls = msg.tool_calls ?? [];
   return (
     <div className="agent-trace-in group flex items-start gap-2.5">
-      {agent && <AgentAvatar seed={agent.seed} name={agent.name} size={22} className="mt-0.5 shrink-0" />}
       <div className="min-w-0 flex-1 space-y-1.5">
         {msg.content && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
+            {agent && <AgentAvatar seed={agent.seed} name={agent.name} size={18} working={!!msg.partial} />}
             <span className="text-[12px] font-medium leading-5 text-[var(--text-secondary)]">
               {agent?.name ?? 'Agente'}
             </span>
@@ -148,7 +148,7 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
           </div>
         )}
         {msg.content && (
-          <div className="max-w-[min(620px,100%)] text-[14px] leading-[22px] text-[var(--text-primary)]">
+          <div className="agent-message-answer w-fit max-w-[min(620px,100%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
             <MessageMarkdown text={msg.content} streaming={!!msg.partial} />
           </div>
         )}
@@ -226,9 +226,10 @@ export function ThinkingRow({ elapsedSeconds, agent }: { elapsedSeconds: number;
   const ss = elapsedSeconds % 60;
   const elapsed = mm > 0 ? `${mm}m ${ss}s` : `${ss}s`;
   return (
-    <div className="flex items-center gap-2 px-3 text-[13px] leading-[18px] text-[var(--text-secondary)]">
-      {agent ? <AgentAvatar seed={agent.seed} name={agent.name} size={16} className="shrink-0 animate-pulse" /> : <Loader2 size={12} className="animate-spin" />}
+    <div role="status" className="flex items-center gap-2 px-3 text-[12px] leading-[18px] text-[var(--text-secondary)]">
+      {agent ? <AgentAvatar seed={agent.seed} name={agent.name} size={24} working /> : <Loader2 size={12} className="animate-spin" />}
       El agente está trabajando
+      <span className="agent-thinking-dots inline-flex items-center gap-1" aria-hidden="true"><span /><span /><span /></span>
       <span className="inline-flex items-center gap-1 tabular-nums">
         <Clock3 size={11} />
         {elapsed}

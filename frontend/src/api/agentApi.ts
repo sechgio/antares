@@ -133,6 +133,9 @@ export const agentApi = {
   agentSessionRename: (id: string, title: string) =>
     _invoke<{ session: AgentSession }>('agent_session_rename', { id, title }),
 
+  agentSessionModelSet: (id: string, provider: string, model: string) =>
+    _invoke<{ session: AgentSession }>('agent_session_model_set', { id, provider, model }),
+
   agentSessionDelete: (id: string) =>
     _invoke<{ deleted: boolean; id: string }>('agent_session_delete', { id }),
 

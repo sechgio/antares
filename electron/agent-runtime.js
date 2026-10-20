@@ -286,6 +286,31 @@ async function sessionRename(params) {
   return { session: renamed };
 }
 
+async function sessionModelSet(params) {
+  const sessionId = _text(params.id, 'la conversación', 120, true);
+  const provider = _text(params.provider, 'un proveedor', 120, true);
+  const model = _text(params.model, 'un modelo', 120, true);
+  const session = await requireSession(sessionId);
+  const info = await execution.providerInfo(provider);
+  await execution.ensureProvider(provider, model);
+  const { pi } = shared.deps;
+  return shared.state.harness.commit(async (tx) => {
+    const live = await tx.doc(pi.LiveDoc, session.conversationId);
+    const inbox = await tx.doc(pi.InboxDoc, session.conversationId);
+    if (live.run || inbox.items.length) throw validation('Espera a que termine el turno para cambiar de modelo');
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model } });
+    current.provider = provider;
+    current.model = model;
+    current.style = info.style || 'openai_chat';
+    current.updated_at = Date.now();
+    const { conversationId, style, modules, ...publicSession } = current;
+    return { session: publicSession };
+  }, ctx());
+}
+
 async function sessionDelete(params) {
   const sessionId = String(params && params.id || '');
   const session = await requireSession(sessionId);
@@ -624,6 +649,7 @@ module.exports = {
     agent_session_create: sessionCreate,
     agent_session_delete: sessionDelete,
     agent_session_rename: sessionRename,
+    agent_session_model_set: sessionModelSet,
     agent_messages_list: messagesList,
     agent_message_send: messageSend,
     agent_tools_list: toolsList,
