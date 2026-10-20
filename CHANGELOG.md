@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- El editor de video tiene una línea de tiempo con regla, cabezal y zoom por niveles, pistas de video y audio y clips proporcionales a su duración. Los medios importados se añaden con +, doble clic o arrastrando, y se pueden dividir (Ctrl+K) y eliminar (Supr). La interfaz del editor se rediseñó con vista previa a la proporción del proyecto, biblioteca con iconos por tipo y panel de propiedades por clip.
 - Agent permite elegir proveedor y modelo desde el composer, consultar los modelos disponibles, filtrar por nombre y reutilizar selecciones recientes. También acepta escribir un modelo manualmente si el proveedor no responde.
 - Agent puede delegar tareas en agentes guardados con herramientas de solo lectura. La conversación muestra los pasos, el resultado y la duración de cada delegación.
 - Agent permite habilitar herramientas por conversación y conserva la selección al reiniciar. Deshabilitarlas bloquea también las llamadas que aún esperan aprobación o un recurso compartido.
