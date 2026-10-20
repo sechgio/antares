@@ -117,7 +117,7 @@ def _best_block_shift(
                 best_dx = dx
                 best_dy = dy
                 best_distance = distance
-    return (best_dx * best_dx + best_dy * best_dy) ** 0.5
+    return float((best_dx * best_dx + best_dy * best_dy) ** 0.5)
 
 
 def _block_error(

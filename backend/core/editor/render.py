@@ -155,7 +155,7 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
     }
 
 
-def _s(us: int) -> str:
+def _s(us: float) -> str:
     return filters._num(us / 1_000_000)
 
 
@@ -191,7 +191,7 @@ def _visual_chain(
         parts.append(shift)
 
     transform = clip["transform"]
-    src_w, src_h = (canvas_w, canvas_h) if is_text else _asset_dimensions(asset)
+    src_w, src_h = (canvas_w, canvas_h) if is_text or asset is None else _asset_dimensions(asset)
     crop = filters.crop(
         float(transform["crop"]["x"]),
         float(transform["crop"]["y"]),

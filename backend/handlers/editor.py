@@ -146,7 +146,7 @@ def editor_export_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist:
     return start_export_job(
         get_job_manager(),
         document,
-        output_path=Path(output_path) if output_path else None,
+        output=Path(output_path) if output_path else None,
         request_id=str(request_id) if request_id else None,
     )
 

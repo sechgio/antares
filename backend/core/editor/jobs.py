@@ -206,7 +206,7 @@ def start_import_job(
     )
     if not started.get("started"):
         _persist_job_record(jid, {**record, "state": "rejected", "reason": started.get("reason")})
-        return started
+        return dict(started)
     return {"started": True, "jobId": jid}
 
 
@@ -264,7 +264,7 @@ def cancel_editor_job(job_id: str, job_manager: Any) -> dict[str, Any]:  # allow
     if outcome.get("cancelled"):
         record = _read_job_record(job_id) or {"jobId": job_id}
         _persist_job_record(job_id, {**record, "state": "cancelling"})
-    return outcome
+    return dict(outcome)
 
 
 EXPORT_STAGES: tuple[str, ...] = ("validando", "rendering", "verificando", "publicando")
@@ -332,11 +332,9 @@ def start_export_job(
     )
     if not started.get("started"):
         _persist_job_record(jid, {**record, "state": "rejected", "reason": started.get("reason")})
-        return started
+        return dict(started)
     return {"started": True, "jobId": jid}
 
-
-EXPORT_STAGES: tuple[str, ...] = ("validando", "rendering", "verificando", "publicando")
 
 EFFECT_STAGES: tuple[str, ...] = ("analizando", "procesando", "verificando", "cacheando")
 EFFECT_TYPES: frozenset[str] = frozenset({"stabilize", "chromakey"})
@@ -427,7 +425,7 @@ def start_effect_job(
     )
     if not started.get("started"):
         _persist_job_record(jid, {**record, "state": "rejected", "reason": started.get("reason")})
-        return started
+        return dict(started)
     return {"started": True, "jobId": jid}
 
 
