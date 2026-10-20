@@ -1,14 +1,3 @@
-"""Vault mínimo de secretos del backend: sella payloads JSON a disco.
-
-- Windows: DPAPI (``CryptProtectData``) vía ``win32ctypes.pywin32``, la misma
-  clase de protección que ``safeStorage`` de Electron.
-- Otros SO (desarrollo): cifrado de flujo HMAC-SHA256 + etiqueta de integridad,
-  con clave aleatoria persistida en ``<datos>/.vault-key`` (permisos 0600) —
-  comparable al fallback v1 de ``electron/autoimg-secure-storage.js`` (no es
-  DPAPI pero sí cifrado autenticado de verdad). Los payloads sellados con la
-  clave derivada antigua (pre-v4) siguen leyéndose y se resellan al escribir.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -37,14 +26,12 @@ _KEY_FILE = ".vault-key"
 
 
 def _legacy_machine_key(namespace: str) -> bytes:
-    """Derivación antigua (determinista) conservada para leer vaults previos."""
     base = user_data_path(".")
     seed = f"antares:{os.path.realpath(base)}:{_NS}:{namespace}".encode()
     return hashlib.sha256(seed).digest()
 
 
 def _machine_key(namespace: str) -> bytes:
-    """Clave por namespace derivada de un material aleatorio persistido a disco."""
     key_path = user_data_path(_KEY_FILE)
     material: bytes | None = None
     try:
@@ -147,7 +134,6 @@ def _hmac_open(namespace: str, encoded: str) -> JsonObject:
 
 
 def seal(namespace: str, path: Path, payload: JsonObject) -> None:
-    """Escribe ``payload`` sellado en ``path`` atómicamente (tmp + rename)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     envelope = _dpapi_seal(namespace, payload) if _dpapi_available() else _hmac_seal(namespace, payload)
     envelope["savedAt"] = datetime.now(timezone.utc).isoformat()
@@ -162,7 +148,6 @@ def seal(namespace: str, path: Path, payload: JsonObject) -> None:
 
 
 def open_sealed(namespace: str, path: Path) -> JsonObject | None:
-    """Lee y des-sella ``path``; None si no existe o está vacío."""
     if not path.exists():
         return None
     try:

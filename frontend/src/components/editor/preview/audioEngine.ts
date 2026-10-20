@@ -1,13 +1,5 @@
 import { type Clip, type ClipAudio } from '../types';
 
-/**
- * Motor de audio de preview (L4, plan §4.5).
- *
- * Ganancia, fades y mezcla sobre Web Audio. El reloj de preview
- * arranca con el contexto de audio y se detiene con él: sin audio
- * activo el transporte usa reloj monótono (transport.ts).
- */
-
 export interface AudioMixNode {
   clipId: string;
   gainDb: number;

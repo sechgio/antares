@@ -1,10 +1,3 @@
-"""Fail if backend/core/canvas uses unallowlisted `dict[str, Any]`.
-
-Fuera de canvas solo advierte; el techo de crecimiento lo aplica
-check:ratchet mediante la métrica `dictAnyBackend` de .quality-baseline.json.
-Exención por línea: `# allowlist`, `# type: ignore` o `# noqa`.
-"""
-
 from __future__ import annotations
 
 import pathlib

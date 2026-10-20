@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import contextlib
@@ -459,8 +458,6 @@ def _collect_code_matches(
     result: dict[str, dict[str, Any]],
     code_rowids: dict[str, int],
 ) -> None:
-    """Recorre filas `SELECT rowid AS __antares_rowid__, ...` y registra cada
-    valor de `field_names` que case contra `query_by_fold`."""
     for row in rows:
         row_dict = dict(row)
         row_id = row_dict.pop("__antares_rowid__")

@@ -1,4 +1,3 @@
-
 import sqlite3
 
 from backend.core import database as db

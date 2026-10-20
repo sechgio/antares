@@ -4,7 +4,6 @@ interface ConnectionState {
   state?: 'connecting' | 'unconfigured' | 'unavailable' | 'disconnected' | 'reauth_required' | 'missing_scopes' | 'connected';
   status_message?: string;
   missing_scopes?: string[];
-  /** Conexión con la app OAuth pública de Antares: no pide Client ID. */
   public_app?: boolean;
 }
 

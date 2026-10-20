@@ -16,7 +16,6 @@ function run() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'editor-rec-'));
   const manager = new RecordingSessionManager({ directory: dir, quotaBytes: 1024 * 1024 });
 
-  // Creación y bloques ordenados.
   const session = manager.create('rec-1');
   session.append(0, Buffer.alloc(1024, 1));
   session.append(1, Buffer.alloc(2048, 2));
@@ -24,12 +23,10 @@ function run() {
   assert(result.writtenBytes === 3072, `writtenBytes=${result.writtenBytes}`);
   assert(fs.existsSync(result.path), 'el archivo de grabación existe en disco');
 
-  // Contenido íntegro.
   const content = fs.readFileSync(result.path);
   assert(content.length === 3072, 'el archivo tiene el tamaño acumulado');
   assert(content[0] === 1 && content[1024] === 2, 'los bloques se escribieron en orden');
 
-  // Fuera de orden rechazado.
   const s2 = manager.create('rec-2');
   let seqError = null;
   try {
@@ -40,7 +37,6 @@ function run() {
   assert(seqError instanceof RecordingSequenceError, 'bloque fuera de orden rechazado');
   manager.abort('rec-2');
 
-  // Cuota: una grabación grande se corta sin llenar el disco.
   const s3 = manager.create('rec-3');
   let quotaError = null;
   try {
@@ -53,14 +49,12 @@ function run() {
   assert(quotaError instanceof RecordingQuotaExceededError, 'la cuota corta la grabación');
   manager.abort('rec-3');
 
-  // Abort elimina el archivo parcial.
   const s4 = manager.create('rec-4');
   s4.append(0, Buffer.alloc(4096));
   const aborted = manager.abort('rec-4');
   assert(aborted.aborted === true, 'abort devuelve estado');
   assert(!fs.existsSync(aborted.path || path.join(dir, 'rec-4.webm')), 'abort borra el archivo parcial');
 
-  // Sesiones desconocidas.
   let missing = null;
   try {
     manager.get('no-existe');
@@ -69,7 +63,6 @@ function run() {
   }
   assert(missing !== null, 'sesión desconocida rechazada');
 
-  // Sesión duplicada.
   manager.create('rec-5');
   let dup = null;
   try {
@@ -80,7 +73,6 @@ function run() {
   assert(dup !== null, 'sesión duplicada rechazada');
   manager.abort('rec-5');
 
-  // RAM acotada: escribir muchos bloques no crece el heap del manager.
   const s6 = manager.create('rec-6');
   for (let i = 0; i < 500; i += 1) {
     s6.append(i, Buffer.alloc(512, i % 256));
@@ -88,7 +80,6 @@ function run() {
   assert(s6.writtenBytes === 500 * 512, 'contador de bytes acumulados');
   manager.finish('rec-6');
 
-  // sessionId inválido.
   let badId = null;
   try {
     new RecordingSessionManager({ directory: dir }).create('../../escape');
@@ -97,7 +88,6 @@ function run() {
   }
   assert(badId !== null, 'sessionId con traversal rechazado');
 
-  // Cuota por defecto declarada.
   assert(DEFAULT_QUOTA_BYTES === 2 * 1024 * 1024 * 1024, 'cuota por defecto de 2 GB');
 
   fs.rmSync(dir, { recursive: true, force: true });

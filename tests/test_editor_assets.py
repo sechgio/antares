@@ -1,10 +1,3 @@
-"""Pruebas de importación de assets del editor (L1, plan §4.3).
-
-Los casos con ffprobe requieren un build preparado
-(``ANTARES_FFMPEG_DIR``) y se saltan sin él; los de validación de token
-y política de archivos corren siempre.
-"""
-
 from __future__ import annotations
 
 import json
@@ -24,9 +17,6 @@ from backend.core.editor.assets import (
 @pytest.fixture()
 def assets_dir(tmp_path: Path) -> Path:
     return tmp_path / "assets"
-
-
-# --- Política de tokens ------------------------------------------------------------
 
 
 def test_relative_token_rejected(assets_dir: Path) -> None:
@@ -60,9 +50,6 @@ def test_allowed_suffixes_cover_media_formats() -> None:
         assert expected in ALLOWED_SUFFIXES
 
 
-# --- Aviso de disco --------------------------------------------------------------------
-
-
 def test_large_file_warning_over_threshold(tmp_path: Path) -> None:
     big = tmp_path / "grande.mp4"
     big.write_bytes(b"\0" * (600 * 1024 * 1024))
@@ -74,9 +61,6 @@ def test_small_file_no_warning(tmp_path: Path) -> None:
     small = tmp_path / "pequeno.mp4"
     small.write_bytes(b"\0" * 1024)
     assert large_file_warning(small) is None
-
-
-# --- Copia real con build ffmpeg ------------------------------------------------------
 
 
 BUILD_DIR = os.environ.get("ANTARES_FFMPEG_DIR", "")
@@ -107,11 +91,9 @@ def test_import_registers_asset_with_streams(tmp_path: Path, assets_dir: Path) -
     assert video["sar"] == {"num": 1, "den": 1}
     assert video["orientation"] == "landscape"
 
-    # El archivo original no se mueve ni se borra.
     assert clip.is_file()
     assert clip.stat().st_mtime == original_mtime
 
-    # El asset queda registrado junto al binario copiado.
     index = assets_dir / f"{asset['id']}.json"
     assert index.is_file()
     copied = assets_dir / f"{asset['id']}.mp4"
@@ -146,9 +128,6 @@ def test_valid_png_imports_as_image_asset(tmp_path: Path, assets_dir: Path) -> N
     asset = import_file(str(png), assets_dir=assets_dir)
     assert asset["type"] == "image"
     assert asset["streams"][0]["width"] == 64
-
-
-# --- Rutas Unicode y espacios (requisito L1.5) ----------------------------------------
 
 
 @pytestmark_real

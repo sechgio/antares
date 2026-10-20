@@ -1,11 +1,3 @@
-"""L7.4: una grabación terminada se valida antes de importarse.
-
-La grabación llega por streaming a la sesión nativa; al finalizar se
-publica como file_token (ruta absoluta validada). El import la copia al
-almacén gestionado por streaming con SHA-256 y la verifica por
-decodificación antes de registrar el asset.
-"""
-
 import subprocess
 from pathlib import Path
 
@@ -48,7 +40,6 @@ def _make_recording(tmp_path: Path, name: str = "rec-1.webm") -> Path:
 
 
 def test_recording_is_validated_before_import(tmp_path: Path) -> None:
-    """Un webm grabado se importa como asset con streams verificados."""
     recording = _make_recording(tmp_path)
     assets_dir = tmp_path / "assets"
     assets_dir.mkdir()
@@ -79,7 +70,6 @@ def test_recording_is_validated_before_import(tmp_path: Path) -> None:
 
 
 def test_empty_recording_is_rejected(tmp_path: Path) -> None:
-    """Un archivo vacío se rechaza con mensaje claro, no entra al proyecto."""
     empty = tmp_path / "vacio.webm"
     empty.write_bytes(b"")
     assets_dir = tmp_path / "assets"
@@ -90,7 +80,6 @@ def test_empty_recording_is_rejected(tmp_path: Path) -> None:
 
 
 def test_truncated_recording_is_rejected(tmp_path: Path) -> None:
-    """Bytes que no son video ni audio se rechazan por decodificación."""
     bad = tmp_path / "roto.webm"
     bad.write_bytes(bytes([0x1A, 0x45, 0xDF, 0xA3]) + b"garbage" * 16)
     assets_dir = tmp_path / "assets"
@@ -100,7 +89,6 @@ def test_truncated_recording_is_rejected(tmp_path: Path) -> None:
 
 
 def test_unknown_extension_is_rejected(tmp_path: Path) -> None:
-    """El renderer no puede importar extensiones fuera del contrato."""
     weird = tmp_path / "nota.exe"
     weird.write_bytes(b"MZ")
     assets_dir = tmp_path / "assets"

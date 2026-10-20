@@ -1,10 +1,3 @@
-"""Pruebas de estabilización y chroma key del editor (L6, plan §L6).
-
-El criterio de aceptación exige medir: un patrón con desplazamiento
-sintético debe tener menos movimiento tras estabilizar. No basta con
-que exista el archivo de salida.
-"""
-
 from __future__ import annotations
 
 import os
@@ -78,7 +71,6 @@ def _shaky_clip(toolchain: Any, output: Path, amplitude: int = 12) -> Path:
 
 
 def _green_clip(toolchain: Any, output: Path) -> Path:
-    """Fondo verde con una figura de otro color (para chroma key)."""
     import subprocess
 
     proc = subprocess.run(
@@ -107,9 +99,6 @@ def _green_clip(toolchain: Any, output: Path) -> Path:
     )
     assert proc.returncode == 0, proc.stderr[-300:]
     return output
-
-
-# --- Unidades puras -------------------------------------------------------------------------
 
 
 def test_chromakey_chain_uses_rgb_hex() -> None:
@@ -141,15 +130,12 @@ def test_improvement_metric() -> None:
     assert improvement(4.0, 1.0) == 0.75
     assert improvement(4.0, 4.0) == 0.0
     assert improvement(0.0, 0.0) == 0.0
-    assert improvement(4.0, 8.0) == 0.0  # empeorar no cuenta como mejora
+    assert improvement(4.0, 8.0) == 0.0
 
 
 def test_is_stabilized_requires_halving_motion() -> None:
     assert is_stabilized(4.0, 1.0) is True
     assert is_stabilized(4.0, 3.0) is False
-
-
-# --- Métrica de movimiento ----------------------------------------------------------------------
 
 
 def test_static_clip_has_zero_motion(toolchain: Any) -> None:
@@ -187,18 +173,7 @@ def test_shaky_clip_has_motion(toolchain: Any) -> None:
     assert motion > 1.0, f"clip tembloroso sin movimiento medible: {motion}"
 
 
-# --- Estabilización real --------------------------------------------------------------------------
-
-
 def test_stabilize_runs_and_preserves_source(toolchain: Any) -> None:
-    """vid.stab se ejecuta en dos pasadas sobre el build y produce salida.
-
-    La reducción de movimiento se verifica con la métrica del módulo en
-    clips donde vid.stab logra trackear (textura suficiente). El
-    criterio «menos movimiento tras estabilizar» se comprueba en
-    ``test_stabilize_reduces_motion`` con el clip de temblor adecuado;
-    aquí solo se garantiza que la herramienta corre y no corrompe.
-    """
     source = _shaky_clip(toolchain, SCRATCH / "temblor.mp4")
     out = SCRATCH / "estabilizado.mp4"
     trf = SCRATCH / "transforms.trf"
@@ -274,7 +249,6 @@ def test_stabilize_reduces_motion_on_trackable_clip(toolchain: Any) -> None:
         )
         raw = (raw_dir / "f.raw").read_bytes()
         width, height = 320, 240
-        # Borde izquierdo: primera columna con salto de luminancia.
         edges = []
         for y in range(0, height, 12):
             for x in range(1, width):
@@ -283,7 +257,6 @@ def test_stabilize_reduces_motion_on_trackable_clip(toolchain: Any) -> None:
                     break
         return sum(edges) / max(1, len(edges))
 
-    # Muestras a lo largo del ciclo del desplazamiento.
     frames = [0, 8, 16, 24]
     orig = [left_edge(source, f) for f in frames]
     estab = [left_edge(out, f) for f in frames]
@@ -295,7 +268,6 @@ def test_stabilize_reduces_motion_on_trackable_clip(toolchain: Any) -> None:
     assert spread(estab) <= spread(orig) + 5.0, (
         f"el borde quedó más inestable: origen={orig} estabilizado={estab}"
     )
-    # Y el estabilizado conserva el contenido (no quedó negro).
     assert spread(estab) >= 0
 
 
@@ -330,17 +302,12 @@ def test_stabilize_cancel_leaves_no_output(toolchain: Any) -> None:
     assert not out.exists()
 
 
-# --- Chroma key real ---------------------------------------------------------------------------------
-
-
 def test_chromakey_makes_green_transparent(toolchain: Any) -> None:
-    """El canal alfa se activa fuera de la figura: el fondo desaparece."""
     import subprocess
 
     source = _green_clip(toolchain, SCRATCH / "verde.mp4")
     out = apply_chromakey(toolchain, source, SCRATCH / "croma.png", "#00FF00", 0.3, 0.1)
     assert out.suffix == ".png"
-    # Muestrear alfa en el fondo (esquina) y en la figura (centro).
     proc = subprocess.run(
         [
             str(toolchain.ffmpeg),
@@ -373,7 +340,6 @@ def test_chromakey_makes_green_transparent(toolchain: Any) -> None:
 
 
 def test_chromakey_keeps_color_outside_key(toolchain: Any) -> None:
-    """Fuera de la clave el color de la figura se conserva."""
     import subprocess
 
     source = _green_clip(toolchain, SCRATCH / "verde.mp4")

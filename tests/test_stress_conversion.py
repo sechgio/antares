@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import threading
@@ -24,7 +23,7 @@ class _ImmediateFuture:
 
 
 class _ImmediateScheduler:
-    def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+    def submit_heavy(self, fn, task, *, block=False, cancel_check=None):
         return _ImmediateFuture(fn(task))
 
 

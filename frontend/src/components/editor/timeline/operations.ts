@@ -1,17 +1,4 @@
-import { clipDurationUs, clipEndUs, type Clip, type EditorProject, type Track } from '../types';
-
-/**
- * Operaciones de timeline (L3, plan §L3.1).
- *
- * Reglas del contrato compartido:
- * - dividir conserva exactamente el límite compartido y lo traslada al
- *   tiempo fuente;
- * - recortar mueve los bordes sin tocar clips vecinos;
- * - repetir crea copias contiguas con duración finita;
- * - ningún valor negativo ni infinito;
- * - la duración derivada usa la misma política de redondeo que el
- *   backend (half-up).
- */
+import { clipDurationUs, clipEndUs, type Clip, type EditorProject } from '../types';
 
 export type TimelineOperation =
   | { type: 'split'; clipId: string; atTimelineUs: number }
@@ -21,9 +8,8 @@ export type TimelineOperation =
   | { type: 'repeat'; clipId: string; times: number }
   | { type: 'delete'; clipId: string };
 
-export interface OperationResult {
+interface OperationResult {
   clips: Clip[];
-  /** true si la operación produjo un cambio real. */
   changed: boolean;
 }
 
@@ -78,8 +64,6 @@ export function applyOperation(project: EditorProject, op: TimelineOperation): O
           }
         }
         if (op.sourceOutUs !== undefined) {
-          // Mínimo absoluto de 1 µs sobre sourceInUs: un intervalo
-          // degenerado rompe el contrato semiabierto del modelo.
           const clamped = Math.max(clip.sourceInUs + 1, Math.round(op.sourceOutUs));
           if (clamped !== clip.sourceOutUs) {
             clip.sourceOutUs = clamped;
@@ -138,22 +122,14 @@ export function applyOperation(project: EditorProject, op: TimelineOperation): O
   }
 }
 
-/** Fin del timeline: fin del último clip. */
 export function timelineEndUs(clips: Clip[]): number {
   return clips.reduce((max, clip) => Math.max(max, clipEndUs(clip)), 0);
 }
 
-/** Pistas visuales ordenadas por order ascendente (mayor order = encima). */
-export function orderedVisualTracks(tracks: Track[]): Track[] {
-  return tracks.filter((t) => t.kind === 'video').sort((a, b) => a.order - b.order);
-}
-
-/** Clips de una pista, ordenados por inicio de timeline. */
 export function clipsInTrack(clips: Clip[], trackId: string): Clip[] {
   return clips.filter((c) => c.trackId === trackId).sort((a, b) => a.timelineStartUs - b.timelineStartUs);
 }
 
-/** Busca el clip bajo el playhead de una pista (semiabierto). */
 export function clipAt(clips: Clip[], trackId: string, timelineUs: number): Clip | null {
   const found = clips.find(
     (c) => c.trackId === trackId && timelineUs >= c.timelineStartUs && timelineUs < clipEndUs(c),

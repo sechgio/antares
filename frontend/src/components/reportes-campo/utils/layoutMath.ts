@@ -5,7 +5,6 @@ export const MIN_SIDEBAR_WIDTH = 220;
 export const MAX_SIDEBAR_WIDTH = 400;
 export const DEFAULT_SIDEBAR_WIDTH = 264;
 
-/** Ancho de sidebar clamped tras un arrastre; el lado derecho invierte el delta. */
 export function clampedSidebarWidth(
   startWidth: number,
   clientDelta: number,
@@ -18,7 +17,6 @@ export function clampedSidebarWidth(
   );
 }
 
-/** Paginación del grid de fotos; siempre devuelve al menos una página vacía. */
 export function paginatePhotos(
   photos: PhotoFile[],
   itemsPerPage: number,
@@ -28,7 +26,6 @@ export function paginatePhotos(
   return { chunks, totalPages: chunks.length };
 }
 
-/** Página actual válida tras cambios en el total (p. ej. al borrar fotos). */
 export function clampCurrentPage(page: number, totalPages: number): number {
   return page >= totalPages ? Math.max(0, totalPages - 1) : page;
 }

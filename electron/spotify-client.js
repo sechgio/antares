@@ -208,7 +208,6 @@ function normalizeSpotifyUris(values, expectedType) {
 
 module.exports = {
   SpotifyError,
-  SpotifyAuthRequiredError,
   request: _request,
   getPlaybackState,
   getCurrentlyPlaying,

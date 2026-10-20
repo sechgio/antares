@@ -27,8 +27,6 @@ describe('efecto delogo de preview', () => {
   });
 
   it('el zoom de UI no cambia la selección persistida', () => {
-    // La misma región relativa (10%..30%) en dos tamaños de viewport
-    // con la misma relación de aspecto produce la misma máscara.
     const small = screenRectToSource({ x: 32, y: 24, width: 64, height: 48 }, { width: 320, height: 240 });
     const large = screenRectToSource({ x: 128, y: 96, width: 256, height: 192 }, { width: 1280, height: 960 });
     expect(small.x).toBeCloseTo(large.x, 6);

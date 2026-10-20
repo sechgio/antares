@@ -1,25 +1,10 @@
-"""Constructores de filtros FFmpeg para el editor (L3, plan §4.6).
-
-Todas las funciones devuelven cadenas de filtro **deterministas** a
-partir de un snapshot validado. No se aceptan cadenas provenientes del
-renderer: los parámetros llegan tipados y se escapan aquí.
-
-Orden de operaciones cerrado entre preview y exportación (§L3.2):
-crop del origen orientado → giro/flip → escala/pad al lienzo →
-posición/opacidad → overlay por orden de capa.
-"""
-
 from __future__ import annotations
 
 import math
 from typing import Any
 
-# FPS y velocidad racionales; durationUs = round((sourceOutUs -
-# sourceInUs) * speed.den / speed.num). Intervalos semiabiertos.
-
 
 def _num(value: Any) -> str:
-    """Formatea un número sin notación científica ni artefactos locales."""
     f = float(value)
     if f == int(f):
         return str(int(f))
@@ -27,7 +12,6 @@ def _num(value: Any) -> str:
 
 
 def _esc(text: str) -> str:
-    """Escapa texto para filtergraphs (dos puntos, barras, comillas)."""
     return (
         text.replace("\\", "\\\\")
         .replace(":", "\\:")
@@ -40,22 +24,12 @@ def _esc(text: str) -> str:
 
 
 def trim_video(source_in_us: int, source_out_us: int, fps_num: int, fps_den: int) -> str:
-    """Recorte temporal de video: trim + setpts (semiabierto)."""
     start = _us_to_seconds(source_in_us)
     end = _us_to_seconds(source_out_us)
     # trim es semiabierto en el sentido de descartar >= end; se usa un
     # epsilon de un microsegundo para incluir el último cuadro.
     end_adj = end + 1e-6
     return f"trim=start={_num(start)}:end={_num(end_adj)},setpts=PTS-STARTPTS"
-
-
-def trim_audio(source_in_us: int, source_out_us: int, sample_rate: int) -> str:
-    start = _us_to_seconds(source_in_us)
-    end = _us_to_seconds(source_out_us)
-    return (
-        f"atrim=start={_num(start)}:end={_num(end + 1e-6)},"
-        f"asetpts=PTS-STARTPTS,aresample={sample_rate}"
-    )
 
 
 def _us_to_seconds(us: int) -> float:
@@ -72,11 +46,11 @@ def speed(speed_num: int, speed_den: int, has_audio: bool) -> str:
     """
     if speed_num == speed_den:
         return ""
-    pts_factor = speed_den / speed_num  # 1/2 -> PTS*2 (dura el doble)
+    pts_factor = speed_den / speed_num
     parts = [f"setpts=PTS*{_num(pts_factor)}"]
     if has_audio:
         # atempo admite [0.5, 2.0] por filtro: se encadenan raíces.
-        tempo = speed_num / speed_den  # 1/2 -> atempo=0.5 (más lento)
+        tempo = speed_num / speed_den
         for factor in _atempo_chain(tempo):
             parts.append(f"atempo={_num(factor)}")
     return ",".join(parts)
@@ -98,7 +72,6 @@ def _atempo_chain(ratio: float) -> list[float]:
 
 
 def crop(x: float, y: float, w: float, h: float, width_px: int, height_px: int) -> str:
-    """Crop normalizado [0..1] del origen orientado → píxeles pares."""
     cw = _even(max(2, round(w * width_px)))
     ch = _even(max(2, round(h * height_px)))
     cx = _even(max(0, min(round(x * width_px), width_px - cw)))
@@ -147,7 +120,6 @@ def fit_canvas(
     canvas_h: int,
     fit: str,
 ) -> str:
-    """Escala y posiciona en el lienzo: fit (contiene) o fill (cubre)."""
     if fit == "fill":
         scale = max(canvas_w / max(src_w, 1), canvas_h / max(src_h, 1))
     else:
@@ -178,12 +150,7 @@ def boxblur(strength: int) -> str:
 
 
 def delogo_rects(rects: list[dict[str, Any]], width_px: int, height_px: int) -> list[str]:  # allowlist: dict[str, Any]
-    """Filtros delogo por rectángulo, en el origen orientado.
-
-    Se aplica **antes** del crop/giro de usuario (§L5.2). FFmpeg exige
-    que el rectángulo quede dentro del fotograma: se recorta aquí con
-    mensaje claro en lugar de fallar en el proceso hijo.
-    """
+    """FFmpeg exige que el rectángulo quede dentro del fotograma."""
     filters: list[str] = []
     for rect in rects:
         x = round(float(rect["x"]) * width_px)
@@ -214,7 +181,6 @@ def audio_gain(gain_db: float) -> str:
 
 
 def setpts_shift(timeline_start_us: int) -> str:
-    """Desplaza el clip a su posición de timeline (semiabierto)."""
     if timeline_start_us <= 0:
         return ""
     return f"setpts=PTS+{_num(_us_to_seconds(timeline_start_us))}/TB"
@@ -261,24 +227,8 @@ def overlay(x_expr: str, y_expr: str) -> str:
 
 
 def overlay_position(canvas_x: float, canvas_y: float, canvas_w: int, canvas_h: int) -> tuple[str, str]:
-    """Posición normalizada del lienzo → expresión de overlay."""
     x = _num(canvas_x * canvas_w)
     y = _num(canvas_y * canvas_h)
     return x, y
 
 
-def text_draw(
-    content: str,
-    font_file: str,
-    font_size: int,
-    color: str,
-    x: str,
-    y: str,
-) -> str:
-    """Título con drawtext sobre un PNG de respaldo no es necesario:
-    el texto se rasteriza en text.py (L4) y se usa como entrada de
-    imagen. Este filtro cubre el caso simple sin shaping."""
-    return (
-        f"drawtext=fontfile='{_esc(font_file)}':text='{_esc(content)}'"
-        f":fontsize={font_size}:fontcolor={color}:x={x}:y={y}"
-    )

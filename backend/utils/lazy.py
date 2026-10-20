@@ -8,14 +8,6 @@ T = TypeVar("T")
 
 
 class LazySingleton(Generic[T]):
-    """Thread-safe singleton created by ``factory`` on first ``get()`` call.
-
-    Arguments passed to ``get()`` are forwarded to the factory only when the
-    instance is created; subsequent calls return the cached instance and ignore
-    them, matching the module-global double-checked-locking pattern this class
-    replaces.
-    """
-
     def __init__(self, factory: Callable[..., T]) -> None:
         self._factory = factory
         self._lock = threading.Lock()

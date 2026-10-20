@@ -25,7 +25,6 @@ it('expone el tab Editor en Herramientas y abre la vista sin cuenta', async () =
 
 it('carga la vista del editor de forma diferida', async () => {
   render(<App />);
-  // Antes de abrir el tab, el módulo del editor no se ha evaluado.
   await waitFor(() => expect(screen.queryByText('Editor abierto')).not.toBeInTheDocument());
   fireEvent.click(await findSidebarTab('Editor'));
   await screen.findByText('Editor abierto');

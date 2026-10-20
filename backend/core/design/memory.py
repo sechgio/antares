@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -19,7 +18,6 @@ MEMORY_VERSION = 1
 MAX_NOTES = 40
 MAX_NOTE_CHARS = 600
 
-_ulock = threading.Lock()
 
 
 def _now() -> str:
@@ -62,8 +60,6 @@ def normalize_memory(raw: Any) -> Memory:
 
 
 class DesignMemory:
-    """Fichero único de preferencias, con lectura tolerante a corrupción."""
-
     def __init__(self, path: Path | None = None) -> None:
         self._path = path or user_data_path("design/memory.json")
         self._lock = threading.RLock()
@@ -137,11 +133,6 @@ def get_design_memory() -> DesignMemory:
 
 
 def render_block(memory: Memory) -> str:
-    """Texto que se inyecta en el prompt del sistema.
-
-    **Sin escape HTML**: esto lo lee el modelo en el prompt, no un navegador.
-    Escaparlo aquí corrompería el texto ("&amp;").
-    """
     notes = [str(n.get("text") or "").strip() for n in memory.get("notes") or []]
     notes = [n for n in notes if n]
     if not notes:

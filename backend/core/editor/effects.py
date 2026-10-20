@@ -1,11 +1,3 @@
-"""Efectos pesados del editor (L6, plan §L6.2-5).
-
-Estabilización en dos pasadas con vid.stab, chroma key por color,
-tolerancia y suavizado. Cada efecto produce un **derivado cacheado**:
-el original se conserva intacto y el efecto es reversible. Los filtros
-se validan contra el build preparado antes de ejecutarlos.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,12 +33,6 @@ def chromakey_chain(color: str, similarity: float, blend: float) -> str:
 
 
 def stabilize_chains(shakiness: int, accuracy: int = 15) -> tuple[str, str]:
-    """Dos pasadas de vid.stab: detectar y transformar.
-
-    ``shakiness`` mapea la sensibilidad de Antares al parámetro del
-    algoritmo propio: no se presenta como el porcentaje del sitio de
-    referencia. El rango del build es 1..10.
-    """
     level = max(1, min(10, int(shakiness)))
     detect = f"vidstabdetect=shakiness={level}:accuracy={max(1, min(15, int(accuracy)))}"
     transform = "vidstabtransform=smoothing=30:input=transforms.trf"
@@ -62,12 +48,6 @@ def apply_stabilize(
     transforms_file: Path | None = None,
     cancel_check: Any = None,
 ) -> Path:
-    """Estabiliza en dos pasadas reales sobre el build.
-
-    La primera pasada analiza el movimiento y escribe ``transforms.trf``;
-    la segunda lo aplica. Un fallo en cualquiera lanza ``ToolchainError``
-    sin dejar salida parcial.
-    """
     import subprocess
 
     trf = transforms_file if transforms_file is not None else output.with_suffix(".trf")

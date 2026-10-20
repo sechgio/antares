@@ -1,11 +1,3 @@
-// Sesiones de grabación del editor (L7, plan §L7.3).
-//
-// Contrato: los bloques llegan ordenados desde el renderer y se escriben
-// a una sesión nativa gestionada en user_data/editor/recordings. La RAM
-// está acotada: cada bloque se encola con backpressure (máximo de bytes
-// en vuelo) y con cuota total por sesión. No se acumula la grabación
-// completa en memoria ni se usa el staging de 1 GiB como disco ilimitado.
-
 const fs = require('fs');
 const path = require('path');
 
@@ -128,14 +120,12 @@ class RecordingSessionManager {
     return result;
   }
 
-  /** Backpressure: true si el renderer debe esperar antes de enviar más. */
   shouldThrottle(sessionId) {
     return this.get(sessionId).writtenBytes >= this.maxInFlightBytes;
   }
 }
 
 module.exports = {
-  RecordingSession,
   RecordingSessionManager,
   RecordingQuotaExceededError,
   RecordingSequenceError,

@@ -1,4 +1,3 @@
-
 from pathlib import Path
 
 from backend.handlers import templates

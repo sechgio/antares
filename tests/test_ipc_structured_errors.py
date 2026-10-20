@@ -1,4 +1,3 @@
-
 from backend.core.exceptions import (
     AntaresBaseException,
     InvalidRequestError,

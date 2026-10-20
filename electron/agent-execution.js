@@ -429,7 +429,6 @@ module.exports = {
   ensureProvider,
   refreshTools,
   notifyDecision,
-  dispatchAndWait,
   dispatchApproved,
   sanitizeProviderError,
 };

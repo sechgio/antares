@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../../api';
 
-export type RecorderState =
+type RecorderState =
   | 'idle'
   | 'requesting'
   | 'recording'
@@ -12,12 +12,12 @@ export type RecorderState =
 
 const MAX_IN_FLIGHT_BYTES = 8 * 1024 * 1024;
 
-export interface RecordingResult {
+interface RecordingResult {
   fileToken: string;
   writtenBytes: number;
 }
 
-export interface UseEditorRecorderResult {
+interface UseEditorRecorderResult {
   state: RecorderState;
   elapsedMs: number;
   error: string | null;
@@ -93,7 +93,6 @@ export function useEditorRecorder(): UseEditorRecorderResult {
   );
 
   const sendChunk = useCallback(async (sessionId: string, blob: Blob) => {
-    // Backpressure: si hay demasiados bytes en vuelo se espera.
     while (inFlightRef.current > MAX_IN_FLIGHT_BYTES) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }

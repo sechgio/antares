@@ -1,11 +1,3 @@
-"""Casos de contrato del modelo temporal del editor (L0, plan §4.2).
-
-Cada caso corresponde a una regla del contrato compartido
-``shared/editor-schema.json``. Los fixtures se validan contra el schema
-real con ``jsonschema``; las funciones de ``models.py`` se prueban con
-los mismos valores que usará el frontend.
-"""
-
 from __future__ import annotations
 
 import math
@@ -140,9 +132,6 @@ def _document(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-# --- 1. Documento mínimo válido y límites de campos -------------------------
-
-
 def test_minimal_document_validates() -> None:
     validate_document(_document())
 
@@ -160,11 +149,7 @@ def test_document_rejects_future_schema_version() -> None:
         validate_document(doc)
 
 
-# --- 2. Velocidad racional y duración derivada -------------------------------
-
-
 def test_duration_with_speed_half_is_doubled() -> None:
-    # 5 s de fuente a 0,5x producen 10 s de timeline.
     clip = _clip(speed={"num": 1, "den": 2})
     assert clip_duration_us(clip) == 10_000_000
 
@@ -175,10 +160,8 @@ def test_duration_with_speed_double_is_halved() -> None:
 
 
 def test_duration_with_ntsc_speed_rounds_half_up() -> None:
-    # 3 s fuente, speed 3/2 -> 2 s exactos (redondeo comprobable).
     clip = _clip(sourceOutUs=3_000_000, speed={"num": 3, "den": 2})
     assert clip_duration_us(clip) == 2_000_000
-    # speed 2/3 sobre 2 s -> 3 s exactos.
     clip = _clip(sourceInUs=0, sourceOutUs=2_000_000, speed={"num": 2, "den": 3})
     assert clip_duration_us(clip) == 3_000_000
 
@@ -190,12 +173,7 @@ def test_speed_zero_den_rejected() -> None:
         validate_document(doc)
 
 
-# --- 3. Intervalos semiabiertos ----------------------------------------------
-
-
 def test_split_preserves_shared_boundary() -> None:
-    # Un corte en 2 s reparte exactamente el límite; la suma de duraciones
-    # de timeline debe igualar la del clip original.
     original = _clip(sourceInUs=0, sourceOutUs=5_000_000)
     total = clip_duration_us(original)
     left = _clip(sourceInUs=0, sourceOutUs=2_000_000)
@@ -213,9 +191,6 @@ def test_negative_timeline_start_rejected() -> None:
     clip = _clip(timelineStartUs=-1)
     with pytest.raises(ValueError):
         validate_document(_document(clips=[clip]))
-
-
-# --- 4. Crop y delogo normalizados -------------------------------------------
 
 
 def test_delogo_rects_stay_in_oriented_source_space() -> None:
@@ -253,9 +228,6 @@ def test_crop_edges_must_not_exceed_one() -> None:
         validate_document(_document(clips=[clip]))
 
 
-# --- 5. Orientación y SAR -----------------------------------------------------
-
-
 def test_portrait_asset_with_rotation_metadata_validates() -> None:
     stream = dict(VIDEO_STREAM, width=240, height=320, rotation=90, orientation="portrait")
     asset = _asset(streams=[stream, AUDIO_STREAM])
@@ -267,29 +239,19 @@ def test_asset_requires_at_least_one_stream() -> None:
         validate_document(_document(assets=[_asset(streams=[])]))
 
 
-# --- 6. Streams sin audio -----------------------------------------------------
-
-
 def test_video_only_asset_validates_and_allows_silent_clip() -> None:
     asset = _asset(streams=[VIDEO_STREAM])
     clip = _clip()
     validate_document(_document(assets=[asset], clips=[clip]))
 
 
-# --- 7. Repeticiones finitas ---------------------------------------------------
-
-
 def test_repeated_clip_total_duration_is_sum() -> None:
     once = _clip(sourceInUs=0, sourceOutUs=2_000_000)
-    # Tres repeticiones contiguas: 0-2s, 2-4s, 4-6s.
     copies = []
     for i in range(3):
         copies.append(_clip(id=f"clip-{i}", timelineStartUs=i * 2_000_000, sourceInUs=0, sourceOutUs=2_000_000))
     assert sum(clip_duration_us(c) for c in copies) == 3 * clip_duration_us(once)
     validate_document(_document(clips=copies))
-
-
-# --- 8. Revisiones --------------------------------------------------------------
 
 
 def test_normalize_bumps_revision_and_touches_updated_at() -> None:
@@ -301,15 +263,12 @@ def test_normalize_bumps_revision_and_touches_updated_at() -> None:
 def test_normalize_does_not_double_bump_same_revision() -> None:
     doc = normalize_document(_document())
     doc2 = normalize_document(doc, expected_revision=2)
-    assert doc2["revision"] == 3  # revisión esperada correcta avanza una sola vez
+    assert doc2["revision"] == 3
 
 
 def test_normalize_rejects_stale_expected_revision() -> None:
     with pytest.raises(ValueError, match="revision"):
         normalize_document(_document(), expected_revision=5)
-
-
-# --- 9. FPS racional tipo 29,97 --------------------------------------------------
 
 
 def test_ntsc_fps_rational_is_valid_and_preserved() -> None:
@@ -320,9 +279,6 @@ def test_ntsc_fps_rational_is_valid_and_preserved() -> None:
 
 
 def test_fps_round_trip_is_stable() -> None:
-    # La misma política de redondeo en TS y Python (half-up sobre el
-    # entero): 1,5 s a 30000/1001 fps son 44,9550… cuadros y deben
-    # redondear a 45 en ambos extremos.
     us = 1_500_000
     num, den = 30000, 1001
     frames = math.floor((us * num) / (den * 1_000_000) + 0.5)

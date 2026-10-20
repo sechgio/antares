@@ -1,13 +1,5 @@
 import { type DelogoRect } from '../types';
 
-/**
- * Overlay de preview rápido del delogo (L5, plan §L5.4).
- *
- * Dibuja las máscaras sobre el preview como regiones semitransparentes.
- * Es una previsualización **rápida y aproximada**: no simula el
- * algoritmo del filtro delogo (que interpola los bordes). La muestra
- * del render final se genera con FFmpeg para revisar el resultado real.
- */
 export function DelogoOverlay({
   rects,
   selectedId,

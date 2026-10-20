@@ -1,6 +1,3 @@
-// before-input-event permite reintentar desde la página data:, cuyo frame y scripts
-// están bloqueados por renderer-trust y la CSP de producción.
-
 const { EventEmitter } = require('events');
 const { assert, finish, stubModule, evictModule, installInertTimers } = require('./helpers/harness');
 

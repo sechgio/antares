@@ -1,12 +1,3 @@
-"""Instrucción y contrato de herramienta para que el modelo emita un Design.
-
-El ``SYSTEM_PROMPT`` condensa las reglas de diseño que Claude codifica en su
-skill ``pptx`` (dominio cromático, contraste de tamaño, una visual por
-diapositiva, nada de texto plano, nada de barras decorativas). Los modelos
-locales pequeños no respetan reglas implícitas: por eso van explícitas y
-limitadas a siete layouts que el render sabe pintar.
-"""
-
 from __future__ import annotations
 
 from backend.core.design.models import FONTS, LAYOUTS, PAGE_PRESETS
@@ -125,7 +116,6 @@ def _slide_schema() -> JsonObject:
 
 
 def tool_spec() -> JsonObject:
-    """Spec de la herramienta que el modelo debe invocar, en formato neutro."""
     defaults = {
         "background": "#FFFFFF", "surface": "#F3F4F6", "text": "#111827",
         "muted": "#6B7280", "accent": "#2563EB", "accentAlt": "#0F172A",

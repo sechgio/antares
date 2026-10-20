@@ -36,15 +36,15 @@ _MAX_TOOLS = 512
 
 
 class McpError(ValueError):
-    """Error del servidor MCP o del transporte."""
+    pass
 
 
 class McpCancelled(McpError):
-    """El transporte se canceló; el efecto externo puede quedar incierto."""
+    pass
 
 
 class McpUncertain(McpError):
-    """Falló la respuesta de una llamada enviada; su efecto no está confirmado."""
+    pass
 
 
 def _tool_pages(request: Callable[[JsonObject], JsonObject]) -> JsonObject:
@@ -115,7 +115,6 @@ def _result_of(message: JsonObject) -> JsonObject:
 
 
 def _parse_sse_response(raw: bytes) -> JsonObject:
-    """Extrae el mensaje JSON-RPC de un cuerpo que puede ser JSON o SSE."""
     text = raw.decode("utf-8", errors="replace").strip()
     if not text:
         raise McpError("Respuesta MCP vacía")
@@ -171,7 +170,6 @@ def _http_session_call(
     url: str, headers: dict[str, str], calls: list[tuple[str, JsonObject | None]],
     cancelled: Callable[[], bool] | None = None,
 ) -> list[JsonObject]:
-    """Handshake initialize + una lista de llamadas JSON-RPC en la misma sesión."""
     init_res, session_id = _http_post(url, headers, _init_message())
     init_result = _result_of(init_res)
     headers = {**headers, "MCP-Protocol-Version": str(init_result.get("protocolVersion") or _PROTOCOL_VERSION)}
@@ -375,7 +373,6 @@ def call_tool_stdio(
 
 
 def normalize_result(result: JsonObject) -> JsonObject:
-    """Uniforma la salida de tools/call: {content:[...], text, isError}."""
     content = result.get("content")
     texts = [c.get("text", "") for c in content or [] if isinstance(c, dict) and c.get("type") == "text"]
     return {

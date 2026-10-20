@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import importlib
@@ -25,7 +24,7 @@ def test_fichas_create_resolves_without_waiting_on_heavy_imports(monkeypatch: py
     orig_import = importlib.import_module
     sleeps = {"n": 0}
 
-    def slow_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+    def slow_import(name: str, package: str | None = None):
         if name in heavy:
             sleeps["n"] += 1
             time.sleep(5)
@@ -59,7 +58,7 @@ def test_technical_reports_create_resolves_without_waiting_on_heavy_imports(
 
     orig_import = importlib.import_module
 
-    def slow_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+    def slow_import(name: str, package: str | None = None):
         if name in heavy:
             time.sleep(5)
         return orig_import(name, package)
@@ -81,7 +80,7 @@ def test_unknown_method_does_not_eager_load_all_modules(monkeypatch: pytest.Monk
     imports: list[str] = []
     orig_import = importlib.import_module
 
-    def tracking_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+    def tracking_import(name: str, package: str | None = None):
         if name.startswith("backend.handlers."):
             imports.append(name)
         return orig_import(name, package)
@@ -104,7 +103,7 @@ def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> No
     imported: list[str] = []
     orig_import = importlib.import_module
 
-    def tracking_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+    def tracking_import(name: str, package: str | None = None):
         if name.startswith("backend.handlers."):
             imported.append(name)
         return orig_import(name, package)
@@ -143,7 +142,7 @@ def test_post_ready_methods_resolve_without_prior_warm_core_of_those_modules(
     imported: list[str] = []
     orig_import = importlib.import_module
 
-    def tracking_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+    def tracking_import(name: str, package: str | None = None):
         if name.startswith("backend.handlers."):
             imported.append(name)
         return orig_import(name, package)
@@ -182,7 +181,7 @@ def test_warm_core_faster_than_full_warm_when_deferred_are_slow(
 
     orig_import = importlib.import_module
 
-    def slow_deferred(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+    def slow_deferred(name: str, package: str | None = None):
         if name in _DEFERRED_HANDLER_MODULES:
             time.sleep(0.05)
         return orig_import(name, package)
@@ -239,7 +238,7 @@ def test_sync_resolve_during_post_ready_warm_does_not_deadlock(
     release_canvas = threading.Event()
     orig_import = importlib.import_module
 
-    def gated_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+    def gated_import(name: str, package: str | None = None):
         if name == "backend.handlers.canvas":
             canvas_started.set()
             release_canvas.wait(timeout=60)
@@ -313,7 +312,7 @@ def test_warm_formatos_core_failure_is_non_fatal(monkeypatch: pytest.MonkeyPatch
 
     real_import = importlib.import_module
 
-    def failing_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+    def failing_import(name: str, package: str | None = None):
         if name == "backend.core.formatos":
             raise ImportError("boom")
         return real_import(name, package)

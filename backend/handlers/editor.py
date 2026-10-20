@@ -1,11 +1,3 @@
-"""Handlers IPC del editor (L1).
-
-Registro automático desde el catálogo compartido: el módulo se carga de
-forma lazy y solo expone los métodos declarados en
-``shared/ipc-method-catalog.json``. Sin Electron ni rutas del renderer:
-las lecturas de archivos llegan como ``file_token`` validados.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -37,7 +29,6 @@ def _require(params: dict[str, Any], key: str) -> Any:  # allowlist: dict[str, A
 
 
 def editor_bootstrap(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Capacidades del build y proyectos recientes. Lectura idempotente."""
     store = get_editor_store()
     from backend.core.editor.toolchain import ToolchainError, capabilities, resolve_toolchain
 
@@ -105,7 +96,6 @@ def editor_project_delete(params: dict[str, Any]) -> dict[str, Any]:  # allowlis
 
 
 def editor_assets_import_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Arranca la copia por streaming como job y responde con jobId."""
     files = params.get("files")
     if not isinstance(files, list) or not files:
         raise ValueError("files debe ser una lista no vacía de file_token")
@@ -139,7 +129,6 @@ def editor_job_cancel(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: d
 
 
 def editor_export_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Arranca el render determinista del snapshot como job."""
     document = _require(params, "document")
     output_path = params.get("outputPath")
     request_id = params.get("requestId")
@@ -152,7 +141,6 @@ def editor_export_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist:
 
 
 def editor_effect_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Arranca un efecto pesado (estabilización o chroma key) como job."""
     document = _require(params, "document")
     effect_type = str(_require(params, "effectType"))
     clip_id = params.get("clipId")
@@ -167,7 +155,6 @@ def editor_effect_start(params: dict[str, Any]) -> dict[str, Any]:  # allowlist:
 
 
 def editor_exports_history(params: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Historial local de exportaciones, más recientes primero."""
     limit = int(params.get("limit", 50))
     return {"exports": list_export_history(limit)}
 

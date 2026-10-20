@@ -28,11 +28,6 @@ export function computeAutoMappings(headers: string[]): {
   return { mappings, idColumn: headers[0] || "" };
 }
 
-/**
- * Convierte filas crudas de hoja en {headers, data} aplicando trim de
- * cabeceras y conversión de seriales Excel en columnas de fecha.
- * Devuelve `{ error }` con el mensaje exacto mostrado al usuario.
- */
 export function rowsToRecords(
   rows: unknown[][],
 ): { headers: string[]; data: Record<string, unknown>[] } | { error: string } {
@@ -66,7 +61,6 @@ export function rowsToRecords(
   return { headers, data };
 }
 
-/** Hoja preferida: primera con datos reales; si no, primera no vacía. */
 export function pickSheetToLoad(sheets: SheetRows[]): SheetRows | undefined {
   const rowLen = (s: SheetRows) =>
     s.rows.length > 0 ? s.rows.length : (s.rowCount ?? 0);
@@ -75,7 +69,6 @@ export function pickSheetToLoad(sheets: SheetRows[]): SheetRows | undefined {
   return withData[0] ?? fallback[0];
 }
 
-/** Validación de alta de columna personalizada; null = ok. */
 export function validateNewCustomColumn(
   name: string,
   mapping: string,
@@ -89,7 +82,6 @@ export function validateNewCustomColumn(
   return null;
 }
 
-/** Imágenes cuyo nombre matchea el recordId de la fila seleccionada, dedupe por nombre. */
 export function filterImagesForRecord(
   images: File[],
   data: Record<string, unknown>[],

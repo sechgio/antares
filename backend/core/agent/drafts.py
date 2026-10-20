@@ -1,13 +1,3 @@
-"""Borradores del agente: carpeta interna por conversación y guardado aprobado.
-
-Las herramientas que escriben archivos reciben un nombre de archivo o carpeta y
-el agente lo resuelve dentro de ``<datos>/ai-agent/drafts/<conversación>``: ahí
-genera sin aprobación, sin tocar originales ni carpetas del usuario. Copiar un
-borrador a una carpeta del usuario es la herramienta ``drafts_save``, que
-siempre pasa por aprobación con el destino exacto y nunca sobrescribe salvo que
-la aprobación lo indique.
-"""
-
 from __future__ import annotations
 
 import os
@@ -53,7 +43,6 @@ EFFECT_TOOLS = frozenset({"drafts_save"})
 
 
 def safe_name(value: object) -> str:
-    """Nombre de archivo simple, sin rutas ni nombres reservados de Windows."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError("Indica un nombre de archivo")
     name = value.strip()
@@ -66,7 +55,6 @@ def safe_name(value: object) -> str:
 
 
 def inside(root: Path, value: str) -> Path | None:
-    """Ruta dentro de ``root`` sin enlaces simbólicos, o ``None``."""
     path = Path(os.path.normpath(value))
     if not path.is_absolute() or ".." in Path(value).parts:
         return None
@@ -80,7 +68,6 @@ def inside(root: Path, value: str) -> Path | None:
 
 
 def bind_outputs(args: JsonObject, keys: frozenset[str], root: Path) -> JsonObject:
-    """Resuelve los nombres de salida dentro de la carpeta de borradores."""
     bound = dict(args)
     for key in keys:
         value = bound.get(key)

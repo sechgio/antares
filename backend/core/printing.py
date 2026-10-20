@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import ctypes
@@ -194,7 +193,6 @@ def _gdi() -> Any:
 
 
 def _parse_pages(pages: Any, total: int) -> list[int] | None:
-    """Filtro de páginas: '1-3,5' o lista de números (base 1) → índices base 0."""
     if pages is None or pages == "":
         return None
     wanted: set[int] = set()
@@ -227,7 +225,6 @@ def _parse_pages(pages: Any, total: int) -> list[int] | None:
 
 
 def _devmode(printer_name: str, duplex: str | None, quality: str | None) -> ctypes.Array[Any] | None:
-    """DEVMODE de la impresora con dúplex/calidad; None si no hay opciones."""
     if duplex is None and quality is None:
         return None
     spool = _spool()

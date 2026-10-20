@@ -68,7 +68,6 @@ def action(store: AgentStore, session_id: str, params: JsonObject) -> JsonObject
 
 
 def backend_pdf(store: AgentStore, session_id: str, method: str, result: JsonObject, op_id: str) -> JsonObject:
-    """Registra únicamente PDFs de motores locales conocidos; nunca salidas MCP."""
     from backend.core.agent import documents, modules
 
     if method not in {"sellador_apply", "formatos_generate", "canvas_export_cmyk_pdf",

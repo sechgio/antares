@@ -244,7 +244,6 @@ describe('useCanvasKeyboard', () => {
     const doc = makeDoc([text]);
     const input = makeInput(doc, { selectedIds: [text.id] });
     renderHook(() => useCanvasKeyboard(input));
-    // Shift cambia key a 'D', pero conserva code='KeyD'.
     const e = press(input, { key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true });
     expect(e.defaultPrevented).toBe(false);
     expect(input.setAllLayers).not.toHaveBeenCalled();

@@ -1,12 +1,3 @@
-"""Rasterizado de títulos del editor (L4, plan §4.5).
-
-El texto se rasteriza una vez a RGBA a resolución de salida y el mismo
-bitmap se usa en preview y exportación, con la misma política de
-métricas, salto de línea y fallback de fuente en ambos caminos. El
-contenido nunca se interpreta como HTML ni se inyecta en filtergraphs:
-llega como cadena y se dibuja con Pillow.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -19,11 +10,10 @@ from backend.core.editor.fonts import resolve_font
 
 
 class TextRenderError(ValueError):
-    """El título no puede rasterizarse."""
+    pass
 
 
 def _font_for(text_clip: dict[str, Any], scale: float) -> Any:  # allowlist: dict[str, Any]
-    """Fuente escalada a la resolución de salida."""
     entry = resolve_font(
         str(text_clip.get("fontId") or ""),
         bold=bool(text_clip.get("style", {}).get("bold", False)),
@@ -39,7 +29,6 @@ def _font_for(text_clip: dict[str, Any], scale: float) -> Any:  # allowlist: dic
 
 
 def text_cache_key(text_clip: dict[str, Any], width: int, height: int) -> str:  # allowlist: dict[str, Any]
-    """Clave de caché estable del bitmap rasterizado."""
     payload = repr(sorted((str(k), str(v)) for k, v in _render_params(text_clip, width, height).items()))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
@@ -63,11 +52,8 @@ def _render_params(text_clip: dict[str, Any], width: int, height: int) -> dict[s
 
 
 def _text_fields(text_clip: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Normaliza el clip: los campos de título pueden venir anidados en
-    ``text`` (contrato del schema) o planos en el clip."""
     if "text" in text_clip and isinstance(text_clip["text"], dict):
         nested = dict(text_clip["text"])
-        # El transform y la duración viven en el clip.
         nested.setdefault("fontId", "dejavu-sans")
         return nested
     return text_clip
@@ -80,13 +66,6 @@ def render_text_bitmap(
     *,
     cache_dir: Path | None = None,
 ) -> Path:
-    """Rasteriza el título a un PNG RGBA del tamaño del lienzo.
-
-    El lienzo es transparente salvo el texto, así puede superponerse
-    con ``overlay`` sin tapar la capa inferior. El resultado se cachea
-    por clave derivada de los parámetros: preview y export comparten el
-    mismo archivo.
-    """
     if width <= 0 or height <= 0:
         raise TextRenderError("el lienzo debe tener dimensiones positivas")
 
@@ -110,8 +89,6 @@ def render_text_bitmap(
     box_w = float(box.get("width", 1.0)) * width
     box_h = float(box.get("height", 0.2)) * height
 
-    # Escala de fuente relativa al lienzo para que el mismo clip se vea
-    # igual en preview (lienzo reducido) y export (resolución final).
     ref = max(width, height)
     scale = ref / 720.0 if ref > 0 else 1.0
     font = _font_for(fields, scale)
@@ -126,7 +103,6 @@ def render_text_bitmap(
     line_height = _line_height(font)
     align = str(fields.get("align", "center"))
 
-    # Saltos de línea multilínea centrados verticalmente en la caja.
     total_h = line_height * len(lines)
     y = box_y + max(0.0, (box_h - total_h) / 2)
     for line in lines:
@@ -174,7 +150,6 @@ def _bitmap_to_temp(image: Any, key: str) -> Path:
 
 
 def _wrap_lines(draw: Any, content: str, font: Any, max_width: float) -> list[str]:
-    """Salto de línea por ancho de caja, respetando saltos explícitos."""
     lines: list[str] = []
     for paragraph in content.split("\n"):
         if not paragraph:

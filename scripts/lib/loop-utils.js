@@ -252,7 +252,6 @@ module.exports = {
   REPO_NAME,
   BASE_BRANCH,
   ROOT,
-  QUALITY_GATE_TIMEOUT_MS,
   sh,
   trySh,
   shDetailed,

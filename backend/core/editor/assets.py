@@ -1,12 +1,3 @@
-"""Importación de archivos al almacén gestionado del editor (L1, §4.3).
-
-El archivo autorizado por token se copia **por streaming** al almacén
-gestionado (``user_data_path('editor/assets')``), se calcula su SHA-256
-durante la copia y se registra con los metadatos de ffprobe. La RAM no
-crece con el tamaño del archivo. El archivo original nunca se mueve ni
-se borra.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -20,11 +11,9 @@ from typing import Any
 
 from backend.utils.paths import user_data_path
 
-_CHUNK = 1024 * 1024  # 1 MiB
+_CHUNK = 1024 * 1024
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-# Extensiones admitidas para importar al editor. El container real lo
-# decide ffprobe, no la extensión.
 ALLOWED_SUFFIXES: frozenset[str] = frozenset(
     {
         ".mp4",
@@ -46,19 +35,14 @@ ALLOWED_SUFFIXES: frozenset[str] = frozenset(
     }
 )
 
-# Tope blando para avisar antes de copiar (plan §4.3: mostrar consumo
-# de disco antes de importar archivos grandes). No es un rechazo.
 LARGE_FILE_WARN_BYTES = 512 * 1024 * 1024
 
 
 class AssetImportError(ValueError):
-    """El archivo no puede importarse como asset del editor."""
+    pass
 
 
 def _validate_token(token: str) -> Path:
-    """Valida el file_token: archivo regular, sin symlink, con extensión
-    admitida. El renderer nunca envía rutas arbitrarias: solo tokens
-    emitidos por el diálogo nativo."""
     if not token:
         raise AssetImportError("token de archivo vacío")
     source = Path(token).expanduser()
@@ -79,10 +63,6 @@ def free_disk_bytes(directory: Path) -> int:
 
 
 def _probe_streams(source: Path) -> tuple[int, list[dict[str, Any]]]:  # allowlist: dict[str, Any]
-    """Metadatos de streams con ffprobe del build preparado.
-
-    Devuelve ``(duration_us, streams)`` con los campos del contrato.
-    """
     from backend.core.editor.toolchain import probe_json, resolve_toolchain
 
     toolchain = resolve_toolchain()
@@ -140,11 +120,6 @@ def _asset_type(suffix: str, streams: list[dict[str, Any]]) -> str:  # allowlist
 
 
 def import_file(token: str, *, assets_dir: Path | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Importa un archivo autorizado al almacén gestionado.
-
-    Flujo: validar token → comprobar espacio → copia por streaming con
-    SHA-256 → probe → registro. Devuelve el ``MediaAsset`` del contrato.
-    """
     source = _validate_token(token)
     base = assets_dir if assets_dir is not None else user_data_path("editor") / "assets"
     base.mkdir(parents=True, exist_ok=True)
@@ -187,8 +162,6 @@ def import_file(token: str, *, assets_dir: Path | None = None) -> dict[str, Any]
             f"archivo truncado: se copiaron {copied} de {size} bytes"
         )
 
-    # Verificación real de integridad: ffprobe tolera truncados con
-    # índice intacto, así que se decodifica completo antes de registrar.
     from backend.core.editor.toolchain import ToolchainError, resolve_toolchain, verify_decodable
 
     try:
@@ -229,7 +202,6 @@ def with_remove(path: Path) -> None:
 
 
 def large_file_warning(source: Path) -> str | None:
-    """Aviso de consumo de disco antes de copiar archivos grandes."""
     size = source.stat().st_size
     if size >= LARGE_FILE_WARN_BYTES:
         gb = size / (1024**3)

@@ -1,15 +1,3 @@
-"""Trabajos del editor sobre ``JobManager`` (L1, plan §4.6).
-
-Cada job de Editor:
-- responde pronto con ``jobId`` (el trabajo real va al thread del job);
-- admite trabajo pesado con ``scheduler.submit_heavy`` desde el thread
-  del job, sin bloquear el lector IPC;
-- registra progreso por etapa, no por conteo de archivos;
-- persiste la descripción/snapshot y el resultado mínimo en
-  ``editor/jobs/`` para no depender del slimming de ``JobManager``;
-- vigila el flag de cancelación entre etapas.
-"""
-
 from __future__ import annotations
 
 import json
@@ -18,7 +6,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from backend.core.editor.assets import AssetImportError, import_file
 from backend.core.editor.toolchain import ToolchainError
@@ -29,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 EDITOR_JOB_TYPES: frozenset[str] = frozenset({"editor_import"})
 
-# Etapas del job de importación (progreso por etapa).
 STAGES: tuple[str, ...] = ("validando", "copiando", "verificando", "registrando")
 
 
@@ -40,11 +27,6 @@ def _jobs_dir() -> Path:
 
 
 def _persist_job_record(job_id: str, record: dict[str, Any]) -> None:  # allowlist: dict[str, Any]
-    """Guarda el snapshot/resultado mínimo del job en disco.
-
-    El slim de ``JobManager`` es específico de conversión y no debe ser
-    la única fuente del historial de Editor.
-    """
     path = _jobs_dir() / f"{job_id}.json"
     tmp = path.with_name(f".{job_id}.json.tmp")
     try:
@@ -59,7 +41,7 @@ def _read_job_record(job_id: str) -> dict[str, Any] | None:  # allowlist: dict[s
     if not path.is_file():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))  # allowlist: dict[str, Any]
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -71,12 +53,6 @@ def _history_dir() -> Path:
 
 
 def _persist_export_history(job_id: str, entry: dict[str, Any]) -> None:  # allowlist: dict[str, Any]
-    """Registra una exportación terminada en el historial local.
-
-    Una entrada por exportación con su destino real: permite mostrar
-    resultados anteriores, reintentar con un destino nuevo y abrir la
-    salida autorizada sin volver a renderizar.
-    """
     path = _history_dir() / f"{job_id}.json"
     tmp = path.with_name(f".{job_id}.json.tmp")
     try:
@@ -87,7 +63,6 @@ def _persist_export_history(job_id: str, entry: dict[str, Any]) -> None:  # allo
 
 
 def list_export_history(limit: int = 50) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
-    """Historial de exportaciones, más recientes primero."""
     entries: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
     for path in _history_dir().glob("*.json"):
         try:
@@ -111,10 +86,6 @@ def _check_cancelled(job: Any) -> bool:
 
 
 def run_import_job(job: Any, *, assets_dir: Path | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Importa los archivos del job uno a uno, por etapas.
-
-    ``job.params``: ``{"files": [token, ...], "requestId": str}``.
-    """
     files = [str(t) for t in (job.params.get("files") or [])]
     total = len(files)
     imported: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
@@ -180,11 +151,6 @@ def start_import_job(
     assets_dir: Path | None = None,
     job_id: str | None = None,
 ) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Crea el job en ``JobManager`` y devuelve ``{"started", "jobId"}``.
-
-    El snapshot mínimo se persiste al crear el job para que el historial
-    exista aunque el proceso muera durante la copia.
-    """
     jid = job_id or f"editor_import_{uuid.uuid4().hex[:12]}"
     record = {
         "jobId": jid,
@@ -211,11 +177,6 @@ def start_import_job(
 
 
 def editor_job_status(job_id: str, job_manager: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Estado del job de Editor: etapa/progreso/resultado.
-
-    Primero se consulta el registro persistido (historial mínimo) y se
-    enriquece con el estado vivo de ``JobManager`` si sigue en memoria.
-    """
     record = _read_job_record(job_id)
     job = job_manager.get_job(job_id)
     if job is None and record is None:
@@ -253,7 +214,6 @@ def editor_job_status(job_id: str, job_manager: Any) -> dict[str, Any]:  # allow
 
 
 def is_editor_job(job_id: str) -> bool:
-    """Solo se cancelan/progresan jobs de Editor, nunca los ajenos."""
     return job_id.startswith("editor_import_") or _read_job_record(job_id) is not None
 
 
@@ -271,7 +231,6 @@ EXPORT_STAGES: tuple[str, ...] = ("validando", "rendering", "verificando", "publ
 
 
 def run_export_job(job: Any, *, output: Path | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Render determinista del snapshot por etapas con cancelación."""
     from backend.core.editor.render import execute_render
 
     document = job.params.get("document") or {}
@@ -341,11 +300,6 @@ EFFECT_TYPES: frozenset[str] = frozenset({"stabilize", "chromakey"})
 
 
 def run_effect_job(job: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Aplica un efecto pesado sobre el asset del clip, por etapas.
-
-    El derivado se cachea por identidad del asset y parámetros: el
-    original se conserva intacto y el efecto es reversible.
-    """
     from backend.core.editor.effects import apply_chromakey, apply_stabilize
     from backend.core.editor.render import asset_path
     from backend.core.editor.toolchain import resolve_toolchain

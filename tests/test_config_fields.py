@@ -1,4 +1,3 @@
-
 from backend.core.config_fields import (
     DEFAULT_FIELDS,
     get_field_names,

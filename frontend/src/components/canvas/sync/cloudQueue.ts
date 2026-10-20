@@ -4,7 +4,7 @@ const PENDING_DELETES_KEY = 'antares:canvas:pending-deletes';
 const PENDING_PUSHES_KEY = 'antares:canvas:pending-pushes';
 const localDeletesInFlight = new Set<string>();
 
-export type PendingCanvasPush = {
+type PendingCanvasPush = {
   id: string;
   options?: { forceResurrect?: boolean };
 };

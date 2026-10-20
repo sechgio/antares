@@ -20,7 +20,7 @@ export interface HeaderField {
   stacked?: boolean;
 }
 
-export interface FieldGroup {
+interface FieldGroup {
   title: string;
   fields: HeaderField[];
 }

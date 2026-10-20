@@ -23,11 +23,6 @@ export function TaskSelectCheckbox({
   );
 }
 
-/**
- * Acciones editar/eliminar de las filas de tareas. `small` reproduce las
- * variantes visuales de cada vista: icono h-3.5 con hover bg-input (tabla) o
- * icono h-4 con hover bg-elevated y transition-colors (lista).
- */
 export function TaskRowActions({
   tarea,
   onEdit,

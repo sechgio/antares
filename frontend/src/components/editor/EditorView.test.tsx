@@ -105,7 +105,6 @@ describe('EditorView', () => {
     mockInvoke.mockResolvedValue({ schemaVersion: 1, projects: [], toolchain: { available: true } });
     render(<EditorView />);
     await screen.findByTestId('editor-view');
-    // La vista funciona sin usuario: no hay llamadas de auth.
     const authCalls = mockInvoke.mock.calls.filter((call) => String(call[0]).includes('auth'));
     expect(authCalls).toHaveLength(0);
   });

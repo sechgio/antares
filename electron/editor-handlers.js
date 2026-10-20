@@ -1,10 +1,3 @@
-// Handlers nativos del editor: diálogo de importación de medios.
-//
-// Contrato (plan §5): `editor_import_files` entrega tokens de lectura
-// emitidos por el diálogo aprobado; el renderer nunca envía rutas
-// arbitrarias. Los filtros limitan la selección a formatos de medios
-// y el backend valida de nuevo el token al copiar.
-
 const fs = require('fs');
 const path = require('path');
 
@@ -66,8 +59,6 @@ async function runEditorRecording(method, params = {}, window) {
   }
   if (method === 'editor_recording_finish') {
     const result = manager.finish(sessionId);
-    // La grabación terminada se publica como file_token de lectura: el
-    // backend la copia al almacén gestionado por streaming.
     const cap = await createFileCapabilityAsync({
       filePath: result.path,
       mode: 'read',
@@ -127,8 +118,5 @@ async function handleEditorCall(method, params = {}, dialog, window) {
 
 module.exports = {
   EDITOR_METHODS,
-  MEDIA_FILTERS,
-  runEditorImportFiles,
-  runEditorRecording,
   handleEditorCall,
 };

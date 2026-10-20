@@ -4,13 +4,13 @@ import type { AgentToolCall } from '../../api/agentApi';
 import AgentAvatar from './AgentAvatar';
 import { METHOD_LABELS } from './methodLabels';
 
-export interface SubagentStep {
+interface SubagentStep {
   name: string;
   status: string;
   detail?: string;
 }
 
-export interface SubagentReceipt {
+interface SubagentReceipt {
   agent: { id?: string; name: string };
   status: string;
   text: string;
@@ -18,7 +18,7 @@ export interface SubagentReceipt {
   ms: number | null;
 }
 
-export function parseSubagentReceipt(result: string | null | undefined): SubagentReceipt | null {
+function parseSubagentReceipt(result: string | null | undefined): SubagentReceipt | null {
   if (!result) return null;
   try {
     const parsed: unknown = JSON.parse(result);

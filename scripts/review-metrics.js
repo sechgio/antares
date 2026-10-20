@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-
-/**
- * Métricas sobre PRs mergeados. Sin gh: sale 0.
- *
- *   node scripts/review-metrics.js [--days 14] [--strict] [--json] [--repo o/n]
- */
 const { fs } = require('fs');
 const { detectRepo, gh, parseCliArgs } = require('./lib/loop-utils');
 const {
@@ -257,11 +251,8 @@ function run() {
 
 module.exports = {
   TARGETS,
-  renderTarget,
   median,
   hoursBetween,
-  firstReviewSignal,
-  nonAuthorApprovals,
   reworkRounds,
   computeMetrics,
   renderMarkdown,

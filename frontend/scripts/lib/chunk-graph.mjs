@@ -28,11 +28,6 @@ function staticSpecifiers(code) {
   return [...specs];
 }
 
-/**
- * Static import closure of `seeds`, as a Map from chunk file name to the chunk
- * that pulled it in. Dynamic `import()` is excluded on purpose: those files are
- * not on the parse path of the seed.
- */
 export function staticClosure({ jsDir, seeds }) {
   const reached = new Map();
   const queue = [];

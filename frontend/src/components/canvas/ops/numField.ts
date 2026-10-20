@@ -1,8 +1,3 @@
-/**
- * Evalúa expresiones aritméticas simples en campos numéricos del inspector:
- * "50/2", "10 + 4.5", "(20-5)*2", "1,5" (coma decimal).
- * Devuelve null cuando la entrada no es una expresión válida.
- */
 export function evalNumericExpression(raw: string): number | null {
   const text = raw.trim().replaceAll(',', '.');
   if (!text) return null;

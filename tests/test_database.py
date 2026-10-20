@@ -1,4 +1,3 @@
-
 import pytest
 
 from backend.core import database as db

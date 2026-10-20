@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import contextlib
@@ -45,21 +44,10 @@ _FileSignature = tuple[int, int, int, int]
 
 
 class CanvasDocumentTooLargeError(ValueError):
-    """A Canvas payload is valid JSON but exceeds the storage byte limit."""
+    pass
 
 
 def encode_canvas_json(payload: object) -> bytes:
-    """Serialize a Canvas payload once, in the canonical on-disk form.
-
-    Serializing a multi-megabyte document costs tens of milliseconds, so every
-    caller that needs the size, the digest and the bytes must reuse a single
-    result instead of encoding the payload again per concern.
-
-    ``allow_nan=False`` is deliberate: the default encoder writes ``NaN`` and
-    ``Infinity`` literals that are not JSON, which would store a document no
-    strict parser (Electron, Postgres) can read back. It raises ``ValueError``,
-    which every caller here already maps to a "datos no serializables" error.
-    """
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 

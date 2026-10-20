@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 PAGE_MARGIN_CM = 0.8

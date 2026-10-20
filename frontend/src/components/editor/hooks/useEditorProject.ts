@@ -7,7 +7,7 @@ export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 const AUTOSAVE_DEBOUNCE_MS = 750;
 
-export interface UseEditorProjectResult {
+interface UseEditorProjectResult {
   project: EditorProject | null;
   projects: Array<{ id: string; name: string; updatedAt?: string; revision?: number }>;
   saveState: SaveState;
@@ -18,16 +18,6 @@ export interface UseEditorProjectResult {
   saveNow: () => Promise<void>;
 }
 
-/**
- * Sesión de proyecto con autosave serializado (L2, plan §4.3).
- *
- * - debounce de 750 ms tras una edición consolidada;
- * - una escritura en vuelo por proyecto; la última revisión pendiente
- *   se escribe al terminar la anterior;
- * - CAS de revisión: `expectedRevision` evita sobrescribir cambios
- *   ajenos; un requestId reintentado no dobla la revisión;
- * - flush al desmontar para guardar antes de abandonar la sesión.
- */
 export function useEditorProject(): UseEditorProjectResult {
   const [project, setProject] = useState<EditorProject | null>(null);
   const [projects, setProjects] = useState<UseEditorProjectResult['projects']>([]);
@@ -54,14 +44,11 @@ export function useEditorProject(): UseEditorProjectResult {
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // Una revisión obsoleta no debe marcarse como error del usuario:
-      // el proyecto se recarga en el siguiente arranque.
       setSaveState('error');
       setError(message);
     } finally {
       inFlightRef.current = false;
       if (dirtyRef.current && projectRef.current) {
-        // Había una edición durante el guardado: escribir la última.
         void persist(projectRef.current);
       }
     }
@@ -131,7 +118,6 @@ export function useEditorProject(): UseEditorProjectResult {
   }, [bootstrap]);
 
   useEffect(() => {
-    // Flush al desmontar: guardar lo pendiente antes de abandonar.
     const unregister = registerEditorFlushHandler(() => {
       void saveNow();
     });
