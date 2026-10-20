@@ -16,6 +16,15 @@ it('muestra el porcentaje de la ventana de contexto y el desglose al pasar el cu
   expect(screen.queryByRole('tooltip')).toBeNull();
 });
 
+it('calcula la ocupación con el último turno y deja el acumulado en el desglose', () => {
+  render(<ContextUsage usage={{ input: 90000, output: 4000, context: 64000 }} model="claude-sonnet-4" />);
+  const trigger = screen.getByRole('button', { name: 'Contexto usado' });
+  expect(trigger).toHaveTextContent('32%');
+  fireEvent.mouseEnter(trigger);
+  expect(screen.getByRole('tooltip')).toHaveTextContent('64 k / 200 k');
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Entrada90 kSalida4 k');
+});
+
 it('sin ventana conocida muestra solo los tokens y nada si no hay uso', () => {
   const { rerender } = render(<ContextUsage usage={{ input: 1500, output: 200 }} model="modelo-propio" />);
   expect(screen.getByRole('button', { name: 'Contexto usado' })).toHaveTextContent('1,7 k');

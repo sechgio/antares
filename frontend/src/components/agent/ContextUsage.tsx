@@ -43,13 +43,13 @@ function Ring({ ratio }: { ratio: number }) {
 }
 
 export default function ContextUsage({ usage, model }: {
-  usage: { input: number; output: number } | null;
+  usage: { input: number; output: number; context?: number } | null;
   model: string;
 }) {
   const [open, setOpen] = useState(false);
   const cardId = useId();
   if (!usage) return null;
-  const used = usage.input + usage.output;
+  const used = usage.context ?? usage.input + usage.output;
   const max = contextWindowFor(model);
   const ratio = max ? Math.min(1, used / max) : 0;
   const percent = `${new Intl.NumberFormat('es', { maximumFractionDigits: 1 }).format(ratio * 100)}%`;

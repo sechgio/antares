@@ -229,12 +229,13 @@ async function projectMessages(conv, session) {
   const slotByCall = new Map((live.tools || []).map((slot) => [slot.callId, slot]));
 
   const messages = [];
-  const usage = { input: 0, output: 0 };
+  const usage = { input: 0, output: 0, context: 0 };
   for (const entry of entries) {
     const msg = entry.model && entry.model[0];
     if (entry.kind === 'pi.assistant' && msg && msg.usage) {
       usage.input += Number(msg.usage.input) || 0;
       usage.output += Number(msg.usage.output) || 0;
+      usage.context = ['input', 'output', 'cacheRead', 'cacheWrite'].reduce((sum, key) => sum + (Number(msg.usage[key]) || 0), 0);
     }
     if (entry.kind === 'pi.user') {
       messages.push({ role: 'user', content: userTextOf(msg), ts: entryTs(entry, msg) });
