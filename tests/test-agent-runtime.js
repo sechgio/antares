@@ -1,11 +1,5 @@
 'use strict';
 
-// Tests del runtime nativo del agente (Electron main): pi-durable + pi-ai,
-// con el puente privado a Python sustituido por un fake en memoria. Cubre el
-// contrato público, aprobaciones (aprobar/rechazar/recuperar), cancelación,
-// dispatch deduplicado, importación JSON→SQLite y el wire OpenAI contra un
-// servidor HTTP simulado.
-
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -300,7 +294,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- contrato estático del catálogo ---
   for (const name of PUBLIC_METHODS) {
     assert(nativeDispatchFor(name) === 'agent', `${name} → native:agent`);
   }
@@ -309,7 +302,6 @@ async function main() {
     assert(METHODS[name].handler === 'backend:agent_internal', `${name} → backend:agent_internal`);
   }
 
-  // --- flujo completo: herramienta segura + gated + aprobación + dedup ---
   {
     const { bridge, state } = makeBridge();
     await openFaux([
@@ -513,7 +505,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- deny: la herramienta no se ejecuta y el modelo lo ve ---
   {
     const { bridge, state } = makeBridge();
     await openFaux([
@@ -609,6 +600,41 @@ async function main() {
   }
 
   {
+    const { bridge } = makeBridge();
+    const delegated = [];
+    const spyBridge = async (method, params) => {
+      if (method === 'agent_internal_dispatch') delegated.push(params);
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('subagent_run', { agent: 'Investigador', task: '¿Qué documentos hay?' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('listo'),
+    ], spyBridge);
+    const { profile } = await runtime.handlers.agent_profile_save({
+      name: 'Investigador', description: 'Busca en la app', instructions: 'Consulta Canvas y resume.',
+      starter: '', tools: ['canvas_list'],
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const listed = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools;
+    const spec = listed.find((tool) => tool.name === 'subagent_run');
+    assert(spec && spec.kind === 'backend' && !spec.gated, 'la delegación aparece como herramienta de lectura');
+    assert((await runtime.handlers.agent_tools_list({})).tools.some((tool) => tool.name === 'subagent_run'),
+      'la lista global incluye los agentes guardados');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega' });
+    assert(await waitIdle(session.id), 'el turno con delegación termina');
+    const sent = delegated.find((request) => request.name === 'subagent_run');
+    assert(sent && sent.context.subagent && sent.context.subagent.name === 'Investigador',
+      'el perfil resuelto viaja por el canal interno');
+    assert(sent.context.subagent.instructions.includes('Consulta Canvas'), 'las indicaciones del agente llegan al subagente');
+    assert(sent.context.subagent.tools.join() === 'canvas_list', 'solo las herramientas del agente');
+    assert(sent.context.subagent.enabled.includes('canvas_list'), 'la conversación limita las herramientas del subagente');
+    await runtime.handlers.agent_profile_delete({ id: profile.id });
+    assert(!(await runtime.handlers.agent_tools_list({})).tools.some((tool) => tool.name === 'subagent_run'),
+      'sin agentes guardados no se ofrece delegar');
+    await runtime.shutdown();
+  }
+
+  {
     const { bridge, state } = makeBridge();
     await openFaux([fauxAssistantMessage('listo')], bridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
@@ -664,11 +690,8 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- cancelación de un turno activo y respuesta tardía descartada ---
   {
     const { bridge } = makeBridge();
-    // El proveedor resuelve 300 ms DESPUÉS de la señal de abort: la respuesta
-    // llega tarde a un turno ya cancelado y no debe publicarse.
     const lateFactory = (_ctx, options) => new Promise((resolve) => {
       const sig = options && options.signal;
       if (sig) sig.addEventListener('abort', () => setTimeout(() => resolve(fauxAssistantMessage('RESPUESTA TARDÍA')), 300), { once: true });
@@ -680,9 +703,7 @@ async function main() {
     assert(await waitFor(async () => (await runtime.handlers.agent_turn_status({ session_id: session.id })).running), 'el turno arranca');
     const cancelled = await runtime.handlers.agent_turn_cancel({ session_id: session.id });
     assert(cancelled.cancelled === true, 'turno activo cancelado');
-    await sleep(700); // la respuesta tardía aterriza tras cancelar
-    // La cola de respuestas se resetea: un reintento interno del turno abortado
-    // no debe robar la respuesta del siguiente turno.
+    await sleep(700);
     faux.setResponses([fauxAssistantMessage('segunda respuesta')]);
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'dos' });
     assert(await waitIdle(session.id), 'el turno siguiente termina');
@@ -692,7 +713,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- importación JSON → durable + recuperación de aprobación pendiente ---
   {
     const { MemoryStorage } = await import('@earendil-works/pi-durable');
     const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-legacy-'));
@@ -717,12 +737,9 @@ async function main() {
     };
 
     const { bridge, state } = makeBridge();
-    // La aprobación pendiente del JSON vive en Python: la sembramos en el fake.
     state.approvals.set('ap-legacy', { ...approvals['ap-legacy'] });
     state.seq = 1;
 
-    // SQLite real: hace falta para reabrir tras "reinicio" (harness.close()
-    // cierra el storage; un MemoryStorage nuevo no conserva nada).
     const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
     const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-runtime-'));
     const dbPath = path.join(runtimeDir, 'agent.sqlite');
@@ -733,7 +750,6 @@ async function main() {
     assert(messages.length === 2 && messages[0].content === 'hola' && messages[1].tool_calls[0].id === 'call-1', 'mensajes importados en orden');
     assert(pending_approvals.length === 1 && pending_approvals[0].id === 'ap-legacy', 'aprobación pendiente recuperada');
 
-    // Idempotencia: reimportar no duplica.
     await importer.importLegacySessions(runtime._internal.state(), legacyDir);
     const { sessions: listed2 } = await runtime.handlers.agent_sessions_list({});
     assert(listed2.length === 1, 'la reimportación no duplica sesiones');
@@ -741,8 +757,6 @@ async function main() {
     assert(fs.readFileSync(path.join(legacyDir, 'approvals.json'), 'utf8') === snapshotBefore.a, 'approvals.json intacto');
     assert(fs.readFileSync(path.join(legacyDir, 'messages', 'legacy-1.json'), 'utf8') === snapshotBefore.m, 'messages intactos');
 
-    // "Reinicio": cerramos y reabrimos sobre el mismo SQLite; la aprobación
-    // pendiente no se ejecuta sola, y decidirla ejecuta una única vez.
     await runtime.shutdown();
     await runtime.open({ dbPath, bridge, dir: legacyDir, skipImport: true });
     const { pending_approvals: pendingAfter } = await runtime.handlers.agent_messages_list({ session_id: 'legacy-1' });
@@ -757,7 +771,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // --- wire real: OpenAI Chat Completions + streaming contra servidor simulado ---
   {
     const hits = [];
     const server = http.createServer((req, res) => {
@@ -803,14 +816,12 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // Los errores del proveedor también son contenido no confiable.
   {
     const secret = 'demo-provider-secret-987654';
     const headerSecret = 'demo-header-secret-123456';
     const replacementSecret = 'demo-provider-next-567890';
     const replacementHeader = 'Bearer demo-header-next-567890';
     const server = http.createServer((req, res) => {
-      // Otra petición puede renovar el contexto antes de recibir este error.
       const record = runtime._internal.shared.providers.get('openai');
       record.info = { ...record.info, api_key: replacementSecret, extra_headers: { 'x-test-credential': replacementHeader } };
       res.writeHead(401, { 'content-type': 'application/json' });

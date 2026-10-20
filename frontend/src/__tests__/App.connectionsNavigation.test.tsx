@@ -11,8 +11,8 @@ vi.mock('../auth/AuthContext', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
   useAuth: () => ({ user: null, loading: false, signOut: vi.fn() }),
 }));
-vi.mock('../components/connections', () => ({
-  default: ({ initialSection }: { initialSection?: string }) => <p>Conexiones: {initialSection ?? 'connections'}</p>,
+vi.mock('../components/connections/ProvidersView', () => ({
+  default: () => <p>Sección Proveedores</p>,
 }));
 vi.mock('../components/agent', () => ({
   default: ({ onConfigureProvider }: { onConfigureProvider?: () => void }) => (
@@ -20,14 +20,14 @@ vi.mock('../components/agent', () => ({
   ),
 }));
 
-it('no hay tab de Conexiones y el agente abre la sección de Ajustes', async () => {
+it('no hay tab de Conexiones y el agente abre la sección Proveedores de Ajustes', async () => {
   render(<App />);
   expect(screen.queryByRole('button', { name: 'Flujos' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Conexiones' })).not.toBeInTheDocument();
   fireEvent.click(await findSidebarTab('Agent'));
   fireEvent.click(screen.getAllByRole('button', { name: 'Agent' }).at(-1)!);
   fireEvent.click(await screen.findByRole('button', { name: 'Configurar IA' }));
-  await screen.findByText('Conexiones: connections');
+  await screen.findByText('Sección Proveedores');
 });
 
 it('transmite la incertidumbre de una escritura sin alterar los rechazos confirmados', async () => {

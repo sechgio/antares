@@ -1,10 +1,5 @@
 'use strict';
 
-// Estado efímero compartido del runtime del agente (nada de esto llega al
-// renderer) y acceso al documento durable de sesiones. Lo pobla
-// agent-runtime.js en open() y lo consumen agent-execution.js y
-// agent-projection.js.
-
 const INTERRUPTED_RESULT = JSON.stringify({
   error: 'Acción interrumpida: el resultado puede ser incierto. Compruébalo antes de repetirla.',
 });
@@ -12,19 +7,19 @@ const NOTICE_KIND = 'antares.notice';
 const CONTEXT_MARKER = '[Contexto de Antares]';
 
 const shared = {
-  deps: null, // {pi, chord, aiOpenai, aiAnthropic, bridge}
-  state: null, // {harness, models, registry, SessionsDoc, dir, ctx, convIndex}
-  live: new Map(), // conversationId -> último snapshot de watchEvents
-  convToSession: new Map(), // conversationId -> sessionId público
-  watchers: new Map(), // conversationId -> AgentEventStream
-  toolSpecs: new Map(), // name -> {gated, kind}
+  deps: null,
+  state: null,
+  live: new Map(),
+  convToSession: new Map(),
+  watchers: new Map(),
+  toolSpecs: new Map(),
   approvalsByCall: new Map(),
-  liveApprovals: new Set(), // approvalId con espera beforeTool activa
-  decisionWaiters: new Map(), // approvalId -> Set<resolve>
-  rounds: new Map(), // conversationId -> rondas de herramientas del run
+  liveApprovals: new Set(),
+  decisionWaiters: new Map(),
+  rounds: new Map(),
   waitingInput: new Set(),
-  providers: new Map(), // providerId -> {info, modelIds:Set}
-  providerOverrides: new Map(), // providerId -> Provider (tests)
+  providers: new Map(),
+  providerOverrides: new Map(),
   nativeTools: null,
   attachments: new Map(),
   dialog: null,
@@ -64,6 +59,11 @@ function aborted() {
 async function sessions() {
   const doc = await shared.state.harness.snapshot(shared.state.SessionsDoc, ctx());
   return (doc && doc.sessions) || {};
+}
+
+async function profiles() {
+  const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
+  return (doc && doc.profiles) || {};
 }
 
 async function commitSessions(change) {
@@ -107,6 +107,7 @@ module.exports = {
   validation,
   aborted,
   sessions,
+  profiles,
   commitSessions,
   requireSession,
   conversation,

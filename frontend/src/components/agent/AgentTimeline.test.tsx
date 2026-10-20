@@ -28,3 +28,18 @@ it('resume más de dos pasos de herramientas y los abre si alguno necesita atenc
     tool_calls: [step('a', 'done'), step('b', 'failed'), step('c', 'done')] } as never} />);
   expect(container.querySelector('details')?.open).toBe(true);
 });
+
+it('dibuja la delegación en otro agente como una traza con sus pasos', () => {
+  render(<MessageRow agent={{ seed: 'antares', name: 'Antares' }} msg={{ role: 'assistant', content: 'Listo.', ts: 1,
+    tool_calls: [{
+      id: 'sub', name: 'subagent_run', params: { agent: 'Investigador', task: 'Busca documentos' }, status: 'done', gated: false,
+      result: JSON.stringify({
+        agent: { id: 'p1', name: 'Investigador' }, status: 'done', text: 'Encontré dos.', ms: 300,
+        steps: [{ name: 'canvas_list', status: 'done' }],
+      }),
+    }] } as never} />);
+  expect(screen.getByText('Investigador')).toBeInTheDocument();
+  expect(screen.getByText('Listar documentos de Canvas')).toBeInTheDocument();
+  expect(screen.getByText('Encontré dos.')).toBeInTheDocument();
+  expect(screen.getByText('completado')).toBeInTheDocument();
+});

@@ -1,11 +1,3 @@
-"""Cliente LLM y catálogo de herramientas del agente.
-
-``tool_specs`` expone los métodos ``backend:*`` del catálogo IPC: los
-``orchestratable`` (solo lectura) se ejecutan directo y el resto pasa por
-tarjeta de aprobación. ``chat`` llama al proveedor configurado con la clave
-del vault y traduce el historial persistido al wire de cada API.
-"""
-
 from __future__ import annotations
 
 import http.client
@@ -25,9 +17,6 @@ MAX_MESSAGE_CHARS = 12_000
 _MAX_TOOL_RESULT_CHARS = 6_000
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _CHAT_TIMEOUT_S = 120.0
-# Tipos de imagen aceptados en un mensaje multimodal. La lista es cerrada a
-# propósito: un media type arbitrario se inyecta tal cual en el JSON de la
-# request, y algunos proveedores lo reenvian como nombre de fichero.
 _ALLOWED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 _MAX_IMAGES_PER_MESSAGE = 8
 _MAX_IMAGE_B64_CHARS = 4 * 1024 * 1024
@@ -37,9 +26,6 @@ _RETRY_AFTER_CAP_S = 15.0
 _ERR_BODY_MAX_BYTES = 4_096
 _ERR_MSG_MAX_CHARS = 300
 
-# Métodos backend que el agente nunca debe invocar (ni siquiera con aprobación):
-# vault/claves, configuración de proveedores y MCP, canales internos y el propio
-# canal del agente, y borrados destructivos.
 _DENIED_PREFIXES = ("ai_provider_", "ai_providers_", "connections_token_", "agent_", "mcp_server")
 _DENIED_METHODS = frozenset({"db_clear", "mcp_tool_call", "telemetry", "canvas_save", "canvas_save_history", "print_pdf"})
 
@@ -55,8 +41,6 @@ def readonly_methods() -> list[str]:
     return sorted({m for m in ORCHESTRATABLE_METHODS if not _denied(m)} | agent_tools.READ_TOOLS)
 
 
-# Claves cuyo valor nunca viaja al LLM: credenciales de nodos (webhook, headers
-# HTTP), grants de archivos y cualquier campo con pinta de secreto.
 _SECRET_RESULT_KEYS = frozenset({
     "secret", "headers", "api_key", "client_secret", "token", "access_token",
     "refresh_token", "authorization", "signature", "password",
@@ -93,7 +77,6 @@ def gated_methods() -> list[str]:
 
 
 def tool_specs() -> list[JsonObject]:
-    """Specs de herramientas para el modelo (formato neutro, se adapta al proveedor)."""
     from backend.core.agent import agent_tools as _agent_tools
     from backend.core.agent import modules
 
@@ -124,7 +107,7 @@ def tool_specs() -> list[JsonObject]:
         try:
             tools = mcp_servers.list_tools(str(server["id"]))
         except Exception:
-            continue  # un servidor caído no bloquea el chat
+            continue
         for tool in tools:
             if not tool.get("enabled", True):
                 continue
@@ -186,8 +169,6 @@ def _retry_delay_s(err: urllib.error.HTTPError, attempt: int) -> float:
 
 
 def _stream_response(res: http.client.HTTPResponse, on_delta: Callable[[str], None] | None = None) -> JsonObject:
-    """Acumula SSE de ambos protocolos; ``on_delta`` recibe el texto parcial
-    acumulado para mostrar streaming, sin publicar herramientas parciales."""
     message: JsonObject = {"content": "", "tool_calls": []}
     calls: dict[int, JsonObject] = {}
     blocks: dict[int, JsonObject] = {}
@@ -339,12 +320,6 @@ def _with_synthetic_results(messages: list[JsonObject]) -> list[JsonObject]:
 
 
 def _sanitize_images(raw: Any) -> list[JsonObject]:
-    """Normaliza los adjuntos de imagen de un mensaje a ``{media_type, data_b64}``.
-
-    Descarta todo lo que no encaje: un media type fuera de la lista, un b64
-    vacío, o más imágenes del tope. Devuelve lista vacía en cualquier otro
-    caso, para que un adjunto dudoso nunca rompa el turno.
-    """
     if not isinstance(raw, list):
         return []
     out: list[JsonObject] = []
@@ -364,7 +339,6 @@ def _sanitize_images(raw: Any) -> list[JsonObject]:
 
 
 def _openai_wire(messages: list[JsonObject], system: str | None) -> list[JsonObject]:
-    """Historial persistido -> formato OpenAI chat completions."""
     wire: list[JsonObject] = [{"role": "system", "content": system or _SYSTEM_PROMPT}]
     for msg in _with_synthetic_results(messages):
         role = msg.get("role")
@@ -422,6 +396,7 @@ def _chat_openai(
     system: str | None,
     on_delta: Callable[[str], None] | None = None,
     extra_tools: list[JsonObject] | None = None,
+    tools: list[JsonObject] | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
         "model": model,
@@ -438,7 +413,7 @@ def _chat_openai(
                     "parameters": s["inputSchema"],
                 },
             }
-            for s in (*tool_specs(), *(extra_tools or []))
+            for s in (*(tool_specs() if tools is None else tools), *(extra_tools or []))
         ]
         payload["tool_choice"] = "auto"
     data = _post_json(url, headers, payload, on_delta)
@@ -478,7 +453,6 @@ def _chat_openai(
 
 
 def _anthropic_wire(messages: list[JsonObject]) -> list[JsonObject]:
-    """Historial persistido → formato Anthropic Messages (bloques)."""
     wire: list[JsonObject] = []
     pending_results: list[JsonObject] = []
     for msg in _with_synthetic_results(messages):
@@ -544,6 +518,7 @@ def _chat_anthropic(
     on_delta: Callable[[str], None] | None = None,
     extra_tools: list[JsonObject] | None = None,
     max_tokens: int | None = None,
+    tools: list[JsonObject] | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
         "model": model,
@@ -559,7 +534,7 @@ def _chat_anthropic(
                 "description": s["description"],
                 "input_schema": s["inputSchema"],
             }
-            for s in (*tool_specs(), *(extra_tools or []))
+            for s in (*(tool_specs() if tools is None else tools), *(extra_tools or []))
         ]
     data = _post_json(url, headers, payload, on_delta)
     if not isinstance(data, dict) or not isinstance(data.get("content"), list):
@@ -596,6 +571,7 @@ def chat(
     on_delta: Callable[[str], None] | None = None,
     extra_tools: list[JsonObject] | None = None,
     max_tokens: int | None = None,
+    tools: list[JsonObject] | None = None,
 ) -> JsonObject:
     """Un turno LLM; `messages` es el historial persistido en formato neutro.
 
@@ -606,7 +582,8 @@ def chat(
     ``extra_tools`` añade specs propias del llamante a las de Antares, para
     que el modelo devuelva una estructura en vez de prosa. ``max_tokens`` solo
     aplica al estilo Anthropic y sube el techo cuando la respuesta es un
-    documento largo.
+    documento largo. ``tools`` sustituye el catálogo por una lista explícita
+    (subagentes: solo sus herramientas de lectura).
     """
     spec = ai_providers.get_provider(provider)
     config = ai_providers.get_config(provider) or {}
@@ -621,7 +598,7 @@ def chat(
     url = ai_providers.endpoint_url(base, path)
     headers = _auth_headers(spec, config)
     if style == "openai_chat":
-        return _chat_openai(url, headers, model, messages, with_tools, system, on_delta, extra_tools)
+        return _chat_openai(url, headers, model, messages, with_tools, system, on_delta, extra_tools, tools)
     if style == "anthropic_messages":
-        return _chat_anthropic(url, headers, model, messages, with_tools, system, on_delta, extra_tools, max_tokens)
+        return _chat_anthropic(url, headers, model, messages, with_tools, system, on_delta, extra_tools, max_tokens, tools)
     raise ValueError(f"Estilo de chat no soportado: {style}")

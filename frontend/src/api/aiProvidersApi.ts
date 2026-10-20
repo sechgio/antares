@@ -14,7 +14,6 @@ export interface AiProviderSpec {
   key_masked: string | null;
   base_url: string;
   needs_key: boolean;
-  /** Presente solo en modelos personalizados. */
   custom?: boolean;
   /** Estilo de API elegido para un modelo personalizado. */
   api?: string;
@@ -38,6 +37,7 @@ export interface AiProviderCustomInput {
 export interface AiProviderStatus extends AiProviderSpec {
   reachable: boolean;
   models_count: number | null;
+  models: string[];
   error: string | null;
 }
 

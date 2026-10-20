@@ -32,9 +32,8 @@ _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _CUSTOM_PREFIX = "custom-"
 _CUSTOM_LABEL_MAX = 60
 _CUSTOM_MODEL_MAX = 128
+_MAX_STATUS_MODELS = 300
 
-# Estilos de chat que Antares ya sabe hablar. Un modelo personalizado elige
-# uno de ellos, así que no hay rutas de código por proveedor.
 _CUSTOM_APIS: dict[str, JsonObject] = {
     "openai": {
         "label": "OpenAI compatible (Chat Completions)",
@@ -289,8 +288,6 @@ def upsert_custom(config: JsonObject) -> JsonObject:
 
 
 def delete_config(provider: str) -> JsonObject:
-    # Un vault custom corrupto no se puede leer, pero sí borrar: si no, el
-    # archivo quedaría huérfano para siempre porque la lista tampoco lo muestra.
     if not provider.startswith(_CUSTOM_PREFIX):
         get_provider(provider)
     vault.clear(_vault_path(provider))
@@ -339,6 +336,27 @@ def _get_json(url: str, headers: dict[str, str]) -> JsonObject:
         return data
 
 
+def _status_model_ids(models: list[object]) -> list[str]:
+    """Identificadores utilizables del listado del proveedor, sin duplicados.
+
+    OpenAI devuelve ``id`` y Ollama ``name``; cualquier otra forma se descarta.
+    El tope evita que un catálogo enorme (OpenRouter) viaje al renderer.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in models:
+        raw = (item.get("id") or item.get("name")) if isinstance(item, dict) else item
+        if not isinstance(raw, str):
+            continue
+        value = raw.strip()[:120]
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+        if len(out) >= _MAX_STATUS_MODELS:
+            break
+    return out
+
 
 def status(provider: str) -> JsonObject:
     """Sonda el endpoint de modelos del proveedor con la clave guardada."""
@@ -348,6 +366,7 @@ def status(provider: str) -> JsonObject:
         **state,
         "reachable": False,
         "models_count": None,
+        "models": [],
         "error": None,
     }
     auth = spec.get("auth") or {}
@@ -393,4 +412,5 @@ def status(provider: str) -> JsonObject:
         return out
     out["reachable"] = True
     out["models_count"] = len(models)
+    out["models"] = _status_model_ids(models)
     return out

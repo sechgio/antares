@@ -4,6 +4,7 @@ import App from '../App';
 import { findSidebarTab } from './sidebarNav';
 import { TAB_DEFINITIONS } from '../navigation';
 import { connectionsApi } from '../api/connectionsApi';
+import { aiProvidersApi } from '../api/aiProvidersApi';
 import { mcpApi } from '../api/mcpApi';
 
 const { mockSupabase } = vi.hoisted(() => {
@@ -160,8 +161,9 @@ describe('App', () => {
     }
   }, 90000);
 
-  it('opens connections below plugins in settings from the account menu', async () => {
+  it('opens connections and providers as independent sections below plugins in settings', async () => {
     vi.spyOn(connectionsApi, 'connectionsProviders').mockResolvedValue({ providers: [], categories: [] });
+    vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [] });
     vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({ servers: [{
       id: 'test-server', name: 'Servidor de prueba', transport: 'stdio', url: '',
       command: 'test', args: [], secret_keys: [], tools_count: null,
@@ -179,12 +181,14 @@ describe('App', () => {
     const sections = within(screen.getByTestId('settings-modal-sidebar')).getAllByRole('button');
     const pluginsIndex = sections.indexOf(screen.getByTestId('settings-section-plugins'));
     expect(sections[pluginsIndex + 1]).toBe(screen.getByTestId('settings-section-connections'));
+    expect(sections[pluginsIndex + 2]).toBe(screen.getByTestId('settings-section-providers'));
 
     fireEvent.click(screen.getByTestId('settings-section-plugins'));
     fireEvent.keyDown(screen.getByTestId('settings-section-plugins'), { key: 'ArrowDown' });
     expect(screen.getByTestId('settings-section-connections')).toHaveAttribute('aria-current', 'page');
     expect(await screen.findByRole('textbox', { name: 'Buscar conexiones' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Servidores MCP' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Secciones de Conexiones' })).not.toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Eliminar Servidor de prueba' }));
     const confirmation = await screen.findByRole('alertdialog', { name: 'Eliminar servidor' });
@@ -194,5 +198,9 @@ describe('App', () => {
     expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
     expect(screen.getByTestId('settings-modal-overlay')).toHaveClass('z-[120]');
     expect(deleteServer).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('settings-section-providers'));
+    expect(await screen.findByText('Elige un servicio')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Buscar conexiones' })).not.toBeInTheDocument();
   });
 });

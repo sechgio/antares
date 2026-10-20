@@ -1,15 +1,3 @@
-"""Agente IA: conversación con tool-calling sobre los métodos del backend.
-
-Herramientas seguras (métodos ``orchestratable`` del catálogo IPC, todas de
-solo lectura) se ejecutan directamente. Cualquier otro método ``backend:*``
-queda como herramienta con aprobación: el modelo la pide, el turno se pausa
-y la UI muestra una tarjeta Aprobar/Rechazar antes de ejecutarla. Los métodos
-``native:*`` (Electron) quedan fuera: el agente no puede invocarlos.
-
-Las API keys salen del vault (``ai_providers``); nunca llegan al renderer.
-Mensajes y aprobaciones se persisten en ``<datos>/ai-agent/``.
-El cliente LLM y las specs de herramientas viven en ``agent_chat``.
-"""
 
 from __future__ import annotations
 
@@ -24,8 +12,8 @@ from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
-from backend.core.agent import agent_tools, drafts, resource_grants
-from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, scrub_secrets
+from backend.core.agent import agent_tools, drafts, resource_grants, subagent
+from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, scrub_secrets, tool_specs
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
@@ -81,7 +69,6 @@ def _write_keys(method: str) -> frozenset[str]:
 def _validate_action_paths(
     method: str, args: JsonObject, grants: dict[str, JsonObject] | None = None, drafts_root: Path | None = None,
 ) -> None:
-    """Lecturas de archivos concedidos o borradores; salidas solo dentro de los borradores."""
     read_resources(method, args, grants or {}, drafts_root)
     for key in ("_resolved_file_token_path", "_resolved_output_path"):
         if args.get(key):
@@ -121,7 +108,6 @@ def dispatch_key(session_id: str, call_id: str) -> str:
 
 
 def summarize_result(full: str) -> str:
-    """Resumen para el modelo: el comprobante completo se guarda aparte."""
     if len(full) <= _MAX_TOOL_RESULT_CHARS:
         return full
     preview = full[: _MAX_TOOL_RESULT_CHARS - 200]
@@ -137,8 +123,6 @@ def result_failed(full: str) -> bool:
 
 
 class AgentStore:
-    """Persistencia JSON de sesiones, mensajes y aprobaciones del agente."""
-
     def __init__(self, base_dir: Path | None = None) -> None:
         base = base_dir or user_data_path("ai-agent")
         base.mkdir(parents=True, exist_ok=True)
@@ -163,14 +147,11 @@ class AgentStore:
                 question["status"] = "interrupted"
         atomic_write_json(self._questions_path, self._questions)
         loaded = self._read(self._dispatches_path)
-        # Registros antiguos indexados solo por call_id: se reindexan por sesión.
         self._dispatches: dict[str, JsonObject] = {
             (key if ":" in key or not isinstance(rec, dict) or not rec.get("session_id")
              else dispatch_key(str(rec["session_id"]), str(rec.get("call_id") or key))): rec
             for key, rec in loaded.items()
         }
-        # Un dispatch "running" al cargar quedó interrumpido: su resultado es
-        # incierto y no debe reejecutarse ni servirse como éxito.
         dirty = self._dispatches.keys() != loaded.keys()
         for record in self._dispatches.values():
             if record.get("status") == "running":
@@ -235,8 +216,6 @@ class AgentStore:
     def _write_messages(self, session_id: str, messages: list[JsonObject]) -> None:
         atomic_write_json(self._messages_path(session_id), messages)
 
-    # ---- sesiones ----
-
     def create_session(self, provider: str, model: str, title: str) -> JsonObject:
         session: JsonObject = {
             "id": uuid.uuid4().hex[:12],
@@ -293,8 +272,6 @@ class AgentStore:
             self._messages_path(session_id).unlink(missing_ok=True)
         return removed
 
-    # ---- mensajes ----
-
     def messages(self, session_id: str) -> list[JsonObject]:
         with self._lock:
             return [dict(m) for m in self._read_messages(session_id)]
@@ -318,7 +295,7 @@ class AgentStore:
                     and not messages[-1].get("tool_calls")
                     and str(messages[-1].get("content") or "").startswith(partial)
                 ):
-                    partial = ""  # la respuesta ya se escribió antes de limpiar el checkpoint
+                    partial = ""
                 interrupted = bool(messages and (
                     messages[-1].get("role") in ("user", "tool_result")
                     or messages[-1].get("tool_calls")
@@ -348,7 +325,7 @@ class AgentStore:
     def append_message(self, session_id: str, message: JsonObject) -> None:
         with self._lock:
             if session_id not in self._sessions:
-                return  # sesión borrada con el turno en curso: no recrear el archivo
+                return
             messages = self._read_messages(session_id)
             messages.append({**message, "ts": _now_ms()})
             self._write_messages(session_id, messages)
@@ -375,8 +352,6 @@ class AgentStore:
                         self._write_messages(session_id, messages)
                         return
 
-    # ---- aprobaciones ----
-
     def add_grants(self, session_id: str, records: list[JsonObject]) -> None:
         with self._lock:
             session_grants = self._grants.setdefault(session_id, {})
@@ -395,7 +370,6 @@ class AgentStore:
             return {key: dict(value) for key, value in (self._grants.get(session_id) or {}).items()}
 
     def revoke_grant(self, session_id: str, path: str) -> int:
-        """Retira el acceso a un archivo o carpeta concreta de la conversación."""
         with self._lock:
             grants = self._grants.get(session_id) or {}
             keys = [key for key, record in grants.items() if str(record.get("path")) == path]
@@ -506,8 +480,6 @@ class AgentStore:
         return approval
 
     def _expire_stale_approvals(self) -> None:
-        """Las aprobaciones ``pending`` más viejas que el TTL dejan de ser
-        decidibles: una decisión tardía no debe disparar una acción antigua."""
         with self._lock:
             now = _now_ms()
             stale = [
@@ -575,8 +547,6 @@ class AgentStore:
             if denied:
                 self._write_approvals()
             return denied
-
-    # ---- ejecuciones deduplicadas (replay unsafe) ----
 
     def dispatches_for(self, session_id: str) -> list[JsonObject]:
         """Comprobantes de la conversación, sin el resultado completo."""
@@ -661,8 +631,6 @@ class AgentStore:
 
 
 class AgentRunner:
-    """Ejecuta turnos del agente en hilos daemon, con pausa por aprobaciones."""
-
     def __init__(
         self,
         store: AgentStore,
@@ -847,15 +815,58 @@ class AgentRunner:
         try:
             data = json.loads(result)
         except json.JSONDecodeError:
-            data = None  # un resultado truncado sigue siendo visible
+            data = None
         failed = isinstance(data, dict) and ("error" in data or data.get("isError") is True)
         self._store.update_tool_call(session_id, str(call["id"]), "failed" if failed else "done", result)
         return str(result)
+
+    def _run_subagent(self, call: JsonObject, token: _CancelEvent | None = None) -> str:
+        profile = call.get("subagent")
+        session_id = str(call.get("session_id") or "")
+        raw_params = call.get("params")
+        params: JsonObject = raw_params if isinstance(raw_params, dict) else {}
+        task = str(params.get("task") or "").strip()
+        session = self._store.get_session(session_id) if session_id else None
+        if not isinstance(profile, dict) or not str(profile.get("name") or "").strip():
+            return json.dumps({"error": "No hay un agente guardado disponible para esta delegación"}, ensure_ascii=False)
+        if session is None:
+            return json.dumps({"error": "El subagente necesita una conversación activa"}, ensure_ascii=False)
+        if not task:
+            return json.dumps({"error": "Indica qué tarea debe resolver el subagente"}, ensure_ascii=False)
+        allowed = set(subagent.allowed_tool_names(profile.get("tools"), profile.get("enabled")))
+        specs = [spec for spec in tool_specs() if str(spec.get("name") or "") in allowed]
+        allowed = {str(spec.get("name") or "") for spec in specs}
+
+        def execute(name: str, args: JsonObject) -> str:
+            if name not in allowed:
+                return json.dumps({"error": f"Herramienta no disponible para el subagente: {name}"}, ensure_ascii=False)
+            return self._execute(
+                {"id": f"sub-{uuid.uuid4().hex[:12]}", "name": name, "params": args, "session_id": session_id},
+                token,
+            )
+
+        try:
+            receipt = subagent.run(
+                provider=str(session.get("provider") or ""),
+                model=str(session.get("model") or ""),
+                agent=profile,
+                task=task,
+                tools=specs,
+                execute=execute,
+                cancelled=(lambda: token.cancelled) if token is not None else None,
+            )
+        except RunCancelled:
+            raise
+        except Exception as err:
+            return json.dumps({"error": str(err)[:300]}, ensure_ascii=False)
+        return json.dumps(scrub_secrets(receipt), ensure_ascii=False)
 
     def _execute(self, call: JsonObject, token: _CancelEvent | None = None) -> str:
         if token is not None and token.cancelled:
             raise RunCancelled()
         name = str(call.get("name") or "")
+        if name == subagent.TOOL_NAME:
+            return self._run_subagent(call, token)
         if name == "ask_user":
             question = self._store.add_question(str(call["session_id"]), str(call["op_id"]), call["params"])
             while True:
@@ -959,7 +970,7 @@ class AgentRunner:
             return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
         except RunCancelled:
             raise
-        except Exception as err:  # el error vuelve al modelo como resultado de la tool
+        except Exception as err:
             return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
 
     def _run_loop(self, session_id: str) -> None:
@@ -973,7 +984,7 @@ class AgentRunner:
                 raise RunCancelled()
             with self._lock:
                 if self._store.pending_approvals(session_id) or self._decisions.get(session_id):
-                    return  # pausa hasta aplicar las decisiones del usuario
+                    return
             reply = await_or_cancel(
                 lambda: chat(str(session["provider"]), str(session["model"]), self._store.messages(session_id),
                              on_delta=lambda chunk: self._set_partial(session_id, chunk, token)),
@@ -982,7 +993,7 @@ class AgentRunner:
             if token is not None and token.cancelled:
                 raise RunCancelled()
             with self._lock:
-                self._partial.pop(session_id, None)  # el texto parcial ya va a persistirse
+                self._partial.pop(session_id, None)
                 self._partial_saved_at.pop(session_id, None)
             calls = reply.get("calls") or []
             text = str(reply.get("text") or "")
@@ -1019,7 +1030,7 @@ class AgentRunner:
                 if call.get("gated"):
                     self._store.create_approval(session_id, call)
                     self._store.update_tool_call(session_id, call_id, "pending", "")
-                    continue  # se reanuda desde decide()
+                    continue
                 result = self._execute_call(session_id, call)
                 self._append_tool_result(session_id, call_id, call["name"], result)
         self._store.append_message(

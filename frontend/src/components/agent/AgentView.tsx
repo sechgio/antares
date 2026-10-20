@@ -8,9 +8,9 @@ import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import Button from '../ui/Button';
-import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
 import AgentAvatar from './AgentAvatar';
+import ModelPicker from './ModelPicker';
 import ArtifactCard from './ArtifactCard';
 import QuestionCard from './QuestionCard';
 import MemoryMenu from './MemoryMenu';
@@ -75,13 +75,13 @@ function SessionRow({
 }) {
   return (
     <div
-      className={`group flex h-[54px] shrink-0 items-center gap-2.5 rounded-xl p-1.5 transition-colors ${
+      className={`group flex h-[46px] shrink-0 items-center gap-2 rounded-lg p-1.5 transition-colors ${
         active
           ? 'bg-[var(--bg-input)]'
           : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'
       }`}
     >
-      <AgentAvatar seed={session.profile?.id ?? session.id} name={session.title || 'Conversación'} size={40} className="shrink-0" />
+      <AgentAvatar seed={session.profile?.id ?? session.id} name={session.title || 'Conversación'} size={30} className="shrink-0" />
       <button type="button" className="flex min-w-0 flex-1 flex-col text-left" onClick={onSelect}>
         <span className="flex min-w-0 items-center gap-1.5">
           {session.last_error && (
@@ -90,11 +90,11 @@ function SessionRow({
               title={session.last_error}
             />
           )}
-          <span className="truncate text-[14px] font-medium leading-5 text-[var(--text-primary)]">
+          <span className="truncate text-[13px] font-medium leading-[18px] text-[var(--text-primary)]">
             {session.title || 'Conversación'}
           </span>
         </span>
-        <span className="truncate text-[13px] leading-5 text-[var(--text-muted)]">
+        <span className="truncate text-[11px] leading-4 text-[var(--text-muted)]">
           {session.model || session.provider} · {relTime(session.updated_at)}
         </span>
       </button>
@@ -468,7 +468,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     if (!ok) setDraft((prev) => (prev.trim() ? prev : content));
   };
 
-  // Envía el siguiente mensaje en cola cuando el turno termina y no quedan aprobaciones.
   useEffect(() => {
     if (!sessionId || running || stopping || pending.length > 0) return;
     const next = queued.find((i) => i.session === sessionId && !i.failed);
@@ -479,8 +478,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       const ok = await sendToSession(sessionId, next.text, next.requestId, next.attachments ?? []);
       if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
-    // Sin config ESLint en el repo esta directiva es inerte; las dependencias
-    // están completas a propósito (queued dispara el reintento).
   }, [sessionId, running, stopping, pending.length, queued]);
 
   const sendCorrection = async (item: (typeof queued)[number]) => {
@@ -599,8 +596,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 <button
                   type="button"
                   className="flex h-9 flex-1 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-                  aria-label="Proveedores y conexiones"
-                  title="Proveedores y conexiones"
+                  aria-label="Proveedores"
+                  title="Proveedores"
                   onClick={onConfigureProvider}
                 >
                   <Plug size={16} />
@@ -777,50 +774,21 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               <AgentAvatar
                 seed={agentIdentity?.seed ?? 'antares-agent'}
                 name={agentIdentity?.name ?? 'Agente de Antares'}
-                size={88}
+                size={64}
               />
               <div>
-                <h2 className="text-[16px] font-semibold leading-6 text-[var(--text-primary)]">
+                <h2 className="text-[15px] font-semibold leading-6 text-[var(--text-primary)]">
                   {activeProfile ? activeProfile.name : sessionId ? '¿En qué trabajamos hoy?' : 'Agente de Antares'}
                 </h2>
-                <p className="mx-auto mt-1 max-w-sm text-[13px] leading-[18px] text-[var(--text-secondary)]">
+                <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-[19px] text-[var(--text-secondary)]">
                   {readyProviders.length === 0
-                    ? 'Configura un proveedor en «Proveedores IA» para empezar.'
+                    ? 'Configura un proveedor en «Proveedores» para empezar.'
                     : activeProfile?.description
                       || 'Conversa con la app: consulta su estado con herramientas de lectura y aprueba cada acción con efectos antes de que se ejecute.'}
                 </p>
               </div>
               {readyProviders.length === 0 && onConfigureProvider && (
                 <Button size="sm" onClick={onConfigureProvider}>Configurar IA</Button>
-              )}
-              {readyProviders.length > 0 && !sessionId && (
-                <div className="w-full max-w-sm space-y-1.5 text-left">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                    Proveedor para la conversación
-                  </p>
-                  <ThemedSelect
-                    value={provider}
-                    onChange={(v) => {
-                      setProvider(v);
-                      const p = providers.find((x) => x.id === v);
-                      if (p?.default_model) setModel(p.default_model);
-                    }}
-                    options={providers.map((p) => ({ value: p.id, label: p.label }))}
-                    aria-label="Proveedor IA"
-                    placeholder="Proveedor…"
-                  />
-                  <Input
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    placeholder="Modelo (opcional)"
-                    spellCheck={false}
-                    aria-label="Modelo"
-                    className="w-full"
-                  />
-                  <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
-                    Se aplican a la próxima conversación. Las claves se guardan cifradas en este equipo.
-                  </p>
-                </div>
               )}
               {readyProviders.length > 0 && (
                 <div className="w-full max-w-sm space-y-1.5">
@@ -1002,11 +970,23 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <span className="hidden h-8 max-w-56 items-center truncate rounded-xl px-2 text-[14px] text-[var(--text-secondary)] sm:flex">
-                  {session
-                    ? session.model || sessionProviderLabel
-                    : model || providerLabel || 'Proveedor IA'}
-                </span>
+                {!session && readyProviders.length > 0 ? (
+                  <ModelPicker
+                    providers={readyProviders}
+                    value={{ provider, model }}
+                    onChange={(next) => {
+                      setProvider(next.provider);
+                      setModel(next.model);
+                    }}
+                  />
+                ) : (
+                  <span className="hidden h-8 max-w-56 items-center gap-1.5 truncate rounded-full px-2 text-[12px] text-[var(--text-muted)] sm:flex">
+                    <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
+                    {session
+                      ? session.model || sessionProviderLabel
+                      : model || providerLabel || 'Proveedor IA'}
+                  </span>
+                )}
                 {(running || pending.length > 0) && (
                   <button
                     type="button"

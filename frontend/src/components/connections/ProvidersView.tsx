@@ -168,7 +168,7 @@ export default function ProvidersView() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl px-6 py-5">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Proveedores IA</h2>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Proveedores</h2>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
           Después podrás usarlo en el Agente o en un paso de IA.
         </p>

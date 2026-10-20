@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { agentApi, type AgentSession } from '../../api/agentApi';
 import { aiProvidersApi } from '../../api/aiProvidersApi';
@@ -371,4 +371,26 @@ it('abre una conversación desde un agente guardado con su mensaje inicial', asy
   await act(async () => { fireEvent.click(screen.getByTitle('Nueva conversación con Informe mensual')); });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
+});
+
+it('crea la conversación con el modelo real elegido en el selector', async () => {
+  vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [
+    { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
+  ] } as never);
+  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({ provider: {
+    id: 'local', label: 'Local', description: '', docs: '', editable_base_url: false, default_base_url: '', default_model: 'prueba',
+    provider: 'openai', configured: true, has_key: true, key_masked: null, base_url: '', needs_key: false,
+    reachable: true, models_count: 2, models: ['prueba', 'otro-modelo'], error: null,
+  } });
+  vi.spyOn(agentApi, 'agentSessionsList').mockResolvedValue({ sessions: [] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, id: 's8' } });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByLabelText('Elegir proveedor y modelo'));
+  const dialog = await screen.findByRole('dialog', { name: 'Modelos disponibles' });
+  await waitFor(() => expect(within(dialog).getByText('otro-modelo')).toBeInTheDocument());
+  fireEvent.click(within(dialog).getByText('otro-modelo'));
+  await act(async () => { fireEvent.click(screen.getByLabelText('Nueva conversación')); });
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ provider: 'local', model: 'otro-modelo' }));
 });

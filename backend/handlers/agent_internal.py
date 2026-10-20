@@ -1,19 +1,3 @@
-"""RPC internos del agente nativo (Electron → Python), nunca del renderer.
-
-El runtime del agente vive en el proceso principal de Electron (pi-durable +
-pi-ai); estos métodos conservan en Python lo que no sale de él: vault de
-proveedores, allowlist y dispatch por lanes del scheduler, validación de rutas,
-servidores MCP y aprobaciones. El catálogo los marca ``internal: true``: el
-router los rechaza antes de aceptar una llamada del renderer.
-
-El dispatch se reserva de forma atómica por ``(session_id, call_id)``
-(``AgentStore.dispatch_claim``): solo el ganador arranca el worker, una
-repetición con la misma intención sirve el comprobante guardado, otra intención
-con el mismo ``call_id`` es un conflicto y nunca se reejecuta un efecto cuyo
-resultado quedó incierto (replay unsafe por defecto). Los efectos sobre el mismo
-recurso se serializan.
-"""
-
 from __future__ import annotations
 
 import json
@@ -26,6 +10,7 @@ from backend.core.agent import agent_chat as _agent_chat
 from backend.core.agent import agent_tools, artifacts, canvas_edit, documents, drafts, resource_grants
 from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
+from backend.core.agent import subagent as _subagent
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.integrations import ai_providers as _ai_providers
@@ -55,8 +40,6 @@ def _record_outcome(session_id: str, name: str, status: str) -> None:
 _inflight: dict[str, _CancelEvent] = {}
 _inflight_lock = threading.Lock()
 _resource_locks: dict[str, threading.Lock] = {}
-# Locks de recurso que retiene un efecto nativo entre su reserva y
-# agent_internal_dispatch_finish (Electron lo ejecuta fuera de este proceso).
 _native_leases: dict[str, list[threading.Lock]] = {}
 _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
                     "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields",
@@ -65,7 +48,6 @@ _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 
 
 def _resource_keys(params: JsonObject) -> list[str]:
-    """Claves de recurso de un efecto: documento/registro/archivo remoto por ID y archivos de salida."""
     keys: set[str] = set()
     document = params.get("document")
     remote = [params.get(name) for name in ("file_id", "replace_file_id", "spreadsheet_id", "item_id", "replace_item_id")]
@@ -85,7 +67,6 @@ def _locks_for(keys: list[str]) -> list[threading.Lock]:
 
 
 def _context_keys(context: object) -> list[str]:
-    """Recurso remoto compartido de un efecto nativo: la hoja (o cuenta) de AutoIMG."""
     if not isinstance(context, dict):
         return []
     for field, prefix in (("sheet_id", "sheet"), ("account_id", "account")):
@@ -96,7 +77,6 @@ def _context_keys(context: object) -> list[str]:
 
 
 def _try_locks(keys: list[str]) -> list[threading.Lock] | None:
-    """Toma todos los locks sin esperar (orden estable) o ninguno."""
     acquired: list[threading.Lock] = []
     for lock in _locks_for(keys):
         if not lock.acquire(blocking=False):
@@ -128,10 +108,6 @@ def _tools(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("provider")
 def _provider(params: JsonObject) -> JsonObject:
-    """Resuelve endpoint y credencial del proveedor para el proceso principal.
-
-    La clave viaja solo por el canal interno Electron↔Python; jamás al
-    renderer ni al modelo."""
     provider = str(params["provider"])
     try:
         spec = _ai_providers.get_provider(provider)
@@ -169,8 +145,6 @@ def _provider(params: JsonObject) -> JsonObject:
 
 
 def _intent(session_id: str, method: str, params: JsonObject, context: JsonObject | None = None) -> JsonObject:
-    """Intención que firma una aprobación: parámetros y revisión de cada archivo
-    concedido que lee. Cambiar el archivo después de aprobar invalida la aprobación."""
     try:
         artifact_context: JsonObject = {}
         store = _store()
@@ -221,11 +195,6 @@ def _intent_fingerprint(session_id: str, method: str, params: JsonObject, contex
 @with_locale
 @validate_params("session_id", "paths")
 def _grants_add(params: JsonObject) -> JsonObject:
-    """Concede lectura de los archivos que el humano escribió o adjuntó, y de las
-    carpetas que eligió en el diálogo de adjuntos.
-
-    Solo lo llama Electron con rutas del texto del usuario o de su diálogo; el
-    modelo no tiene acceso a este método (``agent_`` está denegado e ``internal``)."""
     session_id = str(params["session_id"])
     paths = params["paths"]
     folders = params.get("folders") or []
@@ -253,8 +222,6 @@ def _grants_add(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("text")
 def _mentions(params: JsonObject) -> JsonObject:
-    """Resuelve las ``@menciones`` del texto del humano a módulos de Antares y
-    prepara el contexto que acompaña su mensaje al modelo."""
     result = _agent_modules.resolve_mentions(str(params["text"]))
     result["labels"] = {module: _agent_modules.label_for(module) for module in result["modules"]}
     if result["modules"]:
@@ -280,8 +247,6 @@ def _approval_error(approval: JsonObject | None) -> ValidationError:
 @with_locale
 @validate_params("session_id", "call_id", "method")
 def _approval_ensure(params: JsonObject) -> JsonObject:
-    """Idempotente por (session_id, call_id): tras un reinicio se reanuda la
-    espera sobre la misma aprobación en lugar de crear un duplicado."""
     session_id = str(params["session_id"])
     call_id = str(params["call_id"])
     method = str(params["method"])
@@ -335,10 +300,6 @@ def _dispatch_error(message: str) -> JsonObject:
 @with_locale
 @validate_params("session_id", "call_id", "name")
 def _dispatch(params: JsonObject) -> JsonObject:
-    """Reserva y arranca la ejecución de una herramienta en un hilo daemon; el
-    resultado se sondea con ``agent_internal_dispatch_result``. Los efectos
-    ``gated`` consumen en la reserva una aprobación ``approved`` vinculada a la
-    llamada y con la misma huella de parámetros."""
     session_id = str(params["session_id"])
     call_id = str(params["call_id"])
     name = str(params["name"])
@@ -348,9 +309,6 @@ def _dispatch(params: JsonObject) -> JsonObject:
 
     native = params.get("native") is True
     if native:
-        # Herramientas que Electron ejecuta en el proceso principal: Python solo
-        # reserva la operación y consume la aprobación; Electron registra el
-        # resultado con agent_internal_dispatch_finish.
         if not name.startswith(_NATIVE_PREFIXES):
             return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
         gated = params.get("gated") is not False
@@ -359,8 +317,15 @@ def _dispatch(params: JsonObject) -> JsonObject:
     else:
         is_mcp = _mcp_servers.parse_agent_tool(name) is not None
         gated = is_mcp or name in _agent_chat.gated_methods()
-        if not gated and name not in _agent_chat.readonly_methods():
+        if not gated and name not in _agent_chat.readonly_methods() and name != _subagent.TOOL_NAME:
             return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
+    subagent_profile: JsonObject | None = None
+    if name == _subagent.TOOL_NAME:
+        context = params.get("context")
+        candidate = context.get("subagent") if isinstance(context, dict) else None
+        if not isinstance(candidate, dict) or not str(candidate.get("name") or "").strip():
+            return _dispatch_error("El agente indicado no está disponible para delegar")
+        subagent_profile = candidate
     approval_id = params.get("approval_id")
     if gated and not isinstance(approval_id, str):
         return _dispatch_error("La herramienta requiere una aprobación aprobada para esta llamada")
@@ -394,8 +359,6 @@ def _dispatch(params: JsonObject) -> JsonObject:
         return {**_dispatch_error("El identificador de la llamada ya se usó con otra intención en esta conversación"),
                 "dispatch": record}
     if outcome == "existing":
-        # Deduplicación: una repetición sirve lo persistido; un "running" sigue
-        # en vuelo (o quedará "uncertain" al reabrir el store tras un crash).
         return {"result": (record.get("summary") or record.get("result")) if record.get("status") != "running" else None,
                 "dispatch": record}
 
@@ -418,13 +381,14 @@ def _dispatch(params: JsonObject) -> JsonObject:
                 raise ValidationError("Los parámetros o recursos cambiaron después de reservar la operación")
             result = _agent.get_agent_runner()._execute(
                 {"id": call_id, "name": name, "params": call_params, "session_id": session_id, "op_id": op_id,
-                 "approved_context": intent["context"]}, token
+                 "approved_context": intent["context"], **({"subagent": subagent_profile} if subagent_profile else {})},
+                token,
             )
             status = "failed" if _agent.result_failed(result) else "submitted" if name == "artifact_print" else "succeeded"
         except RunCancelled:
             result = _agent._INTERRUPTED_RESULT
             status = "uncertain"
-        except Exception as err:  # nunca pierdas el resultado: queda registrado
+        except Exception as err:
             result = json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
             status = "failed"
         finally:
@@ -453,7 +417,6 @@ def _dispatch_result(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("session_id", "call_id", "op_id", "result")
 def _dispatch_finish(params: JsonObject) -> JsonObject:
-    """Registra el resultado de una herramienta nativa ejecutada por Electron."""
     try:
         return _finish_native(params)
     finally:
@@ -516,15 +479,12 @@ def _artifacts(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("session_id", "path")
 def _grant_remove(params: JsonObject) -> JsonObject:
-    """El usuario retira un archivo concedido; solo lo llama Electron desde su acción."""
     return {"removed": _store().revoke_grant(str(params["session_id"]), str(params["path"]))}
 
 
 @with_locale
 @validate_params("session_id", "text")
 def _memory_context(params: JsonObject) -> JsonObject:
-    """Recuerdos pertinentes al mensaje del humano. Electron envía la versión
-    actual de cada herramienta para suspender procedimientos desactualizados."""
     raw = params.get("tools")
     tools = raw if isinstance(raw, list) else []
     versions = {str(t["name"]): str(t.get("version") or "") for t in tools if isinstance(t, dict) and t.get("name")}

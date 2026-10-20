@@ -255,7 +255,6 @@ def test_ipc_list_exposes_custom_models_without_the_key(tmp_path, monkeypatch):
 
 
 def test_ipc_list_keeps_catalog_before_custom_models(tmp_path, monkeypatch):
-    """Agente y Diseño usan el primer proveedor listo: un custom no debe adelantarse."""
     from backend.handlers import integrations
 
     monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
@@ -298,3 +297,22 @@ def test_custom_model_with_corrupt_vault_can_be_deleted(tmp_path, monkeypatch):
     ai_providers.delete_config("custom-roto-aaaaaa")
     assert not path.exists()
 
+
+def test_status_exposes_real_model_ids(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    ai_providers.put_config("openai", {"api_key": "sk-x"})
+    monkeypatch.setattr(
+        ai_providers,
+        "_get_json",
+        lambda url, headers: {"data": [{"id": "gpt-4o"}, {"id": " gpt-4o "}, {"id": "gpt-4o"}, {"id": ""}, {}, "gpt-5"]},
+    )
+    assert ai_providers.status("openai")["models"] == ["gpt-4o", "gpt-5"]
+
+    ai_providers.put_config("ollama", {"base_url": "http://127.0.0.1:11434"})
+    monkeypatch.setattr(ai_providers, "_get_json", lambda url, headers: {"models": [{"name": "llama3.1:latest"}]})
+    assert ai_providers.status("ollama")["models"] == ["llama3.1:latest"]
+
+
+def test_status_without_reach_has_no_models(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    assert ai_providers.status("openai")["models"] == []
