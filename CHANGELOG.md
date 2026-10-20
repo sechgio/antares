@@ -8,7 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- Agent permite elegir proveedor y modelo desde el composer, consultar los modelos disponibles, filtrar por nombre y reutilizar selecciones recientes. También acepta escribir un modelo manualmente si el proveedor no responde.
+- Agent permite elegir proveedor y modelo desde el composer en un menú agrupado por proveedor, filtrar por nombre y escribir un modelo manualmente si el proveedor no responde. Un indicador junto al selector muestra el porcentaje de la ventana de contexto usado y, al pasar el cursor, los tokens de entrada y salida.
 - Agent puede delegar tareas en agentes guardados con herramientas de solo lectura. La conversación muestra los pasos, el resultado y la duración de cada delegación.
 - Agent permite habilitar herramientas por conversación y conserva la selección al reiniciar. Deshabilitarlas bloquea también las llamadas que aún esperan aprobación o un recurso compartido.
 - Agent permite generar Padrones y Volantes con sus motores actuales, exportar plantillas HTML y Canvas RGB/CMYK, revisar y guardar PDFs registrados y preparar su impresión con aprobación ligada al archivo. Incluye preguntas estructuradas, operaciones de Espacios con la sesión actual y selección de herramientas MCP.

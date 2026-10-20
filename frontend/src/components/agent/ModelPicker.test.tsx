@@ -13,13 +13,19 @@ function status(id: string, models: string[], error: string | null = null): { pr
   return { provider: { ...spec, reachable: error === null, models_count: models.length, models, error } };
 }
 
+function mockStatus(local: string[], error: string | null = null) {
+  return vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockImplementation(async (id: string) => (
+    id === 'openai' ? status('openai', ['gpt-4o', 'gpt-4.1']) : status('local', local, error)
+  ));
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
 });
 
 it('lista los modelos reales del proveedor y elige uno', async () => {
-  const list = vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue(status('local', ['llama3.1', 'llama3.2', 'qwen2.5']));
+  const list = mockStatus(['llama3.1', 'llama3.2', 'qwen2.5']);
   const change = vi.fn();
   render(<ModelPicker providers={providers} value={{ provider: 'local', model: 'llama3.1' }} onChange={change} />);
   fireEvent.click(screen.getByLabelText('Elegir proveedor y modelo'));
@@ -33,7 +39,7 @@ it('lista los modelos reales del proveedor y elige uno', async () => {
 });
 
 it('filtra por nombre y permite escribir un modelo que no aparece', async () => {
-  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue(status('local', ['llama3.1', 'qwen2.5']));
+  mockStatus(['llama3.1', 'qwen2.5']);
   const change = vi.fn();
   render(<ModelPicker providers={providers} value={{ provider: 'local', model: 'llama3.1' }} onChange={change} />);
   fireEvent.click(screen.getByLabelText('Elegir proveedor y modelo'));
@@ -53,25 +59,23 @@ it('filtra por nombre y permite escribir un modelo que no aparece', async () => 
   expect(change).toHaveBeenLastCalledWith({ provider: 'local', model: 'modelo-propio' });
 });
 
-it('cambia de proveedor y conserva recientes', async () => {
-  localStorage.setItem('antares-agent-models', JSON.stringify([{ provider: 'local', model: 'llama3.2' }]));
-  const list = vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockImplementation(async (id: string) => (
-    id === 'openai' ? status('openai', ['gpt-4o', 'gpt-4.1']) : status('local', ['llama3.1', 'llama3.2'])
-  ));
-  render(<ModelPicker providers={providers} value={{ provider: 'local', model: 'llama3.1' }} onChange={vi.fn()} />);
+it('agrupa los modelos de todos los proveedores y elige uno de otro proveedor', async () => {
+  const list = mockStatus(['llama3.1', 'llama3.2']);
+  const change = vi.fn();
+  render(<ModelPicker providers={providers} value={{ provider: 'local', model: 'llama3.1' }} onChange={change} />);
   fireEvent.click(screen.getByLabelText('Elegir proveedor y modelo'));
   const dialog = screen.getByRole('dialog', { name: 'Modelos disponibles' });
-  await waitFor(() => expect(within(dialog).getByText('Recientes')).toBeInTheDocument());
-  expect(within(dialog).getAllByText('llama3.2')).toHaveLength(1);
-
-  fireEvent.click(within(dialog).getByRole('button', { name: 'OpenAI' }));
-  await waitFor(() => expect(within(dialog).getByText('gpt-4.1')).toBeInTheDocument());
+  const openai = await within(dialog).findByRole('group', { name: 'OpenAI' });
+  await waitFor(() => expect(within(openai).getByText('gpt-4.1')).toBeInTheDocument());
+  expect(within(within(dialog).getByRole('group', { name: 'Local' })).getByText('llama3.2')).toBeInTheDocument();
+  expect(list).toHaveBeenCalledWith('local');
   expect(list).toHaveBeenCalledWith('openai');
-  expect(within(dialog).queryByText('Recientes')).toBeNull();
+  fireEvent.click(within(openai).getByText('gpt-4.1'));
+  expect(change).toHaveBeenCalledWith({ provider: 'openai', model: 'gpt-4.1' });
 });
 
 it('explica el fallo y aun así acepta un modelo manual', async () => {
-  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue(status('local', [], 'El proveedor no responde'));
+  mockStatus([], 'El proveedor no responde');
   const change = vi.fn();
   render(<ModelPicker providers={providers} value={{ provider: 'local', model: 'llama3.1' }} onChange={change} />);
   fireEvent.click(screen.getByLabelText('Elegir proveedor y modelo'));
@@ -83,9 +87,8 @@ it('explica el fallo y aun así acepta un modelo manual', async () => {
   expect(change).toHaveBeenCalledWith({ provider: 'local', model: 'manual-1' });
 });
 
-it('permite recorrer la lista con teclado y señala la selección reciente', async () => {
-  localStorage.setItem('antares-agent-models', JSON.stringify([{ provider: 'local', model: 'llama3.1' }]));
-  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue(status('local', ['llama3.1', 'qwen2.5']));
+it('permite recorrer la lista con teclado y señala la selección actual', async () => {
+  mockStatus(['llama3.1', 'qwen2.5']);
   const change = vi.fn();
   render(<ModelPicker providers={providers} value={{ provider: 'local', model: 'llama3.1' }} onChange={change} />);
   const trigger = screen.getByLabelText('Elegir proveedor y modelo');
@@ -93,7 +96,7 @@ it('permite recorrer la lista con teclado y señala la selección reciente', asy
   const search = await screen.findByRole('combobox', { name: 'Buscar modelo' });
   await screen.findByRole('option', { name: /qwen2.5/ });
   expect(screen.getByRole('option', { name: /llama3.1/ })).toHaveAttribute('aria-selected', 'true');
-  fireEvent.keyDown(search, { key: 'End' });
+  fireEvent.keyDown(search, { key: 'ArrowDown' });
   expect(search).toHaveAttribute('aria-activedescendant', screen.getByRole('option', { name: /qwen2.5/ }).id);
   fireEvent.keyDown(search, { key: 'Enter' });
   expect(change).toHaveBeenCalledWith({ provider: 'local', model: 'qwen2.5' });

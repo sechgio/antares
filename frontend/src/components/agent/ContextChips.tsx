@@ -7,19 +7,14 @@ function baseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
 }
 
-function formatTokens(value: number): string {
-  return value >= 1000 ? `${(value / 1000).toFixed(1).replace('.', ',')} k` : String(value);
-}
-
-export default function ContextChips({ context, usage, onRemoveFile }: {
+export default function ContextChips({ context, onRemoveFile }: {
   context: AgentContext | null;
-  usage: { input: number; output: number } | null;
   onRemoveFile: (path: string) => void;
 }) {
   const modules = context?.modules ?? [];
   const files = context?.files ?? [];
   const accounts = context?.accounts ?? [];
-  if (!modules.length && !files.length && !accounts.length && !usage) return null;
+  if (!modules.length && !files.length && !accounts.length) return null;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pt-2" aria-label="Contexto de la conversación">
       {modules.map((module) => (
@@ -49,11 +44,6 @@ export default function ContextChips({ context, usage, onRemoveFile }: {
           <span className="truncate">{account}</span>
         </span>
       ))}
-      {usage && (
-        <span className="ml-auto text-[10px] tabular-nums text-[var(--text-muted)]" title="Tokens informados por el proveedor (entrada / salida)">
-          {formatTokens(usage.input)} / {formatTokens(usage.output)} tokens
-        </span>
-      )}
     </div>
   );
 }
