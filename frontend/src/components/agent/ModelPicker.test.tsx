@@ -82,3 +82,24 @@ it('explica el fallo y aun así acepta un modelo manual', async () => {
   fireEvent.click(within(dialog).getByText('Usar «manual-1»'));
   expect(change).toHaveBeenCalledWith({ provider: 'local', model: 'manual-1' });
 });
+
+it('permite recorrer la lista con teclado y señala la selección reciente', async () => {
+  localStorage.setItem('antares-agent-models', JSON.stringify([{ provider: 'local', model: 'llama3.1' }]));
+  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue(status('local', ['llama3.1', 'qwen2.5']));
+  const change = vi.fn();
+  render(<ModelPicker providers={providers} value={{ provider: 'local', model: 'llama3.1' }} onChange={change} />);
+  const trigger = screen.getByLabelText('Elegir proveedor y modelo');
+  fireEvent.click(trigger);
+  const search = await screen.findByRole('combobox', { name: 'Buscar modelo' });
+  await screen.findByRole('option', { name: /qwen2.5/ });
+  expect(screen.getByRole('option', { name: /llama3.1/ })).toHaveAttribute('aria-selected', 'true');
+  fireEvent.keyDown(search, { key: 'End' });
+  expect(search).toHaveAttribute('aria-activedescendant', screen.getByRole('option', { name: /qwen2.5/ }).id);
+  fireEvent.keyDown(search, { key: 'Enter' });
+  expect(change).toHaveBeenCalledWith({ provider: 'local', model: 'qwen2.5' });
+  expect(trigger).toHaveFocus();
+  fireEvent.click(trigger);
+  fireEvent.keyDown(await screen.findByRole('combobox'), { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+});

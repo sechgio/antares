@@ -78,6 +78,10 @@ function main() {
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
+  if (!apiMethods.has('agent_session_model_set') || !allowed.has('agent_session_model_set')
+    || catalog.METHODS.agent_session_model_set.handler !== 'native:agent') {
+    throw new Error('El selector de modelos debe usar el método nativo permitido del agente.');
+  }
   const refreshMethod = 'connections_token_refresh';
   if (!catalog.INTERNAL_METHODS.has(refreshMethod) || knownUsedMethods.has(refreshMethod)) {
     throw new Error('El refresco de conexiones debe ser interno, sin acceso del renderer.');

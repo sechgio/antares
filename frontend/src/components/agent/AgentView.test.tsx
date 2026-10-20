@@ -394,3 +394,41 @@ it('crea la conversación con el modelo real elegido en el selector', async () =
   await act(async () => { fireEvent.click(screen.getByLabelText('Nueva conversación')); });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ provider: 'local', model: 'otro-modelo' }));
 });
+
+it('cambia el modelo del chat actual, conserva los mensajes y retiene el anterior si falla', async () => {
+  const provider = {
+    id: 'local', label: 'Local', description: '', docs: '', editable_base_url: false, default_base_url: '', default_model: 'prueba',
+    provider: 'openai', configured: true, has_key: true, key_masked: null, base_url: '', needs_key: false,
+  };
+  vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [provider] });
+  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({ provider: {
+    ...provider, reachable: true, models_count: 2, models: ['prueba', 'otro-modelo'], error: null,
+  } });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+    messages: [{ role: 'assistant', content: 'Respuesta anterior', ts: 1 }],
+  });
+  const save = deferred<{ session: AgentSession }>();
+  const set = vi.spyOn(agentApi, 'agentSessionModelSet').mockReturnValueOnce(save.promise).mockRejectedValueOnce(new Error('Proveedor no disponible'));
+  const create = vi.spyOn(agentApi, 'agentSessionCreate');
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  const trigger = screen.getByLabelText('Elegir proveedor y modelo');
+  fireEvent.click(trigger);
+  fireEvent.click(await screen.findByRole('option', { name: /otro-modelo/ }));
+  expect(set).toHaveBeenCalledWith('s1', 'local', 'otro-modelo');
+  expect(trigger).toBeDisabled();
+  expect(screen.getByText('Respuesta anterior')).toBeVisible();
+  await act(async () => { save.resolve({ session: { ...session, model: 'otro-modelo' } }); });
+  expect(trigger).toHaveTextContent('otro-modelo');
+  expect(create).not.toHaveBeenCalled();
+  fireEvent.click(trigger);
+  fireEvent.click(await screen.findByRole('option', { name: /prueba/ }));
+  await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Proveedor no disponible' })));
+  expect(trigger).toHaveTextContent('otro-modelo');
+  list.mockResolvedValue({ ...empty, running: true });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Continúa' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(trigger).toBeDisabled();
+  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Continúa', expect.any(String), []);
+});
