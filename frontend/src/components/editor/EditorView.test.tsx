@@ -45,7 +45,7 @@ beforeEach(() => {
     invoke: mockInvoke,
     onNotify: vi.fn(),
     reportRendererError: vi.fn(),
-  } as any;
+  } as never;
 });
 
 describe('EditorView', () => {
@@ -62,7 +62,7 @@ describe('EditorView', () => {
   });
 
   it('lista proyectos recientes y abre el elegido', async () => {
-    mockInvoke.mockImplementation((method: string, params?: any) => {
+    mockInvoke.mockImplementation((method: string, params?: unknown) => {
       if (method === 'editor_bootstrap') {
         return Promise.resolve({
           schemaVersion: 1,

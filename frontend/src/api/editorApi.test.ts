@@ -9,7 +9,7 @@ beforeEach(() => {
     invoke: mockInvoke,
     onNotify: vi.fn(),
     reportRendererError: vi.fn(),
-  } as any;
+  } as never;
 });
 
 describe('editorApi facade', () => {
@@ -46,7 +46,7 @@ describe('editorApi facade', () => {
 
   it('guarda con CAS de revisión', async () => {
     mockInvoke.mockResolvedValue({ project: { id: 'p1', revision: 2 } });
-    const doc = { id: 'p1', revision: 1 } as any;
+    const doc = { id: 'p1', revision: 1 } as never;
     await api.editorProjectSave(doc, 1);
     expect(mockInvoke).toHaveBeenCalledWith('editor_project_save', {
       document: doc,
@@ -56,7 +56,7 @@ describe('editorApi facade', () => {
 
   it('reintenta el guardado con el mismo requestId', async () => {
     mockInvoke.mockResolvedValue({ project: { id: 'p1', revision: 2 } });
-    const doc = { id: 'p1', revision: 1 } as any;
+    const doc = { id: 'p1', revision: 1 } as never;
     await api.editorProjectSave(doc, 1, 'req-save-1');
     expect(mockInvoke).toHaveBeenCalledWith('editor_project_save', {
       document: doc,

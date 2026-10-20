@@ -23,7 +23,7 @@ SCHEMA_VERSION: int = 1
 
 def _load_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
     p = resource_path("shared/editor-schema.json")
-    return cast("dict[str, Any]", json.loads(p.read_text(encoding="utf-8")))
+    return cast("dict[str, Any]", json.loads(p.read_text(encoding="utf-8")))  # allowlist: dict[str, Any]
 
 
 _SCHEMA = _load_schema()
@@ -95,8 +95,8 @@ def validate_document(document: Any) -> dict[str, Any]:  # allowlist: dict[str, 
     if errors:
         first = errors[0]
         raise EditorContractError(_format_error(first))
-    _check_semantics(cast("dict[str, Any]", document))
-    return cast("dict[str, Any]", document)
+    _check_semantics(cast("dict[str, Any]", document))  # allowlist: dict[str, Any]
+    return cast("dict[str, Any]", document)  # allowlist: dict[str, Any]
 
 
 def clip_duration_us(clip: dict[str, Any]) -> int:  # allowlist: dict[str, Any]
