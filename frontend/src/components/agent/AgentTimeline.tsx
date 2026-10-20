@@ -5,6 +5,7 @@ import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
 import MessageMarkdown from './MessageMarkdown';
+import Reasoning from './Reasoning';
 import SubagentTrace from './SubagentTrace';
 import { METHOD_LABELS } from './methodLabels';
 
@@ -138,15 +139,16 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
   return (
     <div className="agent-trace-in group flex items-start gap-2.5">
       <div className="min-w-0 flex-1 space-y-1.5">
-        {msg.content && (
+        {(msg.content || msg.reasoning) && (
           <div className="flex items-center gap-1.5">
             {agent && <AgentAvatar seed={agent.seed} name={agent.name} size={18} working={!!msg.partial} />}
             <span className="text-[12px] font-medium leading-5 text-[var(--text-secondary)]">
               {agent?.name ?? 'Agente'}
             </span>
-            {!msg.partial && <CopyButton text={msg.content} />}
+            {!msg.partial && msg.content && <CopyButton text={msg.content} />}
           </div>
         )}
+        {msg.reasoning && <Reasoning text={msg.reasoning} streaming={!!msg.partial && !msg.content} ms={msg.reasoning_ms} />}
         {msg.content && (
           <div className="agent-message-answer w-fit max-w-[min(620px,100%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
             <MessageMarkdown text={msg.content} streaming={!!msg.partial} />

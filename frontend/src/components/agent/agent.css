@@ -21,6 +21,17 @@
   outline-offset: 3px;
 }
 
+.agent-shimmer {
+  background: linear-gradient(90deg, var(--text-muted) 35%, var(--text-primary) 50%, var(--text-muted) 65%) 100% 0 / 300% 100% no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: agentShimmer 1.8s linear infinite;
+}
+@keyframes agentShimmer {
+  to { background-position: 0 0; }
+}
+
 .agent-thinking-dots span {
   width: 4px;
   height: 4px;
@@ -90,7 +101,9 @@
 @media (prefers-reduced-motion: reduce) {
   .agent-avatar[data-working='true'] .agent-avatar-eyes,
   .agent-thinking-dots span,
+  .agent-shimmer,
   .agent-model-menu,
   .agent-workspace .animate-spin,
   .agent-model-menu .animate-spin { animation: none; }
+  .agent-shimmer { background: none; color: var(--text-secondary); }
 }

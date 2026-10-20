@@ -37,6 +37,8 @@ export interface AgentToolCall {
 export interface AgentMessage {
   role: 'user' | 'assistant' | 'tool_result';
   content: string;
+  reasoning?: string;
+  reasoning_ms?: number;
   tool_calls?: AgentToolCall[];
   tool_use_id?: string;
   name?: string;

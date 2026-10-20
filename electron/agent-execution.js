@@ -16,6 +16,17 @@ const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SUBAGENT_DESCRIPTION_MAX = 80;
 
+const REASONING_OPENAI_MODEL = /deepseek-(r1|reasoner)|qwq|qwen3|gpt-oss|thinking/i;
+const REASONING_ANTHROPIC_MODEL = /claude-(3-7|(opus|sonnet|haiku|fable)-[4-9])/i;
+
+function supportsReasoning(style, modelId) {
+  return (style === 'anthropic_messages' ? REASONING_ANTHROPIC_MODEL : REASONING_OPENAI_MODEL).test(String(modelId || ''));
+}
+
+function thinkingLevelFor(style, modelId) {
+  return supportsReasoning(style, modelId) ? 'low' : 'off';
+}
+
 async function providerInfo(provider) {
   return bridge('agent_internal_provider', { provider });
 }
@@ -90,7 +101,7 @@ async function buildProvider(record) {
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 128000,
       maxTokens: 8192,
-      reasoning: false,
+      reasoning: supportsReasoning(info.style, id),
     })),
     api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : shared.deps.aiOpenai.openAICompletionsApi(),
   });
@@ -426,6 +437,7 @@ module.exports = {
   allToolSpecs,
   callKey,
   providerInfo,
+  thinkingLevelFor,
   ensureProvider,
   refreshTools,
   notifyDecision,

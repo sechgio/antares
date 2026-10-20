@@ -387,6 +387,14 @@ async function main() {
   }
 
   {
+    const { thinkingLevelFor } = require('../electron/agent-execution');
+    assert(thinkingLevelFor('anthropic_messages', 'claude-sonnet-4-5') === 'low' && thinkingLevelFor('anthropic_messages', 'claude-3-5-haiku') === 'off',
+      'Anthropic pide razonamiento solo a modelos que lo admiten');
+    assert(thinkingLevelFor('openai_chat', 'deepseek-r1:8b') === 'low' && thinkingLevelFor('openai_chat', 'gpt-4o') === 'off' && thinkingLevelFor('openai_chat', 'llama3.1') === 'off',
+      'los modelos compatibles genéricos no reciben parámetros de razonamiento');
+  }
+
+  {
     const { bridge } = makeBridge();
     const { fauxThinking, fauxText } = await import('@earendil-works/pi-ai');
     await openFaux([fauxAssistantMessage([fauxThinking('Comparo las dos plantillas'), fauxText('Usa la B')])], bridge);
@@ -914,6 +922,7 @@ async function main() {
     const answer = messages.at(-1);
     assert(answer.content === 'Listo' && answer.reasoning === 'Pienso la respuesta' && !answer.partial, 'la respuesta final conserva el razonamiento');
     assert(typeof answer.reasoning_ms === 'number' && answer.reasoning_ms >= 150, 'el razonamiento lleva el tiempo que tardó el modelo');
+    assert(hits[0].reasoning_effort === 'low', 'los modelos de razonamiento conocidos piden esfuerzo bajo');
     server.close();
     await runtime.shutdown();
   }

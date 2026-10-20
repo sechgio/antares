@@ -240,7 +240,7 @@ async function sessionCreate(params) {
     : SYSTEM_PROMPT;
   const conv = await shared.state.harness.createConversation({
     ownership: { kind: 'ownerless' },
-    agent: { model: { provider, modelId: model }, instructions },
+    agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model), instructions },
   }, ctx());
   if (profile && Array.isArray(profile.tools)) {
     const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
@@ -301,7 +301,7 @@ async function sessionModelSet(params) {
     const doc = await tx.doc(shared.state.SessionsDoc);
     const current = doc.sessions[sessionId];
     if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
-    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model } });
+    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model) });
     current.provider = provider;
     current.model = model;
     current.style = info.style || 'openai_chat';

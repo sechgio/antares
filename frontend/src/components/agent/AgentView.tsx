@@ -822,7 +822,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               const previous = messages.slice(0, i).reverse().find((item) => item.ts);
               const newDay = !!label && (!previous?.ts || dayLabel(previous.ts) !== label);
               return (
-                <div key={`${m.ts}-${i}`} className="space-y-4">
+                <div key={m.partial ? 'partial' : `${m.ts}-${i}`} className="space-y-4">
                   {newDay && <DaySeparator label={label} />}
                   <MessageRow msg={m} agent={agentIdentity} />
                 </div>
