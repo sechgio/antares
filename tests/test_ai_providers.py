@@ -187,11 +187,13 @@ def test_custom_model_validates_input(tmp_path, monkeypatch):
         (_custom(api="bedrock"), "formato de API"),
         (_custom(base_url=""), "dirección base"),
         (_custom(base_url="file:///etc/passwd"), "http"),
-        (_custom(model="x" * 129), "modelo"),
+        (_custom(model="x" * 121), "modelo"),
     ]
     for payload, message in cases:
         with pytest.raises(ValueError, match=message):
             ai_providers.upsert_custom(payload)
+    longest = ai_providers.upsert_custom(_custom(model="x" * 120))
+    assert longest["provider"]["default_model"] == "x" * 120
     with pytest.raises(ValueError, match="desconocido"):
         ai_providers.upsert_custom(_custom(id="custom-no-existe"))
     with pytest.raises(ValueError, match="id"):

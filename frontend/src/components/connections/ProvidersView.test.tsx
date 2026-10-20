@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import ProvidersView from './ProvidersView';
 
-const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
+const { addToast, confirm } = vi.hoisted(() => ({ addToast: vi.fn(), confirm: vi.fn() }));
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
+vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm }) }));
 
 const provider: AiProviderSpec = {
   id: 'anthropic', provider: 'anthropic', label: 'Anthropic', description: 'Messages', docs: '',
@@ -25,6 +26,7 @@ const customProvider: AiProviderSpec = {
 beforeEach(() => {
   vi.restoreAllMocks();
   addToast.mockClear();
+  confirm.mockReset().mockResolvedValue(true);
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [provider] });
   vi.spyOn(aiProvidersApi, 'aiProviderSave').mockResolvedValue({ provider });
 });
@@ -102,22 +104,60 @@ it.each(['openai', 'anthropic'])('guarda, prueba y elimina la configuración de 
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
-it('añade un modelo personalizado con formato, dirección, modelo y clave', async () => {
-  const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({
-    id: customProvider.id,
-    provider: customProvider,
-  });
+function pick(name: string, steps: number) {
+  const select = screen.getByRole('button', { name });
+  for (let i = 0; i <= steps; i += 1) fireEvent.keyDown(select, { key: 'ArrowDown' });
+  fireEvent.keyDown(select, { key: 'Enter' });
+}
+
+it('añade un modelo de Anthropic con el endpoint del preset y el ID como nombre', async () => {
+  const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({ id: customProvider.id, provider: customProvider });
   render(<ProvidersView />);
   fireEvent.click(await screen.findByRole('button', { name: 'Añadir modelo' }));
-  fireEvent.change(screen.getByLabelText('Nombre del modelo personalizado'), { target: { value: 'Mi gateway' } });
-  const format = screen.getByRole('button', { name: 'Formato de API del modelo personalizado' });
-  fireEvent.keyDown(format, { key: 'ArrowDown' });
-  fireEvent.keyDown(format, { key: 'ArrowDown' });
-  fireEvent.keyDown(format, { key: 'Enter' });
-  fireEvent.change(screen.getByLabelText('Dirección base del modelo personalizado'), { target: { value: 'https://gateway.example.com/v1' } });
-  fireEvent.change(screen.getByLabelText('Modelo personalizado'), { target: { value: 'mi-modelo' } });
-  fireEvent.change(screen.getByLabelText('Clave del modelo personalizado'), { target: { value: 'sk-9876' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Guardar modelo' }));
+  const dialog = screen.getByRole('dialog', { name: 'Añadir modelo personalizado' });
+  expect(within(dialog).getByText('Endpoint: https://api.anthropic.com')).toBeVisible();
+
+  const model = within(dialog).getByRole('combobox', { name: 'Modelo personalizado' });
+  fireEvent.focus(model);
+  fireEvent.change(model, { target: { value: 'opus' } });
+  fireEvent.mouseDown(within(dialog).getByRole('option', { name: /claude-opus-5-5/ }));
+  expect(model).toHaveValue('claude-opus-5-5');
+  fireEvent.change(within(dialog).getByLabelText('Clave del modelo personalizado'), { target: { value: 'sk-ant-1' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Añadir modelo' }));
+
+  await waitFor(() => expect(save).toHaveBeenCalledWith({
+    label: 'claude-opus-5-5',
+    api: 'anthropic',
+    base_url: 'https://api.anthropic.com',
+    model: 'claude-opus-5-5',
+    api_key: 'sk-ant-1',
+  }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
+it('valida el modelo y la clave antes de guardar', async () => {
+  const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave');
+  render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Añadir modelo' }));
+  const dialog = screen.getByRole('dialog', { name: 'Añadir modelo personalizado' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Añadir modelo' }));
+  expect(within(dialog).getByText('Introduce el ID del modelo.')).toBeVisible();
+  expect(within(dialog).getByText('Introduce una clave o elige otra forma de autenticación.')).toBeVisible();
+  expect(save).not.toHaveBeenCalled();
+});
+
+it('añade un modelo de otro proveedor con formato, dirección, nombre y clave', async () => {
+  const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({ id: customProvider.id, provider: customProvider });
+  render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Añadir modelo' }));
+  const dialog = screen.getByRole('dialog', { name: 'Añadir modelo personalizado' });
+  pick('Proveedor del modelo personalizado', 4);
+  pick('Formato de API del modelo personalizado', 1);
+  fireEvent.change(within(dialog).getByLabelText('Dirección base del modelo personalizado'), { target: { value: 'https://gateway.example.com/v1' } });
+  fireEvent.change(within(dialog).getByRole('combobox', { name: 'Modelo personalizado' }), { target: { value: 'mi-modelo' } });
+  fireEvent.change(within(dialog).getByLabelText('Clave del modelo personalizado'), { target: { value: 'sk-9876' } });
+  fireEvent.change(within(dialog).getByLabelText('Nombre del modelo personalizado'), { target: { value: 'Mi gateway' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Añadir modelo' }));
 
   await waitFor(() => expect(save).toHaveBeenCalledWith({
     label: 'Mi gateway',
@@ -129,6 +169,18 @@ it('añade un modelo personalizado con formato, dirección, modelo y clave', asy
   expect(addToast).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'success' }));
 });
 
+it('muestra el error del servicio dentro del editor sin cerrarlo', async () => {
+  vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockRejectedValue(new Error('base_url debe ser una URL http(s) válida'));
+  render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Añadir modelo' }));
+  const dialog = screen.getByRole('dialog', { name: 'Añadir modelo personalizado' });
+  fireEvent.change(within(dialog).getByRole('combobox', { name: 'Modelo personalizado' }), { target: { value: 'x' } });
+  fireEvent.change(within(dialog).getByLabelText('Clave del modelo personalizado'), { target: { value: 'k' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Añadir modelo' }));
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('base_url debe ser una URL http(s) válida');
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+});
+
 it('edita un modelo personalizado sin reemplazar la clave y permite probarlo y eliminarlo', async () => {
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [customProvider] });
   const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({
@@ -136,12 +188,13 @@ it('edita un modelo personalizado sin reemplazar la clave y permite probarlo y e
     provider: customProvider,
   });
   const probe = vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({
-    provider: { ...customProvider, reachable: true, models_count: 3, error: null },
+    provider: { ...customProvider, reachable: true, models_count: 3, models: ['mi-modelo', 'mi-modelo-2', 'otro'], error: null },
   });
   const remove = vi.spyOn(aiProvidersApi, 'aiProviderDelete').mockResolvedValue({ deleted: true });
   render(<ProvidersView />);
 
   expect(await screen.findByText('mi-modelo')).toBeVisible();
+  expect(screen.getByText('Modelos personalizados · 1')).toBeVisible();
   expect(screen.getByText('••••9876')).toBeVisible();
   expect(screen.getByText('OpenAI compatible (Chat Completions)')).toBeVisible();
 
@@ -150,9 +203,14 @@ it('edita un modelo personalizado sin reemplazar la clave y permite probarlo y e
   expect(probe).toHaveBeenCalledWith(customProvider.id);
 
   fireEvent.click(screen.getByRole('button', { name: 'Editar Mi gateway' }));
-  expect(screen.getByLabelText('Modelo personalizado')).toHaveValue('mi-modelo');
-  fireEvent.change(screen.getByLabelText('Modelo personalizado'), { target: { value: 'mi-modelo-2' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  const dialog = screen.getByRole('dialog', { name: 'Editar modelo personalizado' });
+  const model = within(dialog).getByRole('combobox', { name: 'Modelo personalizado' });
+  expect(model).toHaveValue('mi-modelo');
+  expect(within(dialog).getByLabelText('Dirección base del modelo personalizado')).toHaveValue('https://gateway.example.com/v1');
+  fireEvent.focus(model);
+  fireEvent.change(model, { target: { value: 'mi-modelo-' } });
+  fireEvent.mouseDown(await within(dialog).findByRole('option', { name: 'mi-modelo-2' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
 
   await waitFor(() => expect(save).toHaveBeenCalledWith({
     id: customProvider.id,
@@ -163,10 +221,24 @@ it('edita un modelo personalizado sin reemplazar la clave y permite probarlo y e
   }));
   fireEvent.click(await screen.findByRole('button', { name: 'Eliminar Mi gateway' }));
   await waitFor(() => expect(remove).toHaveBeenCalledWith(customProvider.id));
+  expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ type: 'destructive' }));
+});
+
+it('no elimina el modelo si se cancela la confirmación', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [customProvider] });
+  const remove = vi.spyOn(aiProvidersApi, 'aiProviderDelete');
+  confirm.mockResolvedValue(false);
+  render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar Mi gateway' }));
+  await waitFor(() => expect(confirm).toHaveBeenCalled());
+  expect(remove).not.toHaveBeenCalled();
 });
 
 it('permite quitar la clave guardada de un modelo personalizado', async () => {
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [customProvider] });
+  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({
+    provider: { ...customProvider, reachable: false, models_count: null, models: [], error: 'x' },
+  });
   const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({
     id: customProvider.id,
     provider: customProvider,
@@ -174,9 +246,10 @@ it('permite quitar la clave guardada de un modelo personalizado', async () => {
   render(<ProvidersView />);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Editar Mi gateway' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Quitar la clave guardada' }));
-  expect(screen.getByLabelText('Clave del modelo personalizado')).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  const dialog = screen.getByRole('dialog', { name: 'Editar modelo personalizado' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Sin clave' }));
+  expect(within(dialog).getByText('Al guardar se eliminará la clave guardada.')).toBeVisible();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
 
   await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
     id: customProvider.id,
