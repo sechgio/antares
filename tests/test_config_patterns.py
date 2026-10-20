@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from backend.core import config_patterns

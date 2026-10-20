@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 
-/**
- * useState backed by localStorage: on mount reads `key` and maps it through
- * `parse` (absent key or parse errors → `fallback`); every change is persisted
- * through `serialize`. Returning `null` removes the key instead.
- */
 export function useLocalStorageState<T>(
   key: string,
   options: {

@@ -1,10 +1,3 @@
-"""Pruebas de la cadena de herramientas multimedia del editor (L0).
-
-Si ``ANTARES_FFMPEG_DIR`` no apunta a un build, las pruebas se saltan:
-una suite saltada **no** prueba exportación, solo indica que el entorno
-no tiene herramientas preparadas.
-"""
-
 from __future__ import annotations
 
 import json
@@ -85,8 +78,6 @@ def test_probe_reports_rational_fps() -> None:
 
 
 def test_missing_toolchain_raises_clear_error(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    # Escenario determinista: sin override y con media/ vacío, la
-    # resolución debe fallar con el mensaje que remite al script.
     monkeypatch.delenv("ANTARES_FFMPEG_DIR", raising=False)
     monkeypatch.delenv("ANTARES_FFMPEG_ALLOW_PATH", raising=False)
     monkeypatch.setattr(
@@ -99,4 +90,4 @@ def test_missing_toolchain_raises_clear_error(monkeypatch: pytest.MonkeyPatch, t
 
 def test_capabilities_json_serializable() -> None:
     caps = capabilities(resolve_toolchain())
-    json.dumps(caps)  # el resultado viaja por IPC como JSON
+    json.dumps(caps)

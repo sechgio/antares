@@ -197,13 +197,13 @@ def test_dispatch_uses_heavy_scheduler_for_heavy_methods(monkeypatch) -> None:
     calls = []
 
     class FakeScheduler:
-        def submit_heavy(self, fn, *args, **kwargs):  # type: ignore[no-untyped-def]
+        def submit_heavy(self, fn, *args, **kwargs):
             calls.append(("heavy", args[3]))
             future = Future()
             future.set_result(None)
             return future
 
-        def submit_light(self, fn, *args, **kwargs):  # type: ignore[no-untyped-def]
+        def submit_light(self, fn, *args, **kwargs):
             calls.append(("light", args[3]))
             future = Future()
             future.set_result(None)
@@ -469,10 +469,10 @@ def test_main_does_not_emit_ready_if_shutdown_arrives_during_startup(monkeypatch
 def test_submit_handler_sends_response_when_scheduler_submit_raises(monkeypatch) -> None:
 
     class BrokenScheduler:
-        def submit_heavy(self, fn, *args, **kwargs):  # type: ignore[no-untyped-def]
+        def submit_heavy(self, fn, *args, **kwargs):
             raise RuntimeError("cannot schedule new futures after shutdown")
 
-        def submit_light(self, fn, *args, **kwargs):  # type: ignore[no-untyped-def]
+        def submit_light(self, fn, *args, **kwargs):
             raise RuntimeError("cannot schedule new futures after shutdown")
 
         def metrics(self) -> dict:

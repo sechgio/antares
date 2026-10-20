@@ -1,12 +1,3 @@
-"""Almacén de proyectos del editor (L1, plan §4.3).
-
-Persistencia en ``user_data_path('editor')`` con subcarpetas
-``projects/``, ``assets/``, ``jobs/``, ``recovery/`` y ``trash/``.
-Cada guardado es atómico (temporal en el mismo volumen + ``os.replace``),
-con lock por proyecto y CAS de revisión. ``requestId`` permite
-deduplicar una respuesta perdida sin incrementar la revisión dos veces.
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -18,7 +9,7 @@ import threading
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from backend.core.editor.models import EditorContractError, normalize_document, validate_document
 from backend.utils.lazy import LazySingleton
@@ -39,7 +30,6 @@ def _utc_now_iso() -> str:
 
 
 def new_project_document(name: str, project_id: str | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Documento nuevo válido según el contrato compartido."""
     now = _utc_now_iso()
     doc: dict[str, Any] = {  # allowlist: dict[str, Any]
         "id": project_id or uuid.uuid4().hex,
@@ -77,8 +67,6 @@ def new_project_document(name: str, project_id: str | None = None) -> dict[str, 
 
 
 class EditorStore:
-    """CRUD de proyectos con CAS, dedup de request y papelera."""
-
     def __init__(self, root: str | Path | None = None) -> None:
         base = Path(root) if root is not None else user_data_path("editor")
         self.root = base
@@ -202,8 +190,6 @@ class EditorStore:
                     f"revision obsoleta: se esperaba {expected_revision} y el documento está en {current['revision']}"
                 )
             saved = normalize_document(document, expected_revision=expected_revision)
-            # Copia recuperable antes del reemplazo: un fallo entre
-            # temporal y replace nunca pierde la última versión buena.
             recovery_copy = self.recovery_dir / f"{self._check_id(project_id)}.json"
             with contextlib.suppress(OSError):
                 shutil.copy2(self._path_for(project_id), recovery_copy)
@@ -232,7 +218,6 @@ class EditorStore:
         source = self.get(project_id)
         if source is None:
             raise EditorContractError("el proyecto no existe")
-        # Snapshot independiente: mismo contenido, nueva identidad.
         copy = json.loads(json.dumps(source))
         copy["id"] = uuid.uuid4().hex
         copy["name"] = (name or f"{source['name']} (copia)")[:120]
@@ -248,7 +233,6 @@ class EditorStore:
         return result
 
     def delete(self, project_id: str) -> dict[str, Any]:  # allowlist: dict[str, Any]
-        """Mueve el proyecto a la papelera local (recuperable)."""
         self._check_id(project_id)
         path = self._path_for(project_id)
         with self._locked(project_id):
@@ -279,8 +263,7 @@ class EditorStore:
 
 
 def cast_doc(doc: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Copia defensiva: el renderer nunca muta lo que devuelve el store."""
-    return json.loads(json.dumps(doc))  # type: ignore[no-any-return]
+    return cast(dict[str, Any], json.loads(json.dumps(doc)))  # allowlist: dict[str, Any]
 
 
 _store_singleton = LazySingleton(EditorStore)

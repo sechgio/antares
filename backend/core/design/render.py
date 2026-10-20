@@ -1,12 +1,9 @@
-
 from __future__ import annotations
 
 from html import escape
 
 from backend.core.design.models import LAYOUTS
 from backend.core.design.types import JsonObject
-
-_ESCAPE = {"quote": False}
 
 _STYLE = """
 @page {{ size: {width}mm {height}mm; margin: 0; }}
@@ -143,11 +140,6 @@ def _slide_html(slide: JsonObject, theme: JsonObject, *, notes: bool = False) ->
 
 
 def render_html(document: JsonObject, *, notes: bool = False) -> str:
-    """HTML completo del Design, listo para sanitizer o para PDF.
-
-    Con ``notes=True`` cada diapositiva se acompaña de su nota del ponente bajo
-    el lienzo, para imprimir un guion. Sin ellas queda oculta por CSS.
-    """
     page_raw = document.get("page")
     theme_raw = document.get("theme")
     page: JsonObject = page_raw if isinstance(page_raw, dict) else {}

@@ -43,10 +43,6 @@ def label_for(module_id: str | None) -> str:
 
 
 def resolve_mentions(text: str) -> JsonObject:
-    """Menciones ``@alias`` del texto del usuario → módulos conocidos.
-
-    Una mención ambigua o desconocida no selecciona nada: se informa para que
-    el usuario la corrija. Las direcciones de correo no cuentan como mención."""
     aliases: dict[str, set[str]] = {}
     for module_id, spec in catalog().items():
         for alias in [module_id, spec["label"], *(spec.get("aliases") or [])]:

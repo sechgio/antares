@@ -1,16 +1,9 @@
-"""Pruebas de rasterizado de títulos del editor (L4, plan §4.5).
-
-Casos: PNG RGBA a resolución de salida, caché compartida, Unicode
-(tildes, ñ, emoji), multilínea, contenido escapable, fallback de fuente
-y ausencia de ejecución de texto.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-from PIL import Image  # type: ignore
+from PIL import Image
 
 from backend.core.editor.text import TextRenderError, render_text_bitmap, text_cache_key
 
@@ -38,8 +31,6 @@ def cache_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def allow_system_fonts(monkeypatch: pytest.MonkeyPatch) -> None:
-    # En desarrollo se admite el fallback a fuentes del sistema; en
-    # producción las fuentes van empaquetadas en media/fonts/.
     monkeypatch.setenv("ANTARES_EDITOR_ALLOW_SYSTEM_FONTS", "1")
 
 
@@ -55,8 +46,6 @@ def test_bitmap_is_transparent_outside_text(cache_dir: Path) -> None:
     out = render_text_bitmap(_text_clip(), 640, 360, cache_dir=cache_dir)
     image = Image.open(out)
     alpha = image.getchannel("A")
-    # Las esquinas no deben tener pintado: el lienzo es transparente
-    # salvo el texto, para no tapar la capa inferior.
     corners = [alpha.getpixel(p) for p in [(2, 2), (637, 2), (2, 357), (637, 357)]]
     assert all(a == 0 for a in corners), f"esquinas con alfa: {corners}"
 
@@ -75,7 +64,6 @@ def test_cache_is_shared_between_preview_and_export(cache_dir: Path) -> None:
     second = render_text_bitmap(clip, 1280, 720, cache_dir=cache_dir)
     assert first == second
     assert first.is_file()
-    # Un solo archivo en caché: preview y export comparten bitmap.
     assert len(list(cache_dir.glob("*.png"))) == 1
 
 
@@ -128,15 +116,11 @@ def test_long_text_wraps_within_box(cache_dir: Path) -> None:
     )
     image = Image.open(out)
     alpha = image.getchannel("A")
-    # El borde derecho de la caja (0.7 * 640 = 448) no debe tener
-    # píxeles pintados más allá de un margen.
     right_edge = [alpha.getpixel((x, 180)) for x in range(630, 640)]
     assert all(a == 0 for a in right_edge), f"texto desbordado: {right_edge}"
 
 
 def test_quotes_and_colons_do_not_execute(cache_dir: Path) -> None:
-    # Contenido con comillas, dos puntos y caracteres de filtergraph:
-    # debe dibujarse literal, sin inyección.
     out = render_text_bitmap(
         _text_clip(content="Dijo: \"hola\" [x]; a,b\\c"),
         800,

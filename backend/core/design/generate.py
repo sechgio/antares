@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -13,7 +12,6 @@ from backend.core.integrations import ai_providers
 logger = logging.getLogger(__name__)
 
 _MAX_TOKENS = 16_000
-_REVIEW_TURNS = 2
 _MAX_PROMPT_CHARS = 4_000
 _MAX_REVIEW_IMAGES = 8
 _REVIEW_DPI = 110
@@ -36,7 +34,7 @@ _REPAIR_TURNS = 2
 
 
 class DesignGenerationError(ValueError):
-    """El modelo no devolvió un Design utilizable tras los reintentos."""
+    pass
 
 
 def resolve_model(provider: str, model: str | None) -> str:
@@ -116,7 +114,6 @@ def generate_design(
     *,
     page_preset: str | None = None,
 ) -> JsonObject:
-    """Pide al modelo un Design y lo normaliza. Lanza `DesignGenerationError` si no lo consigue."""
     text = " ".join(str(prompt or "").split())
     if not text:
         raise DesignGenerationError("Escribe qué quieres que presente el diseño.")

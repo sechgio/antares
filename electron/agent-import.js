@@ -96,10 +96,6 @@ function _entryFor(msg, session, pendingCalls) {
   return null;
 }
 
-/**
- * Importa las sesiones JSON de `sourceDir` (por defecto el `ai-agent` de datos
- * de usuario) en el runtime ya abierto. Devuelve {imported, skipped}.
- */
 async function importLegacySessions(runtime, sourceDir) {
   const { dir, ctx } = runtime;
   const source = sourceDir || dir;

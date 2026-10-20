@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from backend.core.mapping_index import MappingIndex

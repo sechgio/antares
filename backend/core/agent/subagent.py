@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -15,7 +14,6 @@ TOOL_NAME = "subagent_run"
 MAX_STEPS = 6
 MAX_TASK_CHARS = 4_000
 MAX_INSTRUCTIONS_CHARS = 8_000
-MAX_SUMMARY_CHARS = 2_000
 MAX_STEP_DETAIL_CHARS = 240
 MAX_RECEIPT_CHARS = 5_400
 
@@ -89,11 +87,6 @@ def run(
     execute: Callable[[str, JsonObject], str],
     cancelled: Callable[[], bool] | None = None,
 ) -> JsonObject:
-    """Ejecuta el subagente y devuelve `{agent, status, text, steps, ms}`.
-
-    ``execute`` corre una herramienta de lectura en la conversación del padre;
-    el recibo incluye la traza de pasos para que la UI la muestre anidada.
-    """
     started = time.monotonic()
     name = str(agent.get("name") or "Subagente").strip()[:80] or "Subagente"
     task = task.strip()[:MAX_TASK_CHARS]

@@ -139,7 +139,6 @@ def design_generate(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params()
 def design_render_html(params: JsonObject) -> JsonObject:
-    """HTML sanitizable para la vista previa; no escribe nada en disco."""
     document = _document_from_params(params)
     return {
         "html": render_html(document),
@@ -151,7 +150,6 @@ def design_render_html(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params()
 def design_export_pdf(params: JsonObject) -> JsonObject:
-    """Imprime el Design. Sin `output_path` devuelve base64 para descarga."""
     document = _document_from_params(params)
     output_path = params.get("output_path")
     output_path = output_path.strip() if isinstance(output_path, str) and output_path.strip() else None

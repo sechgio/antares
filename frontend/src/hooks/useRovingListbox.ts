@@ -1,11 +1,5 @@
 import { useEffect, type KeyboardEvent, type RefObject } from 'react';
 
-/**
- * Navegación tipo listbox compartida: al abrir enfoca la opción seleccionada
- * (`aria-selected`), opcionalmente cayendo a la primera opción, y mueve el
- * foco con flechas/Home/End. Enter/Espacio elige la opción enfocada leyendo
- * su `data-value`.
- */
 export function useRovingListbox(
   listRef: RefObject<HTMLElement | null>,
   open: boolean,

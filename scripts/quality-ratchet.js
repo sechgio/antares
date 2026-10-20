@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-
-/**
- * Falla si type:ignore, any, dict[str, Any] sin allowlist en backend
- * o archivos grandes suben respecto al techo de .quality-baseline.json. Sin baseline sale 0.
- * El techo que se juzga es el commiteado en HEAD, no el del árbol de trabajo.
- *
- *   node scripts/quality-ratchet.js [--json]
- *   node scripts/quality-ratchet.js --update [--force]
- */
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -292,7 +283,6 @@ function run() {
 }
 
 module.exports = {
-  LARGE_FILE_LINES,
   SKIP_DIRS,
   METRICS,
   collectSourceFiles,
@@ -305,7 +295,6 @@ module.exports = {
   evaluate,
   renderReport,
   nextBaseline,
-  loadBaseline,
   readCommittedBaseline,
   chooseBaseline,
   loosenedCeilings,

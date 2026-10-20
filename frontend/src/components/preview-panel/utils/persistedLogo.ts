@@ -43,11 +43,6 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   });
 }
 
-/**
- * Comprime una imagen de logo para persistirla en localStorage
- * (webp, máx. 900px de lado). SVG y no-imágenes pasan sin tocar;
- * si la compresión no reduce tamaño o falla, se devuelve el original.
- */
 export async function compressLogoForStorage(file: File): Promise<string> {
   const original = await fileToDataUrl(file);
   if (!file.type.startsWith("image/") || file.type === "image/svg+xml") {

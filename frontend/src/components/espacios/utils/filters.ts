@@ -56,7 +56,6 @@ export interface TaskStats {
   completed: number;
   overdue: number;
   unscheduled: number;
-  /** Tareas con start_date o due_date (programadas en Gantt/Calendar). */
   scheduled: number;
   progress: number;
 }

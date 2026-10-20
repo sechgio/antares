@@ -1,12 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-/**
- * Compara GitHub contra .github/branch-protection/<branch>.json.
- * Sin gh o sin config: sale 0.
- *
- *   node scripts/branch-protection-check.js [--repo o/n] [--branch main] [--apply] [--json]
- */
 const fs = require('fs');
 const path = require('path');
 const { REPO_OWNER, REPO_NAME, BASE_BRANCH, detectRepo, gh, ghApi, parseCliArgs } = require('./lib/loop-utils');
@@ -233,8 +227,6 @@ function run(argv) {
 }
 
 module.exports = {
-  DEFAULT_REPO,
-  DEFAULT_BRANCH,
   FIELDS,
   enabled,
   normalizeExpected,

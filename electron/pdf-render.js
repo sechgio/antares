@@ -348,10 +348,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
       }
     }
     if (timedOut || renderFailed) {
-      // El cuerpo del render puede seguir dentro de loadFile/printToPDF: al
-      // destruir la ventana esas llamadas rechazan; espera acotada a que el
-      // body asiente antes de borrar el tempDir para no correr el cleanup en
-      // paralelo con un render vivo.
       await raceTimeout(bodyPromise.catch(() => {}), 5_000, () => {});
     }
     if (tempDir) {

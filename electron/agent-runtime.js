@@ -667,14 +667,7 @@ module.exports = {
   _internal: {
     state: () => shared.state,
     shared,
-    _toolSpecs: shared.toolSpecs,
-    _live: shared.live,
-    _convToSession: shared.convToSession,
     _providerOverrides: shared.providerOverrides,
-    _decisionWaiters: shared.decisionWaiters,
-    _approvalsByCall: shared.approvalsByCall,
-    INTERRUPTED_RESULT: shared.INTERRUPTED_RESULT,
-    SYSTEM_PROMPT,
     extractPaths,
   },
 };

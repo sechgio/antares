@@ -1,11 +1,3 @@
-"""Resolución y verificación de la cadena de herramientas multimedia.
-
-L0 del plan del editor: los ejecutables nativos se resuelven por
-``resource_path('media/…')`` y **nunca** dependen de ``PATH``. Los tests
-pueden apuntar a un build concreto con la variable de entorno
-``ANTARES_FFMPEG_DIR``; en uso normal esa variable no existe.
-"""
-
 from __future__ import annotations
 
 import json
@@ -14,12 +6,10 @@ import shutil
 import subprocess  # nosec B404 - uso acotado: argv fijo, shell=False
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from backend.utils.paths import resource_path
 
-# Capacidades mínimas que el build debe exponer para cubrir el alcance
-# local del editor (L5 delogo, L6 estabilización/tono, L3 exportación).
 REQUIRED_FILTERS: frozenset[str] = frozenset(
     {"delogo", "vidstabdetect", "vidstabtransform", "rubberband", "atempo", "boxblur", "chromakey"}
 )
@@ -29,7 +19,7 @@ _DEFAULT_TIMEOUT_S = 30
 
 
 class ToolchainError(RuntimeError):
-    """La cadena de herramientas multimedia no está disponible."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -39,12 +29,6 @@ class Toolchain:
 
 
 def resolve_toolchain() -> Toolchain:
-    """Localiza ffmpeg/ffprobe del build preparado.
-
-    Orden: ``ANTARES_FFMPEG_DIR`` (solo para pruebas), ``media/`` del
-    recurso. No se consulta ``PATH`` salvo en desarrollo explícito con
-    ``ANTARES_FFMPEG_ALLOW_PATH=1``.
-    """
     override = os.environ.get("ANTARES_FFMPEG_DIR")
     candidates: list[Path] = []
     if override:
@@ -112,7 +96,6 @@ def list_encoders(toolchain: Toolchain) -> frozenset[str]:
 
 
 def capabilities(toolchain: Toolchain) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Inventario de capacidades del build, con lo que falta marcado."""
     filters = list_filters(toolchain)
     encoders = list_encoders(toolchain)
     missing_filters = sorted(REQUIRED_FILTERS - filters)
@@ -126,12 +109,11 @@ def capabilities(toolchain: Toolchain) -> dict[str, Any]:  # allowlist: dict[str
 
 
 def probe_json(toolchain: Toolchain, path: Path) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Metadatos procesables de un archivo mediante ffprobe JSON."""
     out = _run(
         toolchain.ffprobe,
         ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)],
     )
-    return json.loads(out)  # type: ignore[no-any-return]
+    return cast(dict[str, Any], json.loads(out))  # allowlist: dict[str, Any]
 
 
 def verify_decodable(toolchain: Toolchain, path: Path) -> None:
@@ -156,11 +138,6 @@ def verify_decodable(toolchain: Toolchain, path: Path) -> None:
 
 
 def synthesize_test_clip(toolchain: Toolchain, output: Path) -> Path:
-    """Clip sintético breve (video con contador de cuadros + tono + silencio).
-
-    Usa fuentes del propio build (``testsrc2``, ``sine``, ``anullsrc``),
-    sin red ni archivos personales. Destruye el destino previo.
-    """
     output.parent.mkdir(parents=True, exist_ok=True)
     _run(
         toolchain.ffmpeg,

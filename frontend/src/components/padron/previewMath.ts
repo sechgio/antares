@@ -7,7 +7,6 @@ interface NumberedItem {
   item: number | string;
 }
 
-/** Items ordenados dentro del rango [start, end] clamped a [1, max]. */
 export function filterItemsInRange<T extends NumberedItem>(
   items: T[],
   start: number,
@@ -24,7 +23,6 @@ export function filterItemsInRange<T extends NumberedItem>(
     .sort((a, b) => Number(a.item) - Number(b.item));
 }
 
-/** Redimensiona la lista a `count` preservando los items existentes por índice. */
 export function resizeItemsPreserve<T extends NumberedItem>(
   prevItems: T[],
   count: number,
@@ -50,14 +48,12 @@ export function isLuriganchoFormat(
   return format === "volante-lurigancho" || format === "volanteo-lurigancho-v2";
 }
 
-/** Variante de preview: lurigancho tiene la suya; el resto usa la de servicio. */
 export function resolvePreviewVariant(
   format: OutputFormat,
 ): "service-interruption" | "volante-lurigancho" | "volanteo-lurigancho-v2" {
   return isLuriganchoFormat(format) ? format : "service-interruption";
 }
 
-/** Filas por página según formato/orientación (water-cut fija 39 portrait). */
 export function resolveRowsPerPage(
   format: OutputFormat,
   orientation: Orientation,
@@ -66,7 +62,6 @@ export function resolveRowsPerPage(
   return orientation === "landscape" ? 18 : 37;
 }
 
-/** Ventana de páginas visibles en la preview (máx. MAX_PREVIEW_PAGES). */
 export function previewWindow(
   offset: number,
   totalPages: number,
@@ -77,7 +72,6 @@ export function previewWindow(
   return { start, end };
 }
 
-/** Total mostrado en el label de folios: el mayor físico o el count de páginas. */
 export function folioLabelTotal(
   physicalFolios: number[],
   activePagesCount: number,

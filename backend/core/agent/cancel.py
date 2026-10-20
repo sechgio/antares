@@ -8,7 +8,7 @@ from backend.core.integrations.types import JsonObject
 
 
 class RunCancelled(Exception):
-    """El run se canceló: la operación en curso se abandona de inmediato."""
+    pass
 
 
 class _CancelEvent:

@@ -1,15 +1,3 @@
-"""Archivos que el humano nombra o adjunta: concesión de lectura por conversación.
-
-Electron extrae las rutas absolutas del texto escrito por el usuario y las que
-elige en el diálogo de adjuntos; aquí se validan (ruta local real, sin ``..``,
-enlaces simbólicos ni puntos de reparse) y se concede solo la lectura de ese
-archivo concreto. Una carpeta solo se concede cuando el usuario la elige en el
-diálogo (alcance explícito): entonces se leen los archivos que contiene. Al usar
-la concesión se revalida la identidad del archivo o carpeta, de modo que uno
-sustituido después se rechaza, y su revisión con identidad y hash del contenido
-entra en la huella de las aprobaciones.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -27,7 +15,6 @@ def _key(path: str) -> str:
 
 
 def _resolve(raw: str, folder: bool = False) -> tuple[str, os.stat_result]:
-    """Ruta real del archivo (o carpeta) o ``ValueError`` con el motivo del rechazo."""
     if not isinstance(raw, str) or not raw or "\x00" in raw:
         raise ValueError("ruta vacía o inválida")
     if raw.startswith(("\\\\", "//")):
@@ -68,7 +55,6 @@ def grant_record(raw: str, request_id: str | None) -> JsonObject:
 
 
 def revision(raw: str) -> JsonObject:
-    """Identidad y contenido de un archivo que participa en una aprobación."""
     real, stat = _resolve(raw)
     digest = hashlib.sha256()
     with open(real, "rb") as handle:
@@ -104,7 +90,6 @@ def _folder_for(real: str, grants: dict[str, JsonObject]) -> JsonObject | None:
 
 
 def check_folder(raw: str, grants: dict[str, JsonObject]) -> str:
-    """Ruta real de una carpeta concedida (elegida por el usuario en el diálogo)."""
     try:
         real, stat = _resolve(raw, folder=True)
     except ValueError as err:
@@ -118,7 +103,6 @@ def check_folder(raw: str, grants: dict[str, JsonObject]) -> str:
 
 
 def check(raw: str, grants: dict[str, JsonObject]) -> JsonObject:
-    """Revalida una ruta contra las concesiones de la conversación."""
     try:
         real, stat = _resolve(raw)
     except ValueError as err:

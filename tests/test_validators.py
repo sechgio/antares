@@ -1,4 +1,3 @@
-
 from backend.utils.validators import (
     is_path_like_key,
     is_safe_user_path,

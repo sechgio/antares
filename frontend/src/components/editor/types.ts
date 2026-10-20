@@ -1,31 +1,19 @@
-/**
- * Tipos del editor de video. Espejo del contrato compartido
- * `shared/editor-schema.json` (schemaVersion 1). No modificar
- * `canvas-schema.json` desde aquí.
- *
- * Reglas del contrato (§4.2 del plan):
- * - Tiempos persistidos en microsegundos enteros seguros para JS.
- * - Intervalos semiabiertos [inicio, fin).
- * - FPS y velocidad racionales.
- * - durationUs = round((sourceOutUs - sourceInUs) * speed.den / speed.num).
- */
-
 export const EDITOR_SCHEMA_VERSION = 1 as const;
 
-export type AssetType = 'video' | 'audio' | 'image' | 'animation';
-export type ClipKind = 'video' | 'audio' | 'image' | 'text';
-export type TrackKind = 'video' | 'audio';
-export type StreamKind = 'video' | 'audio';
-export type FitMode = 'fit' | 'fill';
-export type TextAlign = 'left' | 'center' | 'right';
-export type AnimationType = 'none' | 'fade' | 'slide-up' | 'slide-down' | 'zoom';
-export type AudioEffectType = 'eq' | 'reverse' | 'denoise' | 'pitch';
-export type HeavyEffectType = 'vidstab' | 'chromakey' | 'pitch' | 'denoise' | 'reverse';
-export type BackgroundType = 'solid' | 'blur';
-export type QualityPreset = 'draft' | 'balanced' | 'high';
+type AssetType = 'video' | 'audio' | 'image' | 'animation';
+type ClipKind = 'video' | 'audio' | 'image' | 'text';
+type TrackKind = 'video' | 'audio';
+type StreamKind = 'video' | 'audio';
+type FitMode = 'fit' | 'fill';
+type TextAlign = 'left' | 'center' | 'right';
+type AnimationType = 'none' | 'fade' | 'slide-up' | 'slide-down' | 'zoom';
+type AudioEffectType = 'eq' | 'reverse' | 'denoise' | 'pitch';
+type HeavyEffectType = 'vidstab' | 'chromakey' | 'pitch' | 'denoise' | 'reverse';
+type BackgroundType = 'solid' | 'blur';
+type QualityPreset = 'draft' | 'balanced' | 'high';
 export type Container = 'mp4' | 'mkv' | 'mov' | 'webm';
-export type VideoCodec = 'h264' | 'vp9';
-export type AudioCodec = 'aac' | 'opus';
+type VideoCodec = 'h264' | 'vp9';
+type AudioCodec = 'aac' | 'opus';
 
 export interface Rational {
   num: number;
@@ -203,10 +191,6 @@ export interface EditorProject {
   exportSettings: ExportSettings;
 }
 
-/**
- * Duración de timeline de un clip. Misma política de redondeo que
- * `backend/core/editor/models.py`: half-up sobre el entero.
- */
 export function clipDurationUs(clip: Clip): number {
   const sourceUs = clip.sourceOutUs - clip.sourceInUs;
   const { num, den } = clip.speed;
@@ -215,18 +199,15 @@ export function clipDurationUs(clip: Clip): number {
   return Math.round((sourceUs * den) / num);
 }
 
-/** Fin de timeline de un clip (semiabierto: [inicio, inicio + duración)). */
 export function clipEndUs(clip: Clip): number {
   return clip.timelineStartUs + clipDurationUs(clip);
 }
 
-/** Instante de timeline correspondiente a un instante de fuente. */
 export function sourceToTimelineUs(clip: Clip, sourceUs: number): number {
   const { num, den } = clip.speed;
   return clip.timelineStartUs + Math.round(((sourceUs - clip.sourceInUs) * den) / num);
 }
 
-/** Instante de fuente correspondiente a un instante de timeline. */
 export function timelineToSourceUs(clip: Clip, timelineUs: number): number {
   const { num, den } = clip.speed;
   return clip.sourceInUs + Math.round(((timelineUs - clip.timelineStartUs) * num) / den);

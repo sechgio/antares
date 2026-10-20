@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import base64
@@ -207,7 +206,7 @@ def test_b64_inline_decodes_in_bounded_chunks(monkeypatch) -> None:
     calls: list[int] = []
     real_decode = ss.base64.b64decode
 
-    def tracking_decode(payload, *args, **kwargs):  # type: ignore[no-untyped-def]
+    def tracking_decode(payload, *args, **kwargs):
         calls.append(len(payload))
         return real_decode(payload, *args, **kwargs)
 

@@ -1,9 +1,3 @@
-"""Pruebas de los jobs de Editor sobre JobManager (L1, plan §4.6).
-
-Casos: creación con jobId pronto, progreso por etapas, persistencia del
-snapshot, cancelación, aislamiento de jobs ajenos y rechazo de cola.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,9 +33,6 @@ def _wait_done(mgr: JobManager, job_id: str, timeout_s: float = 10.0) -> None:
             return
         time.sleep(0.05)
     raise AssertionError("el job no terminó a tiempo")
-
-
-# --- Creación y estado -----------------------------------------------------------------
 
 
 def test_import_job_types_are_registered() -> None:
@@ -80,9 +71,6 @@ def test_status_of_unknown_job_raises(manager: JobManager) -> None:
         editor_job_status("editor_import_noexiste", manager)
 
 
-# --- Errores de importación ---------------------------------------------------------------
-
-
 def test_invalid_token_fails_the_job_gracefully(manager: JobManager, tmp_path: Path) -> None:
     result = start_import_job(manager, ["ruta/relativa.mp4"], assets_dir=tmp_path / "assets")
     job_id = result["jobId"]
@@ -103,14 +91,9 @@ def test_missing_file_fails_the_job_gracefully(manager: JobManager, tmp_path: Pa
     assert status["failed"][0]["reason"]
 
 
-# --- Cancelación ----------------------------------------------------------------------------
-
-
 def test_cancel_editor_job_marks_cancel(manager: JobManager, tmp_path: Path) -> None:
     result = start_import_job(manager, [], assets_dir=tmp_path / "assets")
     job_id = result["jobId"]
-    # El job vacío termina rápido; cancelar puede llegar tarde, así que
-    # se acepta job_not_running pero nunca un falso éxito.
     outcome = cancel_editor_job(job_id, manager)
     assert outcome.get("cancelled") is True or outcome.get("reason") == "job_not_running"
 
@@ -126,12 +109,8 @@ def test_is_editor_job_discriminates(manager: JobManager, tmp_path: Path) -> Non
     assert is_editor_job("canvas_default") is False
 
 
-# --- Cola llena ---------------------------------------------------------------------------------
-
-
 def test_queue_full_is_reported_not_raised(manager: JobManager, tmp_path: Path) -> None:
     manager.max_concurrent = 1
-    # Ocupa el único hueco con un job que no termina.
     blocker = manager.create_job(
         "editor_import",
         {"files": []},

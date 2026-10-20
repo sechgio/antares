@@ -1,9 +1,3 @@
-"""Pruebas del almacén de proyectos del editor (L1, plan §4.3).
-
-Casos: CRUD, CAS de revisión, deduplicación de request, papelera,
-escritura atómica, aislamiento de paths y documentos inválidos.
-"""
-
 from __future__ import annotations
 
 import json
@@ -21,9 +15,6 @@ def store(tmp_path: Path) -> EditorStore:
     return EditorStore(tmp_path)
 
 
-# --- CRUD básico ---------------------------------------------------------------
-
-
 def test_create_returns_valid_document(store: EditorStore) -> None:
     result = store.create("Mi video")
     doc = result["project"]
@@ -39,7 +30,7 @@ def test_list_orders_by_updated_at_desc(store: EditorStore) -> None:
     listed = store.list_projects()
     ids = [item["id"] for item in listed]
     assert set(ids) == {a["id"], b["id"]}
-    assert listed[0]["id"] == b["id"]  # B es más reciente
+    assert listed[0]["id"] == b["id"]
 
 
 def test_get_missing_returns_none(store: EditorStore) -> None:
@@ -49,9 +40,6 @@ def test_get_missing_returns_none(store: EditorStore) -> None:
 def test_get_invalid_id_rejected(store: EditorStore) -> None:
     with pytest.raises(EditorContractError):
         store.get("../etc/passwd")
-
-
-# --- CAS de revisión -------------------------------------------------------------
 
 
 def test_save_with_expected_revision_advances(store: EditorStore) -> None:
@@ -79,9 +67,6 @@ def test_save_of_unknown_project_rejected(store: EditorStore) -> None:
         store.save(doc, expected_revision=1)
 
 
-# --- Deduplicación de request -----------------------------------------------------
-
-
 def test_repeated_request_returns_same_result_without_double_bump(store: EditorStore) -> None:
     first = store.create("P", request_id="req-1")
     second = store.create("P otra vez", request_id="req-1")
@@ -98,15 +83,10 @@ def test_repeated_save_request_returns_same_revision(store: EditorStore) -> None
     assert first["revision"] == 2
     doc2 = json.loads(json.dumps(first))
     doc2["name"] = "dos"
-    # Mismo requestId reintentado tras respuesta perdida: mismo
-    # resultado, sin segundo incremento de revisión.
     again = store.save(doc2, expected_revision=2, request_id="req-s")["project"]
     assert again["revision"] == 2
     reloaded = store.get(created["id"])
     assert reloaded is not None and reloaded["revision"] == 2
-
-
-# --- Papelera ------------------------------------------------------------------------
 
 
 def test_delete_moves_to_trash_and_restores(store: EditorStore) -> None:
@@ -132,9 +112,6 @@ def test_restore_missing_rejected(store: EditorStore) -> None:
         store.restore("no-existe")
 
 
-# --- Duplicado --------------------------------------------------------------------------
-
-
 def test_duplicate_shares_content_with_new_identity(store: EditorStore) -> None:
     created = store.create("Original")["project"]
     created["clips"] = []
@@ -151,13 +128,9 @@ def test_duplicate_of_missing_rejected(store: EditorStore) -> None:
         store.duplicate("no-existe")
 
 
-# --- Aislamiento y atomicidad --------------------------------------------------------------
-
-
 def test_project_ids_are_path_safe(tmp_path: Path) -> None:
     store = EditorStore(tmp_path)
     created = store.create("P")["project"]
-    # Un id con separadores de ruta no puede escapar de projects/
     with pytest.raises(EditorContractError):
         store.save({**created, "id": "../../malicioso"}, expected_revision=1)
 
@@ -176,7 +149,7 @@ def test_recovery_copy_written_before_replace(store: EditorStore) -> None:
     recovery = store.recovery_dir / f"{created['id']}.json"
     assert recovery.is_file()
     old = json.loads(recovery.read_text(encoding="utf-8"))
-    assert old["name"] == "P"  # copia de la versión previa
+    assert old["name"] == "P"
 
 
 def test_no_tmp_files_left_behind(store: EditorStore) -> None:
@@ -184,9 +157,6 @@ def test_no_tmp_files_left_behind(store: EditorStore) -> None:
     store.create("B")
     leftovers = list(store.projects_dir.glob(".*.tmp"))
     assert leftovers == []
-
-
-# --- Concurrencia ------------------------------------------------------------------
 
 
 def test_concurrent_creates_are_all_persisted(tmp_path: Path) -> None:

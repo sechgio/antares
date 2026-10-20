@@ -79,13 +79,11 @@ describe('modelo temporal del editor', () => {
 
   it('mapea fuente↔timeline con la misma política de redondeo', () => {
     const c = clip({ timelineStartUs: 500_000, speed: { num: 1, den: 2 } });
-    // A media velocidad, 1,5 s de fuente ocupan 3 s de timeline.
     expect(sourceToTimelineUs(c, 1_500_000)).toBe(3_500_000);
     expect(timelineToSourceUs(c, 3_500_000)).toBe(1_500_000);
   });
 
   it('redondea igual que Python en NTSC (half-up)', () => {
-    // 1,5 s a 30000/1001 fps: 44,9550… cuadros -> 45 en ambos extremos.
     const frames = Math.floor((1_500_000 * 30000) / (1001 * 1_000_000) + 0.5);
     expect(frames).toBe(45);
   });

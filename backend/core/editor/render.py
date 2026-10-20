@@ -1,16 +1,3 @@
-"""Render determinista de un snapshot del editor (L3, plan §L3.5).
-
-Compone un filtergraph único a partir del snapshot validado:
-- base de video con duración definida por canvas/exportSettings;
-- rama por clip (trim → velocidad → transformaciones → lienzo);
-- composición por orden de capa con ``overlay``;
-- mezcla de audio con ``amix`` y silencio para huecos.
-
-El resultado es reproducible: el mismo snapshot produce el mismo
-filtergraph y la misma salida. La composición segmentada se evalúa
-solo si un filtergraph excede los límites del build.
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -31,15 +18,10 @@ MAX_CLIPS_IN_GRAPH = 64
 
 
 class RenderPlanError(ValueError):
-    """El snapshot no puede traducirse a un filtergraph."""
+    pass
 
 
 def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Traduce el snapshot validado a un plan de render determinista.
-
-    Devuelve ``{inputs, filter_complex, args, duration_us}``. No
-    ejecuta nada: es puro y verificable sin FFmpeg.
-    """
     doc = validate_document(snapshot)
     canvas = doc["canvas"]
     export = doc["exportSettings"]
@@ -65,7 +47,6 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
     visual_clips.sort(key=lambda c: (track_order(c), int(c["timelineStartUs"])))
     audio_clips.sort(key=lambda c: int(c["timelineStartUs"]))
 
-    # Duración total: fin del último clip, o 1 s si el timeline está vacío.
     timeline_end_us = 0
     for clip in doc["clips"]:
         end = int(clip["timelineStartUs"]) + clip_duration_us(clip)
@@ -77,16 +58,12 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
     bg_color = canvas["background"].get("color", "#000000") if canvas["background"]["type"] == "solid" else "#000000"
     inputs.append({"kind": "lavfi", "value": f"color=c={bg_color}:s={canvas_w}x{canvas_h}:r={fps_num}/{fps_den}:d={_s(timeline_end_us)}"})
 
-    # Un input de archivo por asset usado (video, imagen o audio). El
-    # render siempre exporta desde los originales gestionados. Los
-    # títulos se rasterizan aquí (L4): su bitmap RGBA es la entrada.
     input_index_of_asset: dict[str, int] = {}
     text_inputs: dict[str, int] = {}
     text_cache = assets_dir.parent / "cache" / "text" if assets_dir is not None else None
     for clip in [*visual_clips, *audio_clips]:
         asset_id = str(clip.get("assetId", ""))
         if clip["kind"] == "text" and not asset_id:
-            # Título sin asset: rasterizar a la resolución de export.
             from backend.core.editor.text import render_text_bitmap
 
             bitmap = render_text_bitmap(clip, canvas_w, canvas_h, cache_dir=text_cache)
@@ -177,8 +154,6 @@ def _visual_chain(
 
     parts: list[str] = []
     if is_text:
-        # El bitmap del título es un fotograma único: se convierte en
-        # stream de la duración del clip en el timeline.
         duration_s = _s(clip_duration_us(clip))
         parts.append(f"loop=loop=-1:size=1,trim=duration={duration_s},setpts=PTS-STARTPTS")
     else:
@@ -274,11 +249,6 @@ def _asset_dimensions(asset: dict[str, Any]) -> tuple[int, int]:  # allowlist: d
 
 
 def asset_path(asset: dict[str, Any], assets_dir: Path | None = None) -> Path:  # allowlist: dict[str, Any]
-    """Ruta del archivo gestionado del asset (nunca una ruta del renderer).
-
-    El nombre físico se registró al importar; se resuelve por id dentro
-    del almacén gestionado, con allowlist de extensiones.
-    """
     from backend.core.editor.assets import ALLOWED_SUFFIXES
 
     base = assets_dir if assets_dir is not None else user_data_path("editor") / "assets"
@@ -319,12 +289,6 @@ def execute_render(
     cancel_check: Any = None,
     assets_dir: Path | None = None,
 ) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Ejecuta el render del snapshot con el build preparado.
-
-    Escribe a un temporal junto al destino y hace «replace» al validar
-    la salida con ffprobe: un fallo nunca deja una exportación parcial
-    como si fuera buena.
-    """
     import subprocess
 
     plan = build_render_plan(snapshot, assets_dir=assets_dir)

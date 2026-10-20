@@ -1,14 +1,3 @@
-"""Memoria local del agente: preferencias, hechos y procedimientos aprendidos.
-
-Cada recuerdo conserva versiones con su fuente (el usuario o comprobantes de una
-conversación), estado y fechas. Un procedimiento solo se aprende de pasos que ya
-terminaron con comprobante verificado en la conversación: es una lista
-declarativa de herramientas, nunca código. Reutilizarlo no concede permisos ni
-acceso a recursos; cada efecto vuelve a pedir su aprobación. El usuario puede
-corregir, desactivar, revertir o borrar cualquier recuerdo, y su corrección
-prevalece sobre lo que proponga el modelo. Los secretos no se guardan.
-"""
-
 from __future__ import annotations
 
 import json
@@ -128,8 +117,6 @@ def _steps(value: object) -> list[JsonObject]:
 
 
 class MemoryStore:
-    """JSON atómico en el directorio del agente, con un lock por proceso."""
-
     def __init__(self, base_dir: Path) -> None:
         self._path = base_dir / "memory.json"
         self._lock = threading.RLock()
@@ -197,8 +184,6 @@ class MemoryStore:
             return self._view(item)
 
     def learn(self, store: AgentStore, session_id: str, params: JsonObject) -> JsonObject:
-        """Procedimiento solo con comprobantes: cada herramienta de sus pasos terminó
-        verificada en esta conversación y su último intento no falló."""
         title = _clean(params.get("title"), "un título", MAX_TITLE)
         when = _clean(params.get("when"), "cuándo aplica", MAX_TEXT)
         steps = _steps(params.get("steps"))
@@ -241,7 +226,6 @@ class MemoryStore:
             return self._view(item)
 
     def update(self, item_id: str, params: JsonObject) -> JsonObject:
-        """Acción del usuario: editar (nueva versión), desactivar, activar o revertir."""
         action = params.get("action")
         with self._lock:
             item = self._items.get(item_id)
@@ -278,7 +262,6 @@ class MemoryStore:
             return self._view(item)
 
     def delete(self, item_id: str) -> bool:
-        """Borra el recuerdo con todas sus versiones y sus referencias derivadas."""
         with self._lock:
             removed = self._items.pop(item_id, None) is not None
             self._applied = {sid: [i for i in ids if i != item_id] for sid, ids in self._applied.items()}
@@ -325,8 +308,6 @@ class MemoryStore:
 
     def context(self, session_id: str, text: str, versions: dict[str, str],
                 templates: set[str] | None = None, accounts: dict[str, str] | None = None) -> JsonObject:
-        """Recuerdos pertinentes para el mensaje, dentro de un límite de tamaño.
-        Un procedimiento con herramientas o plantillas cambiadas se suspende."""
         with self._lock:
             self._tool_versions.update(versions)
             words = _words(text)
@@ -373,7 +354,6 @@ class MemoryStore:
         return {"context": "\n".join([header, *lines]), "items": used}
 
     def record_outcome(self, session_id: str, tool: str, status: str) -> None:
-        """Un procedimiento aplicado en la conversación que falla repetidamente se suspende."""
         with self._lock:
             changed = False
             for item_id in self._applied.get(session_id, []):

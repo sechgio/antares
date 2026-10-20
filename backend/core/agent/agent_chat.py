@@ -35,7 +35,6 @@ def _denied(method: str) -> bool:
 
 
 def readonly_methods() -> list[str]:
-    """Lecturas que el agente ejecuta sin aprobación."""
     from backend.core.agent import agent_tools
 
     return sorted({m for m in ORCHESTRATABLE_METHODS if not _denied(m)} | agent_tools.READ_TOOLS)
@@ -49,7 +48,6 @@ _SECRET_RESULT_KEYS = frozenset({
 
 
 def scrub_secrets(value: Any) -> Any:
-    """Copia recursiva sin credenciales ni grants para lo que viaja al LLM."""
     if isinstance(value, dict):
         return {
             key: ("…" if str(key).lower() in _SECRET_RESULT_KEYS else scrub_secrets(child))
@@ -573,18 +571,6 @@ def chat(
     max_tokens: int | None = None,
     tools: list[JsonObject] | None = None,
 ) -> JsonObject:
-    """Un turno LLM; `messages` es el historial persistido en formato neutro.
-
-    ``with_tools=False`` desactiva las herramientas (nodos Agente de flujos:
-    una sola respuesta de texto, sin tool-calling interactivo).
-    ``on_delta`` recibe el texto parcial acumulado cuando el proveedor hace
-    streaming (opcional; el chat del agente lo usa para mostrar progreso).
-    ``extra_tools`` añade specs propias del llamante a las de Antares, para
-    que el modelo devuelva una estructura en vez de prosa. ``max_tokens`` solo
-    aplica al estilo Anthropic y sube el techo cuando la respuesta es un
-    documento largo. ``tools`` sustituye el catálogo por una lista explícita
-    (subagentes: solo sus herramientas de lectura).
-    """
     spec = ai_providers.get_provider(provider)
     config = ai_providers.get_config(provider) or {}
     chat_spec = spec.get("chat") or {}

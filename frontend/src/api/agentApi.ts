@@ -8,12 +8,9 @@ export interface AgentSession {
   created_at: number;
   updated_at: number;
   last_error: string | null;
-  /** Agente guardado del que nació la conversación. */
   profile?: { id: string; name: string };
 }
 
-// Agente guardado para una tarea repetitiva: mismo runtime, con sus
-// indicaciones y herramientas. No se ejecuta solo ni amplía permisos.
 export interface AgentProfile {
   id: string;
   name: string;
@@ -44,20 +41,18 @@ export interface AgentMessage {
   partial?: boolean;
 }
 
-// Archivos cuya ruta escribió el usuario: concedidos (solo lectura) o rechazados.
-export interface AgentMessageFiles {
+interface AgentMessageFiles {
   granted: string[];
   rejected: { path: string; reason: string }[];
 }
 
-// Adjunto elegido en el diálogo nativo: el renderer solo conoce su id y nombre.
 export interface AgentAttachment {
   id: string;
   name: string;
   kind: 'files' | 'folder';
 }
 
-export interface AgentMessageMentions {
+interface AgentMessageMentions {
   modules: string[];
   unknown: string[];
   ambiguous: { mention: string; modules: string[] }[];
@@ -101,8 +96,6 @@ export interface AgentQuestion {
   questions: { id: string; prompt: string; options?: string[] }[];
 }
 
-// Contexto visible de la conversación: módulos mencionados, archivos
-// concedidos y cuentas que firmaron aprobaciones.
 export interface AgentContext {
   modules: { id: string; label: string }[];
   files: { path: string; folder: boolean }[];
@@ -153,9 +146,6 @@ export const agentApi = {
   agentContextRemoveFile: (session_id: string, path: string) =>
     _invoke<{ removed: number }>('agent_context_remove_file', { session_id, path }),
 
-  // request_id identifica el envío: un reintento con el mismo id no crea otro encargo.
-  // correction: redirige el encargo en curso tras la ronda de herramientas
-  // actual; rechaza los pasos pendientes de aprobación, no los ya enviados.
   agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = [], correction = false) =>
     _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles; mentions?: AgentMessageMentions }>(
       'agent_message_send',

@@ -1,4 +1,3 @@
-
 import threading
 
 from backend.core.state import ProcessState, log_message

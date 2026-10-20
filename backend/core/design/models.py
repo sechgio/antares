@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -174,7 +173,6 @@ def create_empty_document() -> JsonObject:
 
 
 def normalize_document(raw: Any) -> JsonObject:
-    """Normaliza cualquier payload del modelo o del renderer a un Design válido."""
     if not isinstance(raw, dict):
         return create_empty_document()
     raw = {str(k): v for k, v in raw.items()}

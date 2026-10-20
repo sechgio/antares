@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from backend.core.ubicaciones.client import _redact_url_for_log

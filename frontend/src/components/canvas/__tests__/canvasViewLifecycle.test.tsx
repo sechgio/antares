@@ -985,7 +985,6 @@ describe('CanvasView lifecycle', () => {
 
     const ev = { returnValue: '', preventDefault: vi.fn() } as unknown as BeforeUnloadEvent;
     handler(ev);
-    // app.flush-canvas-before-quit controla el cierre; beforeunload solo inicia un save de respaldo.
     expect(ev.preventDefault).not.toHaveBeenCalled();
     await act(async () => {
       await Promise.resolve();

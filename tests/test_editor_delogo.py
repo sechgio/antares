@@ -1,11 +1,3 @@
-"""Pruebas de delogo del editor (L5, plan §L5).
-
-Criterio de aceptación del hito: una marca sintética en fondo simple se
-sustituye **solo** dentro de la región esperada; fuera de la máscara y
-de la banda del algoritmo no hay cambios. La verificación decodifica
-cuadros reales con ffmpeg y compara píxeles, no solo argumentos.
-"""
-
 from __future__ import annotations
 
 import os
@@ -35,7 +27,6 @@ def toolchain() -> Any:
 
 
 def _marked_clip(toolchain: Any, output: Path, width: int = 320, height: int = 240) -> Path:
-    """Fondo liso con una marca sintética roja fija (simula un logo)."""
     proc = subprocess.run(
         [
             str(toolchain.ffmpeg),
@@ -65,7 +56,6 @@ def _marked_clip(toolchain: Any, output: Path, width: int = 320, height: int = 2
 
 
 def _frame_pixels(toolchain: Any, source: Path, frame: int = 50) -> list[tuple[int, int, int]]:
-    """Extrae un cuadro como píxeles RGB crudos."""
     proc = subprocess.run(
         [
             str(toolchain.ffmpeg),
@@ -97,9 +87,6 @@ def _pixel_index(x: int, y: int, width: int = 320) -> int:
     return y * width + x
 
 
-# --- Unidades puras ----------------------------------------------------------------------
-
-
 def test_delogo_rects_returns_one_filter_per_rect() -> None:
     rects = [
         {"id": "r1", "x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
@@ -113,7 +100,6 @@ def test_delogo_rects_returns_one_filter_per_rect() -> None:
 def test_delogo_rounds_to_even_pixels() -> None:
     rects = [{"id": "r1", "x": 0.31, "y": 0.31, "width": 0.21, "height": 0.21}]
     filters = delogo_rects(rects, 320, 240)
-    # 0.31*320=99.2 -> 99 (impar permitido en x/y; w/h deben caber)
     assert "delogo=" in filters[0]
 
 
@@ -127,13 +113,8 @@ def test_delogo_rejects_out_of_bounds() -> None:
         delogo_rects([{"id": "r", "x": 0.9, "y": 0.9, "width": 0.3, "height": 0.3}], 320, 240)
 
 
-# --- Delogo real sobre marca sintética -------------------------------------------------------
-
-
 def test_delogo_removes_red_mark_inside_region(toolchain: Any) -> None:
-    """La marca roja se sustituye dentro de la región esperada."""
     source = _marked_clip(toolchain, SCRATCH / "marcado.mp4")
-    # La marca está en x=100..180, y=80..140 sobre 320x240.
     rects = [{"id": "r1", "x": 100 / 320, "y": 80 / 240, "width": 80 / 320, "height": 60 / 240}]
     chain = ",".join(delogo_rects(rects, 320, 240))
     out = SCRATCH / "sin_marca.mp4"
@@ -164,12 +145,10 @@ def test_delogo_removes_red_mark_inside_region(toolchain: Any) -> None:
 
     pixels = _frame_pixels(toolchain, out)
     inside = pixels[_pixel_index(140, 110)]
-    # Dentro de la región el rojo desaparece: el canal rojo deja de dominar.
     assert not (inside[0] > 150 and inside[1] < 100 and inside[2] < 100), f"rojo persistente: {inside}"
 
 
 def test_outside_region_unchanged(toolchain: Any) -> None:
-    """Fuera de la máscara el fondo gris no cambia."""
     source = _marked_clip(toolchain, SCRATCH / "marcado.mp4")
     before = _frame_pixels(toolchain, source)
     rects = [{"id": "r1", "x": 100 / 320, "y": 80 / 240, "width": 80 / 320, "height": 60 / 240}]
@@ -196,7 +175,6 @@ def test_outside_region_unchanged(toolchain: Any) -> None:
         check=False,
     )
     after = _frame_pixels(toolchain, out)
-    # Esquina opuesta a la marca: sin cambios perceptibles.
     before_corner = before[_pixel_index(20, 200)]
     after_corner = after[_pixel_index(20, 200)]
     for channel in range(3):
@@ -206,7 +184,6 @@ def test_outside_region_unchanged(toolchain: Any) -> None:
 
 
 def test_multiple_marks_each_removed(toolchain: Any) -> None:
-    """Dos marcas en regiones distintas se tratan por separado."""
     source = SCRATCH / "dos_marcas.mp4"
     subprocess.run(
         [
@@ -266,11 +243,7 @@ def test_multiple_marks_each_removed(toolchain: Any) -> None:
 
 
 def test_delogo_applied_before_user_crop(toolchain: Any) -> None:
-    """El delogo se aplica antes del crop de usuario: la máscara usa
-    coordenadas del origen orientado, no del recorte."""
     source = _marked_clip(toolchain, SCRATCH / "marcado.mp4")
-    # Máscara sobre la marca (x=100..180) y luego crop del usuario a la
-    # mitad derecha: el delogo debe actuar sobre la coordenada original.
     rects = [{"id": "r1", "x": 100 / 320, "y": 80 / 240, "width": 80 / 320, "height": 60 / 240}]
     out = SCRATCH / "delogo_y_crop.mp4"
     proc = subprocess.run(
@@ -300,7 +273,6 @@ def test_delogo_applied_before_user_crop(toolchain: Any) -> None:
 
 
 def test_vertical_video_delogo(toolchain: Any) -> None:
-    """Video vertical: la máscara se normaliza sobre sus dimensiones."""
     source = SCRATCH / "vertical.mp4"
     subprocess.run(
         [
@@ -354,15 +326,11 @@ def test_vertical_video_delogo(toolchain: Any) -> None:
 
 
 def test_rect_touching_exact_edge_rejected() -> None:
-    """El filtro delogo del build rechaza rectángulos que toquen el
-    borde exacto, así que el contrato lo rechaza antes con mensaje
-    claro en lugar de fallar en el proceso hijo."""
     with pytest.raises(ValueError, match="borde"):
         delogo_rects([{"id": "r", "x": 240 / 320, "y": 160 / 240, "width": 80 / 320, "height": 80 / 240}], 320, 240)
 
 
 def test_rect_near_edge_with_margin_works(toolchain: Any) -> None:
-    """Máscara cerca del borde con un píxel de margen: el filtro la acepta."""
     source = _marked_clip(toolchain, SCRATCH / "marcado.mp4")
     rects = [{"id": "r1", "x": 240 / 320, "y": 160 / 240, "width": 79 / 320, "height": 79 / 240}]
     out = SCRATCH / "borde.mp4"
@@ -393,5 +361,4 @@ def test_rect_near_edge_with_margin_works(toolchain: Any) -> None:
 
 
 def test_no_mask_means_no_filter(toolchain: Any) -> None:
-    """Sin máscaras no se emite ningún filtro delogo."""
     assert delogo_rects([], 320, 240) == []

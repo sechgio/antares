@@ -75,16 +75,14 @@ describe('operaciones de timeline', () => {
     expect(left.sourceOutUs).toBe(2_000_000);
     expect(right.sourceInUs).toBe(2_000_000);
     expect(right.timelineStartUs).toBe(2_000_000);
-    // Suma de duraciones = original.
     expect(left.timelineStartUs + (left.sourceOutUs - left.sourceInUs) + (right.sourceOutUs - right.sourceInUs)).toBe(
       5_000_000,
     );
   });
 
   it('divide a velocidad distinta de 1 trasladando al tiempo fuente', () => {
-    const slow = clip({ speed: { num: 1, den: 2 } }); // 5 s de fuente -> 10 s de timeline
+    const slow = clip({ speed: { num: 1, den: 2 } });
     const p = project([slow]);
-    // Cortar a los 4 s de timeline -> 2 s de fuente.
     const result = applyOperation(p, { type: 'split', clipId: 'c1', atTimelineUs: 4_000_000 });
     const [left, right] = result.clips;
     expect(left.sourceOutUs).toBe(2_000_000);
@@ -129,7 +127,6 @@ describe('operaciones de timeline', () => {
   it('repite un número finito de veces contiguas (copias adicionales)', () => {
     const p = project([clip({ sourceOutUs: 2_000_000 })]);
     const result = applyOperation(p, { type: 'repeat', clipId: 'c1', times: 3 });
-    // El original + 3 copias contiguas.
     expect(result.clips).toHaveLength(4);
     const starts = result.clips.map((c) => c.timelineStartUs);
     expect(starts).toEqual([0, 2_000_000, 4_000_000, 6_000_000]);

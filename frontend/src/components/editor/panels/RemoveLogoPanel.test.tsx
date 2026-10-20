@@ -29,7 +29,6 @@ describe('RemoveLogoPanel', () => {
   it('cancelar restaura la lista previa', () => {
     const onApply = vi.fn();
     render(<RemoveLogoPanel clipId="c1" rects={[rect()]} onApply={onApply} />);
-    // Borra la máscara y luego cancela: el borrador vuelve al original.
     fireEvent.click(screen.getByRole('button', { name: 'Borrar máscara' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
@@ -80,8 +79,6 @@ describe('RemoveLogoPanel', () => {
   it('no promete reconstrucción con IA ni tracking', () => {
     render(<RemoveLogoPanel clipId="c1" rects={[]} onApply={vi.fn()} />);
     const text = document.body.textContent || '';
-    // Se buscan las palabras completas, no subcadenas: "previa"
-    // contendría "ia" y daría un falso positivo.
     expect(text).not.toMatch(/\bIA\b|inteligencia artificial|seguimiento autom/i);
   });
 });

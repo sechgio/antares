@@ -1,9 +1,3 @@
-"""Pruebas de efectos de audio del editor (L4, plan §L4.4-6).
-
-Los filtros se validan contra el build real: cada cadena se ejecuta
-sobre el clip sintético con tono y se comprueba que ffmpeg la acepta.
-"""
-
 from __future__ import annotations
 
 import os
@@ -71,9 +65,6 @@ def _run_audio_filter(toolchain: Any, source: Path, af: str, output: Path) -> No
     assert output.is_file()
 
 
-# --- Unidades puras --------------------------------------------------------------------
-
-
 def test_eq_bands_are_ten() -> None:
     assert len(EQ_BANDS) == 10
     assert EQ_BANDS[0] == 32 and EQ_BANDS[-1] == 16000
@@ -94,14 +85,13 @@ def test_eq_clamps_to_contract_range() -> None:
 def test_denoise_clamps_strength() -> None:
     assert denoise_chain(0) == ""
     assert "afftdn" in denoise_chain(0.5)
-    assert "afftdn" in denoise_chain(5)  # saturado a 1.0
+    assert "afftdn" in denoise_chain(5)
 
 
 def test_pitch_semitones_to_ratio() -> None:
     assert pitch_chain(0) == ""
     assert "rubberband=pitch=2" in pitch_chain(12)
     assert "rubberband=pitch=0.5" in pitch_chain(-12)
-    # El contrato limita a ±12 semitonos: valores fuera se acotan.
     clamped = pitch_chain(24)
     assert "pitch=2" in clamped
     clamped = pitch_chain(-24)
@@ -111,9 +101,6 @@ def test_pitch_semitones_to_ratio() -> None:
 def test_unknown_effect_rejected() -> None:
     with pytest.raises(ValueError, match="desconocido"):
         audio_effect_chain([{"type": "telepatia"}])
-
-
-# --- Filtros contra el build real ---------------------------------------------------------
 
 
 def test_eq_runs_on_real_audio(toolchain: Any, clip: Path) -> None:

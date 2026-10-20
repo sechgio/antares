@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import base64
@@ -34,7 +33,7 @@ def _document_payload() -> dict[str, object]:
 def test_render_pdf_returns_base64(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_render_pdf(document, logos, images, image_paths=None):  # type: ignore[no-untyped-def]
+    def fake_render_pdf(document, logos, images, image_paths=None):
         captured["title"] = document.title
         captured["pages"] = len(document.pages)
         return b"%PDF", "evidencia.pdf"
@@ -59,7 +58,7 @@ def test_render_pdf_returns_base64(monkeypatch) -> None:
 def test_render_docx_writes_output_path(tmp_path, monkeypatch) -> None:
     out = tmp_path / "salida.docx"
 
-    def fake_render_docx(document, logos, images, image_paths=None):  # type: ignore[no-untyped-def]
+    def fake_render_docx(document, logos, images, image_paths=None):
         return b"PK\x03\x04", "evidencia.docx"
 
     monkeypatch.setattr(handler_module, "render_docx", fake_render_docx)
@@ -82,7 +81,7 @@ def test_render_docx_writes_output_path(tmp_path, monkeypatch) -> None:
 def test_render_pdf_writes_output_path(tmp_path, monkeypatch) -> None:
     out = tmp_path / "salida.pdf"
 
-    def fake_render_pdf(document, logos, images, image_paths=None):  # type: ignore[no-untyped-def]
+    def fake_render_pdf(document, logos, images, image_paths=None):
         return b"%PDF-disk-test", "evidencia.pdf"
 
     monkeypatch.setattr(handler_module, "render_pdf", fake_render_pdf)
@@ -108,12 +107,12 @@ def test_render_pdf_writes_output_path(tmp_path, monkeypatch) -> None:
 def test_render_pdf_uses_preview_html_when_provided(monkeypatch) -> None:
     called = {"html": False, "legacy": False}
 
-    def fake_render_pdf_html(html):  # type: ignore[no-untyped-def]
+    def fake_render_pdf_html(html):
         called["html"] = True
         assert "Vista previa" in html
         return b"%PDF", "preview.pdf"
 
-    def fake_render_pdf(document, logos, images, image_paths=None):  # type: ignore[no-untyped-def]
+    def fake_render_pdf(document, logos, images, image_paths=None):
         called["legacy"] = True
         return b"%PDF", "legacy.pdf"
 
@@ -138,7 +137,7 @@ def test_render_pdf_uses_preview_html_when_provided(monkeypatch) -> None:
 def test_render_pdf_html_path_rejects_over_max_pages(monkeypatch) -> None:
     called = {"html": False}
 
-    def fake_render_pdf_html(html):  # type: ignore[no-untyped-def]
+    def fake_render_pdf_html(html):
         called["html"] = True
         return b"%PDF", "preview.pdf"
 
@@ -166,7 +165,7 @@ def test_render_pdf_html_path_rejects_over_max_pages(monkeypatch) -> None:
 
 
 def test_render_handles_null_images_and_logos(monkeypatch) -> None:
-    def fake_render_pdf(document, logos, images, image_paths=None):  # type: ignore[no-untyped-def]
+    def fake_render_pdf(document, logos, images, image_paths=None):
         assert logos == {"left": None, "right": None}
         assert images == {}
         assert image_paths == {}

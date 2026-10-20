@@ -1,5 +1,3 @@
-"""Audit all locked runtime dependencies without resolving the project again."""
-
 import subprocess
 import sys
 import tempfile

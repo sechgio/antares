@@ -1,11 +1,3 @@
-"""Pruebas de los filtros del editor (L3, plan §L3.2).
-
-Cada filtro se valida contra el build real de FFmpeg: se construye un
-comando con el filtro y se ejecuta sobre un clip sintético, comprobando
-que ffmpeg lo acepta y produce la salida esperada. Un filtro que no
-existe en el build haría fallar el render en tiempo de ejecución.
-"""
-
 from __future__ import annotations
 
 import json
@@ -71,9 +63,6 @@ def _run_filter(toolchain: Any, source: Path, vf: str, output: Path, *, extra: l
     assert output.is_file()
 
 
-# --- Unidades de filtro puras ------------------------------------------------------
-
-
 def test_num_formats_integers_without_decimals() -> None:
     assert filters._num(2.0) == "2"
     assert filters._num(0.5) == "0.5"
@@ -95,9 +84,6 @@ def test_atempo_chain_covers_extremes() -> None:
 def test_even_rounds_down_to_even() -> None:
     assert filters._even(101) == 100
     assert filters._even(100) == 100
-
-
-# --- Filtros contra el build real ----------------------------------------------------
 
 
 def test_trim_video_produces_shorter_output(toolchain: Any, clip: Path) -> None:
@@ -204,7 +190,6 @@ def test_audio_fades_chain(toolchain: Any, clip: Path) -> None:
     out = SCRATCH / "fades.m4a"
     vf = filters.audio_fades(500_000, 500_000, 5_000_000)
     assert "afade=t=in" in vf and "afade=t=out" in vf
-    # Validación con audio real vía -af.
     import subprocess
 
     proc = subprocess.run(
@@ -234,11 +219,7 @@ def test_audio_gain_db(toolchain: Any, clip: Path) -> None:
     assert "volume=" in filters.audio_gain(-6)
 
 
-# --- Composición: orden de capas y overlays -------------------------------------------
-
-
 def test_two_layer_overlay_composition(toolchain: Any, clip: Path) -> None:
-    """Dos capas superpuestas sobre una base: el orden importa."""
     out = SCRATCH / "overlay2.mp4"
     x, y = filters.overlay_position(0.1, 0.1, 640, 360)
     graph = (

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import base64
@@ -25,7 +24,7 @@ def _panel_payload() -> dict[str, object]:
 def test_render_pdf_forwards_export_mode(monkeypatch, export_mode) -> None:
     captured: dict[str, object] = {}
 
-    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):
         captured["export_mode"] = export_mode
         return b"%PDF", "panel.pdf"
 
@@ -62,7 +61,7 @@ def test_compute_match_rejects_over_max_excel_rows(monkeypatch) -> None:
 def test_render_docx_forwards_export_mode(monkeypatch, export_mode) -> None:
     captured: dict[str, object] = {}
 
-    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):
         captured["export_mode"] = export_mode
         return b"PK\x03\x04docx-bytes", "panel.docx"
 
@@ -85,7 +84,7 @@ def test_render_docx_forwards_export_mode(monkeypatch, export_mode) -> None:
 def test_render_pdf_forwards_template_id(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id):  # type: ignore[no-untyped-def]
+    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id):
         captured["template_id"] = template_id
         return b"%PDF", "panel.pdf"
 
@@ -114,7 +113,7 @@ def test_render_pdf_prefers_disk_backed_images(
     fallback_b64 = base64.b64encode(b"fallback-image").decode("ascii")
     captured: dict[str, object] = {}
 
-    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):
         captured["images"] = images
         captured["image_paths"] = image_paths
         return b"%PDF", "panel.pdf"
@@ -138,7 +137,7 @@ def test_render_pdf_prefers_disk_backed_images(
 def test_render_pdf_handles_null_images_and_logos(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):
         captured["images"] = images
         captured["image_paths"] = image_paths
         captured["logos"] = logos
@@ -165,7 +164,7 @@ def test_render_pdf_handles_null_images_and_logos(monkeypatch) -> None:
 
 
 def test_render_docx_response_advertises_docx_format(monkeypatch) -> None:
-    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):
         return b"PK\x03\x04docx-bytes", "panel.docx"
 
     monkeypatch.setattr(handler_module, "render_docx", fake_render_docx)
@@ -187,7 +186,7 @@ def test_render_docx_response_advertises_docx_format(monkeypatch) -> None:
 
 
 def test_render_pdf_writes_to_disk_when_output_path_given(monkeypatch, tmp_path) -> None:
-    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):
         return b"%PDF-1.4disk-content", "panel.pdf"
 
     monkeypatch.setattr(handler_module, "render_pdf", fake_render_pdf)
@@ -211,7 +210,7 @@ def test_render_pdf_writes_to_disk_when_output_path_given(monkeypatch, tmp_path)
 
 
 def test_render_docx_writes_to_disk_when_output_path_given(monkeypatch, tmp_path) -> None:
-    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):
         return b"PK\x03\x04docx-disk-content", "panel.docx"
 
     monkeypatch.setattr(handler_module, "render_docx", fake_render_docx)
@@ -235,7 +234,7 @@ def test_render_docx_writes_to_disk_when_output_path_given(monkeypatch, tmp_path
 
 
 def test_render_docx_resolves_write_token_saved_path(monkeypatch, tmp_path) -> None:
-    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):
         return b"PK\x03\x04docx-token-content", "panel.docx"
 
     monkeypatch.setattr(handler_module, "render_docx", fake_render_docx)
@@ -303,7 +302,7 @@ def test_template_writes_excel_with_expected_columns(tmp_path) -> None:
     assert saved.stat().st_size > 0
 
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except ImportError:
         pytest.skip("pandas no está instalado")
 

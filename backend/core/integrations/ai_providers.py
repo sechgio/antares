@@ -1,12 +1,3 @@
-"""Proveedores de modelos IA (BYOK): claves y base URL selladas en el
-mismo vault que las conexiones OAuth (``core/integrations/vault.py``).
-
-Los specs viven en ``shared/ai-providers-catalog.json``. Además, el usuario
-puede añadir modelos personalizados: su spec y su clave se sellan juntos en
-``ai-providers/custom-*.json`` y se fusionan con el catálogo. La API key nunca
-sale del backend: al renderer solo se expone una versión enmascarada.
-"""
-
 from __future__ import annotations
 
 import http.client
@@ -101,7 +92,6 @@ def _custom_paths() -> list[tuple[str, Path]]:
 
 
 def custom_provider_specs() -> dict[str, JsonObject]:
-    """Specs de los modelos personalizados válidos, indexados por id."""
     specs: dict[str, JsonObject] = {}
     for provider, _ in _custom_paths():
         payload = _custom_payload(provider)
@@ -112,7 +102,6 @@ def custom_provider_specs() -> dict[str, JsonObject]:
 
 
 def invalid_custom_providers() -> list[str]:
-    """Ids de archivos custom presentes pero ilegibles o incompletos."""
     invalid: list[str] = []
     for provider, _ in _custom_paths():
         payload = _custom_payload(provider)
@@ -239,11 +228,6 @@ def _new_custom_id(label: str) -> str:
 
 
 def upsert_custom(config: JsonObject) -> JsonObject:
-    """Crea o actualiza un modelo personalizado con su spec y clave sellados.
-
-    Sin ``id`` crea uno nuevo con id derivado del nombre; con ``id`` actualiza.
-    Omitir ``api_key`` conserva la clave guardada, igual que ``put_config``.
-    """
     raw_id = config.get("id")
     if raw_id is not None and not isinstance(raw_id, str):
         raise ValueError("id debe ser un texto")
@@ -307,7 +291,6 @@ def _base_url(provider: str, spec: JsonObject, config: JsonObject | None) -> str
 
 
 def public_state(provider: str) -> JsonObject:
-    """Estado visible para el renderer: nunca incluye la clave."""
     spec = get_provider(provider)
     config = get_config(provider) or {}
     key = config.get("api_key")
@@ -359,7 +342,6 @@ def _status_model_ids(models: list[object]) -> list[str]:
 
 
 def status(provider: str) -> JsonObject:
-    """Sonda el endpoint de modelos del proveedor con la clave guardada."""
     spec = get_provider(provider)
     state = public_state(provider)
     out: JsonObject = {

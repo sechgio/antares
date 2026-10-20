@@ -1,11 +1,3 @@
-"""Modelo temporal y validación de documentos del editor.
-
-Contrato compartido: ``shared/editor-schema.json`` (schemaVersion 1).
-La validación usa el schema real, no una lista paralela; las funciones
-temporales aplican la misma política de redondeo que el frontend
-(``frontend/src/components/editor/types.ts``).
-"""
-
 from __future__ import annotations
 
 import copy
@@ -34,7 +26,7 @@ def _utc_now_iso() -> str:
 
 
 class EditorContractError(ValueError):
-    """Documento rechazado por el contrato del editor."""
+    pass
 
 
 def _format_error(exc: jsonschema.ValidationError) -> str:
@@ -43,11 +35,6 @@ def _format_error(exc: jsonschema.ValidationError) -> str:
 
 
 def _check_semantics(document: dict[str, Any]) -> None:  # allowlist: dict[str, Any]
-    """Reglas del contrato que el JSON Schema no puede expresar entre
-    campos hermanos: intervalos semiabiertos y crop dentro del origen.
-
-    Los mensajes van en español porque los consume la UI directamente.
-    """
     for clip in document.get("clips", []):
         clip_id = clip.get("id", "?")
         if int(clip["sourceOutUs"]) <= int(clip["sourceInUs"]):
@@ -76,12 +63,6 @@ def _check_semantics(document: dict[str, Any]) -> None:  # allowlist: dict[str, 
 
 
 def validate_document(document: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Valida un documento completo contra el schema compartido.
-
-    Lanza ``EditorContractError`` con un mensaje en español cuando el
-    documento no cumple el contrato. Rechaza versiones futuras de schema
-    sin descartar silenciosamente partes del proyecto.
-    """
     if not isinstance(document, dict):
         raise EditorContractError("(raíz): el documento debe ser un objeto JSON")
     version = document.get("schemaVersion")
@@ -100,13 +81,6 @@ def validate_document(document: Any) -> dict[str, Any]:  # allowlist: dict[str, 
 
 
 def clip_duration_us(clip: dict[str, Any]) -> int:  # allowlist: dict[str, Any]
-    """Duración de timeline de un clip.
-
-    ``durationUs = round((sourceOutUs - sourceInUs) * speed.den / speed.num)``
-
-    Intervalos semiabiertos ``[inicio, fin)``. El redondeo es half-up para
-    coincidir con ``Math.round`` del frontend.
-    """
     source_us = int(clip["sourceOutUs"]) - int(clip["sourceInUs"])
     speed = clip["speed"]
     num = int(speed["num"])
@@ -124,12 +98,6 @@ def normalize_document(
     *,
     expected_revision: int | None = None,
 ) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Valida, sella la revisión y marca ``updatedAt``.
-
-    ``expected_revision`` implementa el CAS de guardado: una revisión
-    obsoleta se rechaza y un guardado repetido con la revisión correcta
-    nunca incrementa dos veces.
-    """
     doc = copy.deepcopy(document)
     if expected_revision is not None:
         current = int(doc.get("revision", 0))

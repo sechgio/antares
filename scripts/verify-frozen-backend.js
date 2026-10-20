@@ -242,10 +242,6 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
             ));
             return;
           }
-          // El smoke del editor renderiza un clip corto con las
-          // herramientas del paquete (sin PATH) en el directorio
-          // Unicode del smoke: si la cadena media no está empaquetada
-          // o el directorio rompe la resolución, esto falla.
           sendRequest('editor-export', 'editor_export_start', {
             document: {
               id: 'smoke',
@@ -331,4 +327,4 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
   }
 }
 
-module.exports = { frozenBackendEnv, verifyFrozenBackendTemplates };
+module.exports = { verifyFrozenBackendTemplates };

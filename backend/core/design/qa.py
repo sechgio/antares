@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from typing import Any
@@ -56,7 +55,6 @@ def _overlap_ratio(a: tuple[float, float, float, float], b: tuple[float, float, 
 
 
 def layouts_for(document: JsonObject) -> list[str]:
-    """Layouts en orden de aparición, para detectar monotonía sin tocar el render."""
     slides = document.get("slides")
     if not isinstance(slides, list):
         return []
@@ -64,7 +62,6 @@ def layouts_for(document: JsonObject) -> list[str]:
 
 
 def consecutive_run_lengths(items: list[str]) -> list[tuple[str, int, int]]:
-    """``(valor, longitud, posicion)`` por cada repetición consecutiva."""
     if not items:
         return []
     runs: list[tuple[str, int, int]] = []
@@ -191,7 +188,6 @@ def _page_findings(page: Any, slide_number: int, safe: tuple[float, float, float
 
 
 def run_preflight(document: JsonObject, pdf: bytes | None = None) -> Preflight:
-    """Mide el Design sobre su PDF renderizado. Si no recibe PDF, lo produce."""
     theme_raw = document.get("theme")
     page_raw = document.get("page")
     theme: JsonObject = theme_raw if isinstance(theme_raw, dict) else {}

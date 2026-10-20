@@ -1,11 +1,3 @@
-"""L8.3: historial local de exportaciones con reintento explícito.
-
-Una exportación terminada queda registrada con su destino real. El
-historial permite ver resultados anteriores y reintentar con un destino
-nuevo; un resultado inexistente muestra estado concreto sin volver a
-renderizar automáticamente.
-"""
-
 from pathlib import Path
 
 from backend.core.editor.jobs import (
@@ -16,7 +8,6 @@ from backend.core.editor.jobs import (
 
 
 def test_export_finish_records_destination(tmp_path, monkeypatch) -> None:
-    """Al terminar un export se registra el destino y el tamaño real."""
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     output = tmp_path / "salida.mp4"
     output.write_bytes(b"x" * 4096)
@@ -54,7 +45,6 @@ def test_export_finish_records_destination(tmp_path, monkeypatch) -> None:
 
 
 def test_history_sorted_recent_first(tmp_path, monkeypatch) -> None:
-    """El historial se ordena por fecha descendente."""
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     for job_id, when in (("old", "2026-01-01T00:00:00+00:00"), ("new", "2026-06-01T00:00:00+00:00")):
         _persist_export_history(
@@ -66,7 +56,6 @@ def test_history_sorted_recent_first(tmp_path, monkeypatch) -> None:
 
 
 def test_history_limit(tmp_path, monkeypatch) -> None:
-    """El límite recorta el historial devuelto."""
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     for i in range(10):
         _persist_export_history(
@@ -83,7 +72,6 @@ def test_history_limit(tmp_path, monkeypatch) -> None:
 
 
 def test_corrupt_history_entry_is_skipped(tmp_path, monkeypatch) -> None:
-    """Una entrada corrupta no rompe el historial completo."""
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     _history_dir()
     (_history_dir() / "roto.json").write_text("{no json", encoding="utf-8")
@@ -96,12 +84,6 @@ def test_corrupt_history_entry_is_skipped(tmp_path, monkeypatch) -> None:
 
 
 def test_missing_output_shows_state_without_rerender(tmp_path, monkeypatch) -> None:
-    """Un destino que ya no existe se reporta; no se re-renderiza solo.
-
-    El contrato del plan: un resultado inexistente muestra estado
-    concreto. Aquí se verifica que el historial conserva el registro y
-    que el backend no lanza render automático al consultarlo.
-    """
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     gone = tmp_path / "borrado.mp4"
     _persist_export_history(
@@ -122,7 +104,6 @@ def test_missing_output_shows_state_without_rerender(tmp_path, monkeypatch) -> N
 
 
 def test_retry_with_new_destination_creates_separate_entry(tmp_path, monkeypatch) -> None:
-    """Reintentar con destino nuevo es una entrada nueva, no sobreescribe."""
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     _persist_export_history(
         "job-a",

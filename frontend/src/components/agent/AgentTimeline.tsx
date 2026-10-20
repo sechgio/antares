@@ -8,7 +8,7 @@ import MessageMarkdown from './MessageMarkdown';
 import SubagentTrace from './SubagentTrace';
 import { METHOD_LABELS } from './methodLabels';
 
-export interface AgentIdentity {
+interface AgentIdentity {
   seed: string;
   name: string;
 }
@@ -236,12 +236,6 @@ export function ThinkingRow({ elapsedSeconds, agent }: { elapsedSeconds: number;
       </span>
     </div>
   );
-}
-
-export interface AgentToolGroups {
-  direct: string[];
-  gated: string[];
-  mcp: string[];
 }
 
 export function ToolGroup({ label, names, enabledNames, onToggle, disabled }: {

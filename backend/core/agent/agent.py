@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import hashlib
@@ -43,8 +42,6 @@ def _schema_values(value: object, segments: tuple[str, ...]) -> list[object]:
 def read_resources(
     method: str, args: JsonObject, grants: dict[str, JsonObject], drafts_root: Path | None = None,
 ) -> list[JsonObject]:
-    """Revisión de cada archivo de lectura del método: archivos concedidos por el
-    humano o borradores de la propia conversación."""
     revisions: list[JsonObject] = []
     for schema in file_tokens_for(method):
         for value in _schema_values(args, schema):
@@ -96,7 +93,6 @@ def _now_ms() -> float:
 
 
 def fingerprint(method: str, params: object) -> str:
-    """Huella determinista de la intención: método y parámetros normalizados."""
     canonical = json.dumps({"method": method, "params": params}, sort_keys=True, ensure_ascii=False,
                            separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -277,7 +273,6 @@ class AgentStore:
             return [dict(m) for m in self._read_messages(session_id)]
 
     def mark_interrupted_turns(self) -> int:
-        """Recupera progreso sin volver a ejecutar herramientas ni decisiones."""
         marked = 0
         with self._lock:
             for session_id in list(self._sessions):
@@ -380,7 +375,6 @@ class AgentStore:
             return len(keys)
 
     def accounts_for(self, session_id: str) -> list[str]:
-        """Cuentas que firmaron aprobaciones de esta conversación."""
         with self._lock:
             found = {str((a.get("context") or {}).get("account")) for a in self._approvals.values()
                      if a.get("session_id") == session_id and a.get("status") == "approved"
@@ -521,8 +515,6 @@ class AgentStore:
             return dict(approval)
 
     def approval_for_call(self, session_id: str, call_id: str) -> JsonObject | None:
-        """Aprobación existente para una llamada; permite reanudar la espera tras
-        un reinicio sin crear duplicados ni redecidir."""
         self._expire_stale_approvals()
         with self._lock:
             for approval in self._approvals.values():
@@ -531,7 +523,6 @@ class AgentStore:
             return None
 
     def ensure_approval(self, session_id: str, call: JsonObject) -> JsonObject:
-        """Consulta y creación en una sola sección crítica, también entre callers."""
         with self._lock:
             return self.approval_for_call(session_id, str(call["id"])) or self.create_approval(session_id, call)
 
@@ -549,7 +540,6 @@ class AgentStore:
             return denied
 
     def dispatches_for(self, session_id: str) -> list[JsonObject]:
-        """Comprobantes de la conversación, sin el resultado completo."""
         with self._lock:
             return [{k: v for k, v in record.items() if k != "result"}
                     for record in self._dispatches.values() if record.get("session_id") == session_id]
@@ -562,14 +552,6 @@ class AgentStore:
     def dispatch_claim(
         self, session_id: str, call_id: str, method: str, params: JsonObject, approval_id: str | None,
     ) -> tuple[str, JsonObject]:
-        """Reserva atómica de una operación.
-
-        Devuelve ``("new", registro)`` solo al ganador, que debe iniciar el
-        worker; ``("existing", registro)`` a quien repite la misma intención y
-        ``("conflict", registro)`` si el ``call_id`` ya se usó con otra intención
-        en esta conversación. Con ``approval_id`` la reserva exige una aprobación
-        aprobada, vinculada a la llamada, con la misma huella y sin consumir, y la
-        consume en la misma operación (``("rejected", {"error": ...})`` si no)."""
         intent = fingerprint(method, params)
         key = dispatch_key(session_id, call_id)
         with self._lock:
@@ -662,8 +644,6 @@ class AgentRunner:
         thread.start()
 
     def cancel_turn(self, session_id: str) -> bool:
-        """Detiene el turno en curso de forma cooperativa (la llamada al
-        proveedor en vuelo se abandona vía ``await_or_cancel``)."""
         with self._lock:
             if not self.is_running(session_id) and self._store.pending_approvals(session_id):
                 self._spawn(session_id, f"agent-cancel-{session_id}")
@@ -684,7 +664,6 @@ class AgentRunner:
                 self._partial_saved_at[session_id] = now
 
     def partial_text(self, session_id: str) -> str | None:
-        """Texto en vivo; el último checkpoint permite recuperarlo tras reiniciar."""
         with self._lock:
             return self._partial.get(session_id) or None
 
@@ -700,7 +679,6 @@ class AgentRunner:
             self._spawn(session_id, f"agent-turn-{session_id}")
 
     def decide(self, approval_id: str, approved: bool) -> JsonObject:
-        """Acepta la decisión y encola su ejecución, en orden por conversación."""
         with self._lock:
             prior = self._store.get_approval(approval_id)
             token = self._cancel.get(str(prior["session_id"])) if prior else None

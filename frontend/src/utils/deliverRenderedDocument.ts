@@ -6,10 +6,6 @@ interface RenderedDocumentResponse {
   filename: string;
 }
 
-/**
- * Ask the user for a PDF output path through the native save dialog.
- * Returns null when the dialog is cancelled.
- */
 export async function askPdfSavePath(defaultFilename: string, title: string): Promise<string | null> {
   const saveTarget = await api.dialogSave({
     title,
@@ -22,10 +18,6 @@ export async function askPdfSavePath(defaultFilename: string, title: string): Pr
   return saveTarget.paths[0] || null;
 }
 
-/**
- * Shared tail of "render a document" exports: on Electron, ask for a save path
- * and pass it to the renderer; on web, download the returned base64 payload.
- */
 export async function renderAndDeliverDocument<TPayload, TResp extends RenderedDocumentResponse>(
   payload: TPayload,
   render: (body: TPayload, outputPath?: string) => Promise<TResp>,

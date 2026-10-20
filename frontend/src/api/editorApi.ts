@@ -1,7 +1,7 @@
 import type { EditorProject } from '../components/editor/types';
 import { _invoke } from './core';
 
-export interface EditorBootstrapResult {
+interface EditorBootstrapResult {
   schemaVersion: number;
   projects: Array<{ id: string; name: string; updatedAt?: string; revision?: number }>;
   toolchain: {
@@ -11,7 +11,7 @@ export interface EditorBootstrapResult {
   };
 }
 
-export interface EditorJobStatus {
+interface EditorJobStatus {
   jobId: string;
   type: string;
   stages: string[];
@@ -26,7 +26,7 @@ export interface EditorJobStatus {
   err_count?: number;
 }
 
-export interface EditorImportResult {
+interface EditorImportResult {
   started: boolean;
   jobId?: string;
   reason?: string;

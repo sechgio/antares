@@ -5,7 +5,7 @@ import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 
-export interface ModelChoice {
+interface ModelChoice {
   provider: string;
   model: string;
 }

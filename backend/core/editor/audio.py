@@ -1,24 +1,13 @@
-"""Efectos de audio del editor (L4, plan §L4.4-6).
-
-Cadena de filtros determinista por clip de audio: ganancia, fades,
-ecualizador, inversión y reducción de ruido. Los filtros se validan
-contra el build preparado: un filtro ausente se rechaza aquí, no en el
-proceso hijo.
-"""
-
 from __future__ import annotations
 
 from typing import Any
 
 from backend.core.editor import filters
 
-# Bandas del ecualizador del editor (Hz). El contrato admite hasta 10
-# ganancias; se mapean a these bands en orden.
 EQ_BANDS: tuple[int, ...] = (32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
 
 
 def eq_chain(band_gains_db: list[float]) -> str:
-    """Ecualizador por bandas con ``equalizer`` de ffmpeg."""
     if not band_gains_db:
         return ""
     parts: list[str] = []
@@ -49,7 +38,6 @@ def denoise_chain(strength: float) -> str:
 
 
 def pitch_chain(semitones: float) -> str:
-    """Cambio de tono conservando duración con ``rubberband``."""
     if semitones == 0:
         return ""
     clamped = max(-12.0, min(12.0, float(semitones)))
@@ -57,7 +45,6 @@ def pitch_chain(semitones: float) -> str:
 
 
 def audio_effect_chain(effects: list[dict[str, Any]], *, gain_db: float = 0.0) -> str:  # allowlist: dict[str, Any]
-    """Cadena completa de efectos de audio de un clip, en orden estable."""
     parts: list[str] = []
     gain = filters.audio_gain(gain_db)
     if gain:

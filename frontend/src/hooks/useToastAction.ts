@@ -3,12 +3,8 @@ import { errorMessage } from '../utils/errors';
 import { useToast } from './useToast';
 
 interface ToastActionOptions {
-  /** Mensaje de éxito; si se omite no se emite toast al resolver. */
   success?: string;
-  /** Fallback cuando el error no trae mensaje propio. */
   error: string;
-  /** true (default): propaga el error tras el toast (formularios/modales).
-   *  false: lo traga (patches fire-and-forget). */
   rethrow?: boolean;
 }
 

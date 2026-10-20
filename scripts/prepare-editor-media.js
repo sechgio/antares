@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-/**
- * Prepara la cadena de herramientas multimedia del editor en `media/`.
- *
- * Uso:
- *   node scripts/prepare-editor-media.js verify      # comprueba media/ contra el manifest
- *   node scripts/prepare-editor-media.js install <dir-con-ffmpeg.exe-y-ffprobe.exe>
- *
- * Los binarios NO se commitean: `media/` queda ignorado salvo
- * `manifest.json` y `LICENSE-THIRD-PARTY.txt`. El manifest es la fuente
- * de verdad de versión, hashes y licencia.
- */
-
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');

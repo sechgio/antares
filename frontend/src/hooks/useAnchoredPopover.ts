@@ -13,29 +13,17 @@ export interface PopoverPosition {
 }
 
 interface UseAnchoredPopoverOptions {
-  /** Fallback popup height before the real element can be measured. */
   estimatedHeight?: number;
-  /** Minimum popup width before measuring; ignored with `matchTriggerWidth`. */
   estimatedWidth?: number;
-  /** Horizontal alignment of the popup relative to the trigger. */
   align?: "start" | "end" | "center";
-  /** "auto" flips upward when space below is tight; "up"/"down" pin the direction. */
   direction?: "auto" | "up" | "down";
-  /** Trigger-to-popup gap in px (default 6). */
   gap?: number;
-  /** Popup width equals the trigger width instead of a minimum. */
   matchTriggerWidth?: boolean;
-  /** When set, `position.maxHeight` is fitted to the space in the open direction. */
   maxHeightCap?: number;
-  /** Floor for the fitted `maxHeight` (default 80). */
   minHeight?: number;
-  /** Freeze the computed width/maxHeight after the first placement of an open session. */
   lockSize?: boolean;
-  /** Close on Escape during the capture phase and swallow the event (keeps parent overlays open). */
   stopEscapePropagation?: boolean;
-  /** false → lifecycle only (open/close/outside-click/Escape), no position tracking. */
   floating?: boolean;
-  /** Custom geometry; replaces the default anchored computation. */
   positioner?: (trigger: DOMRect, popup: HTMLElement | null) => PopoverPosition;
 }
 

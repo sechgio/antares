@@ -1,4 +1,3 @@
-
 import math
 import os
 import tempfile
@@ -632,7 +631,7 @@ def test_consolidated_mode_closes_rendered_images(monkeypatch: pytest.MonkeyPatc
             closed[0] += 1
             orig_close()
 
-        def tracked_convert(mode: str, *a, **kw):  # type: ignore[no-untyped-def]
+        def tracked_convert(mode: str, *a, **kw):
             converted = orig_convert(mode, *a, **kw)
             _track(converted)
             return converted
@@ -676,7 +675,7 @@ def test_consolidated_mode_failure_removes_temp_page_and_closes_images(
 
     closed = [0]
 
-    def raising_save(_self, *_a, **_kw) -> None:  # type: ignore[no-untyped-def]
+    def raising_save(_self, *_a, **_kw) -> None:
         raise Boom("save failed")
 
     def fake_render(datos: dict, formato: str, *, map_opts=None, custom_styles=None) -> Image.Image:

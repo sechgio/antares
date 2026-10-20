@@ -1,5 +1,3 @@
-
-
 class EvidenciaVolanteoError(ValueError):
     pass
 

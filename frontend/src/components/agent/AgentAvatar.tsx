@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import './agent.css';
 
-export interface AgentAvatarPalette {
+interface AgentAvatarPalette {
   from: string;
   to: string;
 }
