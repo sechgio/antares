@@ -23,7 +23,7 @@ export function DelogoOverlay({
           data-testid={`delogo-rect-${rect.id}`}
           className={`absolute rounded border-2 ${
             rect.id === selectedId
-              ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/25'
+              ? 'border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_25%,transparent)]'
               : 'border-dashed border-white/70 bg-white/10'
           }`}
           style={{

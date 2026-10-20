@@ -126,6 +126,7 @@ async function handleEditorCall(method, params = {}, dialog, window) {
 }
 
 module.exports = {
+  EDITOR_METHODS,
   MEDIA_FILTERS,
   runEditorImportFiles,
   runEditorRecording,

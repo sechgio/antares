@@ -11,10 +11,11 @@ import json
 import re
 from pathlib import Path
 
-SPEC = Path("backend/backend.spec")
-BUILDER_YML = Path("electron-builder.yml")
-MEDIA_DIR = Path("media")
-SHARED_DIR = Path("shared")
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = ROOT / "backend/backend.spec"
+BUILDER_YML = ROOT / "electron-builder.yml"
+MEDIA_DIR = ROOT / "media"
+SHARED_DIR = ROOT / "shared"
 
 
 def test_backend_spec_packs_editor_schema() -> None:
