@@ -1,16 +1,6 @@
 #!/usr/bin/env node
-
-/**
- * Auditoría de la política de revisión de un PR: intención, tamaño, alcance, tests, aprobación, taxonomía.
- *
- * Severidades: solo los checks `blocking` pueden tumbar el job. Bloquean la intención vacía y el
- * tamaño grande sin declarar (etiqueta `size/exempt`); el resto son señales para el revisor humano.
- * La puerta falla abierta ante problemas de infraestructura (sin `gh`, API caída, PR cerrado) y
- * falla cerrada ante errores de uso (repo o número de PR imposibles).
- *
- *   node scripts/review-policy-check.js --pr 42 [--comment] [--json]
- *
- * Exit 1 solo cuando un check bloqueante falla, o ante un error de uso.
+/** node scripts/review-policy-check.js --pr 42 [--comment] [--json]
+ * Exit 1 ante checks bloqueantes o uso inválido; 0 sin infraestructura o con PR cerrado.
  */
 const { parseCliArgs, detectRepo } = require('./lib/loop-utils');
 const {
