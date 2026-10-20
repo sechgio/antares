@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Loader2, Plus, RefreshCw, Search } from 'lucide-react';
+import { Check, ChevronDown, Loader2, RefreshCw, Search } from 'lucide-react';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
@@ -24,78 +24,36 @@ interface ProviderModels {
   error: string | null;
 }
 
-const RECENTS_KEY = 'antares-agent-models';
-const MAX_RECENTS = 4;
+interface MenuItem {
+  provider: string;
+  model: string;
+  label: string;
+  detail?: string;
+}
+
 const MENU_HEIGHT = 420;
-const MENU_WIDTH = 360;
-const CUSTOM_TAB = '__custom';
-
-function readRecents(): ModelChoice[] {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]');
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .filter((item): item is ModelChoice => !!item && typeof item === 'object'
-        && typeof (item as ModelChoice).provider === 'string' && typeof (item as ModelChoice).model === 'string')
-      .slice(0, MAX_RECENTS);
-  } catch {
-    return [];
-  }
-}
-
-function remember(choice: ModelChoice): void {
-  try {
-    const next = [choice, ...readRecents().filter((item) => item.provider !== choice.provider || item.model !== choice.model)];
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(next.slice(0, MAX_RECENTS)));
-  } catch {
-  }
-}
-
-function ProviderMark({ id, label, size = 20 }: { id: string; label: string; size?: number }) {
-  const hue = [...id].reduce((sum, char) => sum + char.charCodeAt(0) * 37, 0) % 360;
-  return (
-    <span
-      aria-hidden="true"
-      className="flex shrink-0 items-center justify-center rounded-md text-[10px] font-semibold uppercase leading-none"
-      style={{ width: size, height: size, background: `hsl(${hue} 55% 50% / 0.18)`, color: `hsl(${hue} 60% 62%)` }}
-    >
-      {label.trim().charAt(0) || '?'}
-    </span>
-  );
-}
+const MENU_WIDTH = 260;
 
 export default function ModelPicker({ providers, value, onChange, disabled = false, className }: ModelPickerProps) {
   const { isOpen, position, triggerRef, popupRef, open, close, updatePosition } = useAnchoredPopover({
     estimatedHeight: MENU_HEIGHT,
     estimatedWidth: MENU_WIDTH,
     align: 'start',
-    gap: 8,
+    gap: 6,
     maxHeightCap: MENU_HEIGHT,
   });
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const [query, setQuery] = useState('');
-  const customs = useMemo(() => providers.filter((item) => item.custom), [providers]);
-  const tabFor = useCallback(
-    (id: string) => (customs.some((item) => item.id === id) ? CUSTOM_TAB : id),
-    [customs],
-  );
-  const tabs = useMemo(() => [
-    ...providers.filter((item) => !item.custom),
-    ...(customs.length ? [{ id: CUSTOM_TAB, label: 'Personalizados' }] : []),
-  ], [providers, customs]);
-  const [activeProvider, setActiveProvider] = useState(tabFor(value.provider || providers[0]?.id || ''));
   const [models, setModels] = useState<Record<string, ProviderModels>>({});
   const [highlighted, setHighlighted] = useState(0);
 
-  const customTab = activeProvider === CUSTOM_TAB;
-  const provider = providers.find((item) => item.id === activeProvider) ?? providers[0];
-  const state = customTab
-    ? { loading: false, models: [], error: null }
-    : models[activeProvider] ?? { loading: true, models: [], error: null };
+  const standard = useMemo(() => providers.filter((item) => !item.custom), [providers]);
+  const customs = useMemo(() => providers.filter((item) => item.custom), [providers]);
+  const selectedProvider = providers.find((item) => item.id === value.provider);
+  const currentProvider = standard.find((item) => item.id === value.provider) ?? standard[0];
 
   const load = useCallback(async (id: string) => {
-    if (!id) return;
     setModels((prev) => ({ ...prev, [id]: { loading: true, models: prev[id]?.models ?? [], error: null } }));
     try {
       const { provider: status } = await aiProvidersApi.aiProviderStatus(id);
@@ -116,8 +74,8 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   }, []);
 
   useEffect(() => {
-    if (isOpen && activeProvider && activeProvider !== CUSTOM_TAB) void load(activeProvider);
-  }, [isOpen, activeProvider, load]);
+    if (isOpen) standard.forEach((item) => void load(item.id));
+  }, [isOpen, standard, load]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -129,64 +87,49 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
     if (disabled) close();
   }, [disabled, close]);
 
+  const term = query.trim();
+  const groups = useMemo(() => {
+    const needle = term.toLowerCase();
+    const listed = standard.map((item) => {
+      const state = models[item.id] ?? { loading: true, models: [], error: null };
+      const unique = [...new Set(state.models)];
+      const matches = needle ? unique.filter((model) => model.toLowerCase().includes(needle)) : unique;
+      const entries: MenuItem[] = matches.map((model) => ({ provider: item.id, model, label: model }));
+      if (term && item.id === currentProvider?.id && !unique.includes(term)) {
+        entries.push({ provider: item.id, model: term, label: `Usar «${term}»` });
+      }
+      return { id: item.id, label: item.label, state, entries, custom: false };
+    });
+    const customEntries: MenuItem[] = customs
+      .filter((item) => !needle || item.label.toLowerCase().includes(needle) || item.default_model.toLowerCase().includes(needle))
+      .map((item) => ({ provider: item.id, model: item.default_model, label: item.label, detail: item.default_model }));
+    return customEntries.length
+      ? [...listed, { id: 'custom', label: 'Personalizados', state: { loading: false, models: [], error: null }, entries: customEntries, custom: true }]
+      : listed;
+  }, [standard, customs, models, term, currentProvider?.id]);
+  const items = useMemo(() => groups.flatMap((group) => group.entries), [groups]);
+  const loading = groups.some((group) => group.state.loading);
+
   useEffect(() => {
     if (isOpen) updatePosition();
-  }, [isOpen, activeProvider, state.models.length, query, updatePosition]);
-
-  const recents = useMemo(
-    () => (query.trim() || customTab ? [] : readRecents().filter((item) => item.provider === activeProvider)),
-    [query, activeProvider, customTab],
-  );
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    const unique = [...new Set(state.models)];
-    return term ? unique.filter((model) => model.toLowerCase().includes(term)) : unique;
-  }, [state.models, query]);
-  const custom = !customTab && query.trim() && !filtered.some((model) => model === query.trim()) ? query.trim() : '';
-
-  const items = useMemo(() => {
-    if (customTab) {
-      const term = query.trim().toLowerCase();
-      return customs
-        .filter((item) => !term || item.label.toLowerCase().includes(term) || item.default_model.toLowerCase().includes(term))
-        .map((item) => ({ provider: item.id, model: item.default_model, label: item.label, recent: false, typed: false }));
-    }
-    return [
-      ...recents.map((item) => ({ provider: item.provider, model: item.model, label: item.model, recent: true, typed: false })),
-      ...filtered
-        .filter((model) => !recents.some((item) => item.model === model))
-        .map((model) => ({ provider: activeProvider, model, label: model, recent: false, typed: false })),
-      ...(custom
-        ? [{ provider: activeProvider, model: custom, label: `Usar «${custom}»`, recent: false, typed: true }]
-        : []),
-    ];
-  }, [customTab, customs, query, recents, filtered, custom, activeProvider]);
-
-  const recentCount = items.filter((item) => item.recent).length;
-  const sections = [
-    { id: 'recent', title: 'Recientes', from: 0, to: recentCount },
-    { id: 'models', title: customTab ? 'Modelos personalizados' : provider?.label ?? 'Modelos', from: recentCount, to: items.length },
-  ].filter((section) => section.to > section.from);
+  }, [isOpen, items.length, loading, updatePosition]);
 
   useEffect(() => {
     setHighlighted(0);
-  }, [query, activeProvider, items.length]);
+  }, [query, items.length]);
 
   useEffect(() => {
     if (isOpen) document.getElementById(`${listId}-${highlighted}`)?.scrollIntoView?.({ block: 'nearest' });
   }, [highlighted, isOpen, listId]);
 
   const choose = (nextProvider: string, model: string) => {
-    const choice = { provider: nextProvider, model };
-    remember(choice);
-    onChange(choice);
+    onChange({ provider: nextProvider, model });
     close();
     triggerRef.current?.focus();
   };
 
   const openMenu = () => {
     setQuery('');
-    setActiveProvider(tabFor(value.provider || providers[0]?.id || ''));
     open();
   };
 
@@ -210,14 +153,14 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
 
   if (providers.length === 0) {
     return (
-      <span className={`flex h-8 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] px-3 text-[12px] text-[var(--text-muted)] ${className ?? ''}`}>
+      <span className={`flex h-7 items-center rounded-md px-2 text-[12px] text-[var(--text-muted)] ${className ?? ''}`}>
         Sin proveedor IA
       </span>
     );
   }
 
-  const selectedCustom = customs.find((item) => item.id === value.provider);
-  const modelLabel = selectedCustom?.label || value.model || provider?.default_model || 'Elegir modelo';
+  const modelLabel = (selectedProvider?.custom && selectedProvider.label) || value.model || currentProvider?.default_model || 'Elegir modelo';
+  let index = -1;
 
   return (
     <div className={className}>
@@ -229,16 +172,15 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-label="Elegir proveedor y modelo"
-        title={`${providers.find((item) => item.id === value.provider)?.label ?? ''} · ${modelLabel}`}
-        className={`flex h-8 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-[12px] transition-colors disabled:opacity-50 ${
+        title={`${selectedProvider?.label ?? currentProvider?.label ?? ''} · ${value.model || modelLabel}`}
+        className={`inline-flex h-7 max-w-full items-center gap-1 rounded-md px-2 text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 ${
           isOpen
-            ? 'border-[var(--accent-primary)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
-            : 'border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-[var(--border-active)] hover:text-[var(--text-primary)]'
+            ? 'bg-[var(--bg-input)] text-[var(--text-primary)]'
+            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'
         }`}
       >
-        <ProviderMark id={value.provider || provider?.id || ''} label={providers.find((item) => item.id === value.provider)?.label ?? provider?.label ?? ''} size={18} />
-        <span className="truncate font-medium text-[var(--text-primary)]">{modelLabel}</span>
-        <ChevronDown size={12} className={`shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180 text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'}`} />
+        <span className="truncate">{modelLabel}</span>
+        <ChevronDown size={14} className="shrink-0 opacity-60" />
       </button>
 
       {isOpen && createPortal(
@@ -246,7 +188,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
           ref={popupRef}
           role="dialog"
           aria-label="Modelos disponibles"
-          className="agent-popover-in agent-model-menu fixed z-[300] flex flex-col overflow-hidden rounded-2xl border shadow-xl"
+          className="agent-popover-in agent-model-menu fixed z-[300] flex flex-col overflow-hidden rounded-lg border p-1 shadow-md"
           style={{
             top: position?.top ?? -9999,
             left: position?.left ?? -9999,
@@ -254,8 +196,8 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
             maxHeight: position?.maxHeight ?? MENU_HEIGHT,
             visibility: position ? 'visible' : 'hidden',
             background: 'var(--bg-elevated)',
-            borderColor: 'var(--border-medium)',
-            transformOrigin: position && triggerRef.current && position.top < triggerRef.current.getBoundingClientRect().top ? 'bottom right' : 'top right',
+            borderColor: 'var(--border-subtle)',
+            transformOrigin: position && triggerRef.current && position.top < triggerRef.current.getBoundingClientRect().top ? 'bottom left' : 'top left',
           }}
           onMouseDown={(event) => event.stopPropagation()}
           onKeyDown={(event) => {
@@ -270,8 +212,8 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
               && !triggerRef.current?.contains(event.relatedTarget)) close();
           }}
         >
-          <div className="flex items-center gap-2.5 border-b border-[var(--border-subtle)] px-3.5 py-3">
-            <Search size={15} className="shrink-0 text-[var(--text-muted)]" />
+          <div className="-mx-1 -mt-1 mb-1 flex h-9 items-center gap-2 border-b border-[var(--border-subtle)] px-3">
+            <Search size={14} className="shrink-0 opacity-50" />
             <input
               ref={searchRef}
               value={query}
@@ -283,116 +225,76 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
               role="combobox"
               aria-autocomplete="list"
               aria-expanded="true"
-              aria-controls={!state.loading || state.models.length > 0 ? listId : undefined}
-              aria-activedescendant={(!state.loading || state.models.length > 0) && items[highlighted] ? `${listId}-${highlighted}` : undefined}
-              className="min-w-0 flex-1 bg-transparent text-[14px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              aria-controls={listId}
+              aria-activedescendant={items[highlighted] ? `${listId}-${highlighted}` : undefined}
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
             />
-            {state.loading
-              ? <Loader2 size={14} className="shrink-0 animate-spin text-[var(--text-muted)]" />
-              : <kbd className="shrink-0 rounded-md border border-[var(--border-subtle)] px-1.5 py-0.5 font-sans text-[10px] text-[var(--text-muted)]">Esc</kbd>}
+            {loading && <Loader2 size={13} className="shrink-0 animate-spin text-[var(--text-muted)]" />}
           </div>
 
-          {tabs.length > 1 && (
-            <div className="flex gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-2.5 py-2 custom-scrollbar">
-              {tabs.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-pressed={item.id === activeProvider}
-                  onClick={() => setActiveProvider(item.id)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full py-1 pl-1.5 pr-2.5 text-[12px] font-medium transition-colors ${
-                    item.id === activeProvider
-                      ? 'bg-[var(--bg-input)] text-[var(--text-primary)] ring-1 ring-[var(--border-medium)]'
-                      : 'text-[var(--text-muted)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
-                  }`}
-                >
-                  <ProviderMark id={item.id} label={item.label} size={16} />
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-1.5" aria-busy={state.loading}>
-            {state.loading && state.models.length === 0 ? (
-              <div className="space-y-1.5 p-1" aria-hidden="true">
-                {[0, 1, 2].map((row) => (
-                  <div key={row} className="h-8 animate-pulse rounded-lg bg-[var(--bg-input)]" style={{ opacity: 1 - row * 0.2 }} />
-                ))}
-              </div>
-            ) : (
-              <>
-                <div role="listbox" id={listId} aria-label="Modelos">
-                  {sections.map((section) => (
-                    <div key={section.id} role="group" aria-label={section.title} className="pb-1">
-                      <p className="px-2.5 pb-1 pt-2 text-[11px] font-medium text-[var(--text-muted)]">{section.title}</p>
-                      {items.slice(section.from, section.to).map((item, offset) => {
-                        const index = section.from + offset;
-                        const selected = value.provider === item.provider && value.model === item.model;
-                        const isCustom = item.typed;
-                        return (
-                          <button
-                            key={`${item.recent ? 'recent' : 'model'}:${item.provider}:${item.model}`}
-                            type="button"
-                            role="option"
-                            id={`${listId}-${index}`}
-                            aria-selected={selected}
-                            tabIndex={-1}
-                            onMouseEnter={() => setHighlighted(index)}
-                            onClick={() => choose(item.provider, item.model)}
-                            className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${
-                              index === highlighted ? 'bg-[var(--bg-input)]' : ''
-                            }`}
-                          >
-                            {isCustom
-                              ? <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-md border border-dashed border-[var(--border-medium)] text-[var(--text-muted)]"><Plus size={12} /></span>
-                              : <ProviderMark id={item.provider} label={providers.find((entry) => entry.id === item.provider)?.label ?? item.provider} />}
-                            <span className="min-w-0 flex-1">
-                              <span className={`block truncate text-[13px] ${selected ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{item.label}</span>
-                              {!item.typed && item.label !== item.model && (
-                                <span className="block truncate font-mono text-[11px] text-[var(--text-muted)]">{item.model}</span>
-                              )}
-                            </span>
-                            {selected && <Check size={14} className="shrink-0 text-[var(--accent-primary-hover)]" />}
-                          </button>
-                        );
-                      })}
+          <div role="listbox" id={listId} aria-label="Modelos" aria-busy={loading} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            {groups.map(({ id, label, state, entries, custom }, groupIndex) => (
+              <Fragment key={id}>
+                {groupIndex > 0 && <div role="separator" className="my-1 h-px bg-[var(--border-subtle)]" />}
+                <div role="group" aria-label={label}>
+                  <p className="px-2 py-1.5 text-[12px] font-medium text-[var(--text-muted)]">{label}</p>
+                  {state.loading && state.models.length === 0 && (
+                    <div className="space-y-1 px-2 pb-1" aria-hidden="true">
+                      {[0, 1].map((row) => (
+                        <div key={row} className="h-5 animate-pulse rounded bg-[var(--bg-input)]" style={{ opacity: 1 - row * 0.3 }} />
+                      ))}
                     </div>
-                  ))}
-                </div>
-                {items.length === 0 && !custom && (
-                  <p className="px-2 py-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
-                    {state.error
-                      ? state.error
-                      : customTab
-                        ? 'Ningún modelo personalizado coincide con la búsqueda.'
+                  )}
+                  {entries.map((item) => {
+                    index += 1;
+                    const itemIndex = index;
+                    const selected = value.provider === item.provider && value.model === item.model;
+                    return (
+                      <button
+                        key={`${item.provider}:${item.model}:${item.label}`}
+                        type="button"
+                        role="option"
+                        id={`${listId}-${itemIndex}`}
+                        aria-selected={selected}
+                        tabIndex={-1}
+                        onMouseEnter={() => setHighlighted(itemIndex)}
+                        onClick={() => choose(item.provider, item.model)}
+                        className={`relative flex w-full cursor-default select-none items-center rounded-md py-1.5 pl-2 pr-8 text-left text-[13px] font-normal text-[var(--text-primary)] outline-none ${
+                          itemIndex === highlighted ? 'bg-[var(--bg-input)]' : ''
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate">{item.label}</span>
+                          {item.detail && <span className="block truncate font-mono text-[11px] text-[var(--text-muted)]">{item.detail}</span>}
+                        </span>
+                        {selected && <Check size={14} className="absolute right-2 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                  {!custom && !state.loading && entries.length === 0 && (
+                    <p className="px-2 pb-1.5 text-[12px] leading-relaxed text-[var(--text-muted)]">
+                      {state.error
+                        ? state.error
                         : state.models.length === 0
-                          ? 'Escribe el nombre exacto del modelo que ofrece tu proveedor.'
-                          : 'Ningún modelo coincide con la búsqueda.'}
-                  </p>
-                )}
-              </>
-            )}
-            {state.error && state.models.length > 0 && (
-              <p className="px-2 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">{state.error}</p>
-            )}
-            {state.error && (
-              <button
-                type="button"
-                onClick={() => void load(activeProvider)}
-                className="mt-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-              >
-                <RefreshCw size={11} /> Reintentar
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] px-3.5 py-2 text-[11px] text-[var(--text-muted)]">
-            <span>Se aplica a los siguientes mensajes</span>
-            <span aria-hidden="true" className="flex shrink-0 items-center gap-1.5">
-              <kbd className="rounded-md border border-[var(--border-subtle)] px-1.5 font-sans">↑↓</kbd>
-              <kbd className="rounded-md border border-[var(--border-subtle)] px-1.5 font-sans">↵</kbd>
-            </span>
+                          ? 'Escribe el nombre exacto del modelo.'
+                          : 'Sin coincidencias.'}
+                    </p>
+                  )}
+                  {state.error && entries.length > 0 && (
+                    <p className="px-2 pb-1.5 text-[11px] leading-relaxed text-[var(--text-muted)]">{state.error}</p>
+                  )}
+                  {state.error && (
+                    <button
+                      type="button"
+                      onClick={() => void load(id)}
+                      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                    >
+                      <RefreshCw size={11} /> Reintentar
+                    </button>
+                  )}
+                </div>
+              </Fragment>
+            ))}
           </div>
         </div>,
         document.body,
@@ -400,5 +302,3 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
     </div>
   );
 }
-
-export { readRecents as readModelRecents };
