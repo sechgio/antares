@@ -54,3 +54,47 @@ it('anima al agente solo durante la respuesta y mantiene un estado textual de tr
   expect(screen.getByRole('status')).toHaveTextContent('El agente está trabajando');
   expect(screen.getByRole('status')).toHaveTextContent('1m 1s');
 });
+
+it('muestra el razonamiento abierto mientras piensa y lo pliega al responder sin pisar la elección del usuario', () => {
+  const reasoning = 'Comparo las dos plantillas';
+  const { rerender } = render(<MessageRow msg={{ role: 'assistant', content: '', reasoning, partial: true, ts: 1 }} />);
+  const toggle = screen.getByRole('button', { name: /Pensando/ });
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText(reasoning).closest('[aria-hidden="true"]')).toBeNull();
+
+  rerender(<MessageRow msg={{ role: 'assistant', content: 'Usa la B', reasoning, partial: true, ts: 1 }} />);
+  expect(screen.getByRole('button', { name: /Pensó/ })).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByText(reasoning).closest('[aria-hidden="true"]')).not.toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: /Pensó/ }));
+  rerender(<MessageRow msg={{ role: 'assistant', content: 'Usa la B', reasoning, ts: 1 }} />);
+  expect(screen.getByRole('button', { name: /Pensó/ })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText(reasoning).closest('[aria-hidden="true"]')).toBeNull();
+});
+
+it('no dibuja bloque de razonamiento cuando el modelo no lo expone', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: 'Listo', ts: 1 }} />);
+  expect(screen.queryByRole('button', { name: /Pens/ })).toBeNull();
+});
+
+it('indica cuánto tardó en pensar', () => {
+  const { rerender } = render(<MessageRow msg={{ role: 'assistant', content: 'Listo', reasoning: 'Analizo', reasoning_ms: 12_400, ts: 1 }} />);
+  expect(screen.getByRole('button', { name: 'Pensó durante 12 s' })).toBeInTheDocument();
+  rerender(<MessageRow msg={{ role: 'assistant', content: 'Listo', reasoning: 'Analizo', reasoning_ms: 75_000, ts: 1 }} />);
+  expect(screen.getByRole('button', { name: 'Pensó durante 1 min 15 s' })).toBeInTheDocument();
+  rerender(<MessageRow msg={{ role: 'assistant', content: 'Listo', reasoning: 'Analizo', ts: 1 }} />);
+  expect(screen.getByRole('button', { name: 'Pensó' })).toBeInTheDocument();
+});
+
+it('pregunta por la acción concreta y permite rechazarla o aprobarla', () => {
+  const decide = vi.fn();
+  const approval = { id: 'a1', session_id: 's', call_id: 'c', method: 'canvas_list', params: { destination_folder: 'C:\\salida', filename: 'a.pdf' }, status: 'pending', created_at: 1, decided_at: null } as const;
+  const { rerender } = render(<ApprovalCard busy={false} onDecide={decide} approval={approval} />);
+  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('¿Ejecutar «Listar documentos de Canvas»?');
+  expect(screen.getByText('Destino: C:\\salida\\a.pdf')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Rechazar' }));
+  expect(decide).toHaveBeenCalledWith('a1', false);
+  rerender(<ApprovalCard busy onDecide={decide} approval={{ ...approval, method: 'metodo_desconocido' }} />);
+  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('¿Permitir una acción avanzada?');
+  expect(screen.getByRole('button', { name: 'Aprobar' })).toBeDisabled();
+});

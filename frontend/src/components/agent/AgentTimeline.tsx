@@ -5,6 +5,7 @@ import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
 import MessageMarkdown from './MessageMarkdown';
+import Reasoning from './Reasoning';
 import SubagentTrace from './SubagentTrace';
 import { METHOD_LABELS } from './methodLabels';
 
@@ -138,15 +139,16 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
   return (
     <div className="agent-trace-in group flex items-start gap-2.5">
       <div className="min-w-0 flex-1 space-y-1.5">
-        {msg.content && (
+        {(msg.content || msg.reasoning) && (
           <div className="flex items-center gap-1.5">
             {agent && <AgentAvatar seed={agent.seed} name={agent.name} size={18} working={!!msg.partial} />}
             <span className="text-[12px] font-medium leading-5 text-[var(--text-secondary)]">
               {agent?.name ?? 'Agente'}
             </span>
-            {!msg.partial && <CopyButton text={msg.content} />}
+            {!msg.partial && msg.content && <CopyButton text={msg.content} />}
           </div>
         )}
+        {msg.reasoning && <Reasoning text={msg.reasoning} streaming={!!msg.partial && !msg.content} ms={msg.reasoning_ms} />}
         {msg.content && (
           <div className="agent-message-answer w-fit max-w-[min(620px,100%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
             <MessageMarkdown text={msg.content} streaming={!!msg.partial} />
@@ -176,46 +178,60 @@ export function ApprovalCard({
   busy: boolean;
   onDecide: (id: string, ok: boolean) => void;
 }) {
+  const action = METHOD_LABELS[approval.method];
+  const { params, context } = approval;
+  const facts = [
+    typeof params.id === 'string' && `Elemento: ${params.id}`,
+    typeof params.name === 'string' && `Nombre: ${params.name}`,
+    typeof context?.filename === 'string' && `PDF: ${context.filename}`,
+    typeof params.printer_name === 'string' && `Impresora: ${params.printer_name}`,
+    typeof params.copies === 'number' && `Copias: ${params.copies} · Páginas: ${String(params.pages || 'Todas')}`,
+    typeof params.destination_folder === 'string' && `Destino: ${params.destination_folder}\\${String(params.filename || params.name || '')}`,
+    context?.account && `Cuenta: ${context.account}`,
+    context?.sheet_id && `Hoja: ${context.sheet_id}`,
+    ...(approval.resources ?? []).map((resource) => `Archivo: ${resource.path}`),
+  ].filter((fact): fact is string => !!fact);
   return (
-    <div className="max-w-[min(560px,90%)] overflow-hidden rounded-[20px] border border-[color:color-mix(in_srgb,var(--accent-yellow)_40%,transparent)] bg-[var(--bg-surface)]">
-      <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)]">
-        <AlertTriangle size={13} className="text-[var(--accent-yellow)]" />
-        El agente quiere ejecutar una acción
-      </div>
-      <div className="px-3 py-2.5">
-        <p className="text-[12px] font-medium text-[var(--text-primary)]">
-          {METHOD_LABELS[approval.method] ?? 'Acción avanzada: revisa sus detalles antes de aprobar'}
-        </p>
-        {typeof approval.params.id === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Elemento: <span>{approval.params.id}</span></p>}
-        {typeof approval.params.name === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Nombre: {approval.params.name}</p>}
-        {typeof approval.context?.filename === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">PDF: {approval.context.filename}</p>}
-        {typeof approval.params.printer_name === 'string' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Impresora: {approval.params.printer_name}</p>}
-        {typeof approval.params.copies === 'number' && <p className="mt-1 text-xs text-[var(--text-secondary)]">Copias: {approval.params.copies} · Páginas: {String(approval.params.pages || 'Todas')}</p>}
-        {typeof approval.params.destination_folder === 'string' && <p className="mt-1 break-all text-xs text-[var(--text-secondary)]">Destino: {approval.params.destination_folder}\{String(approval.params.filename || approval.params.name || '')}</p>}
-        {approval.context?.account && <p className="mt-1 text-xs text-[var(--text-secondary)]">Cuenta: {approval.context.account}</p>}
-        {approval.context?.sheet_id && <p className="mt-1 break-all text-xs text-[var(--text-secondary)]">Hoja: {approval.context.sheet_id}</p>}
-        {approval.resources?.map((resource) => (
-          <p key={resource.path} className="mt-1 break-all text-xs text-[var(--text-secondary)]">Archivo: {resource.path}</p>
-        ))}
-        <details className="mt-2 text-xs text-[var(--text-secondary)]">
-          <summary className="cursor-pointer">Ver detalles de la acción</summary>
-          <code>{approval.method}</code>
-          {Object.keys(approval.params).length > 0 && (
-            <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-md bg-[var(--bg-base)] p-2 text-[11px] text-[var(--text-secondary)]">
-              {JSON.stringify(approval.params, null, 2)}
-            </pre>
+    <div role="group" aria-label="Confirmación de acción" className="agent-trace-in max-w-[min(560px,92%)] rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-surface)] p-3">
+      <div className="flex items-start gap-3">
+        <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[color:color-mix(in_srgb,var(--accent-yellow)_14%,transparent)] text-[var(--accent-yellow)]">
+          <ShieldCheck size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium leading-5 text-[var(--text-primary)]">
+            {action ? `¿Ejecutar «${action}»?` : '¿Permitir una acción avanzada?'}
+          </p>
+          <p className="text-[12px] leading-[18px] text-[var(--text-muted)]">
+            {action ? 'El turno sigue en pausa hasta que decidas.' : 'Revisa sus detalles antes de aprobar; el turno sigue en pausa.'}
+          </p>
+          {facts.length > 0 && (
+            <ul className="mt-2 space-y-0.5 text-xs text-[var(--text-secondary)]">
+              {facts.map((fact) => <li key={fact} className="break-all">{fact}</li>)}
+            </ul>
           )}
-        </details>
-        <div className="mt-2.5 flex gap-2">
-          <Button size="sm" disabled={busy} onClick={() => onDecide(approval.id, true)}>
-            <Check size={13} className="mr-1" />
-            Aprobar
-          </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDecide(approval.id, false)}>
-            <X size={13} className="mr-1" />
-            Rechazar
-          </Button>
+          <details className="group mt-2 text-xs text-[var(--text-muted)]">
+            <summary className="flex cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
+              <ChevronRight size={11} className="transition-transform group-open:rotate-90" />
+              Ver detalles de la acción
+            </summary>
+            <code className="mt-1 block text-[11px]">{approval.method}</code>
+            {Object.keys(params).length > 0 && (
+              <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-md bg-[var(--bg-base)] p-2 text-[11px] text-[var(--text-secondary)]">
+                {JSON.stringify(params, null, 2)}
+              </pre>
+            )}
+          </details>
         </div>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => onDecide(approval.id, false)}>
+          <X size={13} aria-hidden="true" />
+          Rechazar
+        </Button>
+        <Button size="sm" disabled={busy} onClick={() => onDecide(approval.id, true)}>
+          <Check size={13} aria-hidden="true" />
+          Aprobar
+        </Button>
       </div>
     </div>
   );

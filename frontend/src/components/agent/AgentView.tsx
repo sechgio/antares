@@ -130,6 +130,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
+  const [suggestionBusy, setSuggestionBusy] = useState(false);
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -494,8 +495,14 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   const sendSuggestion = async (text: string) => {
-    const id = sessionId || (await newSession());
-    if (id) void sendToSession(id, text, newRequestId());
+    if (suggestionBusy || modelBusy || running || stopping || pending.length > 0) return;
+    setSuggestionBusy(true);
+    try {
+      const id = sessionId || (await newSession());
+      if (id) await sendToSession(id, text, newRequestId());
+    } finally {
+      setSuggestionBusy(false);
+    }
   };
 
   const cancelTurn = async () => {
@@ -808,23 +815,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               {readyProviders.length === 0 && onConfigureProvider && (
                 <Button size="sm" onClick={onConfigureProvider}>Configurar IA</Button>
               )}
-              {readyProviders.length > 0 && (
-                <div className="w-full max-w-sm space-y-1.5">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                    Sugerencias
-                  </p>
-                  {(activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS).map((s) => (
-                    <button
-                      key={s}
-                      className="flex w-full items-center gap-2 rounded-2xl bg-[var(--bg-surface)] px-3 py-2.5 text-left text-[13px] text-[var(--text-secondary)] shadow-[0_1px_0.5px_rgba(0,0,0,0.02),0_4px_2px_rgba(0,0,0,0.02)] transition-colors hover:text-[var(--text-primary)]"
-                      onClick={() => void sendSuggestion(s)}
-                    >
-                      <Sparkles size={12} className="shrink-0 text-[var(--accent-primary-hover)]" />
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           ) : (
             messages.map((m, i) => {
@@ -832,7 +822,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               const previous = messages.slice(0, i).reverse().find((item) => item.ts);
               const newDay = !!label && (!previous?.ts || dayLabel(previous.ts) !== label);
               return (
-                <div key={`${m.ts}-${i}`} className="space-y-4">
+                <div key={m.partial ? 'partial' : `${m.ts}-${i}`} className="space-y-4">
                   {newDay && <DaySeparator label={label} />}
                   <MessageRow msg={m} agent={agentIdentity} />
                 </div>
@@ -860,6 +850,22 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           )}
         </div>
         <div className="shrink-0 p-3">
+          {readyProviders.length > 0 && (
+            <div role="group" aria-label="Sugerencias" className="agent-suggestions no-scrollbar mb-2 flex gap-2 overflow-x-auto overscroll-x-contain py-1">
+              {(activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS).map((suggestion) => (
+                <Button
+                  key={suggestion}
+                  variant="none"
+                  size="none"
+                  className="agent-suggestion"
+                  disabled={suggestionBusy || modelBusy || running || stopping || pending.length > 0}
+                  onClick={() => void sendSuggestion(suggestion)}
+                >
+                  {suggestion}
+                </Button>
+              ))}
+            </div>
+          )}
           {queuedForSession.length > 0 && (
             <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">

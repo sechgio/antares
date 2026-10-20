@@ -7,8 +7,48 @@ const {
   commitSessions,
 } = require('./agent-shared');
 
+const crypto = require('crypto');
+
 const NOTICE_KIND = shared.NOTICE_KIND;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
+
+const MAX_REASONING_TIMES = 200;
+const reasoningTimes = new Map();
+const thinkingSpans = new Map();
+
+function reasoningKey(convId, text) {
+  return `${convId}:${crypto.createHash('sha1').update(text).digest('hex')}`;
+}
+
+function rememberReasoningTime(convId, text, ms) {
+  const key = reasoningKey(convId, text);
+  reasoningTimes.delete(key);
+  reasoningTimes.set(key, ms);
+  if (reasoningTimes.size > MAX_REASONING_TIMES) reasoningTimes.delete(reasoningTimes.keys().next().value);
+}
+
+function reasoningTime(convId, text) {
+  return text ? reasoningTimes.get(reasoningKey(convId, text)) : undefined;
+}
+
+function trackThinking(convId, message) {
+  const blocks = message && Array.isArray(message.content) ? message.content : [];
+  let span = thinkingSpans.get(convId);
+  if (!span && blocks.some((block) => block && block.type === 'thinking')) {
+    span = { startedAt: Date.now(), closed: false };
+    thinkingSpans.set(convId, span);
+  }
+  if (!span || span.closed) return;
+  if (blocks.some((block) => block && (block.type === 'text' || block.type === 'toolCall'))) closeThinkingSpan(convId, message);
+}
+
+function closeThinkingSpan(convId, message) {
+  const span = thinkingSpans.get(convId);
+  if (!span || span.closed) return;
+  span.closed = true;
+  const text = reasoningOf(message);
+  if (text) rememberReasoningTime(convId, text, Date.now() - span.startedAt);
+}
 
 async function ensureWatcher(session, context) {
   const convId = session.conversationId;
@@ -36,9 +76,24 @@ function applyEvent(convId, event) {
       live.run = { inputs: event.inputs };
       break;
     case 'run_end':
+      thinkingSpans.delete(convId);
       delete live.run;
       delete live.generation;
       live.tools = [];
+      break;
+    case 'message_start':
+      if (event.message && event.message.role === 'assistant') {
+        thinkingSpans.delete(convId);
+        live.generation = { ...live.generation, message: event.message };
+        trackThinking(convId, event.message);
+      }
+      break;
+    case 'message_end':
+      if (event.entry && event.entry.kind === 'pi.assistant') {
+        closeThinkingSpan(convId, event.entry.model && event.entry.model[0]);
+        thinkingSpans.delete(convId);
+        delete live.generation;
+      }
       break;
     case 'message_update': {
       const message = live.generation && live.generation.message;
@@ -57,6 +112,7 @@ function applyEvent(convId, event) {
         }
       }
       live.generation.message = next;
+      trackThinking(convId, next);
       break;
     }
     case 'tool_execution_start':
@@ -103,6 +159,24 @@ function partialText(convId) {
     .filter((block) => block && block.type === 'text')
     .map((block) => block.text || '')
     .join('');
+}
+
+function reasoningOf(message) {
+  if (!message || !Array.isArray(message.content)) return '';
+  return message.content
+    .filter((block) => block && block.type === 'thinking')
+    .map((block) => block.text || block.thinking || '')
+    .join('\n\n')
+    .trim();
+}
+
+function partialReasoning(convId) {
+  const live = liveFor(convId);
+  return reasoningOf(live.generation && live.generation.message);
+}
+
+function partialReasoningMs(convId, text) {
+  return reasoningTime(convId, text);
 }
 
 function textOf(message) {
@@ -184,9 +258,13 @@ async function projectMessages(conv, session) {
       const calls = (msg.content || []).filter((block) => block && block.type === 'toolCall');
       const tool_calls = calls.map((call) => projectCall(call, resultByCall, slotByCall, pendingByCall, entry));
       const legacy = Array.isArray(entry.data && entry.data.tool_calls) ? entry.data.tool_calls : null;
+      const reasoning = reasoningOf(msg);
+      const reasoningMs = reasoningTime(convId, reasoning);
       messages.push({
         role: 'assistant',
         content: textOf(msg),
+        ...(reasoning ? { reasoning } : {}),
+        ...(reasoningMs !== undefined ? { reasoning_ms: reasoningMs } : {}),
         ...(tool_calls.length ? { tool_calls } : {}),
         ...(legacy ? { tool_calls: mergeLegacyCalls(legacy, tool_calls) } : {}),
         ts: entryTs(entry, msg),
@@ -248,6 +326,8 @@ module.exports = {
   liveFor,
   isRunning,
   partialText,
+  partialReasoning,
+  partialReasoningMs,
   allEntries,
   projectMessages,
 };
