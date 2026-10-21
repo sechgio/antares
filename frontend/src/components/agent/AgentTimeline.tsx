@@ -138,6 +138,20 @@ function shellOutput(result: string | null | undefined) {
   }
 }
 
+// Segundos que lleva en curso una herramienta, desde el inicio que marca el motor.
+function Elapsed({ since }: { since?: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!since) return undefined;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [since]);
+  if (!since) return null;
+  const seconds = Math.max(0, Math.floor((now - since) / 1000));
+  return <span className="shrink-0 text-[12px] tabular-nums text-[var(--text-muted)]" aria-label={`En curso desde hace ${seconds} s`}>{seconds} s</span>;
+}
+
 function TerminalStep({ call }: { call: AgentToolCall }) {
   const command = typeof call.params.command === 'string' ? call.params.command : '';
   const output = shellOutput(call.result);
@@ -148,14 +162,6 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
     setSeen(call.status);
     if (call.status === 'running' || call.status === 'pending') setOpen(true);
   }
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!live || !call.started_at) return undefined;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [live, call.started_at]);
-  const elapsed = live && call.started_at ? Math.max(0, Math.floor((now - call.started_at) / 1000)) : null;
   const exitFailed = output?.exit != null && output.exit !== 0;
   const failed = call.status === 'failed' || call.status === 'denied' || exitFailed;
   const text = output ? output.text : (call.output ?? '').replace(/\n+$/, '');
@@ -181,7 +187,7 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
         {!TERMINAL_VERB[call.status] && <span className="shrink-0 text-[12px] text-[var(--text-muted)]">{CALL_STATUS_LABEL[call.status] ?? call.status}</span>}
         {exitFailed && <span className="shrink-0 text-[12px] text-[var(--accent-red)]">código {output?.exit}</span>}
         {output?.duration != null && !live && <span className="shrink-0 text-[12px] tabular-nums text-[var(--text-muted)]">{output.duration} s</span>}
-        {elapsed != null && <span className="shrink-0 text-[12px] tabular-nums text-[var(--text-muted)]" aria-label={`En curso desde hace ${elapsed} s`}>{elapsed} s</span>}
+        {live && <Elapsed since={call.started_at} />}
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
       </button>
       {open && (
@@ -225,6 +231,7 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
       <span className={call.status === 'done' ? 'sr-only' : `shrink-0 text-[12px] ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`}>
         {CALL_STATUS_LABEL[call.status] ?? call.status}
       </span>
+      {live && <Elapsed since={call.started_at} />}
       {!denied && (params || detail) && <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-90" aria-hidden="true" />}
     </>
   );
