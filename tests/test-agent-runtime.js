@@ -167,7 +167,14 @@ async function main() {
     assert(local.compat && local.compat.maxTokensField === 'max_tokens' && local.compat.supportsDeveloperRole === false
       && local.compat.supportsStore === false, 'un endpoint compatible usa el contrato clásico de Chat Completions');
     assert(!define({ custom: true, base_url: 'https://api.openai.com/v1' }, 'gpt-5').compat, 'la API oficial conserva la detección de pi-ai');
-    assert(!define({ custom: false, base_url: 'http://localhost:11434/v1' }, 'llama3').compat, 'los proveedores del catálogo no cambian');
+    assert(JSON.stringify(define({ custom: false, base_url: 'http://localhost:11434/v1' }, 'llama3').compat)
+      === '{"supportsLongCacheRetention":false}', 'un endpoint no oficial solo pierde la retención larga de caché');
+    const claude = (base) => modelDefinition({ provider: 'a', style: 'anthropic_messages', base_url: base }, 'claude-opus-5-5',
+      'anthropic-messages').compat;
+    assert(!claude('https://api.anthropic.com') && claude('https://proxy.example.com').supportsLongCacheRetention === false,
+      'la retención larga de caché solo viaja a la API oficial de Anthropic');
+    assert(define({ custom: true, base_url: 'https://openrouter.ai/api/v1' }, 'anthropic/claude-opus-5-5').compat
+      .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
     assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
       'un modelo personalizado puede declarar visión aunque su nombre no la sugiera');
   }
