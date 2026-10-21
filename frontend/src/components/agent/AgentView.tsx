@@ -569,6 +569,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   const showHero = !sessionId || messages.length === 0;
+  const toolRunning = messages.some((m) => (m.tool_calls ?? []).some((call) => call.status === 'running'));
   const activeProfile = session?.profile ? profiles.find((item) => item.id === session.profile?.id) ?? null : null;
   const suggestionList = activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS;
   const suggestionsHidden = !!draft.trim() || running || pending.length > 0;
@@ -883,7 +884,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           {artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} sessionId={sessionId}
             onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />)}
           {questions.map((question) => <QuestionCard key={question.id} question={question} onAnswered={() => void loadMessages(sessionId, false)} />)}
-          {running && !questions.length && !pending.length && <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} />}
+          {/* Una herramienta en curso ya muestra su propio brillo y contador: no se repite el estado general. */}
+          {running && !questions.length && !pending.length && !toolRunning && <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} />}
         </div>
 
         <div className="relative h-0">

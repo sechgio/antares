@@ -354,7 +354,11 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
     base.result = textOf(result.msg);
     const diagnostics = (result.entry.data && result.entry.data.diagnostics) || [];
     const blocked = result.msg.isError && diagnostics.some((d) => d && (d.code === 'blocked' || d.code === 'tool_unavailable'));
-    base.status = !result.msg.isError ? 'done' : blocked ? 'denied' : 'failed';
+    // Detener el turno aborta la herramienta: pi-durable conserva su salida parcial
+    // como resultado y le añade un aviso <harness> para el modelo que el usuario no necesita.
+    const aborted = result.msg.isError && diagnostics.some((d) => d && d.code === 'aborted');
+    if (aborted) base.result = base.result.replace(/\n?<harness>\n[\s\S]*?\n<\/harness>\s*$/, '') || INTERRUPTED_RESULT;
+    base.status = !result.msg.isError ? 'done' : blocked ? 'denied' : aborted ? 'interrupted' : 'failed';
     try {
       const receipt = JSON.parse(base.result);
       if (receipt.queued === true || receipt.submitted === true) base.status = 'submitted';

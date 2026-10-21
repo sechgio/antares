@@ -58,6 +58,11 @@ it('cuenta los segundos de un comando en curso y deja la duración final al term
   rerender(<MessageRow msg={shell('done', JSON.stringify({ exit_code: 0, stdout: 'ok', duration_s: 5.4 }))} />);
   expect(screen.queryByLabelText(/En curso desde/)).not.toBeInTheDocument();
   expect(screen.getByText('5.4 s')).toBeInTheDocument();
+  cleanup();
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 'w', name: 'web_open', params: { url: 'https://example.com' }, status: 'running', gated: false, started_at: 8_000,
+  }] } as never} />);
+  expect(screen.getByLabelText('En curso desde hace 4 s')).toBeInTheDocument();
   vi.useRealTimers();
 });
 
