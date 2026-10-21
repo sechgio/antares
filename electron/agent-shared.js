@@ -5,6 +5,7 @@ const INTERRUPTED_RESULT = JSON.stringify({
 });
 const NOTICE_KIND = 'antares.notice';
 const CONTEXT_MARKER = '[Contexto de Antares]';
+const CHECK_MARKER = '[Comprobación de Antares]';
 
 const shared = {
   deps: null,
@@ -17,6 +18,7 @@ const shared = {
   liveApprovals: new Set(),
   decisionWaiters: new Map(),
   rounds: new Map(),
+  turns: new Map(),
   waitingInput: new Set(),
   providers: new Map(),
   providerOverrides: new Map(),
@@ -26,6 +28,7 @@ const shared = {
   INTERRUPTED_RESULT,
   NOTICE_KIND,
   CONTEXT_MARKER,
+  CHECK_MARKER,
 };
 
 // Los proveedores compatibles con OpenAI pueden repetir ids («call_0») entre turnos

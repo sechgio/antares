@@ -13,6 +13,11 @@ const {
 
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.';
+// Repetir la misma llamada sin cambios no aporta información nueva: a partir
+// de aquí se bloquea para que el agente cambie de vía o informe del bloqueo.
+const MAX_REPEATS = 3;
+const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
+  + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SUBAGENT_DESCRIPTION_MAX = 80;
@@ -269,6 +274,7 @@ async function refreshTools() {
       pi.hook(pi.ToolTask, { beforeTool }),
       pi.hook(pi.GenerationTask, {
         afterTools: (_output, _task, api) => countRound(api),
+        onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
           if (!message.errorMessage) return;
           message.errorMessage = sanitizeProviderError(message.errorMessage);
@@ -287,6 +293,35 @@ function countRound(api) {
   shared.rounds.set(api.conversationId, n);
 }
 
+function turnState(conversationId) {
+  let turn = shared.turns.get(conversationId);
+  if (!turn) {
+    turn = { calls: new Map(), remaining: null, checked: false };
+    shared.turns.set(conversationId, turn);
+  }
+  return turn;
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+// Una respuesta final con pasos del plan de este turno sin verificar recibe una
+// sola petición de seguir o de declarar el bloqueo; el aviso no se muestra en el chat.
+function planCheck(answer, api) {
+  const turn = shared.turns.get(api.conversationId);
+  if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
+  if (answer.errorMessage || answer.stopReason === 'aborted' || answer.stopReason === 'error') return undefined;
+  if ((shared.rounds.get(api.conversationId) || 0) >= MAX_TOOL_STEPS) return undefined;
+  turn.checked = true;
+  const steps = turn.remaining.map((title) => `«${title}»`).join(', ');
+  return { continue: `${shared.CHECK_MARKER} ${PLAN_CHECK_TEXT.replace('{steps}', steps)}` };
+}
+
 async function beforeTool(call, api, context) {
   const spec = shared.toolSpecs.get(call.name);
   const rounds = shared.rounds.get(api.conversationId) || 0;
@@ -294,6 +329,14 @@ async function beforeTool(call, api, context) {
   if (!spec) return { block: `Herramienta no disponible para el agente: ${call.name}` };
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   if (!await toolEnabled(sessionId, call.name, context)) return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+  const calls = turnState(api.conversationId).calls;
+  const signature = `${call.name}:${stableJson(call.arguments || {})}`;
+  const seen = (calls.get(signature) || 0) + 1;
+  calls.set(signature, seen);
+  if (seen > MAX_REPEATS) {
+    return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno con los mismos argumentos. No lo repitas: `
+      + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
+  }
   if (!spec.gated) return undefined;
 
   const callId = dispatchCallId(call.id, api.taskId);
@@ -427,6 +470,9 @@ async function executeTool(spec, args, api, context) {
   let parsed = null;
   try { parsed = JSON.parse(text); } catch { }
   const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
+  if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
+    turnState(api.conversationId).remaining = parsed.remaining.map(String);
+  }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
   return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError };
 }

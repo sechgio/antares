@@ -53,8 +53,11 @@ const SYSTEM_PROMPT =
   'Para encargos de varios pasos en el equipo sigue el ciclo planificar → actuar → observar → verificar: publica el plan ' +
   'con task_plan antes de actuar y actualízalo al avanzar; tras cada acción revisa su resultado (salida y código del ' +
   'comando, fs_read, web_read o la captura que devuelven las acciones de escritorio) y nunca supongas que funcionó; ' +
-  'marca un paso como hecho solo con la evidencia observada y termina cuando todos estén verificados, resumiendo qué ' +
-  'comprobaste. Si algo falla, diagnostica la causa y prueba otra vía en lugar de repetir lo mismo. ' +
+  'marca un paso como hecho solo con la evidencia observada (lo que ves en el resultado, no lo que esperas) y termina ' +
+  'cuando todos estén verificados. Si algo falla, diagnostica la causa y prueba otra vía en lugar de repetir lo mismo; ' +
+  'si no puedes avanzar, márcalo como failed y dilo en cuanto lo sepas en vez de insistir. Inicios de sesión, CAPTCHA, ' +
+  'verificación en dos pasos, contraseñas y pagos los hace el usuario: pídeselo y no los intentes. Cierra un encargo ' +
+  'con un resumen breve: qué quedó hecho, la evidencia que lo comprueba y, si falta algo, qué necesitas para seguir. ' +
   'Archivos: fs_list, fs_read y fs_search leen el espacio de trabajo de la conversación y lo que el usuario adjuntó ' +
   '(PDF, Excel, Word y texto); fs_write y fs_edit escriben, y un nombre relativo va al espacio de trabajo. ' +
   'Terminal: shell_run ejecuta PowerShell en el espacio de trabajo. Internet: web_open abre páginas o búsquedas en un ' +
@@ -454,7 +457,10 @@ async function messageSend(params) {
   const input = context
     ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }]
     : content;
-  if (!correction || !projection.isRunning(session.conversationId)) shared.rounds.delete(session.conversationId);
+  if (!correction || !projection.isRunning(session.conversationId)) {
+    shared.rounds.delete(session.conversationId);
+    shared.turns.delete(session.conversationId);
+  }
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await conv.submit({ type: 'input', content: input, whenBusy: correction ? 'steer' : 'reject', ...(requestId ? { requestId } : {}) }, ctx());

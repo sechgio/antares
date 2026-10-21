@@ -1129,6 +1129,52 @@ async function main() {
     fs.rmSync(appData, { recursive: true, force: true });
   }
 
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let probes = 0;
+    const loopBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', inputSchema: schema },
+          { name: 'page_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'page_probe') {
+        probes += 1;
+        return { result: JSON.stringify({ error: 'sin cambios' }) };
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'task_plan') {
+        const remaining = params.params.steps.filter((step) => step.status !== 'done' && step.status !== 'failed').map((step) => step.title);
+        return { result: JSON.stringify({ recorded: true, remaining }) };
+      }
+      return bridge(method, params);
+    };
+    const faux = await openFaux([
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Publicar', steps: [{ title: 'Subir el archivo', status: 'in_progress' }] })], { stopReason: 'toolUse' }),
+      ...[1, 2, 3, 4].map(() => fauxAssistantMessage([fauxToolCall('page_probe', { url: 'https://example.com' })], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('Listo, ya está publicado.'),
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Publicar', steps: [{ title: 'Subir el archivo', status: 'failed' }] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('No pude subirlo: la página no cambia. Necesito que inicies sesión.'),
+    ], loopBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'publica el archivo' });
+    assert(await waitIdle(session.id), 'el turno con bucle y comprobación termina');
+    assert(probes === 3, 'la cuarta llamada idéntica se bloquea sin ejecutarse');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const blocked = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'page_probe');
+    assert(blocked.length === 4 && /Ya llamaste a page_probe 3 veces/.test(String(blocked[3].result || '')),
+      'el agente recibe por qué se bloqueó la repetición');
+    const texts = listed.messages.filter((m) => m.role === 'assistant').map((m) => m.content);
+    assert(texts.includes('Listo, ya está publicado.') && texts.at(-1).startsWith('No pude subirlo'),
+      'una respuesta final con pasos sin verificar continúa hasta declarar el resultado real');
+    assert(!listed.messages.some((m) => m.role === 'user' && String(m.content).includes('Comprobación de Antares')),
+      'la petición interna de comprobación no aparece como mensaje del usuario');
+    assert(listed.messages.filter((m) => m.role === 'user').length === 1, 'el chat solo muestra el mensaje del usuario');
+    assert(faux.getPendingResponseCount() === 0, 'la comprobación se pide una sola vez');
+    await runtime.shutdown();
+  }
+
   finish();
 }
 

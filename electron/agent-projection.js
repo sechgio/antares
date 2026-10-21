@@ -242,6 +242,7 @@ async function projectMessages(conv, session) {
       usage.context = ['input', 'output', 'cacheRead', 'cacheWrite'].reduce((sum, key) => sum + (Number(msg.usage[key]) || 0), 0);
     }
     if (entry.kind === 'pi.user') {
+      if (textOf(msg).startsWith(shared.CHECK_MARKER)) continue;
       messages.push({ role: 'user', content: userTextOf(msg), ts: entryTs(entry, msg) });
       continue;
     }

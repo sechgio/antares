@@ -138,15 +138,18 @@ const SNAPSHOT = `(() => {
     const s = getComputedStyle(el);
     return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.display !== 'none';
   };
-  document.querySelectorAll('[data-antares-ref]').forEach((el) => el.removeAttribute('data-antares-ref'));
   const selector = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],'
     + '[role=checkbox],[role=option],[contenteditable=true],[onclick]';
   const elements = [];
   for (const el of document.querySelectorAll(selector)) {
     if (elements.length >= ${MAX_ELEMENTS}) break;
     if (!visible(el) || el.closest('[aria-hidden=true]')) continue;
-    const ref = String(elements.length + 1);
-    el.setAttribute('data-antares-ref', ref);
+    let ref = el.getAttribute('data-antares-ref');
+    if (!ref) {
+      window.__antaresRef = (window.__antaresRef || 0) + 1;
+      ref = String(window.__antaresRef);
+      el.setAttribute('data-antares-ref', ref);
+    }
     const tag = el.tagName.toLowerCase();
     const label = (el.getAttribute('aria-label') || el.innerText || el.placeholder || el.title || el.name || el.alt || '')
       .trim().replace(/\\s+/g, ' ').slice(0, 80);
