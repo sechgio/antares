@@ -28,6 +28,20 @@ const shared = {
   CONTEXT_MARKER,
 };
 
+// Los proveedores compatibles con OpenAI pueden repetir ids («call_0») entre turnos
+// o dejarlos vacíos; la tarea de pi-durable identifica cada llamada de forma estable.
+const TASK_SUFFIX = '@task:';
+
+function dispatchCallId(callId, taskId) {
+  return taskId ? `${callId || ''}${TASK_SUFFIX}${taskId}` : String(callId || '');
+}
+
+function providerCallId(dispatchId) {
+  const value = String(dispatchId || '');
+  const at = value.lastIndexOf(TASK_SUFFIX);
+  return at === -1 ? value : value.slice(0, at);
+}
+
 function bridge(method, params) {
   return shared.deps.bridge(method, params);
 }
@@ -112,4 +126,6 @@ module.exports = {
   requireSession,
   conversation,
   sessionForConversation,
+  dispatchCallId,
+  providerCallId,
 };

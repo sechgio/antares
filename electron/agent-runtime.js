@@ -14,6 +14,7 @@ const {
   commitSessions,
   requireSession,
   conversation,
+  providerCallId,
 } = require('./agent-shared');
 const execution = require('./agent-execution');
 const projection = require('./agent-projection');
@@ -60,7 +61,9 @@ const SYSTEM_PROMPT =
   'navegador aislado sin las sesiones del usuario; web_read devuelve el texto y elementos con ref para web_click y web_type. ' +
   'Escritorio de Windows: desktop_observe captura la pantalla con sus ventanas y controles y sus coordenadas; ' +
   'desktop_launch, desktop_focus, desktop_click, desktop_type, desktop_key y desktop_scroll actúan y devuelven una captura ' +
-  'nueva que debes revisar antes del siguiente paso.';
+  'nueva que debes revisar antes del siguiente paso. ' +
+  'Empiezas con un núcleo de herramientas; si el encargo necesita un módulo de Antares que no tienes, cárgalo con ' +
+  'tools_load y úsalo desde la siguiente ronda.';
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';
@@ -254,10 +257,12 @@ async function sessionCreate(params) {
     ownership: { kind: 'ownerless' },
     agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model), instructions },
   }, ctx());
-  if (profile && Array.isArray(profile.tools)) {
-    const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
-    await conv.configure({ tools: profile.tools.filter((name) => available.has(name)).map((name) => ({ name })) }, ctx());
-  }
+  const specs = [...shared.toolSpecs.values()];
+  const available = new Set(specs.map((tool) => tool.name));
+  const initialTools = profile && Array.isArray(profile.tools)
+    ? profile.tools.filter((name) => available.has(name))
+    : execution.defaultToolNames(specs);
+  if (initialTools) await conv.configure({ tools: initialTools.map((name) => ({ name })) }, ctx());
   const now = Date.now();
   const session = {
     id: crypto.randomBytes(6).toString('hex'),
@@ -432,6 +437,13 @@ async function messageSend(params) {
     : { granted: [], rejected: [] };
   const nativeNames = [...shared.toolSpecs.values()].filter((t) => t.kind === 'native').map((t) => t.name);
   const mentions = await bridge('agent_internal_mentions', { text: content, native_tools: nativeNames });
+  if ((mentions.modules || []).length) {
+    const current = (await conv.agent(ctx())).tools.map((tool) => tool.name);
+    const extra = execution.moduleToolNames(mentions.modules).filter((name) => !current.includes(name));
+    if (current.includes(execution.TOOLS_LOAD) && extra.length) {
+      await conv.configure({ tools: [...current, ...extra].map((name) => ({ name })) }, ctx());
+    }
+  }
   const attachedNote = attached.length
     ? `Archivos adjuntos por el usuario:\n${attached.map((a) => `- ${a.path} (${a.kind === 'folder' ? 'carpeta' : 'archivo'})`).join('\n')}`
     : '';
@@ -564,7 +576,8 @@ async function toolsSet(params) {
   const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
   if (names && names.some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
   await execution.refreshTools();
-  await conv.configure({ tools: names === null ? null : [...new Set(names)].map((name) => ({ name })) }, ctx());
+  const selected = names === null ? execution.defaultToolNames([...shared.toolSpecs.values()]) : [...new Set(names)];
+  await conv.configure({ tools: selected && selected.map((name) => ({ name })) }, ctx());
   return toolsList(params);
 }
 
@@ -609,7 +622,7 @@ async function approve(params, approved) {
     shared.liveApprovals.has(approval.id)
     || shared.approvalsByCall.has(approvalCall)
     || ((approvalLive && approvalLive.tools) || []).some(
-      (t) => t.callId === approval.call_id && t.status !== 'done')
+      (t) => t.callId === providerCallId(approval.call_id) && t.status !== 'done')
   );
   if (approval && !liveWait) {
     await new Promise((r) => setTimeout(r, 150));
@@ -625,7 +638,7 @@ async function _settleRecoveredApproval(approval) {
   if (!session || session.deleted) return;
   const conv = await shared.state.harness.conversation(session.conversationId, ctx());
   if (!conv) return;
-  const callId = String(approval.call_id || '');
+  const callId = providerCallId(approval.call_id);
   const method = String(approval.method || '');
 
   const already = await _resultEntryFor(conv, callId);
@@ -661,7 +674,9 @@ async function _settleRecoveredApproval(approval) {
 
 async function _resultEntryFor(conv, callId) {
   const entries = await projection.allEntries(conv);
-  return entries.some((entry) => entry.kind === 'pi.tool-result'
+  const owner = entries.findLastIndex((entry) => entry.kind === 'pi.assistant' && entry.model && entry.model[0]
+    && (entry.model[0].content || []).some((block) => block && block.type === 'toolCall' && block.id === callId));
+  return entries.slice(owner + 1).some((entry) => entry.kind === 'pi.tool-result'
     && entry.model && entry.model[0] && entry.model[0].toolCallId === callId);
 }
 

@@ -5,6 +5,7 @@ const {
   bridge,
   ctx,
   commitSessions,
+  providerCallId,
 } = require('./agent-shared');
 
 const crypto = require('crypto');
@@ -217,14 +218,17 @@ async function projectMessages(conv, session) {
   const convId = session.conversationId;
   const live = liveFor(convId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: session.id })).approvals;
-  const pendingByCall = new Map(pending.map((a) => [a.call_id, a]));
+  const pendingByCall = new Map(pending.map((a) => [providerCallId(a.call_id), a]));
   const entries = await allEntries(conv);
 
   const resultByCall = new Map();
+  let assistantId = '';
   for (const entry of entries) {
+    if (entry.kind === 'pi.assistant') assistantId = entry.id;
     if (entry.kind !== 'pi.tool-result') continue;
     const msg = entry.model && entry.model[0];
-    if (msg) resultByCall.set(msg.toolCallId, { entry, msg });
+    const key = msg && `${assistantId}:${msg.toolCallId}`;
+    if (msg && !resultByCall.has(key)) resultByCall.set(key, { entry, msg });
   }
   const slotByCall = new Map((live.tools || []).map((slot) => [slot.callId, slot]));
 
@@ -295,7 +299,7 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
     : null;
   if (legacy && legacy.gated !== undefined) base.gated = !!legacy.gated;
 
-  const result = resultByCall.get(call.id);
+  const result = resultByCall.get(`${assistantEntry.id}:${call.id}`);
   if (result) {
     base.result = textOf(result.msg);
     const diagnostics = (result.entry.data && result.entry.data.diagnostics) || [];

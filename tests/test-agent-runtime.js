@@ -158,6 +158,19 @@ async function waitIdle(sessionId, timeoutMs = 15000) {
 
 async function main() {
   {
+    const { modelDefinition } = require('../electron/agent-execution');
+    const define = (info, id) => modelDefinition({ provider: 'p', style: 'openai_chat', ...info }, id, 'openai-completions');
+    const local = define({ custom: true, base_url: 'http://127.0.0.1:11434/v1', capabilities: { vision: false, context_window: 8192 } }, 'gpt-4o');
+    assert(local.input.join() === 'text' && local.contextWindow === 8192 && local.maxTokens === 2048,
+      'las capacidades declaradas del modelo personalizado mandan sobre el nombre');
+    assert(local.compat && local.compat.maxTokensField === 'max_tokens' && local.compat.supportsDeveloperRole === false
+      && local.compat.supportsStore === false, 'un endpoint compatible usa el contrato clásico de Chat Completions');
+    assert(!define({ custom: true, base_url: 'https://api.openai.com/v1' }, 'gpt-5').compat, 'la API oficial conserva la detección de pi-ai');
+    assert(!define({ custom: false, base_url: 'http://localhost:11434/v1' }, 'llama3').compat, 'los proveedores del catálogo no cambian');
+    assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
+      'un modelo personalizado puede declarar visión aunque su nombre no la sugiera');
+  }
+  {
     const { MemoryStorage } = await import('@earendil-works/pi-durable');
     const { bridge, state } = makeBridge();
     await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true });
@@ -377,7 +390,7 @@ async function main() {
     assert(calls.find((c) => c.name === 'canvas_list').status === 'done', 'herramienta segura ejecutada');
     assert(calls.find((c) => c.name === 'db_clear').status === 'done', 'herramienta aprobada ejecutada');
     assert(messages.at(-1).content === 'hecho', 'respuesta final del modelo');
-    assert(state.dispatchLog.filter((id) => id === calls[1].id).length === 1, 'dispatch deduplicado: una ejecución por call_id');
+    assert(state.dispatchLog.filter((id) => id.startsWith(`${calls[1].id}@task:`)).length === 1, 'dispatch deduplicado: una ejecución por call_id');
     const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(listed.messages.filter((m) => m.role === 'tool_result' && m.tool_use_id === calls[1].id).length === 1, 'sin tool_result duplicado tras aprobación');
 
@@ -975,6 +988,80 @@ async function main() {
 
   {
     const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const bigBridge = async (method, params) => {
+      if (method !== 'agent_internal_tools') return bridge(method, params);
+      const result = await bridge(method, params);
+      for (let i = 0; i < 70; i += 1) {
+        result.tools.push({ name: `formatos_t${i}`, module: 'formatos', description: `Formatos PDF ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: `sellador_t${i}`, module: 'sellador', description: `Sellar ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+      }
+      result.tools.push({ name: 'fs_read', module: 'computer', description: 'Leer archivo', gated: false, kind: 'backend', inputSchema: schema });
+      return result;
+    };
+    const { getCurrentTools } = await import('@earendil-works/pi-ai/utils/transcript');
+    const offered = [];
+    await openFaux([
+      (context) => {
+        offered.push(getCurrentTools(context.messages).map((tool) => tool.name));
+        return fauxAssistantMessage([fauxToolCall('tools_load', { modules: ['formatos'] })], { stopReason: 'toolUse' });
+      },
+      (context) => {
+        offered.push(getCurrentTools(context.messages).map((tool) => tool.name));
+        return fauxAssistantMessage('formatos listos');
+      },
+      fauxAssistantMessage('sellador listo'),
+    ], bigBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const enabledNames = async () => (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools
+      .filter((t) => t.enabled).map((t) => t.name);
+    const initial = await enabledNames();
+    assert(initial.includes('fs_read') && initial.includes('tools_load') && initial.length < 60,
+      'un catálogo grande empieza con el núcleo y tools_load');
+    assert(!initial.some((name) => name.startsWith('formatos_') || name.startsWith('sellador_')), 'los módulos grandes no se envían de entrada');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'necesito formatos' });
+    assert(await waitIdle(session.id), 'el turno con tools_load termina');
+    const loaded = await enabledNames();
+    assert(loaded.filter((name) => name.startsWith('formatos_')).length === 25 && !loaded.some((name) => name.startsWith('sellador_')),
+      'tools_load habilita las herramientas del módulo pedido, con tope por llamada');
+    assert(offered.length === 2 && !offered[0].includes('formatos_t0') && offered[1].includes('formatos_t0'),
+      'el modelo recibe el núcleo y, en la ronda siguiente, las herramientas cargadas');
+    assert(offered[0].length < 60, 'la primera petición no envía el catálogo completo');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'usa @sellador' });
+    assert(await waitIdle(session.id), 'el turno con mención termina');
+    assert((await enabledNames()).filter((name) => name.startsWith('sellador_')).length === 70, 'mencionar un módulo carga sus herramientas');
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: null });
+    assert(JSON.stringify(await enabledNames()) === JSON.stringify(initial), 'restablecer vuelve al núcleo');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('db_clear', { turno: 1 }, { id: 'call_0' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('primero'),
+      fauxAssistantMessage([fauxToolCall('db_clear', { turno: 2 }, { id: 'call_0' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('segundo'),
+    ], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    for (const turn of [1, 2]) {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: `turno ${turn}` });
+      assert(await waitFor(async () => (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals.length === 1),
+        `el turno ${turn} pide su propia aprobación aunque el proveedor repita el id`);
+      const [pending] = (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals;
+      assert(pending.params.turno === turn, `la aprobación del turno ${turn} lleva sus propios parámetros`);
+      await runtime.handlers.agent_approve({ approval_id: pending.id });
+      assert(await waitIdle(session.id), `el turno ${turn} termina`);
+    }
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const repeated = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.id === 'call_0');
+    assert(repeated.length === 2 && repeated.every((c) => c.status === 'done'), 'cada llamada repetida conserva su propio resultado');
+    assert(new Set(state.dispatchLog.filter((id) => id.startsWith('call_0@task:'))).size === 2, 'cada turno ejecuta su llamada sin reutilizar la anterior');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
     const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-shots-'));
     const previousAppData = process.env.LOCALAPPDATA;
     process.env.LOCALAPPDATA = appData;
@@ -1024,6 +1111,19 @@ async function main() {
     assert(results.filter((images) => images.length === 0).length === 1, 'una imagen fuera de los borradores del agente no se adjunta');
     assert(!listed.messages.some((m) => (m.tool_calls || []).some((call) => String(call.result || '').includes('base64'))),
       'la UI no recibe los bytes de la captura');
+    const { fauxProvider } = await import('@earendil-works/pi-ai');
+    const textOnly = fauxProvider({ provider: 'texto', models: [{ id: 'solo-texto', input: ['text'] }] });
+    runtime._internal._providerOverrides.set('texto', textOnly.provider);
+    textOnly.setResponses([fauxAssistantMessage([fauxToolCall('desktop_peek', {})], { stopReason: 'toolUse' }), fauxAssistantMessage('visto')]);
+    const { session: plain } = await runtime.handlers.agent_session_create({ provider: 'texto', model: 'solo-texto' });
+    await runtime.handlers.agent_message_send({ session_id: plain.id, content: 'mira la pantalla' });
+    assert(await waitIdle(plain.id), 'el turno del modelo sin visión termina');
+    const plainMap = await runtime._internal.state().harness.snapshot(runtime._internal.state().SessionsDoc, context);
+    const plainConv = await runtime._internal.state().harness.conversation(plainMap.sessions[plain.id].conversationId, context);
+    const [plainResult] = (await require('../electron/agent-projection').allEntries(plainConv))
+      .filter((entry) => entry.kind === 'pi.tool-result').map((entry) => entry.model[0].content);
+    assert(plainResult.every((block) => block.type === 'text') && JSON.parse(plainResult[0].text).observation,
+      'a un modelo sin visión no se le adjunta la captura y el resultado sigue siendo JSON');
     await runtime.shutdown();
     process.env.LOCALAPPDATA = previousAppData;
     fs.rmSync(appData, { recursive: true, force: true });

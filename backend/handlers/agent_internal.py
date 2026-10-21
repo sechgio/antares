@@ -141,6 +141,8 @@ def _provider(params: JsonObject) -> JsonObject:
             str(k): str(v) for k, v in (auth.get("extra_headers") or {}).items()
         },
         "default_model": config.get("model") or chat_spec.get("default_model", ""),
+        "custom": bool(spec.get("custom")),
+        "capabilities": spec.get("capabilities") or {},
     }
 
 

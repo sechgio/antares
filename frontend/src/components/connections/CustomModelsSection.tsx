@@ -83,6 +83,15 @@ const PRESETS: Preset[] = [
 const CUSTOM_PRESET = PRESETS[PRESETS.length - 1];
 
 type Auth = 'stored' | 'key' | 'none';
+type Vision = 'auto' | 'yes' | 'no';
+
+const VISION_OPTIONS: { value: Vision; label: string }[] = [
+  { value: 'auto', label: 'Detectar por el nombre del modelo' },
+  { value: 'yes', label: 'Sí, acepta capturas e imágenes' },
+  { value: 'no', label: 'No, solo texto' },
+];
+const MIN_CONTEXT = 1024;
+const MAX_CONTEXT = 10_000_000;
 
 interface EditorState {
   id: string | null;
@@ -93,6 +102,8 @@ interface EditorState {
   displayName: string;
   auth: Auth;
   apiKey: string;
+  vision: Vision;
+  contextWindow: string;
   advanced: boolean;
   submitted: boolean;
   saving: boolean;
@@ -259,17 +270,22 @@ function CustomModelEditor({
   const model = form.model.trim();
   const baseUrl = form.baseUrl.trim();
   const apiKey = form.apiKey.trim();
+  const contextText = form.contextWindow.replace(/[\s.,_]/g, '');
+  const contextWindow = contextText ? Number(contextText) : null;
   const errors = {
     model: !model ? 'Introduce el ID del modelo.' : null,
     baseUrl: !baseUrl ? 'Introduce la dirección base del servicio.' : null,
     apiKey: form.auth === 'key' && !apiKey ? 'Introduce una clave o elige otra forma de autenticación.' : null,
+    contextWindow: contextWindow !== null && (!Number.isInteger(contextWindow) || contextWindow < MIN_CONTEXT || contextWindow > MAX_CONTEXT)
+      ? `Indica un número entero de tokens entre ${MIN_CONTEXT} y ${MAX_CONTEXT.toLocaleString('es')}.`
+      : null,
   };
   const show = (field: keyof typeof errors) => (form.submitted ? errors[field] : null);
 
   const save = async () => {
     if (form.saving) return;
-    if (errors.model || errors.baseUrl || errors.apiKey) {
-      setForm((current) => ({ ...current, submitted: true, advanced: current.advanced || !!errors.baseUrl }));
+    if (errors.model || errors.baseUrl || errors.apiKey || errors.contextWindow) {
+      setForm((current) => ({ ...current, submitted: true, advanced: current.advanced || !!errors.baseUrl || !!errors.contextWindow }));
       return;
     }
     const label = form.displayName.trim() || model;
@@ -283,6 +299,8 @@ function CustomModelEditor({
         model,
         ...(form.auth === 'key' ? { api_key: apiKey } : {}),
         ...(form.auth === 'none' && editing?.has_key ? { remove_key: true } : {}),
+        ...(form.vision !== initial.vision ? { vision: form.vision === 'auto' ? null : form.vision === 'yes' } : {}),
+        ...(form.contextWindow.trim() !== initial.contextWindow ? { context_window: contextWindow } : {}),
       });
       await onSaved(label);
     } catch (err) {
@@ -490,6 +508,33 @@ function CustomModelEditor({
                       </div>
                     </>
                   )}
+                  <div className={fieldLabel}>
+                    <span>Imágenes en el agente</span>
+                    <ThemedSelect
+                      className="mt-1.5 w-full"
+                      aria-label="Si el modelo acepta imágenes"
+                      value={form.vision}
+                      disabled={form.saving}
+                      options={VISION_OPTIONS}
+                      onChange={(value) => patch({ vision: value === 'yes' || value === 'no' ? value : 'auto' })}
+                    />
+                    <span className={helper}>El agente envía sus capturas de pantalla como imagen solo a modelos con visión.</span>
+                  </div>
+                  <label className={fieldLabel}>
+                    Ventana de contexto (tokens, opcional)
+                    <Input
+                      className={`mt-1.5 w-full ${show('contextWindow') ? 'border-[var(--accent-red)]' : ''}`}
+                      value={form.contextWindow}
+                      inputMode="numeric"
+                      disabled={form.saving}
+                      onChange={(event) => patch({ contextWindow: event.target.value })}
+                      placeholder="128000"
+                      spellCheck={false}
+                      aria-label="Ventana de contexto del modelo personalizado"
+                    />
+                    <span className={helper}>Ajústala en modelos locales pequeños para que el agente resuma la conversación antes de desbordarla.</span>
+                    {fieldError(show('contextWindow'))}
+                  </label>
                 </div>
               )}
             </div>
@@ -535,7 +580,7 @@ export default function CustomModelsSection({
     const preset = PRESETS[0];
     setEditor({
       id: null, preset: preset.id, api: preset.api, baseUrl: preset.baseUrl, model: '', displayName: '',
-      auth: 'key', apiKey: '', advanced: false, submitted: false, saving: false, error: null,
+      auth: 'key', apiKey: '', vision: 'auto', contextWindow: '', advanced: false, submitted: false, saving: false, error: null,
     });
   };
 
@@ -551,6 +596,8 @@ export default function CustomModelsSection({
       displayName: p.label === p.default_model ? '' : p.label,
       auth: p.has_key ? 'stored' : 'none',
       apiKey: '',
+      vision: p.capabilities?.vision === undefined ? 'auto' : p.capabilities.vision ? 'yes' : 'no',
+      contextWindow: p.capabilities?.context_window ? String(p.capabilities.context_window) : '',
       advanced: false,
       submitted: false,
       saving: false,

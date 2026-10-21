@@ -8,6 +8,7 @@ const {
   profiles,
   sessionForConversation,
   commitSessions,
+  dispatchCallId,
 } = require('./agent-shared');
 
 const MAX_TOOL_STEPS = 40;
@@ -15,11 +16,21 @@ const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SUBAGENT_DESCRIPTION_MAX = 80;
+const TOOLS_LOAD = 'tools_load';
+// Núcleo que reciben las conversaciones nuevas: el resto del catálogo se carga
+// con tools_load o al mencionar un módulo, para no superar el límite de
+// herramientas por petición de los proveedores ni saturar modelos pequeños.
+const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
+const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD]);
+const MAX_LOADED_TOOLS = 25;
+const MAX_DEFAULT_TOOLS = 100;
 
 const REASONING_OPENAI_MODEL = /deepseek-(r1|reasoner)|qwq|qwen3|gpt-oss|thinking/i;
 const REASONING_ANTHROPIC_MODEL = /claude-(3-7|(opus|sonnet|haiku|fable)-[4-9])/i;
 const VISION_MODEL = /gpt-4o|gpt-4\.1|gpt-5|\bo[34]\b|\bo[34]-|claude|gemini|vision|[-_/]vl\b|\bvl[-_]|llava|pixtral|grok-4|llama-4|gemma-3/i;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const DEFAULT_CONTEXT_WINDOW = 128000;
+const DEFAULT_MAX_TOKENS = 8192;
 
 function supportsVision(modelId) {
   return VISION_MODEL.test(String(modelId || ''));
@@ -59,13 +70,39 @@ async function ensureProvider(providerId, modelId) {
   }
   const info = await providerInfo(providerId);
   const existing = shared.providers.get(providerId);
-  if (existing && existing.modelIds.has(modelId)
-    && existing.info.base_url === info.base_url) return;
+  if (existing && existing.modelIds.has(modelId) && existing.info.base_url === info.base_url
+    && JSON.stringify(existing.info.capabilities || {}) === JSON.stringify(info.capabilities || {})) return;
   const record = existing || { info, modelIds: new Set(), secrets: new Set() };
   record.info = info;
   if (modelId) record.modelIds.add(modelId);
   shared.providers.set(providerId, record);
   shared.state.models.setProvider(await buildProvider(record));
+}
+
+// pi-ai trata un host desconocido como la API oficial de OpenAI («store», rol
+// «developer», max_completion_tokens); los servidores compatibles (Ollama, LM
+// Studio, vLLM, llama.cpp…) esperan el contrato clásico de Chat Completions.
+const OPENAI_NATIVE_HOST = /(^|\.)(openai\.com|openrouter\.ai|openai\.azure\.com)$/i;
+
+function modelDefinition(info, id, api) {
+  const capabilities = info.capabilities || {};
+  const contextWindow = Number(capabilities.context_window) || DEFAULT_CONTEXT_WINDOW;
+  let host = '';
+  try { host = new URL(info.base_url).hostname; } catch { }
+  const classic = info.custom && api === 'openai-completions' && !OPENAI_NATIVE_HOST.test(host);
+  return {
+    id,
+    name: id,
+    api,
+    provider: info.provider,
+    baseUrl: info.base_url,
+    input: (typeof capabilities.vision === 'boolean' ? capabilities.vision : supportsVision(id)) ? ['text', 'image'] : ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow,
+    maxTokens: Math.min(DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
+    reasoning: supportsReasoning(info.style, id),
+    ...(classic ? { compat: { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens' } } : {}),
+  };
 }
 
 async function buildProvider(record) {
@@ -97,18 +134,7 @@ async function buildProvider(record) {
         },
       },
     },
-    models: [...modelIds].map((id) => ({
-      id,
-      name: id,
-      api,
-      provider: providerId,
-      baseUrl: info.base_url,
-      input: supportsVision(id) ? ['text', 'image'] : ['text'],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128000,
-      maxTokens: 8192,
-      reasoning: supportsReasoning(info.style, id),
-    })),
+    models: [...modelIds].map((id) => modelDefinition(info, id, api)),
     api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : shared.deps.aiOpenai.openAICompletionsApi(),
   });
 }
@@ -139,7 +165,72 @@ async function allToolSpecs() {
   } else {
     merged.delete(SUBAGENT_TOOL);
   }
+  merged.set(TOOLS_LOAD, {
+    name: TOOLS_LOAD,
+    description: 'Catálogo · tools_load (sin efectos): busca herramientas de Antares que aún no tienes por texto o por módulo y '
+      + 'las habilita desde la siguiente ronda. Sin argumentos lista los módulos disponibles. Úsala cuando el encargo '
+      + 'necesite un módulo de Antares (reportes, Canvas, AutoIMG, Espacios, conexiones, MCP…).',
+    gated: false,
+    kind: 'meta',
+    module: 'agent',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Qué necesitas hacer o el nombre aproximado de la herramienta' },
+        modules: { type: 'array', items: { type: 'string' }, description: 'Módulos cuyas herramientas quieres cargar' },
+      },
+    },
+  });
   return [...merged.values()];
+}
+
+function defaultToolNames(specs) {
+  if (specs.length <= MAX_DEFAULT_TOOLS) return null;
+  return specs.filter((spec) => CORE_MODULES.has(spec.module) || CORE_TOOLS.has(spec.name)).map((spec) => spec.name);
+}
+
+function moduleToolNames(modules) {
+  const wanted = new Set(modules);
+  return [...shared.toolSpecs.values()].filter((spec) => wanted.has(spec.module)).map((spec) => spec.name);
+}
+
+function normal(text) {
+  return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+async function loadTools(args, sessionId, context) {
+  const conv = await conversation(sessionId);
+  const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
+  const specs = [...shared.toolSpecs.values()].filter((spec) => spec.kind !== 'meta');
+  const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
+  const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
+  if (!modules.length && !words.length) {
+    const catalog = new Map();
+    for (const spec of specs) {
+      const id = spec.module || 'otros';
+      const item = catalog.get(id) || { module: id, tools: 0, loaded: 0 };
+      item.tools += 1;
+      if (enabled.has(spec.name)) item.loaded += 1;
+      catalog.set(id, item);
+    }
+    return { text: JSON.stringify({ modules: [...catalog.values()].sort((a, b) => a.module.localeCompare(b.module)) }) };
+  }
+  const score = (spec) => {
+    if (modules.includes(spec.module)) return 100;
+    const haystack = normal(`${spec.name} ${spec.module || ''} ${spec.label || ''} ${spec.description || ''}`);
+    return words.filter((word) => haystack.includes(word)).length;
+  };
+  const found = specs.map((spec) => [spec, score(spec)]).filter(([, value]) => value > 0)
+    .sort((a, b) => b[1] - a[1]).slice(0, MAX_LOADED_TOOLS).map(([spec]) => spec);
+  const added = found.filter((spec) => !enabled.has(spec.name)).map((spec) => spec.name);
+  const text = JSON.stringify({
+    loaded: added,
+    already_enabled: found.filter((spec) => enabled.has(spec.name)).map((spec) => spec.name),
+    tools: found.map((spec) => ({ name: spec.name, module: spec.module || null, gated: !!spec.gated,
+      description: String(spec.description || '').slice(0, 160) })),
+    ...(found.length ? {} : { note: 'Sin coincidencias; llama a tools_load sin argumentos para ver los módulos' }),
+  });
+  return { text, added };
 }
 
 async function resolveProfile(name) {
@@ -205,12 +296,13 @@ async function beforeTool(call, api, context) {
   if (!await toolEnabled(sessionId, call.name, context)) return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
   if (!spec.gated) return undefined;
 
+  const callId = dispatchCallId(call.id, api.taskId);
   let approval;
   try {
     const approvedContext = spec.kind === 'native' ? await nativeTools().nativeToolContext(spec.name) : undefined;
     ({ approval } = await bridge('agent_internal_approval_ensure', {
       session_id: sessionId,
-      call_id: call.id,
+      call_id: callId,
       method: call.name,
       params: call.arguments || {},
       ...(approvedContext ? { context: approvedContext } : {}),
@@ -218,7 +310,7 @@ async function beforeTool(call, api, context) {
   } catch (err) {
     return { block: String((err && err.message) || err) };
   }
-  shared.approvalsByCall.set(callKey(sessionId, call.id), approval.id);
+  shared.approvalsByCall.set(callKey(sessionId, callId), approval.id);
   shared.liveApprovals.add(approval.id);
   try {
     let current = approval;
@@ -289,7 +381,11 @@ async function executeTool(spec, args, api, context) {
   if (!await toolEnabled(sessionId, spec.name, context)) {
     return { content: [{ type: 'text', text: `Herramienta deshabilitada en esta conversación: ${spec.name}` }], isError: true };
   }
-  const callId = api.callId;
+  if (spec.kind === 'meta') {
+    const { text, added } = await loadTools(args || {}, sessionId, context);
+    return { content: [{ type: 'text', text }], isError: false, ...(added && added.length ? { control: { addTools: added } } : {}) };
+  }
+  const callId = dispatchCallId(api.callId, api.taskId);
   const approvalId = spec.gated ? shared.approvalsByCall.get(callKey(sessionId, callId)) : undefined;
   const request = {
     session_id: sessionId,
@@ -331,8 +427,16 @@ async function executeTool(spec, args, api, context) {
   let parsed = null;
   try { parsed = JSON.parse(text); } catch { }
   const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
-  const image = isError ? null : await resultImage(parsed);
+  const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
   return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError };
+}
+
+// Sin visión, pi-ai sustituye la imagen por un aviso pegado al texto del
+// resultado; no adjuntarla mantiene el JSON íntegro para el modelo.
+async function acceptsImages(api, context) {
+  const ref = (await api.agent(context)).model;
+  const model = ref && shared.state.models.getModel(ref.provider, ref.modelId);
+  return !!(model && model.input.includes('image'));
 }
 
 async function resultImage(parsed) {
@@ -460,7 +564,11 @@ function pollDispatch(sessionId, callId, context) {
 
 module.exports = {
   allToolSpecs,
+  defaultToolNames,
+  moduleToolNames,
+  TOOLS_LOAD,
   supportsVision,
+  modelDefinition,
   callKey,
   providerInfo,
   thinkingLevelFor,

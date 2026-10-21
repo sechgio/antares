@@ -24,6 +24,8 @@ _CUSTOM_PREFIX = "custom-"
 _CUSTOM_LABEL_MAX = 60
 _CUSTOM_MODEL_MAX = 120
 _MAX_STATUS_MODELS = 300
+_MIN_CONTEXT = 1_024
+_MAX_CONTEXT = 10_000_000
 
 _CUSTOM_APIS: dict[str, JsonObject] = {
     "openai": {
@@ -79,6 +81,7 @@ def _custom_spec(payload: JsonObject) -> JsonObject | None:
         "chat": {**preset["chat"], "default_model": model},
         "custom": True,
         "api": api,
+        "capabilities": {key: payload[key] for key in ("vision", "context_window") if payload.get(key) is not None},
     }
 
 
@@ -227,6 +230,13 @@ def _new_custom_id(label: str) -> str:
     raise ValueError("No se pudo generar un identificador para el modelo personalizado")
 
 
+def _set_or_drop(target: JsonObject, key: str, value: object) -> None:
+    if value is None:
+        target.pop(key, None)
+    else:
+        target[key] = value
+
+
 def upsert_custom(config: JsonObject) -> JsonObject:
     raw_id = config.get("id")
     if raw_id is not None and not isinstance(raw_id, str):
@@ -264,6 +274,17 @@ def upsert_custom(config: JsonObject) -> JsonObject:
             raise ValueError("La clave no puede contener saltos de línea")
         if stripped:
             saved["api_key"] = stripped
+    if "vision" in config:
+        vision = config["vision"]
+        if vision is not None and not isinstance(vision, bool):
+            raise ValueError("vision debe ser verdadero, falso o vacío")
+        _set_or_drop(saved, "vision", vision)
+    if "context_window" in config:
+        window = config["context_window"]
+        valid = isinstance(window, int) and not isinstance(window, bool) and _MIN_CONTEXT <= window <= _MAX_CONTEXT
+        if window is not None and not valid:
+            raise ValueError(f"La ventana de contexto debe estar entre {_MIN_CONTEXT} y {_MAX_CONTEXT} tokens")
+        _set_or_drop(saved, "context_window", window)
     if not provider:
         provider = _new_custom_id(label)
     saved["id"] = provider

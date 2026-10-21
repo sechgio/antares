@@ -169,6 +169,28 @@ it('añade un modelo de otro proveedor con formato, dirección, nombre y clave',
   expect(addToast).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'success' }));
 });
 
+it('declara visión y ventana de contexto de un modelo local para el agente', async () => {
+  const save = vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockResolvedValue({ id: customProvider.id, provider: customProvider });
+  render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Añadir modelo' }));
+  const dialog = screen.getByRole('dialog', { name: 'Añadir modelo personalizado' });
+  pick('Proveedor del modelo personalizado', 3);
+  fireEvent.change(within(dialog).getByRole('combobox', { name: 'Modelo personalizado' }), { target: { value: 'qwen3:8b' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Opciones avanzadas' }));
+  pick('Si el modelo acepta imágenes', 2);
+  const context = within(dialog).getByLabelText('Ventana de contexto del modelo personalizado');
+  fireEvent.change(context, { target: { value: '500' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Añadir modelo' }));
+  expect(within(dialog).getByText(/Indica un número entero de tokens/)).toBeVisible();
+  expect(save).not.toHaveBeenCalled();
+
+  fireEvent.change(context, { target: { value: '32.768' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Añadir modelo' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+    base_url: 'http://localhost:11434/v1', model: 'qwen3:8b', vision: false, context_window: 32768,
+  })));
+});
+
 it('muestra el error del servicio dentro del editor sin cerrarlo', async () => {
   vi.spyOn(aiProvidersApi, 'aiProviderCustomSave').mockRejectedValue(new Error('base_url debe ser una URL http(s) válida'));
   render(<ProvidersView />);
