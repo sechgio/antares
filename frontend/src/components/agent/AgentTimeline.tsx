@@ -96,8 +96,11 @@ function prettyJson(text: string): string {
 
 function ToolCode({ label, children, tone }: { label: string; children: string; tone?: 'error' }) {
   return (
-    <div>
-      <div className="mb-1 text-[10.5px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{label}</div>
+    <div className="group/code">
+      <div className="mb-1 flex items-center justify-between text-[10.5px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+        {label}
+        <CopyButton text={children} label={`Copiar ${label.toLowerCase()}`} className="group-hover/code:opacity-100" />
+      </div>
       <pre className={`agent-terminal max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-[var(--border-subtle)] px-3 py-2 font-mono text-[11.5px] leading-[18px] ${tone === 'error' ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]'}`}>
         {children}
       </pre>
@@ -168,7 +171,12 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
       </button>
       {open && (
-        <div className={`${TASK_BODY} mb-1.5 mt-1`}>
+        <div className={`${TASK_BODY} group/term relative mb-1.5 mt-1`}>
+          {!live && output?.text && (
+            <div className="absolute right-4 top-1.5 z-10">
+              <CopyButton text={output.text} label="Copiar salida" className="group-hover/term:opacity-100" />
+            </div>
+          )}
           <div ref={logRef} role="log" aria-label={`Salida de ${command}`} className="agent-terminal max-h-64 overflow-auto rounded-lg border border-[var(--border-subtle)] px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
             <div className="whitespace-pre-wrap break-all text-[var(--text-primary)]"><span className="select-none text-[var(--text-muted)]">&gt; </span>{command}</div>
             {lines.map((line, i) => (
@@ -228,13 +236,13 @@ function UserBubble({ msg }: { msg: AgentMessage }) {
   );
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, label = 'Copiar respuesta', className = 'group-hover:opacity-100' }: { text: string; label?: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
       type="button"
-      className="flex size-5 items-center justify-center rounded-md text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
-      aria-label={copied ? 'Copiado' : 'Copiar respuesta'}
+      className={`flex size-5 items-center justify-center rounded-md text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] focus-visible:opacity-100 ${className}`}
+      aria-label={copied ? 'Copiado' : label}
       title={copied ? 'Copiado' : 'Copiar'}
       onClick={() => {
         void navigator.clipboard?.writeText(text).then(() => {
