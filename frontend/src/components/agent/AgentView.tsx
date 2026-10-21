@@ -859,19 +859,22 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         </div>
         <div className="mx-auto w-full max-w-[744px] shrink-0 px-3 pb-3">
           {readyProviders.length > 0 && (
-            <div role="group" aria-label="Sugerencias" className="agent-suggestions no-scrollbar mb-2 flex gap-2 overflow-x-auto overscroll-x-contain py-1">
-              {(activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS).map((suggestion) => (
-                <Button
-                  key={suggestion}
-                  variant="none"
-                  size="none"
-                  className="agent-suggestion"
-                  disabled={suggestionBusy || modelBusy || running || stopping || pending.length > 0}
-                  onClick={() => void sendSuggestion(suggestion)}
-                >
-                  {suggestion}
-                </Button>
-              ))}
+            <div className="agent-suggestions" data-hidden={draft.trim() ? 'true' : undefined} inert={!!draft.trim()}>
+              <div role="group" aria-label="Sugerencias" className="flex min-h-0 flex-wrap gap-1.5 overflow-hidden pb-2">
+                {(activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS).map((suggestion, i) => (
+                  <Button
+                    key={`${sessionId}-${suggestion}`}
+                    variant="none"
+                    size="none"
+                    className="agent-suggestion"
+                    style={{ animationDelay: `${i * 60}ms` }}
+                    disabled={suggestionBusy || modelBusy || running || stopping || pending.length > 0}
+                    onClick={() => void sendSuggestion(suggestion)}
+                  >
+                    {suggestion}
+                  </Button>
+                ))}
+              </div>
             </div>
           )}
           {queuedForSession.length > 0 && (

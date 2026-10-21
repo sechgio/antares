@@ -56,38 +56,29 @@
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 400;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  transition-property: background-color, color, border-color;
+  animation: agentSuggestionIn 320ms cubic-bezier(0.2, 0, 0, 1) both;
+  transition-property: background-color, color, border-color, transform;
   transition-duration: 150ms;
 }
-.agent-workspace .agent-suggestion:hover:not(:disabled) { background: var(--bg-input); color: var(--text-primary); }
+.agent-workspace .agent-suggestion:hover:not(:disabled) { background: var(--bg-input); color: var(--text-primary); transform: translateY(-1px); }
 .agent-workspace .agent-suggestion:focus-visible { outline-offset: -2px; box-shadow: none; }
 .agent-workspace .agent-suggestion:active { transform: none; }
 
-@property --agent-suggestion-fade-start {
-  syntax: '<length-percentage>';
-  inherits: false;
-  initial-value: 0px;
+.agent-suggestions {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms ease-out;
 }
-@property --agent-suggestion-fade-end {
-  syntax: '<length-percentage>';
-  inherits: false;
-  initial-value: 0px;
+.agent-suggestions[data-hidden='true'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
 }
-@supports (animation-timeline: scroll()) {
-  .agent-suggestions {
-    mask-image: linear-gradient(to right, transparent, #000 var(--agent-suggestion-fade-start), #000 calc(100% - var(--agent-suggestion-fade-end)), transparent);
-    animation: agentSuggestionFadeStart linear both, agentSuggestionFadeEnd linear both;
-    animation-timeline: scroll(self inline), scroll(self inline);
-    animation-range: 0px 96px, calc(100% - 96px) 100%;
-  }
-}
-@keyframes agentSuggestionFadeStart {
-  to { --agent-suggestion-fade-start: min(12%, 40px); }
-}
-@keyframes agentSuggestionFadeEnd {
-  from { --agent-suggestion-fade-end: min(12%, 40px); }
-  to { --agent-suggestion-fade-end: 0px; }
+@keyframes agentSuggestionIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
 }
 
 @keyframes agentEyesWorking {
@@ -102,8 +93,11 @@
   .agent-avatar[data-working='true'] .agent-avatar-eyes,
   .agent-thinking-dots span,
   .agent-shimmer,
+  .agent-workspace .agent-suggestion,
   .agent-model-menu,
   .agent-workspace .animate-spin,
   .agent-model-menu .animate-spin { animation: none; }
   .agent-shimmer { background: none; color: var(--text-secondary); }
+  .agent-suggestions { transition: none; }
+  .agent-workspace .agent-suggestion:hover:not(:disabled) { transform: none; }
 }
