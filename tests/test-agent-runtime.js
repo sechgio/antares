@@ -973,6 +973,62 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { bridge } = makeBridge();
+    const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-shots-'));
+    const previousAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = appData;
+    const shot = path.join(appData, 'Antares', 'ai-agent', 'drafts', 's1.screens', 'shot.jpg');
+    const outside = path.join(appData, 'fuera.jpg');
+    fs.mkdirSync(path.dirname(shot), { recursive: true });
+    fs.writeFileSync(shot, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+    fs.writeFileSync(outside, Buffer.from([0xff, 0xd8]));
+    const schema = { type: 'object', properties: {} };
+    const computerBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', inputSchema: schema },
+          { name: 'desktop_peek', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'desktop_peek') {
+        return { result: JSON.stringify({ observation: { image: { path: params.params.outside ? outside : shot, mime: 'image/jpeg' } } }) };
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'task_plan') return { result: JSON.stringify({ recorded: true }) };
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Informe semanal', steps: [
+        { title: 'Leer datos', status: 'done', evidence: 'fs_read devolvió 12 filas' },
+        { title: 'Escribir informe', status: 'in_progress' },
+      ] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('desktop_peek', {}), fauxToolCall('desktop_peek', { outside: true })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Sigo después'),
+    ], computerBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'prepara el informe' });
+    assert(await waitIdle(session.id), 'el turno con plan y capturas termina');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(listed.plan && listed.plan.goal === 'Informe semanal' && listed.plan.steps.length === 2, 'la UI recibe el último plan publicado');
+    assert(listed.plan.steps[0].evidence === 'fs_read devolvió 12 filas', 'el plan conserva la evidencia de cada paso');
+    assert(listed.resumable === true && listed.running === false, 'un plan con pasos abiertos ofrece reanudar');
+    const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+    const map = await runtime._internal.state().harness.snapshot(runtime._internal.state().SessionsDoc, context);
+    const conv = await runtime._internal.state().harness.conversation(map.sessions[session.id].conversationId, context);
+    const results = (await require('../electron/agent-projection').allEntries(conv))
+      .filter((entry) => entry.kind === 'pi.tool-result' && entry.model[0].toolName === 'desktop_peek')
+      .map((entry) => entry.model[0].content.filter((block) => block.type === 'image'));
+    assert(results.length === 2, 'las dos observaciones quedan en el registro durable');
+    assert(results.filter((images) => images.length === 1 && images[0].data === fs.readFileSync(shot).toString('base64')).length === 1,
+      'la captura de los borradores del agente llega al modelo como imagen');
+    assert(results.filter((images) => images.length === 0).length === 1, 'una imagen fuera de los borradores del agente no se adjunta');
+    assert(!listed.messages.some((m) => (m.tool_calls || []).some((call) => String(call.result || '').includes('base64'))),
+      'la UI no recibe los bytes de la captura');
+    await runtime.shutdown();
+    process.env.LOCALAPPDATA = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
+  }
+
   finish();
 }
 

@@ -48,7 +48,19 @@ const SYSTEM_PROMPT =
   'conversación; para entregarlos en una carpeta del usuario usa drafts_save. ' +
   'Guarda con memory_remember solo preferencias o hechos duraderos que indique el usuario, nunca secretos; ' +
   'cuando un encargo repetible termine con comprobante, guarda sus pasos con procedure_learn. ' +
-  'Si el encargo encaja con un agente guardado, delégalo con subagent_run y resume lo que devuelva.';
+  'Si el encargo encaja con un agente guardado, delégalo con subagent_run y resume lo que devuelva.\n\n' +
+  'Para encargos de varios pasos en el equipo sigue el ciclo planificar → actuar → observar → verificar: publica el plan ' +
+  'con task_plan antes de actuar y actualízalo al avanzar; tras cada acción revisa su resultado (salida y código del ' +
+  'comando, fs_read, web_read o la captura que devuelven las acciones de escritorio) y nunca supongas que funcionó; ' +
+  'marca un paso como hecho solo con la evidencia observada y termina cuando todos estén verificados, resumiendo qué ' +
+  'comprobaste. Si algo falla, diagnostica la causa y prueba otra vía en lugar de repetir lo mismo. ' +
+  'Archivos: fs_list, fs_read y fs_search leen el espacio de trabajo de la conversación y lo que el usuario adjuntó ' +
+  '(PDF, Excel, Word y texto); fs_write y fs_edit escriben, y un nombre relativo va al espacio de trabajo. ' +
+  'Terminal: shell_run ejecuta PowerShell en el espacio de trabajo. Internet: web_open abre páginas o búsquedas en un ' +
+  'navegador aislado sin las sesiones del usuario; web_read devuelve el texto y elementos con ref para web_click y web_type. ' +
+  'Escritorio de Windows: desktop_observe captura la pantalla con sus ventanas y controles y sus coordenadas; ' +
+  'desktop_launch, desktop_focus, desktop_click, desktop_type, desktop_key y desktop_scroll actúan y devuelven una captura ' +
+  'nueva que debes revisar antes del siguiente paso.';
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';
@@ -349,15 +361,39 @@ async function messagesList(params) {
       ts: Date.now(),
     });
   }
+  const running = projection.isRunning(session.conversationId);
+  const plan = _latestPlan(messages);
+  const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
   return {
     messages,
-    running: projection.isRunning(session.conversationId),
+    running,
+    plan,
+    resumable: !running && pending.length === 0 && (stopped || !!(plan && plan.steps.some((step) => step.status !== 'done'))),
     pending_approvals: pending,
     artifacts,
     questions,
     context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [] },
     usage: usage || null,
   };
+}
+
+function _latestPlan(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const calls = messages[i].tool_calls || [];
+    for (let j = calls.length - 1; j >= 0; j -= 1) {
+      const call = calls[j];
+      if (call.name !== 'task_plan' || call.status !== 'done' || !Array.isArray(call.params.steps)) continue;
+      return {
+        goal: String(call.params.goal || ''),
+        steps: call.params.steps.map((step) => ({
+          title: String((step && step.title) || ''),
+          status: ['pending', 'in_progress', 'done', 'failed'].includes(step && step.status) ? step.status : 'pending',
+          ...(step && step.evidence ? { evidence: String(step.evidence).slice(0, 300) } : {}),
+        })),
+      };
+    }
+  }
+  return null;
 }
 
 async function contextRemoveFile(params) {
@@ -635,6 +671,7 @@ async function shutdown() {
   }
   shared.watchers.clear();
   shared.live.clear();
+  require('./agent-browser').close();
   if (shared.state) {
     const harness = shared.state.harness;
     shared.state = null;

@@ -10,7 +10,7 @@ const {
   commitSessions,
 } = require('./agent-shared');
 
-const MAX_TOOL_STEPS = 12;
+const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.';
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
@@ -18,6 +18,12 @@ const SUBAGENT_DESCRIPTION_MAX = 80;
 
 const REASONING_OPENAI_MODEL = /deepseek-(r1|reasoner)|qwq|qwen3|gpt-oss|thinking/i;
 const REASONING_ANTHROPIC_MODEL = /claude-(3-7|(opus|sonnet|haiku|fable)-[4-9])/i;
+const VISION_MODEL = /gpt-4o|gpt-4\.1|gpt-5|\bo[34]\b|\bo[34]-|claude|gemini|vision|[-_/]vl\b|\bvl[-_]|llava|pixtral|grok-4|llama-4|gemma-3/i;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+
+function supportsVision(modelId) {
+  return VISION_MODEL.test(String(modelId || ''));
+}
 
 function supportsReasoning(style, modelId) {
   return (style === 'anthropic_messages' ? REASONING_ANTHROPIC_MODEL : REASONING_OPENAI_MODEL).test(String(modelId || ''));
@@ -97,7 +103,7 @@ async function buildProvider(record) {
       api,
       provider: providerId,
       baseUrl: info.base_url,
-      input: ['text'],
+      input: supportsVision(id) ? ['text', 'image'] : ['text'],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 128000,
       maxTokens: 8192,
@@ -325,7 +331,26 @@ async function executeTool(spec, args, api, context) {
   let parsed = null;
   try { parsed = JSON.parse(text); } catch { }
   const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
-  return { content: [{ type: 'text', text }], isError };
+  const image = isError ? null : await resultImage(parsed);
+  return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError };
+}
+
+async function resultImage(parsed) {
+  const ref = parsed && (parsed.image || (parsed.observation && parsed.observation.image));
+  if (!ref || typeof ref.path !== 'string' || ref.mime !== 'image/jpeg') return null;
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { antaresUserData } = require('./canvas-assets');
+  const root = path.resolve(antaresUserData('ai-agent', 'drafts'));
+  const target = path.resolve(ref.path);
+  if (!target.toLowerCase().startsWith(`${root.toLowerCase()}${path.sep}`)) return null;
+  try {
+    const stat = await fs.promises.stat(target);
+    if (!stat.isFile() || stat.size > MAX_IMAGE_BYTES) return null;
+    return { type: 'image', data: (await fs.promises.readFile(target)).toString('base64'), mimeType: 'image/jpeg' };
+  } catch {
+    return null;
+  }
 }
 
 async function dispatchNative(spec, request, context) {
@@ -435,6 +460,7 @@ function pollDispatch(sessionId, callId, context) {
 
 module.exports = {
   allToolSpecs,
+  supportsVision,
   callKey,
   providerInfo,
   thinkingLevelFor,

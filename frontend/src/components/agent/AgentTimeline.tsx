@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { AlertTriangle, Check, ChevronRight, Clock3, Copy, Loader2, ShieldCheck, Wrench, X } from 'lucide-react';
-import type { AgentApproval, AgentMessage, AgentToolCall } from '../../api/agentApi';
+import { AlertTriangle, Check, ChevronRight, Circle, Clock3, Copy, ListChecks, Loader2, ShieldCheck, Wrench, X } from 'lucide-react';
+import type { AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
@@ -187,6 +187,15 @@ export function ApprovalCard({
     typeof params.printer_name === 'string' && `Impresora: ${params.printer_name}`,
     typeof params.copies === 'number' && `Copias: ${params.copies} · Páginas: ${String(params.pages || 'Todas')}`,
     typeof params.destination_folder === 'string' && `Destino: ${params.destination_folder}\\${String(params.filename || params.name || '')}`,
+    typeof params.command === 'string' && `Comando: ${params.command.slice(0, 400)}`,
+    typeof params.cwd === 'string' && `Carpeta: ${params.cwd}`,
+    typeof params.path === 'string' && `Ruta: ${params.path}`,
+    typeof params.target === 'string' && `Abrir: ${params.target}${typeof params.args === 'string' ? ` ${params.args}` : ''}`,
+    typeof params.title === 'string' && `Ventana: ${params.title}`,
+    typeof params.keys === 'string' && `Teclas: ${params.keys}`,
+    typeof params.text === 'string' && `Texto: ${params.text.slice(0, 200)}`,
+    typeof params.x === 'number' && typeof params.y === 'number' && `Punto: (${params.x}, ${params.y})`,
+    typeof params.ref === 'string' && `Elemento de la página: ${params.ref}`,
     context?.account && `Cuenta: ${context.account}`,
     context?.sheet_id && `Hoja: ${context.sheet_id}`,
     ...(approval.resources ?? []).map((resource) => `Archivo: ${resource.path}`),
@@ -234,6 +243,40 @@ export function ApprovalCard({
         </Button>
       </div>
     </div>
+  );
+}
+
+function PlanStepIcon({ status }: { status: AgentPlan['steps'][number]['status'] }) {
+  if (status === 'done') return <Check size={13} className="text-[var(--accent-green)]" />;
+  if (status === 'failed') return <X size={13} className="text-[var(--accent-red)]" />;
+  if (status === 'in_progress') return <Loader2 size={13} className="animate-spin text-[var(--accent-primary-hover)]" />;
+  return <Circle size={11} className="text-[var(--text-muted)]" />;
+}
+
+export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean }) {
+  const done = plan.steps.filter((step) => step.status === 'done').length;
+  return (
+    <section aria-label="Plan del agente" className="agent-trace-in max-w-[min(620px,100%)] rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+      <header className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
+        <ListChecks size={14} className="shrink-0 text-[var(--accent-primary-hover)]" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate font-medium text-[var(--text-primary)]" title={plan.goal}>{plan.goal}</span>
+        <span className="shrink-0 tabular-nums">{done}/{plan.steps.length}{running ? ' · en curso' : ''}</span>
+      </header>
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--bg-input)]" aria-hidden="true">
+        <div className="h-full rounded-full bg-[var(--accent-green)] transition-[width] duration-300" style={{ width: `${(done / Math.max(1, plan.steps.length)) * 100}%` }} />
+      </div>
+      <ol className="mt-2 space-y-1">
+        {plan.steps.map((step, index) => (
+          <li key={`${index}-${step.title}`} className="flex items-start gap-2 text-[12px] leading-[18px]">
+            <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center"><PlanStepIcon status={step.status} /></span>
+            <span className="min-w-0">
+              <span className={step.status === 'done' ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'}>{step.title}</span>
+              {step.evidence && <span className="block text-[11px] text-[var(--text-muted)]">{step.evidence}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

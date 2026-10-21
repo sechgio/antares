@@ -25,6 +25,20 @@ assert(exportsSpecs.length === 5 && exportsSpecs.every((s) => !s.gated), 'las ex
 assert(JSON.stringify(exportsSpecs.slice(0, 3).map((s) => s.module)) === JSON.stringify(['technicalReports', 'informesV2', 'fichasTecnicas']),
   'cada exportación pertenece a su módulo');
 
+const web = specs.filter((s) => s.name.startsWith('web_'));
+assert(web.length === 7 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
+assert(web.filter((s) => s.gated).map((s) => s.name).sort().join() === 'web_click,web_key,web_type',
+  'leer páginas es automático; hacer clic, escribir o pulsar teclas requiere aprobación');
+const browser = require('../electron/agent-browser');
+assert(browser.normalizeUrl('example.com/a') === 'https://example.com/a', 'un dominio sin esquema se abre por https');
+assert(browser.normalizeUrl('http://localhost:5173') === 'http://localhost:5173', 'una URL http se conserva');
+assert(browser.normalizeUrl('clima en Lima').startsWith('https://duckduckgo.com/html/?q=clima%20en%20Lima'), 'un texto libre se busca');
+for (const bad of ['file:///C:/Windows/win.ini', 'javascript:alert(1)', 'chrome://settings', '']) {
+  let threw = false;
+  try { browser.normalizeUrl(bad); } catch { threw = true; }
+  assert(threw, `el navegador del agente rechaza ${JSON.stringify(bad)}`);
+}
+
 const { draftName } = require('../electron/agent-native-tools');
 assert(draftName('informe') === 'informe.pdf' && draftName('a.PDF') === 'a.PDF', 'nombre de borrador con extensión .pdf');
 for (const bad of ['', '..', 'sub/a.pdf', String.raw`C:\x\a.pdf`, 'a?.pdf']) {

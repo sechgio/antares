@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, CornerDownRight, FolderOpen, Paperclip, Pencil, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentContext, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
+import { ArrowDown, ArrowUp, CornerDownRight, FolderOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { agentApi, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
@@ -18,11 +18,12 @@ import MemoryMenu from './MemoryMenu';
 import ContextChips from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
-import { ApprovalCard, DaySeparator, MessageRow, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
+import { ApprovalCard, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
 
 const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
+const RESUME_TEXT = 'Reanuda el encargo donde lo dejaste: revisa el plan y los últimos resultados antes de repetir cualquier acción.';
 
 function newRequestId(): string {
   return crypto.randomUUID();
@@ -128,6 +129,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [usage, setUsage] = useState<{ input: number; output: number; context?: number } | null>(null);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
+  const [plan, setPlan] = useState<AgentPlan | null>(null);
+  const [resumable, setResumable] = useState(false);
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
@@ -201,6 +204,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setUsage(res.usage ?? null);
           setPending(res.pending_approvals);
           setRunning(res.running);
+          setPlan(res.plan ?? null);
+          setResumable(!!res.resumable);
         }
       } catch (err) {
         if (!silent) {
@@ -269,6 +274,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setContext(null);
     setUsage(null);
     setPending([]);
+    setPlan(null);
+    setResumable(false);
     if (sessionId) void loadMessages(sessionId, false);
     else setRunning(false);
   }, [sessionId, loadMessages]);
@@ -829,6 +836,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               );
             })
           )}
+          {!showHero && plan && <PlanCard plan={plan} running={running} />}
           {pending.map((a) => (
             <ApprovalCard key={a.id} approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
           ))}
@@ -1019,6 +1027,18 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     title="Detener el turno"
                   >
                     <Square size={12} />
+                  </button>
+                )}
+                {resumable && !running && pending.length === 0 && (
+                  <button
+                    type="button"
+                    className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-surface)] px-3 text-[12px] text-[var(--text-secondary)] shadow-[0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-[var(--border-subtle)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-50"
+                    onClick={() => void sendSuggestion(RESUME_TEXT)}
+                    disabled={suggestionBusy || modelBusy || stopping}
+                    title="Continuar el encargo desde el último paso verificado"
+                  >
+                    <Play size={12} aria-hidden="true" />
+                    Reanudar
                   </button>
                 )}
                 <button

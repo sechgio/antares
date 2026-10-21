@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import { ApprovalCard, MessageRow, ThinkingRow } from './AgentTimeline';
+import { ApprovalCard, MessageRow, PlanCard, ThinkingRow } from './AgentTimeline';
 
 it('muestra cuenta y recursos revisados antes de una decisión explícita', () => {
   const decide = vi.fn();
@@ -97,4 +97,25 @@ it('pregunta por la acción concreta y permite rechazarla o aprobarla', () => {
   rerender(<ApprovalCard busy onDecide={decide} approval={{ ...approval, method: 'metodo_desconocido' }} />);
   expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('¿Permitir una acción avanzada?');
   expect(screen.getByRole('button', { name: 'Aprobar' })).toBeDisabled();
+});
+
+it('muestra el plan con su progreso y la evidencia de cada paso', () => {
+  render(<PlanCard running plan={{ goal: 'Preparar el informe', steps: [
+    { title: 'Leer el Excel', status: 'done', evidence: 'fs_read devolvió 12 filas' },
+    { title: 'Buscar el tipo de cambio', status: 'in_progress' },
+    { title: 'Guardar el informe', status: 'pending' },
+  ] }} />);
+  expect(screen.getByRole('region', { name: 'Plan del agente' })).toBeInTheDocument();
+  expect(screen.getByText('1/3 · en curso')).toBeInTheDocument();
+  expect(screen.getByText('fs_read devolvió 12 filas')).toBeInTheDocument();
+});
+
+it('detalla el comando y la ruta en la aprobación de una acción del equipo', () => {
+  render(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    id: 'a', session_id: 's', call_id: 'c', method: 'shell_run', status: 'pending', created_at: 1, decided_at: null,
+    params: { command: 'Get-ChildItem', cwd: 'C:\datos' },
+  }} />);
+  expect(screen.getByText('¿Ejecutar «Ejecutar un comando de PowerShell»?')).toBeInTheDocument();
+  expect(screen.getByText('Comando: Get-ChildItem')).toBeInTheDocument();
+  expect(screen.getByText('Carpeta: C:\datos')).toBeInTheDocument();
 });

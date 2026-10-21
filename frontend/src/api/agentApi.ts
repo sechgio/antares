@@ -98,6 +98,11 @@ export interface AgentQuestion {
   questions: { id: string; prompt: string; options?: string[] }[];
 }
 
+export interface AgentPlan {
+  goal: string;
+  steps: { title: string; status: 'pending' | 'in_progress' | 'done' | 'failed'; evidence?: string }[];
+}
+
 export interface AgentContext {
   modules: { id: string; label: string }[];
   files: { path: string; folder: boolean }[];
@@ -138,6 +143,8 @@ export const agentApi = {
     _invoke<{
       messages: AgentMessage[];
       running: boolean;
+      plan?: AgentPlan | null;
+      resumable?: boolean;
       pending_approvals: AgentApproval[];
       artifacts?: AgentArtifact[];
       questions?: AgentQuestion[];
