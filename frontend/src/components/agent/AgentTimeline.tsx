@@ -146,12 +146,13 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
   }
   const exitFailed = output?.exit != null && output.exit !== 0;
   const failed = call.status === 'failed' || call.status === 'denied' || exitFailed;
-  const lines = output?.text ? output.text.split('\n') : [];
+  const text = output ? output.text : (call.output ?? '').replace(/\n+$/, '');
+  const lines = text ? text.split('\n') : [];
   // Como una terminal, se ve el final de la salida: ahí suelen estar el error o el resumen.
   const logRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [open, output?.text]);
+  }, [open, text]);
   return (
     <div>
       <button

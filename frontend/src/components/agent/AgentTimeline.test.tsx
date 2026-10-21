@@ -44,6 +44,17 @@ it('muestra los comandos como terminal: abierta y animada mientras corre, con su
   expect(screen.queryByRole('log')).not.toBeInTheDocument();
 });
 
+it('muestra la salida de un comando mientras se ejecuta', () => {
+  const shell = (output: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status: 'running', gated: true, result: null, output,
+  }] }) as never;
+  const { rerender } = render(<MessageRow msg={shell('compilando\n')} />);
+  expect(screen.getByText('compilando')).toBeInTheDocument();
+  rerender(<MessageRow msg={shell('compilando\n12 tests ok\n')} />);
+  expect(screen.getByText('12 tests ok')).toBeInTheDocument();
+  expect(screen.getByRole('log').querySelector('.agent-terminal-cursor')).not.toBeNull();
+});
+
 it('copia la salida de un comando terminado y la entrada de una herramienta', () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });

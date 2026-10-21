@@ -11,9 +11,19 @@ class RunCancelled(Exception):
     pass
 
 
+_MAX_PROGRESS_CHARS = 64_000
+
+
 class _CancelEvent:
     def __init__(self) -> None:
         self._event = threading.Event()
+        self._progress_lock = threading.Lock()
+        self.progress = ""
+
+    def report(self, text: str) -> None:
+        """Salida en curso de la herramienta; se conserva el principio para que solo crezca."""
+        with self._progress_lock:
+            self.progress = (self.progress + text)[:_MAX_PROGRESS_CHARS]
 
     def cancel(self) -> None:
         self._event.set()

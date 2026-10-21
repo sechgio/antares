@@ -145,6 +145,15 @@ function applyEvent(convId, event) {
     case 'tool_execution_start':
       live.tools = upsertSlot(live.tools, event, { status: 'running' });
       break;
+    case 'tool_execution_update':
+      if (event.output) {
+        const slot = (live.tools || []).find((s) => s.callId === event.toolCallId) || {};
+        const output = 'set' in event.output
+          ? event.output.set
+          : String(slot.output || '').slice(event.output.trimStart || 0) + (event.output.append || '');
+        live.tools = upsertSlot(live.tools, event, { status: 'running', output });
+      }
+      break;
     case 'tool_execution_end':
       live.tools = upsertSlot(live.tools, event, { status: 'done', entry: event.entry });
       break;
@@ -360,6 +369,7 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
   const slot = slotByCall.get(call.id);
   if ((slot && slot.status !== 'done') || (!slot && inLiveRound)) {
     base.status = slot && slot.status === 'running' ? 'running' : 'queued';
+    if (slot && slot.output) base.output = slot.output;
     return base;
   }
   base.status = 'interrupted';

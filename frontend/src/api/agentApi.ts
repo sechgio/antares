@@ -29,6 +29,8 @@ export interface AgentToolCall {
   gated: boolean;
   status: 'queued' | 'pending' | 'running' | 'done' | 'denied' | 'failed' | 'interrupted' | 'submitted';
   result?: string | null;
+  /** Salida que la herramienta lleva producida mientras corre (p. ej. shell_run). */
+  output?: string;
 }
 
 export interface AgentMessage {

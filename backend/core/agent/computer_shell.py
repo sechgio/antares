@@ -75,10 +75,13 @@ def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: An
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     chunks: dict[str, list[bytes]] = {"stdout": [], "stderr": []}
+    report = getattr(token, "report", None)
 
     def pump(name: str, stream: Any) -> None:
         for line in iter(stream.readline, b""):
             chunks[name].append(line)
+            if callable(report):
+                report(line.decode("utf-8", errors="replace").replace("\r\n", "\n"))
 
     readers = [threading.Thread(target=pump, args=(name, getattr(process, name)), daemon=True)
                for name in ("stdout", "stderr")]

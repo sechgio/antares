@@ -137,6 +137,28 @@ def test_shell_cancellation_kills_the_command(store):
     assert time.monotonic() - started < 10
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_reports_output_while_the_command_runs(store):
+    token = _CancelEvent()
+    seen = []
+    worker = threading.Thread(target=lambda: seen.append(agent_tools.run(
+        "shell_run", {"command": "'uno'; 'dos'; Start-Sleep -Seconds 3; 'tres'"}, store, "s1", token)))
+    worker.start()
+    deadline = time.monotonic() + 10
+    while "dos" not in token.progress and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert token.progress == "uno\ndos\n" and worker.is_alive()
+    worker.join(15)
+    assert token.progress == "uno\ndos\ntres\n" and seen[0]["stdout"] == "uno\ndos\ntres\n"
+
+
+def test_cancel_event_keeps_the_start_of_long_progress():
+    token = _CancelEvent()
+    token.report("a" * 70_000)
+    token.report("b")
+    assert token.progress == "a" * 64_000
+
+
 def test_shell_rejects_unauthorized_working_folders(store, tmp_path):
     with pytest.raises(ValueError, match="no está autorizada"):
         computer_shell.run({"command": "dir", "cwd": str(tmp_path)}, {}, store.drafts_dir("s1"))

@@ -411,11 +411,19 @@ function notifyDecision(approvalId) {
   for (const resolve of [...waiters]) resolve();
 }
 
-async function dispatchAndWait(request, context) {
+// El backend devuelve la salida en curso completa desde el principio (p. ej. la
+// de shell_run); a pi-durable solo se le pasa lo nuevo para que la UI la vea crecer.
+async function dispatchAndWait(request, context, api) {
   const first = await bridge('agent_internal_dispatch', request);
   let result = first.result;
+  let shown = 0;
+  const onOutput = (output) => {
+    if (!api || output.length <= shown) return;
+    api.output(output.slice(shown));
+    shown = output.length;
+  };
   while (result === null || result === undefined) {
-    result = await pollDispatch(request.session_id, request.call_id, context);
+    result = await pollDispatch(request.session_id, request.call_id, context, onOutput);
   }
   return String(result);
 }
@@ -464,7 +472,7 @@ async function executeTool(spec, args, api, context) {
   try {
     text = spec.kind === 'native'
       ? await dispatchNative(spec, request, context)
-      : await dispatchAndWait(request, context);
+      : await dispatchAndWait(request, context, api);
   } finally {
     if (spec.name === 'ask_user') shared.waitingInput.delete(sessionId);
   }
@@ -587,13 +595,14 @@ function waitResource(context) {
   });
 }
 
-function pollDispatch(sessionId, callId, context) {
+function pollDispatch(sessionId, callId, context, onOutput) {
   const signal = context && context.abortSignal;
   return new Promise((resolve, reject) => {
     if (signal && signal.aborted) return reject(aborted());
     const timer = setTimeout(async () => {
       try {
         const next = await bridge('agent_internal_dispatch_result', { session_id: sessionId, call_id: callId });
+        if (onOutput && typeof next.output === 'string') onOutput(next.output);
         resolve(next.result === undefined ? null : next.result);
       } catch (err) {
         resolve(INTERRUPTED_RESULT);
