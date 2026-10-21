@@ -31,14 +31,63 @@ beforeEach(() => {
   vi.spyOn(aiProvidersApi, 'aiProviderSave').mockResolvedValue({ provider });
 });
 
+it('muestra el resumen de los proveedores y despliega solo la configuración elegida', async () => {
+  const other = { ...provider, id: 'openai', provider: 'openai', label: 'OpenAI' };
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [provider, other] });
+  render(<ProvidersView />);
+
+  const anthropic = await screen.findByRole('button', { name: 'Configurar Anthropic' });
+  const openai = screen.getByRole('button', { name: 'Configurar OpenAI' });
+  expect(anthropic).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByLabelText('API key Anthropic')).not.toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Actualizar' })).not.toBeInTheDocument();
+
+  fireEvent.click(anthropic);
+  expect(anthropic).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByLabelText('API key Anthropic')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Modelo Anthropic'), { target: { value: 'borrador' } });
+  fireEvent.click(openai);
+  expect(anthropic).toHaveAttribute('aria-expanded', 'false');
+  expect(openai).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByLabelText('API key Anthropic')).not.toBeVisible();
+  expect(screen.getByLabelText('API key OpenAI')).toBeVisible();
+
+  fireEvent.click(anthropic);
+  expect(screen.getByLabelText('Modelo Anthropic')).toHaveValue('borrador');
+  fireEvent.click(anthropic);
+  expect(screen.getByLabelText('Modelo Anthropic')).not.toBeVisible();
+  expect(aiProvidersApi.aiProviderSave).not.toHaveBeenCalled();
+});
+
+it('permite configurar un servicio local sin pedir clave de acceso', async () => {
+  const local = {
+    ...provider, id: 'ollama', provider: 'ollama', label: 'Ollama (local)',
+    needs_key: false, has_key: false, configured: false, key_masked: null,
+    base_url: 'http://127.0.0.1:11434', default_model: 'llama3.1',
+  };
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [local] });
+  render(<ProvidersView />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Configurar Ollama (local)' }));
+  expect(screen.queryByLabelText('API key Ollama (local)')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Base URL Ollama (local)')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Probar' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(aiProvidersApi.aiProviderSave).toHaveBeenCalledWith({
+    provider: 'ollama', api_key: undefined, base_url: local.base_url, model: 'llama3.1',
+  }));
+});
+
 it('muestra la dirección y el modelo guardados al volver a la configuración', async () => {
   render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Configurar Anthropic' }));
   expect(await screen.findByLabelText('Base URL Anthropic')).toHaveValue(provider.base_url);
   expect(screen.getByLabelText('Modelo Anthropic')).toHaveValue('custom-model');
 });
 
 it('conserva la dirección y el modelo personalizados al actualizar solo la clave', async () => {
   render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Configurar Anthropic' }));
   fireEvent.change(await screen.findByLabelText('API key Anthropic'), { target: { value: 'new-key' } });
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
   await waitFor(() => expect(aiProvidersApi.aiProviderSave).toHaveBeenCalledWith({
@@ -49,6 +98,7 @@ it('conserva la dirección y el modelo personalizados al actualizar solo la clav
 
 it('permite volver a la dirección y al modelo predeterminados sin reemplazar la clave', async () => {
   render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Configurar Anthropic' }));
   fireEvent.change(await screen.findByLabelText('Base URL Anthropic'), { target: { value: '' } });
   fireEvent.change(screen.getByLabelText('Modelo Anthropic'), { target: { value: '' } });
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
@@ -62,6 +112,7 @@ it('puede probar inmediatamente después de restaurar los valores predeterminado
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValueOnce({ providers: [provider] }).mockResolvedValue({ providers: [restored] });
   vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({ provider: { ...restored, reachable: true, models_count: 1, error: null } });
   render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Configurar Anthropic' }));
   fireEvent.change(await screen.findByLabelText('Base URL Anthropic'), { target: { value: '' } });
   fireEvent.change(screen.getByLabelText('Modelo Anthropic'), { target: { value: '' } });
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
@@ -75,6 +126,7 @@ it('puede probar inmediatamente después de restaurar los valores predeterminado
 it('invalida el resultado de la prueba cuando cambian los ajustes y pide guardarlos antes de probar', async () => {
   vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({ provider: { ...provider, reachable: true, models_count: 2, error: null } });
   render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Configurar Anthropic' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Probar' }));
   expect(await screen.findByText('Disponible · 2 modelos')).toBeVisible();
   fireEvent.change(screen.getByLabelText('Base URL Anthropic'), { target: { value: 'https://other.example.com/v1' } });
@@ -90,6 +142,7 @@ it.each(['openai', 'anthropic'])('guarda, prueba y elimina la configuración de 
   const probe = vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({ provider: { ...current, reachable: false, models_count: null, error: 'HTTP 401' } });
   const remove = vi.spyOn(aiProvidersApi, 'aiProviderDelete').mockResolvedValue({ deleted: true });
   render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: `Configurar ${id}` }));
   fireEvent.change(await screen.findByLabelText(`Modelo ${id}`), { target: { value: 'otro-modelo' } });
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
   await waitFor(() => expect(aiProvidersApi.aiProviderSave).toHaveBeenCalledWith({
