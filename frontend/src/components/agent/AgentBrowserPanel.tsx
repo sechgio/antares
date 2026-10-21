@@ -9,6 +9,8 @@ const EMPTY: AgentBrowserState = {
   open: false, url: '', title: '', loading: false, can_go_back: false, can_go_forward: false, docked: false, user_control: false,
 };
 
+const OVERLAY = '[role="menu"], [role="dialog"], [role="listbox"], [role="alertdialog"]';
+
 // La página es una vista nativa que el proceso principal coloca encima del hueco
 // «agent-browser-viewport»: el panel solo le informa de su posición y tamaño.
 export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) {
@@ -39,23 +41,35 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const rect = element.getBoundingClientRect();
-        void agentApi.agentBrowser('bounds', {
-          bounds: {
-            x: rect.left + element.clientLeft,
-            y: rect.top + element.clientTop,
-            width: element.clientWidth || rect.width,
-            height: element.clientHeight || rect.height,
-          },
-        }).catch(() => {});
+        // La vista nativa pinta encima del DOM: si un menú o diálogo la pisa,
+        // se desacopla mientras siga abierto para que no lo tape.
+        const covered = Array.from(document.querySelectorAll(OVERLAY)).some((overlay) => {
+          const box = overlay.getBoundingClientRect();
+          return box.width > 0 && box.height > 0 && box.left < rect.right && box.right > rect.left && box.top < rect.bottom && box.bottom > rect.top;
+        });
+        const bounds = covered ? null : {
+          x: rect.left + element.clientLeft,
+          y: rect.top + element.clientTop,
+          width: element.clientWidth || rect.width,
+          height: element.clientHeight || rect.height,
+        };
+        const key = JSON.stringify(bounds);
+        if (key === sent) return;
+        sent = key;
+        void agentApi.agentBrowser('bounds', { bounds }).catch(() => {});
       });
     };
+    let sent = '';
     report();
     const observer = new ResizeObserver(report);
     observer.observe(element);
+    const overlays = new MutationObserver(report);
+    overlays.observe(document.body, { childList: true });
     window.addEventListener('resize', report);
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      overlays.disconnect();
       window.removeEventListener('resize', report);
       void agentApi.agentBrowser('bounds', { bounds: null }).catch(() => {});
     };
