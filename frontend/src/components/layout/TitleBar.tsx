@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 
 const TitleBarPlugins = lazy(() => import('./TitleBarPlugins'));
 
-const WINDOW_BUTTON = 'app-titlebar-button flex size-8 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors';
+const WINDOW_BUTTON = 'app-titlebar-button flex size-8 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-[color,background-color] duration-150';
 
 function handleWindowAction(action: 'minimizeWindow' | 'maximizeWindow' | 'closeWindow') {
   window.electronAPI?.[action]?.();
@@ -24,7 +24,7 @@ export default function TitleBar() {
   return (
     <div
       data-testid="app-titlebar"
-      className="app-titlebar flex h-11 shrink-0 items-center justify-end overflow-visible pr-2 text-[var(--text-secondary)] select-none"
+      className="app-titlebar flex h-8 shrink-0 items-center justify-end overflow-visible bg-[color:color-mix(in_srgb,var(--accent-blue)_6%,var(--bg-elevated))] pr-2 text-[var(--text-secondary)] select-none"
     >
       <div className="app-titlebar-controls flex h-8 items-stretch overflow-visible">
         {hasTitlebarPlugins && (
@@ -34,13 +34,13 @@ export default function TitleBar() {
         )}
         <UpdateButton />
       </div>
-      <span className="mx-2 h-4 w-px bg-[var(--border-medium)]" aria-hidden />
-      <div className="app-titlebar-controls flex items-center gap-0.5">
+      <span className="mx-2 h-4 w-px shrink-0 bg-[var(--border-subtle)]" aria-hidden />
+      <div className="app-titlebar-controls flex items-center gap-1">
         <div className="relative">
           <Button variant="none" size="none"
             aria-label="Minimizar"
             onClick={() => handleWindowAction('minimizeWindow')}
-            className={cn(WINDOW_BUTTON, 'hover:bg-[var(--sidebar-accent)] hover:text-[var(--text-primary)]')}
+            className={cn(WINDOW_BUTTON, 'hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]')}
           >
             <Minus size={14} strokeWidth={1.8} />
           </Button>
@@ -50,7 +50,7 @@ export default function TitleBar() {
           <Button variant="none" size="none"
             aria-label="Maximizar"
             onClick={() => handleWindowAction('maximizeWindow')}
-            className={cn(WINDOW_BUTTON, 'hover:bg-[var(--sidebar-accent)] hover:text-[var(--text-primary)]')}
+            className={cn(WINDOW_BUTTON, 'hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]')}
           >
             <Square size={11} strokeWidth={1.8} />
           </Button>

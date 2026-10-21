@@ -33,11 +33,11 @@ describe('TitleBar', () => {
     }
   });
 
-  it('renders the controls bar inside the content card', () => {
+  it('renders a compact window controls bar', () => {
     renderTitleBar();
 
     const titlebar = screen.getByTestId('app-titlebar');
-    expect(titlebar).toHaveClass('app-titlebar', 'h-11');
+    expect(titlebar).toHaveClass('app-titlebar', 'h-8');
     expect(titlebar).not.toHaveClass('border-b');
     expect(titlebar).toHaveClass('text-[var(--text-secondary)]');
   });
