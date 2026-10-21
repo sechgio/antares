@@ -48,36 +48,38 @@ const CALL_STATUS_LABEL: Record<string, string> = {
 };
 
 function CallStatusIcon({ status }: { status: string }) {
-  if (status === 'submitted' || status === 'queued') return <Clock3 size={12} className="text-[var(--text-muted)]" />;
-  if (status === 'done') return <Check size={12} className="text-[var(--accent-green)]" />;
-  if (status === 'denied' || status === 'failed') return <X size={12} className="text-[var(--accent-red)]" />;
-  if (status === 'interrupted') return <AlertTriangle size={12} className="text-[var(--accent-yellow)]" />;
-  if (status === 'pending') return <ShieldCheck size={12} className="text-[var(--accent-yellow)]" />;
-  return <Loader2 size={12} className="animate-spin text-[var(--text-muted)]" />;
+  if (status === 'submitted' || status === 'queued') return <Clock3 size={14} className="text-[var(--text-muted)]" />;
+  if (status === 'done') return <CircleCheck size={14} className="text-[var(--text-muted)]" />;
+  if (status === 'denied' || status === 'failed') return <CircleX size={14} className="text-[var(--accent-red)]" />;
+  if (status === 'interrupted') return <AlertTriangle size={14} className="text-[var(--accent-yellow)]" />;
+  if (status === 'pending') return <ShieldCheck size={14} className="text-[var(--accent-yellow)]" />;
+  return <CircleDot size={14} className="text-[var(--text-primary)]" />;
 }
+
+const TASK_ROW = 'flex min-h-6 max-w-full items-center gap-2 py-0.5 text-[13px] leading-5 text-[var(--text-secondary)]';
+const TASK_BODY = 'ml-[6.5px] border-l border-[var(--border-subtle)] pl-[15px]';
 
 function ToolCallStep({ call }: { call: AgentToolCall }) {
   if (call.name === 'subagent_run') return <SubagentTrace call={call} />;
   const detail = call.result || null;
   const params = Object.keys(call.params).length > 0 ? JSON.stringify(call.params) : null;
+  const status = CALL_STATUS_LABEL[call.status] ?? call.status;
   const row = (
     <>
-      <Wrench size={12} className="shrink-0 text-[var(--text-muted)]" />
-      <span className="truncate text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">{METHOD_LABELS[call.name] ?? call.name}</span>
-      {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--accent-yellow)]" aria-label="Requiere aprobación" />}
-      {(params || detail) && <ChevronRight size={12} className="shrink-0 text-[var(--text-muted)] opacity-0 transition-[opacity,transform] group-hover:opacity-100 group-open:rotate-90 group-open:opacity-100" />}
-      <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-[var(--text-muted)]">
-        <CallStatusIcon status={call.status} />
-        <span className={call.status === 'done' ? 'sr-only' : undefined}>{CALL_STATUS_LABEL[call.status] ?? call.status}</span>
+      <span className="flex shrink-0" aria-hidden="true"><CallStatusIcon status={call.status} /></span>
+      <span className={`truncate transition-colors group-hover:text-[var(--text-primary)] ${call.status === 'running' ? 'agent-shimmer' : ''}`}>
+        {METHOD_LABELS[call.name] ?? call.name}
       </span>
+      {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Requiere aprobación" />}
+      <span className={call.status === 'done' ? 'sr-only' : 'shrink-0 text-[12px] text-[var(--text-muted)]'}>{status}</span>
+      {(params || detail) && <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-90" aria-hidden="true" />}
     </>
   );
-  const rowClass = 'flex h-7 items-center gap-2 rounded-lg px-2 text-[12.5px]';
-  if (!params && !detail) return <div className={`group ${rowClass}`}>{row}</div>;
+  if (!params && !detail) return <div className={`group ${TASK_ROW}`}>{row}</div>;
   return (
     <details className="group">
-      <summary className={`${rowClass} cursor-pointer list-none transition-colors hover:bg-[var(--bg-input)]`}>{row}</summary>
-      <pre className="mb-1 ml-[22px] mt-0.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-[var(--bg-surface)] p-2.5 text-[11px] leading-relaxed text-[var(--text-secondary)]">
+      <summary className={`${TASK_ROW} w-fit cursor-pointer list-none`}>{row}</summary>
+      <pre className={`${TASK_BODY} my-1 max-h-40 overflow-auto whitespace-pre-wrap break-all py-0.5 text-[11.5px] leading-relaxed text-[var(--text-muted)]`}>
         {detail ?? params}
       </pre>
     </details>
@@ -120,12 +122,12 @@ function ToolSteps({ calls }: { calls: AgentToolCall[] }) {
   const done = calls.filter((c) => c.status === 'done').length;
   return (
     <details className="group/steps" open={attention}>
-      <summary className="flex h-7 cursor-pointer list-none items-center gap-2 rounded-lg px-2 text-[12.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]">
-        <ChevronRight size={12} className="shrink-0 transition-transform group-open/steps:rotate-90" />
-        <Wrench size={12} className="shrink-0" />
+      <summary className={`${TASK_ROW} w-fit cursor-pointer list-none hover:text-[var(--text-primary)]`}>
+        <Wrench size={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
         {calls.length} pasos · {done} completados
+        <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open/steps:rotate-90" aria-hidden="true" />
       </summary>
-      <div className="ml-[13px] border-l border-[var(--border-subtle)] pl-1.5">{calls.map((c) => <ToolCallStep key={c.id} call={c} />)}</div>
+      <div className={`${TASK_BODY} mt-0.5`}>{calls.map((c) => <ToolCallStep key={c.id} call={c} />)}</div>
     </details>
   );
 }
@@ -133,7 +135,7 @@ function ToolSteps({ calls }: { calls: AgentToolCall[] }) {
 function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdentity }) {
   const calls = msg.tool_calls ?? [];
   return (
-    <div className="agent-trace-in group flex items-start gap-2.5">
+    <div className="agent-trace-in group flex items-start gap-2.5" data-tools-only={!msg.content && !msg.reasoning && calls.length > 0 ? '' : undefined}>
       <div className="min-w-0 flex-1 space-y-1.5">
         {(msg.content || msg.reasoning) && (
           <div className="flex items-center gap-1.5">
@@ -151,7 +153,7 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
           </div>
         )}
         {calls.length > 0 && (
-          <div className="-mx-2 w-full max-w-[min(636px,100%)]">
+          <div className="w-full max-w-[min(620px,100%)] space-y-0.5">
             <ToolSteps calls={calls} />
           </div>
         )}

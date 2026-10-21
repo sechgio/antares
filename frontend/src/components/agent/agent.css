@@ -42,6 +42,10 @@
 .agent-thinking-dots span:nth-child(2) { animation-delay: 160ms; }
 .agent-thinking-dots span:nth-child(3) { animation-delay: 320ms; }
 .agent-subagent-body[inert] { visibility: hidden; }
+.agent-workspace [aria-label="Mensajes"] > div:empty { display: none; }
+.agent-workspace [aria-label="Mensajes"] > div:has(> [data-tools-only]) + div:has(> [data-tools-only]:first-child),
+.agent-workspace [aria-label="Mensajes"] > div:has(> [data-tools-only]) + div:empty + div:has(> [data-tools-only]:first-child),
+.agent-workspace [aria-label="Mensajes"] > div:has(> [data-tools-only]) + div:empty + div:empty + div:has(> [data-tools-only]:first-child) { margin-top: 2px; }
 
 .agent-workspace .agent-suggestion {
   display: inline-flex;
