@@ -59,8 +59,12 @@ function testCounters() {
     'cuenta ocurrencias dict[str,Any] sin allowlist en backend/, incl. canvas, no tests/',
   );
 
-  const big = tmpProject({ 'backend/core/big.py': 'l\n'.repeat(600), 'backend/core/small.py': 'l\n'.repeat(10) });
-  eq(ratchet.countLargeFiles(ratchet.collectSourceFiles(big)), 1, 'cuenta archivos > 500 líneas');
+  const big = tmpProject({
+    'backend/core/big.py': 'l\n'.repeat(600),
+    'backend/core/small.py': 'l\n'.repeat(10),
+    '.agents/skills/local/script.ts': 'l\n'.repeat(600),
+  });
+  eq(ratchet.countLargeFiles(ratchet.collectSourceFiles(big)), 1, 'cuenta archivos > 500 líneas sin incluir skills locales');
 
   const measured = ratchet.measure(dir);
   eq(measured.typeIgnore, 2, 'measure() reporta typeIgnore');

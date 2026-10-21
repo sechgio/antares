@@ -1,5 +1,7 @@
 import { _invoke } from './core';
 
+export type AgentPermissionMode = 'ask' | 'auto' | 'full';
+
 export interface AgentSession {
   id: string;
   title: string;
@@ -8,6 +10,7 @@ export interface AgentSession {
   created_at: number;
   updated_at: number;
   last_error: string | null;
+  permission_mode?: AgentPermissionMode;
   profile?: { id: string; name: string };
 }
 
@@ -29,6 +32,10 @@ export interface AgentToolCall {
   gated: boolean;
   status: 'queued' | 'pending' | 'running' | 'done' | 'denied' | 'failed' | 'interrupted' | 'submitted';
   result?: string | null;
+  /** Salida que la herramienta lleva producida mientras corre (p. ej. shell_run). */
+  output?: string;
+  /** Epoch ms en que empezó a ejecutarse, mientras sigue en curso. */
+  started_at?: number;
 }
 
 export interface AgentMessage {
@@ -98,6 +105,30 @@ export interface AgentQuestion {
   questions: { id: string; prompt: string; options?: string[] }[];
 }
 
+export interface AgentBrowserState {
+  open: boolean;
+  url: string;
+  title: string;
+  loading: boolean;
+  can_go_back: boolean;
+  can_go_forward: boolean;
+  docked: boolean;
+  user_control: boolean;
+  reason?: 'page' | 'agent-open' | 'control' | 'closed';
+}
+
+export interface AgentBrowserBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface AgentPlan {
+  goal: string;
+  steps: { title: string; status: 'pending' | 'in_progress' | 'done' | 'failed'; evidence?: string }[];
+}
+
 export interface AgentContext {
   modules: { id: string; label: string }[];
   files: { path: string; folder: boolean }[];
@@ -131,6 +162,9 @@ export const agentApi = {
   agentSessionModelSet: (id: string, provider: string, model: string) =>
     _invoke<{ session: AgentSession }>('agent_session_model_set', { id, provider, model }),
 
+  agentSessionPermissionsSet: (id: string, permission_mode: AgentPermissionMode) =>
+    _invoke<{ session: AgentSession }>('agent_session_permissions_set', { id, permission_mode }),
+
   agentSessionDelete: (id: string) =>
     _invoke<{ deleted: boolean; id: string }>('agent_session_delete', { id }),
 
@@ -138,11 +172,13 @@ export const agentApi = {
     _invoke<{
       messages: AgentMessage[];
       running: boolean;
+      plan?: AgentPlan | null;
+      resumable?: boolean;
       pending_approvals: AgentApproval[];
       artifacts?: AgentArtifact[];
       questions?: AgentQuestion[];
       context?: AgentContext;
-      usage?: { input: number; output: number; context?: number } | null;
+      usage?: { input: number; output: number; context?: number; cached?: number; prompt?: number } | null;
     }>('agent_messages_list', { session_id }),
 
   agentContextRemoveFile: (session_id: string, path: string) =>
@@ -169,6 +205,9 @@ export const agentApi = {
       last_error: string | null;
     }>('agent_turn_status', { session_id }),
 
+  agentBrowser: (action: 'state' | 'bounds' | 'control' | 'open' | 'back' | 'forward' | 'reload',
+    extra: { url?: string; user?: boolean; bounds?: AgentBrowserBounds | null } = {}) =>
+    _invoke<AgentBrowserState>('agent_browser', { action, ...extra }),
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 

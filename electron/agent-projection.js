@@ -5,12 +5,38 @@ const {
   bridge,
   ctx,
   commitSessions,
+  providerCallId,
 } = require('./agent-shared');
 
 const crypto = require('crypto');
 
 const NOTICE_KIND = shared.NOTICE_KIND;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
+
+// La UI recarga al recibir agent.changed en vez de esperar al sondeo; se agrupan
+// los eventos de cada conversación para no saturar el IPC con cada delta.
+const NOTIFY_MS = 90;
+const notifyTimers = new Map();
+
+function emitChanged(sessionId) {
+  if (shared.notify) {
+    shared.notify('agent.changed', { session_id: sessionId });
+    return;
+  }
+  try {
+    const win = require('./window-manager').getMainWindow();
+    if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', 'agent.changed', { session_id: sessionId });
+  } catch { }
+}
+
+function notifyChanged(convId) {
+  if (notifyTimers.has(convId)) return;
+  notifyTimers.set(convId, setTimeout(() => {
+    notifyTimers.delete(convId);
+    const sessionId = shared.convToSession.get(convId);
+    if (sessionId) emitChanged(sessionId);
+  }, NOTIFY_MS));
+}
 
 const MAX_REASONING_TIMES = 200;
 const reasoningTimes = new Map();
@@ -59,6 +85,7 @@ async function ensureWatcher(session, context) {
   applySnapshot(convId, stream.snapshot);
   stream.start(async (events) => {
     for (const event of events) applyEvent(convId, event);
+    if (events.length) notifyChanged(convId);
   });
 }
 
@@ -116,12 +143,19 @@ function applyEvent(convId, event) {
       break;
     }
     case 'tool_execution_start':
-      live.tools = (live.tools || []).map((slot) => slot.callId === event.toolCallId ? { ...slot, status: 'running' } : slot);
+      live.tools = upsertSlot(live.tools, event, { status: 'running', startedAt: Date.now() });
+      break;
+    case 'tool_execution_update':
+      if (event.output) {
+        const slot = (live.tools || []).find((s) => s.callId === event.toolCallId) || {};
+        const output = 'set' in event.output
+          ? event.output.set
+          : String(slot.output || '').slice(event.output.trimStart || 0) + (event.output.append || '');
+        live.tools = upsertSlot(live.tools, event, { status: 'running', output });
+      }
       break;
     case 'tool_execution_end':
-      live.tools = (live.tools || []).map((slot) => slot.callId === event.toolCallId
-        ? { ...slot, status: 'done', entry: event.entry }
-        : slot);
+      live.tools = upsertSlot(live.tools, event, { status: 'done', entry: event.entry });
       break;
     case 'inbox_update':
       live.inbox = event.items;
@@ -140,6 +174,16 @@ function applyEvent(convId, event) {
       break;
   }
   shared.live.set(convId, live);
+}
+
+// Las llamadas de una ronda nueva no vienen en la instantánea: su primer evento
+// crea el slot para que la UI las vea en curso en vez de interrumpidas.
+function upsertSlot(tools, event, change) {
+  const slots = tools || [];
+  if (!slots.some((slot) => slot.callId === event.toolCallId)) {
+    return [...slots, { callId: event.toolCallId, name: event.toolName, ...change }];
+  }
+  return slots.map((slot) => slot.callId === event.toolCallId ? { ...slot, ...change } : slot);
 }
 
 function liveFor(convId) {
@@ -217,27 +261,37 @@ async function projectMessages(conv, session) {
   const convId = session.conversationId;
   const live = liveFor(convId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: session.id })).approvals;
-  const pendingByCall = new Map(pending.map((a) => [a.call_id, a]));
+  const pendingByCall = new Map(pending.map((a) => [providerCallId(a.call_id), a]));
   const entries = await allEntries(conv);
 
   const resultByCall = new Map();
+  let assistantId = '';
   for (const entry of entries) {
+    if (entry.kind === 'pi.assistant') assistantId = entry.id;
     if (entry.kind !== 'pi.tool-result') continue;
     const msg = entry.model && entry.model[0];
-    if (msg) resultByCall.set(msg.toolCallId, { entry, msg });
+    const key = msg && `${assistantId}:${msg.toolCallId}`;
+    if (msg && !resultByCall.has(key)) resultByCall.set(key, { entry, msg });
   }
   const slotByCall = new Map((live.tools || []).map((slot) => [slot.callId, slot]));
+  const lastAssistant = [...entries].reverse().find((entry) => entry.kind === 'pi.assistant');
+  const liveRound = live.run && lastAssistant ? lastAssistant.id : null;
 
   const messages = [];
-  const usage = { input: 0, output: 0, context: 0 };
+  // cached/prompt: tokens de prompt servidos desde la caché del proveedor frente
+  // al total enviado, para ver si el prefijo se está reutilizando.
+  const usage = { input: 0, output: 0, context: 0, cached: 0, prompt: 0 };
   for (const entry of entries) {
     const msg = entry.model && entry.model[0];
     if (entry.kind === 'pi.assistant' && msg && msg.usage) {
       usage.input += Number(msg.usage.input) || 0;
       usage.output += Number(msg.usage.output) || 0;
+      usage.cached += Number(msg.usage.cacheRead) || 0;
+      usage.prompt += ['input', 'cacheRead', 'cacheWrite'].reduce((sum, key) => sum + (Number(msg.usage[key]) || 0), 0);
       usage.context = ['input', 'output', 'cacheRead', 'cacheWrite'].reduce((sum, key) => sum + (Number(msg.usage[key]) || 0), 0);
     }
     if (entry.kind === 'pi.user') {
+      if (textOf(msg).startsWith(shared.CHECK_MARKER)) continue;
       messages.push({ role: 'user', content: userTextOf(msg), ts: entryTs(entry, msg) });
       continue;
     }
@@ -257,7 +311,7 @@ async function projectMessages(conv, session) {
     }
     if (entry.kind === 'pi.assistant' && msg) {
       const calls = (msg.content || []).filter((block) => block && block.type === 'toolCall');
-      const tool_calls = calls.map((call) => projectCall(call, resultByCall, slotByCall, pendingByCall, entry));
+      const tool_calls = calls.map((call) => projectCall(call, resultByCall, slotByCall, pendingByCall, entry, entry.id === liveRound));
       const legacy = Array.isArray(entry.data && entry.data.tool_calls) ? entry.data.tool_calls : null;
       const reasoning = reasoningOf(msg);
       const reasoningMs = reasoningTime(convId, reasoning);
@@ -281,7 +335,7 @@ function mergeLegacyCalls(legacy, projected) {
   return legacy.map((call) => ({ ...call, ...(byId.get(call.id) || {}) }));
 }
 
-function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEntry) {
+function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEntry, inLiveRound = false) {
   const base = {
     id: call.id,
     name: call.name,
@@ -295,7 +349,7 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
     : null;
   if (legacy && legacy.gated !== undefined) base.gated = !!legacy.gated;
 
-  const result = resultByCall.get(call.id);
+  const result = resultByCall.get(`${assistantEntry.id}:${call.id}`);
   if (result) {
     base.result = textOf(result.msg);
     const diagnostics = (result.entry.data && result.entry.data.diagnostics) || [];
@@ -313,8 +367,10 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
     return base;
   }
   const slot = slotByCall.get(call.id);
-  if (slot && slot.status !== 'done') {
-    base.status = slot.status === 'running' ? 'running' : 'queued';
+  if ((slot && slot.status !== 'done') || (!slot && inLiveRound)) {
+    base.status = slot && slot.status === 'running' ? 'running' : 'queued';
+    if (slot && slot.output) base.output = slot.output;
+    if (slot && slot.status === 'running' && slot.startedAt) base.started_at = slot.startedAt;
     return base;
   }
   base.status = 'interrupted';
@@ -324,6 +380,7 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
 
 module.exports = {
   ensureWatcher,
+  notifyChanged,
   liveFor,
   isRunning,
   partialText,

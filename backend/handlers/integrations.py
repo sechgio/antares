@@ -55,6 +55,7 @@ def _ai_providers_list(params: JsonObject) -> JsonObject:
         if spec.get("custom"):
             entry["custom"] = True
             entry["api"] = spec.get("api", "")
+            entry["capabilities"] = spec.get("capabilities") or {}
         providers.append(entry)
     if params.get("include_invalid") is True:
         for pid in _ai_providers.invalid_custom_providers():
@@ -105,7 +106,7 @@ def _ai_provider_delete(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("label", "api", "base_url", "model")
 def _ai_provider_custom_save(params: JsonObject) -> JsonObject:
-    fields = ("id", "label", "api", "base_url", "model", "api_key", "remove_key")
+    fields = ("id", "label", "api", "base_url", "model", "api_key", "remove_key", "vision", "context_window")
     try:
         return _ai_providers.upsert_custom({k: params[k] for k in fields if k in params})
     except ValueError as exc:

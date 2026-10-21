@@ -17,6 +17,12 @@ export interface AiProviderSpec {
   custom?: boolean;
   api?: string;
   invalid?: boolean;
+  capabilities?: AiModelCapabilities;
+}
+
+export interface AiModelCapabilities {
+  vision?: boolean;
+  context_window?: number;
 }
 
 export type AiProviderApiFormat = 'openai' | 'anthropic';
@@ -29,6 +35,8 @@ interface AiProviderCustomInput {
   model: string;
   api_key?: string;
   remove_key?: boolean;
+  vision?: boolean | null;
+  context_window?: number | null;
 }
 
 export interface AiProviderStatus extends AiProviderSpec {

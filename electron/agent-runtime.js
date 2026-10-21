@@ -14,6 +14,7 @@ const {
   commitSessions,
   requireSession,
   conversation,
+  providerCallId,
 } = require('./agent-shared');
 const execution = require('./agent-execution');
 const projection = require('./agent-projection');
@@ -41,14 +42,31 @@ function extractPaths(content) {
 const SYSTEM_PROMPT =
   'Eres el agente de Antares, una app de escritorio de documentos e imágenes. ' +
   'Responde en español. Tienes herramientas para consultar el estado de la app ' +
-  '(métodos de solo lectura) y herramientas con efectos que el usuario aprueba ' +
-  'una a una. Usa herramientas cuando la respuesta dependa de datos reales de la ' +
+  '(métodos de solo lectura) y herramientas con efectos sujetas al modo de permisos ' +
+  'que el usuario elige para la conversación. Usa herramientas cuando la respuesta dependa de datos reales de la ' +
   'app; si una herramienta requiere aprobación explícale al usuario qué hará. ' +
   'Para archivos de salida indica solo un nombre: se generan en los borradores de la ' +
   'conversación; para entregarlos en una carpeta del usuario usa drafts_save. ' +
   'Guarda con memory_remember solo preferencias o hechos duraderos que indique el usuario, nunca secretos; ' +
   'cuando un encargo repetible termine con comprobante, guarda sus pasos con procedure_learn. ' +
-  'Si el encargo encaja con un agente guardado, delégalo con subagent_run y resume lo que devuelva.';
+  'Si el encargo encaja con un agente guardado, delégalo con subagent_run y resume lo que devuelva.\n\n' +
+  'Para encargos de varios pasos en el equipo sigue el ciclo planificar → actuar → observar → verificar: publica el plan ' +
+  'con task_plan antes de actuar y actualízalo al avanzar; tras cada acción revisa su resultado (salida y código del ' +
+  'comando, fs_read, web_read o la captura que devuelven las acciones de escritorio) y nunca supongas que funcionó; ' +
+  'marca un paso como hecho solo con la evidencia observada (lo que ves en el resultado, no lo que esperas) y termina ' +
+  'cuando todos estén verificados. Si algo falla, diagnostica la causa y prueba otra vía en lugar de repetir lo mismo; ' +
+  'si no puedes avanzar, márcalo como failed y dilo en cuanto lo sepas en vez de insistir. Inicios de sesión, CAPTCHA, ' +
+  'verificación en dos pasos, contraseñas y pagos los hace el usuario: pídeselo y no los intentes. Cierra un encargo ' +
+  'con un resumen breve: qué quedó hecho, la evidencia que lo comprueba y, si falta algo, qué necesitas para seguir. ' +
+  'Archivos: fs_list, fs_read y fs_search leen el espacio de trabajo de la conversación y lo que el usuario adjuntó ' +
+  '(PDF, Excel, Word y texto); fs_write y fs_edit escriben, y un nombre relativo va al espacio de trabajo. ' +
+  'Terminal: shell_run ejecuta PowerShell en el espacio de trabajo. Internet: web_open abre páginas o búsquedas en un ' +
+  'navegador aislado sin las sesiones del usuario; web_read devuelve el texto y elementos con ref para web_click y web_type. ' +
+  'Escritorio de Windows: desktop_observe captura la pantalla con sus ventanas y controles y sus coordenadas; ' +
+  'desktop_launch, desktop_focus, desktop_click, desktop_type, desktop_key y desktop_scroll actúan y devuelven una captura ' +
+  'nueva que debes revisar antes del siguiente paso. ' +
+  'Empiezas con un núcleo de herramientas; si el encargo necesita un módulo de Antares que no tienes, cárgalo con ' +
+  'tools_load y úsalo desde la siguiente ronda.';
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';
@@ -104,7 +122,10 @@ async function _open(options = {}) {
       initial: () => ({ profiles: {} }),
     });
     const registry = pi.createRegistry();
-    const harness = await pi.Harness.open(storage, { models, registry }, ctx());
+    // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
+    // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
+    const settings = { stream: { cacheRetention: 'long' } };
+    const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
     shared.state = {
       harness,
       models,
@@ -235,17 +256,19 @@ async function sessionCreate(params) {
   await execution.ensureProvider(provider, model);
   const instructions = profile
     ? `${SYSTEM_PROMPT}\n\nEres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. `
-      + 'Sus indicaciones orientan el trabajo, pero no amplían permisos: cada acción con efectos sigue requiriendo aprobación.\n'
+      + 'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n'
       + `Indicaciones del usuario:\n${profile.instructions}`
     : SYSTEM_PROMPT;
   const conv = await shared.state.harness.createConversation({
     ownership: { kind: 'ownerless' },
     agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model), instructions },
   }, ctx());
-  if (profile && Array.isArray(profile.tools)) {
-    const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
-    await conv.configure({ tools: profile.tools.filter((name) => available.has(name)).map((name) => ({ name })) }, ctx());
-  }
+  const specs = [...shared.toolSpecs.values()];
+  const available = new Set(specs.map((tool) => tool.name));
+  const initialTools = profile && Array.isArray(profile.tools)
+    ? profile.tools.filter((name) => available.has(name))
+    : execution.defaultToolNames(specs);
+  if (initialTools) await conv.configure({ tools: initialTools.map((name) => ({ name })) }, ctx());
   const now = Date.now();
   const session = {
     id: crypto.randomBytes(6).toString('hex'),
@@ -311,6 +334,26 @@ async function sessionModelSet(params) {
   }, ctx());
 }
 
+async function sessionPermissionsSet(params) {
+  const sessionId = _text(params.id, 'la conversación', 120, true);
+  const mode = params.permission_mode;
+  if (!['ask', 'auto', 'full'].includes(mode)) throw validation('Modo de permisos no válido');
+  const session = await requireSession(sessionId);
+  const { pi } = shared.deps;
+  return shared.state.harness.commit(async (tx) => {
+    const live = await tx.doc(pi.LiveDoc, session.conversationId);
+    const inbox = await tx.doc(pi.InboxDoc, session.conversationId);
+    if (live.run || inbox.items.length) throw validation('Espera a que termine el turno para cambiar los permisos');
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    current.permission_mode = mode;
+    current.updated_at = Date.now();
+    const { conversationId, style, modules, ...publicSession } = current;
+    return { session: publicSession };
+  }, ctx());
+}
+
 async function sessionDelete(params) {
   const sessionId = String(params && params.id || '');
   const session = await requireSession(sessionId);
@@ -349,15 +392,51 @@ async function messagesList(params) {
       ts: Date.now(),
     });
   }
+  const running = projection.isRunning(session.conversationId);
+  const plan = _latestPlan(messages);
+  const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
   return {
     messages,
-    running: projection.isRunning(session.conversationId),
+    running,
+    plan,
+    resumable: !running && pending.length === 0 && (stopped || !!(plan && plan.steps.some((step) => step.status !== 'done'))),
     pending_approvals: pending,
     artifacts,
     questions,
     context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [] },
     usage: usage || null,
   };
+}
+
+function _latestPlan(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const calls = messages[i].tool_calls || [];
+    for (let j = calls.length - 1; j >= 0; j -= 1) {
+      const call = calls[j];
+      if (call.name !== 'task_plan' || call.status !== 'done' || !Array.isArray(call.params.steps)) continue;
+      return {
+        goal: String(call.params.goal || ''),
+        steps: call.params.steps.map((step) => ({
+          title: String((step && step.title) || ''),
+          status: ['pending', 'in_progress', 'done', 'failed'].includes(step && step.status) ? step.status : 'pending',
+          ...(step && step.evidence ? { evidence: String(step.evidence).slice(0, 300) } : {}),
+        })),
+      };
+    }
+  }
+  return null;
+}
+
+// Panel del navegador del agente: la UI lo coloca, lo maneja y puede tomar el
+// control para que el agente no actúe mientras el usuario usa la página.
+async function browserAction(params) {
+  const browser = shared.browser || require('./agent-browser');
+  const action = String((params && params.action) || 'state');
+  if (action === 'state') return browser.state();
+  if (action === 'bounds') return browser.dock(params.bounds || null);
+  if (action === 'control') return browser.setUserControl(params.user === true);
+  if (['open', 'back', 'forward', 'reload'].includes(action)) return browser.navigate(action, params.url);
+  throw validation(`Acción del navegador no válida: ${action}`);
 }
 
 async function contextRemoveFile(params) {
@@ -396,6 +475,13 @@ async function messageSend(params) {
     : { granted: [], rejected: [] };
   const nativeNames = [...shared.toolSpecs.values()].filter((t) => t.kind === 'native').map((t) => t.name);
   const mentions = await bridge('agent_internal_mentions', { text: content, native_tools: nativeNames });
+  if ((mentions.modules || []).length) {
+    const current = (await conv.agent(ctx())).tools.map((tool) => tool.name);
+    const extra = execution.moduleToolNames(mentions.modules).filter((name) => !current.includes(name));
+    if (current.includes(execution.TOOLS_LOAD) && extra.length) {
+      await conv.configure({ tools: [...current, ...extra].map((name) => ({ name })) }, ctx());
+    }
+  }
   const attachedNote = attached.length
     ? `Archivos adjuntos por el usuario:\n${attached.map((a) => `- ${a.path} (${a.kind === 'folder' ? 'carpeta' : 'archivo'})`).join('\n')}`
     : '';
@@ -406,7 +492,10 @@ async function messageSend(params) {
   const input = context
     ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }]
     : content;
-  if (!correction || !projection.isRunning(session.conversationId)) shared.rounds.delete(session.conversationId);
+  if (!correction || !projection.isRunning(session.conversationId)) {
+    shared.rounds.delete(session.conversationId);
+    shared.turns.delete(session.conversationId);
+  }
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await conv.submit({ type: 'input', content: input, whenBusy: correction ? 'steer' : 'reject', ...(requestId ? { requestId } : {}) }, ctx());
@@ -528,7 +617,8 @@ async function toolsSet(params) {
   const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
   if (names && names.some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
   await execution.refreshTools();
-  await conv.configure({ tools: names === null ? null : [...new Set(names)].map((name) => ({ name })) }, ctx());
+  const selected = names === null ? execution.defaultToolNames([...shared.toolSpecs.values()]) : [...new Set(names)];
+  await conv.configure({ tools: selected && selected.map((name) => ({ name })) }, ctx());
   return toolsList(params);
 }
 
@@ -573,7 +663,7 @@ async function approve(params, approved) {
     shared.liveApprovals.has(approval.id)
     || shared.approvalsByCall.has(approvalCall)
     || ((approvalLive && approvalLive.tools) || []).some(
-      (t) => t.callId === approval.call_id && t.status !== 'done')
+      (t) => t.callId === providerCallId(approval.call_id) && t.status !== 'done')
   );
   if (approval && !liveWait) {
     await new Promise((r) => setTimeout(r, 150));
@@ -589,7 +679,7 @@ async function _settleRecoveredApproval(approval) {
   if (!session || session.deleted) return;
   const conv = await shared.state.harness.conversation(session.conversationId, ctx());
   if (!conv) return;
-  const callId = String(approval.call_id || '');
+  const callId = providerCallId(approval.call_id);
   const method = String(approval.method || '');
 
   const already = await _resultEntryFor(conv, callId);
@@ -625,7 +715,9 @@ async function _settleRecoveredApproval(approval) {
 
 async function _resultEntryFor(conv, callId) {
   const entries = await projection.allEntries(conv);
-  return entries.some((entry) => entry.kind === 'pi.tool-result'
+  const owner = entries.findLastIndex((entry) => entry.kind === 'pi.assistant' && entry.model && entry.model[0]
+    && (entry.model[0].content || []).some((block) => block && block.type === 'toolCall' && block.id === callId));
+  return entries.slice(owner + 1).some((entry) => entry.kind === 'pi.tool-result'
     && entry.model && entry.model[0] && entry.model[0].toolCallId === callId);
 }
 
@@ -635,6 +727,7 @@ async function shutdown() {
   }
   shared.watchers.clear();
   shared.live.clear();
+  require('./agent-browser').close();
   if (shared.state) {
     const harness = shared.state.harness;
     shared.state = null;
@@ -661,6 +754,7 @@ module.exports = {
     agent_session_delete: sessionDelete,
     agent_session_rename: sessionRename,
     agent_session_model_set: sessionModelSet,
+    agent_session_permissions_set: sessionPermissionsSet,
     agent_messages_list: messagesList,
     agent_message_send: messageSend,
     agent_tools_list: toolsList,
@@ -669,6 +763,7 @@ module.exports = {
     agent_turn_cancel: turnCancel,
     agent_attach: attach,
     agent_context_remove_file: contextRemoveFile,
+    agent_browser: browserAction,
     agent_profiles_list: profilesList,
     agent_profile_save: profileSave,
     agent_profile_delete: profileDelete,

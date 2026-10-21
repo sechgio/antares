@@ -894,8 +894,10 @@ class AgentRunner:
                     raise ValueError("Esta herramienta requiere una conversación")
                 raw_params = call.get("params")
                 tool_args: JsonObject = dict(raw_params) if isinstance(raw_params, dict) else {}
-                result = agent_tools.run(name, tool_args, self._store, str(session_id))
+                result = agent_tools.run(name, tool_args, self._store, str(session_id), token)
                 return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
+            except RunCancelled:
+                raise
             except Exception as err:
                 return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
         fn = self._handler_getter(name)

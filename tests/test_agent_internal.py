@@ -252,6 +252,28 @@ def test_concurrent_dispatches_start_a_single_worker(store, monkeypatch):
     assert len({o["dispatch"]["op_id"] for o in outcomes}) == 1
 
 
+def test_dispatch_result_reports_running_output_until_it_finishes(store, monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow(params):
+        started.set()
+        release.wait(5)
+        return {"ok": 1}
+
+    monkeypatch.setattr(agent, "get_agent_runner", lambda: agent.AgentRunner(store, lambda name: slow))
+    monkeypatch.setattr(agent_internal._agent_chat, "readonly_methods", lambda: ["lectura"])
+    op_id = _dispatch(session_id="s1", call_id="c1", name="lectura", params={})["dispatch"]["op_id"]
+    assert started.wait(5)
+    assert "output" not in _dispatch_result("c1")
+    agent_internal._inflight[op_id].report("línea 1\n")
+    agent_internal._inflight[op_id].report("línea 2\n")
+    running = _dispatch_result("c1")
+    assert running["result"] is None and running["output"] == "línea 1\nlínea 2\n"
+    release.set()
+    assert "output" not in _wait_result("c1")
+
+
 def test_same_call_id_with_other_intent_is_a_conflict(store, monkeypatch):
     executed = []
     runner = agent.AgentRunner(store, lambda name: lambda params: executed.append(params) or {"ok": 1})

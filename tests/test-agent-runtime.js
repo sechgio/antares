@@ -16,6 +16,8 @@ const PUBLIC_METHODS = [
   'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set',
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
   'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
+  'agent_browser',
+  'agent_session_permissions_set',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -158,6 +160,42 @@ async function waitIdle(sessionId, timeoutMs = 15000) {
 
 async function main() {
   {
+    const { modelDefinition } = require('../electron/agent-execution');
+    const define = (info, id) => modelDefinition({ provider: 'p', style: 'openai_chat', ...info }, id, 'openai-completions');
+    const local = define({ custom: true, base_url: 'http://127.0.0.1:11434/v1', capabilities: { vision: false, context_window: 8192 } }, 'gpt-4o');
+    assert(local.input.join() === 'text' && local.contextWindow === 8192 && local.maxTokens === 2048,
+      'las capacidades declaradas del modelo personalizado mandan sobre el nombre');
+    assert(local.compat && local.compat.maxTokensField === 'max_tokens' && local.compat.supportsDeveloperRole === false
+      && local.compat.supportsStore === false, 'un endpoint compatible usa el contrato clásico de Chat Completions');
+    assert(!define({ custom: true, base_url: 'https://api.openai.com/v1' }, 'gpt-5').compat, 'la API oficial conserva la detección de pi-ai');
+    assert(JSON.stringify(define({ custom: false, base_url: 'http://localhost:11434/v1' }, 'llama3').compat)
+      === '{"supportsLongCacheRetention":false}', 'un endpoint no oficial solo pierde la retención larga de caché');
+    const claude = (base) => modelDefinition({ provider: 'a', style: 'anthropic_messages', base_url: base }, 'claude-opus-5-5',
+      'anthropic-messages').compat;
+    assert(!claude('https://api.anthropic.com') && claude('https://proxy.example.com').supportsLongCacheRetention === false,
+      'la retención larga de caché solo viaja a la API oficial de Anthropic');
+    const { ANTHROPIC_MODELS } = await import('@earendil-works/pi-ai/providers/anthropic.models');
+    const verified = (base, id) => modelDefinition({ provider: 'a', style: 'anthropic_messages', base_url: base }, id,
+      'anthropic-messages', ANTHROPIC_MODELS[id]).compat || {};
+    assert(verified('https://api.anthropic.com', 'claude-opus-5-5').supportsMidConvoToolChanges === true
+      && !verified('https://api.anthropic.com', 'claude-sonnet-4-5').supportsMidConvoToolChanges
+      && !verified('https://proxy.example.com', 'claude-opus-5-5').supportsMidConvoToolChanges,
+      'solo un Claude verificado en la API oficial recibe las herramientas nuevas sin cambiar la lista enviada');
+    const { leadingSystem } = require('../electron/agent-execution');
+    const user = { role: 'user', content: 'hola' };
+    const system = { role: 'system', content: '', sections: { instructions: 'sys' } };
+    const later = { role: 'system', content: '', toolsAdded: [{ name: 'beta' }] };
+    const hoisted = leadingSystem([user, system, { role: 'assistant', content: [] }, later]).messages;
+    assert(hoisted[0] === system && hoisted[1] === user && hoisted[3] === later,
+      'el prompt base encabeza la petición y los cambios posteriores quedan en su sitio');
+    assert(leadingSystem([system, user]) === undefined && leadingSystem([user]) === undefined,
+      'una petición que ya empieza por el prompt no se toca');
+    assert(define({ custom: true, base_url: 'https://openrouter.ai/api/v1' }, 'anthropic/claude-opus-5-5').compat
+      .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
+    assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
+      'un modelo personalizado puede declarar visión aunque su nombre no la sugiera');
+  }
+  {
     const { MemoryStorage } = await import('@earendil-works/pi-durable');
     const { bridge, state } = makeBridge();
     await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true });
@@ -212,6 +250,59 @@ async function main() {
     assert((await conv.agent(context)).model.modelId === 'otro-modelo', 'la configuración durable del runtime conserva el modelo');
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
+    const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-permissions-'));
+    const dbPath = path.join(dir, 'agent.sqlite');
+    const { bridge } = makeBridge();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const { session: other } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const changed = await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    assert(changed.session.permission_mode === 'full' && !changed.session.conversationId, 'devuelve el modo guardado sin datos privados');
+    for (const mode of ['invalid', '', null, undefined, true]) {
+      let rejected;
+      try { await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: mode }); } catch (err) { rejected = err; }
+      assert(rejected, `rechaza un modo inválido: ${mode}`);
+    }
+    await runtime.shutdown();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const { sessions } = await runtime.handlers.agent_sessions_list();
+    assert(sessions.find((item) => item.id === session.id).permission_mode === 'full', 'el modo sobrevive al reinicio de SQLite');
+    assert(!sessions.find((item) => item.id === other.id).permission_mode, 'no cambia los permisos de otras conversaciones');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  for (const mode of ['ask', 'auto', 'full']) {
+    const { bridge, state } = makeBridge();
+    const webBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') result.tools.push({ name: 'web_read', description: 'Leer página', gated: false, kind: 'backend', inputSchema: { type: 'object', properties: {} } });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('web_read', {}), fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+    ], webBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: mode });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hazlo' });
+    if (mode !== 'full') {
+      assert(await waitFor(() => state.approvals.size === (mode === 'ask' ? 2 : 1)), `${mode}: pausa las llamadas que requieren aprobación`);
+      assert(state.dispatches.length === (mode === 'ask' ? 0 : 1), `${mode}: no ejecuta las acciones pendientes`);
+      let busy;
+      try { await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' }); } catch (err) { busy = err; }
+      assert(busy && /termine el turno/.test(busy.message), 'no amplía permisos durante un turno activo');
+      for (const approval of state.approvals.values()) await runtime.handlers.agent_approve({ approval_id: approval.id });
+    }
+    assert(await waitIdle(session.id), `${mode}: el turno termina`);
+    assert(state.dispatches.length === 2, `${mode}: ejecuta cada acción una vez`);
+    assert([...state.approvals.values()].every((approval) => approval.status === 'approved'), `${mode}: conserva las aprobaciones en el registro`);
+    assert(state.approvals.size === (mode === 'ask' ? 2 : 1), `${mode}: aplica la política de internet y efectos`);
+    await runtime.shutdown();
   }
 
   {
@@ -336,6 +427,25 @@ async function main() {
   for (const name of PUBLIC_METHODS) {
     assert(nativeDispatchFor(name) === 'agent', `${name} → native:agent`);
   }
+  {
+    const calls = [];
+    runtime._internal.shared.browser = {
+      state: () => ({ open: false, user_control: false }),
+      dock: (bounds) => { calls.push(['dock', bounds]); return { docked: !!bounds }; },
+      setUserControl: (user) => { calls.push(['control', user]); return { user_control: user }; },
+      navigate: async (action, url) => { calls.push([action, url]); return { open: true, url: url || '' }; },
+    };
+    const handle = runtime.handlers.agent_browser;
+    assert((await handle({ action: 'state' })).open === false, 'agent_browser devuelve el estado del navegador');
+    assert((await handle({ action: 'bounds', bounds: { x: 1, y: 2, width: 300, height: 200 } })).docked === true, 'la UI coloca el panel');
+    assert((await handle({ action: 'bounds' })).docked === false, 'sin hueco la página vuelve a su ventana anfitriona');
+    assert((await handle({ action: 'control', user: true })).user_control === true, 'el usuario puede tomar el control');
+    assert((await handle({ action: 'open', url: 'example.com' })).url === 'example.com', 'la barra de dirección abre páginas');
+    let rejected = false;
+    try { await handle({ action: 'borrar' }); } catch { rejected = true; }
+    assert(rejected && calls.length === 4, 'una acción desconocida se rechaza sin tocar el navegador');
+    runtime._internal.shared.browser = undefined;
+  }
   for (const name of INTERNAL_RPCS) {
     assert(INTERNAL_SET.has(name), `${name} es internal:true`);
     assert(METHODS[name].handler === 'backend:agent_internal', `${name} → backend:agent_internal`);
@@ -377,7 +487,7 @@ async function main() {
     assert(calls.find((c) => c.name === 'canvas_list').status === 'done', 'herramienta segura ejecutada');
     assert(calls.find((c) => c.name === 'db_clear').status === 'done', 'herramienta aprobada ejecutada');
     assert(messages.at(-1).content === 'hecho', 'respuesta final del modelo');
-    assert(state.dispatchLog.filter((id) => id === calls[1].id).length === 1, 'dispatch deduplicado: una ejecución por call_id');
+    assert(state.dispatchLog.filter((id) => id.startsWith(`${calls[1].id}@task:`)).length === 1, 'dispatch deduplicado: una ejecución por call_id');
     const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(listed.messages.filter((m) => m.role === 'tool_result' && m.tool_use_id === calls[1].id).length === 1, 'sin tool_result duplicado tras aprobación');
 
@@ -470,7 +580,7 @@ async function main() {
     await runtime.shutdown();
   }
 
-  {
+  for (const mode of ['auto', 'full']) {
     const { bridge, state } = makeBridge();
     const executed = [];
     runtime._internal.shared.nativeTools = {
@@ -481,22 +591,35 @@ async function main() {
       ],
       runNativeTool: async (name) => { executed.push(name); return { ok: name }; },
     };
-    await openFaux([
+    const faux = await openFaux([
       fauxAssistantMessage([fauxToolCall('autoimg_status', {}), fauxToolCall('autoimg_sync_to_sheet', {})], { stopReason: 'toolUse' }),
       fauxAssistantMessage('sincronizado'),
     ], bridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: mode });
     const { tools } = await runtime.handlers.agent_tools_list({});
     assert(tools.some((t) => t.name === 'autoimg_status' && t.kind === 'native' && t.module === 'autoimg'), 'tools_list incluye herramientas nativas');
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sincroniza autoimg' });
-    assert(await waitFor(async () =>
-      (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals.length > 0), 'el efecto nativo pide aprobación');
-    assert(JSON.stringify(executed) === JSON.stringify(['autoimg_status']), 'la lectura nativa se ejecuta sin aprobación');
-    const ap = (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals[0];
-    await runtime.handlers.agent_approve({ approval_id: ap.id });
+    if (mode === 'auto') {
+      assert(await waitFor(async () =>
+        (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals.length > 0), 'el efecto nativo pide aprobación');
+      assert(JSON.stringify(executed) === JSON.stringify(['autoimg_status']), 'la lectura nativa se ejecuta sin aprobación');
+      const ap = (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals[0];
+      await runtime.handlers.agent_approve({ approval_id: ap.id });
+    }
     assert(await waitIdle(session.id), 'el turno termina tras aprobar el efecto nativo');
     assert(JSON.stringify(executed) === JSON.stringify(['autoimg_status', 'autoimg_sync_to_sheet']), 'cada herramienta nativa se ejecuta una vez');
     assert(state.dispatches.every((d) => d.status === 'succeeded'), 'Electron registra el comprobante en Python');
+    if (mode === 'full') {
+      faux.setResponses([
+        fauxAssistantMessage([fauxToolCall('autoimg_sync_to_sheet', {})], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('deshabilitada'),
+      ]);
+      await runtime.handlers.agent_tools_set({ session_id: session.id, names: [] });
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'intenta otra vez' });
+      assert(await waitIdle(session.id), 'termina el turno con una herramienta excluida');
+      assert(executed.length === 2 && state.dispatches.length === 2, 'Acceso completo conserva las herramientas deshabilitadas');
+    }
     runtime._internal.shared.nativeTools = null;
     await runtime.shutdown();
   }
@@ -652,8 +775,8 @@ async function main() {
     const conv = await runtime._internal.state().harness.conversation(
       (await require('../electron/agent-shared').requireSession(session.id)).conversationId, runtime._internal.state().ctx);
     const instructions = (await conv.agent(runtime._internal.state().ctx)).instructions;
-    assert(String(instructions).includes('plantilla de cortes') && String(instructions).includes('requiriendo aprobación'),
-      'las indicaciones del agente se suman sin retirar las reglas de aprobación');
+    assert(String(instructions).includes('plantilla de cortes') && String(instructions).includes('no amplían los permisos elegidos'),
+      'las indicaciones del agente se suman sin ampliar los permisos elegidos');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     assert((await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools.every((t) => t.enabled), 'una conversación normal no hereda el agente');
     await runtime.handlers.agent_profile_delete({ id: profile.id });
@@ -714,6 +837,8 @@ async function main() {
     assert(first.context > 0 && usage.input > first.input, 'el total acumula los turnos');
     assert(usage.context >= first.input, 'el contexto del último turno incluye el historial reenviado');
     assert(usage.context < first.context + first.input, 'el contexto no acumula los turnos anteriores');
+    assert(first.cached === 0 && usage.cached > 0 && usage.cached < usage.prompt,
+      'el segundo turno reutiliza el prefijo cacheado y se informa frente al prompt total');
     await runtime.shutdown();
   }
 
@@ -970,6 +1095,279 @@ async function main() {
     assert(!status.last_error.includes(secret) && status.last_error.includes('<REDACTED>'), 'el error no expone la credencial del proveedor');
     assert(!status.last_error.includes(headerSecret), 'el error no expone el token de una cabecera Bearer');
     server.close();
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const bigBridge = async (method, params) => {
+      if (method !== 'agent_internal_tools') return bridge(method, params);
+      const result = await bridge(method, params);
+      for (let i = 0; i < 70; i += 1) {
+        result.tools.push({ name: `formatos_t${i}`, module: 'formatos', description: `Formatos PDF ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: `sellador_t${i}`, module: 'sellador', description: `Sellar ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+      }
+      result.tools.push({ name: 'fs_read', module: 'computer', description: 'Leer archivo', gated: false, kind: 'backend', inputSchema: schema });
+      return result;
+    };
+    const { getCurrentTools } = await import('@earendil-works/pi-ai/utils/transcript');
+    const offered = [];
+    await openFaux([
+      (context) => {
+        offered.push(getCurrentTools(context.messages).map((tool) => tool.name));
+        return fauxAssistantMessage([fauxToolCall('tools_load', { modules: ['formatos'] })], { stopReason: 'toolUse' });
+      },
+      (context) => {
+        offered.push(getCurrentTools(context.messages).map((tool) => tool.name));
+        return fauxAssistantMessage('formatos listos');
+      },
+      fauxAssistantMessage('sellador listo'),
+    ], bigBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const enabledNames = async () => (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools
+      .filter((t) => t.enabled).map((t) => t.name);
+    const initial = await enabledNames();
+    assert(initial.includes('fs_read') && initial.includes('tools_load') && initial.length < 60,
+      'un catálogo grande empieza con el núcleo y tools_load');
+    assert(!initial.some((name) => name.startsWith('formatos_') || name.startsWith('sellador_')), 'los módulos grandes no se envían de entrada');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'necesito formatos' });
+    assert(await waitIdle(session.id), 'el turno con tools_load termina');
+    const loaded = await enabledNames();
+    assert(loaded.filter((name) => name.startsWith('formatos_')).length === 25 && !loaded.some((name) => name.startsWith('sellador_')),
+      'tools_load habilita las herramientas del módulo pedido, con tope por llamada');
+    assert(offered.length === 2 && !offered[0].includes('formatos_t0') && offered[1].includes('formatos_t0'),
+      'el modelo recibe el núcleo y, en la ronda siguiente, las herramientas cargadas');
+    assert(offered[0].length < 60, 'la primera petición no envía el catálogo completo');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'usa @sellador' });
+    assert(await waitIdle(session.id), 'el turno con mención termina');
+    assert((await enabledNames()).filter((name) => name.startsWith('sellador_')).length === 70, 'mencionar un módulo carga sus herramientas');
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: null });
+    assert(JSON.stringify(await enabledNames()) === JSON.stringify(initial), 'restablecer vuelve al núcleo');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('db_clear', { turno: 1 }, { id: 'call_0' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('primero'),
+      fauxAssistantMessage([fauxToolCall('db_clear', { turno: 2 }, { id: 'call_0' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('segundo'),
+    ], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    for (const turn of [1, 2]) {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: `turno ${turn}` });
+      assert(await waitFor(async () => (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals.length === 1),
+        `el turno ${turn} pide su propia aprobación aunque el proveedor repita el id`);
+      const [pending] = (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals;
+      assert(pending.params.turno === turn, `la aprobación del turno ${turn} lleva sus propios parámetros`);
+      await runtime.handlers.agent_approve({ approval_id: pending.id });
+      assert(await waitIdle(session.id), `el turno ${turn} termina`);
+    }
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const repeated = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.id === 'call_0');
+    assert(repeated.length === 2 && repeated.every((c) => c.status === 'done'), 'cada llamada repetida conserva su propio resultado');
+    assert(new Set(state.dispatchLog.filter((id) => id.startsWith('call_0@task:'))).size === 2, 'cada turno ejecuta su llamada sin reutilizar la anterior');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-shots-'));
+    const previousAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = appData;
+    const shot = path.join(appData, 'Antares', 'ai-agent', 'drafts', 's1.screens', 'shot.jpg');
+    const outside = path.join(appData, 'fuera.jpg');
+    fs.mkdirSync(path.dirname(shot), { recursive: true });
+    fs.writeFileSync(shot, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+    fs.writeFileSync(outside, Buffer.from([0xff, 0xd8]));
+    const schema = { type: 'object', properties: {} };
+    const computerBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', inputSchema: schema },
+          { name: 'desktop_peek', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'desktop_peek') {
+        return { result: JSON.stringify({ observation: { image: { path: params.params.outside ? outside : shot, mime: 'image/jpeg' } } }) };
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'task_plan') return { result: JSON.stringify({ recorded: true }) };
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Informe semanal', steps: [
+        { title: 'Leer datos', status: 'done', evidence: 'fs_read devolvió 12 filas' },
+        { title: 'Escribir informe', status: 'in_progress' },
+      ] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('desktop_peek', {}), fauxToolCall('desktop_peek', { outside: true })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Sigo después'),
+    ], computerBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'prepara el informe' });
+    assert(await waitIdle(session.id), 'el turno con plan y capturas termina');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(listed.plan && listed.plan.goal === 'Informe semanal' && listed.plan.steps.length === 2, 'la UI recibe el último plan publicado');
+    assert(listed.plan.steps[0].evidence === 'fs_read devolvió 12 filas', 'el plan conserva la evidencia de cada paso');
+    assert(listed.resumable === true && listed.running === false, 'un plan con pasos abiertos ofrece reanudar');
+    const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+    const map = await runtime._internal.state().harness.snapshot(runtime._internal.state().SessionsDoc, context);
+    const conv = await runtime._internal.state().harness.conversation(map.sessions[session.id].conversationId, context);
+    const results = (await require('../electron/agent-projection').allEntries(conv))
+      .filter((entry) => entry.kind === 'pi.tool-result' && entry.model[0].toolName === 'desktop_peek')
+      .map((entry) => entry.model[0].content.filter((block) => block.type === 'image'));
+    assert(results.length === 2, 'las dos observaciones quedan en el registro durable');
+    assert(results.filter((images) => images.length === 1 && images[0].data === fs.readFileSync(shot).toString('base64')).length === 1,
+      'la captura de los borradores del agente llega al modelo como imagen');
+    assert(results.filter((images) => images.length === 0).length === 1, 'una imagen fuera de los borradores del agente no se adjunta');
+    assert(!listed.messages.some((m) => (m.tool_calls || []).some((call) => String(call.result || '').includes('base64'))),
+      'la UI no recibe los bytes de la captura');
+    const { fauxProvider } = await import('@earendil-works/pi-ai');
+    const textOnly = fauxProvider({ provider: 'texto', models: [{ id: 'solo-texto', input: ['text'] }] });
+    runtime._internal._providerOverrides.set('texto', textOnly.provider);
+    textOnly.setResponses([fauxAssistantMessage([fauxToolCall('desktop_peek', {})], { stopReason: 'toolUse' }), fauxAssistantMessage('visto')]);
+    const { session: plain } = await runtime.handlers.agent_session_create({ provider: 'texto', model: 'solo-texto' });
+    await runtime.handlers.agent_message_send({ session_id: plain.id, content: 'mira la pantalla' });
+    assert(await waitIdle(plain.id), 'el turno del modelo sin visión termina');
+    const plainMap = await runtime._internal.state().harness.snapshot(runtime._internal.state().SessionsDoc, context);
+    const plainConv = await runtime._internal.state().harness.conversation(plainMap.sessions[plain.id].conversationId, context);
+    const [plainResult] = (await require('../electron/agent-projection').allEntries(plainConv))
+      .filter((entry) => entry.kind === 'pi.tool-result').map((entry) => entry.model[0].content);
+    assert(plainResult.every((block) => block.type === 'text') && JSON.parse(plainResult[0].text).observation,
+      'a un modelo sin visión no se le adjunta la captura y el resultado sigue siendo JSON');
+    await runtime.shutdown();
+    process.env.LOCALAPPDATA = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let probes = 0;
+    const loopBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', inputSchema: schema },
+          { name: 'page_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'page_probe') {
+        probes += 1;
+        return { result: JSON.stringify({ error: 'sin cambios' }) };
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'task_plan') {
+        const remaining = params.params.steps.filter((step) => step.status !== 'done' && step.status !== 'failed').map((step) => step.title);
+        return { result: JSON.stringify({ recorded: true, remaining }) };
+      }
+      return bridge(method, params);
+    };
+    const faux = await openFaux([
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Publicar', steps: [{ title: 'Subir el archivo', status: 'in_progress' }] })], { stopReason: 'toolUse' }),
+      ...[1, 2, 3, 4].map(() => fauxAssistantMessage([fauxToolCall('page_probe', { url: 'https://example.com' })], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('Listo, ya está publicado.'),
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Publicar', steps: [{ title: 'Subir el archivo', status: 'failed' }] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('No pude subirlo: la página no cambia. Necesito que inicies sesión.'),
+    ], loopBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const notices = [];
+    runtime._internal.shared.notify = (method, params) => notices.push([method, params.session_id]);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'publica el archivo' });
+    assert(await waitIdle(session.id), 'el turno con bucle y comprobación termina');
+    assert(await waitFor(async () => notices.some(([method, id]) => method === 'agent.changed' && id === session.id)),
+      'el motor avisa a la UI de los cambios de la conversación');
+    runtime._internal.shared.notify = null;
+    assert(probes === 3, 'la cuarta llamada idéntica se bloquea sin ejecutarse');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const blocked = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'page_probe');
+    assert(blocked.length === 4 && /Ya llamaste a page_probe 3 veces/.test(String(blocked[3].result || '')),
+      'el agente recibe por qué se bloqueó la repetición');
+    const texts = listed.messages.filter((m) => m.role === 'assistant').map((m) => m.content);
+    assert(texts.includes('Listo, ya está publicado.') && texts.at(-1).startsWith('No pude subirlo'),
+      'una respuesta final con pasos sin verificar continúa hasta declarar el resultado real');
+    assert(!listed.messages.some((m) => m.role === 'user' && String(m.content).includes('Comprobación de Antares')),
+      'la petición interna de comprobación no aparece como mensaje del usuario');
+    assert(listed.messages.filter((m) => m.role === 'user').length === 1, 'el chat solo muestra el mensaje del usuario');
+    assert(faux.getPendingResponseCount() === 0, 'la comprobación se pide una sola vez');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const slowBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'slow_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'slow_probe') {
+        await gate;
+        return { result: JSON.stringify({ ok: true }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('slow_probe', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+    ], slowBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'prueba lenta' });
+    const statusOf = async () => {
+      const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+      const call = listed.messages.flatMap((m) => m.tool_calls || []).find((c) => c.name === 'slow_probe');
+      return call && call.status;
+    };
+    assert(await waitFor(async () => (await statusOf()) === 'running'), 'una herramienta en ejecución se muestra en curso');
+    assert((await statusOf()) !== 'interrupted', 'una herramienta en ejecución nunca aparece como interrumpida');
+    release();
+    assert(await waitIdle(session.id), 'el turno lento termina');
+    assert((await statusOf()) === 'done', 'al terminar la herramienta pasa a hecha');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let progress = '';
+    let finished = false;
+    const streamBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'stream_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'stream_probe') return { result: null, dispatch: { op_id: 'op-stream' } };
+      if (method === 'agent_internal_dispatch_result') {
+        return finished
+          ? { result: JSON.stringify({ exit_code: 0, stdout: progress }) }
+          : { result: null, ...(progress ? { output: progress } : {}) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('stream_probe', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+    ], streamBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'prueba con salida' });
+    const callOf = async () => {
+      const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+      return listed.messages.flatMap((m) => m.tool_calls || []).find((c) => c.name === 'stream_probe');
+    };
+    progress = 'uno\n';
+    assert(await waitFor(async () => ((await callOf()) || {}).output === 'uno\n'), 'la salida en curso llega a la llamada mientras corre');
+    progress = 'uno\ndos\n';
+    assert(await waitFor(async () => ((await callOf()) || {}).output === 'uno\ndos\n'), 'la salida en curso crece sin repetir lo ya mostrado');
+    assert((await callOf()).status === 'running', 'con salida parcial la herramienta sigue en curso');
+    assert(Math.abs(Date.now() - (await callOf()).started_at) < 30_000, 'una herramienta en curso informa cuándo empezó');
+    finished = true;
+    assert(await waitIdle(session.id), 'el turno con salida en vivo termina');
+    const done = await callOf();
+    assert(done.status === 'done' && done.output === undefined && done.started_at === undefined && JSON.parse(done.result).stdout === 'uno\ndos\n',
+      'al terminar se muestra el resultado y no la salida parcial');
     await runtime.shutdown();
   }
 

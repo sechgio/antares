@@ -5,6 +5,7 @@ const INTERRUPTED_RESULT = JSON.stringify({
 });
 const NOTICE_KIND = 'antares.notice';
 const CONTEXT_MARKER = '[Contexto de Antares]';
+const CHECK_MARKER = '[Comprobación de Antares]';
 
 const shared = {
   deps: null,
@@ -17,16 +18,33 @@ const shared = {
   liveApprovals: new Set(),
   decisionWaiters: new Map(),
   rounds: new Map(),
+  turns: new Map(),
   waitingInput: new Set(),
   providers: new Map(),
   providerOverrides: new Map(),
   nativeTools: null,
   attachments: new Map(),
   dialog: null,
+  notify: null,
   INTERRUPTED_RESULT,
   NOTICE_KIND,
   CONTEXT_MARKER,
+  CHECK_MARKER,
 };
+
+// Los proveedores compatibles con OpenAI pueden repetir ids («call_0») entre turnos
+// o dejarlos vacíos; la tarea de pi-durable identifica cada llamada de forma estable.
+const TASK_SUFFIX = '@task:';
+
+function dispatchCallId(callId, taskId) {
+  return taskId ? `${callId || ''}${TASK_SUFFIX}${taskId}` : String(callId || '');
+}
+
+function providerCallId(dispatchId) {
+  const value = String(dispatchId || '');
+  const at = value.lastIndexOf(TASK_SUFFIX);
+  return at === -1 ? value : value.slice(0, at);
+}
 
 function bridge(method, params) {
   return shared.deps.bridge(method, params);
@@ -112,4 +130,6 @@ module.exports = {
   requireSession,
   conversation,
   sessionForConversation,
+  dispatchCallId,
+  providerCallId,
 };
