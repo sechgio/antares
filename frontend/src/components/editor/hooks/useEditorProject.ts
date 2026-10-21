@@ -26,32 +26,42 @@ export function useEditorProject(): UseEditorProjectResult {
 
   const projectRef = useRef<EditorProject | null>(null);
   const dirtyRef = useRef(false);
-  const inFlightRef = useRef(false);
+  const inFlightRef = useRef<Promise<void> | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSeq = useRef(0);
 
-  const persist = useCallback(async (draft: EditorProject) => {
-    inFlightRef.current = true;
+  const persist = useCallback((): Promise<void> => {
+    if (inFlightRef.current) return inFlightRef.current;
+    if (!dirtyRef.current || !projectRef.current) return Promise.resolve();
     setSaveState('saving');
-    const requestId = `editor-save-${Date.now()}-${requestSeq.current++}`;
-    try {
-      const response = await api.editorProjectSave(draft, draft.revision, requestId);
-      const saved = response.project as EditorProject;
-      projectRef.current = saved;
-      dirtyRef.current = false;
-      setProject(saved);
-      setSaveState('saved');
-      setError(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setSaveState('error');
-      setError(message);
-    } finally {
-      inFlightRef.current = false;
-      if (dirtyRef.current && projectRef.current) {
-        void persist(projectRef.current);
+    const save = async () => {
+      try {
+        while (dirtyRef.current && projectRef.current) {
+          const draft = projectRef.current;
+          const requestId = `editor-save-${Date.now()}-${requestSeq.current++}`;
+          const { project: saved } = await api.editorProjectSave(draft, draft.revision, requestId);
+          const current = projectRef.current;
+          if (current.id !== draft.id) return;
+          dirtyRef.current = current !== draft;
+          const next = current === draft ? saved : { ...current, revision: saved.revision, updatedAt: saved.updatedAt };
+          projectRef.current = next;
+          setProject(next);
+        }
+        setSaveState('saved');
+        setError(null);
+      } catch (err) {
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
+        setSaveState('error');
+        setError(err instanceof Error ? err.message : String(err));
+        throw err;
       }
-    }
+    };
+    const pending = save().finally(() => { inFlightRef.current = null; });
+    inFlightRef.current = pending;
+    return pending;
   }, []);
 
   const saveNow = useCallback(async () => {
@@ -59,9 +69,7 @@ export function useEditorProject(): UseEditorProjectResult {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    const draft = projectRef.current;
-    if (!draft || !dirtyRef.current) return;
-    await persist(draft);
+    await persist();
   }, [persist]);
 
   const updateProject = useCallback(
@@ -77,7 +85,7 @@ export function useEditorProject(): UseEditorProjectResult {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         debounceRef.current = null;
-        void persist(draft);
+        void persist().catch(() => {});
       }, AUTOSAVE_DEBOUNCE_MS);
     },
     [persist],
@@ -93,6 +101,7 @@ export function useEditorProject(): UseEditorProjectResult {
   }, []);
 
   const createProject = useCallback(async (name?: string) => {
+    await saveNow();
     const requestId = `editor-create-${Date.now()}`;
     const response = await api.editorProjectCreate(name, requestId);
     const created = response.project as EditorProject;
@@ -101,9 +110,10 @@ export function useEditorProject(): UseEditorProjectResult {
     setProject(created);
     setSaveState('saved');
     setProjects((prev) => [{ id: created.id, name: created.name, updatedAt: created.updatedAt, revision: created.revision }, ...prev]);
-  }, []);
+  }, [saveNow]);
 
   const openProject = useCallback(async (projectId: string) => {
+    await saveNow();
     const response = await api.editorProjectGet(projectId);
     const opened = response.project as EditorProject;
     projectRef.current = opened;
@@ -111,20 +121,22 @@ export function useEditorProject(): UseEditorProjectResult {
     setProject(opened);
     setSaveState('saved');
     setError(null);
-  }, []);
+  }, [saveNow]);
 
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
 
   useEffect(() => {
-    const unregister = registerEditorFlushHandler(() => {
-      void saveNow();
-    });
+    let unmounted = false;
+    const flush = async () => {
+      await saveNow();
+      if (unmounted) unregister();
+    };
+    const unregister = registerEditorFlushHandler(flush);
     return () => {
-      unregister();
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      void saveNow();
+      unmounted = true;
+      void flush().catch(() => {});
     };
   }, [saveNow]);
 

@@ -243,7 +243,7 @@ def run_export_job(job: Any, *, output: Path | None = None) -> dict[str, Any]:  
     result = execute_render(
         document,
         output,
-        cancel_check=_check_cancelled,
+        cancel_check=lambda: _check_cancelled(job),
     )
     _set_stage(job, EXPORT_STAGES[2], 85)
     _set_stage(job, EXPORT_STAGES[3], 95)

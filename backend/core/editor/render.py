@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -284,11 +286,13 @@ def execute_render(
     snapshot: dict[str, Any],  # allowlist: dict[str, Any]
     output: Path,
     *,
-    cancel_check: Any = None,
+    cancel_check: Callable[[], bool] | None = None,
     assets_dir: Path | None = None,
 ) -> dict[str, Any]:  # allowlist: dict[str, Any]
     import subprocess
 
+    if cancel_check and cancel_check():
+        raise ToolchainError("render cancelado")
     plan = build_render_plan(snapshot, assets_dir=assets_dir)
     toolchain = resolve_toolchain()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -302,18 +306,35 @@ def execute_render(
             cmd += ["-i", source["value"]]
     cmd += ["-filter_complex", plan["filter_complex"], *plan["args"], str(tmp)]
 
-    proc = subprocess.run(
+    proc = subprocess.Popen(
         cmd,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=1800,
-        check=False,
     )
+    deadline = time.monotonic() + 1800
+    try:
+        while True:
+            if cancel_check and cancel_check():
+                raise ToolchainError("render cancelado")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(cmd, 1800)
+            try:
+                _, stderr = proc.communicate(timeout=min(0.2, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
+    except Exception:
+        proc.kill()
+        proc.communicate()
+        tmp.unlink(missing_ok=True)
+        raise
     failed = proc.returncode != 0 or bool(cancel_check and cancel_check())
     if failed:
-        with_stderr = proc.stderr.strip()[-400:]
+        with_stderr = stderr.strip()[-400:]
         if tmp.exists():
             tmp.unlink(missing_ok=True)
         if cancel_check and cancel_check():
