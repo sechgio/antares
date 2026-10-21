@@ -65,6 +65,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- **Rendimiento y capacidad**: Canvas descarga documentos por grupos y conserva el progreso si falla alguno; Canvas y Espacios paginan los listados completos. Las capas Boolean reutilizan índices al comparar dependencias. Exportaciones y efectos del editor comparten el scheduler pesado; IPC admite solicitudes antes de serializarlas, limita los bytes pendientes y respeta la contrapresión. El catálogo JSON evita escrituras idénticas y las métricas offline distinguen las estimaciones del transporte medido.
 - **Agent / navegador integrado**: solo se muestra en su panel dentro de Agent. Al abrir otra herramienta se retira la vista nativa y la ventana auxiliar queda transparente, sin interceptar clics; la página y su sesión se conservan al volver a Agent.
 - **Agent / identificadores de herramienta**: ya no reutiliza la aprobación ni el resultado de una llamada anterior cuando el proveedor repite identificadores entre turnos (por ejemplo `call_0`) o los deja vacíos.
 - **Editor multimedia**: el guardado conserva las ediciones realizadas durante una escritura, serializa las revisiones y detiene los reintentos automáticos tras un error. El cierre espera los guardados pendientes y mantiene la aplicación abierta si fallan. La exportación enlaza correctamente la cancelación al trabajo, interrumpe el proceso de render y elimina las salidas parciales.

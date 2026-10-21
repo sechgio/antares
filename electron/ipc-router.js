@@ -27,6 +27,8 @@ const {
 const _pendingRequests = new Map();
 const _pendingMethodCounts = new Map();
 let _pendingRequestCount = 0;
+let _pendingRequestBytes = 0;
+const _stdinBackpressure = new WeakSet();
 let _attachedProcess = null;
 
 let _ipcMethodsCache = null;
@@ -71,6 +73,7 @@ const IPC_TELEMETRY_SLOW_MS = 5_000;
 const IPC_TELEMETRY_LARGE_BYTES = 1 * 1024 * 1024;
 const DEFAULT_MAX_PENDING_REQUESTS = 64;
 const DEFAULT_MAX_PENDING_PER_METHOD = 8;
+const MAX_PENDING_REQUEST_BYTES = 64 * 1024 * 1024;
 
 function _positiveIntegerEnv(name, fallback) {
   const raw = Number(process.env[name]);
@@ -487,6 +490,9 @@ function _writeStdinWithBackpressure(proc, payload) {
       settled = true;
       if (onDrain) proc.stdin.removeListener('drain', onDrain);
       if (onError) proc.stdin.removeListener('error', onError);
+      proc.stdin.removeListener?.('close', onClose);
+      proc.removeListener?.('close', onClose);
+      _stdinBackpressure.delete(proc);
       resolve({ waitedForDrain: !!waitedForDrain });
     };
     const fail = (err) => {
@@ -494,8 +500,12 @@ function _writeStdinWithBackpressure(proc, payload) {
       settled = true;
       if (onDrain) proc.stdin.removeListener('drain', onDrain);
       if (onError) proc.stdin.removeListener('error', onError);
+      proc.stdin.removeListener?.('close', onClose);
+      proc.removeListener?.('close', onClose);
+      _stdinBackpressure.delete(proc);
       reject(err);
     };
+    const onClose = () => fail(new Error('Backend stdin closed'));
 
     let ok;
     try {
@@ -511,12 +521,15 @@ function _writeStdinWithBackpressure(proc, payload) {
     }
 
     _ipcBackpressureWaits += 1;
+    _stdinBackpressure.add(proc);
     onDrain = () => finish(true);
     onError = (err) => {
       fail(err instanceof Error ? err : new Error(String(err)));
     };
     proc.stdin.once('drain', onDrain);
     proc.stdin.once('error', onError);
+    proc.stdin.once('close', onClose);
+    proc.once?.('close', onClose);
   });
 }
 
@@ -528,31 +541,62 @@ function _sendRequest(method, params) {
 
   const id = crypto.randomUUID();
   const request = { jsonrpc: '2.0', id, method, params };
-  const line = `${JSON.stringify(request)}\n`;
-  const requestBytes = Buffer.byteLength(line, 'utf8');
   const timeoutMs = _getTimeoutForMethod(method);
   const startedAt = Date.now();
   const reservation = _reservePendingRequest(method);
-  if (reservation.error) {
-    try { reservation.error.ipc_request_id = id; } catch {}
+  let admissionError = reservation.error;
+  if (!admissionError && _stdinBackpressure.has(proc)) {
+    admissionError = _capacityError('ipc_stdin_backpressure', 1, 1);
+  }
+  let line;
+  let requestBytes = 0;
+  if (!admissionError) {
+    const estimatedBytes = _estimatePayloadBytes(request) + 1;
+    if (estimatedBytes > MAX_PENDING_REQUEST_BYTES - _pendingRequestBytes) {
+      admissionError = _capacityError('ipc_pending_bytes_limit', _pendingRequestBytes, MAX_PENDING_REQUEST_BYTES);
+    } else {
+      try {
+        line = `${JSON.stringify(request)}\n`;
+        requestBytes = Buffer.byteLength(line, 'utf8');
+        if (requestBytes > MAX_PENDING_REQUEST_BYTES - _pendingRequestBytes) {
+          admissionError = _capacityError('ipc_pending_bytes_limit', _pendingRequestBytes, MAX_PENDING_REQUEST_BYTES);
+        }
+      } catch (err) {
+        reservation.release();
+        return Promise.reject(err);
+      }
+    }
+  }
+  if (admissionError) {
+    if (reservation.release) reservation.release();
+    try { admissionError.ipc_request_id = id; } catch {}
     _logIpcTelemetry({
       method,
       requestId: id,
       elapsedMs: Date.now() - startedAt,
       requestBytes,
       outcome: 'rejected',
-      errorCode: _ipcErrorCode(reservation.error),
-      reason: reservation.error && reservation.error.details && reservation.error.details.reason,
+      errorCode: _ipcErrorCode(admissionError),
+      reason: admissionError.details && admissionError.details.reason,
     });
-    return Promise.reject(reservation.error);
+    return Promise.reject(admissionError);
   }
 
+  _pendingRequestBytes += requestBytes;
   _ensureListeners();
 
   incrementPendingRequests();
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let writeFinished = false;
+    let bytesReleased = false;
+    const releaseBytes = () => {
+      if (!bytesReleased && writeFinished && entry.pendingReleased) {
+        bytesReleased = true;
+        _pendingRequestBytes -= requestBytes;
+      }
+    };
 
     const settle = (fn, value) => {
       if (settled) return;
@@ -571,6 +615,7 @@ function _sendRequest(method, params) {
         if (entry.pendingReleased) return;
         entry.pendingReleased = true;
         reservation.release();
+        releaseBytes();
         decrementPendingRequests();
       },
       resolve: (result) => {
@@ -623,6 +668,9 @@ function _sendRequest(method, params) {
       _pendingRequests.delete(id);
       entry.releasePending();
       entry.reject(new Error(`Backend stdin write failed: ${err.message}`));
+    }).finally(() => {
+      writeFinished = true;
+      releaseBytes();
     });
   });
 }

@@ -147,7 +147,9 @@ def test_offline_baseline_at_ten_x_samples_rss_and_records_job_waits_with_bounde
     assert {measurement["peak_rss_bytes"] for measurement in result["measurements"]} == {512}
     for measurement in result["measurements"]:
         assert measurement["samples"] > 0
-        assert measurement["ipc_bytes"] > 0
+        assert measurement["ipc_bytes"] == 0
+        assert measurement["ipc_bytes_measured"] is False
+        assert measurement["estimated_ipc_bytes"] > 0
         assert measurement["request_count"] > 0
         assert measurement["latency_ms"]["p95"] >= measurement["latency_ms"]["p50"]
         assert measurement["latency_ms"]["p99"] >= measurement["latency_ms"]["p95"]
@@ -158,3 +160,14 @@ def test_offline_baseline_at_ten_x_samples_rss_and_records_job_waits_with_bounde
     assert result["metadata"]["cpu_count"] >= 0
     assert result["metadata"]["memory_total_bytes"] >= 0
     assert result["metadata"]["memory_available_bytes"] >= 0
+
+
+def test_offline_measurements_declare_their_actual_scope_and_do_not_claim_transport_bytes() -> None:
+    result = run_offline_baseline("1x", seed=17)
+    measurements = {row["scenario"]: row for row in result["measurements"]}
+    assert "excludes PDF/video export" in measurements["export"]["measurement_scope"]
+    assert "excludes cloud sync" in measurements["canvas_sync"]["measurement_scope"]
+    assert "excludes Supabase" in measurements["espacios"]["measurement_scope"]
+    assert all("excludes" in row["measurement_scope"] for row in measurements.values())
+    assert all(row["ipc_bytes"] == 0 and row["ipc_bytes_measured"] is False for row in measurements.values())
+    assert all(row["errors"] == 0 and row["partial"] is False for row in measurements.values())

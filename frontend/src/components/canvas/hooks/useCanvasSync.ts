@@ -127,7 +127,7 @@ export function useCanvasSync({
             if (result.conflict.localDoc.id === historyDocRef.current.id) {
               onConflictRef.current(result.conflict);
             }
-            setSyncStatus('synced');
+            setSyncStatus(result.pushErrors > 0 || (result.pullErrors ?? 0) > 0 ? 'error' : 'synced');
             return;
           }
           if (result.reloadOpenId && result.reloadOpenId === historyDocRef.current.id) {
@@ -149,7 +149,7 @@ export function useCanvasSync({
               }
             }
           }
-          setSyncStatus(result.pushErrors > 0 ? 'error' : 'synced');
+          setSyncStatus(result.pushErrors > 0 || (result.pullErrors ?? 0) > 0 ? 'error' : 'synced');
         } finally {
           setSyncing(false);
         }

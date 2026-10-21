@@ -23,6 +23,7 @@ export type SyncResult = {
   skipped: boolean;
   reason?: string;
   pushErrors: number;
+  pullErrors?: number;
   lastError?: string;
   conflict?: SyncConflict;
 };

@@ -139,6 +139,41 @@ def test_caller_mutation_after_insert_does_not_corrupt_store(tmp_path) -> None:
     assert stored["title"] == "ok"
 
 
+def test_identical_json_updates_do_not_rewrite_the_catalog(tmp_path, monkeypatch) -> None:
+    db = JsonDocumentStore(tmp_path / "docs.json", _normalize)
+    doc = {"id": "doc-1", "title": "one", "nested": {"value": 1}}
+    db.insert(doc)
+
+    def unexpected_write(*_args, **_kwargs):
+        raise AssertionError("unchanged JSON must not be rewritten")
+
+    monkeypatch.setattr("backend.core.json_store.atomic_write_text", unexpected_write)
+    assert db.update("doc-1", doc) == doc
+    assert db.insert(doc) == doc
+    imported, deleted = db.replace_all_counted([doc])
+    assert imported == [doc] and deleted == 1
+    assert JsonDocumentStore(db.db_path, _normalize).get_all() == [doc]
+
+
+def test_json_type_and_record_order_changes_are_persisted(tmp_path) -> None:
+    db = JsonDocumentStore(tmp_path / "docs.json", _normalize)
+    db.insert({"id": "doc-1", "nested": {"value": 1}})
+    second = db.insert({"id": "doc-2"})
+    first = db.update("doc-1", {"nested": {"value": True}})
+    assert JsonDocumentStore(db.db_path, _normalize).get("doc-1")["nested"]["value"] is True
+    db.replace_all_counted([second, first])
+    assert [doc["id"] for doc in JsonDocumentStore(db.db_path, _normalize).get_all()] == ["doc-2", "doc-1"]
+
+
+@pytest.mark.parametrize("initial", ["[]", '"unsupported"'])
+def test_clear_still_rewrites_loaded_empty_or_unsupported_catalogs(tmp_path, initial) -> None:
+    path = tmp_path / "docs.json"
+    path.write_text(initial, encoding="utf-8")
+    db = JsonDocumentStore(path, _normalize)
+    assert db.clear_all() == 0
+    assert path.read_text(encoding="utf-8") == "{}"
+
+
 def test_failed_save_does_not_commit_in_memory(tmp_path, monkeypatch) -> None:
     db = JsonDocumentStore(tmp_path / "docs.json", _normalize)
     db.insert({"id": "doc-1", "title": "ok"})

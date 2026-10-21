@@ -24,6 +24,15 @@ BASE_COUNTS = {
 }
 MAX_SERIALIZED_PAYLOAD_BYTES = 64 * 1024 * 1024
 MAX_RECORDED_ERRORS = 100
+MEASUREMENT_SCOPES = {
+    "conversion": "local image creation and conversion, JSON encode/decode; excludes Electron IPC",
+    "list": "local SQLite history list and JSON encode/decode; excludes renderer display and Electron IPC",
+    "export": "local JSON document insert and JSON encode/decode; excludes PDF/video export and Electron IPC",
+    "spreadsheet": "synthetic row transform and JSON encode/decode; excludes spreadsheet file I/O and Electron IPC",
+    "canvas_sync": "local CanvasStore save and JSON encode/decode; excludes cloud sync, assets and Electron IPC",
+    "espacios": "local JSON task insert and JSON encode/decode; excludes Supabase, RLS, Realtime and Electron IPC",
+    "autoimg": "local light scheduler submission and JSON encode/decode; excludes image processing and Electron IPC",
+}
 Clock = Callable[[], float]
 RssSampler = Callable[[], int]
 
@@ -328,6 +337,7 @@ def _measure_scenario(
     collector = MetricCollector(scenario, scale)
     tracker = RssPeakTracker(rss_sampler)
     representative_payload: dict[str, Any] = {}
+    estimated_ipc_bytes = 0
     for index, item in enumerate(items):
         started = clock()
         try:
@@ -345,21 +355,25 @@ def _measure_scenario(
         else:
             collector.observe(
                 duration_ms=max(0.0, (clock() - started) * 1_000),
-                ipc_bytes=len(encoded) * 2,
                 request_count=1,
                 lock_wait_ms=lock_wait_ms if index == 0 else 0.0,
                 queue_wait_ms=queue_wait_ms if index == 0 else 0.0,
             )
             if not representative_payload:
                 representative_payload = decoded
+            estimated_ipc_bytes += len(encoded) * 2
         finally:
             tracker.observe()
-    return collector.finish(
+    result = collector.finish(
         peak_rss_bytes=tracker.peak_rss_bytes,
         fixture_domains=fixture_domains,
         representative_payload=representative_payload,
         capacity=capacity,
     )
+    result["measurement_scope"] = MEASUREMENT_SCOPES.get(scenario, "local transform and JSON encode/decode; excludes Electron IPC")
+    result["estimated_ipc_bytes"] = estimated_ipc_bytes
+    result["ipc_bytes_measured"] = False
+    return result
 
 
 def run_conversion_scenario(fixtures: dict[str, Any], scale: str, *, clock: Clock, rss_sampler: RssSampler, workdir: Path) -> dict[str, Any]:

@@ -117,16 +117,23 @@ export async function updateProyecto(
 
 export async function fetchTareas(proyectoId: string): Promise<Tarea[]> {
   const client = requireClient();
-  const { data, error } = await client
-    .from('tareas')
-    .select(
-      'id, proyecto_id, title, description, status, priority, assignee_id, start_date, due_date, sort_order, created_by, created_at, updated_at',
-    )
-    .eq('proyecto_id', proyectoId)
-    .order('sort_order')
-    .order('created_at');
-  throwOnError(error);
-  return data ?? [];
+  const rows: Tarea[] = [];
+  const pageSize = 200;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await client
+      .from('tareas')
+      .select(
+        'id, proyecto_id, title, description, status, priority, assignee_id, start_date, due_date, sort_order, created_by, created_at, updated_at',
+      )
+      .eq('proyecto_id', proyectoId)
+      .order('sort_order')
+      .order('created_at')
+      .order('id')
+      .range(offset, offset + pageSize - 1);
+    throwOnError(error);
+    rows.push(...(data ?? []));
+    if (!data || data.length < pageSize) return rows;
+  }
 }
 
 interface DueSoonTareaRow {

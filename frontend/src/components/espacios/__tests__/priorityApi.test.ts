@@ -5,7 +5,7 @@ import type { TareaPriority } from '../types';
 const { query, from } = vi.hoisted(() => {
   const query = {
     select: vi.fn(), eq: vi.fn(), order: vi.fn(), insert: vi.fn(),
-    update: vi.fn(), single: vi.fn(), maybeSingle: vi.fn(),
+    update: vi.fn(), single: vi.fn(), maybeSingle: vi.fn(), range: vi.fn(),
   };
   return { query, from: vi.fn() };
 });
@@ -18,6 +18,7 @@ beforeEach(() => {
   query.select.mockReturnValue(query);
   query.eq.mockReturnValue(query);
   query.order.mockReturnValue(query);
+  query.range.mockResolvedValue({ data: [], error: null });
   query.insert.mockReturnValue(query);
   query.update.mockReturnValue(query);
   query.single.mockResolvedValue({
@@ -83,10 +84,25 @@ describe('priority persistence', () => {
 
   it('selects persisted priority within the requested project', async () => {
     const rows = [{ id: 'task-1', priority: 'low' }];
-    query.order.mockReturnValueOnce(query).mockResolvedValueOnce({ data: rows, error: null });
+    query.range.mockResolvedValueOnce({ data: rows, error: null });
     await expect(fetchTareas('project-1')).resolves.toEqual(rows);
     expect(query.select).toHaveBeenCalledWith(expect.stringContaining('status, priority, assignee_id'));
     expect(query.eq).toHaveBeenCalledWith('proyecto_id', 'project-1');
+  });
+
+  it('returns all project tasks beyond the server row limit with a stable tie breaker', async () => {
+    const rows = Array.from({ length: 1201 }, (_, id) => ({ id: `task-${id}` }));
+    query.range.mockImplementation(async (from: number, to: number) => ({ data: rows.slice(from, to + 1), error: null }));
+    await expect(fetchTareas('project-1')).resolves.toEqual(rows);
+    expect(query.range).toHaveBeenCalledTimes(7);
+    expect(query.range).toHaveBeenLastCalledWith(1200, 1399);
+    expect(query.order).toHaveBeenCalledWith('id');
+  });
+
+  it('rejects later-page failures instead of presenting an incomplete board', async () => {
+    query.range.mockResolvedValueOnce({ data: Array(200).fill({ id: 'task' }), error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'Sin conexión' } });
+    await expect(fetchTareas('project-1')).rejects.toThrow('Sin conexión');
   });
 
   it('rejects invalid runtime priorities before issuing a write', async () => {

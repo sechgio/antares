@@ -146,7 +146,6 @@ class JsonDocumentStore:
 
     def _save(self, items: dict[str, dict[str, Any]]) -> None:
         encoded_items: dict[str, str] = {}
-        parts: list[str] = []
         for item_id, item in items.items():
             encoded = (
                 self._encoded_items[item_id]
@@ -154,8 +153,17 @@ class JsonDocumentStore:
                 else json.dumps(item, ensure_ascii=False, separators=(",", ":"))
             )
             encoded_items[item_id] = encoded
-            parts.append(f"{json.dumps(item_id, ensure_ascii=False)}:{encoded}")
-        content = "{" + ",".join(parts) + "}"
+        if (
+            self._encoded_items
+            and encoded_items == self._encoded_items
+            and tuple(items) == tuple(self._items)
+            and self.db_path.exists()
+        ):
+            return
+        content = "{" + ",".join(
+            f"{json.dumps(item_id, ensure_ascii=False)}:{encoded}"
+            for item_id, encoded in encoded_items.items()
+        ) + "}"
         atomic_write_text(self.db_path, content)
         self._encoded_items = encoded_items
 

@@ -26,7 +26,7 @@ const supabaseMock = vi.hoisted(() => {
 
   const chainable: Record<string, unknown> = {};
 
-  for (const m of ['select', 'eq', 'in', 'is', 'maybeSingle', 'update', 'insert', 'upsert']) {
+  for (const m of ['select', 'eq', 'in', 'is', 'order', 'range', 'maybeSingle', 'update', 'insert', 'upsert']) {
     chainable[m] = vi.fn(() => chainable);
   }
 
@@ -109,7 +109,7 @@ function resetMocks(): void {
     data: { session: { user: { id: 'user-1' } } },
   });
 
-  for (const m of ['select', 'eq', 'in', 'is', 'maybeSingle', 'update', 'insert', 'upsert']) {
+  for (const m of ['select', 'eq', 'in', 'is', 'order', 'range', 'maybeSingle', 'update', 'insert', 'upsert']) {
     (supabaseMock.chainable[m] as ReturnType<typeof vi.fn>).mockClear();
   }
 }
@@ -136,6 +136,55 @@ describe('canvasCloudSync isNewer', () => {
 
 describe('syncCanvasDocuments', () => {
   beforeEach(resetMocks);
+
+  it('drains pulls in bounded batches and keeps successful saves after a document fails', async () => {
+    const docs = Array.from({ length: 17 }, (_, i) => makeDoc({ id: `doc-${i}` }));
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [] });
+    enqueue(docs.map((doc) => ({ id: doc.id, updated_at: doc.updatedAt })));
+    for (let offset = 0; offset < docs.length; offset += 4) {
+      enqueue(docs.slice(offset, offset + 4).map((document) => ({ document, updated_at: document.updatedAt })));
+    }
+    let active = 0;
+    let peak = 0;
+    vi.mocked(api.canvasSave).mockImplementation(async (doc) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active -= 1;
+      if (doc.id === 'doc-2') throw new Error('Disco no disponible');
+      return { ok: true };
+    });
+    const result = await syncCanvasDocuments();
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(api.canvasSave).toHaveBeenCalledTimes(17);
+    expect(result).toMatchObject({ pulled: 16, pullErrors: 1, skipped: false });
+    expect(result.lastError).toContain('Disco no disponible');
+    expect(supabaseMock.chainable.in).toHaveBeenCalledTimes(5);
+    for (let offset = 0; offset < docs.length; offset += 4) {
+      expect(supabaseMock.chainable.in).toHaveBeenCalledWith('id', docs.slice(offset, offset + 4).map((doc) => doc.id));
+    }
+  });
+
+  it('loads every metadata page beyond the server row limit', async () => {
+    const { listRemoteCanvasMeta } = await import('./canvasCloudSync');
+    const rows = Array.from({ length: 1201 }, (_, i) => ({ id: `doc-${i}`, name: 'Doc', updated_at: '', deleted_at: null }));
+    for (let offset = 0; offset < rows.length; offset += 200) enqueue(rows.slice(offset, offset + 200));
+    await expect(listRemoteCanvasMeta()).resolves.toEqual(rows);
+    expect(supabaseMock.chainable.range).toHaveBeenCalledTimes(7);
+    expect(supabaseMock.chainable.range).toHaveBeenLastCalledWith(1200, 1399);
+    expect(supabaseMock.chainable.order).toHaveBeenCalledWith('id');
+  });
+
+  it('continues pulling later batches when a remote batch fails', async () => {
+    const docs = Array.from({ length: 5 }, (_, i) => makeDoc({ id: `doc-${i}` }));
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [] });
+    enqueue(docs.map((doc) => ({ id: doc.id, updated_at: doc.updatedAt })));
+    enqueue(null, { message: 'Sin conexión' });
+    enqueue([{ document: docs[4], updated_at: docs[4].updatedAt }]);
+    const result = await syncCanvasDocuments();
+    expect(result).toMatchObject({ pulled: 1, pullErrors: 4, skipped: false });
+    expect(api.canvasSave).toHaveBeenCalledWith(expect.objectContaining({ id: 'doc-4' }), expect.anything());
+  });
 
   it('preserves an editor that becomes dirty during a general sync pull', async () => {
     const local = makeDoc({ name: 'Local', updatedAt: '2026-07-01T00:00:00Z' });
