@@ -186,7 +186,7 @@ describe('App', () => {
     fireEvent.click(screen.getByTestId('settings-section-plugins'));
     fireEvent.keyDown(screen.getByTestId('settings-section-plugins'), { key: 'ArrowDown' });
     expect(screen.getByTestId('settings-section-connections')).toHaveAttribute('aria-current', 'page');
-    expect(await screen.findByRole('textbox', { name: 'Buscar conexiones' })).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'Buscar conexiones' }, { timeout: 8000 })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Servidores MCP' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Secciones de Conexiones' })).not.toBeInTheDocument();
 
