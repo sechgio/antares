@@ -122,7 +122,10 @@ async function _open(options = {}) {
       initial: () => ({ profiles: {} }),
     });
     const registry = pi.createRegistry();
-    const harness = await pi.Harness.open(storage, { models, registry }, ctx());
+    // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
+    // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
+    const settings = { stream: { cacheRetention: 'long' } };
+    const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
     shared.state = {
       harness,
       models,

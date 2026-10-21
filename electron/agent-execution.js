@@ -88,6 +88,7 @@ async function ensureProvider(providerId, modelId) {
 // «developer», max_completion_tokens); los servidores compatibles (Ollama, LM
 // Studio, vLLM, llama.cpp…) esperan el contrato clásico de Chat Completions.
 const OPENAI_NATIVE_HOST = /(^|\.)(openai\.com|openrouter\.ai|openai\.azure\.com)$/i;
+const LONG_CACHE_HOST = /(^|\.)(openai\.com|openrouter\.ai|anthropic\.com)$/i;
 
 function modelDefinition(info, id, api) {
   const capabilities = info.capabilities || {};
@@ -95,6 +96,15 @@ function modelDefinition(info, id, api) {
   let host = '';
   try { host = new URL(info.base_url).hostname; } catch { }
   const classic = info.custom && api === 'openai-completions' && !OPENAI_NATIVE_HOST.test(host);
+  // Caché del prefijo: la retención larga (1 h / 24 h) solo viaja a las APIs
+  // oficiales, y Claude vía OpenRouter lleva marcas cache_control aunque el
+  // proveedor sea propio (pi-ai solo las pone al proveedor «openrouter»).
+  const compat = {
+    ...(LONG_CACHE_HOST.test(host) ? {} : { supportsLongCacheRetention: false }),
+    ...(api === 'openai-completions' && /(^|\.)openrouter\.ai$/i.test(host) && id.startsWith('anthropic/')
+      ? { cacheControlFormat: 'anthropic' } : {}),
+    ...(classic ? { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens' } : {}),
+  };
   return {
     id,
     name: id,
@@ -106,7 +116,7 @@ function modelDefinition(info, id, api) {
     contextWindow,
     maxTokens: Math.min(DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
     reasoning: supportsReasoning(info.style, id),
-    ...(classic ? { compat: { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens' } } : {}),
+    ...(Object.keys(compat).length ? { compat } : {}),
   };
 }
 
