@@ -404,6 +404,18 @@ function _latestPlan(messages) {
   return null;
 }
 
+// Panel del navegador del agente: la UI lo coloca, lo maneja y puede tomar el
+// control para que el agente no actúe mientras el usuario usa la página.
+async function browserAction(params) {
+  const browser = shared.browser || require('./agent-browser');
+  const action = String((params && params.action) || 'state');
+  if (action === 'state') return browser.state();
+  if (action === 'bounds') return browser.dock(params.bounds || null);
+  if (action === 'control') return browser.setUserControl(params.user === true);
+  if (['open', 'back', 'forward', 'reload'].includes(action)) return browser.navigate(action, params.url);
+  throw validation(`Acción del navegador no válida: ${action}`);
+}
+
 async function contextRemoveFile(params) {
   const sessionId = String(params && params.session_id || '');
   await requireSession(sessionId);
@@ -727,6 +739,7 @@ module.exports = {
     agent_turn_cancel: turnCancel,
     agent_attach: attach,
     agent_context_remove_file: contextRemoveFile,
+    agent_browser: browserAction,
     agent_profiles_list: profilesList,
     agent_profile_save: profileSave,
     agent_profile_delete: profileDelete,

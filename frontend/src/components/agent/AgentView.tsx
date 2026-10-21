@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Globe, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { agentApi, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
@@ -19,6 +19,7 @@ import MemoryMenu from './MemoryMenu';
 import ContextChips from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
+import AgentBrowserPanel from './AgentBrowserPanel';
 import { ApprovalCard, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
 
 const POLL_MS = 1500;
@@ -149,6 +150,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }, []);
   const [deciding, setDeciding] = useState(false);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean }[]>(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
@@ -287,6 +289,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       if (method === 'agent.changed' && (params as { session_id?: string } | null)?.session_id === sessionId) void loadMessages(sessionId);
     });
   }, [sessionId, loadMessages]);
+
+  useEffect(() => onNotify((method, params) => {
+    if (method === 'agent.browser' && (params as { reason?: string } | null)?.reason === 'agent-open') setBrowserOpen(true);
+  }), []);
 
   useEffect(() => {
     const active = Boolean(sessionId) && (running || pending.length > 0);
@@ -761,6 +767,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </span>
             </div>
             <span className="min-w-0 flex-1" />
+            <button
+              type="button"
+              aria-label="Navegador del agente"
+              aria-pressed={browserOpen}
+              title={browserOpen ? 'Cerrar el navegador del agente' : 'Abrir el navegador del agente'}
+              onClick={() => setBrowserOpen((open) => !open)}
+              className={`flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] ${browserOpen ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
+            >
+              <Globe size={14} />
+            </button>
             <MemoryMenu />
             <Button
               ref={toolsMenu.triggerRef}
@@ -1075,6 +1091,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           </div>
         </div>
       </main>
+
+      {browserOpen && <AgentBrowserPanel onClose={() => setBrowserOpen(false)} />}
 
       {toolsMenu.isOpen && createPortal(
         <div

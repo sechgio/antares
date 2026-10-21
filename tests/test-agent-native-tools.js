@@ -38,6 +38,16 @@ for (const bad of ['file:///C:/Windows/win.ini', 'javascript:alert(1)', 'chrome:
   try { browser.normalizeUrl(bad); } catch { threw = true; }
   assert(threw, `el navegador del agente rechaza ${JSON.stringify(bad)}`);
 }
+{
+  const placed = browser.clampBounds({ x: 600.4, y: 80, width: 900, height: 700 }, 1.25, { width: 1500, height: 900 });
+  assert(placed.x === 751 && placed.y === 100 && placed.width === 749 && placed.height === 800,
+    'el panel se escala con el zoom de la interfaz y se ajusta a la ventana');
+  const negative = browser.clampBounds({ x: -10, y: -5, width: 50, height: 40 }, 1, { width: 800, height: 600 });
+  assert(negative.x === 0 && negative.y === 0, 'el panel nunca se coloca fuera de la ventana');
+  assert(browser.state().open === false && browser.state().user_control === false, 'sin página abierta el estado está vacío');
+  assert(browser.dock(null).docked === false && browser.dock({ x: 1, y: 2, width: 0, height: 5 }).docked === false,
+    'un hueco vacío o sin tamaño no monta la página');
+}
 
 const { draftName } = require('../electron/agent-native-tools');
 assert(draftName('informe') === 'informe.pdf' && draftName('a.PDF') === 'a.PDF', 'nombre de borrador con extensión .pdf');
@@ -48,6 +58,11 @@ for (const bad of ['', '..', 'sub/a.pdf', String.raw`C:\x\a.pdf`, 'a?.pdf']) {
 }
 
 async function exportTest() {
+  browser.setUserControl(true);
+  let blocked = null;
+  try { await browser.run('web_read', {}); } catch (err) { blocked = err.message; }
+  assert(blocked === browser.USER_CONTROL_ERROR, 'con el control en manos del usuario el agente no usa el navegador');
+  browser.setUserControl(false);
   const { validateToolArguments } = await import('@earendil-works/pi-ai');
   const taskSpec = specs.find((s) => s.name === 'espacios_tarea_update');
   const taskTool = { name: taskSpec.name, description: taskSpec.description, parameters: taskSpec.inputSchema };

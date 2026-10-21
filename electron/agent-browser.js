@@ -43,7 +43,17 @@ const TOOLS = {
   }, true],
 };
 
-let win = null;
+// La página vive en un WebContentsView. Sin el panel abierto se aloja en una
+// ventana anfitriona fuera de pantalla (una ventana oculta no pinta: sin
+// capturas ni clics); con el panel abierto se monta en la ventana principal
+// sobre el hueco que el panel le deja, como el navegador de Claude Desktop.
+const HOST_SIZE = { width: 1280, height: 860 };
+const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
+
+let host = null;
+let view = null;
+let docked = null;
+let userControl = false;
 let sessionReady = false;
 
 function isWeb(url) {
@@ -76,26 +86,65 @@ function prepareSession(electron) {
   return ses;
 }
 
-function browser() {
-  if (win && !win.isDestroyed()) return win;
-  const electron = require('electron');
-  prepareSession(electron);
-  win = new electron.BrowserWindow({
-    width: 1280,
-    height: 860,
+function alive(item) {
+  return !!item && !item.isDestroyed();
+}
+
+function hostWindow(electron) {
+  if (alive(host)) return host;
+  host = new electron.BrowserWindow({
+    ...HOST_SIZE,
+    x: -32000,
+    y: -32000,
     show: false,
+    frame: false,
+    skipTaskbar: true,
+    focusable: false,
     title: 'Navegador del agente · Antares',
-    autoHideMenuBar: true,
+    webPreferences: { backgroundThrottling: false },
+  });
+  host.on('closed', () => { host = null; });
+  host.showInactive();
+  return host;
+}
+
+function state() {
+  const contents = alive(view && view.webContents) ? view.webContents : null;
+  return {
+    open: !!contents,
+    url: contents ? contents.getURL() : '',
+    title: contents ? contents.getTitle() : '',
+    loading: contents ? contents.isLoading() : false,
+    can_go_back: contents ? contents.navigationHistory.canGoBack() : false,
+    can_go_forward: contents ? contents.navigationHistory.canGoForward() : false,
+    docked: !!docked,
+    user_control: userControl,
+  };
+}
+
+function notify(reason) {
+  try {
+    const win = require('./window-manager').getMainWindow();
+    if (alive(win)) win.webContents.send('ipc-notify', 'agent.browser', { ...state(), reason });
+  } catch { }
+}
+
+function browser() {
+  if (view && alive(view.webContents)) return view;
+  const electron = require('electron');
+  const ses = prepareSession(electron);
+  view = new electron.WebContentsView({
     webPreferences: {
-      partition: PARTITION,
+      session: ses,
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: false,
       spellcheck: false,
+      backgroundThrottling: false,
     },
   });
-  const contents = win.webContents;
+  const contents = view.webContents;
   contents.setWindowOpenHandler(({ url }) => {
     if (isWeb(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
@@ -106,10 +155,81 @@ function browser() {
   contents.on('will-redirect', (event, url) => {
     if (!isWeb(url)) event.preventDefault();
   });
-  win.on('page-title-updated', (event) => event.preventDefault());
-  win.on('closed', () => { win = null; });
-  win.showInactive();
-  return win;
+  contents.on('did-navigate', () => fitPage());
+  for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
+    contents.on(event, () => notify('page'));
+  }
+  contents.once('destroyed', () => {
+    view = null;
+    docked = null;
+    notify('closed');
+  });
+  mount(electron);
+  return view;
+}
+
+function clampBounds(bounds, zoom, size) {
+  const scale = Number(zoom) > 0 ? Number(zoom) : 1;
+  const x = Math.max(0, Math.round(Number(bounds.x) * scale));
+  const y = Math.max(0, Math.round(Number(bounds.y) * scale));
+  const width = Math.max(0, Math.min(Math.round(Number(bounds.width) * scale), size.width - x));
+  const height = Math.max(0, Math.min(Math.round(Number(bounds.height) * scale), size.height - y));
+  return { x, y, width, height };
+}
+
+// Coloca la página en el panel de la ventana principal o la devuelve a la
+// ventana anfitriona; mover el view conserva la página, su historial y su sesión.
+function mount(electron) {
+  if (!view) return;
+  const main = docked ? require('./window-manager').getMainWindow() : null;
+  const target = alive(main) ? main : hostWindow(electron);
+  const parent = target === main ? host : main;
+  if (alive(parent)) parent.contentView.removeChildView(view);
+  target.contentView.addChildView(view);
+  if (target === main) {
+    const [width, height] = main.getContentSize();
+    view.setBounds(clampBounds(docked, main.webContents.getZoomFactor(), { width, height }));
+  } else {
+    view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
+  }
+  fitPage();
+}
+
+// La página siempre se maqueta con el ancho de escritorio de la ventana
+// anfitriona y en un panel más estrecho se muestra reducida: el agente ve la
+// misma página, con los mismos elementos, sea cual sea el tamaño del panel.
+function fitPage() {
+  if (!view || !alive(view.webContents)) return;
+  const { width } = view.getBounds();
+  const zoom = width > 0 && width < HOST_SIZE.width ? width / HOST_SIZE.width : 1;
+  if (Math.abs(view.webContents.getZoomFactor() - zoom) > 0.001) view.webContents.setZoomFactor(zoom);
+}
+
+function dock(bounds) {
+  const valid = bounds && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(Number(bounds[key])))
+    && Number(bounds.width) > 0 && Number(bounds.height) > 0;
+  docked = valid ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null;
+  if (view) mount(require('electron'));
+  return state();
+}
+
+function setUserControl(value) {
+  userControl = !!value;
+  notify('control');
+  return state();
+}
+
+async function navigate(action, url) {
+  if (action === 'open') {
+    const contents = browser().webContents;
+    await load(contents, normalizeUrl(url));
+    return state();
+  }
+  const contents = current();
+  if (action === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
+  else if (action === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward();
+  else if (action === 'reload') contents.reload();
+  return state();
 }
 
 function delay(ms) {
@@ -195,8 +315,8 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
 }
 
 function current() {
-  if (!win || win.isDestroyed()) throw new Error('El navegador del agente no tiene ninguna página abierta; usa web_open');
-  return win.webContents;
+  if (!view || !alive(view.webContents)) throw new Error('El navegador del agente no tiene ninguna página abierta; usa web_open');
+  return view.webContents;
 }
 
 async function locate(contents, ref) {
@@ -214,7 +334,10 @@ async function locate(contents, ref) {
   return rect;
 }
 
-async function clickAt(contents, { x, y }) {
+async function clickAt(contents, point) {
+  const zoom = contents.getZoomFactor() || 1;
+  const x = Math.round(point.x * zoom);
+  const y = Math.round(point.y * zoom);
   for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) {
     contents.sendInputEvent({ type, x, y, button: 'left', clickCount: 1 });
     await delay(30);
@@ -254,8 +377,10 @@ async function observeAfter(contents) {
 }
 
 async function run(name, params = {}, { dir } = {}) {
+  if (userControl) throw new Error(USER_CONTROL_ERROR);
   if (name === 'web_open') {
     const contents = browser().webContents;
+    notify('agent-open');
     await load(contents, normalizeUrl(params.url));
     return snapshot(contents);
   }
@@ -298,8 +423,11 @@ async function run(name, params = {}, { dir } = {}) {
 }
 
 function close() {
-  if (win && !win.isDestroyed()) win.destroy();
-  win = null;
+  if (view && alive(view.webContents)) view.webContents.close();
+  if (alive(host)) host.destroy();
+  view = null;
+  host = null;
+  docked = null;
 }
 
-module.exports = { TOOLS, PARTITION, run, close, normalizeUrl, isWeb };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds };

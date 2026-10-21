@@ -16,6 +16,7 @@ const PUBLIC_METHODS = [
   'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set',
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
   'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
+  'agent_browser',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -348,6 +349,25 @@ async function main() {
 
   for (const name of PUBLIC_METHODS) {
     assert(nativeDispatchFor(name) === 'agent', `${name} → native:agent`);
+  }
+  {
+    const calls = [];
+    runtime._internal.shared.browser = {
+      state: () => ({ open: false, user_control: false }),
+      dock: (bounds) => { calls.push(['dock', bounds]); return { docked: !!bounds }; },
+      setUserControl: (user) => { calls.push(['control', user]); return { user_control: user }; },
+      navigate: async (action, url) => { calls.push([action, url]); return { open: true, url: url || '' }; },
+    };
+    const handle = runtime.handlers.agent_browser;
+    assert((await handle({ action: 'state' })).open === false, 'agent_browser devuelve el estado del navegador');
+    assert((await handle({ action: 'bounds', bounds: { x: 1, y: 2, width: 300, height: 200 } })).docked === true, 'la UI coloca el panel');
+    assert((await handle({ action: 'bounds' })).docked === false, 'sin hueco la página vuelve a su ventana anfitriona');
+    assert((await handle({ action: 'control', user: true })).user_control === true, 'el usuario puede tomar el control');
+    assert((await handle({ action: 'open', url: 'example.com' })).url === 'example.com', 'la barra de dirección abre páginas');
+    let rejected = false;
+    try { await handle({ action: 'borrar' }); } catch { rejected = true; }
+    assert(rejected && calls.length === 4, 'una acción desconocida se rechaza sin tocar el navegador');
+    runtime._internal.shared.browser = undefined;
   }
   for (const name of INTERNAL_RPCS) {
     assert(INTERNAL_SET.has(name), `${name} es internal:true`);

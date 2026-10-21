@@ -98,6 +98,25 @@ export interface AgentQuestion {
   questions: { id: string; prompt: string; options?: string[] }[];
 }
 
+export interface AgentBrowserState {
+  open: boolean;
+  url: string;
+  title: string;
+  loading: boolean;
+  can_go_back: boolean;
+  can_go_forward: boolean;
+  docked: boolean;
+  user_control: boolean;
+  reason?: 'page' | 'agent-open' | 'control' | 'closed';
+}
+
+export interface AgentBrowserBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface AgentPlan {
   goal: string;
   steps: { title: string; status: 'pending' | 'in_progress' | 'done' | 'failed'; evidence?: string }[];
@@ -176,6 +195,9 @@ export const agentApi = {
       last_error: string | null;
     }>('agent_turn_status', { session_id }),
 
+  agentBrowser: (action: 'state' | 'bounds' | 'control' | 'open' | 'back' | 'forward' | 'reload',
+    extra: { url?: string; user?: boolean; bounds?: AgentBrowserBounds | null } = {}) =>
+    _invoke<AgentBrowserState>('agent_browser', { action, ...extra }),
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 
