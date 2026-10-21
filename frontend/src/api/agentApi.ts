@@ -34,6 +34,8 @@ export interface AgentToolCall {
   result?: string | null;
   /** Salida que la herramienta lleva producida mientras corre (p. ej. shell_run). */
   output?: string;
+  /** Epoch ms en que empezó a ejecutarse, mientras sigue en curso. */
+  started_at?: number;
 }
 
 export interface AgentMessage {

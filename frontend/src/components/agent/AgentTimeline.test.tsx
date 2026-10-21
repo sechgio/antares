@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { ApprovalCard, MessageRow, PlanCard, ThinkingRow } from './AgentTimeline';
 
@@ -42,6 +42,23 @@ it('muestra los comandos como terminal: abierta y animada mientras corre, con su
   expect(screen.getByText('fallo 2')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /Ejecutó npm test/ }));
   expect(screen.queryByRole('log')).not.toBeInTheDocument();
+});
+
+it('cuenta los segundos de un comando en curso y deja la duración final al terminar', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(10_000);
+  const shell = (status: string, result?: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status, gated: true, result,
+    ...(status === 'running' ? { started_at: 7_000 } : {}),
+  }] }) as never;
+  const { rerender } = render(<MessageRow msg={shell('running')} />);
+  expect(screen.getByLabelText('En curso desde hace 3 s')).toHaveTextContent('3 s');
+  act(() => { vi.advanceTimersByTime(2_000); });
+  expect(screen.getByLabelText('En curso desde hace 5 s')).toBeInTheDocument();
+  rerender(<MessageRow msg={shell('done', JSON.stringify({ exit_code: 0, stdout: 'ok', duration_s: 5.4 }))} />);
+  expect(screen.queryByLabelText(/En curso desde/)).not.toBeInTheDocument();
+  expect(screen.getByText('5.4 s')).toBeInTheDocument();
+  vi.useRealTimers();
 });
 
 it('pinta en rojo las líneas de stderr y del error, no la salida normal', () => {

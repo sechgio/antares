@@ -1362,10 +1362,11 @@ async function main() {
     progress = 'uno\ndos\n';
     assert(await waitFor(async () => ((await callOf()) || {}).output === 'uno\ndos\n'), 'la salida en curso crece sin repetir lo ya mostrado');
     assert((await callOf()).status === 'running', 'con salida parcial la herramienta sigue en curso');
+    assert(Math.abs(Date.now() - (await callOf()).started_at) < 30_000, 'una herramienta en curso informa cuándo empezó');
     finished = true;
     assert(await waitIdle(session.id), 'el turno con salida en vivo termina');
     const done = await callOf();
-    assert(done.status === 'done' && done.output === undefined && JSON.parse(done.result).stdout === 'uno\ndos\n',
+    assert(done.status === 'done' && done.output === undefined && done.started_at === undefined && JSON.parse(done.result).stdout === 'uno\ndos\n',
       'al terminar se muestra el resultado y no la salida parcial');
     await runtime.shutdown();
   }
