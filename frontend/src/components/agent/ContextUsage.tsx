@@ -100,7 +100,7 @@ export default function ContextUsage({ usage, model }: {
           <div className="space-y-1.5 border-t border-[var(--border-subtle)] p-3 tabular-nums">
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">Entrada</span><span className="text-[var(--text-primary)]">{formatTokens(usage.input)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">Salida</span><span className="text-[var(--text-primary)]">{formatTokens(usage.output)}</span></div>
-            {!!usage.prompt && (
+            {!!usage.cached && !!usage.prompt && (
               <div className="flex justify-between">
                 <span className="text-[var(--text-muted)]">En caché</span>
                 <span className="text-[var(--text-primary)]">

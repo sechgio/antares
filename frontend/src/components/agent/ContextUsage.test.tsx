@@ -26,6 +26,12 @@ it('calcula la ocupación con el último turno y deja el acumulado en el desglos
   expect(screen.getByRole('tooltip')).not.toHaveTextContent('En caché');
 });
 
+it('no muestra la caché cuando el proveedor no la usa', () => {
+  render(<ContextUsage usage={{ input: 20000, output: 1000, cached: 0, prompt: 20000 }} model="llama3.1:8b" />);
+  fireEvent.mouseEnter(screen.getByRole('button', { name: 'Contexto usado' }));
+  expect(screen.getByRole('tooltip')).not.toHaveTextContent('En caché');
+});
+
 it('muestra cuánto del prompt se sirvió desde la caché del proveedor', () => {
   render(<ContextUsage usage={{ input: 20000, output: 1000, cached: 60000, prompt: 80000 }} model="claude-sonnet-4" />);
   fireEvent.mouseEnter(screen.getByRole('button', { name: 'Contexto usado' }));
