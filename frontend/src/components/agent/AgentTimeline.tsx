@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AppWindow, ArrowLeft, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Clock3, Copy, FilePen, FileText, FolderOpen, Globe, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Package, Route, Search, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
+import { AppWindow, ArrowLeft, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, FilePen, FileText, FolderOpen, Globe, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Package, Route, Search, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
@@ -321,13 +321,12 @@ export function ApprovalCard({
     context?.sheet_id && `Hoja: ${context.sheet_id}`,
     ...(approval.resources ?? []).map((resource) => `Archivo: ${resource.path}`),
   ].filter((fact): fact is string => !!fact);
+  const Icon = approval.method === 'shell_run' ? Terminal : TOOL_ICONS[approval.method] ?? ShieldCheck;
   return (
-    <div role="group" aria-label="Confirmación de acción" className="agent-trace-in max-w-[min(560px,92%)] rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-surface)] p-3">
-      <div className="flex items-start gap-3">
-        <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[color:color-mix(in_srgb,var(--accent-yellow)_14%,transparent)] text-[var(--accent-yellow)]">
-          <ShieldCheck size={16} />
-        </span>
-        <div className="min-w-0 flex-1">
+    <div role="group" aria-label="Confirmación de acción" className="agent-trace-in">
+      <div className="flex w-fit max-w-full flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)] px-3 py-2.5">
+        <Icon size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--accent-yellow)]" />
+        <div className="min-w-0 max-w-[460px] flex-1">
           <p className="text-[13px] font-medium leading-5 text-[var(--text-primary)]">
             {action ? `¿Ejecutar «${action}»?` : '¿Permitir una acción avanzada?'}
           </p>
@@ -335,33 +334,33 @@ export function ApprovalCard({
             {action ? 'El turno sigue en pausa hasta que decidas.' : 'Revisa sus detalles antes de aprobar; el turno sigue en pausa.'}
           </p>
           {facts.length > 0 && (
-            <ul className="mt-2 space-y-0.5 text-xs text-[var(--text-secondary)]">
+            <ul className="mt-1.5 space-y-0.5 font-mono text-[11.5px] leading-[17px] text-[var(--text-secondary)]">
               {facts.map((fact) => <li key={fact} className="break-all">{fact}</li>)}
             </ul>
           )}
-          <details className="group mt-2 text-xs text-[var(--text-muted)]">
-            <summary className="flex cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
-              <ChevronRight size={11} className="transition-transform group-open:rotate-90" />
+          <details className="group mt-1.5 text-[11.5px] text-[var(--text-muted)]">
+            <summary className="flex w-fit cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
               Ver detalles de la acción
+              <ChevronRight size={12} className="transition-transform duration-200 group-open:rotate-90" />
             </summary>
             <code className="mt-1 block text-[11px]">{approval.method}</code>
             {Object.keys(params).length > 0 && (
-              <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-md bg-[var(--bg-base)] p-2 text-[11px] text-[var(--text-secondary)]">
+              <pre className="agent-terminal mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-[var(--border-subtle)] p-2 text-[11px] text-[var(--text-secondary)]">
                 {JSON.stringify(params, null, 2)}
               </pre>
             )}
           </details>
         </div>
-      </div>
-      <div className="mt-3 flex justify-end gap-2">
-        <Button size="sm" variant="secondary" disabled={busy} onClick={() => onDecide(approval.id, false)}>
-          <X size={13} aria-hidden="true" />
-          Rechazar
-        </Button>
-        <Button size="sm" disabled={busy} onClick={() => onDecide(approval.id, true)}>
-          <Check size={13} aria-hidden="true" />
-          Aprobar
-        </Button>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => onDecide(approval.id, false)}>
+            <X size={13} aria-hidden="true" />
+            Rechazar
+          </Button>
+          <Button size="sm" disabled={busy} onClick={() => onDecide(approval.id, true)}>
+            <Check size={13} aria-hidden="true" />
+            Aprobar
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -417,14 +416,10 @@ export function ThinkingRow({ elapsedSeconds, agent }: { elapsedSeconds: number;
   const ss = elapsedSeconds % 60;
   const elapsed = mm > 0 ? `${mm}m ${ss}s` : `${ss}s`;
   return (
-    <div role="status" className="flex items-center gap-2 px-3 text-[12px] leading-[18px] text-[var(--text-secondary)]">
-      {agent ? <AgentAvatar seed={agent.seed} name={agent.name} size={24} working /> : <Loader2 size={12} className="animate-spin" />}
-      El agente está trabajando
-      <span className="agent-thinking-dots inline-flex items-center gap-1" aria-hidden="true"><span /><span /><span /></span>
-      <span className="inline-flex items-center gap-1 tabular-nums">
-        <Clock3 size={11} />
-        {elapsed}
-      </span>
+    <div role="status" className="agent-trace-in flex items-center gap-2 text-[13px] leading-5">
+      {agent ? <AgentAvatar seed={agent.seed} name={agent.name} size={16} working /> : <Loader2 size={14} className="animate-spin text-[var(--text-muted)]" />}
+      <span className="agent-shimmer">El agente está trabajando</span>
+      <span className="tabular-nums text-[12px] text-[var(--text-muted)]">{elapsed}</span>
     </div>
   );
 }
