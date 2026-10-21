@@ -66,7 +66,7 @@ export default function ContextUsage({ usage, model }: {
         type="button"
         aria-label="Contexto usado"
         aria-describedby={open ? cardId : undefined}
-        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-surface)] px-2 text-[12px] font-medium tabular-nums text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+        className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] tabular-nums text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
       >
         {max && <Ring ratio={ratio} />}
         {max ? percent : formatTokens(used)}

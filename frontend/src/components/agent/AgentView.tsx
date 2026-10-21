@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, CornerDownRight, FolderOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { agentApi, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
@@ -922,9 +922,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </div>
           )}
-          <div className="rounded-[20px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2.5 transition-colors focus-within:border-[var(--border-medium)]">
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] transition-colors focus-within:border-[var(--border-medium)]">
             {attachments.length > 0 && (
-              <div className="mb-1.5 flex flex-wrap gap-1.5 px-1" aria-label="Adjuntos">
+              <div className="flex flex-wrap gap-1.5 px-3 pt-2.5" aria-label="Adjuntos">
                 {attachments.map((item) => (
                   <span
                     key={item.id}
@@ -944,113 +944,114 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 ))}
               </div>
             )}
-            <textarea
-              ref={draftRef}
-              rows={1}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
+            <div className="flex items-end gap-0.5 p-1.5">
+              <button
+                type="button"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                onClick={() => void attach('files')}
+                disabled={!sessionId}
+                aria-label="Adjuntar archivos"
+                title="Adjuntar archivos (solo lectura para el agente)"
+              >
+                <Plus size={16} />
+              </button>
+              <button
+                type="button"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                onClick={() => void attach('folder')}
+                disabled={!sessionId}
+                aria-label="Adjuntar carpeta"
+                title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
+              >
+                <FolderOpen size={14} />
+              </button>
+              <textarea
+                ref={draftRef}
+                rows={1}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                placeholder={
+                  !sessionId
+                    ? 'Crea una conversación primero'
+                    : running || pending.length > 0
+                      ? 'Escribe para cuando termine…'
+                      : 'Hola, ¿qué necesitas hoy?'
                 }
-              }}
-              placeholder={
-                !sessionId
-                  ? 'Crea una conversación primero'
-                  : running || pending.length > 0
-                    ? 'Escribe para cuando termine…'
-                    : 'Hola, ¿qué necesitas hoy?'
-              }
-              disabled={!sessionId}
-              aria-label="Mensaje para el agente"
-              className="max-h-36 w-full resize-none bg-transparent px-1.5 pt-1.5 text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
-            />
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
+                disabled={!sessionId}
+                aria-label="Mensaje para el agente"
+                className="max-h-36 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
+              />
+              {(running || pending.length > 0) && (
                 <button
                   type="button"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-primary)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_10%,var(--bg-input))] disabled:opacity-50"
-                  onClick={() => void attach('files')}
-                  disabled={!sessionId}
-                  aria-label="Adjuntar archivos"
-                  title="Adjuntar archivos (solo lectura para el agente)"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
+                  onClick={() => void cancelTurn()}
+                  aria-label="Detener"
+                  disabled={stopping}
+                  title="Detener el turno"
                 >
-                  <Plus size={16} />
+                  <Square size={12} />
                 </button>
+              )}
+              <button
+                type="button"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-primary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--bg-input)] active:scale-[0.96] motion-reduce:transform-none disabled:bg-transparent disabled:text-[var(--text-muted)]"
+                onClick={() => void send()}
+                disabled={!sessionId || !draft.trim() || modelBusy}
+                aria-label="Enviar"
+                title="Enviar (Intro)"
+              >
+                <CornerDownLeft size={16} />
+              </button>
+            </div>
+          </div>
+          <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 px-2 text-[12px] text-[var(--text-muted)]">
+            {session ? (
+              <span
+                className="flex min-w-0 items-center gap-1.5"
+                title="Las acciones que modifican datos se pausan hasta que las apruebes"
+              >
+                <ShieldCheck
+                  size={13}
+                  className={pending.length > 0 ? 'shrink-0 text-[var(--accent-yellow)]' : 'shrink-0'}
+                />
+                <span className="truncate">{pending.length > 0 ? `${pending.length} por aprobar` : 'Con aprobación'}</span>
+              </span>
+            ) : <span />}
+            <div className="flex min-w-0 items-center gap-1">
+              {resumable && !running && pending.length === 0 && (
                 <button
                   type="button"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                  onClick={() => void attach('folder')}
-                  disabled={!sessionId}
-                  aria-label="Adjuntar carpeta"
-                  title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
+                  className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  onClick={() => void sendSuggestion(RESUME_TEXT)}
+                  disabled={suggestionBusy || modelBusy || stopping}
+                  title="Continuar el encargo desde el último paso verificado"
                 >
-                  <FolderOpen size={15} />
+                  <Play size={11} aria-hidden="true" />
+                  Reanudar
                 </button>
-                {session && (
-                  <span
-                    className="hidden h-[30px] shrink-0 items-center gap-1.5 rounded-full pl-1 pr-2 text-[11px] text-[var(--text-secondary)] sm:flex"
-                    title="Las acciones que modifican datos se pausan hasta que las apruebes"
-                  >
-                    <ShieldCheck
-                      size={15}
-                      className={pending.length > 0 ? 'text-[var(--accent-yellow)]' : 'text-[var(--text-secondary)]'}
-                    />
-                    {pending.length > 0 ? `${pending.length} por aprobar` : 'Con aprobación'}
-                  </span>
-                )}
-              </div>
-              <div className="ml-auto flex min-w-0 items-center gap-2">
-                <ContextUsage usage={usage} model={session?.model ?? model} />
-                {readyProviders.length > 0 ? (
-                  <ModelPicker
-                    providers={readyProviders}
-                    value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
-                    onChange={(next) => void changeModel(next)}
-                    disabled={modelBusy || running || stopping || pending.length > 0}
-                    className="min-w-0 max-w-[min(40vw,240px)]"
-                  />
-                ) : (
-                  <span className="hidden h-8 max-w-56 items-center gap-1.5 truncate rounded-full px-2 text-[12px] text-[var(--text-muted)] sm:flex">
-                    <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
-                    {session?.model || model || providerLabel || 'Proveedor IA'}
-                  </span>
-                )}
-                {(running || pending.length > 0) && (
-                  <button
-                    type="button"
-                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-surface)] text-[var(--text-secondary)] shadow-[0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-[var(--border-subtle)] transition-colors hover:text-[var(--accent-red)]"
-                    onClick={() => void cancelTurn()}
-                    aria-label="Detener"
-                    disabled={stopping}
-                    title="Detener el turno"
-                  >
-                    <Square size={12} />
-                  </button>
-                )}
-                {resumable && !running && pending.length === 0 && (
-                  <button
-                    type="button"
-                    className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-surface)] px-3 text-[12px] text-[var(--text-secondary)] shadow-[0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-[var(--border-subtle)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-50"
-                    onClick={() => void sendSuggestion(RESUME_TEXT)}
-                    disabled={suggestionBusy || modelBusy || stopping}
-                    title="Continuar el encargo desde el último paso verificado"
-                  >
-                    <Play size={12} aria-hidden="true" />
-                    Reanudar
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--accent-primary-hover)] active:scale-[0.96] motion-reduce:transform-none disabled:bg-[var(--bg-input)] disabled:text-[var(--text-muted)]"
-                  onClick={() => void send()}
-                  disabled={!sessionId || !draft.trim() || modelBusy}
-                  aria-label="Enviar"
-                >
-                  <ArrowUp size={16} />
-                </button>
-              </div>
+              )}
+              {readyProviders.length > 0 ? (
+                <ModelPicker
+                  providers={readyProviders}
+                  value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
+                  onChange={(next) => void changeModel(next)}
+                  disabled={modelBusy || running || stopping || pending.length > 0}
+                  className="min-w-0 max-w-[min(40vw,240px)]"
+                />
+              ) : (
+                <span className="hidden h-7 max-w-56 items-center gap-1.5 truncate px-2 sm:flex">
+                  <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
+                  {session?.model || model || providerLabel || 'Proveedor IA'}
+                </span>
+              )}
+              <ContextUsage usage={usage} model={session?.model ?? model} />
             </div>
           </div>
         </div>
