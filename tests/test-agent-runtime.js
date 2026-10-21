@@ -1328,6 +1328,48 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let progress = '';
+    let finished = false;
+    const streamBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'stream_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'stream_probe') return { result: null, dispatch: { op_id: 'op-stream' } };
+      if (method === 'agent_internal_dispatch_result') {
+        return finished
+          ? { result: JSON.stringify({ exit_code: 0, stdout: progress }) }
+          : { result: null, ...(progress ? { output: progress } : {}) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('stream_probe', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+    ], streamBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'prueba con salida' });
+    const callOf = async () => {
+      const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+      return listed.messages.flatMap((m) => m.tool_calls || []).find((c) => c.name === 'stream_probe');
+    };
+    progress = 'uno\n';
+    assert(await waitFor(async () => ((await callOf()) || {}).output === 'uno\n'), 'la salida en curso llega a la llamada mientras corre');
+    progress = 'uno\ndos\n';
+    assert(await waitFor(async () => ((await callOf()) || {}).output === 'uno\ndos\n'), 'la salida en curso crece sin repetir lo ya mostrado');
+    assert((await callOf()).status === 'running', 'con salida parcial la herramienta sigue en curso');
+    finished = true;
+    assert(await waitIdle(session.id), 'el turno con salida en vivo termina');
+    const done = await callOf();
+    assert(done.status === 'done' && done.output === undefined && JSON.parse(done.result).stdout === 'uno\ndos\n',
+      'al terminar se muestra el resultado y no la salida parcial');
+    await runtime.shutdown();
+  }
+
   finish();
 }
 

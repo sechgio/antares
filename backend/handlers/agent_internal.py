@@ -415,7 +415,12 @@ def _dispatch_result(params: JsonObject) -> JsonObject:
     if record is None:
         raise NotFoundError(f"Dispatch no encontrado: {call_id}")
     result = (record.get("summary") or record.get("result")) if record.get("status") != "running" else None
-    return {"dispatch": {k: v for k, v in record.items() if k != "result"}, "result": result}
+    response: JsonObject = {"dispatch": {k: v for k, v in record.items() if k != "result"}, "result": result}
+    with _inflight_lock:
+        token = _inflight.get(str(record.get("op_id")))
+    if result is None and token is not None and token.progress:
+        response["output"] = token.progress
+    return response
 
 
 @with_locale

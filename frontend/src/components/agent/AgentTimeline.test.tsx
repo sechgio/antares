@@ -44,6 +44,47 @@ it('muestra los comandos como terminal: abierta y animada mientras corre, con su
   expect(screen.queryByRole('log')).not.toBeInTheDocument();
 });
 
+it('muestra la salida de un comando mientras se ejecuta', () => {
+  const shell = (output: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status: 'running', gated: true, result: null, output,
+  }] }) as never;
+  const { rerender } = render(<MessageRow msg={shell('compilando\n')} />);
+  expect(screen.getByText('compilando')).toBeInTheDocument();
+  rerender(<MessageRow msg={shell('compilando\n12 tests ok\n')} />);
+  expect(screen.getByText('12 tests ok')).toBeInTheDocument();
+  expect(screen.getByRole('log').querySelector('.agent-terminal-cursor')).not.toBeNull();
+});
+
+it('copia la salida de un comando terminado y la entrada de una herramienta', () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  const shell = (status: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [
+    { id: 't', name: 'shell_run', params: { command: 'dir' }, status, gated: true, result: JSON.stringify({ exit_code: 0, stdout: 'a.txt\nb.txt\n' }) },
+  ] }) as never;
+  const { rerender } = render(<MessageRow msg={shell('running')} />);
+  expect(screen.queryByRole('button', { name: 'Copiar salida' })).not.toBeInTheDocument();
+  rerender(<MessageRow msg={shell('done')} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar salida' }));
+  expect(writeText).toHaveBeenCalledWith('a.txt\nb.txt');
+  cleanup();
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
+    { id: 'r', name: 'fs_read', params: { path: 'notas.txt' }, status: 'done', gated: false, result: '"hola"' },
+  ] } as never} />);
+  fireEvent.click(screen.getByText('notas.txt'));
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar entrada' }));
+  expect(writeText).toHaveBeenLastCalledWith('{\n  "path": "notas.txt"\n}');
+});
+
+it('la salida de un comando se abre desplazada al final, como una terminal', () => {
+  const spy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(900);
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status: 'running', gated: true,
+    result: JSON.stringify({ stdout: Array.from({ length: 80 }, (_, i) => `línea ${i}`).join('\n') }),
+  }] } as never} />);
+  expect(screen.getByRole('log', { name: 'Salida de npm test' }).scrollTop).toBe(900);
+  spy.mockRestore();
+});
+
 it('muestra cada herramienta con su argumento clave, entrada y salida, y marca errores y rechazos', () => {
   const call = (id: string, name: string, params: Record<string, unknown>, status: string, result?: string) => ({ id, name, params, status, gated: false, result });
   render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
