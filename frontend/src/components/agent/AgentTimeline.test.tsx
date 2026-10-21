@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { ApprovalCard, MessageRow, PlanCard, ThinkingRow } from './AgentTimeline';
 
@@ -42,6 +42,24 @@ it('muestra los comandos como terminal: abierta y animada mientras corre, con su
   expect(screen.getByText('fallo 2')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /Ejecutó npm test/ }));
   expect(screen.queryByRole('log')).not.toBeInTheDocument();
+});
+
+it('muestra cada herramienta con su argumento clave, entrada y salida, y marca errores y rechazos', () => {
+  const call = (id: string, name: string, params: Record<string, unknown>, status: string, result?: string) => ({ id, name, params, status, gated: false, result });
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
+    call('a', 'fs_read', { path: 'C:\\datos\\ventas.csv' }, 'done', '{"total_lines":9}'),
+    call('b', 'web_open', { url: 'https://es.wikipedia.org/wiki/Lima' }, 'failed', '{"error":"sin conexión"}'),
+  ] } as never} />);
+  expect(screen.getByText('C:\\datos\\ventas.csv')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('https://es.wikipedia.org/wiki/Lima'));
+  expect(screen.getByText('Error')).toBeInTheDocument();
+  expect(screen.getByText(/"error": "sin conexión"/)).toBeInTheDocument();
+  expect(screen.getByText('fallida')).toBeInTheDocument();
+  cleanup();
+  const { container } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
+    tool_calls: [call('c', 'fs_write', { path: 'informe.txt' }, 'denied')] } as never} />);
+  expect(screen.getByText('rechazada')).toBeInTheDocument();
+  expect(container.querySelector('details')).toBeNull();
 });
 
 it('dibuja la delegación en otro agente como una traza con sus pasos', () => {

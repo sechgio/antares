@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Clock3, Copy, Loader2, Route, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
+import { AppWindow, ArrowLeft, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Clock3, Copy, FilePen, FileText, FolderOpen, Globe, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Package, Route, Search, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
@@ -47,13 +48,57 @@ const CALL_STATUS_LABEL: Record<string, string> = {
   interrupted: 'interrumpida · comprueba el resultado',
 };
 
-function CallStatusIcon({ status }: { status: string }) {
-  if (status === 'submitted' || status === 'queued') return <Clock3 size={14} className="text-[var(--text-muted)]" />;
-  if (status === 'done') return <CircleCheck size={14} className="text-[var(--text-muted)]" />;
-  if (status === 'denied' || status === 'failed') return <CircleX size={14} className="text-[var(--accent-red)]" />;
-  if (status === 'interrupted') return <AlertTriangle size={14} className="text-[var(--accent-yellow)]" />;
-  if (status === 'pending') return <ShieldCheck size={14} className="text-[var(--accent-yellow)]" />;
-  return <CircleDot size={14} className="text-[var(--text-primary)]" />;
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  fs_list: FolderOpen,
+  fs_read: FileText,
+  fs_search: Search,
+  fs_write: FilePen,
+  fs_edit: FilePen,
+  web_open: Globe,
+  web_read: BookOpen,
+  web_screenshot: Camera,
+  web_back: ArrowLeft,
+  web_click: MousePointerClick,
+  web_type: Keyboard,
+  web_key: Keyboard,
+  desktop_observe: Monitor,
+  desktop_click: MousePointerClick,
+  desktop_type: Keyboard,
+  desktop_key: Keyboard,
+  desktop_scroll: Mouse,
+  desktop_launch: AppWindow,
+  desktop_focus: AppWindow,
+  task_plan: ListChecks,
+  tools_load: Package,
+};
+
+const KEY_PARAMS = ['path', 'url', 'query', 'target', 'title', 'keys', 'text', 'name', 'id'];
+
+function keyArgument(params: Record<string, unknown>): string | null {
+  for (const key of KEY_PARAMS) {
+    const value = params[key];
+    if (typeof value === 'string' && value.trim()) return value.replace(/\s+/g, ' ').trim();
+  }
+  return null;
+}
+
+function prettyJson(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+function ToolCode({ label, children, tone }: { label: string; children: string; tone?: 'error' }) {
+  return (
+    <div>
+      <div className="mb-1 text-[10.5px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{label}</div>
+      <pre className={`agent-terminal max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-[var(--border-subtle)] px-3 py-2 font-mono text-[11.5px] leading-[18px] ${tone === 'error' ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]'}`}>
+        {children}
+      </pre>
+    </div>
+  );
 }
 
 const TASK_ROW = 'flex min-h-6 max-w-full items-center gap-2 py-0.5 text-[13px] leading-5 text-[var(--text-secondary)]';
@@ -104,7 +149,7 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
         className={`group ${TASK_ROW} w-fit text-left`}
       >
         <Terminal size={14} className={`shrink-0 ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
-        <span className={`min-w-0 truncate transition-colors group-hover:text-[var(--text-primary)] ${live ? 'agent-shimmer' : ''}`}>
+        <span className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : 'group-hover:text-[var(--text-primary)]'} ${live ? 'agent-shimmer' : ''}`}>
           {TERMINAL_VERB[call.status] ? `${TERMINAL_VERB[call.status]} ` : ''}<span className="font-mono text-[12px]">{command}</span>
         </span>
         {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Requiere aprobación" />}
@@ -132,26 +177,34 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
   if (call.name === 'subagent_run') return <SubagentTrace call={call} />;
   if (call.name === 'shell_run') return <TerminalStep call={call} />;
   const detail = call.result || null;
-  const params = Object.keys(call.params).length > 0 ? JSON.stringify(call.params) : null;
-  const status = CALL_STATUS_LABEL[call.status] ?? call.status;
+  const params = Object.keys(call.params).length > 0 ? JSON.stringify(call.params, null, 2) : null;
+  const failed = call.status === 'failed';
+  const denied = call.status === 'denied';
+  const live = call.status === 'running';
+  const Icon = denied ? Ban : TOOL_ICONS[call.name] ?? Wrench;
+  const arg = keyArgument(call.params);
   const row = (
     <>
-      <span className="flex shrink-0" aria-hidden="true"><CallStatusIcon status={call.status} /></span>
-      <span className={`truncate transition-colors group-hover:text-[var(--text-primary)] ${call.status === 'running' ? 'agent-shimmer' : ''}`}>
+      <Icon size={14} className={`shrink-0 ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
+      <span className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : denied ? 'text-[var(--text-muted)]' : 'group-hover:text-[var(--text-primary)]'} ${live ? 'agent-shimmer' : ''}`}>
         {METHOD_LABELS[call.name] ?? call.name}
+        {arg && <span className={`ml-1.5 font-mono text-[12px] ${failed ? '' : 'text-[var(--text-muted)]'}`}>{arg}</span>}
       </span>
       {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Requiere aprobación" />}
-      <span className={call.status === 'done' ? 'sr-only' : 'shrink-0 text-[12px] text-[var(--text-muted)]'}>{status}</span>
-      {(params || detail) && <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-90" aria-hidden="true" />}
+      <span className={call.status === 'done' ? 'sr-only' : `shrink-0 text-[12px] ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`}>
+        {CALL_STATUS_LABEL[call.status] ?? call.status}
+      </span>
+      {!denied && (params || detail) && <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-90" aria-hidden="true" />}
     </>
   );
-  if (!params && !detail) return <div className={`group ${TASK_ROW}`}>{row}</div>;
+  if (denied || (!params && !detail)) return <div className={`group ${TASK_ROW}`}>{row}</div>;
   return (
     <details className="group">
       <summary className={`${TASK_ROW} w-fit cursor-pointer list-none`}>{row}</summary>
-      <pre className={`${TASK_BODY} my-1 max-h-40 overflow-auto whitespace-pre-wrap break-all py-0.5 text-[11.5px] leading-relaxed text-[var(--text-muted)]`}>
-        {detail ?? params}
-      </pre>
+      <div className={`${TASK_BODY} mb-1.5 mt-1 space-y-2`}>
+        {params && <ToolCode label="Entrada">{params}</ToolCode>}
+        {detail && <ToolCode label={failed ? 'Error' : 'Salida'} tone={failed ? 'error' : undefined}>{prettyJson(detail)}</ToolCode>}
+      </div>
     </details>
   );
 }
