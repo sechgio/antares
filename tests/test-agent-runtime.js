@@ -1371,6 +1371,37 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const stopBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'stop_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'stop_probe') return { result: null, dispatch: { op_id: 'op-stop' } };
+      if (method === 'agent_internal_dispatch_result') return { result: null, output: 'paso 1\npaso 2\n' };
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('stop_probe', {})], { stopReason: 'toolUse' }),
+    ], stopBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'prueba que se detiene' });
+    const callOf = async () => {
+      const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+      return listed.messages.flatMap((m) => m.tool_calls || []).find((c) => c.name === 'stop_probe');
+    };
+    assert(await waitFor(async () => ((await callOf()) || {}).output === 'paso 1\npaso 2\n'), 'la salida parcial se ve antes de detener');
+    await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+    assert(await waitIdle(session.id), 'el turno detenido termina');
+    const stopped = await callOf();
+    assert(stopped.status === 'interrupted', 'una herramienta detenida a medias aparece interrumpida, no fallida');
+    assert(stopped.result.trimEnd() === 'paso 1\npaso 2','tras detener se conserva la salida parcial sin los avisos internos del motor');
+    await runtime.shutdown();
+  }
+
   finish();
 }
 
