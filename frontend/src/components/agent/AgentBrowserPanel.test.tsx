@@ -50,3 +50,20 @@ it('abre direcciones desde la barra y permite tomar y devolver el control', asyn
   expect(call).toHaveBeenCalledWith('control', { user: false });
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
+
+it('desacopla la página mientras un menú la tapa y la vuelve a colocar al cerrarse', async () => {
+  const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(base);
+  const box = (left: number, top: number, width: number, height: number) => ({
+    left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}),
+  }) as DOMRect;
+  render(<AgentBrowserPanel onClose={vi.fn()} />);
+  vi.spyOn(screen.getByTestId('agent-browser-viewport'), 'getBoundingClientRect').mockReturnValue(box(600, 80, 400, 500));
+  const menu = document.createElement('div');
+  menu.setAttribute('role', 'menu');
+  vi.spyOn(menu, 'getBoundingClientRect').mockReturnValue(box(520, 60, 200, 160));
+
+  await act(async () => { document.body.appendChild(menu); });
+  await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', { bounds: null }));
+  await act(async () => { menu.remove(); });
+  await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', { bounds: expect.objectContaining({ x: 600, y: 80 }) }));
+});
