@@ -44,6 +44,16 @@ it('muestra los comandos como terminal: abierta y animada mientras corre, con su
   expect(screen.queryByRole('log')).not.toBeInTheDocument();
 });
 
+it('la salida de un comando se abre desplazada al final, como una terminal', () => {
+  const spy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(900);
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status: 'running', gated: true,
+    result: JSON.stringify({ stdout: Array.from({ length: 80 }, (_, i) => `línea ${i}`).join('\n') }),
+  }] } as never} />);
+  expect(screen.getByRole('log', { name: 'Salida de npm test' }).scrollTop).toBe(900);
+  spy.mockRestore();
+});
+
 it('muestra cada herramienta con su argumento clave, entrada y salida, y marca errores y rechazos', () => {
   const call = (id: string, name: string, params: Record<string, unknown>, status: string, result?: string) => ({ id, name, params, status, gated: false, result });
   render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppWindow, ArrowLeft, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, FilePen, FileText, FolderOpen, Globe, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Package, Route, Search, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
@@ -144,6 +144,11 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
   const exitFailed = output?.exit != null && output.exit !== 0;
   const failed = call.status === 'failed' || call.status === 'denied' || exitFailed;
   const lines = output?.text ? output.text.split('\n') : [];
+  // Como una terminal, se ve el final de la salida: ahí suelen estar el error o el resumen.
+  const logRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [open, output?.text]);
   return (
     <div>
       <button
@@ -164,7 +169,7 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
       </button>
       {open && (
         <div className={`${TASK_BODY} mb-1.5 mt-1`}>
-          <div role="log" aria-label={`Salida de ${command}`} className="agent-terminal max-h-64 overflow-auto rounded-lg border border-[var(--border-subtle)] px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
+          <div ref={logRef} role="log" aria-label={`Salida de ${command}`} className="agent-terminal max-h-64 overflow-auto rounded-lg border border-[var(--border-subtle)] px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
             <div className="whitespace-pre-wrap break-all text-[var(--text-primary)]"><span className="select-none text-[var(--text-muted)]">&gt; </span>{command}</div>
             {lines.map((line, i) => (
               <div key={i} className="agent-terminal-line whitespace-pre-wrap break-all" style={{ animationDelay: `${Math.min(i, 40) * 18}ms` }}>{line || ' '}</div>
