@@ -108,6 +108,8 @@ async function run() {
     }
     await exposedApi.canvasFlushAck();
     assert(invokeCalls.some(([channel]) => channel === 'canvas-flush-ack'), 'canvas flush ACK should use its private channel');
+    await exposedApi.canvasFlushAck(false);
+    assert(invokeCalls.at(-1)[1] === false, 'failed editor saves must reach the close guard');
   }
 
   {

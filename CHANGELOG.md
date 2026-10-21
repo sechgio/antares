@@ -47,6 +47,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- **Editor multimedia**: el guardado conserva las ediciones realizadas durante una escritura, serializa las revisiones y detiene los reintentos automáticos tras un error. El cierre espera los guardados pendientes y mantiene la aplicación abierta si fallan. La exportación enlaza correctamente la cancelación al trabajo, interrumpe el proceso de render y elimina las salidas parciales.
 - **Optimizador de imágenes / guardado atómico**: los nombres de archivo guardados se sanean con la misma autoridad que el resto del producto —incluidos los nombres reservados de Windows como `CON` o `AUX`, que ya no se escriben con nombre inválido— y la escritura atómica hace `fsync` antes de publicar, como el guardado de configuración.
 - **Canvas / sincronización**: los envíos pendientes se conservan hasta la respuesta del servidor, recuperan la versión local más reciente y se descartan al borrar el documento. Un fallo de localStorage no bloquea el envío en memoria.
 - **Agent / estándares**: la retirada de Flujos conserva los archivos que no sean PDFs de un productor registrado, los PDFs reutilizados y las salidas sin procedencia comprobable; también conserva la carpeta de estado si contiene una salida pendiente. El esquema de actualización de tareas de Espacios exige la revisión consultada.
