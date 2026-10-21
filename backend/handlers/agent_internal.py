@@ -7,7 +7,7 @@ from pathlib import Path
 
 from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
-from backend.core.agent import agent_tools, artifacts, canvas_edit, documents, drafts, resource_grants
+from backend.core.agent import agent_tools, artifacts, canvas_edit, computer_files, documents, drafts, resource_grants
 from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
 from backend.core.agent import subagent as _subagent
@@ -43,7 +43,7 @@ _resource_locks: dict[str, threading.Lock] = {}
 _native_leases: dict[str, list[threading.Lock]] = {}
 _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
                     "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields",
-                    "gdrive_", "gsheets_", "onedrive_", "excel_")
+                    "gdrive_", "gsheets_", "onedrive_", "excel_", "web_")
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 
 
@@ -141,6 +141,8 @@ def _provider(params: JsonObject) -> JsonObject:
             str(k): str(v) for k, v in (auth.get("extra_headers") or {}).items()
         },
         "default_model": config.get("model") or chat_spec.get("default_model", ""),
+        "custom": bool(spec.get("custom")),
+        "capabilities": spec.get("capabilities") or {},
     }
 
 
@@ -170,6 +172,8 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
                 raise ValueError("Revisa el PDF en el chat antes de imprimirlo")
             resources.append(resource_grants.revision(str(path)))
             artifact_context = {"filename": file["name"], "sha256": file["sha256"]}
+        if method in computer_files.WRITE_TOOLS:
+            resources.extend(computer_files.resources(params, store.grants_for(session_id), store.drafts_dir(session_id)))
         if method in _CLOUD_UPLOADS:
             root = store.drafts_dir(session_id)
             source = drafts.inside(root, str(root / str(params.get("draft") or "")))
@@ -411,7 +415,12 @@ def _dispatch_result(params: JsonObject) -> JsonObject:
     if record is None:
         raise NotFoundError(f"Dispatch no encontrado: {call_id}")
     result = (record.get("summary") or record.get("result")) if record.get("status") != "running" else None
-    return {"dispatch": {k: v for k, v in record.items() if k != "result"}, "result": result}
+    response: JsonObject = {"dispatch": {k: v for k, v in record.items() if k != "result"}, "result": result}
+    with _inflight_lock:
+        token = _inflight.get(str(record.get("op_id")))
+    if result is None and token is not None and token.progress:
+        response["output"] = token.progress
+    return response
 
 
 @with_locale

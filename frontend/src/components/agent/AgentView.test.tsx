@@ -47,6 +47,69 @@ afterEach(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
 });
 
+it('cambia los permisos por conversación y conserva el modo si falla el guardado', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const second = { ...session, id: 's2', title: 'Segunda', permission_mode: 'ask' as const };
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, second] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const saving = deferred<{ session: AgentSession }>();
+  const save = vi.spyOn(agentApi, 'agentSessionPermissionsSet')
+    .mockReturnValueOnce(saving.promise)
+    .mockRejectedValueOnce(new Error('No se pudieron guardar los permisos'));
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
+  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
+  expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveAttribute('aria-checked', 'true');
+  fireEvent.click(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ }));
+  expect(save).toHaveBeenLastCalledWith(session.id, 'full');
+  expect(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeDisabled();
+  await act(async () => { saving.resolve({ session: { ...session, permission_mode: 'full' } }); });
+  expect(screen.getByRole('button', { name: 'Permisos: Acceso completo' })).toBeEnabled();
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  expect(screen.getByRole('button', { name: 'Permisos: Solicitar aprobación' })).toBeEnabled();
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Acceso completo' }));
+  await act(async () => { fireEvent.click(screen.getByRole('menuitemradio', { name: /^Solicitar aprobación/ })); });
+  expect(screen.getByRole('button', { name: 'Permisos: Acceso completo' })).toBeEnabled();
+  expect(addToast).toHaveBeenCalledWith({ message: 'No se pudieron guardar los permisos', type: 'error' });
+});
+
+it('permite navegar los permisos con el teclado y cierra con Escape o un clic fuera', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  render(<AgentView />);
+  await act(async () => {});
+  const trigger = screen.getByRole('button', { name: 'Permisos: Aprobar por mí' });
+  fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+  const selected = screen.getByRole('menuitemradio', { name: /Aprobar por mí/ });
+  expect(selected).toHaveFocus();
+  fireEvent.keyDown(selected, { key: 'ArrowDown' });
+  const full = screen.getByRole('menuitemradio', { name: /Acceso completo/ });
+  expect(full).toHaveFocus();
+  fireEvent.keyDown(full, { key: 'Escape' });
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  fireEvent.click(trigger);
+  fireEvent.mouseDown(document.body);
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+});
+
+it.each(['running', 'approval'])('impide cambiar permisos durante un turno en %s', async (state) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty, running: state === 'running',
+    pending_approvals: state === 'approval' ? [{ id: 'a1', session_id: session.id, call_id: 'c1', method: 'db_clear', params: {}, status: 'pending', created_at: 1, decided_at: null }] : [],
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  const trigger = screen.getByRole('button', { name: 'Permisos: Aprobar por mí' });
+  expect(trigger).toBeDisabled();
+  fireEvent.click(trigger);
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  if (state === 'approval') expect(screen.getByLabelText('1 por aprobar')).toBeInTheDocument();
+});
+
 it('guarda las herramientas de la conversación y conserva la selección si falla', async () => {
   vi.mocked(agentApi.agentToolsList).mockResolvedValue({ tools: availableTools });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
@@ -393,6 +456,7 @@ it('envía una sugerencia del composer creando una única conversación si no ha
   const group = await screen.findByRole('group', { name: 'Sugerencias' });
   const buttons = within(group).getAllByRole('button');
   expect(buttons).toHaveLength(3);
+  expect(group.querySelector('[aria-hidden="true"]')).toHaveAttribute('inert');
   fireEvent.click(buttons[0]);
   fireEvent.click(buttons[0]);
   expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba' });
@@ -493,4 +557,19 @@ it('cambia el modelo del chat actual, conserva los mensajes y retiene el anterio
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(trigger).toBeDisabled();
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Continúa', expect.any(String), []);
+});
+
+it('recarga la conversación en cuanto el motor avisa de un cambio, sin esperar al sondeo', async () => {
+  let notify: ((method: string, params: unknown) => void) | null = null;
+  vi.spyOn(window.electronAPI, 'onNotify').mockImplementation((cb) => { notify = cb; return () => { notify = null; }; });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await waitFor(() => expect(list).toHaveBeenCalled());
+  const before = list.mock.calls.length;
+  await act(async () => { notify?.('agent.changed', { session_id: 'otra' }); });
+  expect(list.mock.calls.length).toBe(before);
+  list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta en vivo', ts: 2 }] });
+  await act(async () => { notify?.('agent.changed', { session_id: 's1' }); });
+  expect(await screen.findByText('Respuesta en vivo')).toBeInTheDocument();
 });

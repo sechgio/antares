@@ -122,11 +122,21 @@ async function run() {
     assert(wrongOrigin.ok === false, 'ACK from the main renderer with an untrusted origin is rejected');
     assert(quitCalls === 0, 'wrong-origin ACK cannot trigger app quit');
 
+    const failedSave = await flushAck({
+      sender: { id: mainWindow.webContents.id, mainFrame: mainWindow.webContents.mainFrame },
+      senderFrame: mainWindow.webContents.mainFrame,
+    }, false);
+    await quitPromise;
+    assert(failedSave.ok === true, 'trusted renderer can report an unsuccessful save');
+    assert(quitCalls === 0, 'failed editor save keeps the app open');
+    assert(killedPython === 0, 'failed editor save preserves the backend for another attempt');
+
+    const retryQuit = beforeQuit({ preventDefault: () => { prevented += 1; } });
     const accepted = await flushAck({
       sender: { id: mainWindow.webContents.id, mainFrame: mainWindow.webContents.mainFrame },
       senderFrame: mainWindow.webContents.mainFrame,
     });
-    await quitPromise;
+    await retryQuit;
     assert(accepted.ok === true, 'ACK from the main renderer is accepted');
     assert(quitCalls === 1, 'accepted ACK allows deferred quit to complete');
     assert(killedPython === 1, 'shutdown is run exactly once');

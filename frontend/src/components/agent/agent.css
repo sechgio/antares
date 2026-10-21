@@ -7,6 +7,25 @@
 .agent-workspace .agent-conversation { background: var(--agent-panel); }
 .agent-workspace .agent-message-user { background: var(--bg-surface); }
 .agent-workspace .agent-message-answer { background: var(--agent-bubble); }
+.agent-browser-resizer {
+  position: absolute;
+  inset-block: 0;
+  left: -12px;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+.agent-browser-resizer::after {
+  content: '';
+  position: absolute;
+  inset-block: 24px;
+  left: 5px;
+  width: 1px;
+  background: var(--border-medium);
+}
+.agent-browser-resizer:is(:hover, :focus-visible, [data-resizing='true'])::after { background: var(--accent-primary); }
+.agent-browser-resizer:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -3px; }
 .agent-avatar { overflow: visible; flex-shrink: 0; }
 
 .agent-avatar[data-working='true'] .agent-avatar-eyes {
@@ -42,6 +61,10 @@
 .agent-thinking-dots span:nth-child(2) { animation-delay: 160ms; }
 .agent-thinking-dots span:nth-child(3) { animation-delay: 320ms; }
 .agent-subagent-body[inert] { visibility: hidden; }
+.agent-workspace [aria-label="Mensajes"] > div:empty { display: none; }
+.agent-workspace [aria-label="Mensajes"] > div:has(> [data-tools-only]) + div:has(> [data-tools-only]:first-child),
+.agent-workspace [aria-label="Mensajes"] > div:has(> [data-tools-only]) + div:empty + div:has(> [data-tools-only]:first-child),
+.agent-workspace [aria-label="Mensajes"] > div:has(> [data-tools-only]) + div:empty + div:empty + div:has(> [data-tools-only]:first-child) { margin-top: 2px; }
 
 .agent-workspace .agent-suggestion {
   display: inline-flex;
@@ -52,42 +75,71 @@
   padding: 0 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 18px;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 500;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  transition-property: background-color, color, border-color;
+  animation: agentSuggestionIn 320ms cubic-bezier(0.2, 0, 0, 1) both;
+  transition-property: background-color, color, border-color, transform;
   transition-duration: 150ms;
 }
-.agent-workspace .agent-suggestion:hover:not(:disabled) { background: var(--bg-input); }
+.agent-workspace .agent-suggestion:hover:not(:disabled) { background: var(--bg-input); color: var(--text-primary); transform: translateY(-1px); }
 .agent-workspace .agent-suggestion:focus-visible { outline-offset: -2px; box-shadow: none; }
 .agent-workspace .agent-suggestion:active { transform: none; }
 
-@property --agent-suggestion-fade-start {
-  syntax: '<length-percentage>';
-  inherits: false;
-  initial-value: 0px;
+.agent-suggestions {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms ease-out;
 }
-@property --agent-suggestion-fade-end {
-  syntax: '<length-percentage>';
-  inherits: false;
-  initial-value: 0px;
+.agent-suggestions[data-hidden='true'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
 }
-@supports (animation-timeline: scroll()) {
-  .agent-suggestions {
-    mask-image: linear-gradient(to right, transparent, #000 var(--agent-suggestion-fade-start), #000 calc(100% - var(--agent-suggestion-fade-end)), transparent);
-    animation: agentSuggestionFadeStart linear both, agentSuggestionFadeEnd linear both;
-    animation-timeline: scroll(self inline), scroll(self inline);
-    animation-range: 0px 96px, calc(100% - 96px) 100%;
-  }
+.agent-marquee {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
 }
-@keyframes agentSuggestionFadeStart {
-  to { --agent-suggestion-fade-start: min(12%, 40px); }
+.agent-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: agentMarquee 32s linear infinite;
 }
-@keyframes agentSuggestionFadeEnd {
-  from { --agent-suggestion-fade-end: min(12%, 40px); }
-  to { --agent-suggestion-fade-end: 0px; }
+.agent-marquee-set {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  padding-right: 6px;
+}
+.agent-marquee:is(:hover, :focus-within) .agent-marquee-track { animation-play-state: paused; }
+.agent-marquee[data-static='true'] { mask-image: none; }
+.agent-marquee[data-static='true'] .agent-marquee-track { animation: none; }
+@keyframes agentMarquee {
+  to { transform: translateX(-50%); }
+}
+@keyframes agentSuggestionIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+}
+
+.agent-terminal { background: color-mix(in srgb, var(--bg-base) 72%, #000); }
+.agent-terminal-line { animation: agentTerminalLine 220ms ease-out both; }
+.agent-terminal-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  margin-top: 3px;
+  background: var(--text-secondary);
+  animation: agentTerminalCursor 1s steps(1) infinite;
+}
+@keyframes agentTerminalLine {
+  from { opacity: 0; transform: translateY(3px); }
+}
+@keyframes agentTerminalCursor {
+  50% { opacity: 0; }
 }
 
 @keyframes agentEyesWorking {
@@ -102,8 +154,15 @@
   .agent-avatar[data-working='true'] .agent-avatar-eyes,
   .agent-thinking-dots span,
   .agent-shimmer,
+  .agent-workspace .agent-suggestion,
+  .agent-terminal-line,
+  .agent-marquee-track,
+  .agent-terminal-cursor,
   .agent-model-menu,
   .agent-workspace .animate-spin,
   .agent-model-menu .animate-spin { animation: none; }
   .agent-shimmer { background: none; color: var(--text-secondary); }
+  .agent-suggestions { transition: none; }
+  .agent-marquee { overflow-x: auto; scrollbar-width: none; }
+  .agent-workspace .agent-suggestion:hover:not(:disabled) { transform: none; }
 }

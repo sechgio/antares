@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, CornerDownRight, FolderOpen, Paperclip, Pencil, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentContext, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
+import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Globe, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
+import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -11,6 +12,7 @@ import Button from '../ui/Button';
 import ThemedSelect from '../ui/ThemedSelect';
 import AgentAvatar from './AgentAvatar';
 import ModelPicker from './ModelPicker';
+import PermissionPicker from './PermissionPicker';
 import ContextUsage from './ContextUsage';
 import ArtifactCard from './ArtifactCard';
 import QuestionCard from './QuestionCard';
@@ -18,11 +20,13 @@ import MemoryMenu from './MemoryMenu';
 import ContextChips from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
-import { ApprovalCard, DaySeparator, MessageRow, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
+import AgentBrowserPanel from './AgentBrowserPanel';
+import { ApprovalCard, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
 
 const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
+const RESUME_TEXT = 'Reanuda el encargo donde lo dejaste: revisa el plan y los últimos resultados antes de repetir cualquier acción.';
 
 function newRequestId(): string {
   return crypto.randomUUID();
@@ -125,12 +129,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [context, setContext] = useState<AgentContext | null>(null);
-  const [usage, setUsage] = useState<{ input: number; output: number; context?: number } | null>(null);
+  const [usage, setUsage] = useState<{ input: number; output: number; context?: number; cached?: number; prompt?: number } | null>(null);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
+  const [plan, setPlan] = useState<AgentPlan | null>(null);
+  const [resumable, setResumable] = useState(false);
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
+  const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [suggestionBusy, setSuggestionBusy] = useState(false);
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
@@ -145,6 +152,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }, []);
   const [deciding, setDeciding] = useState(false);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean }[]>(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
@@ -201,6 +209,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setUsage(res.usage ?? null);
           setPending(res.pending_approvals);
           setRunning(res.running);
+          setPlan(res.plan ?? null);
+          setResumable(!!res.resumable);
         }
       } catch (err) {
         if (!silent) {
@@ -269,9 +279,22 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setContext(null);
     setUsage(null);
     setPending([]);
+    setPlan(null);
+    setResumable(false);
     if (sessionId) void loadMessages(sessionId, false);
     else setRunning(false);
   }, [sessionId, loadMessages]);
+
+  useEffect(() => {
+    if (!sessionId) return undefined;
+    return onNotify((method, params) => {
+      if (method === 'agent.changed' && (params as { session_id?: string } | null)?.session_id === sessionId) void loadMessages(sessionId);
+    });
+  }, [sessionId, loadMessages]);
+
+  useEffect(() => onNotify((method, params) => {
+    if (method === 'agent.browser' && (params as { reason?: string } | null)?.reason === 'agent-open') setBrowserOpen(true);
+  }), []);
 
   useEffect(() => {
     const active = Boolean(sessionId) && (running || pending.length > 0);
@@ -341,6 +364,18 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }, [draft]);
 
   const session = sessions.find((s) => s.id === sessionId) ?? null;
+  const changePermissions = async (mode: AgentPermissionMode) => {
+    if (!sessionId || permissionsBusy) return;
+    setPermissionsBusy(true);
+    try {
+      const { session: updated } = await agentApi.agentSessionPermissionsSet(sessionId, mode);
+      setSessions((list) => list.map((item) => item.id === updated.id ? updated : item));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudieron guardar los permisos'), type: 'error' });
+    } finally {
+      setPermissionsBusy(false);
+    }
+  };
   const queuedForSession = queued.filter((i) => i.session === sessionId);
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
@@ -535,8 +570,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
   const showHero = !sessionId || messages.length === 0;
   const activeProfile = session?.profile ? profiles.find((item) => item.id === session.profile?.id) ?? null : null;
+  const suggestionList = activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS;
+  const suggestionsHidden = !!draft.trim() || running || pending.length > 0;
   const agentIdentity = session
-    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? (session.title || 'Agente de Antares') }
+    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares' }
     : undefined;
 
   const changeModel = async (next: { provider: string; model: string }) => {
@@ -744,6 +781,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </span>
             </div>
             <span className="min-w-0 flex-1" />
+            <button
+              type="button"
+              aria-label="Navegador del agente"
+              aria-pressed={browserOpen}
+              title={browserOpen ? 'Cerrar el navegador del agente' : 'Abrir el navegador del agente'}
+              onClick={() => setBrowserOpen((open) => !open)}
+              className={`flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] ${browserOpen ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
+            >
+              <Globe size={14} />
+            </button>
             <MemoryMenu />
             <Button
               ref={toolsMenu.triggerRef}
@@ -793,7 +840,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           />
         )}
 
-        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-5 pt-3 md:px-6">
+        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-5 pt-3 md:px-6 [&>*]:mx-auto [&>*]:max-w-[720px]">
           {showHero ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
@@ -829,6 +876,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               );
             })
           )}
+          {!showHero && plan && <PlanCard plan={plan} running={running} />}
           {pending.map((a) => (
             <ApprovalCard key={a.id} approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
           ))}
@@ -849,21 +897,30 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </button>
           )}
         </div>
-        <div className="shrink-0 p-3">
+        <div className="mx-auto w-full max-w-[744px] shrink-0 px-3 pb-3">
           {readyProviders.length > 0 && (
-            <div role="group" aria-label="Sugerencias" className="agent-suggestions no-scrollbar mb-2 flex gap-2 overflow-x-auto overscroll-x-contain py-1">
-              {(activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS).map((suggestion) => (
-                <Button
-                  key={suggestion}
-                  variant="none"
-                  size="none"
-                  className="agent-suggestion"
-                  disabled={suggestionBusy || modelBusy || running || stopping || pending.length > 0}
-                  onClick={() => void sendSuggestion(suggestion)}
-                >
-                  {suggestion}
-                </Button>
-              ))}
+            <div className="agent-suggestions" data-hidden={suggestionsHidden ? 'true' : undefined} inert={suggestionsHidden}>
+              <div role="group" aria-label="Sugerencias" className="agent-marquee min-h-0 pb-2" data-static={suggestionList.length < 2 ? 'true' : undefined}>
+                <div className="agent-marquee-track">
+                  {(suggestionList.length < 2 ? [false] : [false, true]).map((clone) => (
+                    <div key={String(clone)} className="agent-marquee-set" aria-hidden={clone || undefined} inert={clone}>
+                      {suggestionList.map((suggestion, i) => (
+                        <Button
+                          key={`${sessionId}-${suggestion}`}
+                          variant="none"
+                          size="none"
+                          className="agent-suggestion"
+                          style={{ animationDelay: `${i * 60}ms` }}
+                          disabled={suggestionBusy || modelBusy || running || stopping || pending.length > 0}
+                          onClick={() => void sendSuggestion(suggestion)}
+                        >
+                          {suggestion}
+                        </Button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
           {queuedForSession.length > 0 && (
@@ -914,9 +971,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </div>
           )}
-          <div className="rounded-[20px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2.5 transition-colors focus-within:border-[var(--border-medium)]">
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] transition-colors focus-within:border-[var(--border-medium)]">
             {attachments.length > 0 && (
-              <div className="mb-1.5 flex flex-wrap gap-1.5 px-1" aria-label="Adjuntos">
+              <div className="flex flex-wrap gap-1.5 px-3 pt-2.5" aria-label="Adjuntos">
                 {attachments.map((item) => (
                   <span
                     key={item.id}
@@ -936,105 +993,117 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 ))}
               </div>
             )}
-            <textarea
-              ref={draftRef}
-              rows={1}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
+            <div className="flex items-end gap-0.5 p-1.5">
+              <button
+                type="button"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                onClick={() => void attach('files')}
+                disabled={!sessionId}
+                aria-label="Adjuntar archivos"
+                title="Adjuntar archivos (solo lectura para el agente)"
+              >
+                <Plus size={16} />
+              </button>
+              <button
+                type="button"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                onClick={() => void attach('folder')}
+                disabled={!sessionId}
+                aria-label="Adjuntar carpeta"
+                title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
+              >
+                <FolderOpen size={14} />
+              </button>
+              <textarea
+                ref={draftRef}
+                rows={1}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                placeholder={
+                  !sessionId
+                    ? 'Crea una conversación primero'
+                    : running || pending.length > 0
+                      ? 'Escribe para cuando termine…'
+                      : 'Hola, ¿qué necesitas hoy?'
                 }
-              }}
-              placeholder={
-                !sessionId
-                  ? 'Crea una conversación primero'
-                  : running || pending.length > 0
-                    ? 'Escribe para cuando termine…'
-                    : 'Hola, ¿qué necesitas hoy?'
-              }
-              disabled={!sessionId}
-              aria-label="Mensaje para el agente"
-              className="max-h-36 w-full resize-none bg-transparent px-1.5 pt-1.5 text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
-            />
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
+                disabled={!sessionId}
+                aria-label="Mensaje para el agente"
+                className="max-h-36 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
+              />
+              {(running || pending.length > 0) && (
                 <button
                   type="button"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-primary)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_10%,var(--bg-input))] disabled:opacity-50"
-                  onClick={() => void attach('files')}
-                  disabled={!sessionId}
-                  aria-label="Adjuntar archivos"
-                  title="Adjuntar archivos (solo lectura para el agente)"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
+                  onClick={() => void cancelTurn()}
+                  aria-label="Detener"
+                  disabled={stopping}
+                  title="Detener el turno"
                 >
-                  <Plus size={16} />
+                  <Square size={12} />
                 </button>
+              )}
+              <button
+                type="button"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-primary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--bg-input)] active:scale-[0.96] motion-reduce:transform-none disabled:bg-transparent disabled:text-[var(--text-muted)]"
+                onClick={() => void send()}
+                disabled={!sessionId || !draft.trim() || modelBusy}
+                aria-label="Enviar"
+                title="Enviar (Intro)"
+              >
+                <CornerDownLeft size={16} />
+              </button>
+            </div>
+          </div>
+          <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 px-2 text-[12px] text-[var(--text-muted)]">
+            {session ? (
+              <PermissionPicker
+                key={session.id}
+                value={session.permission_mode ?? 'auto'}
+                onChange={(mode) => void changePermissions(mode)}
+                disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
+                pending={pending.length}
+              />
+            ) : <span />}
+            <div className="flex min-w-0 items-center gap-1">
+              {resumable && !running && pending.length === 0 && (
                 <button
                   type="button"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                  onClick={() => void attach('folder')}
-                  disabled={!sessionId}
-                  aria-label="Adjuntar carpeta"
-                  title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
+                  className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  onClick={() => void sendSuggestion(RESUME_TEXT)}
+                  disabled={suggestionBusy || modelBusy || stopping}
+                  title="Continuar el encargo desde el último paso verificado"
                 >
-                  <FolderOpen size={15} />
+                  <Play size={11} aria-hidden="true" />
+                  Reanudar
                 </button>
-                {session && (
-                  <span
-                    className="hidden h-[30px] shrink-0 items-center gap-1.5 rounded-full pl-1 pr-2 text-[11px] text-[var(--text-secondary)] sm:flex"
-                    title="Las acciones que modifican datos se pausan hasta que las apruebes"
-                  >
-                    <ShieldCheck
-                      size={15}
-                      className={pending.length > 0 ? 'text-[var(--accent-yellow)]' : 'text-[var(--text-secondary)]'}
-                    />
-                    {pending.length > 0 ? `${pending.length} por aprobar` : 'Con aprobación'}
-                  </span>
-                )}
-              </div>
-              <div className="ml-auto flex min-w-0 items-center gap-2">
-                <ContextUsage usage={usage} model={session?.model ?? model} />
-                {readyProviders.length > 0 ? (
-                  <ModelPicker
-                    providers={readyProviders}
-                    value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
-                    onChange={(next) => void changeModel(next)}
-                    disabled={modelBusy || running || stopping || pending.length > 0}
-                    className="min-w-0 max-w-[min(40vw,240px)]"
-                  />
-                ) : (
-                  <span className="hidden h-8 max-w-56 items-center gap-1.5 truncate rounded-full px-2 text-[12px] text-[var(--text-muted)] sm:flex">
-                    <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
-                    {session?.model || model || providerLabel || 'Proveedor IA'}
-                  </span>
-                )}
-                {(running || pending.length > 0) && (
-                  <button
-                    type="button"
-                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-surface)] text-[var(--text-secondary)] shadow-[0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-[var(--border-subtle)] transition-colors hover:text-[var(--accent-red)]"
-                    onClick={() => void cancelTurn()}
-                    aria-label="Detener"
-                    disabled={stopping}
-                    title="Detener el turno"
-                  >
-                    <Square size={12} />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--accent-primary-hover)] active:scale-[0.96] motion-reduce:transform-none disabled:bg-[var(--bg-input)] disabled:text-[var(--text-muted)]"
-                  onClick={() => void send()}
-                  disabled={!sessionId || !draft.trim() || modelBusy}
-                  aria-label="Enviar"
-                >
-                  <ArrowUp size={16} />
-                </button>
-              </div>
+              )}
+              {readyProviders.length > 0 ? (
+                <ModelPicker
+                  providers={readyProviders}
+                  value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
+                  onChange={(next) => void changeModel(next)}
+                  disabled={modelBusy || running || stopping || pending.length > 0}
+                  className="min-w-0 max-w-[min(40vw,240px)]"
+                />
+              ) : (
+                <span className="hidden h-7 max-w-56 items-center gap-1.5 truncate px-2 sm:flex">
+                  <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
+                  {session?.model || model || providerLabel || 'Proveedor IA'}
+                </span>
+              )}
+              <ContextUsage usage={usage} model={session?.model ?? model} />
             </div>
           </div>
         </div>
       </main>
+
+      {browserOpen && <AgentBrowserPanel onClose={() => setBrowserOpen(false)} />}
 
       {toolsMenu.isOpen && createPortal(
         <div
@@ -1067,7 +1136,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             Restablecer herramientas
           </Button>
           <p className="shrink-0 text-[10px] leading-relaxed text-[var(--text-muted)]">
-            {sessionId ? 'La selección se guarda para esta conversación. Las acciones que modifican datos requieren tu aprobación.' : 'Selecciona una conversación para configurar sus herramientas.'}
+            {sessionId ? 'La selección se guarda para esta conversación. Las acciones siguen el modo de permisos elegido.' : 'Selecciona una conversación para configurar sus herramientas.'}
           </p>
         </div>,
         document.body,

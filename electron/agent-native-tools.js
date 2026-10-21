@@ -155,6 +155,8 @@ for (const service of [require('./google-workspace-service'), require('./microso
   for (const name of Object.keys(service.TOOLS)) CLOUD[name] = service;
 }
 
+const WEB = require('./agent-browser').TOOLS;
+
 function spec(name, [label, schema], gated) {
   return {
     name,
@@ -182,6 +184,10 @@ const SPECS = [
   ...Object.entries(RENDERER_TOOLS).map(([name, [module, label, schema, gated]]) => ({
     name, module, label, gated, kind: 'native', description: `${label} (${gated ? 'requiere aprobación' : 'lectura o borrador interno'})`,
     inputSchema: schema || OBJECT, inheritSchema: !schema,
+  })),
+  ...Object.entries(WEB).map(([name, [label, schema, gated]]) => ({
+    name, module: 'computer', label, gated, kind: 'native', inputSchema: schema,
+    description: `Navegador · ${name} (${gated ? 'efecto: requiere aprobación del usuario' : 'solo lectura en el navegador aislado del agente'}): ${label}`,
   })),
   ...Object.entries(CLOUD).map(([name, service]) => {
     const [label, schema, gated] = service.TOOLS[name];
@@ -309,6 +315,7 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
     }
   }
   if (CLOUD[name]) return CLOUD[name].run(name, params || {}, { dir: draftsDir(sessionId) });
+  if (WEB[name]) return require('./agent-browser').run(name, params || {}, { dir: `${draftsDir(sessionId)}.screens` });
   if (name === 'document_generate') return generateDocument(params, sessionId);
   if (RENDERER_TOOLS[name]) {
     const result = await require('./agent-renderer-tools').runRendererTool(name,

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import { ApprovalCard, MessageRow, ThinkingRow } from './AgentTimeline';
+import { ApprovalCard, MessageRow, PlanCard, ThinkingRow } from './AgentTimeline';
 
 it('muestra cuenta y recursos revisados antes de una decisión explícita', () => {
   const decide = vi.fn();
@@ -27,6 +27,117 @@ it('resume más de dos pasos de herramientas y los abre si alguno necesita atenc
   rerender(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
     tool_calls: [step('a', 'done'), step('b', 'failed'), step('c', 'done')] } as never} />);
   expect(container.querySelector('details')?.open).toBe(true);
+});
+
+it('muestra los comandos como terminal: abierta y animada mientras corre, con su salida al terminar', () => {
+  const shell = (status: string, result?: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status, gated: true, result,
+  }] }) as never;
+  const { rerender } = render(<MessageRow msg={shell('running')} />);
+  expect(screen.getByText(/Ejecutando/)).toHaveClass('agent-shimmer');
+  expect(screen.getByRole('log', { name: 'Salida de npm test' })).toBeInTheDocument();
+  rerender(<MessageRow msg={shell('done', JSON.stringify({ exit_code: 1, stdout: 'ok 1\nfallo 2\n', stderr: '', duration_s: 4.2 }))} />);
+  expect(screen.getByText(/Ejecutó/)).not.toHaveClass('agent-shimmer');
+  expect(screen.getByText('código 1')).toBeInTheDocument();
+  expect(screen.getByText('fallo 2')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Ejecutó npm test/ }));
+  expect(screen.queryByRole('log')).not.toBeInTheDocument();
+});
+
+it('cuenta los segundos de un comando en curso y deja la duración final al terminar', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(10_000);
+  const shell = (status: string, result?: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status, gated: true, result,
+    ...(status === 'running' ? { started_at: 7_000 } : {}),
+  }] }) as never;
+  const { rerender } = render(<MessageRow msg={shell('running')} />);
+  expect(screen.getByLabelText('En curso desde hace 3 s')).toHaveTextContent('3 s');
+  act(() => { vi.advanceTimersByTime(2_000); });
+  expect(screen.getByLabelText('En curso desde hace 5 s')).toBeInTheDocument();
+  rerender(<MessageRow msg={shell('done', JSON.stringify({ exit_code: 0, stdout: 'ok', duration_s: 5.4 }))} />);
+  expect(screen.queryByLabelText(/En curso desde/)).not.toBeInTheDocument();
+  expect(screen.getByText('5.4 s')).toBeInTheDocument();
+  vi.useRealTimers();
+});
+
+it('pinta en rojo las líneas de stderr y del error, no la salida normal', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'build' }, status: 'running', gated: true,
+    result: JSON.stringify({ exit_code: 1, stdout: 'compilando\nlisto\n', stderr: 'aviso: obsoleto\n', error: 'falló' }),
+  }] } as never} />);
+  expect(screen.getByText('listo')).not.toHaveClass('text-[var(--accent-red)]');
+  expect(screen.getByText('aviso: obsoleto')).toHaveClass('text-[var(--accent-red)]');
+  expect(screen.getByText('falló')).toHaveClass('text-[var(--accent-red)]');
+});
+
+it('muestra la salida de un comando mientras se ejecuta', () => {
+  const shell = (output: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status: 'running', gated: true, result: null, output,
+  }] }) as never;
+  const { rerender } = render(<MessageRow msg={shell('compilando\n')} />);
+  expect(screen.getByText('compilando')).toBeInTheDocument();
+  rerender(<MessageRow msg={shell('compilando\n12 tests ok\n')} />);
+  expect(screen.getByText('12 tests ok')).toBeInTheDocument();
+  expect(screen.getByRole('log').querySelector('.agent-terminal-cursor')).not.toBeNull();
+});
+
+it('copia la salida de un comando terminado y la entrada de una herramienta', () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  const shell = (status: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [
+    { id: 't', name: 'shell_run', params: { command: 'dir' }, status, gated: true, result: JSON.stringify({ exit_code: 0, stdout: 'a.txt\nb.txt\n' }) },
+  ] }) as never;
+  const { rerender } = render(<MessageRow msg={shell('running')} />);
+  expect(screen.queryByRole('button', { name: 'Copiar salida' })).not.toBeInTheDocument();
+  rerender(<MessageRow msg={shell('done')} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar salida' }));
+  expect(writeText).toHaveBeenCalledWith('a.txt\nb.txt');
+  cleanup();
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
+    { id: 'r', name: 'fs_read', params: { path: 'notas.txt' }, status: 'done', gated: false, result: '"hola"' },
+  ] } as never} />);
+  fireEvent.click(screen.getByText('notas.txt'));
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar entrada' }));
+  expect(writeText).toHaveBeenLastCalledWith('{\n  "path": "notas.txt"\n}');
+});
+
+it('la salida de un comando se abre desplazada al final, como una terminal', () => {
+  const spy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(900);
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status: 'running', gated: true,
+    result: JSON.stringify({ stdout: Array.from({ length: 80 }, (_, i) => `línea ${i}`).join('\n') }),
+  }] } as never} />);
+  expect(screen.getByRole('log', { name: 'Salida de npm test' }).scrollTop).toBe(900);
+  spy.mockRestore();
+});
+
+it('muestra cada herramienta con su argumento clave, entrada y salida, y marca errores y rechazos', () => {
+  const call = (id: string, name: string, params: Record<string, unknown>, status: string, result?: string) => ({ id, name, params, status, gated: false, result });
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
+    call('a', 'fs_read', { path: 'C:\\datos\\ventas.csv' }, 'done', '{"total_lines":9}'),
+    call('b', 'web_open', { url: 'https://es.wikipedia.org/wiki/Lima' }, 'failed', '{"error":"sin conexión"}'),
+  ] } as never} />);
+  expect(screen.getByText('C:\\datos\\ventas.csv')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('https://es.wikipedia.org/wiki/Lima'));
+  expect(screen.getByText('Error')).toBeInTheDocument();
+  expect(screen.getByText(/"error": "sin conexión"/)).toBeInTheDocument();
+  expect(screen.getByText('fallida')).toBeInTheDocument();
+  cleanup();
+  const { container } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
+    tool_calls: [call('c', 'fs_write', { path: 'informe.txt' }, 'denied')] } as never} />);
+  expect(screen.getByText('rechazada')).toBeInTheDocument();
+  expect(container.querySelector('details')).toBeNull();
+});
+
+it('muestra los saltos de línea reales en la salida de una herramienta y respeta las barras escapadas', () => {
+  const { container } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 'r', name: 'fs_read', params: { path: 'notas.txt' }, status: 'done', gated: false,
+    result: JSON.stringify({ text: 'línea uno\nlínea dos', path: 'C:\\new\\notas.txt' }),
+  }] } as never} />);
+  const output = [...container.querySelectorAll('pre')].map((pre) => pre.textContent).find((text) => text?.includes('línea uno'));
+  expect(output).toContain('línea uno\nlínea dos');
+  expect(output).toContain('C:\\\\new\\\\notas.txt');
 });
 
 it('dibuja la delegación en otro agente como una traza con sus pasos', () => {
@@ -97,4 +208,28 @@ it('pregunta por la acción concreta y permite rechazarla o aprobarla', () => {
   rerender(<ApprovalCard busy onDecide={decide} approval={{ ...approval, method: 'metodo_desconocido' }} />);
   expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('¿Permitir una acción avanzada?');
   expect(screen.getByRole('button', { name: 'Aprobar' })).toBeDisabled();
+});
+
+it('muestra el plan con su progreso y la evidencia de cada paso', () => {
+  render(<PlanCard running plan={{ goal: 'Preparar el informe', steps: [
+    { title: 'Leer el Excel', status: 'done', evidence: 'fs_read devolvió 12 filas' },
+    { title: 'Buscar el tipo de cambio', status: 'in_progress' },
+    { title: 'Guardar el informe', status: 'pending' },
+  ] }} />);
+  expect(screen.getByRole('region', { name: 'Plan del agente' })).toBeInTheDocument();
+  expect(screen.getByText('1 de 3 hechos')).toBeInTheDocument();
+  expect(screen.getByText('fs_read devolvió 12 filas')).toBeInTheDocument();
+  expect(screen.getByText('Buscar el tipo de cambio')).toHaveClass('agent-shimmer');
+  fireEvent.click(screen.getByRole('button', { name: /Plan: Preparar el informe/ }));
+  expect(screen.queryByText('Leer el Excel')).not.toBeInTheDocument();
+});
+
+it('detalla el comando y la ruta en la aprobación de una acción del equipo', () => {
+  render(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    id: 'a', session_id: 's', call_id: 'c', method: 'shell_run', status: 'pending', created_at: 1, decided_at: null,
+    params: { command: 'Get-ChildItem', cwd: 'C:\datos' },
+  }} />);
+  expect(screen.getByText('¿Ejecutar «Ejecutar un comando de PowerShell»?')).toBeInTheDocument();
+  expect(screen.getByText('Comando: Get-ChildItem')).toBeInTheDocument();
+  expect(screen.getByText('Carpeta: C:\datos')).toBeInTheDocument();
 });

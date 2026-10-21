@@ -180,7 +180,7 @@ export default function MemoryMenu() {
             </p>
           )}
           <p className="shrink-0 text-[10px] leading-relaxed text-[var(--text-muted)]">
-            Los recuerdos orientan al agente; no conceden permisos y cada acción vuelve a pedir tu aprobación.
+            Los recuerdos orientan al agente; no conceden permisos y cada acción sigue el modo de permisos de la conversación.
           </p>
         </div>,
         document.body,

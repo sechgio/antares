@@ -159,7 +159,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
           )}
         </div>
         <p className="px-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
-          El agente no se ejecuta solo: lo abres cuando lo necesitas y cada acción que modifica datos te pide aprobación.
+          El agente no se ejecuta solo: lo abres cuando lo necesitas y sus acciones siguen el modo de permisos de la conversación.
         </p>
       </div>
       <footer className="flex shrink-0 items-center gap-2 border-t border-[var(--border-subtle)] p-3">

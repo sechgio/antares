@@ -142,6 +142,15 @@
         "excel_worksheets", "excel_read_range", "excel_update_range"],
       "native": true
     },
+    "computer": {
+      "label": "Equipo",
+      "aliases": ["equipo", "pc", "computadora", "archivos", "terminal", "powershell", "navegador", "web", "internet", "escritorio", "windows"],
+      "handlers": [],
+      "methods": ["fs_list", "fs_read", "fs_search", "fs_write", "fs_edit", "shell_run", "task_plan",
+        "desktop_observe", "desktop_click", "desktop_type", "desktop_key", "desktop_scroll", "desktop_launch", "desktop_focus",
+        "web_open", "web_read", "web_screenshot", "web_click", "web_type", "web_key", "web_back"],
+      "native": true
+    },
     "app": {
       "label": "Antares",
       "aliases": ["antares", "app"],

@@ -16,7 +16,7 @@ declare global {
       autoUpdateInstall: () => Promise<{ success: boolean; reason?: string }>;
       onAutoUpdateStatus: (callback: (data: { status: string; version: string | null; progress: number; message?: string }) => void) => () => void;
       getPathForFile: (file: File) => string;
-      canvasFlushAck?: () => Promise<unknown>;
+      canvasFlushAck?: (saved?: boolean) => Promise<unknown>;
       fileStagedCreate?: (name: string, size: number) => Promise<{ token: string }>;
       fileStagedAppend?: (token: string, chunk: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
       fileStagedComplete?: (token: string) => Promise<{ file_token: string }>;
