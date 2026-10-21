@@ -555,6 +555,7 @@ def test_submit_handler_rejects_unexpected_memory_guard_failure(monkeypatch) -> 
 
 
 def test_main_resolves_deferred_method_in_worker_not_reader(monkeypatch) -> None:
+    monkeypatch.setattr(backend_main, "init_db", lambda: None)
 
     loaded: dict[str, object] = {}
     reads: list[str] = []
