@@ -49,11 +49,15 @@ const TOOLS = {
 // sobre el hueco que el panel le deja, como el navegador de Claude Desktop.
 const HOST_SIZE = { width: 1280, height: 860 };
 const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
+const USER_BUSY_ERROR = 'El usuario está usando el navegador en este momento; espera unos segundos antes de volver a actuar en la página';
+const USER_INPUT_GRACE_MS = 5_000;
 
 let host = null;
 let view = null;
 let docked = null;
 let userControl = false;
+let lastUserInputAt = 0;
+let agentInput = false;
 let sessionReady = false;
 
 function isWeb(url) {
@@ -155,6 +159,13 @@ function browser() {
   contents.on('will-redirect', (event, url) => {
     if (!isWeb(url)) event.preventDefault();
   });
+  // sendInputEvent dispara estos eventos de forma síncrona: lo que llega sin
+  // la marca agentInput es del usuario y el agente le cede el paso un momento.
+  const userInput = (_event, input) => {
+    if (!agentInput && ['mouseDown', 'mouseWheel', 'keyDown', 'rawKeyDown'].includes(input.type)) lastUserInputAt = Date.now();
+  };
+  contents.on('before-input-event', userInput);
+  contents.on('before-mouse-event', userInput);
   contents.on('did-navigate', () => fitPage());
   for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
     contents.on(event, () => notify('page'));
@@ -334,12 +345,21 @@ async function locate(contents, ref) {
   return rect;
 }
 
+function send(target, event) {
+  agentInput = true;
+  try {
+    target.sendInputEvent(event);
+  } finally {
+    agentInput = false;
+  }
+}
+
 async function clickAt(contents, point) {
   const zoom = contents.getZoomFactor() || 1;
   const x = Math.round(point.x * zoom);
   const y = Math.round(point.y * zoom);
   for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) {
-    contents.sendInputEvent({ type, x, y, button: 'left', clickCount: 1 });
+    send(contents, { type, x, y, button: 'left', clickCount: 1 });
     await delay(30);
   }
 }
@@ -350,10 +370,10 @@ function pressCombo(contents, combo) {
   const last = parts[parts.length - 1] || '';
   const keyCode = KEY_CODES[last.toLowerCase()] || (last.length === 1 ? last : null);
   if (!keyCode || modifiers.length !== parts.length - 1) throw new Error(`Tecla desconocida: ${combo}`);
-  contents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
-  if (keyCode.length === 1 && !modifiers.some((m) => m !== 'shift')) contents.sendInputEvent({ type: 'char', keyCode, modifiers });
-  if (keyCode === 'Enter') contents.sendInputEvent({ type: 'char', keyCode: '\r', modifiers });
-  contents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
+  send(contents, { type: 'keyDown', keyCode, modifiers });
+  if (keyCode.length === 1 && !modifiers.some((m) => m !== 'shift')) send(contents, { type: 'char', keyCode, modifiers });
+  if (keyCode === 'Enter') send(contents, { type: 'char', keyCode: '\r', modifiers });
+  send(contents, { type: 'keyUp', keyCode, modifiers });
 }
 
 async function screenshot(contents, dir) {
@@ -378,6 +398,7 @@ async function observeAfter(contents) {
 
 async function run(name, params = {}, { dir } = {}) {
   if (userControl) throw new Error(USER_CONTROL_ERROR);
+  if (!['web_read', 'web_screenshot'].includes(name) && Date.now() - lastUserInputAt < USER_INPUT_GRACE_MS) throw new Error(USER_BUSY_ERROR);
   if (name === 'web_open') {
     const contents = browser().webContents;
     notify('agent-open');
@@ -430,4 +451,4 @@ function close() {
   docked = null;
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds };

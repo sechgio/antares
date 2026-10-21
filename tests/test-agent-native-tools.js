@@ -1,6 +1,6 @@
 'use strict';
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, finish, stubModule, installInertTimers } = require('./helpers/harness');
 const { nativeToolSpecs } = require('../electron/agent-native-tools');
 const { nativeMethods } = require('../shared/ipc-method-catalog');
 
@@ -63,6 +63,33 @@ async function exportTest() {
   try { await browser.run('web_read', {}); } catch (err) { blocked = err.message; }
   assert(blocked === browser.USER_CONTROL_ERROR, 'con el control en manos del usuario el agente no usa el navegador');
   browser.setUserControl(false);
+  {
+    const { EventEmitter: Emitter } = require('node:events');
+    const parent = { isDestroyed: () => false, on: () => {}, showInactive: () => {}, setIgnoreMouseEvents: () => {}, destroy: () => {},
+      contentView: { addChildView: () => {}, removeChildView: () => {} } };
+    const contents = Object.assign(new Emitter(), {
+      isDestroyed: () => false, getURL: () => 'https://example.com', getTitle: () => '', isLoading: () => false,
+      getZoomFactor: () => 1, setZoomFactor: () => {}, setWindowOpenHandler: () => {}, loadURL: async () => {},
+      navigationHistory: { canGoBack: () => false, canGoForward: () => false }, close: () => contents.emit('destroyed'),
+    });
+    stubModule('electron/window-manager.js', { getMainWindow: () => null });
+    stubModule('electron', {
+      BrowserWindow: function () { return parent; },
+      WebContentsView: function () { return { webContents: contents, setBounds: () => {}, getBounds: () => ({ width: 1280 }) }; },
+      session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, on: () => {} }) },
+    });
+    const timers = installInertTimers();
+    try { await browser.navigate('open', 'https://example.com'); } finally { timers.restore(); }
+    contents.emit('before-mouse-event', {}, { type: 'mouseDown' });
+    const attempt = async () => { try { await browser.run('web_back', {}); return null; } catch (err) { return err.message; } };
+    assert(await attempt() === browser.USER_BUSY_ERROR, 'si el usuario acaba de usar la página, el agente no actúa sobre ella');
+    const now = Date.now;
+    Date.now = () => now() + 6_000;
+    try {
+      assert(await attempt() === 'No hay una página anterior', 'pasados unos segundos sin actividad del usuario, el agente retoma la página');
+    } finally { Date.now = now; }
+    browser.close();
+  }
   const { validateToolArguments } = await import('@earendil-works/pi-ai');
   const taskSpec = specs.find((s) => s.name === 'espacios_tarea_update');
   const taskTool = { name: taskSpec.name, description: taskSpec.description, parameters: taskSpec.inputSchema };
