@@ -85,6 +85,23 @@
   from { opacity: 0; transform: translateY(6px) scale(0.98); }
 }
 
+.agent-terminal { background: color-mix(in srgb, var(--bg-base) 72%, #000); }
+.agent-terminal-line { animation: agentTerminalLine 220ms ease-out both; }
+.agent-terminal-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  margin-top: 3px;
+  background: var(--text-secondary);
+  animation: agentTerminalCursor 1s steps(1) infinite;
+}
+@keyframes agentTerminalLine {
+  from { opacity: 0; transform: translateY(3px); }
+}
+@keyframes agentTerminalCursor {
+  50% { opacity: 0; }
+}
+
 @keyframes agentEyesWorking {
   0%, 42%, 49%, 100% { transform: scaleY(1); }
   45% { transform: scaleY(0.15); }
@@ -98,6 +115,8 @@
   .agent-thinking-dots span,
   .agent-shimmer,
   .agent-workspace .agent-suggestion,
+  .agent-terminal-line,
+  .agent-terminal-cursor,
   .agent-model-menu,
   .agent-workspace .animate-spin,
   .agent-model-menu .animate-spin { animation: none; }

@@ -29,6 +29,21 @@ it('resume más de dos pasos de herramientas y los abre si alguno necesita atenc
   expect(container.querySelector('details')?.open).toBe(true);
 });
 
+it('muestra los comandos como terminal: abierta y animada mientras corre, con su salida al terminar', () => {
+  const shell = (status: string, result?: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test' }, status, gated: true, result,
+  }] }) as never;
+  const { rerender } = render(<MessageRow msg={shell('running')} />);
+  expect(screen.getByText(/Ejecutando/)).toHaveClass('agent-shimmer');
+  expect(screen.getByRole('log', { name: 'Salida de npm test' })).toBeInTheDocument();
+  rerender(<MessageRow msg={shell('done', JSON.stringify({ exit_code: 1, stdout: 'ok 1\nfallo 2\n', stderr: '', duration_s: 4.2 }))} />);
+  expect(screen.getByText(/Ejecutó/)).not.toHaveClass('agent-shimmer');
+  expect(screen.getByText('código 1')).toBeInTheDocument();
+  expect(screen.getByText('fallo 2')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Ejecutó npm test/ }));
+  expect(screen.queryByRole('log')).not.toBeInTheDocument();
+});
+
 it('dibuja la delegación en otro agente como una traza con sus pasos', () => {
   render(<MessageRow agent={{ seed: 'antares', name: 'Antares' }} msg={{ role: 'assistant', content: 'Listo.', ts: 1,
     tool_calls: [{

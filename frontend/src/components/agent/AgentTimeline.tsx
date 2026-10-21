@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Clock3, Copy, Loader2, Route, ShieldCheck, Wrench, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Clock3, Copy, Loader2, Route, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
 import type { AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
@@ -59,8 +59,78 @@ function CallStatusIcon({ status }: { status: string }) {
 const TASK_ROW = 'flex min-h-6 max-w-full items-center gap-2 py-0.5 text-[13px] leading-5 text-[var(--text-secondary)]';
 const TASK_BODY = 'ml-[6.5px] border-l border-[var(--border-subtle)] pl-[15px]';
 
+const TERMINAL_VERB: Record<string, string> = {
+  running: 'Ejecutando',
+  done: 'Ejecutó',
+  failed: 'Falló',
+  denied: 'No ejecutó',
+  interrupted: 'Interrumpió',
+};
+
+function shellOutput(result: string | null | undefined) {
+  if (!result) return null;
+  try {
+    const data = JSON.parse(result) as { exit_code?: unknown; stdout?: unknown; stderr?: unknown; error?: unknown; duration_s?: unknown };
+    const text = [data.stdout, data.stderr, data.error].filter((part): part is string => typeof part === 'string' && part !== '').join('\n');
+    return {
+      exit: typeof data.exit_code === 'number' ? data.exit_code : null,
+      text: text.replace(/\n+$/, ''),
+      duration: typeof data.duration_s === 'number' ? data.duration_s : null,
+    };
+  } catch {
+    return { exit: null, text: result, duration: null };
+  }
+}
+
+function TerminalStep({ call }: { call: AgentToolCall }) {
+  const command = typeof call.params.command === 'string' ? call.params.command : '';
+  const output = shellOutput(call.result);
+  const live = call.status === 'running';
+  const [open, setOpen] = useState(live || call.status === 'pending');
+  const [seen, setSeen] = useState(call.status);
+  if (seen !== call.status) {
+    setSeen(call.status);
+    if (call.status === 'running' || call.status === 'pending') setOpen(true);
+  }
+  const exitFailed = output?.exit != null && output.exit !== 0;
+  const failed = call.status === 'failed' || call.status === 'denied' || exitFailed;
+  const lines = output?.text ? output.text.split('\n') : [];
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={`group ${TASK_ROW} w-fit text-left`}
+      >
+        <Terminal size={14} className={`shrink-0 ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
+        <span className={`min-w-0 truncate transition-colors group-hover:text-[var(--text-primary)] ${live ? 'agent-shimmer' : ''}`}>
+          {TERMINAL_VERB[call.status] ? `${TERMINAL_VERB[call.status]} ` : ''}<span className="font-mono text-[12px]">{command}</span>
+        </span>
+        {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Requiere aprobación" />}
+        {!TERMINAL_VERB[call.status] && <span className="shrink-0 text-[12px] text-[var(--text-muted)]">{CALL_STATUS_LABEL[call.status] ?? call.status}</span>}
+        {exitFailed && <span className="shrink-0 text-[12px] text-[var(--accent-red)]">código {output?.exit}</span>}
+        {output?.duration != null && !live && <span className="shrink-0 text-[12px] tabular-nums text-[var(--text-muted)]">{output.duration} s</span>}
+        <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className={`${TASK_BODY} mb-1.5 mt-1`}>
+          <div role="log" aria-label={`Salida de ${command}`} className="agent-terminal max-h-64 overflow-auto rounded-lg border border-[var(--border-subtle)] px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
+            <div className="whitespace-pre-wrap break-all text-[var(--text-primary)]"><span className="select-none text-[var(--text-muted)]">&gt; </span>{command}</div>
+            {lines.map((line, i) => (
+              <div key={i} className="agent-terminal-line whitespace-pre-wrap break-all" style={{ animationDelay: `${Math.min(i, 40) * 18}ms` }}>{line || ' '}</div>
+            ))}
+            {live && <span className="agent-terminal-cursor" aria-hidden="true" />}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCallStep({ call }: { call: AgentToolCall }) {
   if (call.name === 'subagent_run') return <SubagentTrace call={call} />;
+  if (call.name === 'shell_run') return <TerminalStep call={call} />;
   const detail = call.result || null;
   const params = Object.keys(call.params).length > 0 ? JSON.stringify(call.params) : null;
   const status = CALL_STATUS_LABEL[call.status] ?? call.status;
