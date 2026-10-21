@@ -149,7 +149,7 @@ export const agentApi = {
       artifacts?: AgentArtifact[];
       questions?: AgentQuestion[];
       context?: AgentContext;
-      usage?: { input: number; output: number; context?: number } | null;
+      usage?: { input: number; output: number; context?: number; cached?: number; prompt?: number } | null;
     }>('agent_messages_list', { session_id }),
 
   agentContextRemoveFile: (session_id: string, path: string) =>

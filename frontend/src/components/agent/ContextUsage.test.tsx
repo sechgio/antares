@@ -23,6 +23,13 @@ it('calcula la ocupación con el último turno y deja el acumulado en el desglos
   fireEvent.mouseEnter(trigger);
   expect(screen.getByRole('tooltip')).toHaveTextContent('64 k / 200 k');
   expect(screen.getByRole('tooltip')).toHaveTextContent('Entrada90 kSalida4 k');
+  expect(screen.getByRole('tooltip')).not.toHaveTextContent('En caché');
+});
+
+it('muestra cuánto del prompt se sirvió desde la caché del proveedor', () => {
+  render(<ContextUsage usage={{ input: 20000, output: 1000, cached: 60000, prompt: 80000 }} model="claude-sonnet-4" />);
+  fireEvent.mouseEnter(screen.getByRole('button', { name: 'Contexto usado' }));
+  expect(screen.getByRole('tooltip')).toHaveTextContent('En caché60 k · 75%');
 });
 
 it('sin ventana conocida muestra solo los tokens y nada si no hay uso', () => {

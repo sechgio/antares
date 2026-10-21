@@ -43,7 +43,7 @@ function Ring({ ratio }: { ratio: number }) {
 }
 
 export default function ContextUsage({ usage, model }: {
-  usage: { input: number; output: number; context?: number } | null;
+  usage: { input: number; output: number; context?: number; cached?: number; prompt?: number } | null;
   model: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -100,6 +100,14 @@ export default function ContextUsage({ usage, model }: {
           <div className="space-y-1.5 border-t border-[var(--border-subtle)] p-3 tabular-nums">
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">Entrada</span><span className="text-[var(--text-primary)]">{formatTokens(usage.input)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--text-muted)]">Salida</span><span className="text-[var(--text-primary)]">{formatTokens(usage.output)}</span></div>
+            {!!usage.prompt && (
+              <div className="flex justify-between">
+                <span className="text-[var(--text-muted)]">En caché</span>
+                <span className="text-[var(--text-primary)]">
+                  {formatTokens(usage.cached ?? 0)} · {new Intl.NumberFormat('es', { maximumFractionDigits: 0 }).format(((usage.cached ?? 0) / usage.prompt) * 100)}%
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

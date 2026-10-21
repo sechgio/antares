@@ -727,6 +727,8 @@ async function main() {
     assert(first.context > 0 && usage.input > first.input, 'el total acumula los turnos');
     assert(usage.context >= first.input, 'el contexto del último turno incluye el historial reenviado');
     assert(usage.context < first.context + first.input, 'el contexto no acumula los turnos anteriores');
+    assert(first.cached === 0 && usage.cached > 0 && usage.cached < usage.prompt,
+      'el segundo turno reutiliza el prefijo cacheado y se informa frente al prompt total');
     await runtime.shutdown();
   }
 
