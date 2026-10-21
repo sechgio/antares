@@ -393,6 +393,7 @@ it('envía una sugerencia del composer creando una única conversación si no ha
   const group = await screen.findByRole('group', { name: 'Sugerencias' });
   const buttons = within(group).getAllByRole('button');
   expect(buttons).toHaveLength(3);
+  expect(group.querySelector('[aria-hidden="true"]')).toHaveAttribute('inert');
   fireEvent.click(buttons[0]);
   fireEvent.click(buttons[0]);
   expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba' });

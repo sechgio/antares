@@ -542,6 +542,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
   const showHero = !sessionId || messages.length === 0;
   const activeProfile = session?.profile ? profiles.find((item) => item.id === session.profile?.id) ?? null : null;
+  const suggestionList = activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS;
   const agentIdentity = session
     ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? (session.title || 'Agente de Antares') }
     : undefined;
@@ -860,20 +861,26 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         <div className="mx-auto w-full max-w-[744px] shrink-0 px-3 pb-3">
           {readyProviders.length > 0 && (
             <div className="agent-suggestions" data-hidden={draft.trim() ? 'true' : undefined} inert={!!draft.trim()}>
-              <div role="group" aria-label="Sugerencias" className="flex min-h-0 flex-wrap gap-1.5 overflow-hidden pb-2">
-                {(activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS).map((suggestion, i) => (
-                  <Button
-                    key={`${sessionId}-${suggestion}`}
-                    variant="none"
-                    size="none"
-                    className="agent-suggestion"
-                    style={{ animationDelay: `${i * 60}ms` }}
-                    disabled={suggestionBusy || modelBusy || running || stopping || pending.length > 0}
-                    onClick={() => void sendSuggestion(suggestion)}
-                  >
-                    {suggestion}
-                  </Button>
-                ))}
+              <div role="group" aria-label="Sugerencias" className="agent-marquee min-h-0 pb-2" data-static={suggestionList.length < 2 ? 'true' : undefined}>
+                <div className="agent-marquee-track">
+                  {(suggestionList.length < 2 ? [false] : [false, true]).map((clone) => (
+                    <div key={String(clone)} className="agent-marquee-set" aria-hidden={clone || undefined} inert={clone}>
+                      {suggestionList.map((suggestion, i) => (
+                        <Button
+                          key={`${sessionId}-${suggestion}`}
+                          variant="none"
+                          size="none"
+                          className="agent-suggestion"
+                          style={{ animationDelay: `${i * 60}ms` }}
+                          disabled={suggestionBusy || modelBusy || running || stopping || pending.length > 0}
+                          onClick={() => void sendSuggestion(suggestion)}
+                        >
+                          {suggestion}
+                        </Button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
