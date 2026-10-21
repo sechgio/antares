@@ -196,6 +196,25 @@ it('descarta la lectura previa al envío y drena la actualización pendiente de 
   expect(screen.queryByText('El agente está trabajando')).not.toBeInTheDocument();
 });
 
+it('no repite el estado de trabajo mientras una herramienta en curso ya lo muestra', async () => {
+  const call = (status: string) => ({ id: 'c', name: 'shell_run', params: { command: 'npm test' }, status, gated: true });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
+    messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [call('running')] }] } as never);
+  const { unmount } = render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  expect(screen.getByText(/Ejecutando/)).toBeInTheDocument();
+  expect(screen.queryByText('El agente está trabajando')).not.toBeInTheDocument();
+  unmount();
+  list.mockResolvedValue({ ...empty, running: true,
+    messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [{ ...call('done'), result: '{"exit_code":0}' }] }] } as never);
+  render(<AgentView />);
+  await act(async () => {});
+  // La conversación abierta se recuerda al volver a montar la vista.
+  expect(await screen.findByText(/Ejecutó/)).toBeInTheDocument();
+  expect(screen.getByText('El agente está trabajando')).toBeInTheDocument();
+});
+
 it('no aplica running=false de una lectura antigua mientras el envío sigue pendiente', async () => {
   const initial = deferred<Snapshot>();
   const send = deferred<{ accepted: boolean }>();
