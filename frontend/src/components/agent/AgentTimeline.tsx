@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, Check, ChevronRight, Circle, Clock3, Copy, ListChecks, Loader2, ShieldCheck, Wrench, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Clock3, Copy, Loader2, Route, ShieldCheck, Wrench, X } from 'lucide-react';
 import type { AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
@@ -243,35 +243,46 @@ export function ApprovalCard({
 }
 
 function PlanStepIcon({ status }: { status: AgentPlan['steps'][number]['status'] }) {
-  if (status === 'done') return <Check size={13} className="text-[var(--accent-green)]" />;
-  if (status === 'failed') return <X size={13} className="text-[var(--accent-red)]" />;
-  if (status === 'in_progress') return <Loader2 size={13} className="animate-spin text-[var(--accent-primary-hover)]" />;
-  return <Circle size={11} className="text-[var(--text-muted)]" />;
+  if (status === 'done') return <CircleCheck size={14} className="text-[var(--text-secondary)]" aria-label="Hecho" />;
+  if (status === 'failed') return <CircleX size={14} className="text-[var(--accent-red)]" aria-label="Fallido" />;
+  if (status === 'in_progress') return <CircleDot size={14} className="text-[var(--text-primary)]" aria-label="En curso" />;
+  return <Circle size={14} className="text-[var(--text-muted)] opacity-70" aria-label="Pendiente" />;
 }
 
 export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean }) {
+  const [open, setOpen] = useState(true);
   const done = plan.steps.filter((step) => step.status === 'done').length;
   return (
-    <section aria-label="Plan del agente" className="agent-trace-in max-w-[min(620px,100%)] rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
-      <header className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
-        <ListChecks size={14} className="shrink-0 text-[var(--accent-primary-hover)]" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate font-medium text-[var(--text-primary)]" title={plan.goal}>{plan.goal}</span>
-        <span className="shrink-0 tabular-nums">{done}/{plan.steps.length}{running ? ' · en curso' : ''}</span>
-      </header>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--bg-input)]" aria-hidden="true">
-        <div className="h-full rounded-full bg-[var(--accent-green)] transition-[width] duration-300" style={{ width: `${(done / Math.max(1, plan.steps.length)) * 100}%` }} />
-      </div>
-      <ol className="mt-2 space-y-1">
-        {plan.steps.map((step, index) => (
-          <li key={`${index}-${step.title}`} className="flex items-start gap-2 text-[12px] leading-[18px]">
-            <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center"><PlanStepIcon status={step.status} /></span>
-            <span className="min-w-0">
-              <span className={step.status === 'done' ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'}>{step.title}</span>
-              {step.evidence && <span className="block text-[11px] text-[var(--text-muted)]">{step.evidence}</span>}
-            </span>
-          </li>
-        ))}
-      </ol>
+    <section aria-label="Plan del agente" className="agent-trace-in max-w-[min(620px,100%)] text-[13px] leading-5">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="group flex max-w-full items-center gap-2 rounded-md py-0.5 text-left text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+      >
+        <Route size={14} className="shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate" title={plan.goal}>Plan: {plan.goal}</span>
+        <span className="shrink-0 tabular-nums text-[var(--text-muted)]">{done} de {plan.steps.length} hechos</span>
+        <ChevronDown size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? '' : '-rotate-90'}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <ol className="ml-[6.5px] mt-1 space-y-1 border-l border-[var(--border-subtle)] pl-[13px]">
+          {plan.steps.map((step, index) => (
+            <li key={`${index}-${step.title}`} className="flex items-start gap-2">
+              <span className="flex h-5 shrink-0 items-center"><PlanStepIcon status={step.status} /></span>
+              <span className="min-w-0">
+                <span className={
+                  step.status === 'in_progress' && running ? 'agent-shimmer'
+                    : step.status === 'pending' ? 'text-[var(--text-muted)]'
+                      : step.status === 'failed' ? 'text-[var(--accent-red)]'
+                        : 'text-[var(--text-secondary)]'
+                }>{step.title}</span>
+                {step.evidence && <span className="block text-[11.5px] leading-4 text-[var(--text-muted)]">{step.evidence}</span>}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }

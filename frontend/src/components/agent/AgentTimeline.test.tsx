@@ -106,8 +106,11 @@ it('muestra el plan con su progreso y la evidencia de cada paso', () => {
     { title: 'Guardar el informe', status: 'pending' },
   ] }} />);
   expect(screen.getByRole('region', { name: 'Plan del agente' })).toBeInTheDocument();
-  expect(screen.getByText('1/3 · en curso')).toBeInTheDocument();
+  expect(screen.getByText('1 de 3 hechos')).toBeInTheDocument();
   expect(screen.getByText('fs_read devolvió 12 filas')).toBeInTheDocument();
+  expect(screen.getByText('Buscar el tipo de cambio')).toHaveClass('agent-shimmer');
+  fireEvent.click(screen.getByRole('button', { name: /Plan: Preparar el informe/ }));
+  expect(screen.queryByText('Leer el Excel')).not.toBeInTheDocument();
 });
 
 it('detalla el comando y la ruta en la aprobación de una acción del equipo', () => {
