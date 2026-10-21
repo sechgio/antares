@@ -47,6 +47,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- **Rendimiento y capacidad**: Canvas descarga documentos por grupos y conserva el progreso si falla alguno; Canvas y Espacios paginan los listados completos. Las capas Boolean reutilizan índices al comparar dependencias. Exportaciones y efectos del editor comparten el scheduler pesado; IPC admite solicitudes antes de serializarlas, limita los bytes pendientes y respeta la contrapresión. El catálogo JSON evita escrituras idénticas y las métricas offline distinguen las estimaciones del transporte medido.
 - **Optimizador de imágenes / guardado atómico**: los nombres de archivo guardados se sanean con la misma autoridad que el resto del producto —incluidos los nombres reservados de Windows como `CON` o `AUX`, que ya no se escriben con nombre inválido— y la escritura atómica hace `fsync` antes de publicar, como el guardado de configuración.
 - **Canvas / sincronización**: los envíos pendientes se conservan hasta la respuesta del servidor, recuperan la versión local más reciente y se descartan al borrar el documento. Un fallo de localStorage no bloquea el envío en memoria.
 - **Agent / estándares**: la retirada de Flujos conserva los archivos que no sean PDFs de un productor registrado, los PDFs reutilizados y las salidas sin procedencia comprobable; también conserva la carpeta de estado si contiene una salida pendiente. El esquema de actualización de tareas de Espacios exige la revisión consultada.

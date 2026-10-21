@@ -4,6 +4,8 @@ import json
 import logging
 import threading
 import uuid
+from collections.abc import Callable
+from concurrent.futures import wait
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -11,6 +13,7 @@ from typing import Any, cast
 from backend.core.editor.assets import AssetImportError, import_file
 from backend.core.editor.toolchain import ToolchainError
 from backend.core.observability import log_event
+from backend.core.scheduler import get_scheduler
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
@@ -230,6 +233,22 @@ def cancel_editor_job(job_id: str, job_manager: Any) -> dict[str, Any]:  # allow
 EXPORT_STAGES: tuple[str, ...] = ("validando", "rendering", "verificando", "publicando")
 
 
+def _run_heavy_editor_job(job: Any, operation: Callable[[], object]) -> None:
+    def execute() -> object:
+        if _check_cancelled(job):
+            raise ToolchainError("trabajo cancelado")
+        return operation()
+
+    future = get_scheduler().submit_heavy(execute, block=True, cancel_check=lambda: _check_cancelled(job))
+    if future is None:
+        raise ToolchainError("trabajo cancelado")
+    while not future.done():
+        if _check_cancelled(job) and future.cancel():
+            raise ToolchainError("trabajo cancelado")
+        wait([future], timeout=0.2)
+    future.result()
+
+
 def run_export_job(job: Any, *, output: Path | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
     from backend.core.editor.render import execute_render
 
@@ -286,7 +305,7 @@ def start_export_job(
     started = job_manager.create_job(
         "editor_export",
         {"document": document, "requestId": request_id},
-        lambda job: run_export_job(job, output=output),
+        lambda job: _run_heavy_editor_job(job, lambda: run_export_job(job, output=output)),
         job_id=jid,
     )
     if not started.get("started"):
@@ -374,7 +393,7 @@ def start_effect_job(
     started = job_manager.create_job(
         "editor_effect",
         {"document": document, "effectType": effect_type, "clipId": clip_id, "requestId": request_id},
-        run_effect_job,
+        lambda job: _run_heavy_editor_job(job, lambda: run_effect_job(job)),
         job_id=jid,
     )
     if not started.get("started"):

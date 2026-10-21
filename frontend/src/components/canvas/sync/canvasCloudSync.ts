@@ -26,6 +26,8 @@ import {
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
 const CLOUD_SYNC_TIMEOUT_MS = 30_000;
+const CLOUD_META_PAGE_SIZE = 200;
+const PULL_SYNC_CONCURRENCY = 4;
 export const MAX_CLOUD_CANVAS_DOCUMENT_BYTES = 16 * 1024 * 1024;
 
 function assertCloudCanvasDocumentSize(doc: CanvasDocument): void {
@@ -51,13 +53,18 @@ export async function listRemoteCanvasMeta(): Promise<CanvasRemoteMeta[] | null>
   if (!supabase) return null;
   const uid = await sessionUserId();
   if (!uid) return null;
-  const { data, error } = await withTimeout(
-    supabase.from('canvas_documents').select('id, name, updated_at, deleted_at'),
-    CLOUD_SYNC_TIMEOUT_MS,
-    'canvas-list-remote',
-  );
-  if (error) throw new Error(error.message);
-  return (data ?? []) as CanvasRemoteMeta[];
+  const rows: CanvasRemoteMeta[] = [];
+  for (let offset = 0; ; offset += CLOUD_META_PAGE_SIZE) {
+    const { data, error } = await withTimeout(
+      supabase.from('canvas_documents').select('id, name, updated_at, deleted_at')
+        .order('id').range(offset, offset + CLOUD_META_PAGE_SIZE - 1),
+      CLOUD_SYNC_TIMEOUT_MS,
+      'canvas-list-remote',
+    );
+    if (error) throw new Error(error.message);
+    rows.push(...(data ?? []));
+    if (!data || data.length < CLOUD_META_PAGE_SIZE) return rows;
+  }
 }
 
 type CanvasPushResult = {
@@ -659,6 +666,7 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   let pushed = 0;
   let deletedLocal = 0;
   let pushErrors = 0;
+  let pullErrors = 0;
   let lastError: string | undefined;
   let reloadOpenId: string | undefined;
   let conflict: SyncConflict | undefined;
@@ -704,32 +712,48 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   }
 
   if (toPullIds.length > 0) {
-    const docs = await fetchRemoteDocuments(toPullIds);
     const { persistDataUrlsAsCanvasAssets } = await import('../utils/imageBlobStore');
-    const storedDocs = await Promise.all(docs.map((doc) => persistDataUrlsAsCanvasAssets(doc)));
-    await Promise.all(storedDocs.map(async (doc) => {
-      if (deletingIds.has(doc.id) || pendingCanvasDeletes().includes(doc.id)) return;
-      const current = options.getOpenState?.();
-      if (current?.document.id === doc.id && current.dirty) {
-        conflict = {
-          localDoc: current.document, remoteDoc: doc,
-          remoteUpdatedAt: doc.updatedAt || '', localUpdatedAt: current.document.updatedAt || '',
-        };
-        return;
-      }
+    for (let offset = 0; offset < toPullIds.length; offset += PULL_SYNC_CONCURRENCY) {
+      const ids = toPullIds.slice(offset, offset + PULL_SYNC_CONCURRENCY);
+      let docs: CanvasDocument[];
       try {
-        await api.canvasSave(doc, {
-          touch: false, slim: true, expectedUpdatedAt: localById.get(doc.id)?.updatedAt || '',
-        });
+        docs = await fetchRemoteDocuments(ids);
       } catch (err) {
-        if (err && typeof err === 'object' && 'category' in err && err.category === 'RESOURCE_LOCKED') return;
-        throw err;
+        pullErrors += ids.length;
+        lastError = errorMessage(err, String(err));
+        continue;
       }
-      pulled += 1;
-      if (options.openDocumentId === doc.id && !options.openDirty) {
-        reloadOpenId = doc.id;
+      const settled = await Promise.allSettled(docs.map(async (remoteDoc) => {
+        const doc = await persistDataUrlsAsCanvasAssets(remoteDoc);
+        if (deletingIds.has(doc.id) || pendingCanvasDeletes().includes(doc.id)) return;
+        const current = options.getOpenState?.();
+        if (current?.document.id === doc.id && current.dirty) {
+          conflict = {
+            localDoc: current.document, remoteDoc: doc,
+            remoteUpdatedAt: doc.updatedAt || '', localUpdatedAt: current.document.updatedAt || '',
+          };
+          return;
+        }
+        try {
+          await api.canvasSave(doc, {
+            touch: false, slim: true, expectedUpdatedAt: localById.get(doc.id)?.updatedAt || '',
+          });
+        } catch (err) {
+          if (err && typeof err === 'object' && 'category' in err && err.category === 'RESOURCE_LOCKED') return;
+          throw err;
+        }
+        pulled += 1;
+        if (options.openDocumentId === doc.id && !options.openDirty) {
+          reloadOpenId = doc.id;
+        }
+      }));
+      for (const result of settled) {
+        if (result.status === 'rejected') {
+          pullErrors += 1;
+          lastError = errorMessage(result.reason, String(result.reason));
+        }
       }
-    }));
+    }
   }
 
   if (conflictRemoteDeletedMeta && options.openDocumentId) {
@@ -838,7 +862,10 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     });
   }
 
-  return { pulled, pushed, deletedLocal, reloadOpenId, skipped: false, pushErrors, lastError, conflict };
+  if (pullErrors > 0) {
+    reportFrontendError({ kind: 'sync_error', view: 'canvas.pull', message: lastError ?? 'Cloud pull failed' });
+  }
+  return { pulled, pushed, deletedLocal, reloadOpenId, skipped: false, pushErrors, pullErrors, lastError, conflict };
 }
 
 async function publishAcceptedPush(result: CanvasPushResult): Promise<void> {
