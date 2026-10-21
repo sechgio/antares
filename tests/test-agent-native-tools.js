@@ -44,6 +44,9 @@ for (const bad of ['file:///C:/Windows/win.ini', 'javascript:alert(1)', 'chrome:
     'el panel se escala con el zoom de la interfaz y se ajusta a la ventana');
   const negative = browser.clampBounds({ x: -10, y: -5, width: 50, height: 40 }, 1, { width: 800, height: 600 });
   assert(negative.x === 0 && negative.y === 0, 'el panel nunca se coloca fuera de la ventana');
+  assert(browser.siteUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) antares-app/0.11.12 Chrome/152.0.7977.130 Electron/44.6.0 Safari/537.36')
+    === 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.130 Safari/537.36',
+  'los sitios ven un Chrome normal, sin Electron ni el nombre de la app');
   assert(browser.state().open === false && browser.state().user_control === false, 'sin página abierta el estado está vacío');
   assert(browser.dock(null).docked === false && browser.dock({ x: 1, y: 2, width: 0, height: 5 }).docked === false,
     'un hueco vacío o sin tamaño no monta la página');
@@ -76,7 +79,8 @@ async function exportTest() {
     stubModule('electron', {
       BrowserWindow: function () { return parent; },
       WebContentsView: function () { return { webContents: contents, setBounds: () => {}, getBounds: () => ({ width: 1280 }) }; },
-      session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, on: () => {} }) },
+      session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, on: () => {},
+        getUserAgent: () => 'Mozilla/5.0 Chrome/1 Electron/1', setUserAgent: () => {} }) },
     });
     const timers = installInertTimers();
     try { await browser.navigate('open', 'https://example.com'); } finally { timers.restore(); }

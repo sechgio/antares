@@ -77,11 +77,18 @@ function normalizeUrl(raw) {
   return `https://duckduckgo.com/html/?q=${encodeURIComponent(value)}`;
 }
 
+// Los sitios ven un Chrome normal: sin «Electron/…» ni el nombre de la app,
+// que muchos tratan como tráfico automatizado (igual que Claude Desktop).
+function siteUserAgent(agent) {
+  return String(agent).replace(/\s(?!(?:Mozilla|AppleWebKit|Chrome|Safari)\/)[^\s/()]+\/[^\s()]+/g, '');
+}
+
 function prepareSession(electron) {
   const ses = electron.session.fromPartition(PARTITION);
   if (sessionReady) return ses;
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
+  ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
   ses.on('will-download', (event, item) => {
     event.preventDefault();
     item.cancel();
@@ -451,4 +458,4 @@ function close() {
   docked = null;
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds, siteUserAgent };
