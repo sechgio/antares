@@ -66,6 +66,85 @@ async function run() {
   console.log('Testing IPC pending-request admission...\n');
 
   {
+    const proc = makeProc(990);
+    const writes = [];
+    proc.stdin.write = (line) => { writes.push(line); return true; };
+    const router = loadRouter({ currentProc: { ref: proc }, incrementPendingRequests: () => {}, decrementPendingRequests: () => {},
+      env: { ANTARES_IPC_MAX_PENDING_PER_METHOD: '1' } });
+    const first = router._sendRequest('version', {});
+    let serialized = 0;
+    const rejected = await getRejection(router._sendRequest('version', { toJSON: () => { serialized += 1; return {}; } }));
+    assert(rejected?.category === 'CAPACITY_EXCEEDED' && serialized === 0, 'count admission rejects before serializing parameters');
+    respond(proc, writes[0]);
+    await first;
+    const circular = {}; circular.self = circular;
+    assert(await getRejection(router._sendRequest('version', circular)) instanceof Error, 'serialization failures reject asynchronously');
+    const next = router._sendRequest('version', {});
+    assert(writes.length === 2, 'serialization failure releases the reserved method slot');
+    respond(proc, writes[1]);
+    await next;
+  }
+
+  {
+    const proc = makeProc(991);
+    const writes = [];
+    proc.stdin.write = (line) => { writes.push(line); return false; };
+    const router = loadRouter({ currentProc: { ref: proc }, incrementPendingRequests: () => {}, decrementPendingRequests: () => {} });
+    const first = router._sendRequest('version', {});
+    const blocked = await getRejection(router._sendRequest('formats', {}));
+    assert(blocked?.details?.reason === 'ipc_stdin_backpressure' && writes.length === 1, 'backpressure prevents concurrent writes until drain');
+    proc.stdin.emit('drain');
+    respond(proc, writes[0]);
+    await first;
+    proc.stdin.write = (line) => { writes.push(line); return true; };
+    const next = router._sendRequest('formats', {});
+    respond(proc, writes[1]);
+    await next;
+    assert(writes.length === 2, 'drain releases stdin admission');
+  }
+
+  {
+    const proc = makeProc(992);
+    const writes = [];
+    proc.stdin.write = (line) => { writes.push(line); return true; };
+    const router = loadRouter({ currentProc: { ref: proc }, incrementPendingRequests: () => {}, decrementPendingRequests: () => {} });
+    const payload = 'x'.repeat(33 * 1024 * 1024);
+    const first = router._sendRequest('version', { payload });
+    let serialized = 0;
+    const rejected = await getRejection(router._sendRequest('formats', { payload, toJSON() { serialized += 1; return { payload }; } }));
+    assert(rejected?.details?.reason === 'ipc_pending_bytes_limit', 'aggregate serialized requests have a byte budget');
+    assert(serialized === 0 && writes.length === 1, 'byte admission rejects before allocating another serialized request');
+    respond(proc, writes[0]);
+    await first;
+    await new Promise((resolve) => setImmediate(resolve));
+    const next = router._sendRequest('formats', { payload });
+    assert(writes.length === 2, 'completed request releases its byte reservation');
+    respond(proc, writes[1]);
+    await next;
+  }
+
+  {
+    const proc = makeProc(993);
+    const writes = [];
+    proc.stdin.write = (line) => { writes.push(line); return false; };
+    const currentProc = { ref: proc };
+    const router = loadRouter({ currentProc, incrementPendingRequests: () => {}, decrementPendingRequests: () => {} });
+    const first = router._sendRequest('version', { payload: 'x'.repeat(33 * 1024 * 1024) });
+    const closed = first.catch((error) => error);
+    proc.emit('close', 1, null);
+    assert(await closed instanceof Error, 'process close rejects a request waiting for drain');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(proc.stdin.listenerCount('drain') === 0 && proc.stdin.listenerCount('error') === 0, 'process close removes drain listeners');
+    const replacement = makeProc(994);
+    replacement.stdin.write = (line) => { writes.push(line); return true; };
+    currentProc.ref = replacement;
+    const next = router._sendRequest('version', { payload: 'x'.repeat(33 * 1024 * 1024) });
+    assert(writes.length === 2, 'process close releases bytes for a replacement backend');
+    respond(replacement, writes[1]);
+    await next;
+  }
+
+  {
     const path = require('path');
     const { pathToFileURL } = require('url');
     const trustedFrame = {

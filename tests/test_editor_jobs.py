@@ -125,8 +125,91 @@ def test_queue_full_is_reported_not_raised(manager: JobManager, tmp_path: Path) 
     manager.cancel_job("editor_import_blocker")
 
 
-def test_export_job_binds_its_cancellation_check(manager: JobManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("job_type", ["export", "effect"])
+@pytest.mark.parametrize("queue_limit", [0, 1])
+def test_editor_heavy_jobs_share_capacity_and_cancel_before_execution(
+    manager: JobManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, job_type: str, queue_limit: int,
+) -> None:
+    import threading
+
+    from backend.core.editor import jobs
+    from backend.core.scheduler import WorkScheduler
+
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=queue_limit)
+    monkeypatch.setattr(jobs, "get_scheduler", lambda: scheduler)
+    entered = threading.Event()
+    release = threading.Event()
+    executed = threading.Event()
+
+    def blocker() -> None:
+        entered.set()
+        assert release.wait(10)
+
+    blocker_future = scheduler.submit_heavy(blocker)
+    assert blocker_future is not None
+    assert entered.wait(2)
+    monkeypatch.setattr(jobs, "run_export_job", lambda *_args, **_kwargs: executed.set() or {})
+    monkeypatch.setattr(jobs, "run_effect_job", lambda *_args: executed.set() or {})
+    try:
+        if job_type == "export":
+            started = jobs.start_export_job(manager, {}, output=tmp_path / "export.mp4")
+        else:
+            started = jobs.start_effect_job(manager, {}, "chromakey")
+        assert started["started"] is True
+        assert not executed.wait(0.1)
+        assert manager.cancel_job(started["jobId"])["cancelled"] is True
+        _wait_done(manager, started["jobId"], timeout_s=2)
+        assert not executed.is_set()
+        assert not manager.get_job(started["jobId"]).state.running
+    finally:
+        release.set()
+        blocker_future.result(timeout=2)
+        scheduler.shutdown()
+
+
+@pytest.mark.parametrize("job_type", ["export", "effect"])
+def test_editor_heavy_jobs_run_after_shared_capacity_is_released(
+    manager: JobManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, job_type: str,
+) -> None:
+    import threading
+
+    from backend.core.editor import jobs
+    from backend.core.scheduler import WorkScheduler
+
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1)
+    monkeypatch.setattr(jobs, "get_scheduler", lambda: scheduler)
+    release = threading.Event()
+    executed = threading.Event()
+    scheduler.submit_heavy(lambda: release.wait(5))
+    monkeypatch.setattr(jobs, "run_export_job", lambda *_args, **_kwargs: executed.set() or {"output": "ok"})
+    monkeypatch.setattr(jobs, "run_effect_job", lambda *_args: executed.set() or {"output": "ok"})
+    try:
+        if job_type == "export":
+            started = jobs.start_export_job(manager, {}, output=tmp_path / "export.mp4")
+        else:
+            started = jobs.start_effect_job(manager, {}, "chromakey")
+        assert not executed.wait(0.1)
+        release.set()
+        assert executed.wait(2)
+        _wait_done(manager, started["jobId"])
+        job = manager.get_job(started["jobId"])
+        assert job is not None
+        assert not job.state.running
+        assert job.state.err_count == 0
+    finally:
+        release.set()
+        scheduler.shutdown()
+
+
+def test_export_job_binds_its_cancellation_check(
+    manager: JobManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest,
+) -> None:
     from backend.core.editor.store import new_project_document
+    from backend.core.scheduler import WorkScheduler
+
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1)
+    request.addfinalizer(scheduler.shutdown)
+    monkeypatch.setattr("backend.core.editor.jobs.get_scheduler", lambda: scheduler)
 
     output = tmp_path / "export.mp4"
     monkeypatch.setattr("backend.core.editor.jobs._history_dir", lambda: tmp_path)

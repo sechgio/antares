@@ -688,6 +688,21 @@ function documentLayerDependencyIds(layer: CanvasLayer): string[] {
   return ids;
 }
 
+const documentLayerIndexes = new WeakMap<CanvasLayer[], Map<string, CanvasLayer>>();
+
+function documentLayerIndex(layers: CanvasLayer[] | undefined): Map<string, CanvasLayer> | undefined {
+  if (!layers) return undefined;
+  let index = documentLayerIndexes.get(layers);
+  if (!index) {
+    index = new Map();
+    for (const layer of layers) {
+      if (!index.has(layer.id)) index.set(layer.id, layer);
+    }
+    documentLayerIndexes.set(layers, index);
+  }
+  return index;
+}
+
 export function documentLayersRelevantEqual(
   layer: CanvasLayer,
   prevLayers: CanvasLayer[] | undefined,
@@ -695,12 +710,12 @@ export function documentLayersRelevantEqual(
 ): boolean {
   if (prevLayers === nextLayers) return true;
   if (!layerNeedsDocumentLayers(layer)) return true;
-  const prev = prevLayers ?? [];
-  const next = nextLayers ?? [];
   const ids = documentLayerDependencyIds(layer);
   if (ids.length === 0) return true;
+  const prev = documentLayerIndex(prevLayers);
+  const next = documentLayerIndex(nextLayers);
   for (const id of ids) {
-    if (prev.find((l) => l.id === id) !== next.find((l) => l.id === id)) return false;
+    if (prev?.get(id) !== next?.get(id)) return false;
   }
   return true;
 }

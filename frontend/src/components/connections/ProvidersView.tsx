@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, ChevronRight, ExternalLink, KeyRound, Lock, PlugZap, ShieldCheck, Trash2 } from 'lucide-react';
+import { AlertCircle, ChevronRight, ExternalLink, KeyRound, PlugZap, ShieldCheck, Trash2 } from 'lucide-react';
 import { aiProvidersApi, type AiProviderSpec, type AiProviderStatus } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
@@ -26,6 +26,7 @@ export default function ProvidersView() {
   const [loadError, setLoadError] = useState(false);
   const [probing, setProbing] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<string, FormState>>({});
+  const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -167,35 +168,28 @@ export default function ProvidersView() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-6 py-5">
+      <div className="mx-auto max-w-4xl px-4 py-5 sm:px-6">
         <h2 className="text-sm font-semibold text-[var(--text-primary)]">Proveedores</h2>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
-          Después podrás usarlo en el Agente o en un paso de IA.
+          Conecta un servicio para usar sus modelos en el Agente y los pasos de IA.
         </p>
-        <ol className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {STEPS.map((step, i) => (
-            <li
-              key={step}
-              className="flex items-center gap-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)]"
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--bg-input)] text-[10px] font-semibold tabular-nums text-[var(--text-primary)]">
-                {i + 1}
-              </span>
-              {step}
-            </li>
-          ))}
-        </ol>
-        <div className="mb-5 mt-3 flex flex-col gap-1 text-[11px] text-[var(--text-muted)]">
-          <span className="inline-flex items-center gap-1.5">
-            <ShieldCheck size={12} className="shrink-0 text-[var(--accent-green)]" />
-            Las claves se guardan cifradas en este equipo.
-          </span>
-          <span>
-            Para otro proveedor compatible, usa la tarjeta del protocolo que indique su documentación y cambia la dirección y el modelo.
-          </span>
+        <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+          <ShieldCheck size={12} className="shrink-0 text-[var(--accent-green)]" />
+          Las claves se guardan cifradas en este equipo.
         </div>
+        <details className="mb-4 mt-2 text-xs text-[var(--text-secondary)]">
+          <summary className="w-fit cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-primary)]">Ayuda de configuración</summary>
+          <div className="mt-2 space-y-2 leading-relaxed">
+            <ol className="list-inside list-decimal space-y-1">
+              {STEPS.map((step) => <li key={step}>{step}</li>)}
+            </ol>
+            <p>Usa una clave de tu cuenta en el servicio. El uso puede tener un coste según tu plan. Para Ollama, instala el servicio y descarga un modelo en tu equipo.</p>
+            <p>El modelo predeterminado se usará en conversaciones nuevas y pasos de IA sin modelo propio. «Probar» consulta el listado de modelos; no genera texto.</p>
+            <p>Para otro proveedor compatible, elige su protocolo y cambia la dirección y el modelo según su documentación.</p>
+          </div>
+        </details>
 
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <div className="divide-y divide-[var(--border-subtle)] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
           {builtins.map((p) => {
             const form = forms[p.id];
             const st = statuses[p.id];
@@ -204,122 +198,123 @@ export default function ProvidersView() {
               <section
                 key={p.id}
                 aria-label={p.label}
-                className="flex flex-col rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] transition-colors duration-150 hover:border-[var(--border-medium)]"
+                className="first:rounded-t-xl last:rounded-b-xl"
               >
-                <div className="flex items-start gap-3 p-4 pb-3">
-                  <ProviderIcon providerId={p.id} label={p.label} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-[var(--text-primary)]">{p.label}</div>
-                    <div className="mt-0.5 text-xs text-[var(--text-secondary)]">{p.description}</div>
-                  </div>
-                  <StatusBadge tone={providerStatusTone(p, st)}>{providerStatusText(p, st)}</StatusBadge>
-                </div>
+                <Button
+                  size="none"
+                  variant="none"
+                  className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 text-left hover:bg-[var(--bg-elevated)] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]"
+                  aria-label={`Configurar ${p.label}`}
+                  aria-expanded={expandedProvider === p.id}
+                  aria-controls={`provider-settings-${p.id}`}
+                  onClick={() => setExpandedProvider((current) => current === p.id ? null : p.id)}
+                >
+                  <span className="row-span-2 sm:row-span-1"><ProviderIcon providerId={p.id} label={p.label} /></span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-[var(--text-primary)]">{p.label}</span>
+                    <span className="mt-0.5 block truncate font-mono text-[11px] text-[var(--text-secondary)]" title={p.default_model}>{p.default_model}</span>
+                  </span>
+                  <span className="col-start-2 row-start-2 sm:col-start-auto sm:row-start-auto">
+                    <StatusBadge tone={providerStatusTone(p, st)}>{providerStatusText(p, st)}</StatusBadge>
+                  </span>
+                  <ChevronRight size={15} className={`col-start-3 row-span-2 row-start-1 text-[var(--text-secondary)] sm:col-start-auto sm:row-span-1 sm:row-start-auto ${expandedProvider === p.id ? 'rotate-90' : ''}`} />
+                </Button>
 
-                <div className="mx-4 flex items-start justify-between gap-3 rounded-lg bg-[var(--bg-input)] px-3 py-2.5">
-                  <div className="min-w-0 space-y-1 text-[11px] text-[var(--text-secondary)]">
-                    {p.has_key && (
-                      <div className="flex items-center gap-1.5 font-mono text-[var(--text-primary)]">
-                        <Lock size={11} className="shrink-0 text-[var(--text-secondary)]" />
-                        <span className="truncate">Clave: {p.key_masked}</span>
-                      </div>
+                <div id={`provider-settings-${p.id}`} hidden={expandedProvider !== p.id}>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-subtle)] px-4 pt-3">
+                    <p className="text-xs text-[var(--text-secondary)]">{p.description}</p>
+                    {p.docs && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`${p.needs_key ? 'Obtener clave de' : 'Instalar'} ${p.label}`}
+                        onClick={() => window.open(p.docs, '_blank')}
+                      >
+                        {p.needs_key ? 'Obtener clave' : 'Cómo instalar'}
+                        <ExternalLink size={12} />
+                      </Button>
                     )}
-                    <p className="text-pretty">{p.needs_key ? 'Usa una clave de tu cuenta en este servicio. El uso puede tener un coste según tu plan.' : 'Este servicio funciona en tu equipo. Instálalo y descarga un modelo antes de probar la conexión.'}</p>
                   </div>
-                  {p.docs && (
-                    <Button
-                      className="shrink-0"
-                      size="sm"
-                      variant="secondary"
-                      aria-label={`${p.needs_key ? 'Obtener clave de' : 'Instalar'} ${p.label}`}
-                      onClick={() => window.open(p.docs, '_blank')}
-                    >
-                      {p.needs_key ? 'Obtener clave de acceso' : 'Ver cómo instalar'}
-                      <ExternalLink size={12} />
-                    </Button>
-                  )}
-                </div>
 
-                <div className="space-y-3 p-4">
-                  {p.needs_key && (
+                  <div className="grid gap-3 p-4 sm:grid-cols-2">
+                    {p.needs_key && (
+                      <label className="block text-xs font-medium text-[var(--text-secondary)]">
+                        Clave de acceso
+                        <Input
+                          className="mt-1.5 w-full"
+                          type="password"
+                          disabled={busy}
+                          value={form?.apiKey ?? ''}
+                          onChange={(e) => updateForm(p, { apiKey: e.target.value })}
+                          placeholder={p.has_key ? `Actual: ${p.key_masked}` : 'Clave de acceso (API key)'}
+                          spellCheck={false}
+                          aria-label={`API key ${p.label}`}
+                        />
+                      </label>
+                    )}
                     <label className="block text-xs font-medium text-[var(--text-secondary)]">
-                      Clave de acceso
+                      Modelo predeterminado
                       <Input
                         className="mt-1.5 w-full"
-                        type="password"
+                        value={form?.model ?? p.default_model}
                         disabled={busy}
-                        value={form?.apiKey ?? ''}
-                        onChange={(e) => updateForm(p, { apiKey: e.target.value })}
-                        placeholder={p.has_key ? `Actual: ${p.key_masked}` : 'Clave de acceso (API key)'}
+                        onChange={(e) => updateForm(p, { model: e.target.value })}
+                        maxLength={120}
                         spellCheck={false}
-                        aria-label={`API key ${p.label}`}
+                        aria-label={`Modelo ${p.label}`}
+                        placeholder="Nombre exacto del modelo según el servicio"
                       />
                     </label>
-                  )}
-                  <label className="block text-xs font-medium text-[var(--text-secondary)]">
-                    Modelo predeterminado
-                    <Input
-                      className="mt-1.5 w-full"
-                      value={form?.model ?? p.default_model}
-                      disabled={busy}
-                      onChange={(e) => updateForm(p, { model: e.target.value })}
-                      maxLength={120}
-                      spellCheck={false}
-                      aria-label={`Modelo ${p.label}`}
-                      placeholder="Nombre exacto del modelo según el servicio"
-                    />
-                    <span className="mt-1 block text-[11px] font-normal text-[var(--text-muted)]">
-                      Se usará en conversaciones nuevas y pasos de IA sin modelo propio. «Probar» consulta el listado de modelos; no genera texto.
-                    </span>
-                  </label>
-                  {p.editable_base_url && (
-                    <details open={!p.needs_key} className="group">
-                      <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] [&::-webkit-details-marker]:hidden">
-                        <ChevronRight size={13} className="transition-transform duration-150 group-open:rotate-90" />
-                        {p.needs_key ? 'Dirección del servicio (avanzado)' : 'Dirección del servicio local'}
-                      </summary>
-                      <div className="mt-1.5 pl-[17px]">
-                        <Input
-                          className="w-full"
-                          value={form?.baseUrl ?? p.base_url}
-                          disabled={busy}
-                          onChange={(e) => updateForm(p, { baseUrl: e.target.value })}
-                          placeholder={`Base URL (vacío = ${p.default_base_url})`}
-                          spellCheck={false}
-                          aria-label={`Base URL ${p.label}`}
-                        />
-                        <p className="mt-1 text-[11px] text-[var(--text-muted)]">Dirección base de la API, sin /chat/completions ni /messages. Conserva /v1 si el servicio lo indica. Vacío restaura la dirección original.</p>
-                      </div>
-                    </details>
-                  )}
-                </div>
+                    {p.editable_base_url && (
+                      <details open={!p.needs_key} className={`group ${p.needs_key ? 'sm:col-span-2' : ''}`}>
+                        <summary className="flex cursor-pointer list-none items-center gap-1 rounded text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-primary)] [&::-webkit-details-marker]:hidden">
+                          <ChevronRight size={13} className="transition-transform duration-150 group-open:rotate-90" />
+                          {p.needs_key ? 'Dirección del servicio (avanzado)' : 'Dirección del servicio local'}
+                        </summary>
+                        <div className="mt-1.5 pl-[17px]">
+                          <Input
+                            className="w-full"
+                            value={form?.baseUrl ?? p.base_url}
+                            disabled={busy}
+                            onChange={(e) => updateForm(p, { baseUrl: e.target.value })}
+                            placeholder={`Base URL (vacío = ${p.default_base_url})`}
+                            spellCheck={false}
+                            aria-label={`Base URL ${p.label}`}
+                          />
+                          <p className="mt-1 text-[11px] text-[var(--text-muted)]">Dirección base de la API, sin /chat/completions ni /messages. Conserva /v1 si el servicio lo indica. Vacío restaura la dirección original.</p>
+                        </div>
+                      </details>
+                    )}
+                  </div>
 
-                {st && !st.reachable && st.error && (
-                  <p role="alert" className="mx-4 mb-3 flex items-start gap-1.5 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-red)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_8%,transparent)] px-3 py-2 text-[11px] text-[var(--accent-red)]">
-                    <AlertCircle size={12} className="mt-px shrink-0" />
-                    <span className="break-words">{st.error}</span>
-                  </p>
-                )}
+                  {st && !st.reachable && st.error && (
+                    <p role="alert" className="mx-4 mb-3 flex items-start gap-1.5 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-red)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-red)_8%,transparent)] px-3 py-2 text-[11px] text-[var(--accent-red)]">
+                      <AlertCircle size={12} className="mt-px shrink-0" />
+                      <span className="break-words">{st.error}</span>
+                    </p>
+                  )}
 
-                <div className="flex items-center gap-2 border-t border-[var(--border-subtle)] px-4 py-3">
-                  <Button size="sm" disabled={busy} onClick={() => void save(p)}>
-                    <KeyRound size={13} />
-                    {p.configured ? 'Actualizar' : 'Guardar'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={busy || (p.needs_key && !p.has_key)}
-                    onClick={() => void probe(p)}
-                  >
-                    <PlugZap size={13} />
-                    Probar
-                  </Button>
-                  {p.configured && (
-                    <Button className="ml-auto hover:text-[var(--accent-red)]" size="sm" variant="ghost" disabled={busy} onClick={() => void remove(p)}>
-                      <Trash2 size={13} />
-                      Eliminar
+                  <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] px-4 py-3">
+                    <Button size="sm" disabled={busy} onClick={() => void save(p)}>
+                      <KeyRound size={13} />
+                      {p.configured ? 'Actualizar' : 'Guardar'}
                     </Button>
-                  )}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy || (p.needs_key && !p.has_key)}
+                      onClick={() => void probe(p)}
+                    >
+                      <PlugZap size={13} />
+                      Probar
+                    </Button>
+                    {p.configured && (
+                      <Button className="ml-auto hover:text-[var(--accent-red)]" size="sm" variant="ghost" disabled={busy} onClick={() => void remove(p)}>
+                        <Trash2 size={13} />
+                        Eliminar
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </section>
             );

@@ -90,6 +90,19 @@ describe('useCanvasSync conflict handling', () => {
     vi.useRealTimers();
   });
 
+  it('refreshes successful pulls and reports a partial pull error', async () => {
+    syncCanvasDocuments.mockResolvedValue({ pulled: 4, pushed: 0, deletedLocal: 0, skipped: false, pushErrors: 0, pullErrors: 1 });
+    const refreshList = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => {
+      const historyDocRef = useRef(createEmptyDocument('Local'));
+      return useCanvasSync({ historyDocRef, isOpenDirty: () => false, refreshList, replaceDocument: vi.fn() });
+    });
+    await act(async () => { await result.current.runCloudSync(); });
+    expect(refreshList).toHaveBeenCalled();
+    expect(result.current.syncStatus).toBe('error');
+    expect(result.current.syncing).toBe(false);
+  });
+
   it('finishes syncing without waiting for conflict resolution', async () => {
     const localDoc = createEmptyDocument('Local');
     localDoc.id = 'doc-1';

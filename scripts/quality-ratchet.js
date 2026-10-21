@@ -12,7 +12,7 @@ const SKIP_DIRS = new Set([
   'node_modules', '.git', '.venv', 'venv', 'venv312', 'dist', 'dist-electron',
   'data', 'coverage', 'release', 'build', 'scratch', 'agent-tools',
   '.mypy_cache', '.ruff_cache', '.pytest_cache', '__pycache__',
-  '.workbuddy-ai', '.worktrees', 'worktrees', '.superpowers',
+  '.workbuddy-ai', '.worktrees', 'worktrees', '.superpowers', '.agents',
   '.github', 'assets', 'formatos',
 ]);
 

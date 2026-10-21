@@ -372,6 +372,27 @@ describe('canvas perf hot path', () => {
     expect(documentLayersRelevantEqual(masked, layersA, layersC)).toBe(false);
   });
 
+  it('compares Boolean dependencies with linear indexing across one immutable layer update', async () => {
+    const { documentLayersRelevantEqual } = await import('../editor/LayerNode');
+    let idReads = 0;
+    const operands = Array.from({ length: 1000 }, (_, i) => {
+      const layer = createLayer('rect', { id: `operand-${i}` });
+      Object.defineProperty(layer, 'id', { get: () => { idReads += 1; return `operand-${i}`; } });
+      return layer;
+    });
+    const prev = [...operands];
+    const next = [...prev];
+    for (let i = 0; i < 1000; i += 1) {
+      const layer = createLayer('boolean', { meta: { ops: [{ op: 'union', layerId: 'operand-999' }] } });
+      expect(documentLayersRelevantEqual(layer, prev, next)).toBe(true);
+    }
+    expect(idReads).toBeLessThanOrEqual(6000);
+    const changed = [...next.slice(0, -1), createLayer('rect', { id: 'operand-999' })];
+    const bool = createLayer('boolean', { meta: { ops: [{ op: 'union', layerId: 'operand-999' }] } });
+    expect(documentLayersRelevantEqual(bool, next, changed)).toBe(false);
+    expect(documentLayersRelevantEqual(bool, next, next.slice(0, -1))).toBe(false);
+  });
+
   it('ancestorIds with prebuilt Map stays linear for many matches', () => {
     const layers = [];
     for (let i = 0; i < 200; i++) {

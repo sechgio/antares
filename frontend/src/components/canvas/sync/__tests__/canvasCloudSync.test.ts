@@ -61,6 +61,8 @@ function makeSupabase(opts: FakeSupabaseOpts) {
       eq: () => sel,
       in: () => sel,
       is: () => sel,
+      order: () => sel,
+      range: () => sel,
       select: () => sel,
       maybeSingle: async () => opts.select ?? { data: null, error: null },
     };
