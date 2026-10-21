@@ -224,7 +224,7 @@ function _installWindowCloseGuard() {
   }
 }
 
-ipcMain.handle('canvas-flush-ack', async (event) => {
+ipcMain.handle('canvas-flush-ack', async (event, saved) => {
   let trustedSender = false;
   try {
     const { getMainWindow } = require('./window-manager');
@@ -239,7 +239,7 @@ ipcMain.handle('canvas-flush-ack', async (event) => {
   if (_canvasFlushResolver) {
     const resolve = _canvasFlushResolver;
     _canvasFlushResolver = null;
-    resolve(true);
+    resolve(saved === false ? 'save_failed' : true);
   }
   return { ok: true };
 });
@@ -312,7 +312,7 @@ async function _flushCanvasBeforeQuit(win) {
       appendLogEvent('WARN', 'app.flush-timeout', { component: 'electron', timeout_ms: CANVAS_FLUSH_TIMEOUT_MS });
       settle(false);
     }, CANVAS_FLUSH_TIMEOUT_MS);
-    _canvasFlushResolver = (ok) => settle(!!ok);
+    _canvasFlushResolver = (result) => settle(result);
     if (webContents && typeof webContents.once === 'function') {
       webContents.once('render-process-gone', onRendererGone);
       webContents.once('destroyed', onRendererGone);
@@ -325,13 +325,17 @@ async function _flushCanvasBeforeQuit(win) {
   });
   const result = await flushPromise;
   _canvasFlushResolver = null;
-  if (result) appendLogEvent('INFO', 'app.flush-acked', { component: 'electron' });
+  if (result === true) appendLogEvent('INFO', 'app.flush-acked', { component: 'electron' });
   return result;
 }
 
 async function _flushCanvasAndQuit(win) {
   try {
-    if (win && !win.isDestroyed()) await _flushCanvasBeforeQuit(win);
+    if (win && !win.isDestroyed() && await _flushCanvasBeforeQuit(win) === 'save_failed') {
+      _isQuittingDeferred = false;
+      appendLogEvent('WARN', 'app.flush-aborted', { component: 'electron', reason: 'editor_save_failed' });
+      return;
+    }
   } catch (err) {
     console.warn('[main] canvas flush before quit failed:', err && err.message);
   }

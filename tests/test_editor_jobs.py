@@ -9,6 +9,7 @@ from backend.core.editor.jobs import (
     cancel_editor_job,
     editor_job_status,
     is_editor_job,
+    start_export_job,
     start_import_job,
 )
 from backend.core.jobs import JobManager
@@ -122,3 +123,22 @@ def test_queue_full_is_reported_not_raised(manager: JobManager, tmp_path: Path) 
     assert result["started"] is False
     assert result["reason"] == "max_concurrent_reached"
     manager.cancel_job("editor_import_blocker")
+
+
+def test_export_job_binds_its_cancellation_check(manager: JobManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.editor.store import new_project_document
+
+    output = tmp_path / "export.mp4"
+    monkeypatch.setattr("backend.core.editor.jobs._history_dir", lambda: tmp_path)
+
+    def render(document, destination, *, cancel_check):
+        assert cancel_check() is False
+        destination.write_bytes(b"video")
+        return {"output": str(destination), "durationUs": 1_000_000, "streams": 1}
+
+    monkeypatch.setattr("backend.core.editor.render.execute_render", render)
+    started = start_export_job(manager, new_project_document("Prueba"), output=output)
+    _wait_done(manager, started["jobId"])
+    status = editor_job_status(started["jobId"], manager)
+    assert status["state"] == "completed"
+    assert output.read_bytes() == b"video"
