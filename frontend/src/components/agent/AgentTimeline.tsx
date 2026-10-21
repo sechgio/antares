@@ -82,9 +82,13 @@ function keyArgument(params: Record<string, unknown>): string | null {
   return null;
 }
 
+// Los textos largos (páginas, archivos) se leen con sus saltos de línea reales
+// en vez de «\n» escapados; una barra invertida escapada se respeta.
 function prettyJson(text: string): string {
   try {
-    return JSON.stringify(JSON.parse(text), null, 2);
+    const value: unknown = JSON.parse(text);
+    if (typeof value === 'string') return value;
+    return JSON.stringify(value, null, 2).replace(/(?<!\\)((?:\\\\)*)\\n/g, '$1\n');
   } catch {
     return text;
   }

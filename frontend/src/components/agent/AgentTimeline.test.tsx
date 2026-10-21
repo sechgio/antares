@@ -62,6 +62,16 @@ it('muestra cada herramienta con su argumento clave, entrada y salida, y marca e
   expect(container.querySelector('details')).toBeNull();
 });
 
+it('muestra los saltos de línea reales en la salida de una herramienta y respeta las barras escapadas', () => {
+  const { container } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 'r', name: 'fs_read', params: { path: 'notas.txt' }, status: 'done', gated: false,
+    result: JSON.stringify({ text: 'línea uno\nlínea dos', path: 'C:\\new\\notas.txt' }),
+  }] } as never} />);
+  const output = [...container.querySelectorAll('pre')].map((pre) => pre.textContent).find((text) => text?.includes('línea uno'));
+  expect(output).toContain('línea uno\nlínea dos');
+  expect(output).toContain('C:\\\\new\\\\notas.txt');
+});
+
 it('dibuja la delegación en otro agente como una traza con sus pasos', () => {
   render(<MessageRow agent={{ seed: 'antares', name: 'Antares' }} msg={{ role: 'assistant', content: 'Listo.', ts: 1,
     tool_calls: [{
