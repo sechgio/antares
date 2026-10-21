@@ -800,7 +800,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           />
         )}
 
-        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-5 pt-3 md:px-6">
+        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-5 pt-3 md:px-6 [&>*]:mx-auto [&>*]:max-w-[720px]">
           {showHero ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
@@ -857,7 +857,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </button>
           )}
         </div>
-        <div className="shrink-0 p-3">
+        <div className="mx-auto w-full max-w-[744px] shrink-0 px-3 pb-3">
           {readyProviders.length > 0 && (
             <div role="group" aria-label="Sugerencias" className="agent-suggestions no-scrollbar mb-2 flex gap-2 overflow-x-auto overscroll-x-contain py-1">
               {(activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS).map((suggestion) => (
