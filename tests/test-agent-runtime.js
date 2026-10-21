@@ -17,6 +17,7 @@ const PUBLIC_METHODS = [
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
   'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
   'agent_browser',
+  'agent_session_permissions_set',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -249,6 +250,59 @@ async function main() {
     assert((await conv.agent(context)).model.modelId === 'otro-modelo', 'la configuración durable del runtime conserva el modelo');
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
+    const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-permissions-'));
+    const dbPath = path.join(dir, 'agent.sqlite');
+    const { bridge } = makeBridge();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const { session: other } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const changed = await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    assert(changed.session.permission_mode === 'full' && !changed.session.conversationId, 'devuelve el modo guardado sin datos privados');
+    for (const mode of ['invalid', '', null, undefined, true]) {
+      let rejected;
+      try { await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: mode }); } catch (err) { rejected = err; }
+      assert(rejected, `rechaza un modo inválido: ${mode}`);
+    }
+    await runtime.shutdown();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const { sessions } = await runtime.handlers.agent_sessions_list();
+    assert(sessions.find((item) => item.id === session.id).permission_mode === 'full', 'el modo sobrevive al reinicio de SQLite');
+    assert(!sessions.find((item) => item.id === other.id).permission_mode, 'no cambia los permisos de otras conversaciones');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  for (const mode of ['ask', 'auto', 'full']) {
+    const { bridge, state } = makeBridge();
+    const webBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') result.tools.push({ name: 'web_read', description: 'Leer página', gated: false, kind: 'backend', inputSchema: { type: 'object', properties: {} } });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('web_read', {}), fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+    ], webBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: mode });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hazlo' });
+    if (mode !== 'full') {
+      assert(await waitFor(() => state.approvals.size === (mode === 'ask' ? 2 : 1)), `${mode}: pausa las llamadas que requieren aprobación`);
+      assert(state.dispatches.length === (mode === 'ask' ? 0 : 1), `${mode}: no ejecuta las acciones pendientes`);
+      let busy;
+      try { await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' }); } catch (err) { busy = err; }
+      assert(busy && /termine el turno/.test(busy.message), 'no amplía permisos durante un turno activo');
+      for (const approval of state.approvals.values()) await runtime.handlers.agent_approve({ approval_id: approval.id });
+    }
+    assert(await waitIdle(session.id), `${mode}: el turno termina`);
+    assert(state.dispatches.length === 2, `${mode}: ejecuta cada acción una vez`);
+    assert([...state.approvals.values()].every((approval) => approval.status === 'approved'), `${mode}: conserva las aprobaciones en el registro`);
+    assert(state.approvals.size === (mode === 'ask' ? 2 : 1), `${mode}: aplica la política de internet y efectos`);
+    await runtime.shutdown();
   }
 
   {
@@ -526,7 +580,7 @@ async function main() {
     await runtime.shutdown();
   }
 
-  {
+  for (const mode of ['auto', 'full']) {
     const { bridge, state } = makeBridge();
     const executed = [];
     runtime._internal.shared.nativeTools = {
@@ -537,22 +591,35 @@ async function main() {
       ],
       runNativeTool: async (name) => { executed.push(name); return { ok: name }; },
     };
-    await openFaux([
+    const faux = await openFaux([
       fauxAssistantMessage([fauxToolCall('autoimg_status', {}), fauxToolCall('autoimg_sync_to_sheet', {})], { stopReason: 'toolUse' }),
       fauxAssistantMessage('sincronizado'),
     ], bridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: mode });
     const { tools } = await runtime.handlers.agent_tools_list({});
     assert(tools.some((t) => t.name === 'autoimg_status' && t.kind === 'native' && t.module === 'autoimg'), 'tools_list incluye herramientas nativas');
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sincroniza autoimg' });
-    assert(await waitFor(async () =>
-      (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals.length > 0), 'el efecto nativo pide aprobación');
-    assert(JSON.stringify(executed) === JSON.stringify(['autoimg_status']), 'la lectura nativa se ejecuta sin aprobación');
-    const ap = (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals[0];
-    await runtime.handlers.agent_approve({ approval_id: ap.id });
+    if (mode === 'auto') {
+      assert(await waitFor(async () =>
+        (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals.length > 0), 'el efecto nativo pide aprobación');
+      assert(JSON.stringify(executed) === JSON.stringify(['autoimg_status']), 'la lectura nativa se ejecuta sin aprobación');
+      const ap = (await runtime.handlers.agent_messages_list({ session_id: session.id })).pending_approvals[0];
+      await runtime.handlers.agent_approve({ approval_id: ap.id });
+    }
     assert(await waitIdle(session.id), 'el turno termina tras aprobar el efecto nativo');
     assert(JSON.stringify(executed) === JSON.stringify(['autoimg_status', 'autoimg_sync_to_sheet']), 'cada herramienta nativa se ejecuta una vez');
     assert(state.dispatches.every((d) => d.status === 'succeeded'), 'Electron registra el comprobante en Python');
+    if (mode === 'full') {
+      faux.setResponses([
+        fauxAssistantMessage([fauxToolCall('autoimg_sync_to_sheet', {})], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('deshabilitada'),
+      ]);
+      await runtime.handlers.agent_tools_set({ session_id: session.id, names: [] });
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'intenta otra vez' });
+      assert(await waitIdle(session.id), 'termina el turno con una herramienta excluida');
+      assert(executed.length === 2 && state.dispatches.length === 2, 'Acceso completo conserva las herramientas deshabilitadas');
+    }
     runtime._internal.shared.nativeTools = null;
     await runtime.shutdown();
   }
@@ -708,8 +775,8 @@ async function main() {
     const conv = await runtime._internal.state().harness.conversation(
       (await require('../electron/agent-shared').requireSession(session.id)).conversationId, runtime._internal.state().ctx);
     const instructions = (await conv.agent(runtime._internal.state().ctx)).instructions;
-    assert(String(instructions).includes('plantilla de cortes') && String(instructions).includes('requiriendo aprobación'),
-      'las indicaciones del agente se suman sin retirar las reglas de aprobación');
+    assert(String(instructions).includes('plantilla de cortes') && String(instructions).includes('no amplían los permisos elegidos'),
+      'las indicaciones del agente se suman sin ampliar los permisos elegidos');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     assert((await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools.every((t) => t.enabled), 'una conversación normal no hereda el agente');
     await runtime.handlers.agent_profile_delete({ id: profile.id });

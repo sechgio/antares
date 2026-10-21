@@ -18,7 +18,14 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
   const [state, setState] = useState<AgentBrowserState>(EMPTY);
   const [address, setAddress] = useState('');
   const [editing, setEditing] = useState(false);
+  const [width, setWidth] = useState<number | null>(null);
+  const [layout, setLayout] = useState({ width: 340, available: 0 });
+  const [drag, setDrag] = useState<{ pointerId: number; x: number; width: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const minWidth = layout.available ? Math.min(340, layout.available / 2) : 340;
+  const maxWidth = layout.available ? Math.max(minWidth, layout.available - 320) : 760;
+  const clampWidth = (value: number) => Math.min(maxWidth, Math.max(minWidth, value));
 
   useEffect(() => {
     let alive = true;
@@ -40,6 +47,13 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
     const report = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
+        const panel = panelRef.current;
+        const conversation = panel?.previousElementSibling;
+        if (panel && conversation) {
+          const width = panel.getBoundingClientRect().width;
+          const available = width + conversation.getBoundingClientRect().width;
+          setLayout((prev) => prev.width === width && prev.available === available ? prev : { width, available });
+        }
         const rect = element.getBoundingClientRect();
         // La vista nativa pinta encima del DOM: si un menú o diálogo la pisa,
         // se desacopla mientras siga abierto para que no lo tape.
@@ -63,6 +77,7 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
     report();
     const observer = new ResizeObserver(report);
     observer.observe(element);
+    if (panelRef.current?.parentElement) observer.observe(panelRef.current.parentElement);
     const overlays = new MutationObserver(report);
     overlays.observe(document.body, { childList: true });
     window.addEventListener('resize', report);
@@ -86,7 +101,44 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
   const iconButton = 'flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-40';
 
   return (
-    <aside aria-label="Navegador del agente" className="agent-browser flex w-[clamp(340px,44%,760px)] shrink-0 flex-col overflow-hidden rounded-[24px] bg-[var(--bg-base)]">
+    <div
+      ref={panelRef}
+      className="relative flex w-[clamp(340px,44%,760px)] shrink-0"
+      style={{ width: width === null ? undefined : clampWidth(width), maxWidth: layout.available ? maxWidth : undefined }}
+    >
+      <div
+        role="separator"
+        tabIndex={0}
+        aria-label="Ancho del navegador del agente"
+        aria-orientation="vertical"
+        aria-valuemin={Math.round(minWidth)}
+        aria-valuemax={Math.round(maxWidth)}
+        aria-valuenow={Math.round(width === null ? layout.width : clampWidth(width))}
+        title="Arrastra para cambiar el ancho · Doble clic para restablecer"
+        className="agent-browser-resizer"
+        data-resizing={drag ? 'true' : undefined}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDrag({ pointerId: event.pointerId, x: event.clientX, width: panelRef.current?.getBoundingClientRect().width ?? layout.width });
+        }}
+        onPointerMove={(event) => {
+          if (drag?.pointerId === event.pointerId) setWidth(clampWidth(drag.width + drag.x - event.clientX));
+        }}
+        onPointerUp={() => setDrag(null)}
+        onPointerCancel={() => setDrag(null)}
+        onLostPointerCapture={() => setDrag(null)}
+        onDoubleClick={() => setWidth(null)}
+        onKeyDown={(event) => {
+          const current = width === null ? layout.width : clampWidth(width);
+          const next = { ArrowLeft: current + 24, ArrowRight: current - 24, Home: minWidth, End: maxWidth }[event.key];
+          if (next === undefined) return;
+          event.preventDefault();
+          setWidth(clampWidth(next));
+        }}
+      />
+    <aside aria-label="Navegador del agente" className="agent-browser flex min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] bg-[var(--bg-base)]">
       <div className="flex shrink-0 items-center gap-1 px-2.5 pb-2 pt-3">
         <button type="button" className={iconButton} aria-label="Atrás" disabled={!state.can_go_back} onClick={() => void run('back')}>
           <ArrowLeft size={14} />
@@ -150,5 +202,6 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
         )}
       </div>
     </aside>
+    </div>
   );
 }

@@ -14,6 +14,7 @@
     "ai_providers_list": { "handler": "backend:integrations", "idempotent": true, "inputSchema": {"type":"object","properties":{}} },
     "agent_sessions_list": { "handler": "native:agent", "idempotent": true },
     "agent_session_create": { "handler": "native:agent" },
+    "agent_session_permissions_set": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"id":{"type":"string"},"permission_mode":{"type":"string","enum":["ask","auto","full"]}},"required":["id","permission_mode"]} },
     "agent_session_delete": { "handler": "native:agent" },
     "agent_messages_list": { "handler": "native:agent", "idempotent": true },
     "agent_message_send": { "handler": "native:agent" },

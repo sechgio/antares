@@ -1,6 +1,7 @@
 'use strict';
 
 const { assert, finish, stubModule, installInertTimers } = require('./helpers/harness');
+const { EventEmitter } = require('node:events');
 const { nativeToolSpecs } = require('../electron/agent-native-tools');
 const { nativeMethods } = require('../shared/ipc-method-catalog');
 
@@ -61,6 +62,55 @@ for (const bad of ['', '..', 'sub/a.pdf', String.raw`C:\x\a.pdf`, 'a?.pdf']) {
 }
 
 async function exportTest() {
+  {
+    const contents = Object.assign(new EventEmitter(), {
+      isDestroyed: () => false, getURL: () => 'https://example.com', getTitle: () => 'Página',
+      isLoading: () => false, getZoomFactor: () => 1, setZoomFactor: () => {},
+      navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+      setWindowOpenHandler: () => {}, loadURL: async () => {}, close: () => contents.emit('destroyed'),
+    });
+    const moves = [];
+    const makeParent = (name) => ({
+      isDestroyed: () => false,
+      contentView: {
+        addChildView: (child) => moves.push([name, 'add', child]),
+        removeChildView: (child) => moves.push([name, 'remove', child]),
+      },
+    });
+    const main = { ...makeParent('main'), getContentSize: () => [1000, 700],
+      webContents: { getZoomFactor: () => 1, send: () => {} } };
+    let hostVisible = false;
+    let hostOpacity = 1;
+    let hostIgnoresMouse = false;
+    const host = { ...makeParent('host'), on: () => {}, showInactive: () => { hostVisible = true; },
+      setIgnoreMouseEvents: (value) => { hostIgnoresMouse = value; }, destroy: () => {} };
+    const page = { webContents: contents, setBounds: () => {}, getBounds: () => ({ width: 400, height: 500 }) };
+    stubModule('electron/window-manager.js', { getMainWindow: () => main });
+    stubModule('electron', {
+      BrowserWindow: function (options) { hostOpacity = options.opacity ?? 1; return host; },
+      WebContentsView: function () { return page; },
+      session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, on: () => {},
+        getUserAgent: () => 'Mozilla/5.0 Chrome/1 Electron/1', setUserAgent: () => {} }) },
+    });
+    const bounds = { x: 100, y: 50, width: 400, height: 500 };
+    browser.dock(bounds);
+    const timers = installInertTimers();
+    try { await browser.navigate('open', 'https://example.com'); } finally { timers.restore(); }
+    moves.length = 0;
+    browser.dock(null);
+    assert(moves[0]?.[0] === 'main' && moves[0]?.[1] === 'remove' && moves[0]?.[2] === page
+      && moves[1]?.[0] === 'host' && moves[1]?.[1] === 'add',
+    'al salir del panel retira la vista nativa de la ventana principal antes de alojarla fuera de pantalla');
+    assert(browser.state().open && !browser.state().docked, 'ocultar el navegador conserva la página abierta');
+    assert(!hostVisible || hostOpacity === 0, 'fuera de Agent la ventana auxiliar no muestra el navegador');
+    assert(hostIgnoresMouse, 'la ventana auxiliar no intercepta clics de otras pestañas');
+    moves.length = 0;
+    browser.dock(bounds);
+    assert(moves[0]?.[0] === 'host' && moves[0]?.[1] === 'remove' && moves[1]?.[0] === 'main'
+      && moves[1]?.[1] === 'add' && moves[1]?.[2] === page,
+    'volver al panel retira la misma vista de la anfitriona antes de mostrarla en Agent');
+    browser.close();
+  }
   browser.setUserControl(true);
   let blocked = null;
   try { await browser.run('web_read', {}); } catch (err) { blocked = err.message; }

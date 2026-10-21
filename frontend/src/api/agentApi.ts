@@ -1,5 +1,7 @@
 import { _invoke } from './core';
 
+export type AgentPermissionMode = 'ask' | 'auto' | 'full';
+
 export interface AgentSession {
   id: string;
   title: string;
@@ -8,6 +10,7 @@ export interface AgentSession {
   created_at: number;
   updated_at: number;
   last_error: string | null;
+  permission_mode?: AgentPermissionMode;
   profile?: { id: string; name: string };
 }
 
@@ -154,6 +157,9 @@ export const agentApi = {
 
   agentSessionModelSet: (id: string, provider: string, model: string) =>
     _invoke<{ session: AgentSession }>('agent_session_model_set', { id, provider, model }),
+
+  agentSessionPermissionsSet: (id: string, permission_mode: AgentPermissionMode) =>
+    _invoke<{ session: AgentSession }>('agent_session_permissions_set', { id, permission_mode }),
 
   agentSessionDelete: (id: string) =>
     _invoke<{ deleted: boolean; id: string }>('agent_session_delete', { id }),

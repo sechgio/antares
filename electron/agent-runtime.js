@@ -42,8 +42,8 @@ function extractPaths(content) {
 const SYSTEM_PROMPT =
   'Eres el agente de Antares, una app de escritorio de documentos e imágenes. ' +
   'Responde en español. Tienes herramientas para consultar el estado de la app ' +
-  '(métodos de solo lectura) y herramientas con efectos que el usuario aprueba ' +
-  'una a una. Usa herramientas cuando la respuesta dependa de datos reales de la ' +
+  '(métodos de solo lectura) y herramientas con efectos sujetas al modo de permisos ' +
+  'que el usuario elige para la conversación. Usa herramientas cuando la respuesta dependa de datos reales de la ' +
   'app; si una herramienta requiere aprobación explícale al usuario qué hará. ' +
   'Para archivos de salida indica solo un nombre: se generan en los borradores de la ' +
   'conversación; para entregarlos en una carpeta del usuario usa drafts_save. ' +
@@ -256,7 +256,7 @@ async function sessionCreate(params) {
   await execution.ensureProvider(provider, model);
   const instructions = profile
     ? `${SYSTEM_PROMPT}\n\nEres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. `
-      + 'Sus indicaciones orientan el trabajo, pero no amplían permisos: cada acción con efectos sigue requiriendo aprobación.\n'
+      + 'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n'
       + `Indicaciones del usuario:\n${profile.instructions}`
     : SYSTEM_PROMPT;
   const conv = await shared.state.harness.createConversation({
@@ -328,6 +328,26 @@ async function sessionModelSet(params) {
     current.provider = provider;
     current.model = model;
     current.style = info.style || 'openai_chat';
+    current.updated_at = Date.now();
+    const { conversationId, style, modules, ...publicSession } = current;
+    return { session: publicSession };
+  }, ctx());
+}
+
+async function sessionPermissionsSet(params) {
+  const sessionId = _text(params.id, 'la conversación', 120, true);
+  const mode = params.permission_mode;
+  if (!['ask', 'auto', 'full'].includes(mode)) throw validation('Modo de permisos no válido');
+  const session = await requireSession(sessionId);
+  const { pi } = shared.deps;
+  return shared.state.harness.commit(async (tx) => {
+    const live = await tx.doc(pi.LiveDoc, session.conversationId);
+    const inbox = await tx.doc(pi.InboxDoc, session.conversationId);
+    if (live.run || inbox.items.length) throw validation('Espera a que termine el turno para cambiar los permisos');
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    current.permission_mode = mode;
     current.updated_at = Date.now();
     const { conversationId, style, modules, ...publicSession } = current;
     return { session: publicSession };
@@ -734,6 +754,7 @@ module.exports = {
     agent_session_delete: sessionDelete,
     agent_session_rename: sessionRename,
     agent_session_model_set: sessionModelSet,
+    agent_session_permissions_set: sessionPermissionsSet,
     agent_messages_list: messagesList,
     agent_message_send: messageSend,
     agent_tools_list: toolsList,

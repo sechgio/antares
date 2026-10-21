@@ -44,8 +44,8 @@ const TOOLS = {
 };
 
 // La página vive en un WebContentsView. Sin el panel abierto se aloja en una
-// ventana anfitriona fuera de pantalla (una ventana oculta no pinta: sin
-// capturas ni clics); con el panel abierto se monta en la ventana principal
+// ventana anfitriona transparente fuera de pantalla (una ventana oculta no
+// pinta); con el panel abierto se monta en la ventana principal
 // sobre el hueco que el panel le deja, como el navegador de Claude Desktop.
 const HOST_SIZE = { width: 1280, height: 860 };
 const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
@@ -108,6 +108,7 @@ function hostWindow(electron) {
     x: -32000,
     y: -32000,
     show: false,
+    opacity: 0,
     frame: false,
     skipTaskbar: true,
     focusable: false,
@@ -115,6 +116,7 @@ function hostWindow(electron) {
     webPreferences: { backgroundThrottling: false },
   });
   host.on('closed', () => { host = null; });
+  host.setIgnoreMouseEvents(true);
   host.showInactive();
   return host;
 }
@@ -199,8 +201,8 @@ function clampBounds(bounds, zoom, size) {
 // ventana anfitriona; mover el view conserva la página, su historial y su sesión.
 function mount(electron) {
   if (!view) return;
-  const main = docked ? require('./window-manager').getMainWindow() : null;
-  const target = alive(main) ? main : hostWindow(electron);
+  const main = require('./window-manager').getMainWindow();
+  const target = docked && alive(main) ? main : hostWindow(electron);
   const parent = target === main ? host : main;
   if (alive(parent)) parent.contentView.removeChildView(view);
   target.contentView.addChildView(view);

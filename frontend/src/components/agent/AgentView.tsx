@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Globe, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
+import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Globe, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -12,6 +12,7 @@ import Button from '../ui/Button';
 import ThemedSelect from '../ui/ThemedSelect';
 import AgentAvatar from './AgentAvatar';
 import ModelPicker from './ModelPicker';
+import PermissionPicker from './PermissionPicker';
 import ContextUsage from './ContextUsage';
 import ArtifactCard from './ArtifactCard';
 import QuestionCard from './QuestionCard';
@@ -136,6 +137,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
+  const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [suggestionBusy, setSuggestionBusy] = useState(false);
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
@@ -362,6 +364,18 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }, [draft]);
 
   const session = sessions.find((s) => s.id === sessionId) ?? null;
+  const changePermissions = async (mode: AgentPermissionMode) => {
+    if (!sessionId || permissionsBusy) return;
+    setPermissionsBusy(true);
+    try {
+      const { session: updated } = await agentApi.agentSessionPermissionsSet(sessionId, mode);
+      setSessions((list) => list.map((item) => item.id === updated.id ? updated : item));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudieron guardar los permisos'), type: 'error' });
+    } finally {
+      setPermissionsBusy(false);
+    }
+  };
   const queuedForSession = queued.filter((i) => i.session === sessionId);
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
@@ -1048,16 +1062,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           </div>
           <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 px-2 text-[12px] text-[var(--text-muted)]">
             {session ? (
-              <span
-                className="flex min-w-0 items-center gap-1.5"
-                title="Las acciones que modifican datos se pausan hasta que las apruebes"
-              >
-                <ShieldCheck
-                  size={13}
-                  className={pending.length > 0 ? 'shrink-0 text-[var(--accent-yellow)]' : 'shrink-0'}
-                />
-                <span className="truncate">{pending.length > 0 ? `${pending.length} por aprobar` : 'Con aprobación'}</span>
-              </span>
+              <PermissionPicker
+                key={session.id}
+                value={session.permission_mode ?? 'auto'}
+                onChange={(mode) => void changePermissions(mode)}
+                disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
+                pending={pending.length}
+              />
             ) : <span />}
             <div className="flex min-w-0 items-center gap-1">
               {resumable && !running && pending.length === 0 && (
@@ -1125,7 +1136,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             Restablecer herramientas
           </Button>
           <p className="shrink-0 text-[10px] leading-relaxed text-[var(--text-muted)]">
-            {sessionId ? 'La selección se guarda para esta conversación. Las acciones que modifican datos requieren tu aprobación.' : 'Selecciona una conversación para configurar sus herramientas.'}
+            {sessionId ? 'La selección se guarda para esta conversación. Las acciones siguen el modo de permisos elegido.' : 'Selecciona una conversación para configurar sus herramientas.'}
           </p>
         </div>,
         document.body,

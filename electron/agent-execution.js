@@ -8,6 +8,7 @@ const {
   profiles,
   sessionForConversation,
   commitSessions,
+  requireSession,
   dispatchCallId,
 } = require('./agent-shared');
 
@@ -367,7 +368,9 @@ async function beforeTool(call, api, context) {
     return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno con los mismos argumentos. No lo repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
-  if (!spec.gated) return undefined;
+  const session = await requireSession(sessionId);
+  const mode = session.permission_mode || 'auto';
+  if (!spec.gated && !(mode === 'ask' && call.name.startsWith('web_'))) return undefined;
 
   const callId = dispatchCallId(call.id, api.taskId);
   let approval;
@@ -380,6 +383,9 @@ async function beforeTool(call, api, context) {
       params: call.arguments || {},
       ...(approvedContext ? { context: approvedContext } : {}),
     }));
+    if (mode === 'full' && approval.status === 'pending') {
+      ({ approval } = await bridge('agent_internal_approval_decide', { approval_id: approval.id, approve: true }));
+    }
   } catch (err) {
     return { block: String((err && err.message) || err) };
   }
@@ -460,7 +466,7 @@ async function executeTool(spec, args, api, context) {
     return { content: [{ type: 'text', text }], isError: false, ...(added && added.length ? { control: { addTools: added } } : {}) };
   }
   const callId = dispatchCallId(api.callId, api.taskId);
-  const approvalId = spec.gated ? shared.approvalsByCall.get(callKey(sessionId, callId)) : undefined;
+  const approvalId = shared.approvalsByCall.get(callKey(sessionId, callId));
   const request = {
     session_id: sessionId,
     call_id: callId,
