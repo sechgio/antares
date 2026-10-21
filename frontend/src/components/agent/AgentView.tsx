@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { agentApi, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
+import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -281,6 +282,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }, [sessionId, loadMessages]);
 
   useEffect(() => {
+    if (!sessionId) return undefined;
+    return onNotify((method, params) => {
+      if (method === 'agent.changed' && (params as { session_id?: string } | null)?.session_id === sessionId) void loadMessages(sessionId);
+    });
+  }, [sessionId, loadMessages]);
+
+  useEffect(() => {
     const active = Boolean(sessionId) && (running || pending.length > 0);
     if (active && timerRef.current == null) {
       timerRef.current = window.setInterval(() => {
@@ -543,8 +551,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const showHero = !sessionId || messages.length === 0;
   const activeProfile = session?.profile ? profiles.find((item) => item.id === session.profile?.id) ?? null : null;
   const suggestionList = activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS;
+  const suggestionsHidden = !!draft.trim() || running || pending.length > 0;
   const agentIdentity = session
-    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? (session.title || 'Agente de Antares') }
+    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares' }
     : undefined;
 
   const changeModel = async (next: { provider: string; model: string }) => {
@@ -860,7 +869,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         </div>
         <div className="mx-auto w-full max-w-[744px] shrink-0 px-3 pb-3">
           {readyProviders.length > 0 && (
-            <div className="agent-suggestions" data-hidden={draft.trim() ? 'true' : undefined} inert={!!draft.trim()}>
+            <div className="agent-suggestions" data-hidden={suggestionsHidden ? 'true' : undefined} inert={suggestionsHidden}>
               <div role="group" aria-label="Sugerencias" className="agent-marquee min-h-0 pb-2" data-static={suggestionList.length < 2 ? 'true' : undefined}>
                 <div className="agent-marquee-track">
                   {(suggestionList.length < 2 ? [false] : [false, true]).map((clone) => (

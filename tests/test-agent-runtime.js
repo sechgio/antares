@@ -1158,8 +1158,13 @@ async function main() {
       fauxAssistantMessage('No pude subirlo: la página no cambia. Necesito que inicies sesión.'),
     ], loopBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const notices = [];
+    runtime._internal.shared.notify = (method, params) => notices.push([method, params.session_id]);
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'publica el archivo' });
     assert(await waitIdle(session.id), 'el turno con bucle y comprobación termina');
+    assert(await waitFor(async () => notices.some(([method, id]) => method === 'agent.changed' && id === session.id)),
+      'el motor avisa a la UI de los cambios de la conversación');
+    runtime._internal.shared.notify = null;
     assert(probes === 3, 'la cuarta llamada idéntica se bloquea sin ejecutarse');
     const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
     const blocked = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'page_probe');
@@ -1172,6 +1177,42 @@ async function main() {
       'la petición interna de comprobación no aparece como mensaje del usuario');
     assert(listed.messages.filter((m) => m.role === 'user').length === 1, 'el chat solo muestra el mensaje del usuario');
     assert(faux.getPendingResponseCount() === 0, 'la comprobación se pide una sola vez');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const slowBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'slow_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'slow_probe') {
+        await gate;
+        return { result: JSON.stringify({ ok: true }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('slow_probe', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+    ], slowBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'prueba lenta' });
+    const statusOf = async () => {
+      const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+      const call = listed.messages.flatMap((m) => m.tool_calls || []).find((c) => c.name === 'slow_probe');
+      return call && call.status;
+    };
+    assert(await waitFor(async () => (await statusOf()) === 'running'), 'una herramienta en ejecución se muestra en curso');
+    assert((await statusOf()) !== 'interrupted', 'una herramienta en ejecución nunca aparece como interrumpida');
+    release();
+    assert(await waitIdle(session.id), 'el turno lento termina');
+    assert((await statusOf()) === 'done', 'al terminar la herramienta pasa a hecha');
     await runtime.shutdown();
   }
 

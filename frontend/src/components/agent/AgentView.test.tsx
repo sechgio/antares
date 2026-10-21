@@ -495,3 +495,18 @@ it('cambia el modelo del chat actual, conserva los mensajes y retiene el anterio
   expect(trigger).toBeDisabled();
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Continúa', expect.any(String), []);
 });
+
+it('recarga la conversación en cuanto el motor avisa de un cambio, sin esperar al sondeo', async () => {
+  let notify: ((method: string, params: unknown) => void) | null = null;
+  vi.spyOn(window.electronAPI, 'onNotify').mockImplementation((cb) => { notify = cb; return () => { notify = null; }; });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await waitFor(() => expect(list).toHaveBeenCalled());
+  const before = list.mock.calls.length;
+  await act(async () => { notify?.('agent.changed', { session_id: 'otra' }); });
+  expect(list.mock.calls.length).toBe(before);
+  list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta en vivo', ts: 2 }] });
+  await act(async () => { notify?.('agent.changed', { session_id: 's1' }); });
+  expect(await screen.findByText('Respuesta en vivo')).toBeInTheDocument();
+});

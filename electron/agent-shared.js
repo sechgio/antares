@@ -25,6 +25,7 @@ const shared = {
   nativeTools: null,
   attachments: new Map(),
   dialog: null,
+  notify: null,
   INTERRUPTED_RESULT,
   NOTICE_KIND,
   CONTEXT_MARKER,

@@ -355,6 +355,7 @@ async function beforeTool(call, api, context) {
   }
   shared.approvalsByCall.set(callKey(sessionId, callId), approval.id);
   shared.liveApprovals.add(approval.id);
+  require('./agent-projection').notifyChanged(api.conversationId);
   try {
     let current = approval;
     while (current && current.status === 'pending') {
