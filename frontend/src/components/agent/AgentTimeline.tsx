@@ -123,14 +123,18 @@ function shellOutput(result: string | null | undefined) {
   if (!result) return null;
   try {
     const data = JSON.parse(result) as { exit_code?: unknown; stdout?: unknown; stderr?: unknown; error?: unknown; duration_s?: unknown };
-    const text = [data.stdout, data.stderr, data.error].filter((part): part is string => typeof part === 'string' && part !== '').join('\n');
+    const clean = (part: unknown) => (typeof part === 'string' ? part.replace(/\n+$/, '') : '');
+    const stdout = clean(data.stdout);
+    const errors = [clean(data.stderr), clean(data.error)].filter(Boolean).join('\n');
     return {
       exit: typeof data.exit_code === 'number' ? data.exit_code : null,
-      text: text.replace(/\n+$/, ''),
+      text: [stdout, errors].filter(Boolean).join('\n'),
+      // Las líneas desde aquí son stderr o el error de la herramienta y se pintan en rojo.
+      errorFrom: errors ? (stdout ? stdout.split('\n').length : 0) : Infinity,
       duration: typeof data.duration_s === 'number' ? data.duration_s : null,
     };
   } catch {
-    return { exit: null, text: result, duration: null };
+    return { exit: null, text: result, errorFrom: Infinity, duration: null };
   }
 }
 
@@ -181,7 +185,7 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
           <div ref={logRef} role="log" aria-label={`Salida de ${command}`} className="agent-terminal max-h-64 overflow-auto rounded-lg border border-[var(--border-subtle)] px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
             <div className="whitespace-pre-wrap break-all text-[var(--text-primary)]"><span className="select-none text-[var(--text-muted)]">&gt; </span>{command}</div>
             {lines.map((line, i) => (
-              <div key={i} className="agent-terminal-line whitespace-pre-wrap break-all" style={{ animationDelay: `${Math.min(i, 40) * 18}ms` }}>{line || ' '}</div>
+              <div key={i} className={`agent-terminal-line whitespace-pre-wrap break-all ${output && i >= output.errorFrom ? 'text-[var(--accent-red)]' : ''}`} style={{ animationDelay: `${Math.min(i, 40) * 18}ms` }}>{line || ' '}</div>
             ))}
             {live && <span className="agent-terminal-cursor" aria-hidden="true" />}
           </div>

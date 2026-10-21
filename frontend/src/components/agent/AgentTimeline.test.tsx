@@ -44,6 +44,16 @@ it('muestra los comandos como terminal: abierta y animada mientras corre, con su
   expect(screen.queryByRole('log')).not.toBeInTheDocument();
 });
 
+it('pinta en rojo las líneas de stderr y del error, no la salida normal', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'build' }, status: 'running', gated: true,
+    result: JSON.stringify({ exit_code: 1, stdout: 'compilando\nlisto\n', stderr: 'aviso: obsoleto\n', error: 'falló' }),
+  }] } as never} />);
+  expect(screen.getByText('listo')).not.toHaveClass('text-[var(--accent-red)]');
+  expect(screen.getByText('aviso: obsoleto')).toHaveClass('text-[var(--accent-red)]');
+  expect(screen.getByText('falló')).toHaveClass('text-[var(--accent-red)]');
+});
+
 it('muestra la salida de un comando mientras se ejecuta', () => {
   const shell = (output: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [{
     id: 't', name: 'shell_run', params: { command: 'npm test' }, status: 'running', gated: true, result: null, output,
