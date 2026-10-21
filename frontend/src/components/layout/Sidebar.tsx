@@ -128,11 +128,11 @@ const TAB_BY_ID = Object.fromEntries(TAB_DEFINITIONS.map((tab) => [tab.id, tab])
   (typeof TAB_DEFINITIONS)[number]
 >;
 
-const RAIL_BG = 'bg-[linear-gradient(180deg,color-mix(in_srgb,var(--accent-primary)_34%,var(--bg-surface)),color-mix(in_srgb,var(--accent-primary)_22%,var(--bg-surface)))]';
-const RAIL_ICON = 'flex size-8 items-center justify-center rounded-lg transition-[color,background-color,box-shadow,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.94] motion-reduce:active:scale-100';
-const RAIL_ICON_IDLE = 'text-[color:color-mix(in_srgb,var(--accent-primary)_40%,var(--text-secondary))] hover:bg-[color:color-mix(in_srgb,var(--text-primary)_16%,transparent)] hover:text-[var(--text-primary)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-primary)_10%,transparent)]';
-const RAIL_ICON_ON = 'bg-[var(--text-primary)] text-[var(--bg-base)] shadow-[0_1px_2px_rgba(0,0,0,0.16)]';
-const RAIL_DIVIDER = 'my-1 h-px w-5 shrink-0 bg-[color:color-mix(in_srgb,var(--text-primary)_14%,transparent)]';
+const RAIL_BG = 'bg-[color:color-mix(in_srgb,var(--accent-blue)_6%,var(--bg-elevated))]';
+const RAIL_ICON = 'flex size-8 items-center justify-center rounded-lg transition-[color,background-color,box-shadow,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.96] motion-reduce:active:scale-100';
+const RAIL_ICON_IDLE = 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]';
+const RAIL_ICON_ON = 'bg-[var(--bg-input)] text-[var(--text-primary)] shadow-[inset_0_0_0_1px_var(--border-medium)]';
+const RAIL_DIVIDER = 'my-1 h-px w-5 shrink-0 bg-[var(--border-medium)]';
 const PANEL_ROW = 'flex h-8 w-full shrink-0 items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.99] motion-reduce:active:scale-100';
 const MENU_ITEM = 'flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] text-[var(--text-primary)] transition-colors duration-150 hover:bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:pointer-events-none disabled:opacity-45';
 const MENU_ICON = 'size-[15px] shrink-0 text-[var(--text-secondary)]';
@@ -288,14 +288,14 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
   );
 
   return (
-    <div data-slot="sidebar-shell" className={cn('relative flex min-h-0 min-w-0 flex-1 py-1.5 pr-1.5', RAIL_BG)}>
+    <div data-slot="sidebar-shell" className={cn('relative flex min-h-0 min-w-0 flex-1 pb-2', RAIL_BG)}>
       <aside
         data-testid="app-sidebar"
         data-expanded={expanded ? 'true' : 'false'}
         data-peeking={peeking ? 'true' : 'false'}
         data-slot="sidebar"
         aria-label="Barra lateral de navegación"
-        className="flex shrink-0 flex-col items-center gap-1 pb-0.5 pt-0.5"
+        className="flex shrink-0 flex-col items-center gap-1 py-1.5"
         style={{ width: RAIL_WIDTH }}
         onMouseLeave={schedulePeekClose}
       >
@@ -345,7 +345,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
               aria-expanded={account.isOpen}
               onClick={account.toggle}
               className={cn(
-                'flex size-7 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[11px] font-semibold text-[var(--text-on-accent)] transition-[box-shadow,transform] duration-150 ease-[var(--ease-out)] hover:scale-105 active:scale-[0.94] motion-reduce:hover:scale-100 motion-reduce:active:scale-100',
+                'flex size-8 items-center justify-center rounded-full bg-[var(--bg-surface)] text-[11px] font-semibold text-[var(--text-primary)] transition-[background-color,box-shadow,transform] duration-150 ease-[var(--ease-out)] hover:bg-[var(--bg-input)] active:scale-[0.96] motion-reduce:active:scale-100',
                 account.isOpen && 'ring-2 ring-[color:color-mix(in_srgb,var(--accent-primary)_45%,transparent)] ring-offset-2 ring-offset-transparent',
               )}
             >
@@ -356,19 +356,19 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
         </div>
       </aside>
 
-      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+      <div className="relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-l-2xl bg-[var(--bg-base)] after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-l-2xl after:border after:border-r-0 after:border-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
         <div
           aria-hidden={!expanded}
           inert={!expanded ? true : undefined}
           className={cn(
-            'shrink-0 overflow-hidden transition-[width] duration-[260ms] ease-[var(--ease-drawer)] motion-reduce:transition-none',
+            'shrink-0 overflow-hidden rounded-l-2xl transition-[width] duration-[260ms] ease-[var(--ease-drawer)] motion-reduce:transition-none',
             !expanded && 'pointer-events-none',
           )}
           style={{ width: expanded ? PANEL_WIDTH : 0 }}
         >
           <div
             className={cn(
-              'flex h-full flex-col border-r border-[var(--sidebar-border)] bg-[color:color-mix(in_srgb,var(--text-primary)_3%,var(--bg-surface))] text-[var(--sidebar-foreground)] transition-[opacity,transform] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none',
+              'flex h-full flex-col rounded-l-2xl border-r border-[var(--sidebar-border)] bg-[var(--bg-surface)] text-[var(--sidebar-foreground)] transition-[opacity,transform] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none',
               expanded ? 'translate-x-0 opacity-100' : '-translate-x-3 opacity-0',
             )}
             style={{ width: PANEL_WIDTH }}

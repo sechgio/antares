@@ -85,6 +85,18 @@ describe('App', () => {
     });
   });
 
+  it('keeps window controls outside the collapsible navigation', async () => {
+    render(<App />);
+    const toggle = await screen.findByTestId('sidebar-toggle');
+    const titlebar = screen.getByTestId('app-titlebar');
+
+    expect(titlebar.closest('[data-slot="sidebar-shell"]')).toBeNull();
+    fireEvent.click(toggle);
+
+    expect(screen.getByTestId('app-sidebar')).toHaveAttribute('data-expanded', 'false');
+    expect(within(titlebar).getByRole('button', { name: 'Cerrar' })).toBeVisible();
+  });
+
   it('can open Espacios tab', async () => {
     render(<App />);
     fireEvent.click(await findSidebarTab('Espacios'));

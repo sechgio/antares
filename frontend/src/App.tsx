@@ -294,6 +294,7 @@ function AppContent() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
+      <TitleBar />
       <div className="flex min-h-0 flex-1">
         <Sidebar
           activeTab={activeTab}
@@ -304,7 +305,6 @@ function AppContent() {
           onOpenSettings={openAppearanceSettings}
         >
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <TitleBar />
           <main className="flex-1 overflow-hidden relative">
             {cloudAuthBlocked ? (
               authLoading ? (
