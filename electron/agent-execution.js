@@ -90,17 +90,23 @@ async function ensureProvider(providerId, modelId) {
 const OPENAI_NATIVE_HOST = /(^|\.)(openai\.com|openrouter\.ai|openai\.azure\.com)$/i;
 const LONG_CACHE_HOST = /(^|\.)(openai\.com|openrouter\.ai|anthropic\.com)$/i;
 
-function modelDefinition(info, id, api) {
+function modelDefinition(info, id, api, verified) {
   const capabilities = info.capabilities || {};
   const contextWindow = Number(capabilities.context_window) || DEFAULT_CONTEXT_WINDOW;
   let host = '';
   try { host = new URL(info.base_url).hostname; } catch { }
   const classic = info.custom && api === 'openai-completions' && !OPENAI_NATIVE_HOST.test(host);
+  const official = LONG_CACHE_HOST.test(host);
+  const flags = official && verified && verified.api === api ? verified.compat || {} : {};
   // Caché del prefijo: la retención larga (1 h / 24 h) solo viaja a las APIs
-  // oficiales, y Claude vía OpenRouter lleva marcas cache_control aunque el
+  // oficiales; los modelos que el catálogo de pi-ai verifica reciben las
+  // herramientas nuevas como bloques tool_addition, así tools_load no cambia la
+  // lista enviada; y Claude vía OpenRouter lleva marcas cache_control aunque el
   // proveedor sea propio (pi-ai solo las pone al proveedor «openrouter»).
   const compat = {
-    ...(LONG_CACHE_HOST.test(host) ? {} : { supportsLongCacheRetention: false }),
+    ...(official ? {} : { supportsLongCacheRetention: false }),
+    ...(flags.supportsMidConvoSystemMessages && flags.supportsMidConvoToolChanges
+      ? { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true } : {}),
     ...(api === 'openai-completions' && /(^|\.)openrouter\.ai$/i.test(host) && id.startsWith('anthropic/')
       ? { cacheControlFormat: 'anthropic' } : {}),
     ...(classic ? { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens' } : {}),
@@ -126,6 +132,7 @@ async function buildProvider(record) {
   const anthropic = info.style === 'anthropic_messages';
   const api = anthropic ? 'anthropic-messages' : 'openai-completions';
   const providerId = info.provider;
+  const catalog = anthropic ? (await import('@earendil-works/pi-ai/providers/anthropic.models')).ANTHROPIC_MODELS : {};
   return createProvider({
     id: providerId,
     name: providerId,
@@ -149,7 +156,7 @@ async function buildProvider(record) {
         },
       },
     },
-    models: [...modelIds].map((id) => modelDefinition(info, id, api)),
+    models: [...modelIds].map((id) => modelDefinition(info, id, api, catalog[id])),
     api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : shared.deps.aiOpenai.openAICompletionsApi(),
   });
 }
@@ -283,6 +290,7 @@ async function refreshTools() {
     hooks: [
       pi.hook(pi.ToolTask, { beforeTool }),
       pi.hook(pi.GenerationTask, {
+        beforeRequest: ({ messages }) => leadingSystem(messages),
         afterTools: (_output, _task, api) => countRound(api),
         onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
@@ -296,6 +304,18 @@ async function refreshTools() {
       }),
     ],
   }));
+}
+
+// pi-durable escribe el prompt base al preparar la primera generación, detrás
+// del mensaje que la provocó. Los modelos que aceptan mensajes de sistema a
+// mitad de conversación lo enviarían como una actualización y sin herramientas
+// iniciales; al encabezar la petición vuelve a ser el prompt de sistema y el
+// ancla fija de la lista de herramientas. Al resto no le cambia nada: pi-ai ya
+// reúne sus mensajes de sistema al principio.
+function leadingSystem(messages) {
+  const index = messages.findIndex((message) => message.role === 'system');
+  if (index <= 0) return undefined;
+  return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
 }
 
 function countRound(api) {
@@ -626,6 +646,7 @@ module.exports = {
   TOOLS_LOAD,
   supportsVision,
   modelDefinition,
+  leadingSystem,
   callKey,
   providerInfo,
   thinkingLevelFor,

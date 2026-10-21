@@ -173,6 +173,22 @@ async function main() {
       'anthropic-messages').compat;
     assert(!claude('https://api.anthropic.com') && claude('https://proxy.example.com').supportsLongCacheRetention === false,
       'la retención larga de caché solo viaja a la API oficial de Anthropic');
+    const { ANTHROPIC_MODELS } = await import('@earendil-works/pi-ai/providers/anthropic.models');
+    const verified = (base, id) => modelDefinition({ provider: 'a', style: 'anthropic_messages', base_url: base }, id,
+      'anthropic-messages', ANTHROPIC_MODELS[id]).compat || {};
+    assert(verified('https://api.anthropic.com', 'claude-opus-5-5').supportsMidConvoToolChanges === true
+      && !verified('https://api.anthropic.com', 'claude-sonnet-4-5').supportsMidConvoToolChanges
+      && !verified('https://proxy.example.com', 'claude-opus-5-5').supportsMidConvoToolChanges,
+      'solo un Claude verificado en la API oficial recibe las herramientas nuevas sin cambiar la lista enviada');
+    const { leadingSystem } = require('../electron/agent-execution');
+    const user = { role: 'user', content: 'hola' };
+    const system = { role: 'system', content: '', sections: { instructions: 'sys' } };
+    const later = { role: 'system', content: '', toolsAdded: [{ name: 'beta' }] };
+    const hoisted = leadingSystem([user, system, { role: 'assistant', content: [] }, later]).messages;
+    assert(hoisted[0] === system && hoisted[1] === user && hoisted[3] === later,
+      'el prompt base encabeza la petición y los cambios posteriores quedan en su sitio');
+    assert(leadingSystem([system, user]) === undefined && leadingSystem([user]) === undefined,
+      'una petición que ya empieza por el prompt no se toca');
     assert(define({ custom: true, base_url: 'https://openrouter.ai/api/v1' }, 'anthropic/claude-opus-5-5').compat
       .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
     assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
