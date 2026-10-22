@@ -177,3 +177,20 @@ def test_a_different_account_suspends_the_procedure(store):
     assert learned["id"] not in other["items"]
     item = next(i for i in mem.items() if i["id"] == learned["id"])
     assert item["status"] == "suspended" and "cuenta de Google" in item["reason"]
+
+
+def test_preference_scope_is_global_and_keeps_the_human_correction(store):
+    mem = memory.memory_for(store)
+    remembered = mem.remember("chat-breve", {
+        "kind": "preference", "title": "Estilo", "content": "Responde de forma breve",
+    })
+    edited = mem.update(remembered["id"], {"action": "edit", "content": "Incluye un ejemplo cuando ayude"})
+    context = mem.context("chat-formal", "hola", VERSIONS)
+    assert "compartida entre conversaciones y agentes" in context["context"]
+    assert "Incluye un ejemplo cuando ayude" in context["context"]
+    assert edited["source"] == {"kind": "user"}
+    with pytest.raises(ValueError, match="corrigió"):
+        mem.remember("chat-formal", {
+            "kind": "preference", "title": "Estilo", "content": "Responde de forma formal",
+        })
+    assert mem.items()[0]["content"] == "Incluye un ejemplo cuando ayude"

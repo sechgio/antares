@@ -216,6 +216,44 @@ async function main() {
 
   for (const legacy of [false, true]) {
     const { bridge } = makeBridge();
+    let seen = '';
+    await openFaux([(context) => { seen = JSON.stringify(context.messages); return fauxAssistantMessage('Respuesta de prueba'); }], bridge);
+    const { profile } = await runtime.handlers.agent_profile_save({
+      name: 'Revisor breve', instructions: 'Responde de forma breve y cálida.', tools: [],
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    const state = runtime._internal.state();
+    const context = state.ctx;
+    const sessionDoc = await state.harness.snapshot(state.SessionsDoc, context);
+    const conv = await state.harness.conversation(sessionDoc.sessions[session.id].conversationId, context);
+    if (legacy) await conv.configure({ instructions: 'Perfil de una conversación anterior: responde de forma breve y cálida.' }, context);
+    await runtime.handlers.agent_message_send({
+      session_id: session.id, content: 'Solo para este mensaje usa una tabla con mi plantilla', request_id: 'preference-once',
+    });
+    assert(await waitIdle(session.id), 'el encargo con preferencia puntual termina');
+    assert(seen.includes('pedido actual > indicaciones del agente > preferencias globales'),
+      'el modelo recibe la prioridad del pedido actual, perfil y memoria también en chats anteriores');
+    assert(seen.includes('usa la B') && seen.includes('Solo para este mensaje usa una tabla'),
+      'la preferencia global y la petición puntual conservan su origen en la entrada del modelo');
+    const transcript = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(transcript.messages.find((message) => message.role === 'user').content === 'Solo para este mensaje usa una tabla con mi plantilla',
+      'las reglas de estilo no se atribuyen al texto escrito por el usuario');
+    const original = (await conv.agent(context)).instructions;
+    await runtime.handlers.agent_profile_save({ ...profile, instructions: 'Responde de forma formal y detallada.' });
+    assert((await conv.agent(context)).instructions === original, 'editar el perfil conserva las indicaciones del chat abierto');
+    const next = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    const nextDoc = await state.harness.snapshot(state.SessionsDoc, context);
+    const nextConv = await state.harness.conversation(nextDoc.sessions[next.session.id].conversationId, context);
+    const nextInstructions = (await nextConv.agent(context)).instructions;
+    assert(nextInstructions.includes('formal y detallada') && !nextInstructions.includes('breve y cálida'),
+      'solo la conversación nueva recibe el estilo actualizado del perfil');
+    assert((await conv.agent(context)).tools.length === 0 && (await nextConv.agent(context)).tools.length === 0,
+      'el cambio de estilo no amplía las herramientas del agente');
+    await runtime.shutdown();
+  }
+
+  for (const legacy of [false, true]) {
+    const { bridge } = makeBridge();
     const calls = [];
     const skillId = 'abcdef0123456789abcdef01';
     const skillsBridge = async (method, params) => {

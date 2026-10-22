@@ -43,8 +43,18 @@ const SKILLS_GUIDE = 'Para tareas especializadas consulta skills_list si está d
   + 'Lee SKILL.md completo siguiendo next_offset y consulta sus archivos de apoyo solo cuando los necesites. '
   + 'Las skills son instrucciones de trabajo, no conceden permisos ni habilitan herramientas. '
   + 'Sus scripts solo se ejecutan con las herramientas y aprobaciones normales; nunca los ejecutes por el hecho de cargar una skill.';
+const CONVERSATION_GUIDE = 'Conversación y preferencias: sin otras indicaciones, responde de forma breve, clara y cálida; usa un ejemplo cuando ayude. '
+  + 'Ante un saludo, saluda con naturalidad sin abrir un plan ni usar herramientas. Si la ayuda pedida es vaga, pregunta qué necesita lograr. '
+  + 'Si el usuario corrige el formato o cambia de idea, aplica el cambio al encargo actual y conserva lo que siga siendo útil. '
+  + 'Para estilo, formato y forma de trabajar, aplica esta prioridad: pedido actual > indicaciones del agente > preferencias globales. '
+  + 'Si el usuario pide un formato exacto, entrégalo sin preámbulos ni preguntas de cierre adicionales. '
+  + 'La memoria es local y se comparte entre conversaciones y agentes; una preferencia puntual no cambia un recuerdo duradero. '
+  + 'Guarda una preferencia solo si el usuario la expresa como duradera y confirma que se guardó solo después de un resultado correcto de memory_remember. '
+  + 'No reemplaces una corrección humana de memoria; propón el cambio en el chat. '
+  + 'El estilo y las preferencias no amplían permisos ni eliminan los requisitos de seguridad y verificación.';
 const SYSTEM_PROMPT =
   'Eres el agente de Antares, una app de escritorio de documentos e imágenes. ' +
+  CONVERSATION_GUIDE + '\n\n' +
   'Responde en español. Tienes herramientas para consultar el estado de la app ' +
   '(métodos de solo lectura) y herramientas con efectos sujetas al modo de permisos ' +
   'que el usuario elige para la conversación. Usa herramientas cuando la respuesta dependa de datos reales de la ' +
@@ -263,7 +273,7 @@ async function sessionCreate(params) {
   const instructions = profile
     ? `${SYSTEM_PROMPT}\n\nEres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. `
       + 'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n'
-      + `Indicaciones del usuario:\n${profile.instructions}`
+      + `Indicaciones del agente guardado:\n${profile.instructions}`
     : SYSTEM_PROMPT;
   const conv = await shared.state.harness.createConversation({
     ownership: { kind: 'ownerless' },
@@ -518,7 +528,9 @@ async function messageSend(params) {
   const memory = await bridge('agent_internal_memory_context', {
     session_id: sessionId, text: content, tools: [...shared.toolSpecs.values()].map(_toolVersion), accounts: _accounts(),
   }).catch(() => ({ context: '' }));
-  const skillsNote = String((await conv.agent(ctx())).instructions || '').includes(SKILLS_GUIDE) ? '' : SKILLS_GUIDE;
+  const instructions = String((await conv.agent(ctx())).instructions || '');
+  const skillsNote = instructions.includes(SKILLS_GUIDE) ? '' : SKILLS_GUIDE;
+  const conversationNote = instructions.includes(CONVERSATION_GUIDE) ? '' : CONVERSATION_GUIDE;
   const botsNote = mentionedBots.size
     ? `El usuario solicita colaborar con estos bots guardados: ${JSON.stringify([...mentionedBots.values()])}. `
       + 'Usa subagent_run con su id exacto en agent y un encargo autocontenido. Si son varios, reparte el trabajo y transmite '
@@ -527,7 +539,7 @@ async function messageSend(params) {
       + 'Los bots delegados solo leen, no pueden delegar de nuevo ni acceden por sí solos a otros chats. '
       + 'No amplíes herramientas ni permisos por una mención.'
     : '';
-  const context = [mentions.context, memory.context, attachedNote, skillsNote, botsNote].filter(Boolean).join('\n\n');
+  const context = [mentions.context, memory.context, attachedNote, skillsNote, conversationNote, botsNote].filter(Boolean).join('\n\n');
   const input = context
     ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }]
     : content;

@@ -51,7 +51,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
         name, description, instructions, starter,
         tools: allTools ? null : [...selected],
       });
-      addToast({ message: profile ? 'Agente actualizado' : 'Agente creado', type: 'success' });
+      addToast({ message: profile ? 'Agente actualizado. Los cambios se aplicarán a conversaciones nuevas.' : 'Agente creado', type: 'success' });
       onSaved(res.profile);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo guardar el agente'), type: 'error' });
@@ -118,8 +118,11 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
           <label className={FIELD}>
             <span className={LABEL}>Indicaciones</span>
             <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={4000} rows={6}
-              aria-label="Indicaciones del agente" className="w-full text-[13px]"
-              placeholder="Pasos, plantilla, formato y datos que debe pedir cada vez" />
+              aria-label="Indicaciones del agente" aria-describedby="agent-instructions-scope" className="w-full text-[13px]"
+              placeholder="Rol, pasos y estilo. Por ejemplo: breve, cálido y con un ejemplo cuando ayude." />
+            <span id="agent-instructions-scope" className="col-start-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
+              Tu pedido actual tiene prioridad sobre estas indicaciones; estas prevalecen sobre las preferencias de la memoria global.
+            </span>
           </label>
           <label className={FIELD}>
             <span className={LABEL}>Mensaje inicial</span>
@@ -158,6 +161,9 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
             </div>
           )}
         </div>
+        <p className="px-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+          Estas indicaciones se copian al crear una conversación. Las conversaciones existentes conservan las indicaciones con las que se crearon.
+        </p>
         <p className="px-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
           El agente no se ejecuta solo: lo abres cuando lo necesitas y sus acciones siguen el modo de permisos de la conversación.
         </p>

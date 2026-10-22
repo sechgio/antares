@@ -80,6 +80,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- Agent explicita la prioridad del pedido actual sobre las indicaciones del agente y las preferencias globales. El editor y la memoria muestran su alcance; editar un perfil informa que afecta a conversaciones nuevas. La guía distingue cambios puntuales y preferencias duraderas, conserva las correcciones humanas y responde de forma natural ante saludos y ayuda vaga.
 - Agent destaca la aprobación, pregunta, actividad o resultado que requiere atención junto al composer, anuncia cada evento una sola vez y permite ir a sus detalles sin interrumpir la lectura del historial. Conserva los detalles abiertos durante las actualizaciones y respeta movimiento reducido al desplazarse.
 - Agent permite iniciar una conversación con el primer mensaje, conserva el borrador si falla la creación y reutiliza la identidad del envío al reintentar texto o sugerencias. Evita envíos simultáneos y avisa cuando no pudo actualizar el estado del chat.
 - **Agent / delegación**: una respuesta del subagente que llega después de Detener no se guarda como exitosa, tampoco si termina su último paso de herramientas.
