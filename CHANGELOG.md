@@ -71,6 +71,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- **Seguridad de PDF**: `pypdf` requiere 6.21.1 o superior y el lockfile fija esa versión para corregir CVE-2026-113786, que bloqueaba la auditoría de CI.
 - **Agent / detener**: una herramienta detenida a mitad aparece como interrumpida (no como fallida) y conserva la salida que llevaba, sin los avisos internos del motor.
 - **Rendimiento y capacidad**: Canvas descarga documentos por grupos y conserva el progreso si falla alguno; Canvas y Espacios paginan los listados completos. Las capas Boolean reutilizan índices al comparar dependencias. Exportaciones y efectos del editor comparten el scheduler pesado; IPC admite solicitudes antes de serializarlas, limita los bytes pendientes y respeta la contrapresión. El catálogo JSON evita escrituras idénticas y las métricas offline distinguen las estimaciones del transporte medido.
 - **Agent / navegador integrado**: solo se muestra en su panel dentro de Agent. La navegación principal lo retira al abrir cualquier otra pestaña y al iniciar fuera de Agent, incluso si quedó acoplado tras una recarga de la interfaz. La ventana auxiliar queda transparente, sin interceptar clics; la página y su sesión se conservan al volver a Agent.
