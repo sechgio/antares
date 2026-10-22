@@ -455,14 +455,17 @@ async function messageSend(params) {
   const requestId = typeof params.request_id === 'string' && params.request_id
     ? params.request_id.slice(0, MAX_REQUEST_ID_CHARS)
     : undefined;
-  if (requestId && await _admittedRequest(session, requestId)) return { accepted: true, duplicate: true };
   const correction = params.correction === true;
+  const admitted = requestId && await _admittedRequest(session, requestId);
+  if (admitted) {
+    if (correction && admitted.status === 'queued') {
+      const { denied } = await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
+      for (const id of denied || []) execution.notifyDecision(id);
+    }
+    return { accepted: true, duplicate: true };
+  }
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
   if (pending.length && !correction) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
-  if (pending.length) {
-    const { denied } = await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
-    for (const id of denied || []) execution.notifyDecision(id);
-  }
   await execution.refreshTools();
   await execution.ensureProvider(session.provider, session.model);
   const conv = await conversation(sessionId);
@@ -507,6 +510,10 @@ async function messageSend(params) {
       // instante: espera acotada a idle antes de rendirse.
       await Promise.race([conv.waitForIdle(ctx()), new Promise((r) => setTimeout(r, 5000))]);
     }
+  }
+  if (pending.length) {
+    const { denied } = await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
+    for (const id of denied || []) execution.notifyDecision(id);
   }
   await commitSessions((map) => {
     const s = map[sessionId];
@@ -586,7 +593,7 @@ async function _admittedRequest(session, requestId) {
     (tx) => tx.submissionByRequest(session.conversationId, requestId),
     ctx(),
   );
-  return found !== undefined;
+  return found;
 }
 
 async function toolsList(params = {}) {

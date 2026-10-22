@@ -477,7 +477,7 @@ it('detener pausa la cola y conserva las tareas pendientes para un envío explí
   render(<AgentView />);
   await act(async () => {});
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Siguiente tarea' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
   expect(agentApi.agentTurnCancel).toHaveBeenCalledWith(session.id);
@@ -516,11 +516,50 @@ it('envía un mensaje en cola como corrección del encargo en curso', async () =
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
-  fireEvent.click(screen.getByLabelText('Enviar'));
+  fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' }));
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar como corrección')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Usa la plantilla B', expect.any(String), [], true);
   expect(screen.queryByText('En cola')).not.toBeInTheDocument();
+});
+
+it('admite una indicación inmediata una sola vez y confirma recepción después de aceptarla', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  const admitted = deferred<{ accepted: boolean }>();
+  vi.mocked(agentApi.agentMessageSend).mockReturnValue(admitted.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
+  const indicate = screen.getByRole('button', { name: 'Indicar ahora' });
+  fireEvent.click(indicate);
+  fireEvent.click(indicate);
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Usa la plantilla B', expect.any(String), [], true);
+  expect(screen.queryByText(/Indicación recibida/)).not.toBeInTheDocument();
+  await act(async () => { admitted.resolve({ accepted: true }); });
+  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toHaveAttribute('role', 'status');
+  expect(screen.queryByText('En cola')).not.toBeInTheDocument();
+});
+
+it.each(['rechazo', 'sin aceptación'])('una indicación con %s conserva borrador, adjuntos e identidad y mantiene el turno anterior', async (failure) => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'plantilla.pdf', kind: 'files' }] });
+  if (failure === 'rechazo') vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('No se pudo registrar la indicación'));
+  else vi.mocked(agentApi.agentMessageSend).mockResolvedValueOnce({ accepted: false });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa esta plantilla' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Usa esta plantilla');
+  expect(screen.getByText('plantilla.pdf')).toBeInTheDocument();
+  expect(screen.getByLabelText('Detener')).toBeInTheDocument();
+  expect(screen.queryByText(/Indicación recibida/)).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
+  const [first, retry] = vi.mocked(agentApi.agentMessageSend).mock.calls;
+  expect(retry).toEqual(['s1', 'Usa esta plantilla', first[2], ['a1'], true]);
+  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toHaveAttribute('role', 'status');
 });
 
 it('muestra el contexto de la conversación y permite retirar un archivo concedido', async () => {
