@@ -2,6 +2,93 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { expect, it, vi } from 'vitest';
 import { ApprovalCard, MessageRow, PlanCard, ThinkingRow } from './AgentTimeline';
 
+it('muestra el descubrimiento y la lectura de skills en la traza', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
+    { id: 'list', name: 'skills_list', params: {}, status: 'done', gated: false, result: '{"skills":[]}' },
+    { id: 'read', name: 'skills_read', params: { skill_id: 'skill' }, status: 'done', gated: false,
+      result: '{"name":"pdf-review","content":"Revisa las firmas"}' },
+  ] }} />);
+  expect(screen.getByText('Buscar skills disponibles')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Leer una skill'));
+  expect(screen.getByText(/Revisa las firmas/)).toBeInTheDocument();
+});
+
+it('presenta el catálogo de skills con procedencia, límites y advertencias', () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  const result = JSON.stringify({ skills: [
+    { id: 'local', name: 'pdf-review', description: 'Revisa firmas', location: 'C:\\skills\\pdf-review\\SKILL.md' },
+    { id: 'attached', name: 'pdf-review', description: 'Revisa márgenes', location: 'C:\\proyecto\\pdf-review\\SKILL.md' },
+  ], total: 4, truncated: true, library: 'C:\\skills', warnings: ['Una skill no tiene descripción'], notice: 'No concede permisos.' });
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 'list', name: 'skills_list', params: {}, status: 'done', gated: false, result,
+  }] }} />);
+  fireEvent.click(screen.getByText('Buscar skills disponibles'));
+  expect(screen.getByText('2 de 4 skills · catálogo parcial')).toBeVisible();
+  expect(screen.getAllByText('pdf-review')).toHaveLength(2);
+  expect(screen.getByText('Revisa firmas')).toBeVisible();
+  expect(screen.getByText('C:\\proyecto\\pdf-review\\SKILL.md')).toBeVisible();
+  expect(screen.getByText('Biblioteca local: C:\\skills')).toBeVisible();
+  expect(screen.getByText('Una skill no tiene descripción')).toBeVisible();
+  expect(screen.getByText('No concede permisos.')).toBeVisible();
+  fireEvent.click(screen.getByText('Datos originales'));
+  expect(screen.getByText(result)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar json' }));
+  expect(writeText).toHaveBeenCalledWith(result);
+});
+
+it('distingue una lectura parcial de una completa y muestra el contenido sin ejecutar HTML', () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  const content = '<img src=x onerror=alert(1)>\nRevisa las firmas';
+  const message = (nextOffset: number | null) => ({ role: 'assistant' as const, content: '', ts: 1, tool_calls: [{
+    id: 'read', name: 'skills_read', params: { skill_id: 'skill' }, status: 'done' as const, gated: false,
+    result: JSON.stringify({ name: 'pdf-review', file_path: 'references/firmas.md', content, offset: 4000,
+      total_chars: 8000, next_offset: nextOffset, notice: 'Solo lectura.' }),
+  }] });
+  const { container, rerender } = render(<MessageRow msg={message(8000)} />);
+  fireEvent.click(screen.getByText('Leer una skill'));
+  expect(screen.getByText('pdf-review')).toBeVisible();
+  expect(screen.getByText('references/firmas.md')).toBeVisible();
+  expect(screen.getByText('Lectura parcial · siguiente offset: 8000')).toBeVisible();
+  expect(screen.getByText('Solo lectura.')).toBeVisible();
+  expect(screen.getByText(content, { normalizer: (text) => text })).toBeVisible();
+  expect(container.querySelector('img')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar contenido' }));
+  expect(writeText).toHaveBeenCalledWith(content);
+  rerender(<MessageRow msg={message(null)} />);
+  expect(screen.queryByText(/siguiente offset/)).not.toBeInTheDocument();
+  expect(screen.getByText('Fin del archivo · 8000 caracteres en total')).toBeVisible();
+});
+
+it('explica un catálogo vacío y conserva salidas antiguas, inválidas y errores', () => {
+  const message = (result: string, status: 'done' | 'failed' = 'done') => ({ role: 'assistant' as const, content: '', ts: 1,
+    tool_calls: [{ id: 'list', name: 'skills_list', params: {}, status, gated: false, result }] });
+  const { rerender } = render(<MessageRow msg={message(JSON.stringify({
+    skills: [], total: 0, truncated: false, library: 'C:\\skills', warnings: [], notice: 'Solo lectura.',
+  }))} />);
+  fireEvent.click(screen.getByText('Buscar skills disponibles'));
+  expect(screen.getByText('No se encontraron skills en los recursos autorizados.')).toBeVisible();
+  for (const result of ['{"skills":[null]}', '{"skills":[]}', 'Salida sin JSON', '{"error":"Permiso revocado"}']) {
+    rerender(<MessageRow msg={message(result)} />);
+    expect(screen.getByText(result.startsWith('{') ? JSON.stringify(JSON.parse(result), null, 2) : result,
+      { normalizer: (text) => text })).toBeVisible();
+    expect(screen.queryByText('Datos originales')).not.toBeInTheDocument();
+  }
+  rerender(<MessageRow msg={message('{"error":"Permiso revocado"}', 'failed')} />);
+  expect(screen.getByText('Error')).toBeVisible();
+  expect(screen.getByText(/Permiso revocado/)).toHaveClass('text-[var(--accent-red)]');
+});
+
+it('identifica la búsqueda de conversaciones en español y muestra su resultado', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 'history', name: 'sessions_search', params: { query: 'Boreal' }, status: 'done', gated: false,
+    result: JSON.stringify({ matches: [{ title: 'Proyecto Boreal', excerpt: 'Carta número 42' }] }),
+  }] }} />);
+  fireEvent.click(screen.getByText('Buscar en conversaciones anteriores'));
+  expect(screen.getByText(/Carta número 42/)).toBeInTheDocument();
+});
+
 it('muestra cuenta y recursos revisados antes de una decisión explícita', () => {
   const decide = vi.fn();
   render(<ApprovalCard busy={false} onDecide={decide} approval={{
