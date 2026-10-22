@@ -31,6 +31,19 @@ const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
 const RESUME_TEXT = 'Reanuda el encargo donde lo dejaste: revisa el plan y los últimos resultados antes de repetir cualquier acción.';
 
+type SendIntent = Readonly<{
+  session: string;
+  text: string;
+  requestId: string;
+  attachments: readonly string[];
+  correction: boolean;
+}>;
+
+type SendReceipt = { intent: SendIntent } & (
+  | { phase: 'sending' | 'received' }
+  | { phase: 'unconfirmed'; reason: string }
+);
+
 type ConversationAttention = { key: string; text: string } & (
   | { kind: 'stale' | 'working' }
   | { kind: 'item'; target: string; action: string }
@@ -38,7 +51,7 @@ type ConversationAttention = { key: string; text: string } & (
 
 function activityText(tool?: string): string {
   if (tool?.startsWith('fs_')) return 'Estoy trabajando con tus archivos.';
-  if (tool?.startsWith('browser_')) return 'Estoy consultando la página.';
+  if (tool?.startsWith('web_')) return 'Estoy trabajando en la página.';
   if (tool?.startsWith('desktop_')) return 'Estoy trabajando con la aplicación.';
   if (tool === 'shell_run') return 'Estoy ejecutando la tarea.';
   if (tool === 'subagent_run') return 'Estoy consultando a otro agente.';
@@ -171,7 +184,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [deciding, setDeciding] = useState(false);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [browserOpen, setBrowserOpen] = useState(false);
-  const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean }[]>(() => {
+  const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean; correction?: boolean }[]>(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
       return Array.isArray(saved) ? saved.filter((item) => item && typeof item.session === 'string' && typeof item.text === 'string')
@@ -181,13 +194,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           requestId: typeof item.requestId === 'string' ? item.requestId : newRequestId(),
           attachments: Array.isArray(item.attachments) ? item.attachments.filter((a: unknown) => typeof a === 'string') : [],
           failed: true,
+          ...(item.correction === true ? { correction: true } : {}),
         })) : [];
     } catch { return []; }
   });
-  const failedSendRef = useRef<{ key: string; requestId: string } | null>(null);
+  const [sendReceipts, setSendReceipts] = useState<SendReceipt[]>([]);
+  const requestsInFlightRef = useRef(new Set<string>());
+  const draftVersionRef = useRef(0);
+  const restoredDraftRef = useRef<{ session: string; requestId: string; version: number } | null>(null);
   const correctionInFlightRef = useRef(false);
   const [sendingCorrection, setSendingCorrection] = useState(false);
-  const [receivedCorrection, setReceivedCorrection] = useState('');
   const [stopping, setStopping] = useState(false);
   const [runningSince, setRunningSince] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -445,6 +461,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
   const queuedForSession = queued.filter((i) => i.session === sessionId);
+  const receiptsForSession = sendReceipts.filter((receipt) => receipt.intent.session === sessionId);
+  const latestReceipt = receiptsForSession[receiptsForSession.length - 1];
+  const visibleReceipts = receiptsForSession.filter((receipt) => receipt.phase !== 'received' || receipt === latestReceipt);
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
   const filteredTools = useMemo(() => {
@@ -504,6 +523,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     const token = `@bot:${profile.id}`;
     const start = mentionCursor - mentionMatch[0].length + mentionMatch[0].indexOf('@');
     const caret = start + token.length + 1;
+    draftVersionRef.current += 1;
     setDraft(`${draft.slice(0, start)}${token} ${draft.slice(mentionCursor)}`);
     setMentionCursor(caret);
     setMentionsHidden(true);
@@ -519,7 +539,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       const res = await agentApi.agentSessionCreate({ provider, model: model || undefined, ...(profile ? { profile_id: profile.id } : {}) });
       await refreshSessions();
       setSessionId(res.session.id);
-      if (profile?.starter) setDraft(profile.starter);
+      if (profile?.starter) {
+        draftVersionRef.current += 1;
+        setDraft(profile.starter);
+      }
       return res.session.id;
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo crear la conversación'), type: 'error' });
@@ -550,13 +573,27 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
-  const sendToSession = async (id: string, content: string, requestId: string, attachmentIds: string[] = [], correction = false): Promise<boolean> => {
+  const recordReceipt = (receipt: SendReceipt) => {
+    setSendReceipts((previous) => {
+      const matches = (item: SendReceipt) => item.intent.session === receipt.intent.session && item.intent.requestId === receipt.intent.requestId;
+      const retained = receipt.phase === 'sending' ? previous.filter((item) => !matches(item)) : previous;
+      const next = retained.some(matches) ? retained.map((item) => matches(item) ? receipt : item) : [...retained, receipt];
+      const latestReceived = [...next].reverse().find((item) => item.intent.session === receipt.intent.session && item.phase === 'received');
+      return next.filter((item) => item.intent.session !== receipt.intent.session || item.phase !== 'received' || item === latestReceived);
+    });
+  };
+
+  const sendToSession = async (input: SendIntent): Promise<boolean> => {
+    const intent = { ...input, attachments: [...input.attachments] };
+    const { session: id, text: content, requestId, attachments: attachmentIds, correction } = intent;
+    const key = JSON.stringify([id, requestId]);
+    if (requestsInFlightRef.current.has(key) || (correction && correctionInFlightRef.current)) return false;
+    requestsInFlightRef.current.add(key);
     if (correction) {
-      if (correctionInFlightRef.current) return false;
       correctionInFlightRef.current = true;
       setSendingCorrection(true);
-      setReceivedCorrection('');
     }
+    recordReceipt({ intent, phase: 'sending' });
     const state = messagesVersionRef.current.get(id) ?? { version: 0, pending: 0 };
     messagesVersionRef.current.set(id, state);
     state.version += 1;
@@ -566,9 +603,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       const res = await (correction
         ? agentApi.agentMessageSend(id, content, requestId, attachmentIds, true)
         : agentApi.agentMessageSend(id, content, requestId, attachmentIds)).finally(() => { state.pending -= 1; });
-      if (correction) {
-        if (!res.accepted) throw new Error('No se pudo registrar la indicación');
-        setReceivedCorrection(id);
+      if (res.accepted !== true) throw new Error(correction ? 'No se pudo registrar la indicación' : 'No se pudo registrar el mensaje');
+      recordReceipt({ intent, phase: 'received' });
+      setAttachments((previous) => previous.filter((file) => !attachmentIds.includes(file.id)));
+      if (id === sessionIdRef.current) {
+        const restored = restoredDraftRef.current;
+        if (restored?.session === id && restored.requestId === requestId && restored.version === draftVersionRef.current) {
+          setDraft('');
+          restoredDraftRef.current = null;
+        }
       }
       for (const file of res.files?.rejected ?? []) {
         addToast({ message: `No se autorizó ${file.path}: ${file.reason}`, type: 'warning' });
@@ -584,10 +627,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       await loadMessages(id);
       return true;
     } catch (err) {
-      if (!correction && id === sessionIdRef.current) setRunning(false);
-      addToast({ message: errorMessage(err, 'No se pudo enviar el mensaje'), type: 'error' });
+      const reason = errorMessage(err, 'No se pudo enviar el mensaje');
+      recordReceipt({ intent, phase: 'unconfirmed', reason });
+      if (id === sessionIdRef.current) {
+        if (!correction) setRunning(false);
+        addToast({ message: reason, type: 'error' });
+      }
       return false;
     } finally {
+      requestsInFlightRef.current.delete(key);
       if (correction) {
         correctionInFlightRef.current = false;
         setSendingCorrection(false);
@@ -598,29 +646,45 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const send = async (correction = false, suggestion?: string) => {
     const content = suggestion ?? draft.trim();
     if (!content || sendInFlightRef.current || modelBusy || stopping || (correction && correctionInFlightRef.current)) return;
+    const attachmentIds = suggestion === undefined ? attachments.map((a) => a.id) : [];
+    const version = draftVersionRef.current;
     sendInFlightRef.current = true;
     setSending(true);
     try {
       const id = sessionId || (await newSession());
       if (!id) return;
-      if (suggestion === undefined) setDraft((prev) => prev.trim() === content ? '' : prev);
+      if (suggestion === undefined && version === draftVersionRef.current) setDraft((prev) => prev.trim() === content ? '' : prev);
       atBottomRef.current = true;
-      const attachmentIds = suggestion === undefined ? attachments.map((a) => a.id) : [];
-      const key = JSON.stringify([id, content, attachmentIds, correction]);
-      const failed = failedSendRef.current;
-      const retry = failed?.key === key;
-      const requestId = retry ? failed.requestId : newRequestId();
-      if (!correction && !retry && (running || pending.length > 0)) {
+      const failed = sendReceipts.find((receipt) => receipt.phase === 'unconfirmed'
+        && receipt.intent.session === id && receipt.intent.text === content && receipt.intent.correction === correction
+        && JSON.stringify(receipt.intent.attachments) === JSON.stringify(attachmentIds));
+      const requestId = failed?.intent.requestId ?? newRequestId();
+      if (!correction && !failed && (running || pending.length > 0)) {
         setQueued((q) => [...q, { session: id, text: content, requestId, attachments: attachmentIds }]);
-        setAttachments([]);
+        setAttachments((previous) => previous.filter((file) => !attachmentIds.includes(file.id)));
         return;
       }
-      const ok = await sendToSession(id, content, requestId, attachmentIds, correction);
-      failedSendRef.current = ok ? null : { key, requestId };
-      if (suggestion === undefined) {
-        if (ok) setAttachments([]);
-        else setDraft((prev) => (prev.trim() ? prev : content));
+      const ok = await sendToSession({ session: id, text: content, requestId, attachments: attachmentIds, correction });
+      if (!ok && suggestion === undefined && id === sessionIdRef.current && version === draftVersionRef.current) {
+        setDraft((prev) => {
+          if (prev.trim()) return prev;
+          restoredDraftRef.current = { session: id, requestId, version };
+          return content;
+        });
       }
+    } finally {
+      sendInFlightRef.current = false;
+      setSending(false);
+    }
+  };
+
+  const retrySend = async (intent: SendIntent) => {
+    if (sendInFlightRef.current || modelBusy || stopping || (intent.correction && correctionInFlightRef.current)) return;
+    sendInFlightRef.current = true;
+    setSending(true);
+    try {
+      const ok = await sendToSession(intent);
+      if (ok) setQueued((q) => q.filter((item) => item.session !== intent.session || item.requestId !== intent.requestId));
     } finally {
       sendInFlightRef.current = false;
       setSending(false);
@@ -634,21 +698,25 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     const sending = { ...next, failed: true };
     setQueued((q) => q.map((i) => i === next ? sending : i));
     void (async () => {
-      const ok = await sendToSession(sessionId, next.text, next.requestId, next.attachments ?? []);
+      const ok = await sendToSession({ session: sessionId, text: next.text, requestId: next.requestId,
+        attachments: next.attachments ?? [], correction: next.correction === true });
       if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
   }, [sessionId, running, stopping, modelBusy, messagesStale, pending.length, queued]);
 
   const sendCorrection = async (item: (typeof queued)[number]) => {
-    if (correctionInFlightRef.current) return;
-    setQueued((q) => q.filter((i) => i !== item));
-    const ok = await sendToSession(item.session, item.text, item.requestId, item.attachments ?? [], true);
-    if (!ok) setQueued((q) => [...q, { ...item, failed: true }]);
+    if (correctionInFlightRef.current || item.failed) return;
+    const correcting = { ...item, correction: true, failed: true };
+    setQueued((q) => q.map((i) => i === item ? correcting : i));
+    const ok = await sendToSession({ session: item.session, text: item.text, requestId: item.requestId,
+      attachments: item.attachments ?? [], correction: true });
+    if (ok) setQueued((q) => q.filter((i) => i !== correcting));
   };
 
   const attach = async (kind: 'files' | 'folder') => {
     try {
       const res = await agentApi.agentAttach(kind);
+      if (res.attachments.length) draftVersionRef.current += 1;
       setAttachments((prev) => [...prev, ...res.attachments]);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo adjuntar'), type: 'error' });
@@ -1104,26 +1172,31 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
                 En cola
               </span>
+              <span className="text-[11px] text-[var(--text-muted)]">Se enviará al terminar el turno.</span>
               {queuedForSession.map((item, idx) => (
                 <span
                   key={`${idx}-${item.text}`}
                   className="flex max-w-[70%] items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-0.5 pl-2.5 pr-1 text-[11px] text-[var(--text-secondary)]"
                 >
-                  {item.failed ? (
+                  {requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId])) ? (
+                    <span className="truncate">Enviando: {item.text}</span>
+                  ) : item.failed ? (
                     <button
                       type="button"
                       className="truncate text-[var(--accent-yellow)]"
-                      title="Mensaje pendiente — clic para enviar"
-                      onClick={() =>
-                        setQueued((q) => q.map((i) => (i === item ? { ...i, failed: false } : i)))
-                      }
+                      title="Reintentar el envío pendiente"
+                      onClick={() => {
+                        const receipt = sendReceipts.find((entry) => entry.intent.session === item.session && entry.intent.requestId === item.requestId);
+                        if (receipt) void retrySend(receipt.intent);
+                        else setQueued((q) => q.map((i) => (i === item ? { ...i, failed: false } : i)));
+                      }}
                     >
                       {item.text}
                     </button>
                   ) : (
                     <span className="truncate">{item.text}</span>
                   )}
-                  {(running || pending.length > 0) && (
+                  {(running || pending.length > 0) && !item.failed && (
                     <button
                       type="button"
                       className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
@@ -1133,6 +1206,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                       onClick={() => void sendCorrection(item)}
                     >
                       <CornerDownRight size={10} />
+                      <span className="ml-1 text-[11px]">Indicar ahora</span>
                     </button>
                   )}
                   <button
@@ -1176,7 +1250,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                       type="button"
                       className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
                       aria-label={`Quitar ${item.name}`}
-                      onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== item.id))}
+                      onClick={() => { draftVersionRef.current += 1; setAttachments((prev) => prev.filter((a) => a.id !== item.id)); }}
                     >
                       <X size={10} />
                     </button>
@@ -1209,13 +1283,14 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 ref={draftRef}
                 rows={1}
                 value={draft}
-                onChange={(event) => { setDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionsHidden(false); }}
+                onChange={(event) => { draftVersionRef.current += 1; setDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionsHidden(false); }}
                 onSelect={(event) => setMentionCursor(event.currentTarget.selectionStart)}
                 aria-autocomplete="list"
                 aria-controls={mentionMatch ? 'agent-bot-mentions' : undefined}
                 aria-activedescendant={selectedMention ? `agent-mention-${selectedMention.id}` : undefined}
                 onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing) return;
+                  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+                  if (e.key === 'Enter' && e.repeat && !e.shiftKey) { e.preventDefault(); return; }
                   if (mentionMatch && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMentionsHidden(true); return; }
                   if (selectedMention && !e.shiftKey && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab'].includes(e.key)) {
                     e.preventDefault();
@@ -1269,10 +1344,26 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </div>
             )}
           </div>
-          {receivedCorrection === sessionId && receivedCorrection && (
-            <p role="status" className="px-3 pt-1.5 text-[12px] text-[var(--text-secondary)]">
-              Indicación recibida para los próximos pasos.
-            </p>
+          {visibleReceipts.length > 0 && (
+            <div role="region" aria-label="Estado de los envíos" tabIndex={0} className="custom-scrollbar max-h-36 space-y-1.5 overflow-y-auto px-3 pt-1.5">
+              {visibleReceipts.map((receipt) => (
+                <div key={receipt.intent.requestId} className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[12px] text-[var(--text-secondary)]">
+                  <p role="status" aria-live="polite" aria-atomic="true" className="min-w-0 flex-1">
+                    {receipt.phase === 'sending' ? receipt.intent.correction ? 'Enviando indicación…' : 'Enviando mensaje…'
+                      : receipt.phase === 'received' ? receipt.intent.correction ? 'Indicación recibida para los próximos pasos.' : 'Mensaje recibido en esta conversación.'
+                        : receipt.intent.correction ? 'No se pudo confirmar la recepción de la indicación.' : 'No se pudo confirmar la recepción.'}
+                    <span className="ml-1 break-words text-[var(--text-muted)]">«{receipt.intent.text.slice(0, 100)}{receipt.intent.text.length > 100 ? '…' : ''}»{receipt.intent.attachments.length > 0 && ` · ${receipt.intent.attachments.length} adjunto${receipt.intent.attachments.length === 1 ? '' : 's'}`}</span>
+                  </p>
+                  {receipt.phase === 'unconfirmed' && <>
+                    <Button variant="ghost" size="sm" aria-label={`Reintentar envío: ${receipt.intent.text}`}
+                      title={receipt.reason} disabled={sending || sendingCorrection || modelBusy || stopping} onClick={() => void retrySend(receipt.intent)}>
+                      Reintentar envío
+                    </Button>
+                    <p className="w-full text-[11px] text-[var(--text-muted)]">{receipt.reason} Se recuperará este mismo mensaje, sin crear otro.</p>
+                  </>}
+                </div>
+              ))}
+            </div>
           )}
           <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 px-2 text-[12px] text-[var(--text-muted)]">
             {session ? (

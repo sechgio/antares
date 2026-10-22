@@ -119,7 +119,7 @@ it('conserva el bot seleccionado en la cola restaurada aunque cambie su nombre',
   list.mockResolvedValue(empty);
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByTitle('Mensaje pendiente — clic para enviar')); });
+  await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Consulta @bot:bot-original', expect.any(String), []);
 });
 
@@ -645,7 +645,7 @@ it('restaura la conversación y la cola sin enviar tareas automáticamente tras 
   render(<AgentView />);
   await act(async () => {});
   expect(screen.getByText('Progreso recuperado')).toBeInTheDocument();
-  expect(screen.getByText('Tarea pendiente')).toHaveAttribute('title', 'Mensaje pendiente — clic para enviar');
+  expect(screen.getByText('Tarea pendiente')).toHaveAttribute('title', 'Reintentar el envío pendiente');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByText('Tarea pendiente')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Tarea pendiente', 'req-guardado', []);
@@ -1204,4 +1204,263 @@ it('no anuncia una pregunta del chat anterior al cambiar de conversación', asyn
   expect(screen.queryByRole('region', { name: 'Atención del agente' })).not.toBeInTheDocument();
   observer.disconnect();
   await act(async () => { loading.resolve(empty); });
+});
+
+it('confirma la recepción solo tras la admisión y conserva ese recibo si falla el refresco', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const admitted = deferred<{ accepted: boolean }>();
+  vi.mocked(agentApi.agentMessageSend).mockReturnValue(admitted.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Prepara el informe' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  const receipts = within(screen.getByRole('region', { name: 'Estado de los envíos' }));
+  expect(receipts.getByText('Enviando mensaje…')).toBeVisible();
+  expect(receipts.queryByText('Mensaje recibido en esta conversación.')).not.toBeInTheDocument();
+  list.mockRejectedValue(new Error('No se pudo leer el historial'));
+  await act(async () => { admitted.resolve({ accepted: true }); });
+  expect(receipts.getByText('Mensaje recibido en esta conversación.')).toBeVisible();
+  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
+});
+
+it('un mensaje sin aceptación conserva su borrador y ofrece recuperar la misma petición', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentMessageSend).mockResolvedValueOnce({ accepted: false });
+  render(<AgentView />);
+  await act(async () => {});
+  const input = screen.getByLabelText('Mensaje para el agente');
+  fireEvent.change(input, { target: { value: 'Ordena este informe' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(input).toHaveValue('Ordena este informe');
+  expect(screen.getByText('No se pudo confirmar la recepción.')).toBeVisible();
+  const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Reintentar envío: Ordena este informe' })); });
+  expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
+  expect(input).toHaveValue('');
+  expect(screen.getByText('Mensaje recibido en esta conversación.')).toBeVisible();
+});
+
+it('ignora Intro repetido y composición IME sin impedir Shift+Intro', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  render(<AgentView />);
+  await act(async () => {});
+  const input = screen.getByLabelText('Mensaje para el agente');
+  fireEvent.change(input, { target: { value: 'Un encargo' } });
+  await act(async () => {
+    fireEvent.keyDown(input, { key: 'Enter', repeat: true });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+  });
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(input).toHaveValue('Un encargo');
+  await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Un encargo', expect.any(String), []);
+});
+
+it.each(['texto nuevo', 'texto idéntico editado', 'adjunto nuevo', 'adjunto quitado'])('recupera el payload original y conserva un borrador con %s', async (change) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentAttach')
+    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'original.pdf', kind: 'files' }] })
+    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'nuevo.pdf', kind: 'files' }] });
+  const admitted = deferred<{ accepted: boolean; duplicate: boolean }>();
+  vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('Respuesta perdida')).mockReturnValueOnce(admitted.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  const input = screen.getByLabelText('Mensaje para el agente');
+  fireEvent.change(input, { target: { value: 'Encargo original' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(input).toHaveValue('Encargo original');
+  if (change === 'adjunto nuevo') await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  else if (change === 'adjunto quitado') fireEvent.click(screen.getByLabelText('Quitar original.pdf'));
+  else {
+    fireEvent.change(input, { target: { value: 'Borrador nuevo' } });
+    if (change === 'texto idéntico editado') fireEvent.change(input, { target: { value: 'Encargo original' } });
+  }
+  const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
+  const retry = screen.getByRole('button', { name: 'Reintentar envío: Encargo original' });
+  await act(async () => { fireEvent.click(retry); fireEvent.click(retry); });
+  expect(vi.mocked(agentApi.agentMessageSend).mock.calls).toEqual([original, original]);
+  expect(screen.getByText('Enviando mensaje…')).toBeVisible();
+  await act(async () => { admitted.resolve({ accepted: true, duplicate: true }); });
+  expect(input).toHaveValue(change === 'texto nuevo' ? 'Borrador nuevo' : 'Encargo original');
+  expect(screen.queryByText('original.pdf')).not.toBeInTheDocument();
+  if (change === 'adjunto nuevo') expect(screen.getByText('nuevo.pdf')).toBeVisible();
+});
+
+it.each(['aceptado', 'sin confirmar'])('conserva la edición y adjuntos hechos durante un envío %s', async (result) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentAttach')
+    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'original.pdf', kind: 'files' }] })
+    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'nuevo.pdf', kind: 'files' }] });
+  const admitted = deferred<{ accepted: boolean }>();
+  vi.mocked(agentApi.agentMessageSend).mockReturnValue(admitted.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  const input = screen.getByLabelText('Mensaje para el agente');
+  fireEvent.change(input, { target: { value: 'Primero' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  fireEvent.change(input, { target: { value: 'Segundo' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  await act(async () => { admitted.resolve({ accepted: result === 'aceptado' }); });
+  expect(input).toHaveValue('Segundo');
+  expect(screen.getByText('nuevo.pdf')).toBeVisible();
+  expect(vi.mocked(agentApi.agentMessageSend).mock.calls[0]).toEqual(['s1', 'Primero', expect.any(String), ['a1']]);
+});
+
+it('captura el mensaje antes de esperar a que se cree el primer chat', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const creation = deferred<{ session: AgentSession }>();
+  vi.spyOn(agentApi, 'agentSessionCreate').mockReturnValue(creation.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  const input = screen.getByLabelText('Mensaje para el agente');
+  fireEvent.change(input, { target: { value: 'Primer encargo' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  fireEvent.change(input, { target: { value: 'Encargo siguiente' } });
+  await act(async () => { creation.resolve({ session }); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Primer encargo', expect.any(String), []);
+  expect(input).toHaveValue('Encargo siguiente');
+});
+
+it.each(['aceptado', 'sin confirmar'])('mantiene el recibo de un envío %s en su chat al navegar', async (result) => {
+  const second = { ...session, id: 's2', title: 'Segunda' };
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, second] });
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const admitted = deferred<{ accepted: boolean }>();
+  vi.mocked(agentApi.agentMessageSend).mockReturnValue(admitted.promise);
+  vi.spyOn(agentApi, 'agentAttach')
+    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'original.pdf', kind: 'files' }] })
+    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'otro-chat.pdf', kind: 'files' }] });
+  render(<AgentView />);
+  await act(async () => {});
+  const input = screen.getByLabelText('Mensaje para el agente');
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  fireEvent.change(input, { target: { value: 'Encargo del primer chat' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  fireEvent.change(input, { target: { value: 'Borrador del segundo chat' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  await act(async () => { admitted.resolve({ accepted: result === 'aceptado' }); });
+  expect(input).toHaveValue('Borrador del segundo chat');
+  expect(screen.getByText('otro-chat.pdf')).toBeVisible();
+  if (result === 'aceptado') expect(screen.queryByText('original.pdf')).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Estado de los envíos' })).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  const receipts = screen.getByRole('region', { name: 'Estado de los envíos' });
+  expect(receipts).toHaveTextContent('Encargo del primer chat');
+  expect(receipts).toHaveTextContent(result === 'aceptado' ? 'Mensaje recibido en esta conversación.' : 'No se pudo confirmar la recepción.');
+  expect(input).toHaveValue('Borrador del segundo chat');
+});
+
+it('conserva varios envíos no confirmados y muestra la recepción del que se acaba de recuperar', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('Respuesta A perdida')).mockRejectedValueOnce(new Error('Respuesta B perdida'));
+  render(<AgentView />);
+  await act(async () => {});
+  const input = screen.getByLabelText('Mensaje para el agente');
+  for (const text of ['Encargo A', 'Encargo B']) {
+    fireEvent.change(input, { target: { value: text } });
+    await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  }
+  const receipts = within(screen.getByRole('region', { name: 'Estado de los envíos' }));
+  expect(receipts.getByRole('button', { name: 'Reintentar envío: Encargo A' })).toBeVisible();
+  expect(receipts.getByRole('button', { name: 'Reintentar envío: Encargo B' })).toBeVisible();
+  const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
+  await act(async () => { fireEvent.click(receipts.getByRole('button', { name: 'Reintentar envío: Encargo A' })); });
+  expect(vi.mocked(agentApi.agentMessageSend).mock.calls[2]).toEqual(original);
+  expect(receipts.getByText('Mensaje recibido en esta conversación.')).toHaveTextContent('Encargo A');
+  expect(receipts.getByRole('button', { name: 'Reintentar envío: Encargo B' })).toBeVisible();
+  expect(input).toHaveValue('Encargo B');
+});
+
+it('conserva una indicación fallida de la cola y la recupera con su misma intención tras remontar', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  vi.mocked(agentApi.agentMessageSend).mockResolvedValueOnce({ accepted: false });
+  const first = render(<AgentView />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar como corrección')); });
+  const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
+  expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
+    { session: 's1', text: 'Usa la plantilla B', requestId: original[2], attachments: [], failed: true, correction: true },
+  ]);
+  first.unmount();
+  list.mockResolvedValue(empty);
+  render(<AgentView />);
+  await act(async () => {});
+  expect(agentApi.agentMessageSend).toHaveBeenCalledTimes(1);
+  await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
+  expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
+  expect(screen.queryByText('En cola')).not.toBeInTheDocument();
+  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toBeVisible();
+});
+
+it('no convierte un envío restaurado de intención desconocida en una indicación', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: 's1', text: 'Encargo anterior', requestId: 'previous' }]));
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  render(<AgentView />);
+  await act(async () => {});
+  expect(screen.getByTitle('Reintentar el envío pendiente')).toBeVisible();
+  expect(screen.queryByLabelText('Enviar como corrección')).not.toBeInTheDocument();
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+});
+
+it.each(['web_open', 'web_read', 'web_click'])('muestra actividad web real durante %s', async (name) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true, messages: [{
+    role: 'assistant', content: '', ts: 1, tool_calls: [{ id: 'c', name, params: {}, gated: name === 'web_click', status: 'running' }],
+  }] });
+  render(<AgentView />);
+  await act(async () => {});
+  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Estoy trabajando en la página.')).toBeVisible();
+});
+
+it('un ACK anterior no sustituye el recibo de una indicación más reciente', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: 's1', text: 'Encargo A', requestId: 'queue-a' }]));
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const first = deferred<{ accepted: boolean }>();
+  vi.mocked(agentApi.agentMessageSend).mockReturnValueOnce(first.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
+  expect(screen.getByText('Enviando mensaje…')).toBeVisible();
+  list.mockResolvedValue({ ...empty, running: true });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Indicación B' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
+  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toBeVisible();
+  await act(async () => { first.resolve({ accepted: true }); });
+  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toHaveTextContent('Indicación B');
+  expect(screen.queryByText('Mensaje recibido en esta conversación.')).not.toBeInTheDocument();
+});
+
+it('el eco de un texto en el historial no confirma una respuesta de envío perdida', async () => {
+  const update = agentUpdates();
+  localStorage.setItem('antares-agent-session', session.id);
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('Respuesta perdida'));
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Texto repetido' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  list.mockResolvedValue({ ...empty, messages: [{ role: 'user', content: 'Texto repetido', ts: 1 }] });
+  await act(async () => { update(); });
+  expect(screen.getByRole('button', { name: 'Reintentar envío: Texto repetido' })).toBeVisible();
+  expect(screen.getByText('No se pudo confirmar la recepción.')).toBeVisible();
+  expect(screen.queryByText('Mensaje recibido en esta conversación.')).not.toBeInTheDocument();
 });

@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent muestra recibos de envío y permite recuperar una petición no confirmada con el mismo texto, adjuntos e intención, sin borrar un borrador nuevo. La cola distingue lo guardado de lo recibido y conserva las indicaciones al restaurarse; el compositor ignora Intro repetido y la actividad reconoce las herramientas web reales.
 - Agent explica qué confirma cada modo de permisos y su alcance por conversación. Cada solicitud muestra el efecto, destino, cuenta y recursos disponibles, aclara que permitir autoriza solo esa llamada y que rechazar la omite e informa al agente. Las categorías de herramientas dejan de prometer una aprobación en todos los modos.
 - Agent reconoce menciones de bots guardados con `@nombre`, `@"Nombre completo"` y referencias por identificador, ofrece sugerencias con teclado y conserva las menciones de módulos. Seleccionar un bot conserva su identidad al renombrarlo o restaurar la cola. El coordinador puede delegar y compartir conclusiones, sin ampliar permisos ni resolver silenciosamente bots ambiguos o borrados.
 - Agent separa conversaciones y agentes guardados con búsquedas independientes. El selector de herramientas permite buscar y filtrar Skills y MCP sin modificar la selección oculta, conserva el foco de teclado y muestra el total habilitado. Las trazas de skills presentan catálogo, procedencia, contenido y lecturas parciales, conservando el JSON original.
