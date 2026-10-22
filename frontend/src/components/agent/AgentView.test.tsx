@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { agentApi, type AgentSession } from '../../api/agentApi';
+import { agentApi, type AgentApproval, type AgentPermissionMode, type AgentSession } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import AgentView from './AgentView';
 
@@ -175,7 +175,7 @@ it('busca herramientas por etiqueta o nombre y abre solo los grupos con coincide
   expect(panel.getByText('2 de 3 habilitadas')).toBeInTheDocument();
   fireEvent.change(search, { target: { value: 'PowerShell' } });
   expect(panel.getByRole('switch', { name: 'Habilitar shell_run' })).toHaveAttribute('aria-checked', 'false');
-  expect(panel.queryByText('Lectura directa', { selector: 'summary' })).not.toBeInTheDocument();
+  expect(panel.queryByText('Uso general', { selector: 'summary' })).not.toBeInTheDocument();
   fireEvent.change(search, { target: { value: 'db_clear' } });
   expect(panel.getByRole('switch', { name: 'Habilitar db_clear' })).toBeInTheDocument();
   fireEvent.change(search, { target: { value: 'sin-coincidencias' } });
@@ -333,6 +333,10 @@ it('cambia los permisos por conversación y conserva el modo si falla el guardad
   fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
   const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
   expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveAttribute('aria-checked', 'true');
+  expect(within(menu).getByRole('menuitemradio', { name: /Solicitar aprobación/ })).toHaveTextContent('Confirmar acciones sensibles y consultas web');
+  expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveTextContent('consultar la web sin preguntar');
+  expect(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ })).toHaveTextContent('sin pedir confirmación');
+  expect(within(menu).getByText(/El modo se guarda solo para esta conversación y conserva las herramientas y accesos habilitados/)).toBeInTheDocument();
   fireEvent.click(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ }));
   expect(save).toHaveBeenLastCalledWith(session.id, 'full');
   expect(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeDisabled();
@@ -382,6 +386,39 @@ it.each(['running', 'approval'])('impide cambiar permisos durante un turno en %s
   if (state === 'approval') expect(screen.getByLabelText('1 por aprobar')).toBeInTheDocument();
 });
 
+it.each<{ mode: AgentPermissionMode; label: string }>([
+  { mode: 'ask', label: 'Solicitar aprobación' },
+  { mode: 'auto', label: 'Aprobar por mí' },
+  { mode: 'full', label: 'Acceso completo' },
+])('muestra la decisión pendiente del motor sin autoaprobarla en $mode', async ({ mode, label }) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, permission_mode: mode }] });
+  const approval: AgentApproval = {
+    id: 'a1', session_id: session.id, call_id: 'c1', method: 'gdrive_upload',
+    params: { draft: 'resumen.pdf', folder_id: 'Informes' }, status: 'pending', created_at: 1, decided_at: null,
+    context: { account: 'ana@example.com' },
+  };
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
+  const approve = vi.spyOn(agentApi, 'agentApprove');
+  const deny = vi.spyOn(agentApi, 'agentDeny').mockResolvedValue({ approval: { ...approval, status: 'denied' } });
+  const saveMode = vi.spyOn(agentApi, 'agentSessionPermissionsSet');
+  render(<AgentView />);
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: `Permisos: ${label}` })).toBeDisabled();
+  const card = within(screen.getByRole('group', { name: 'Confirmación de acción' }));
+  expect(card.getByText('Subir un borrador a Google Drive')).toBeInTheDocument();
+  expect(card.getByText('Carpeta remota: Informes')).toBeInTheDocument();
+  expect(card.getByText('Cuenta: ana@example.com')).toBeInTheDocument();
+  expect(card.getByText('Borrador: resumen.pdf')).toBeInTheDocument();
+  expect(approve).not.toHaveBeenCalled();
+  expect(deny).not.toHaveBeenCalled();
+  expect(saveMode).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(card.getByRole('button', { name: 'Rechazar esta acción' })); });
+  expect(deny).toHaveBeenCalledExactlyOnceWith('a1');
+  expect(approve).not.toHaveBeenCalled();
+  expect(saveMode).not.toHaveBeenCalled();
+});
+
 it('guarda las herramientas de la conversación y conserva la selección si falla', async () => {
   vi.mocked(agentApi.agentToolsList).mockResolvedValue({ tools: availableTools });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
@@ -394,7 +431,7 @@ it('guarda las herramientas de la conversación y conserva la selección si fall
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   expect(agentApi.agentToolsList).toHaveBeenLastCalledWith('s1');
   fireEvent.click(screen.getByLabelText('Herramientas del agente'));
-  fireEvent.click(screen.getByText('Con aprobación', { selector: 'summary' }));
+  fireEvent.click(screen.getByText('Acciones sensibles', { selector: 'summary' }));
   await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' })); });
   expect(set).toHaveBeenLastCalledWith('s1', ['flows_list']);
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'false');
@@ -417,7 +454,7 @@ it('descarta una selección guardada tarde al cambiar de conversación', async (
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   fireEvent.click(screen.getByLabelText('Herramientas del agente'));
-  fireEvent.click(screen.getByText('Con aprobación', { selector: 'summary' }));
+  fireEvent.click(screen.getByText('Acciones sensibles', { selector: 'summary' }));
   fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' }));
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toBeDisabled();
   await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
@@ -437,7 +474,7 @@ it('descarta la carga de herramientas de una conversación anterior', async () =
   await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
   await act(async () => { first.resolve({ tools: availableTools.map((tool) => ({ ...tool, enabled: false })) }); });
   fireEvent.click(screen.getByLabelText('Herramientas del agente'));
-  fireEvent.click(screen.getByText('Con aprobación', { selector: 'summary' }));
+  fireEvent.click(screen.getByText('Acciones sensibles', { selector: 'summary' }));
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'true');
 });
 
@@ -674,11 +711,11 @@ it('recupera una aprobación pendiente sin aprobarla al montar y permite detener
   });
   render(<AgentView />);
   await act(async () => {});
-  expect(screen.getByRole('button', { name: 'Aprobar' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Permitir esta acción' })).toBeInTheDocument();
   expect(approve).not.toHaveBeenCalled();
   expect(deny).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
-  expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Permitir esta acción' })).not.toBeInTheDocument();
   expect(approve).not.toHaveBeenCalled();
 });
 

@@ -6,9 +6,9 @@ import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import Button from '../ui/Button';
 
 const MODES = [
-  { value: 'ask', label: 'Solicitar aprobación', description: 'Confirmar cambios y acceso a internet', Icon: Hand },
-  { value: 'auto', label: 'Aprobar por mí', description: 'Confirmar solo acciones que modifican datos', Icon: ShieldCheck },
-  { value: 'full', label: 'Acceso completo', description: 'Sin confirmar; conserva los accesos habilitados', Icon: ShieldAlert },
+  { value: 'ask', label: 'Solicitar aprobación', description: 'Confirmar acciones sensibles y consultas web', Icon: Hand },
+  { value: 'auto', label: 'Aprobar por mí', description: 'Confirmar acciones sensibles; consultar la web sin preguntar', Icon: ShieldCheck },
+  { value: 'full', label: 'Acceso completo', description: 'Ejecutar acciones habilitadas sin pedir confirmación', Icon: ShieldAlert },
 ] satisfies { value: AgentPermissionMode; label: string; description: string; Icon: typeof Hand }[];
 
 export default function PermissionPicker({ value, onChange, disabled, pending }: {
@@ -20,9 +20,9 @@ export default function PermissionPicker({ value, onChange, disabled, pending }:
   const id = useId();
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     estimatedWidth: 340,
-    estimatedHeight: 132,
+    estimatedHeight: 260,
     direction: 'up',
-    maxHeightCap: 260,
+    maxHeightCap: 320,
   });
   const selected = MODES.find((mode) => mode.value === value) ?? MODES[1];
   const { Icon } = selected;
@@ -113,6 +113,10 @@ export default function PermissionPicker({ value, onChange, disabled, pending }:
             <Check size={14} className={`shrink-0 ${value === mode ? '' : 'invisible'}`} aria-hidden="true" />
           </Button>
         ))}
+        <p className="px-2 pb-1 pt-1.5 text-[11px] leading-4 text-[var(--text-secondary)]">
+          Las acciones sensibles incluyen comandos, uso del escritorio y cambios en archivos o servicios.
+          {' '}El modo se guarda solo para esta conversación y conserva las herramientas y accesos habilitados.
+        </p>
       </div>, document.body,
     )}
   </>;
