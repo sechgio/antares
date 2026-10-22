@@ -11,6 +11,8 @@ const autoimg = nativeMethods('autoimg');
 
 assert(specs.filter((s) => s.module === 'autoimg').every((s) => autoimg.has(s.name)), 'toda herramienta AutoIMG existe en el catálogo native:autoimg');
 assert(specs.every((s) => s.kind === 'native' && s.module && s.inputSchema.type === 'object'), 'specs completas');
+assert(specs.some((s) => s.name === 'canvas_apply_layers' && s.module === 'canvas' && s.gated && s.inheritSchema),
+  'Canvas aplica capas con aprobación, puente del editor y esquema heredado del backend');
 for (const config of ['autoimg_oauth_config_save', 'autoimg_oauth_config_status', 'autoimg_sheets_auth_url',
   'autoimg_sheets_auth_revoke', 'autoimg_sheets_auth_cancel', 'autoimg_sheets_open', 'autoimg_auto_sync_toggle', 'autoimg_bootstrap']) {
   assert(!names.has(config), `${config} queda en la interfaz humana`);
@@ -63,11 +65,58 @@ for (const bad of ['', '..', 'sub/a.pdf', String.raw`C:\x\a.pdf`, 'a?.pdf']) {
 
 async function exportTest() {
   {
+    const isolatedCalls = [];
+    const inputCommands = [];
+    let attached = false;
+    let attachments = 0;
+    let pageTimeOrigin = 1;
+    let navigationPhase = '';
     const contents = Object.assign(new EventEmitter(), {
       isDestroyed: () => false, getURL: () => 'https://example.com', getTitle: () => 'Página',
-      isLoading: () => false, getZoomFactor: () => 1, setZoomFactor: () => {},
+      isLoading: () => false, getZoomFactor: () => 0.5, setZoomFactor: () => {},
       navigationHistory: { canGoBack: () => false, canGoForward: () => false },
       setWindowOpenHandler: () => {}, loadURL: async () => {}, close: () => contents.emit('destroyed'),
+      executeJavaScriptInIsolatedWorld: async (world, scripts) => {
+        isolatedCalls.push({ world, scripts });
+        return { url: 'https://example.com', time_origin: pageTimeOrigin };
+      },
+      executeJavaScript: async (script) => {
+        if (script.includes('const el = document.querySelector') && script.includes('getBoundingClientRect')) {
+          if (navigationPhase === 'locate') pageTimeOrigin += 1;
+          return { x: 240, y: 120 };
+        }
+        if (navigationPhase === 'clear' && script.includes("'select' in el")) pageTimeOrigin += 1;
+        return { url: 'https://example.com', title: '', text: '', elements: [] };
+      },
+      sendInputEvent: () => { throw new Error('La ventana no tiene foco'); },
+      debugger: {
+        isAttached: () => attached,
+        attach: () => { attached = true; attachments += 1; },
+        sendCommand: async (method, params) => {
+          await Promise.resolve();
+          if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') {
+            const mouse = { type: 'mouseDown', x: params.x * contents.getZoomFactor(), y: params.y * contents.getZoomFactor(),
+              button: params.button, clickCount: params.clickCount };
+            if (navigationPhase === 'human-error') {
+              contents.emit('before-mouse-event', {}, mouse);
+              throw new Error('Fallo de transporte simulado');
+            }
+            if (navigationPhase === 'human-mouse-before') contents.emit('before-mouse-event', {}, mouse);
+            contents.emit('before-mouse-event', {}, mouse);
+            if (navigationPhase === 'human-mouse-after') contents.emit('before-mouse-event', {}, mouse);
+          }
+          inputCommands.push({ method, params });
+          if ((navigationPhase === 'human-key' && params.type === 'keyDown')
+            || (navigationPhase === 'human-focus' && method === 'Emulation.setFocusEmulationEnabled')) {
+            contents.emit('before-input-event', {}, { type: 'keyDown' });
+          }
+          if (navigationPhase === 'human-wheel' && params.type === 'mouseMoved') contents.emit('input-event', {}, { type: 'mouseWheel' });
+          if (navigationPhase === 'human-control' && params.type === 'mouseMoved') browser.setUserControl(true);
+          if ((navigationPhase === 'focus' && method === 'Emulation.setFocusEmulationEnabled')
+            || (navigationPhase === 'packet' && params.type === 'mouseMoved')
+            || (navigationPhase === 'key' && params.type === 'keyDown')) pageTimeOrigin += 1;
+        },
+      },
     });
     const moves = [];
     const makeParent = (name) => ({
@@ -96,6 +145,11 @@ async function exportTest() {
     browser.dock(bounds);
     const timers = installInertTimers();
     try { await browser.navigate('open', 'https://example.com'); } finally { timers.restore(); }
+    const pageContext = await browser.approvalContext();
+    assert(pageContext.page_url === 'https://example.com' && pageContext.page_time_origin === 1,
+      'el navegador obtiene la identidad del documento para el contexto de aprobación');
+    assert(isolatedCalls.length === 1 && isolatedCalls[0].world !== 0 && isolatedCalls[0].world !== 999,
+      'la identidad se consulta en un mundo aislado de los scripts de la página y del preload');
     moves.length = 0;
     browser.dock(null);
     assert(moves[0]?.[0] === 'main' && moves[0]?.[1] === 'remove' && moves[0]?.[2] === page
@@ -109,6 +163,88 @@ async function exportTest() {
     assert(moves[0]?.[0] === 'host' && moves[0]?.[1] === 'remove' && moves[1]?.[0] === 'main'
       && moves[1]?.[1] === 'add' && moves[1]?.[2] === page,
     'volver al panel retira la misma vista de la anfitriona antes de mostrarla en Agent');
+    const inputTimers = installInertTimers();
+    let inputError = null;
+    try {
+      await browser.run('web_click', { ref: '1' });
+      await browser.run('web_type', { ref: '1', text: 'Prueba á', submit: true });
+      await browser.run('web_key', { keys: 'ctrl+a shift+a space left ctrl+-' });
+    } catch (error) { inputError = error.message; } finally { inputTimers.restore(); }
+    assert(inputError === null, `las acciones del navegador no requieren foco nativo: ${inputError}`);
+    assert(attachments === 1, 'el transporte de entrada reutiliza la conexión al navegador');
+    assert(inputCommands[0]?.method === 'Emulation.setFocusEmulationEnabled' && inputCommands[0]?.params.enabled === true,
+      'el navegador emula el foco de su página sin enfocar la ventana de Windows');
+    const mouse = inputCommands.filter((command) => command.method === 'Input.dispatchMouseEvent');
+    assert(mouse.length === 6 && mouse.slice(0, 3).map((command) => command.params.type).join()
+      === 'mouseMoved,mousePressed,mouseReleased' && mouse.every((command) => command.params.x === 240 && command.params.y === 120),
+    'el clic envía movimiento, pulsación y liberación en coordenadas CSS sin aplicar el zoom dos veces');
+    assert(inputCommands.some((command) => command.method === 'Input.insertText' && command.params.text === 'Prueba á'),
+      'el texto Unicode se inserta en la página sin usar el teclado global');
+    const keyDown = inputCommands.filter((command) => command.method === 'Input.dispatchKeyEvent' && command.params.type === 'keyDown');
+    assert(keyDown.length === 6 && keyDown[0].params.key === 'Enter' && keyDown[0].params.text === '\r'
+      && keyDown[1].params.modifiers === 2 && !keyDown[1].params.text
+      && keyDown[2].params.modifiers === 8 && keyDown[2].params.text === 'A'
+      && keyDown[3].params.text === ' ' && keyDown[4].params.key === 'ArrowLeft'
+      && keyDown[5].params.modifiers === 2 && keyDown[5].params.windowsVirtualKeyCode === 189,
+    'las teclas conservan envío, atajos, mayúsculas, espacio y navegación');
+    assert(inputCommands.filter((command) => command.method === 'Input.dispatchKeyEvent' && command.params.type === 'keyUp').length === 6,
+      'cada tecla se libera después de enviarla');
+    for (const [name, params, phase, sent] of [
+      ['web_click', { ref: '1' }, 'locate', 0], ['web_click', { ref: '1' }, 'focus', 0],
+      ['web_click', { ref: '1' }, 'packet', 1], ['web_type', { ref: '1', text: 'no enviar', clear: true }, 'clear', 3],
+      ['web_key', { keys: 'enter ctrl+a' }, 'key', 1],
+    ]) {
+      pageTimeOrigin = 1;
+      navigationPhase = phase;
+      attached = phase !== 'focus';
+      inputCommands.length = 0;
+      const approvedContext = await browser.approvalContext();
+      let changed;
+      const raceTimers = installInertTimers();
+      try { await browser.run(name, params, { approvedContext }); } catch (error) { changed = error; }
+      finally { raceTimers.restore(); }
+      assert(changed && /página cambió/.test(changed.message)
+        && inputCommands.filter((command) => command.method.startsWith('Input.')).length === sent,
+      `${phase}: navegar durante la interacción impide enviar entrada al documento nuevo`);
+      assert(!!changed?.uncertain === (sent > 0), `${phase}: solo la entrada ya enviada produce incertidumbre`);
+    }
+    const realNow = Date.now;
+    let now = realNow() - 100_000;
+    Date.now = () => now;
+    try {
+      for (const [phase, name, sent] of [
+        ['human-key', 'web_key', 1], ['human-focus', 'web_click', 0], ['human-wheel', 'web_click', 1],
+        ['human-mouse-before', 'web_click', 2], ['human-mouse-after', 'web_click', 2], ['human-control', 'web_click', 1],
+        ['human-error', 'web_click', 1],
+      ]) {
+        now += 6_000;
+        navigationPhase = phase;
+        attached = phase !== 'human-focus';
+        inputCommands.length = 0;
+        let interrupted;
+        const timers = installInertTimers();
+        try { await browser.run(name, name === 'web_key' ? { keys: 'enter ctrl+a' } : { ref: '1' }); }
+        catch (error) { interrupted = error; }
+        finally { timers.restore(); browser.setUserControl(false); }
+        assert(interrupted?.message === (phase === 'human-control' ? browser.USER_CONTROL_ERROR
+          : phase === 'human-error' ? 'Fallo de transporte simulado' : browser.USER_BUSY_ERROR)
+          && inputCommands.filter((command) => command.method.startsWith('Input.')).length === sent,
+        `${phase}: una entrada humana durante la espera detiene los siguientes paquetes`);
+        assert(!!interrupted?.uncertain === (sent > 0), `${phase}: interrumpir después de enviar conserva la incertidumbre`);
+        if (phase === 'human-error') {
+          let paused;
+          try { await browser.run('web_key', { keys: 'enter' }); } catch (error) { paused = error; }
+          assert(paused?.message === browser.USER_BUSY_ERROR, 'fallar sin el eco CDP no pierde el clic humano consumido por la correlación');
+        }
+      }
+      navigationPhase = '';
+      now += 6_000;
+      const timers = installInertTimers();
+      let resumed;
+      try { resumed = await browser.run('web_click', { ref: '1' }); }
+      finally { timers.restore(); }
+      assert(resumed?.clicked === '1', 'el clic propio no prolonga la pausa humana y el agente puede retomar tras la inactividad');
+    } finally { Date.now = realNow; }
     browser.close();
   }
   browser.setUserControl(true);
@@ -203,6 +339,33 @@ async function exportTest() {
   let effects = 0;
   stub('../electron/autoimg-handlers', { handleAutoimgCall: async () => { effects += 1; return { handled: true, result: { ok: true } }; } });
   const { nativeToolContext } = require('../electron/agent-native-tools');
+  {
+    let pageUrl = 'https://example.com/informe';
+    let pageTimeOrigin = 1;
+    let interactions = 0;
+    stubModule('electron/agent-browser.js', {
+      ...browser,
+      approvalContext: async () => ({ page_url: pageUrl, page_time_origin: pageTimeOrigin }),
+      run: async (_name, _params, options) => {
+        assert(options.approvedContext?.page_time_origin === pageTimeOrigin, 'el adapter conserva el contexto aprobado hasta el navegador');
+        interactions += 1; return { clicked: '1' };
+      },
+    });
+    const approved = await nativeToolContext('web_click');
+    assert(approved.page_url === pageUrl && approved.page_time_origin === pageTimeOrigin,
+      'la aprobación del navegador identifica la página y su documento');
+    pageTimeOrigin += 1;
+    let rejected = false;
+    try { await runNativeTool('web_click', { ref: '1' }, { sessionId: 'abc123', approvedContext: approved }); }
+    catch { rejected = true; }
+    assert(rejected && interactions === 0, 'recargar la misma URL invalida una aprobación pendiente antes de hacer clic');
+    pageUrl = 'https://example.com/otra';
+    const currentPage = await nativeToolContext('web_click');
+    assert(currentPage.page_url === pageUrl, 'la siguiente aprobación identifica la página nueva');
+    await runNativeTool('web_click', { ref: '1' }, { sessionId: 'abc123', approvedContext: currentPage });
+    assert(interactions === 1, 'una aprobación de la página actual ejecuta la interacción una sola vez');
+    stubModule('electron/agent-browser.js', browser);
+  }
   const context = await nativeToolContext('autoimg_sheets_write_range');
   assert(context.account === 'cuenta-original@example.com' && context.sheet_id === sheet, 'contexto identifica cuenta y hoja');
   assert(!JSON.stringify(context).includes('refresh-original'), 'la aprobación no incluye credenciales');

@@ -10,6 +10,8 @@ import { useToast } from '../../hooks/useToast';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import Button from '../ui/Button';
 import ThemedSelect from '../ui/ThemedSelect';
+import Input from '../ui/Input';
+import { SegmentedControl } from '../ui/SegmentedControl';
 import AgentAvatar from './AgentAvatar';
 import ModelPicker from './ModelPicker';
 import PermissionPicker from './PermissionPicker';
@@ -21,6 +23,7 @@ import ContextChips from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
+import { METHOD_LABELS } from './methodLabels';
 import { ApprovalCard, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
 
 const POLL_MS = 1500;
@@ -129,8 +132,17 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [suggestionBusy, setSuggestionBusy] = useState(false);
   const [draft, setDraft] = useState('');
+  const [mentionCursor, setMentionCursor] = useState(0);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionsHidden, setMentionsHidden] = useState(false);
   const [search, setSearch] = useState('');
+  const [profileSearch, setProfileSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sidebarView, setSidebarView] = useState<'conversations' | 'agents'>('conversations');
+  const sessionSearchRef = useRef<HTMLInputElement | null>(null);
+  const [toolsQuery, setToolsQuery] = useState('');
+  const [toolsFilter, setToolsFilter] = useState<'all' | 'skills' | 'mcp'>('all');
+  const toolsSearchRef = useRef<HTMLInputElement | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [editing, setEditing] = useState<AgentProfile | 'new' | null>(null);
@@ -172,13 +184,23 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const atBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
+  const botMentionsRef = useRef<HTMLDivElement | null>(null);
   const toolsMenu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end',
-    estimatedWidth: 300,
-    estimatedHeight: 320,
-    maxHeightCap: 400,
+    estimatedWidth: 360,
+    estimatedHeight: 400,
+    maxHeightCap: 480,
     stopEscapePropagation: true,
   });
+  const toolsVisible = toolsMenu.isOpen && toolsMenu.position !== null;
+  useEffect(() => {
+    if (!toolsVisible) return;
+    const frame = window.requestAnimationFrame(() => toolsSearchRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (document.activeElement === document.body) toolsMenu.triggerRef.current?.focus();
+    };
+  }, [toolsVisible, toolsMenu.triggerRef]);
 
   useEffect(() => {
     localStorage.setItem(QUEUE_KEY, JSON.stringify(queued));
@@ -253,6 +275,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     let cancelled = false;
     setTools([]);
     setToolsBusy(true);
+    setToolsQuery('');
+    setToolsFilter('all');
     void agentApi.agentToolsList(sessionId || undefined).then((res) => {
       if (!cancelled && version === toolsVersionRef.current) setTools(res.tools);
     }).catch((err) => {
@@ -372,13 +396,18 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const queuedForSession = queued.filter((i) => i.session === sessionId);
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
+  const filteredTools = useMemo(() => {
+    const query = toolsQuery.trim().toLocaleLowerCase('es');
+    return tools.filter((tool) => (toolsFilter === 'all' || (toolsFilter === 'skills' ? tool.name.startsWith('skills_') : tool.kind === 'mcp'))
+      && `${METHOD_LABELS[tool.name] ?? ''} ${tool.name} ${tool.module ?? ''}`.toLocaleLowerCase('es').includes(query));
+  }, [tools, toolsQuery, toolsFilter]);
   const toolGroups = useMemo(
     () => ({
-      direct: tools.filter((t) => !t.gated && t.kind !== 'mcp').map((t) => t.name),
-      gated: tools.filter((t) => t.gated && t.kind !== 'mcp').map((t) => t.name),
-      mcp: tools.filter((t) => t.kind === 'mcp').map((t) => t.name),
+      direct: filteredTools.filter((t) => !t.gated && t.kind !== 'mcp').map((t) => t.name),
+      gated: filteredTools.filter((t) => t.gated && t.kind !== 'mcp').map((t) => t.name),
+      mcp: filteredTools.filter((t) => t.kind === 'mcp').map((t) => t.name),
     }),
-    [tools],
+    [filteredTools],
   );
   const enabledNames = new Set(tools.filter((tool) => tool.enabled !== false).map((tool) => tool.name));
   const toolCount = enabledNames.size;
@@ -406,6 +435,29 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     if (!query) return sessions;
     return sessions.filter((s) => (s.title || 'Conversación').toLowerCase().includes(query));
   }, [sessions, search]);
+  const visibleProfiles = useMemo(() => {
+    const query = profileSearch.trim().toLocaleLowerCase('es');
+    return profiles.filter((profile) => `${profile.name} ${profile.description}`.toLocaleLowerCase('es').includes(query));
+  }, [profiles, profileSearch]);
+  const mentionMatch = mentionsHidden ? null : draft.slice(0, mentionCursor).match(/(?:^|\s)@(?:"([^"\n]*)|([\p{L}\p{N}_-]*))$/u);
+  const normalizeBotName = (value: string) => value.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').trim().replace(/[\s_]+/g, '-');
+  const mentionQuery = normalizeBotName(mentionMatch?.[1] ?? mentionMatch?.[2] ?? '');
+  const mentionProfiles = mentionMatch ? profiles.filter((profile) => normalizeBotName(profile.name).includes(mentionQuery)).slice(0, 6) : [];
+  const selectedMention = mentionProfiles[Math.min(mentionIndex, Math.max(0, mentionProfiles.length - 1))];
+  useEffect(() => {
+    const option = Array.from(botMentionsRef.current?.children ?? []).find((item) => item.getAttribute('aria-selected') === 'true');
+    option?.scrollIntoView({ block: 'nearest' });
+  }, [selectedMention?.id]);
+  const insertBotMention = (profile: AgentProfile) => {
+    if (!mentionMatch) return;
+    const token = `@bot:${profile.id}`;
+    const start = mentionCursor - mentionMatch[0].length + mentionMatch[0].indexOf('@');
+    const caret = start + token.length + 1;
+    setDraft(`${draft.slice(0, start)}${token} ${draft.slice(mentionCursor)}`);
+    setMentionCursor(caret);
+    setMentionsHidden(true);
+    window.requestAnimationFrame(() => { draftRef.current?.focus(); draftRef.current?.setSelectionRange(caret, caret); });
+  };
 
   const newSession = async (profile?: AgentProfile) => {
     if (!provider) {
@@ -471,7 +523,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         addToast({ message: `No se autorizó ${file.path}: ${file.reason}`, type: 'warning' });
       }
       for (const mention of res.mentions?.unknown ?? []) {
-        addToast({ message: `@${mention} no corresponde a ningún módulo de Antares`, type: 'warning' });
+        addToast({ message: `@${mention} no corresponde a ningún agente guardado ni módulo de Antares`, type: 'warning' });
       }
       for (const mention of res.mentions?.ambiguous ?? []) {
         addToast({ message: `@${mention.mention} es ambiguo; escribe el nombre completo del módulo`, type: 'warning' });
@@ -612,8 +664,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
           e.preventDefault();
+          setSidebarView('conversations');
           setSidebarOpen(true);
           setSearchOpen(true);
+          sessionSearchRef.current?.focus();
         }
       }}
     >
@@ -649,19 +703,20 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <label className="agent-search flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg bg-[var(--bg-input)] px-3">
               <Search size={14} className="shrink-0 text-[var(--text-secondary)]" />
               <input
+                ref={sessionSearchRef}
                 autoFocus
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Escape') { setSearch(''); setSearchOpen(false); } }}
-                placeholder="Buscar…"
-                aria-label="Buscar conversaciones"
+                value={sidebarView === 'agents' ? profileSearch : search}
+                onChange={(e) => sidebarView === 'agents' ? setProfileSearch(e.target.value) : setSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') { if (sidebarView === 'agents') setProfileSearch(''); else setSearch(''); setSearchOpen(false); } }}
+                placeholder={sidebarView === 'agents' ? 'Buscar agentes…' : 'Buscar conversaciones…'}
+                aria-label={sidebarView === 'agents' ? 'Buscar agentes' : 'Buscar conversaciones'}
                 className="min-w-0 flex-1 bg-transparent text-[14px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
               />
               <button
                 type="button"
                 className="flex size-5 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                 aria-label="Cerrar búsqueda"
-                onClick={() => { setSearch(''); setSearchOpen(false); }}
+                onClick={() => { if (sidebarView === 'agents') setProfileSearch(''); else setSearch(''); setSearchOpen(false); }}
               >
                 <X size={12} />
               </button>
@@ -671,8 +726,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               <button
                 type="button"
                 className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-                aria-label="Buscar conversaciones"
-                title="Buscar conversaciones (Ctrl+K)"
+                aria-label={sidebarView === 'agents' ? 'Buscar agentes' : 'Buscar conversaciones'}
+                title={sidebarView === 'agents' ? 'Buscar agentes' : 'Buscar conversaciones (Ctrl+K)'}
                 onClick={() => setSearchOpen(true)}
               >
                 <Search size={16} />
@@ -692,9 +747,17 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           )}
         </div>
 
+        <SegmentedControl
+          value={sidebarView}
+          onChange={(value) => { setSidebarView(value); setSearchOpen(Boolean(value === 'agents' ? profileSearch : search)); }}
+          options={[{ value: 'conversations', label: 'Conversaciones' }, { value: 'agents', label: 'Agentes' }]}
+          aria-label="Vistas del agente"
+          className="mx-1 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)]"
+        />
         <div className="custom-scrollbar mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
+          {sidebarView === 'agents' ? <>
           <div className="flex items-center justify-between px-1.5 pb-1 pt-1">
-            <span className="text-[12px] font-medium text-[var(--text-muted)]">Agentes</span>
+            <span className="text-[12px] font-medium text-[var(--text-muted)]">Agentes guardados</span>
             <button
               type="button"
               className="flex size-6 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
@@ -714,7 +777,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               Crea un agente con tus indicaciones y herramientas para una tarea que repites.
             </button>
           )}
-          {profiles.map((profile) => (
+          {profiles.length > 0 && visibleProfiles.length === 0 && <p className="px-2.5 py-3 text-[12px] text-[var(--text-secondary)]">
+            Sin agentes para «{profileSearch.trim()}».
+          </p>}
+          {visibleProfiles.map((profile) => (
             <div key={profile.id} className={`group flex h-[50px] shrink-0 items-center gap-2 rounded-xl p-1.5 transition-colors ${activeProfile?.id === profile.id ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'}`}>
               <AgentAvatar seed={profile.id} name={profile.name} size={32} className="shrink-0" />
               <button
@@ -737,6 +803,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </button>
             </div>
           ))}
+          </> : <>
           {sessions.length === 0 && (
             <>
               <span className="px-1.5 pb-1 pt-3 text-[12px] font-medium text-[var(--text-muted)]">Conversaciones</span>
@@ -764,6 +831,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </section>
           ))}
+          </>}
         </div>
 
       </aside>
@@ -822,7 +890,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               aria-haspopup="dialog"
               aria-expanded={toolsMenu.isOpen}
               title="Herramientas del agente"
-              onClick={toolsMenu.toggle}
+              onClick={() => { setToolsQuery(''); setToolsFilter('all'); toolsMenu.toggle(); }}
               className="relative flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
             >
               <Wrench size={14} />
@@ -996,6 +1064,20 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </div>
           )}
           <div className="agent-composer rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] transition-colors focus-within:border-[var(--border-medium)]">
+            {mentionMatch && <div className="border-b border-[var(--border-subtle)] p-2">
+              <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">Colaborar con un bot · solo lectura</p>
+              <div ref={botMentionsRef} id="agent-bot-mentions" role="listbox" aria-label="Bots para mencionar" className="max-h-44 overflow-y-auto">
+                {mentionProfiles.map((profile) => <Button key={profile.id} id={`agent-mention-${profile.id}`} role="option"
+                  aria-selected={selectedMention?.id === profile.id} tabIndex={-1} variant="none" size="none"
+                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--bg-input)] ${selectedMention?.id === profile.id ? 'bg-[var(--bg-input)]' : ''}`}
+                  onMouseDown={(event) => event.preventDefault()} onClick={() => insertBotMention(profile)}>
+                  <AgentAvatar seed={profile.id} name={profile.name} size={24} />
+                  <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{profile.name}</span>
+                    <span className="block truncate text-[11px] text-[var(--text-secondary)]">{profile.description || 'Agente guardado'} · {profile.id}</span></span>
+                </Button>)}
+                {mentionProfiles.length === 0 && <p className="px-2 py-1 text-[12px] text-[var(--text-secondary)]">Sin bots coincidentes. Crea uno en Agentes o continúa con tu mensaje.</p>}
+              </div>
+            </div>}
             {attachments.length > 0 && (
               <div className="flex flex-wrap gap-1.5 px-3 pt-2.5" aria-label="Adjuntos">
                 {attachments.map((item) => (
@@ -1042,8 +1124,20 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 ref={draftRef}
                 rows={1}
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(event) => { setDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionsHidden(false); }}
+                onSelect={(event) => setMentionCursor(event.currentTarget.selectionStart)}
+                aria-autocomplete="list"
+                aria-controls={mentionMatch ? 'agent-bot-mentions' : undefined}
+                aria-activedescendant={selectedMention ? `agent-mention-${selectedMention.id}` : undefined}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
+                  if (mentionMatch && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMentionsHidden(true); return; }
+                  if (selectedMention && !e.shiftKey && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab'].includes(e.key)) {
+                    e.preventDefault();
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') setMentionIndex((mentionProfiles.indexOf(selectedMention) + (e.key === 'ArrowDown' ? 1 : -1) + mentionProfiles.length) % mentionProfiles.length);
+                    else insertBotMention(selectedMention);
+                    return;
+                  }
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     void send();
@@ -1054,7 +1148,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     ? 'Crea una conversación primero'
                     : running || pending.length > 0
                       ? 'Añade una indicación o déjala para después…'
-                      : 'Hola, ¿qué necesitas hoy?'
+                      : 'Escribe un mensaje o @ para mencionar un bot…'
                 }
                 disabled={!sessionId}
                 aria-label="Mensaje para el agente"
@@ -1152,18 +1246,38 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           style={{
             top: toolsMenu.position?.top ?? -9999,
             left: toolsMenu.position?.left ?? -9999,
-            width: 300,
-            maxHeight: toolsMenu.position?.maxHeight ?? 400,
+            width: toolsMenu.position?.width ?? 360,
+            maxHeight: toolsMenu.position?.maxHeight ?? 480,
             visibility: toolsMenu.position ? 'visible' : 'hidden',
           }}
         >
-          <p className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-            Herramientas del agente
-          </p>
+          <div className="flex shrink-0 items-start justify-between gap-2">
+            <div>
+              <h2 className="text-[13px] font-medium text-[var(--text-primary)]">Herramientas del agente</h2>
+              <p className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{toolsBusy ? 'Actualizando herramientas…' : `${toolCount} de ${tools.length} habilitadas`}</p>
+            </div>
+            <Button variant="ghost" size="none" className="flex size-6 items-center justify-center" aria-label="Cerrar herramientas" onClick={toolsMenu.close}><X size={13} /></Button>
+          </div>
+          <div className="relative shrink-0">
+            <Input ref={toolsSearchRef} value={toolsQuery} onChange={(event) => setToolsQuery(event.target.value)}
+              style={{ transitionProperty: 'background-color, border-color, box-shadow, color' }}
+              aria-label="Buscar herramientas" placeholder="Buscar por nombre o módulo…" className="w-full pr-8 text-[12px]" />
+            {toolsQuery && <Button variant="ghost" size="none" className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center"
+              aria-label="Limpiar búsqueda de herramientas" onClick={() => { setToolsQuery(''); toolsSearchRef.current?.focus(); }}><X size={12} /></Button>}
+          </div>
+          <SegmentedControl value={toolsFilter} onChange={setToolsFilter} aria-label="Filtrar herramientas"
+            className="flex shrink-0 gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)]"
+            options={[{ value: 'all', label: 'Todas' }, { value: 'skills', label: 'Skills' }, { value: 'mcp', label: 'MCP' }]} />
+          {toolsFilter === 'skills' && <p className="shrink-0 text-[11px] leading-relaxed text-[var(--text-secondary)]">
+            Adjunta una carpeta con SKILL.md y pide al agente que busque una skill. Estas opciones habilitan sus herramientas de lectura, no instalan skills.
+          </p>}
           <div className="custom-scrollbar min-h-0 space-y-2 overflow-y-auto">
-            <ToolGroup label="Lectura directa" names={toolGroups.direct} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} />
-            <ToolGroup label="Con aprobación" names={toolGroups.gated} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} />
-            <ToolGroup label="MCP" names={toolGroups.mcp} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} />
+            <ToolGroup label="Lectura directa" names={toolGroups.direct} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
+            <ToolGroup label="Con aprobación" names={toolGroups.gated} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
+            <ToolGroup label="MCP" names={toolGroups.mcp} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
+            {tools.length > 0 && filteredTools.length === 0 && <p className="py-2 text-[12px] text-[var(--text-secondary)]">
+              {toolsQuery.trim() ? 'No hay coincidencias. Prueba otro nombre o módulo.' : toolsFilter === 'skills' ? 'No hay herramientas de skills disponibles.' : 'No hay herramientas MCP disponibles.'}
+            </p>}
             {tools.length === 0 && (
               <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
                 {toolsBusy ? 'Cargando herramientas…' : 'No hay herramientas disponibles.'}

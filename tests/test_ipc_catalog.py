@@ -12,6 +12,20 @@ def _catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
+def test_canvas_layer_tool_uses_the_ipc_schema_and_is_not_retryable():
+    from backend.core.agent import canvas_edit
+    from backend.core.ipc_catalog import IDEMPOTENT_METHODS, ORCHESTRATABLE_METHODS
+
+    entry = _catalog()["methods"]["agent_canvas_apply_layers"]
+    spec = next(spec for spec in canvas_edit.TOOL_SPECS if spec["name"] == "canvas_apply_layers")
+    assert spec["inputSchema"] == entry["inputSchema"]
+    assert spec["gated"] is True
+    assert "agent_canvas_apply_layers" not in IDEMPOTENT_METHODS | ORCHESTRATABLE_METHODS
+    layer_type = entry["inputSchema"]["properties"]["layers"]["items"]["properties"]["type"]
+    schema = json.loads((CATALOG_PATH.parent / "canvas-schema.json").read_text(encoding="utf-8"))
+    assert layer_type["enum"] == schema["layerTypes"]
+
+
 def test_approval_context_is_declared_only_on_private_agent_calls():
     methods = _catalog()["methods"]
     for method in ("agent_internal_approval_ensure", "agent_internal_dispatch"):

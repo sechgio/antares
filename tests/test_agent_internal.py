@@ -43,6 +43,58 @@ def _wait_result(call_id, timeout=10, session_id="s1"):
     raise AssertionError(f"dispatch {call_id} no terminó")
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_subagent_uses_the_durable_runtime_route(store, monkeypatch, legacy):
+    routes = []
+
+    def chat(provider, model, messages, **kwargs):
+        routes.append((provider, model))
+        return {"text": "Revisé los datos solicitados", "calls": []}
+
+    monkeypatch.setattr(agent_internal._agent_chat, "chat", chat)
+    monkeypatch.setattr(agent, "get_agent_runner", lambda: agent.AgentRunner(store, lambda _: None))
+    session_id = store.create_session("old-provider", "old-model", "Anterior")["id"] if legacy else "durable-session"
+    _dispatch(session_id=session_id, call_id="delegation", name="subagent_run", params={"task": "Revisa datos"},
+              context={"subagent": {"id": "reader", "name": "Lector", "instructions": "Lee los datos",
+                                    "tools": [], "enabled": [], "provider": "selected-provider", "model": "selected-model"}})
+    receipt = json.loads(_wait_result("delegation", session_id=session_id)["result"])
+    assert receipt["status"] == "done" and receipt["text"] == "Revisé los datos solicitados"
+    assert routes == [("selected-provider", "selected-model")]
+
+
+def test_subagent_reads_local_skills_without_gaining_effect_tools(store, monkeypatch):
+    skill = store.base_dir / "skills/pdf-review/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: pdf-review\ndescription: Revisa PDFs\nallowed-tools: shell_run\n---\nRevisa cada firma.", encoding="utf-8")
+    calls = []
+
+    def chat(provider, model, messages, **kwargs):
+        available = {tool["name"] for tool in kwargs["tools"]}
+        assert available == {"skills_list", "skills_read"}
+        assert "skills_read" in kwargs["system"]
+        calls.append(len(messages))
+        if len(calls) == 1:
+            return {"calls": [{"id": "list", "name": "skills_list", "params": {"query": "PDF"}}]}
+        result = json.loads(messages[-1]["content"])
+        if len(calls) == 2:
+            return {"calls": [{"id": "read", "name": "skills_read", "params": {"skill_id": result["skills"][0]["id"]}}]}
+        if len(calls) == 3:
+            assert "Revisa cada firma" in result["content"]
+            return {"calls": [{"id": "blocked", "name": "shell_run", "params": {"command": "exit 0"}}]}
+        assert "no disponible" in result["error"]
+        return {"text": "Leí la skill de revisión de firmas; no ejecuté comandos", "calls": []}
+
+    monkeypatch.setattr(agent_internal._agent_chat, "chat", chat)
+    monkeypatch.setattr(agent, "get_agent_runner", lambda: agent.AgentRunner(store, lambda _: None))
+    _dispatch(session_id="durable-skills", call_id="skills-delegation", name="subagent_run", params={"task": "Revisa PDFs con skills"},
+              context={"subagent": {"name": "Revisor", "provider": "selected", "model": "model", "tools": None,
+                                    "enabled": ["skills_list", "skills_read"]}})
+    receipt = json.loads(_wait_result("skills-delegation", session_id="durable-skills")["result"])
+    assert receipt["status"] == "done" and len(calls) == 4
+    assert [(step["name"], step["status"]) for step in receipt["steps"]] == [
+        ("skills_list", "done"), ("skills_read", "done"), ("shell_run", "failed")]
+
+
 def test_tools_list_projects_backend_and_mcp_kinds(monkeypatch):
     monkeypatch.setattr(mcp_servers, "list_servers", lambda: [{"id": "srv"}])
     monkeypatch.setattr(
@@ -417,6 +469,17 @@ def test_native_context_changes_invalidate_approval(store, key, value):
     assert store.get_dispatch("s1", "native-context") is None
 
 
+@pytest.mark.parametrize("changed", [{"page_url": "https://example.com/otra"}, {"page_time_origin": 2}])
+def test_browser_approval_rejects_a_different_document(store, changed):
+    context = {"tool_version": "browser-v1", "page_url": "https://example.com/informe", "page_time_origin": 1}
+    params = {"ref": "1"}
+    approval_id = _approve_native("s1", "browser", "web_click", params, context)
+    out = _dispatch(session_id="s1", call_id="browser", name="web_click", params=params, native=True, gated=True,
+                    approval_id=approval_id, context={**context, **changed})
+    assert "no coinciden" in json.loads(out["result"])["error"]
+    assert store.get_dispatch("s1", "browser") is None
+
+
 def _approve_native(session_id, call_id, method, params, context):
     approval = agent_internal._approval_ensure({"session_id": session_id, "call_id": call_id, "method": method,
                                                "params": params, "context": context})["approval"]
@@ -478,15 +541,16 @@ def test_native_wait_revalidates_the_approval_with_the_current_context(store):
                      approval_id=retry_id, context=sheet)["execute"] == "native"
 
 
-def test_python_workers_wait_for_a_native_effect_on_the_same_document(store, monkeypatch):
+@pytest.mark.parametrize("method", ["canvas_fill_fields", "canvas_apply_layers"])
+def test_python_workers_wait_for_a_native_effect_on_the_same_document(store, monkeypatch, method):
     ran = threading.Event()
     monkeypatch.setattr(agent, "get_agent_runner",
                         lambda: agent.AgentRunner(store, lambda name: lambda params: ran.set() or {"ok": True}))
     monkeypatch.setattr(agent_internal._agent_chat, "gated_methods", lambda: ["canvas_save"])
     context = {"tool_version": "test-v1"}
     params = {"id": "doc", "expected_updated_at": "1", "values": {}}
-    native = _dispatch(session_id="s1", call_id="n1", name="canvas_fill_fields", params=params, native=True,
-                       gated=True, approval_id=_approve_native("s1", "n1", "canvas_fill_fields", params, context),
+    native = _dispatch(session_id="s1", call_id="n1", name=method, params=params, native=True,
+                       gated=True, approval_id=_approve_native("s1", "n1", method, params, context),
                        context=context)
     assert native["execute"] == "native"
     approval_id = _approve("s2", "c2", "canvas_save", {"id": "doc"})

@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { executeRendererTool } from './rendererTools';
 import { registerAgentCanvasEditor } from './canvasEditor';
 import { createEmptyDocument } from '../canvas/types';
+import { agentApi } from '../../api/agentApi';
 
 const external = vi.hoisted(() => ({ getUser: vi.fn(), createEspacio: vi.fn(), fetchEspacios: vi.fn(), updateTarea: vi.fn() }));
 vi.mock('../../lib/supabase', () => ({ supabase: { auth: { getUser: external.getUser } } }));
@@ -24,16 +25,34 @@ it('datos ausentes y formatos inválidos no generan un PDF', async () => {
 it('una plantilla con editor dirty no se exporta ni se cambia', async () => {
   const doc = createEmptyDocument('Prueba');
   const apply = vi.fn();
-  const release = registerAgentCanvasEditor({ get: () => doc, dirty: () => true, apply, open: vi.fn() });
+  const release = registerAgentCanvasEditor({ get: () => doc, dirty: () => true, apply, applyLayers: apply, open: vi.fn() });
   try {
     await expect(executeRendererTool('document_render', { document: doc })).rejects.toThrow('cambios sin guardar');
     await expect(executeRendererTool('canvas_fill_fields', { id: doc.id, values: { NOMBRE: 'Ana' } })).rejects.toThrow('cambios sin guardar');
+    await expect(executeRendererTool('canvas_apply_layers', { id: doc.id, layers: [] })).rejects.toThrow('cambios sin guardar');
     expect(apply).not.toHaveBeenCalled();
   } finally { release(); }
 });
 
 it('un nombre de herramienta no permite ejecutar código arbitrario', async () => {
   await expect(executeRendererTool('eval', { code: 'alert(1)' })).rejects.toThrow('no disponible');
+});
+
+it('aplica capas por el editor abierto y por IPC para otro documento', async () => {
+  const doc = createEmptyDocument('Prueba');
+  const params = { id: doc.id, expected_updated_at: doc.updatedAt, layers: [] };
+  const result = { id: doc.id, updatedAt: 'nueva', layers: doc.layers, fields: [], createdLayers: [] };
+  const invoke = vi.spyOn(agentApi, 'agentCanvasApplyLayers').mockResolvedValue(result);
+  const applyLayers = vi.fn().mockResolvedValue(result);
+  const release = registerAgentCanvasEditor({ get: () => doc, dirty: () => false, apply: vi.fn(), applyLayers, open: vi.fn() });
+  try {
+    await expect(executeRendererTool('canvas_apply_layers', params)).resolves.toEqual(result);
+    expect(applyLayers).toHaveBeenCalledWith(params);
+    expect(invoke).not.toHaveBeenCalled();
+    const other = { ...params, id: 'otro-documento' };
+    await expect(executeRendererTool('canvas_apply_layers', other)).resolves.toEqual(result);
+    expect(invoke).toHaveBeenCalledWith(other);
+  } finally { release(); }
 });
 
 it('Espacios exige sesión y revalida la cuenta antes de aplicar la acción', async () => {

@@ -1,5 +1,8 @@
 export const METHOD_LABELS: Record<string, string> = {
   task_plan: 'Actualizar el plan del encargo',
+  sessions_search: 'Buscar en conversaciones anteriores',
+  skills_list: 'Buscar skills disponibles',
+  skills_read: 'Leer una skill',
   fs_list: 'Listar una carpeta',
   fs_read: 'Leer un archivo',
   fs_search: 'Buscar en archivos',
@@ -115,6 +118,7 @@ export const METHOD_LABELS: Record<string, string> = {
   document_generate: 'Generar un documento en borradores',
   file_read: 'Leer un archivo autorizado',
   canvas_fill_fields: 'Rellenar campos de un documento de Canvas',
+  canvas_apply_layers: 'Maquetar capas y campos de un documento de Canvas',
   artifacts_list: 'Consultar los documentos generados',
   drafts_list: 'Consultar los borradores de la conversación',
   drafts_save: 'Guardar un borrador en una carpeta',

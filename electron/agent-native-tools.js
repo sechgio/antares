@@ -112,6 +112,7 @@ const RENDERER_TOOLS = {
   }, false],
   document_generate: ['documents', 'Generar un PDF con la plantilla y su motor RGB o CMYK', null, false],
   canvas_fill_fields: ['canvas', 'Completar campos de Canvas comprobando el editor y la revisión', null, true],
+  canvas_apply_layers: ['canvas', 'Maquetar capas y campos de Canvas con revisión, geometría en mm y resultado verificable', null, true],
   espacios_list: ['espacios', 'Listar Espacios accesibles en la sesión actual', OBJECT, false],
   espacios_projects: ['espacios', 'Listar proyectos de un Espacio', ID_SCHEMA, false],
   espacios_tasks: ['espacios', 'Listar tareas de un proyecto', ID_SCHEMA, false],
@@ -206,6 +207,7 @@ async function nativeToolContext(name) {
   const { createHash } = require('node:crypto');
   const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
   const context = { tool_version: hash({ policy: 1, spec: selected }) };
+  if (WEB[name] && selected.gated) return Object.assign(context, await require('./agent-browser').approvalContext());
   if (CLOUD[name]) return Object.assign(context, await CLOUD[name].context(name));
   if (selected.module === 'espacios') {
     Object.assign(context, await require('./agent-renderer-tools').runRendererTool('espacios_context'));
@@ -311,11 +313,12 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
   if (SPECS.find((s) => s.name === name).gated) {
     const current = await nativeToolContext(name);
     if (!approvedContext || JSON.stringify(current) !== JSON.stringify(approvedContext)) {
+      if (WEB[name]) throw new Error('La página cambió después de aprobar; vuelve a leerla con web_read y solicita una nueva aprobación');
       throw new Error('La cuenta, los permisos o la hoja cambiaron después de aprobar; solicita una nueva aprobación');
     }
   }
   if (CLOUD[name]) return CLOUD[name].run(name, params || {}, { dir: draftsDir(sessionId) });
-  if (WEB[name]) return require('./agent-browser').run(name, params || {}, { dir: `${draftsDir(sessionId)}.screens` });
+  if (WEB[name]) return require('./agent-browser').run(name, params || {}, { dir: `${draftsDir(sessionId)}.screens`, approvedContext });
   if (name === 'document_generate') return generateDocument(params, sessionId);
   if (RENDERER_TOOLS[name]) {
     const result = await require('./agent-renderer-tools').runRendererTool(name,

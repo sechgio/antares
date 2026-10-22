@@ -17,6 +17,9 @@ const KEY_CODES = {
   pageup: 'PageUp', pagedown: 'PageDown',
 };
 const MODIFIERS = { ctrl: 'control', control: 'control', shift: 'shift', alt: 'alt', meta: 'meta', cmd: 'meta' };
+const VIRTUAL_KEYS = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, Delete: 46,
+  Up: 38, Down: 40, Left: 37, Right: 39, Home: 36, End: 35, PageUp: 33, PageDown: 34,
+  ';': 186, '=': 187, ',': 188, '-': 189, '.': 190, '/': 191, '`': 192, '[': 219, '\\': 220, ']': 221, "'": 222 };
 
 const REF = { type: 'string', description: 'Referencia «ref» de un elemento devuelto por web_read' };
 const TOOLS = {
@@ -57,7 +60,7 @@ let view = null;
 let docked = null;
 let userControl = false;
 let lastUserInputAt = 0;
-let agentInput = false;
+const pendingMouseInputs = new Set();
 let sessionReady = false;
 
 function isWeb(url) {
@@ -168,13 +171,18 @@ function browser() {
   contents.on('will-redirect', (event, url) => {
     if (!isWeb(url)) event.preventDefault();
   });
-  // sendInputEvent dispara estos eventos de forma síncrona: lo que llega sin
-  // la marca agentInput es del usuario y el agente le cede el paso un momento.
   const userInput = (_event, input) => {
-    if (!agentInput && ['mouseDown', 'mouseWheel', 'keyDown', 'rawKeyDown'].includes(input.type)) lastUserInputAt = Date.now();
+    if (input.type === 'mouseDown') {
+      const own = [...pendingMouseInputs].find((pending) => pending.contents === contents
+        && Math.round(pending.x) === Math.round(input.x) && Math.round(pending.y) === Math.round(input.y)
+        && pending.button === input.button && pending.clickCount === input.clickCount);
+      if (own) { pendingMouseInputs.delete(own); return; }
+    }
+    if (['mouseDown', 'mouseWheel', 'keyDown', 'rawKeyDown'].includes(input.type)) lastUserInputAt = Date.now();
   };
   contents.on('before-input-event', userInput);
   contents.on('before-mouse-event', userInput);
+  contents.on('input-event', (event, input) => { if (input.type === 'mouseWheel') userInput(event, input); });
   contents.on('did-navigate', () => fitPage());
   for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
     contents.on(event, () => notify('page'));
@@ -339,6 +347,13 @@ function current() {
   return view.webContents;
 }
 
+async function approvalContext(contents = current()) {
+  const page = await contents.executeJavaScriptInIsolatedWorld(1001, [{
+    code: '({ url: location.href, time_origin: performance.timeOrigin })',
+  }], true);
+  return { page_url: page.url, page_time_origin: page.time_origin };
+}
+
 async function locate(contents, ref) {
   const id = String(ref || '').replace(/[^0-9]/g, '');
   if (!id) throw new Error('Indica la referencia del elemento (web_read)');
@@ -354,35 +369,69 @@ async function locate(contents, ref) {
   return rect;
 }
 
-function send(target, event) {
-  agentInput = true;
+async function assertInteraction(input) {
+  let samePage = false;
   try {
-    target.sendInputEvent(event);
+    const page = await approvalContext(input.contents);
+    samePage = current() === input.contents && page.page_url === input.expected.page_url
+      && page.page_time_origin === input.expected.page_time_origin;
+  } catch {}
+  if (samePage && !userControl && Date.now() - lastUserInputAt >= USER_INPUT_GRACE_MS) return;
+  const error = new Error(!samePage
+    ? 'La página cambió o ya no se puede comprobar; vuelve a leerla con web_read y solicita una nueva aprobación'
+    : userControl ? USER_CONTROL_ERROR : USER_BUSY_ERROR);
+  if (input.sent) error.uncertain = true;
+  throw error;
+}
+
+async function send(input, method, event) {
+  const target = input.contents;
+  let mouseInput;
+  try {
+    await assertInteraction(input);
+    if (!target.debugger.isAttached()) {
+      target.debugger.attach('1.3');
+      await target.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+      await assertInteraction(input);
+    }
+    if (method === 'Input.dispatchMouseEvent' && event.type === 'mousePressed') {
+      const zoom = target.getZoomFactor();
+      mouseInput = { contents: target, x: event.x * zoom, y: event.y * zoom, button: event.button, clickCount: event.clickCount };
+      pendingMouseInputs.add(mouseInput);
+    }
+    input.sent = true;
+    await target.debugger.sendCommand(method, event);
+  } catch (error) {
+    if (mouseInput && !pendingMouseInputs.has(mouseInput)) lastUserInputAt = Date.now();
+    if (input.sent) error.uncertain = true;
+    throw error;
   } finally {
-    agentInput = false;
+    pendingMouseInputs.delete(mouseInput);
   }
 }
 
-async function clickAt(contents, point) {
-  const zoom = contents.getZoomFactor() || 1;
-  const x = Math.round(point.x * zoom);
-  const y = Math.round(point.y * zoom);
-  for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) {
-    send(contents, { type, x, y, button: 'left', clickCount: 1 });
+async function clickAt(input, point) {
+  const x = Math.round(point.x);
+  const y = Math.round(point.y);
+  for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
+    await send(input, 'Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
     await delay(30);
   }
 }
 
-function pressCombo(contents, combo) {
+async function pressCombo(input, combo) {
   const parts = combo.split('+').filter(Boolean);
   const modifiers = parts.slice(0, -1).map((part) => MODIFIERS[part.toLowerCase()]).filter(Boolean);
   const last = parts[parts.length - 1] || '';
   const keyCode = KEY_CODES[last.toLowerCase()] || (last.length === 1 ? last : null);
   if (!keyCode || modifiers.length !== parts.length - 1) throw new Error(`Tecla desconocida: ${combo}`);
-  send(contents, { type: 'keyDown', keyCode, modifiers });
-  if (keyCode.length === 1 && !modifiers.some((m) => m !== 'shift')) send(contents, { type: 'char', keyCode, modifiers });
-  if (keyCode === 'Enter') send(contents, { type: 'char', keyCode: '\r', modifiers });
-  send(contents, { type: 'keyUp', keyCode, modifiers });
+  const mask = modifiers.reduce((value, modifier) => value | { alt: 1, control: 2, meta: 4, shift: 8 }[modifier], 0);
+  const key = keyCode === 'Space' ? ' ' : ['Up', 'Down', 'Left', 'Right'].includes(keyCode) ? `Arrow${keyCode}`
+    : keyCode.length === 1 && modifiers.includes('shift') ? keyCode.toUpperCase() : keyCode;
+  const event = { key, modifiers: mask, windowsVirtualKeyCode: VIRTUAL_KEYS[keyCode] || keyCode.toUpperCase().charCodeAt(0) };
+  const text = keyCode === 'Enter' ? '\r' : (key.length === 1 && !(mask & 7) ? key : '');
+  await send(input, 'Input.dispatchKeyEvent', { type: 'keyDown', ...event, ...(text ? { text } : {}) });
+  await send(input, 'Input.dispatchKeyEvent', { type: 'keyUp', ...event });
 }
 
 async function screenshot(contents, dir) {
@@ -405,7 +454,7 @@ async function observeAfter(contents) {
   return snapshot(contents, 0, RESULT_BUDGET - 400);
 }
 
-async function run(name, params = {}, { dir } = {}) {
+async function run(name, params = {}, { dir, approvedContext } = {}) {
   if (userControl) throw new Error(USER_CONTROL_ERROR);
   if (!['web_read', 'web_screenshot'].includes(name) && Date.now() - lastUserInputAt < USER_INPUT_GRACE_MS) throw new Error(USER_BUSY_ERROR);
   if (name === 'web_open') {
@@ -422,29 +471,31 @@ async function run(name, params = {}, { dir } = {}) {
     contents.navigationHistory.goBack();
     return observeAfter(contents);
   }
+  const input = { contents, expected: approvedContext || await approvalContext(contents), sent: false };
   if (name === 'web_click') {
-    await clickAt(contents, await locate(contents, params.ref));
+    await clickAt(input, await locate(contents, params.ref));
     return { clicked: String(params.ref), page: await observeAfter(contents) };
   }
   if (name === 'web_type') {
     const text = String(params.text ?? '');
     if (text.length > 5000) throw new Error('El texto excede 5000 caracteres');
-    await clickAt(contents, await locate(contents, params.ref));
+    await clickAt(input, await locate(contents, params.ref));
     if (params.clear === true) {
+      await assertInteraction(input);
       await contents.executeJavaScript(`(() => {
         const el = document.querySelector('[data-antares-ref="${String(params.ref).replace(/[^0-9]/g, '')}"]');
         if (el && 'select' in el) el.select(); else document.execCommand('selectAll');
       })()`, true);
     }
-    await contents.insertText(text);
-    if (params.submit === true) pressCombo(contents, 'enter');
+    await send(input, 'Input.insertText', { text });
+    if (params.submit === true) await pressCombo(input, 'enter');
     return { typed: text.length, page: await observeAfter(contents) };
   }
   if (name === 'web_key') {
     const keys = String(params.keys || '').trim();
     if (!keys) throw new Error('Indica las teclas');
     for (const combo of keys.split(/\s+/)) {
-      pressCombo(contents, combo);
+      await pressCombo(input, combo);
       await delay(80);
     }
     return { pressed: keys, page: await observeAfter(contents) };
@@ -460,4 +511,4 @@ function close() {
   docked = null;
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds, siteUserAgent };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds, siteUserAgent, approvalContext };

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api';
+import { agentApi } from '../../api/agentApi';
 import { registerAgentCanvasEditor } from '../agent/canvasEditor';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import './canvas.css';
@@ -1114,6 +1115,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   );
 
   const onOpenDocRef = useRef(onOpenDoc);
+  const isOpenDirtyRef = useLiveRef(isOpenDirty);
   onOpenDocRef.current = onOpenDoc;
   useEffect(() => {
     const openRequested = () => {
@@ -1130,6 +1132,24 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     get: () => history.documentRef.current,
     dirty: isOpenDirty,
     open: (id) => { void onOpenDocRef.current(id); },
+    applyLayers: async (params) => {
+      const current = history.documentRef.current;
+      if (isOpenDirtyRef.current()) throw new Error('Canvas tiene cambios sin guardar');
+      if (current.updatedAt !== params.expected_updated_at) throw new Error('El documento cambió; vuelve a consultar su revisión');
+      const result = await agentApi.agentCanvasApplyLayers(params);
+      const saved = { ...current, layers: result.layers, fields: result.fields, updatedAt: result.updatedAt };
+      const hydrated = await hydrateDocumentImages(saved);
+      if (history.documentRef.current === current && !isOpenDirtyRef.current()) {
+        history.setDocument(hydrated);
+        history.markSaved();
+      } else if (history.documentRef.current.id === current.id) {
+        handleConflict({ localDoc: history.documentRef.current, remoteDoc: hydrated,
+          localUpdatedAt: history.documentRef.current.updatedAt ?? '', remoteUpdatedAt: result.updatedAt });
+      }
+      void queueCanvasCloudPush(saved).catch(() => flashStatus('Guardado localmente; sincronización pendiente', 4000));
+      await refreshList();
+      return result;
+    },
     apply: async (values, expected) => {
       const current = history.documentRef.current;
       if (isOpenDirty()) throw new Error('Canvas tiene cambios sin guardar');
@@ -1142,7 +1162,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       if (!await onSave({ silent: true })) throw new Error('No se pudo guardar Canvas; la edición se conserva para revisarla');
       return { id: current.id, updatedAt: history.documentRef.current.updatedAt, fields_changed: Object.keys(values).length };
     },
-  }), [history, isOpenDirty, onSave]);
+  }), [history, isOpenDirty, isOpenDirtyRef, onSave, handleConflict, refreshList, flashStatus]);
   const onNewRef = useRef(onNew);
   onNewRef.current = onNew;
   onDeleteDocRef.current = onDeleteDoc;

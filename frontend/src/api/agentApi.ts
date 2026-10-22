@@ -1,4 +1,9 @@
 import { _invoke } from './core';
+import type { CanvasDocument } from '../components/canvas/types';
+
+export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt' | 'layers' | 'fields'>> & {
+  createdLayers: { id: string; name: string }[];
+};
 
 export type AgentPermissionMode = 'ask' | 'auto' | 'full';
 
@@ -222,6 +227,8 @@ export const agentApi = {
 
   agentCanvasFill: (params: Record<string, unknown>) =>
     _invoke<Record<string, unknown>>('agent_canvas_fill', params),
+  agentCanvasApplyLayers: (params: Record<string, unknown>) =>
+    _invoke<CanvasLayersResult>('agent_canvas_apply_layers', params),
 
   agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'review' | 'open' | 'save' | 'print';
     request_id?: string; sha256?: string; page?: number; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string }) =>

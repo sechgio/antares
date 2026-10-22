@@ -57,7 +57,7 @@ vi.mock('../sync/canvasCloudSync', async (importOriginal) => {
 });
 
 vi.mock('../sync/cloudQueue', () => ({
-  queueCanvasCloudPush: vi.fn(),
+  queueCanvasCloudPush: vi.fn(async () => {}),
   queueCanvasCloudDelete: vi.fn(),
 }));
 
@@ -158,6 +158,8 @@ vi.mock('../editor/GeneratePanel', () => ({
 }));
 
 import { api } from '../../../api';
+import { agentApi } from '../../../api/agentApi';
+import { getAgentCanvasEditor } from '../../agent/canvasEditor';
 import CanvasView from '../CanvasView';
 import { useCanvasBootstrap } from '../hooks/useCanvasBootstrap';
 import { queueCanvasCloudPush } from '../sync/cloudQueue';
@@ -233,6 +235,46 @@ describe('CanvasView lifecycle', () => {
       expect(api.canvasBootstrap).toHaveBeenCalled();
     });
   }
+
+  it('la edición por capas actualiza el editor, conserva undo y rechaza revisiones locales obsoletas', async () => {
+    await renderReady();
+    const base = currentStageDocument();
+    const layer = { ...createLayer('text'), id: 'agent-title', value: 'Título del agente' };
+    const result = { id: base.id, updatedAt: '2026-10-21T10:00:00.001Z', layers: [...base.layers, layer], fields: [],
+      createdLayers: [{ id: layer.id, name: layer.name }] };
+    const invoke = vi.spyOn(agentApi, 'agentCanvasApplyLayers').mockResolvedValue(result);
+    try {
+      await expect(getAgentCanvasEditor()?.applyLayers({ id: base.id, expected_updated_at: 'obsoleta', layers: [] }))
+        .rejects.toThrow('revisión');
+      expect(invoke).not.toHaveBeenCalled();
+      vi.mocked(queueCanvasCloudPush).mockRejectedValueOnce(new Error('Sin conexión'));
+      await act(async () => {
+        await getAgentCanvasEditor()?.applyLayers({ id: base.id, expected_updated_at: base.updatedAt, layers: [layer] });
+      });
+      expect(currentStageDocument().layers).toEqual(result.layers);
+      expect(getAgentCanvasEditor()?.dirty()).toBe(false);
+      expect(queueCanvasCloudPush).toHaveBeenCalledWith(expect.objectContaining({ layers: result.layers }));
+      fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true });
+      await waitFor(() => expect(currentStageDocument().layers).toEqual(base.layers));
+    } finally { invoke.mockRestore(); }
+  });
+
+  it('una edición del usuario durante la llamada de capas se conserva y presenta conflicto', async () => {
+    await renderReady();
+    const base = currentStageDocument();
+    const result = { id: base.id, updatedAt: '2026-10-21T10:00:00.001Z', layers: [], fields: [], createdLayers: [] };
+    let finish = (_result: typeof result) => {};
+    const invoke = vi.spyOn(agentApi, 'agentCanvasApplyLayers').mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    try {
+      const pending = getAgentCanvasEditor()?.applyLayers({ id: base.id, expected_updated_at: base.updatedAt, layers: [] });
+      act(() => latestStageActions?.onDrawLayer?.('rect', { x: 10, y: 10, w: 20, h: 20 }));
+      const edited = currentStageDocument();
+      await act(async () => { finish(result); await pending; });
+      expect(currentStageDocument().layers).toEqual(edited.layers);
+      expect(getAgentCanvasEditor()?.dirty()).toBe(true);
+      expect(screen.getByTestId('sync-conflict-bar')).toBeTruthy();
+    } finally { invoke.mockRestore(); }
+  });
 
   it.each([
     { placement: 'click', w: 0, h: 0, width: '50mm', height: '40mm' },

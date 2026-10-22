@@ -108,4 +108,6 @@ def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: An
                           "stderr": text("stderr"), "duration_s": round(time.monotonic() - started, 2)}
     if timed_out:
         result["error"] = f"El comando superó {timeout} s y se detuvo"
+    elif process.returncode != 0:
+        result["error"] = f"El comando terminó con código {process.returncode}"
     return result

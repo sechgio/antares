@@ -12,6 +12,7 @@ from backend.core.agent import (
     drafts,
     memory,
     questions,
+    skills,
     task_plan,
 )
 from backend.core.integrations.types import JsonObject
@@ -24,7 +25,7 @@ SPECS: dict[str, JsonObject] = {
     for spec in (*drafts.TOOL_SPECS, *({**s, "module": "documents"} for s in documents.TOOL_SPECS),
                  *canvas_edit.TOOL_SPECS, *artifacts.TOOL_SPECS, *questions.TOOL_SPECS, *memory.TOOL_SPECS,
                  *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_desktop.TOOL_SPECS,
-                 *task_plan.TOOL_SPECS)
+                 *task_plan.TOOL_SPECS, *skills.TOOL_SPECS)
 }
 READ_TOOLS = frozenset(name for name, spec in SPECS.items() if not spec["gated"])
 EFFECT_TOOLS = frozenset(name for name, spec in SPECS.items() if spec["gated"])
@@ -32,12 +33,14 @@ EFFECT_TOOLS = frozenset(name for name, spec in SPECS.items() if spec["gated"])
 
 def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: Any = None) -> JsonObject:
     root = store.drafts_dir(session_id)
+    if name in {"skills_list", "skills_read"}:
+        return skills.run(name, args, store.grants_for(session_id), root, store.base_dir / "skills")
     if name.startswith("fs_"):
         return computer_files.fit(computer_files.run(name, args, store.grants_for(session_id), root))
     if name == "shell_run":
         return computer_files.fit(computer_shell.run(args, store.grants_for(session_id), root, token))
     if name.startswith("desktop_"):
-        return computer_desktop.run(name, args, root)
+        return computer_desktop.run(name, args, root, token)
     if name == "task_plan":
         return task_plan.update(args)
     if name == "drafts_list":
@@ -60,6 +63,8 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return documents.read_file(args, store.grants_for(session_id), root)
     if name == "canvas_fill_fields":
         return canvas_edit.fill_fields(args)
+    if name == "canvas_apply_layers":
+        return canvas_edit.apply_layers(args)
     if name == "artifacts_list":
         return {"artifacts": store.artifacts_for(session_id)}
     if name in {"memory_search", "memory_remember", "procedure_learn"}:
