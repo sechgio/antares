@@ -130,7 +130,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
-  const [suggestionBusy, setSuggestionBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+  const sendInFlightRef = useRef(false);
+  const [messagesStale, setMessagesStale] = useState(false);
   const [draft, setDraft] = useState('');
   const [mentionCursor, setMentionCursor] = useState(0);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -168,7 +170,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         })) : [];
     } catch { return []; }
   });
-  const failedSendRef = useRef<{ session: string; text: string; requestId: string } | null>(null);
+  const failedSendRef = useRef<{ key: string; requestId: string } | null>(null);
   const correctionInFlightRef = useRef(false);
   const [sendingCorrection, setSendingCorrection] = useState(false);
   const [receivedCorrection, setReceivedCorrection] = useState('');
@@ -217,6 +219,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         const res = await agentApi.agentMessagesList(id);
         const current = messagesVersionRef.current.get(id);
         if (id === sessionIdRef.current && version === (current?.version ?? 0) && !current?.pending) {
+          setMessagesStale(false);
           setMessages(res.messages);
           setArtifacts(res.artifacts ?? []);
           setQuestions(res.questions ?? []);
@@ -228,6 +231,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setResumable(!!res.resumable);
         }
       } catch (err) {
+        if (id === sessionIdRef.current) setMessagesStale(true);
         if (!silent) {
           addToast({ message: errorMessage(err, 'No se pudieron cargar los mensajes'), type: 'error' });
         }
@@ -298,6 +302,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setPending([]);
     setPlan(null);
     setResumable(false);
+    setMessagesStale(false);
     if (sessionId) void loadMessages(sessionId, false);
     else setRunning(false);
   }, [sessionId, loadMessages]);
@@ -510,7 +515,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     messagesVersionRef.current.set(id, state);
     state.version += 1;
     state.pending += 1;
-    if (!correction && id === sessionIdRef.current) setRunning(true);
+    if (!correction && (id === sessionIdRef.current || !sessionIdRef.current)) setRunning(true);
     try {
       const res = await (correction
         ? agentApi.agentMessageSend(id, content, requestId, attachmentIds, true)
@@ -544,27 +549,40 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
-  const send = async (correction = false) => {
-    const content = draft.trim();
-    if (!content || !sessionId || modelBusy || (correction && correctionInFlightRef.current)) return;
-    setDraft('');
-    atBottomRef.current = true;
-    const failed = failedSendRef.current;
-    const requestId = failed && failed.session === sessionId && failed.text === content ? failed.requestId : newRequestId();
-    const attachmentIds = attachments.map((a) => a.id);
-    if (!correction && (running || pending.length > 0)) {
-      setQueued((q) => [...q, { session: sessionId, text: content, requestId, attachments: attachmentIds }]);
-      setAttachments([]);
-      return;
+  const send = async (correction = false, suggestion?: string) => {
+    const content = suggestion ?? draft.trim();
+    if (!content || sendInFlightRef.current || modelBusy || stopping || (correction && correctionInFlightRef.current)) return;
+    sendInFlightRef.current = true;
+    setSending(true);
+    try {
+      const id = sessionId || (await newSession());
+      if (!id) return;
+      if (suggestion === undefined) setDraft((prev) => prev.trim() === content ? '' : prev);
+      atBottomRef.current = true;
+      const attachmentIds = suggestion === undefined ? attachments.map((a) => a.id) : [];
+      const key = JSON.stringify([id, content, attachmentIds, correction]);
+      const failed = failedSendRef.current;
+      const retry = failed?.key === key;
+      const requestId = retry ? failed.requestId : newRequestId();
+      if (!correction && !retry && (running || pending.length > 0)) {
+        setQueued((q) => [...q, { session: id, text: content, requestId, attachments: attachmentIds }]);
+        setAttachments([]);
+        return;
+      }
+      const ok = await sendToSession(id, content, requestId, attachmentIds, correction);
+      failedSendRef.current = ok ? null : { key, requestId };
+      if (suggestion === undefined) {
+        if (ok) setAttachments([]);
+        else setDraft((prev) => (prev.trim() ? prev : content));
+      }
+    } finally {
+      sendInFlightRef.current = false;
+      setSending(false);
     }
-    const ok = await sendToSession(sessionId, content, requestId, attachmentIds, correction);
-    failedSendRef.current = ok ? null : { session: sessionId, text: content, requestId };
-    if (ok) setAttachments([]);
-    if (!ok) setDraft((prev) => (prev.trim() ? prev : content));
   };
 
   useEffect(() => {
-    if (!sessionId || running || stopping || modelBusy || pending.length > 0) return;
+    if (!sessionId || running || stopping || modelBusy || messagesStale || pending.length > 0) return;
     const next = queued.find((i) => i.session === sessionId && !i.failed);
     if (!next) return;
     const sending = { ...next, failed: true };
@@ -573,7 +591,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       const ok = await sendToSession(sessionId, next.text, next.requestId, next.attachments ?? []);
       if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
-  }, [sessionId, running, stopping, modelBusy, pending.length, queued]);
+  }, [sessionId, running, stopping, modelBusy, messagesStale, pending.length, queued]);
 
   const sendCorrection = async (item: (typeof queued)[number]) => {
     if (correctionInFlightRef.current) return;
@@ -592,14 +610,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   const sendSuggestion = async (text: string) => {
-    if (suggestionBusy || modelBusy || running || stopping || pending.length > 0) return;
-    setSuggestionBusy(true);
-    try {
-      const id = sessionId || (await newSession());
-      if (id) await sendToSession(id, text, newRequestId());
-    } finally {
-      setSuggestionBusy(false);
-    }
+    if (running || pending.length > 0) return;
+    await send(false, text);
   };
 
   const cancelTurn = async () => {
@@ -966,7 +978,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               );
             })
           )}
-          {!showHero && plan && <PlanCard plan={plan} running={running} />}
+          {messagesStale && (
+            <div role="status" className="flex items-center gap-2 text-[13px] text-[var(--text-secondary)]">
+              <span>No se pudo actualizar la conversación. El estado mostrado puede estar desactualizado.</span>
+              <Button variant="ghost" size="sm" onClick={() => void loadMessages(sessionId, false)}>Reintentar actualización</Button>
+            </div>
+          )}
+          {!showHero && plan && <PlanCard plan={plan} running={running && !messagesStale} />}
           {pending.map((a) => (
             <ApprovalCard key={a.id} approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
           ))}
@@ -974,7 +992,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />)}
           {questions.map((question) => <QuestionCard key={question.id} question={question} onAnswered={() => void loadMessages(sessionId, false)} />)}
           {/* Una herramienta en curso ya muestra su propio brillo y contador: no se repite el estado general. */}
-          {running && !questions.length && !pending.length && !toolRunning && <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} />}
+          {running && !messagesStale && !questions.length && !pending.length && !toolRunning && <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} />}
         </div>
 
         <div className="relative h-0">
@@ -1002,7 +1020,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                           size="none"
                           className="agent-suggestion"
                           style={{ animationDelay: `${i * 60}ms` }}
-                          disabled={suggestionBusy || modelBusy || running || stopping || pending.length > 0}
+                          disabled={sending || modelBusy || running || stopping || pending.length > 0}
                           onClick={() => void sendSuggestion(suggestion)}
                         >
                           {suggestion}
@@ -1144,13 +1162,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   }
                 }}
                 placeholder={
-                  !sessionId
-                    ? 'Crea una conversación primero'
-                    : running || pending.length > 0
-                      ? 'Añade una indicación o déjala para después…'
-                      : 'Escribe un mensaje o @ para mencionar un bot…'
+                  running || pending.length > 0
+                    ? 'Añade una indicación o déjala para después…'
+                    : 'Escribe un mensaje o @ para mencionar un bot…'
                 }
-                disabled={!sessionId}
                 aria-label="Mensaje para el agente"
                 className="max-h-36 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
               />
@@ -1170,7 +1185,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 type="button"
                 className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-primary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--bg-input)] active:scale-[0.96] motion-reduce:transform-none disabled:bg-transparent disabled:text-[var(--text-muted)]"
                 onClick={() => void send()}
-                disabled={!sessionId || !draft.trim() || modelBusy}
+                disabled={(!sessionId && !provider) || !draft.trim() || modelBusy || sending}
                 aria-label="Enviar"
                 title="Enviar (Intro)"
               >
@@ -1179,9 +1194,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </div>
             {(running || pending.length > 0) && (
               <div className="flex flex-wrap justify-end gap-2 px-3 pb-2.5">
-                <Button variant="ghost" size="sm" onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping}
+                <Button variant="ghost" size="sm" onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping || sending}
                   title="Dejar para después (Intro)">Dejar para después</Button>
-                <Button size="sm" onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sendingCorrection}>
+                <Button size="sm" onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sending || sendingCorrection}>
                   Indicar ahora
                 </Button>
               </div>
@@ -1208,7 +1223,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   type="button"
                   className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
                   onClick={() => void sendSuggestion(RESUME_TEXT)}
-                  disabled={suggestionBusy || modelBusy || stopping}
+                  disabled={sending || modelBusy || stopping}
                   title="Continuar el encargo desde el último paso verificado"
                 >
                   <Play size={11} aria-hidden="true" />
@@ -1220,7 +1235,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   providers={readyProviders}
                   value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
                   onChange={(next) => void changeModel(next)}
-                  disabled={modelBusy || running || stopping || pending.length > 0}
+                  disabled={sending || modelBusy || running || stopping || pending.length > 0}
                   className="min-w-0 max-w-[min(40vw,240px)]"
                 />
               ) : (

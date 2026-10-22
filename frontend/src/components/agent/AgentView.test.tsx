@@ -768,6 +768,126 @@ it('abre una conversación desde un agente guardado con su mensaje inicial', asy
   expect(suggestions.getByRole('button', { name: 'Prepara el informe de este mes' })).toBeEnabled();
 });
 
+it('envía el primer texto una sola vez ante doble Enter y conserva lo escrito durante la creación', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const created = deferred<{ session: AgentSession }>();
+  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockReturnValue(created.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  const input = screen.getByLabelText('Mensaje para el agente');
+  expect(input).toBeEnabled();
+  fireEvent.change(input, { target: { value: 'Mi primer encargo' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba' });
+  expect(input).toHaveValue('Mi primer encargo');
+  fireEvent.change(input, { target: { value: 'El siguiente encargo' } });
+  await act(async () => { created.resolve({ session }); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Mi primer encargo', expect.any(String), []);
+  expect(input).toHaveValue('El siguiente encargo');
+});
+
+it('mantiene activo el primer turno mientras espera la aceptación del mensaje', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
+  vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const send = deferred<{ accepted: boolean }>();
+  vi.mocked(agentApi.agentMessageSend).mockReturnValue(send.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Primer encargo' } });
+  await act(async () => { fireEvent.keyDown(screen.getByLabelText('Mensaje para el agente'), { key: 'Enter' }); });
+  expect(screen.getByText('El agente está trabajando')).toBeInTheDocument();
+  await act(async () => { send.resolve({ accepted: true }); });
+});
+
+it('conserva el primer borrador sin proveedor y no crea ni envía una conversación', async () => {
+  const create = vi.spyOn(agentApi, 'agentSessionCreate');
+  render(<AgentView />);
+  await act(async () => {});
+  const input = screen.getByLabelText('Mensaje para el agente');
+  fireEvent.change(input, { target: { value: 'Encargo pendiente' } });
+  expect(input).toBeEnabled();
+  expect(screen.getByLabelText('Enviar')).toBeDisabled();
+  await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
+  expect(input).toHaveValue('Encargo pendiente');
+  expect(addToast).toHaveBeenCalledWith({ message: 'Elige un proveedor IA', type: 'error' });
+  expect(create).not.toHaveBeenCalled();
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+});
+
+it('conserva el primer borrador si falla la creación y permite volver a enviarlo', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const create = vi.spyOn(agentApi, 'agentSessionCreate')
+    .mockRejectedValueOnce(new Error('No se pudo crear')).mockResolvedValue({ session });
+  render(<AgentView />);
+  await act(async () => {});
+  const input = screen.getByLabelText('Mensaje para el agente');
+  fireEvent.change(input, { target: { value: 'Primer encargo' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(input).toHaveValue('Primer encargo');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(addToast).toHaveBeenCalledWith({ message: 'No se pudo crear', type: 'error' });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(create).toHaveBeenCalledTimes(2);
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Primer encargo', expect.any(String), []);
+  expect(input).toHaveValue('');
+});
+
+it.each(['texto', 'sugerencia'])('reintenta %s con la misma identidad si se pierde la respuesta de aceptación', async (source) => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
+  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session });
+  const accepted = new Set<string>();
+  vi.mocked(agentApi.agentMessageSend).mockImplementation(async (_session, _content, requestId) => {
+    if (accepted.has(requestId)) return { accepted: true, duplicate: true };
+    accepted.add(requestId);
+    throw new Error('Respuesta perdida');
+  });
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await act(async () => {});
+  const input = screen.getByLabelText('Mensaje para el agente');
+  const submit = () => {
+    if (source === 'texto') {
+      fireEvent.change(input, { target: { value: 'Encargo aceptado' } });
+      fireEvent.click(screen.getByLabelText('Enviar'));
+    } else {
+      fireEvent.click(within(screen.getByRole('group', { name: 'Sugerencias' })).getAllByRole('button')[0]);
+    }
+  };
+  await act(async () => { submit(); });
+  await act(async () => { submit(); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledTimes(2);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(accepted.size).toBe(1);
+});
+
+it('marca el estado desactualizado si falla el sondeo y lo recupera sin perder el historial', async () => {
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
+    messages: [{ role: 'assistant', content: 'Última respuesta recibida', ts: 1 }] });
+  localStorage.setItem('antares-agent-session', 's1');
+  vi.useFakeTimers();
+  render(<AgentView />);
+  await act(async () => {});
+  expect(screen.getByText('Última respuesta recibida')).toBeVisible();
+  list.mockRejectedValueOnce(new Error('Sin conexión'));
+  await act(async () => { vi.advanceTimersByTime(1500); });
+  expect(screen.getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
+  expect(screen.getByText('Última respuesta recibida')).toBeVisible();
+  expect(screen.queryByText('El agente está trabajando')).not.toBeInTheDocument();
+  list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta confirmada', ts: 2 }] });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Reintentar actualización' })); });
+  expect(screen.queryByText(/El estado mostrado puede estar desactualizado/)).not.toBeInTheDocument();
+  expect(screen.getByText('Respuesta confirmada')).toBeVisible();
+});
+
 it('envía una sugerencia del composer creando una única conversación si no hay ninguna', async () => {
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
@@ -802,6 +922,9 @@ it('ofrece sugerencias en un chat con historial y permite reintentar un envío f
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador sin enviar');
   await act(async () => { fireEvent.click(suggestion); });
   expect(agentApi.agentMessageSend).toHaveBeenLastCalledWith('s1', suggestion.textContent, expect.any(String), []);
+  const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
+  expect(second[2]).toBe(first[2]);
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador sin enviar');
   expect(screen.getByText('Respuesta previa')).toBeVisible();
 });
 

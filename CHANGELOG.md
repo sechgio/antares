@@ -80,6 +80,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- Agent permite iniciar una conversación con el primer mensaje, conserva el borrador si falla la creación y reutiliza la identidad del envío al reintentar texto o sugerencias. Evita envíos simultáneos y avisa cuando no pudo actualizar el estado del chat.
 - **Agent / delegación**: una respuesta del subagente que llega después de Detener no se guarda como exitosa, tampoco si termina su último paso de herramientas.
 - **Agent / ciclo del turno**: una respuesta correcta limpia el estado de error actual sin borrar el historial y conserva la recuperación al reiniciar. Detener una herramienta en espera solicita una sola cancelación; las aprobaciones y los sondeos liberan sus listeners y esperas al terminar.
 - **Seguridad de PDF**: `pypdf` requiere 6.21.1 o superior y el lockfile fija esa versión para corregir CVE-2026-113786, que bloqueaba la auditoría de CI.
