@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.agent import computer_files
+from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.core.integrations.types import JsonObject
 
 _SHOT_WIDTH = 1280
@@ -22,6 +23,7 @@ _MAX_ELEMENTS = 160
 _OBSERVATION_BUDGET = 5_000
 _KEEP_SCREENS = 12
 _UIA_TIMEOUT_S = 12
+_DESKTOP_LOCK = threading.Lock()
 
 _POINT = {"type": "integer", "description": "Coordenada en píxeles de la última captura de desktop_observe"}
 TOOL_SPECS: list[JsonObject] = [
@@ -373,13 +375,15 @@ def click(params: JsonObject, root: Path) -> JsonObject:
     return _settled(root, {"clicked": {"x": params["x"], "y": params["y"], "button": button}})
 
 
-def type_text(params: JsonObject, root: Path) -> JsonObject:
+def type_text(params: JsonObject, root: Path, token: _CancelEvent | None = None) -> JsonObject:
     text = params.get("text")
     if not isinstance(text, str) or not text:
         raise ValueError("Indica el texto")
     if len(text) > 5_000:
         raise ValueError("El texto excede 5000 caracteres")
     for char in text.replace("\r\n", "\n"):
+        if token is not None and token.cancelled:
+            raise RunCancelled()
         if char == "\n":
             _send(_key(0x0D), _key(0x0D, up=True))
         elif char == "\t":
@@ -389,17 +393,25 @@ def type_text(params: JsonObject, root: Path) -> JsonObject:
             units = [int.from_bytes(encoded[i:i + 2], "little") for i in range(0, len(encoded), 2)]
             _send(*[_unicode(unit) for unit in units], *[_unicode(unit, up=True) for unit in units])
         time.sleep(0.004)
+    if token is not None and token.cancelled:
+        raise RunCancelled()
     return _settled(root, {"typed": len(text)})
 
 
-def press(params: JsonObject, root: Path) -> JsonObject:
+def press(params: JsonObject, root: Path, token: _CancelEvent | None = None) -> JsonObject:
     keys = str(params.get("keys") or "").strip()
     if not keys:
         raise ValueError("Indica las teclas")
-    for combo in keys.split():
-        codes = [_vk_for(part) for part in combo.split("+") if part]
+    shortcuts = [[_vk_for(part) for part in combo.split("+") if part] for combo in keys.split()]
+    if any(not codes for codes in shortcuts):
+        raise ValueError("Indica las teclas")
+    for codes in shortcuts:
+        if token is not None and token.cancelled:
+            raise RunCancelled()
         _send(*[_key(code) for code in codes], *[_key(code, up=True) for code in reversed(codes)])
         time.sleep(0.12)
+    if token is not None and token.cancelled:
+        raise RunCancelled()
     return _settled(root, {"pressed": keys})
 
 
@@ -443,19 +455,27 @@ def focus(params: JsonObject, root: Path) -> JsonObject:
     return _settled(root, {"focused": match["title"]})
 
 
-def run(name: str, params: JsonObject, root: Path) -> JsonObject:
-    if name == "desktop_observe":
-        return observe(root, params.get("elements") is not False)
-    if name == "desktop_click":
-        return click(params, root)
-    if name == "desktop_type":
-        return type_text(params, root)
-    if name == "desktop_key":
-        return press(params, root)
-    if name == "desktop_scroll":
-        return scroll(params, root)
-    if name == "desktop_launch":
-        return launch(params, root)
-    if name == "desktop_focus":
-        return focus(params, root)
-    raise ValueError(f"Herramienta no disponible para el agente: {name}")
+def run(name: str, params: JsonObject, root: Path, token: _CancelEvent | None = None) -> JsonObject:
+    while not _DESKTOP_LOCK.acquire(timeout=0.1):
+        if token is not None and token.cancelled:
+            raise RunCancelled()
+    try:
+        if token is not None and token.cancelled:
+            raise RunCancelled()
+        if name == "desktop_observe":
+            return observe(root, params.get("elements") is not False)
+        if name == "desktop_click":
+            return click(params, root)
+        if name == "desktop_type":
+            return type_text(params, root, token)
+        if name == "desktop_key":
+            return press(params, root, token)
+        if name == "desktop_scroll":
+            return scroll(params, root)
+        if name == "desktop_launch":
+            return launch(params, root)
+        if name == "desktop_focus":
+            return focus(params, root)
+        raise ValueError(f"Herramienta no disponible para el agente: {name}")
+    finally:
+        _DESKTOP_LOCK.release()

@@ -2,6 +2,7 @@ import json
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -123,6 +124,7 @@ def test_shell_runs_powershell_in_the_workspace(store):
     out = _run(store, "shell_run", command="Write-Output ('ñandú ' + (2+3)); Get-Location | % Path; exit 3")
     assert out["exit_code"] == 3
     assert out["stdout"].splitlines() == ["ñandú 5", str(store.drafts_dir("s1"))]
+    assert "código 3" in out["error"] and agent.result_failed(json.dumps(out))
     timed = _run(store, "shell_run", command="Start-Sleep -Seconds 20", timeout_s=1)
     assert "superó 1 s" in timed["error"] and timed["duration_s"] < 10
 
@@ -201,3 +203,77 @@ def test_desktop_dispatch_requires_an_approval(store):
         {"session_id": "s1", "call_id": "c1", "name": "desktop_click", "params": {"x": 1, "y": 1}})
     assert "aprobación" in json.loads(out["result"])["error"]
     assert {"fs_write", "fs_edit"} == computer_files.WRITE_TOOLS
+
+
+def test_desktop_actions_from_different_sessions_do_not_overlap(store, monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+    clicked = threading.Event()
+
+    def observe(root, elements=True):
+        started.set()
+        assert release.wait(5)
+        return {"observed": True}
+
+    monkeypatch.setattr(computer_desktop, "observe", observe)
+    monkeypatch.setattr(computer_desktop, "click", lambda *_: clicked.set() or {"clicked": True})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(agent_tools.run, "desktop_observe", {}, store, "s1")
+        assert started.wait(5)
+        second = pool.submit(agent_tools.run, "desktop_click", {"x": 1, "y": 1}, store, "s2")
+        try:
+            assert not clicked.wait(0.2)
+        finally:
+            release.set()
+        assert first.result(timeout=5) == {"observed": True}
+        assert second.result(timeout=5) == {"clicked": True}
+
+
+def test_desktop_stops_typing_when_the_turn_is_cancelled(store, monkeypatch):
+    token = _CancelEvent()
+    sent = []
+
+    def send(*inputs):
+        sent.extend(inputs)
+        token.cancel()
+
+    monkeypatch.setattr(computer_desktop, "_send", send)
+    monkeypatch.setattr(computer_desktop, "_settled", lambda *_: {"typed": True})
+    with pytest.raises(RunCancelled):
+        agent_tools.run("desktop_type", {"text": "abcd"}, store, "s1", token)
+    assert len(sent) == 2
+    monkeypatch.setattr(computer_desktop, "observe", lambda *_: {"observed": True})
+    assert _run(store, "desktop_observe") == {"observed": True}
+
+
+def test_cancelled_desktop_action_does_not_execute_after_waiting(store, monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+    clicked = threading.Event()
+    token = _CancelEvent()
+
+    def observe(root, elements=True):
+        started.set()
+        assert release.wait(5)
+        return {"observed": True}
+
+    monkeypatch.setattr(computer_desktop, "observe", observe)
+    monkeypatch.setattr(computer_desktop, "click", lambda *_: clicked.set() or {})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(agent_tools.run, "desktop_observe", {}, store, "s1")
+        assert started.wait(5)
+        second = pool.submit(agent_tools.run, "desktop_click", {"x": 1, "y": 1}, store, "s2", token)
+        token.cancel()
+        release.set()
+        first.result(timeout=5)
+        with pytest.raises(RunCancelled):
+            second.result(timeout=5)
+    assert not clicked.is_set()
+
+
+def test_desktop_validates_all_shortcuts_before_sending_input(store, monkeypatch):
+    sent = []
+    monkeypatch.setattr(computer_desktop, "_send", lambda *inputs: sent.extend(inputs))
+    with pytest.raises(ValueError, match="Tecla desconocida"):
+        _run(store, "desktop_key", keys="ctrl+s hiper")
+    assert sent == []
