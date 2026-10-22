@@ -60,6 +60,8 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return documents.read_file(args, store.grants_for(session_id), root)
     if name == "canvas_fill_fields":
         return canvas_edit.fill_fields(args)
+    if name == "canvas_apply_layers":
+        return canvas_edit.apply_layers(args)
     if name == "artifacts_list":
         return {"artifacts": store.artifacts_for(session_id)}
     if name in {"memory_search", "memory_remember", "procedure_learn"}:

@@ -69,6 +69,33 @@ def _text_layer(layer_id: str, name: str, value: str) -> dict:
 
 class TestCanvasIpcE2E:
 
+    def test_agent_can_lay_out_an_a4_in_one_call_and_read_exact_content(self, backend):
+        proc, _stderr = backend
+        doc = _rpc_call(proc, "canvas_create", {"name": "A4 del agente"})["result"]["document"]
+        layers = []
+        for index, name in enumerate(["Cabecera", "Título", "Subtítulo", "Cuerpo"]):
+            layers.append({
+                "type": "rect" if index == 0 else "text", "name": name, "pageIndex": 0,
+                "value": "" if index == 0 else f"Texto {index}",
+                "cssVars": {"--translate-x": "10mm", "--translate-y": f"{10 + index * 30}mm",
+                            "--width": "190mm", "--height": "20mm", "--font-size": "14pt",
+                            "--font-family": "Arial", "--color": "#123456", "--background-color": "#abcdef",
+                            "--text-align": "center", "--border-radius": "2mm", "--opacity": "0.9"},
+            })
+        params = {"id": doc["id"], "expected_updated_at": doc["updatedAt"], "layers": layers}
+        response = _rpc_call(proc, "agent_canvas_apply_layers", params)
+        assert "result" in response, response
+        result = response["result"]
+        assert result["updatedAt"] != doc["updatedAt"]
+        assert [item["name"] for item in result["createdLayers"]] == [item["name"] for item in layers]
+        persisted = _rpc_call(proc, "canvas_get", {"id": doc["id"]})["result"]["document"]
+        assert persisted["layers"] == result["layers"]
+        assert persisted["updatedAt"] == result["updatedAt"]
+        for expected, actual in zip(layers, persisted["layers"][1:], strict=True):
+            assert all(actual[key] == value for key, value in expected.items())
+        stale = _rpc_call(proc, "agent_canvas_apply_layers", params)
+        assert stale["error"]["category"] == "RESOURCE_LOCKED"
+
     def test_conditional_save_rejects_stale_revision(self, backend) -> None:
         proc, _stderr = backend
         base = _rpc_call(proc, "canvas_create", {"name": "Base"})["result"]["document"]

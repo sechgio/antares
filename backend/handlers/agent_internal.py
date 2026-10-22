@@ -42,7 +42,7 @@ _inflight_lock = threading.Lock()
 _resource_locks: dict[str, threading.Lock] = {}
 _native_leases: dict[str, list[threading.Lock]] = {}
 _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
-                    "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields",
+                    "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields", "canvas_apply_layers",
                     "gdrive_", "gsheets_", "onedrive_", "excel_", "web_")
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 
@@ -597,6 +597,7 @@ HANDLERS = {
     "agent_internal_mentions": _mentions,
     "agent_internal_document_plan": _document_plan,
     "agent_canvas_fill": canvas_edit.fill_fields,
+    "agent_canvas_apply_layers": canvas_edit.apply_layers,
     "agent_internal_artifacts": _artifacts,
     "agent_internal_artifact_action": _artifact_action,
     "agent_internal_artifact_effect": _artifact_effect,

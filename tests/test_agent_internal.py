@@ -478,15 +478,16 @@ def test_native_wait_revalidates_the_approval_with_the_current_context(store):
                      approval_id=retry_id, context=sheet)["execute"] == "native"
 
 
-def test_python_workers_wait_for_a_native_effect_on_the_same_document(store, monkeypatch):
+@pytest.mark.parametrize("method", ["canvas_fill_fields", "canvas_apply_layers"])
+def test_python_workers_wait_for_a_native_effect_on_the_same_document(store, monkeypatch, method):
     ran = threading.Event()
     monkeypatch.setattr(agent, "get_agent_runner",
                         lambda: agent.AgentRunner(store, lambda name: lambda params: ran.set() or {"ok": True}))
     monkeypatch.setattr(agent_internal._agent_chat, "gated_methods", lambda: ["canvas_save"])
     context = {"tool_version": "test-v1"}
     params = {"id": "doc", "expected_updated_at": "1", "values": {}}
-    native = _dispatch(session_id="s1", call_id="n1", name="canvas_fill_fields", params=params, native=True,
-                       gated=True, approval_id=_approve_native("s1", "n1", "canvas_fill_fields", params, context),
+    native = _dispatch(session_id="s1", call_id="n1", name=method, params=params, native=True,
+                       gated=True, approval_id=_approve_native("s1", "n1", method, params, context),
                        context=context)
     assert native["execute"] == "native"
     approval_id = _approve("s2", "c2", "canvas_save", {"id": "doc"})

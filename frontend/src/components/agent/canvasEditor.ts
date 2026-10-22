@@ -4,6 +4,7 @@ interface CanvasEditor {
   get: () => CanvasDocument;
   dirty: () => boolean;
   apply: (values: Record<string, unknown>, expected: string) => Promise<unknown>;
+  applyLayers: (params: Record<string, unknown>) => Promise<unknown>;
   open: (id: string) => void;
 }
 let editor: CanvasEditor | null = null;

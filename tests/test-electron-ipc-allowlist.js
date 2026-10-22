@@ -78,6 +78,11 @@ function main() {
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
+  if (!apiMethods.has('agent_canvas_apply_layers') || !allowed.has('agent_canvas_apply_layers')
+    || catalog.METHODS.agent_canvas_apply_layers.handler !== 'backend:agent_internal'
+    || catalog.IDEMPOTENT_METHODS.has('agent_canvas_apply_layers')) {
+    throw new Error('La edición de capas Canvas debe usar el puente permitido sin reintentos de escritura.');
+  }
   if (!apiMethods.has('agent_session_model_set') || !allowed.has('agent_session_model_set')
     || catalog.METHODS.agent_session_model_set.handler !== 'native:agent') {
     throw new Error('El selector de modelos debe usar el método nativo permitido del agente.');
