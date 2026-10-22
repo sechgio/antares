@@ -1046,6 +1046,96 @@ async function main() {
   }
 
   {
+    const { bridge, state } = makeBridge();
+    let failDenial = true;
+    let sawCorrection = false;
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      (context) => {
+        sawCorrection = JSON.stringify(context.messages).includes('no borres');
+        return fauxAssistantMessage('corregido');
+      },
+      fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('segundo encargo'),
+    ], async (method, params) => {
+      if (method === 'agent_internal_approvals_deny_session' && failDenial) {
+        failDenial = false;
+        throw new Error('No se pudo rechazar la aprobación');
+      }
+      return bridge(method, params);
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'limpia' });
+    assert(await waitFor(() => state.approvals.size > 0), 'el encargo espera antes de corregir');
+    const correction = { session_id: session.id, content: 'no borres', request_id: 'accepted-correction', correction: true };
+    let failed;
+    try { await runtime.handlers.agent_message_send(correction); } catch (err) { failed = err; }
+    assert(!!failed, 'se informa de un fallo al desbloquear la corrección admitida');
+    const retried = await runtime.handlers.agent_message_send(correction);
+    assert(retried.duplicate && await waitIdle(session.id) && sawCorrection,
+      'el reintento desbloquea la corrección ya admitida sin duplicarla');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'otro encargo' });
+    assert(await waitFor(() => [...state.approvals.values()].some((a) => a.status === 'pending')),
+      'el encargo posterior espera su propia aprobación');
+    await runtime.handlers.agent_message_send(correction);
+    assert([...state.approvals.values()].some((a) => a.status === 'pending'),
+      'repetir una corrección ya aplicada no rechaza aprobaciones posteriores');
+    await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+    await runtime.shutdown();
+  }
+
+  for (const failure of ['adjunto', 'proveedor', 'menciones', 'admisión']) {
+    const { bridge, state } = makeBridge();
+    let rejectCorrection = false;
+    let sawCorrection = false;
+    const faux = await openFaux([
+      fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      (context) => {
+        sawCorrection = JSON.stringify(context.messages).includes('no borres');
+        return fauxAssistantMessage('corregido');
+      },
+    ], async (method, params) => {
+      if (rejectCorrection && ((failure === 'proveedor' && method === 'agent_internal_provider')
+        || (failure === 'menciones' && method === 'agent_internal_mentions'))) throw new Error(failure);
+      return bridge(method, params);
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'limpia' });
+    assert(await waitFor(() => state.approvals.size > 0), `${failure}: el turno espera aprobación`);
+    const harness = runtime._internal.state().harness;
+    const getConversation = harness.conversation.bind(harness);
+    harness.conversation = async (...args) => {
+      const conv = await getConversation(...args);
+      if (rejectCorrection && failure === 'admisión') conv.submit = async () => { throw new Error('admisión'); };
+      return conv;
+    };
+    rejectCorrection = true;
+    if (failure === 'proveedor') runtime._internal._providerOverrides.delete('faux');
+    let rejected;
+    try {
+      await runtime.handlers.agent_message_send({
+        session_id: session.id, content: 'no borres', request_id: 'correction-retry', correction: true,
+        ...(failure === 'adjunto' ? { attachments: ['caducado'] } : {}),
+      });
+    } catch (err) { rejected = err; }
+    assert(!!rejected, `${failure}: se informa del rechazo de la corrección`);
+    assert([...state.approvals.values()][0].status === 'pending', `${failure}: la aprobación anterior sigue pendiente`);
+    const beforeRetry = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(!sawCorrection && !beforeRetry.messages.some((m) => m.role === 'user' && m.content === 'no borres'),
+      `${failure}: la corrección rechazada no se presenta como recibida`);
+    rejectCorrection = false;
+    runtime._internal._providerOverrides.set('faux', faux.provider);
+    const retried = await runtime.handlers.agent_message_send({
+      session_id: session.id, content: 'no borres', request_id: 'correction-retry', correction: true,
+    });
+    assert(retried.accepted && !retried.duplicate, `${failure}: se admite el reintento con la misma identidad`);
+    assert(await waitIdle(session.id) && sawCorrection, `${failure}: el modelo recibe la corrección al reintentar`);
+    assert([...state.approvals.values()][0].status === 'denied' && state.dispatchLog.length === 0,
+      `${failure}: la corrección admitida rechaza el efecto pendiente sin ejecutarlo`);
+    await runtime.shutdown();
+  }
+
+  {
     const { bridge } = makeBridge();
     const lateFactory = (_ctx, options) => new Promise((resolve) => {
       const sig = options && options.signal;
