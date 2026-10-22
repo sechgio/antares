@@ -47,6 +47,106 @@ afterEach(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
 });
 
+it('muestra conversaciones de una sola línea y reserva los avatares de la barra lateral para los agentes', async () => {
+  const profile = { id: 'p1', name: 'Reportes', description: 'Prepara informes', instructions: '', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [profile] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [
+    { ...session, profile: { id: profile.id, name: profile.name }, last_error: 'Proveedor sin conexión' },
+    { ...session, id: 's2', title: '' },
+  ] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  localStorage.setItem('antares-agent-session', session.id);
+  render(<AgentView />);
+  const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
+  const first = await within(sidebar).findByRole('button', { name: 'Primera' });
+  expect(first).toHaveAttribute('title', 'Primera');
+  expect(first).toHaveAttribute('aria-current', 'page');
+  expect(within(sidebar).getAllByRole('img')).toHaveLength(1);
+  expect(within(sidebar).getByRole('img', { name: 'Reportes' })).toBeInTheDocument();
+  expect(within(sidebar).queryByText(/prueba|local|hace|ahora/)).not.toBeInTheDocument();
+  expect(within(sidebar).getByTitle('Proveedor sin conexión')).toBeInTheDocument();
+  expect(screen.getByRole('main', { name: 'Conversación del agente' }).querySelector('header svg[role="img"]')).toBeNull();
+  const second = within(sidebar).getByRole('button', { name: 'Conversación' });
+  await act(async () => { fireEvent.click(second); });
+  expect(second).toHaveAttribute('aria-current', 'page');
+  expect(first).not.toHaveAttribute('aria-current');
+  expect(agentApi.agentMessagesList).toHaveBeenLastCalledWith('s2');
+});
+
+it('conserva la búsqueda y el borrado desde las filas compactas', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, { ...session, id: 's2', title: 'Segunda' }] });
+  confirm.mockResolvedValue(true);
+  const remove = vi.spyOn(agentApi, 'agentSessionDelete').mockResolvedValue({ deleted: true, id: 's2' });
+  render(<AgentView />);
+  const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
+  await within(sidebar).findByRole('button', { name: 'Primera' });
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Buscar conversaciones' }));
+  fireEvent.change(within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' }), { target: { value: 'Segunda' } });
+  expect(within(sidebar).queryByRole('button', { name: 'Primera' })).not.toBeInTheDocument();
+  expect(within(sidebar).getByRole('button', { name: 'Segunda' })).toBeInTheDocument();
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session] });
+  await act(async () => { fireEvent.click(within(sidebar).getByRole('button', { name: 'Eliminar conversación' })); });
+  expect(remove).toHaveBeenCalledExactlyOnceWith('s2');
+  expect(within(sidebar).queryByRole('button', { name: 'Segunda' })).not.toBeInTheDocument();
+});
+
+it('amplía el buscador y restaura las acciones al cerrarlo', async () => {
+  const configure = vi.fn();
+  render(<AgentView onConfigureProvider={configure} />);
+  const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
+  await within(sidebar).findByRole('button', { name: 'Primera' });
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Buscar conversaciones' }));
+  const search = within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' });
+  expect(search).toHaveFocus();
+  expect(within(sidebar).queryByRole('button', { name: 'Nueva conversación' })).not.toBeInTheDocument();
+  expect(within(sidebar).queryByRole('button', { name: 'Proveedores' })).not.toBeInTheDocument();
+  fireEvent.change(search, { target: { value: 'Sin resultados' } });
+  expect(within(sidebar).getByText('Sin resultados para «Sin resultados».')).toBeInTheDocument();
+  fireEvent.keyDown(search, { key: 'Escape' });
+  expect(within(sidebar).queryByRole('textbox')).not.toBeInTheDocument();
+  expect(within(sidebar).getByRole('button', { name: 'Nueva conversación' })).toBeInTheDocument();
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Proveedores' }));
+  expect(configure).toHaveBeenCalledOnce();
+  expect(within(sidebar).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
+});
+
+it('oculta y muestra la barra lateral sin perder la conversación ni el borrador', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+    messages: [{ role: 'assistant', content: 'Respuesta conservada', ts: 1 }],
+  });
+  render(<AgentView />);
+  await screen.findByText('Respuesta conservada');
+  const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
+  fireEvent.change(composer, { target: { value: 'Borrador pendiente' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ocultar barra lateral' }));
+  expect(screen.queryByRole('complementary', { name: 'Agentes y conversaciones' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Mostrar barra lateral' })).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByText('Respuesta conservada')).toBeVisible();
+  expect(composer).toHaveValue('Borrador pendiente');
+  fireEvent.click(screen.getByRole('button', { name: 'Mostrar barra lateral' }));
+  const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
+  expect(within(sidebar).getByRole('button', { name: 'Primera' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('button', { name: 'Ocultar barra lateral' })).toHaveAttribute('aria-expanded', 'true');
+  expect(composer).toHaveValue('Borrador pendiente');
+});
+
+it('permite ocultar la barra sin conversación activa y Ctrl+K la recupera para buscar', async () => {
+  render(<AgentView />);
+  await screen.findByRole('button', { name: 'Primera' });
+  fireEvent.click(screen.getByRole('button', { name: 'Ocultar barra lateral' }));
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+  fireEvent.keyDown(screen.getByRole('main'), { key: 'k', ctrlKey: true });
+  const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
+  expect(within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' })).toHaveFocus();
+  const hide = screen.getByRole('button', { name: 'Ocultar barra lateral' });
+  hide.focus();
+  fireEvent.click(hide);
+  fireEvent.keyDown(screen.getByRole('main'), { key: 'k', ctrlKey: true });
+  expect(within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' })).toHaveFocus();
+});
+
 it('cambia los permisos por conversación y conserva el modo si falla el guardado', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const second = { ...session, id: 's2', title: 'Segunda', permission_mode: 'ask' as const };
@@ -536,7 +636,9 @@ it('crea la conversación con el modelo real elegido en el selector', async () =
   const dialog = await screen.findByRole('dialog', { name: 'Modelos disponibles' });
   await waitFor(() => expect(within(dialog).getByText('otro-modelo')).toBeInTheDocument());
   fireEvent.click(within(dialog).getByText('otro-modelo'));
-  await act(async () => { fireEvent.click(screen.getByLabelText('Nueva conversación')); });
+  const newChat = screen.getByRole('button', { name: 'Nueva conversación' });
+  expect(newChat).toHaveTextContent('Nuevo chat');
+  await act(async () => { fireEvent.click(newChat); });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ provider: 'local', model: 'otro-modelo' }));
 });
 

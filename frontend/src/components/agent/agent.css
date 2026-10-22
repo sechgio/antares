@@ -1,17 +1,23 @@
 .agent-workspace {
-  --agent-panel: color-mix(in srgb, var(--bg-surface) 68%, var(--bg-base));
+  --agent-panel: var(--bg-surface);
   --agent-bubble: color-mix(in srgb, var(--bg-input) 65%, var(--bg-surface));
 }
 
 .agent-workspace .agent-sidebar,
 .agent-workspace .agent-conversation { background: var(--agent-panel); }
-.agent-workspace .agent-message-user { background: var(--bg-surface); }
-.agent-workspace .agent-message-answer { background: var(--agent-bubble); }
+.agent-workspace .agent-message-user { background: var(--agent-bubble); }
+.agent-workspace .agent-message-answer { background: transparent; padding-inline: 0; }
+.agent-workspace .agent-search:focus-within {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+.agent-workspace :is(.agent-search input, .agent-composer textarea):focus-visible { outline: none; }
 .agent-browser-resizer {
   position: absolute;
   inset-block: 0;
-  left: -12px;
+  left: -6px;
   width: 12px;
+  z-index: 1;
   cursor: col-resize;
   touch-action: none;
   user-select: none;
