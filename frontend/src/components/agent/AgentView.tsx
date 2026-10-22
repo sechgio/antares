@@ -170,6 +170,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     } catch { return []; }
   });
   const failedSendRef = useRef<{ session: string; text: string; requestId: string; attachments: string[] } | null>(null);
+  const correctionInFlightRef = useRef(false);
+  const [sendingCorrection, setSendingCorrection] = useState(false);
+  const [receivedCorrection, setReceivedCorrection] = useState('');
   const [stopping, setStopping] = useState(false);
   const [runningSince, setRunningSince] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -498,15 +501,25 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   const sendToSession = async (id: string, content: string, requestId: string, attachmentIds: string[] = [], correction = false): Promise<boolean> => {
+    if (correction) {
+      if (correctionInFlightRef.current) return false;
+      correctionInFlightRef.current = true;
+      setSendingCorrection(true);
+      setReceivedCorrection('');
+    }
     const state = messagesVersionRef.current.get(id) ?? { version: 0, pending: 0 };
     messagesVersionRef.current.set(id, state);
     state.version += 1;
     state.pending += 1;
-    if (id === sessionIdRef.current) setRunning(true);
+    if (!correction && id === sessionIdRef.current) setRunning(true);
     try {
       const res = await (correction
         ? agentApi.agentMessageSend(id, content, requestId, attachmentIds, true)
         : agentApi.agentMessageSend(id, content, requestId, attachmentIds)).finally(() => { state.pending -= 1; });
+      if (correction) {
+        if (!res.accepted) throw new Error('No se pudo registrar la indicación');
+        setReceivedCorrection(id);
+      }
       for (const file of res.files?.rejected ?? []) {
         addToast({ message: `No se autorizó ${file.path}: ${file.reason}`, type: 'warning' });
       }
@@ -521,27 +534,32 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       await loadMessages(id);
       return true;
     } catch (err) {
-      if (id === sessionIdRef.current) setRunning(false);
+      if (!correction && id === sessionIdRef.current) setRunning(false);
       addToast({ message: errorMessage(err, 'No se pudo enviar el mensaje'), type: 'error' });
       return false;
+    } finally {
+      if (correction) {
+        correctionInFlightRef.current = false;
+        setSendingCorrection(false);
+      }
     }
   };
 
-  const send = async () => {
+  const send = async (correction = false) => {
     const content = draft.trim();
-    if (!content || !sessionId || modelBusy) return;
+    if (!content || !sessionId || modelBusy || (correction && correctionInFlightRef.current)) return;
     setDraft('');
     atBottomRef.current = true;
     const failed = failedSendRef.current;
     const attachmentIds = attachments.map((a) => a.id);
     const requestId = failed && failed.session === sessionId && failed.text === content
       && JSON.stringify(failed.attachments) === JSON.stringify(attachmentIds) ? failed.requestId : newRequestId();
-    if (running || pending.length > 0) {
+    if (!correction && (running || pending.length > 0)) {
       setQueued((q) => [...q, { session: sessionId, text: content, requestId, attachments: attachmentIds }]);
       setAttachments([]);
       return;
     }
-    const ok = await sendToSession(sessionId, content, requestId, attachmentIds);
+    const ok = await sendToSession(sessionId, content, requestId, attachmentIds, correction);
     failedSendRef.current = ok ? null : { session: sessionId, text: content, requestId, attachments: attachmentIds };
     if (ok) setAttachments([]);
     if (!ok) setDraft((prev) => (prev.trim() ? prev : content));
@@ -560,6 +578,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }, [sessionId, running, stopping, modelBusy, pending.length, queued]);
 
   const sendCorrection = async (item: (typeof queued)[number]) => {
+    if (correctionInFlightRef.current) return;
     setQueued((q) => q.filter((i) => i !== item));
     const ok = await sendToSession(item.session, item.text, item.requestId, item.attachments ?? [], true);
     if (!ok) setQueued((q) => [...q, { ...item, failed: true }]);
@@ -1032,6 +1051,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                       className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
                       aria-label="Enviar como corrección"
                       title="Enviar ahora como corrección del encargo en curso"
+                      disabled={sendingCorrection || stopping}
                       onClick={() => void sendCorrection(item)}
                     >
                       <CornerDownRight size={10} />
@@ -1134,7 +1154,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   !sessionId
                     ? 'Crea una conversación primero'
                     : running || pending.length > 0
-                      ? 'Escribe para cuando termine…'
+                      ? 'Añade una indicación o déjala para después…'
                       : 'Escribe un mensaje o @ para mencionar un bot…'
                 }
                 disabled={!sessionId}
@@ -1153,7 +1173,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   <Square size={12} />
                 </button>
               )}
-              <button
+              {!running && pending.length === 0 && <button
                 type="button"
                 className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-primary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--bg-input)] active:scale-[0.96] motion-reduce:transform-none disabled:bg-transparent disabled:text-[var(--text-muted)]"
                 onClick={() => void send()}
@@ -1162,9 +1182,23 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 title="Enviar (Intro)"
               >
                 <CornerDownLeft size={16} />
-              </button>
+              </button>}
             </div>
+            {(running || pending.length > 0) && (
+              <div className="flex flex-wrap justify-end gap-2 px-3 pb-2.5">
+                <Button variant="ghost" size="sm" onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping}
+                  title="Dejar para después (Intro)">Dejar para después</Button>
+                <Button size="sm" onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sendingCorrection}>
+                  Indicar ahora
+                </Button>
+              </div>
+            )}
           </div>
+          {receivedCorrection === sessionId && receivedCorrection && (
+            <p role="status" className="px-3 pt-1.5 text-[12px] text-[var(--text-secondary)]">
+              Indicación recibida para los próximos pasos.
+            </p>
+          )}
           <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 px-2 text-[12px] text-[var(--text-muted)]">
             {session ? (
               <PermissionPicker
