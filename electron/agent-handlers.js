@@ -12,7 +12,7 @@ async function handleAgentCall(method, params) {
     return { handled: true, result: require('./agent-renderer-tools').acceptRendererResult(params || {}) };
   }
   const runtime = require('./agent-runtime');
-  await runtime.open();
+  if (method !== 'agent_browser') await runtime.open();
   const handler = runtime.handlers[method];
   if (!handler) throw new Error(`Método de agente no soportado: ${method}`);
   return { handled: true, result: await handler(params || {}) };
