@@ -182,6 +182,10 @@ function AppContent() {
   }, [handleTabChange]);
 
   useEffect(() => {
+    if (activeTab !== 'agent') void agentApi.agentBrowser('bounds', { bounds: null }).catch(() => {});
+  }, [activeTab]);
+
+  useEffect(() => {
     if (!canvasMounted || activeTab === 'canvas') return;
     const t = window.setTimeout(() => setCanvasMounted(false), CANVAS_KEEPALIVE_MS);
     return () => window.clearTimeout(t);

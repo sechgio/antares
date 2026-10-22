@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Globe, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Globe, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
@@ -41,17 +41,6 @@ const SUGGESTIONS = [
   '¿Qué ejecuciones recientes fallaron y por qué?',
 ];
 
-function relTime(ms?: number): string {
-  if (!ms) return '';
-  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-  if (s < 60) return 'ahora';
-  const m = Math.floor(s / 60);
-  if (m < 60) return `hace ${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `hace ${h} h`;
-  return `hace ${Math.floor(h / 24)} d`;
-}
-
 export function groupSessions(list: AgentSession[], now = Date.now()): { label: string; items: AgentSession[] }[] {
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
@@ -83,32 +72,32 @@ function SessionRow({
 }) {
   return (
     <div
-      className={`group flex h-[46px] shrink-0 items-center gap-2 rounded-lg p-1.5 transition-colors ${
+      className={`group relative flex h-8 shrink-0 items-center rounded-lg px-1.5 transition-colors ${
         active
           ? 'bg-[var(--bg-input)]'
           : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'
       }`}
     >
-      <AgentAvatar seed={session.profile?.id ?? session.id} name={session.title || 'Conversación'} size={30} className="shrink-0" />
-      <button type="button" className="flex min-w-0 flex-1 flex-col text-left" onClick={onSelect} aria-current={active ? 'page' : undefined}>
-        <span className="flex min-w-0 items-center gap-1.5">
-          {session.last_error && (
-            <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-yellow)]"
-              title={session.last_error}
-            />
-          )}
-          <span className="truncate text-[13px] font-medium leading-[18px] text-[var(--text-primary)]">
-            {session.title || 'Conversación'}
-          </span>
-        </span>
-        <span className="truncate text-[11px] leading-4 text-[var(--text-muted)]">
-          {session.model || session.provider} · {relTime(session.updated_at)}
+      <button
+        type="button"
+        className={`flex h-full min-w-0 flex-1 items-center gap-1.5 text-left text-[13px] leading-[18px] group-hover:pr-6 group-focus-within:pr-6 ${active ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
+        title={session.title || 'Conversación'}
+        aria-current={active ? 'page' : undefined}
+        onClick={onSelect}
+      >
+        {session.last_error && (
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-yellow)]"
+            title={session.last_error}
+          />
+        )}
+        <span className="truncate">
+          {session.title || 'Conversación'}
         </span>
       </button>
       <button
         type="button"
-        className="invisible shrink-0 rounded-md p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--accent-red)] group-hover:visible group-focus-within:visible focus-visible:visible"
+        className="invisible absolute right-1.5 rounded-md p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--accent-red)] group-hover:visible group-focus-within:visible"
         aria-label="Eliminar conversación"
         title="Eliminar"
         onClick={onDelete}
@@ -154,6 +143,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [toolsQuery, setToolsQuery] = useState('');
   const [toolsFilter, setToolsFilter] = useState<'all' | 'skills' | 'mcp'>('all');
   const toolsSearchRef = useRef<HTMLInputElement | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [editing, setEditing] = useState<AgentProfile | 'new' | null>(null);
 
@@ -656,6 +646,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
           e.preventDefault();
           setSidebarView('conversations');
+          setSidebarOpen(true);
           setSearchOpen(true);
           sessionSearchRef.current?.focus();
         }
@@ -676,10 +667,21 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           }}
         />
       )}
-      <aside aria-label="Agentes y conversaciones" className="agent-sidebar hidden h-full w-[224px] shrink-0 flex-col rounded-[24px] border border-[var(--border-subtle)] bg-[var(--bg-base)] p-[7px] md:flex">
+      <aside aria-label="Agentes y conversaciones" hidden={!sidebarOpen} className={`agent-sidebar hidden h-full w-[248px] shrink-0 flex-col bg-[var(--bg-base)] p-[7px] ${sidebarOpen ? 'md:flex' : ''}`}>
         <div className="flex shrink-0 items-center gap-2 p-1">
-          {searchOpen ? (
-            <label className="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-full bg-[var(--bg-input)] px-3">
+          {!searchOpen && <Button
+            variant="none"
+            size="none"
+            className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg-input)]"
+            onClick={() => void newSession()}
+            aria-label="Nueva conversación"
+            title="Nueva conversación"
+          >
+            <Pencil size={15} className="shrink-0 text-[var(--text-secondary)]" />
+            <span className="truncate">Nuevo chat</span>
+          </Button>}
+          {searchOpen && sidebarOpen ? (
+            <label className="agent-search flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg bg-[var(--bg-input)] px-3">
               <Search size={14} className="shrink-0 text-[var(--text-secondary)]" />
               <input
                 ref={sessionSearchRef}
@@ -704,7 +706,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <>
               <button
                 type="button"
-                className="flex h-9 flex-1 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
                 aria-label={sidebarView === 'agents' ? 'Buscar agentes' : 'Buscar conversaciones'}
                 title={sidebarView === 'agents' ? 'Buscar agentes' : 'Buscar conversaciones (Ctrl+K)'}
                 onClick={() => setSearchOpen(true)}
@@ -714,7 +716,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               {onConfigureProvider && (
                 <button
                   type="button"
-                  className="flex h-9 flex-1 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
                   aria-label="Proveedores"
                   title="Proveedores"
                   onClick={onConfigureProvider}
@@ -724,16 +726,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               )}
             </>
           )}
-          <Button
-            variant="primary"
-            size="none"
-            className="flex h-9 flex-1 items-center justify-center rounded-full"
-            onClick={() => void newSession()}
-            aria-label="Nueva conversación"
-            title="Nueva conversación"
-          >
-            <Plus size={16} />
-          </Button>
         </div>
 
         <SegmentedControl
@@ -825,7 +817,18 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
       </aside>
 
-      <main aria-label="Conversación del agente" className="agent-conversation flex min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] bg-[var(--bg-base)]">
+      <main aria-label="Conversación del agente" className="agent-conversation relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
+        <Button
+          variant="none"
+          size="none"
+          className="absolute left-3 top-3 hidden size-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] md:flex"
+          aria-label={sidebarOpen ? 'Ocultar barra lateral' : 'Mostrar barra lateral'}
+          title={sidebarOpen ? 'Ocultar barra lateral' : 'Mostrar barra lateral'}
+          aria-expanded={sidebarOpen}
+          onClick={() => setSidebarOpen((open) => !open)}
+        >
+          {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+        </Button>
         <nav aria-label="Conversaciones" className="grid shrink-0 grid-cols-[minmax(0,1fr)_repeat(4,auto)] items-center gap-2 border-b border-[var(--border-subtle)] p-3 md:hidden">
           <ThemedSelect value={sessionId} onChange={setSessionId} placeholder="Elegir conversación"
             options={sessions.map((item) => ({ value: item.id, label: item.title || 'Conversación' }))}
@@ -842,9 +845,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           {onConfigureProvider && <Button size="sm" variant="secondary" aria-label="Configurar proveedor" onClick={onConfigureProvider}><Settings2 size={14} /></Button>}
         </nav>
         {session && (
-          <header className="flex shrink-0 items-center gap-2 px-4 pb-2 pt-3">
-            <div className="flex h-[31px] min-w-0 items-center gap-2 rounded-full pl-2 pr-3 transition-colors hover:bg-[var(--bg-input)]">
-              <AgentAvatar seed={session.profile?.id ?? session.id} name={session.title || 'Conversación'} size={20} className="shrink-0" />
+          <header className="flex shrink-0 items-center gap-2 px-4 pb-2 pt-3 md:pl-12">
+            <div className="flex h-[31px] min-w-0 items-center pr-3">
               <span className="truncate text-[13px] font-medium leading-[18px] text-[var(--text-secondary)]">
                 {session.title || 'Conversación'}
               </span>
@@ -1041,7 +1043,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </div>
           )}
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] transition-colors focus-within:border-[var(--border-medium)]">
+          <div className="agent-composer rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] transition-colors focus-within:border-[var(--border-medium)]">
             {mentionMatch && <div className="border-b border-[var(--border-subtle)] p-2">
               <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">Colaborar con un bot · solo lectura</p>
               <div ref={botMentionsRef} id="agent-bot-mentions" role="listbox" aria-label="Bots para mencionar" className="max-h-44 overflow-y-auto">
@@ -1077,7 +1079,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 ))}
               </div>
             )}
-            <div className="flex items-end gap-0.5 p-1.5">
+            <div className="flex items-end gap-1 p-2.5">
               <button
                 type="button"
                 className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"

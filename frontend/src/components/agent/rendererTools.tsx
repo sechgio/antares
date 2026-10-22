@@ -193,13 +193,14 @@ export async function executeRendererTool(method: string, params: Data): Promise
       data: object(ctx.data) as Record<string, string>, images: Array.isArray(ctx.images) ? ctx.images.map(text) : [], logoLeft: null, logoRight: null,
     }))) };
   }
-  if (method === 'canvas_fill_fields') {
+  if (method === 'canvas_fill_fields' || method === 'canvas_apply_layers') {
     const editor = getAgentCanvasEditor();
     if (editor?.get().id === text(params.id)) {
       if (editor.dirty()) throw new Error('Canvas tiene cambios sin guardar; conserva o guarda tu edición antes de aprobar otra versión');
+      if (method === 'canvas_apply_layers') return editor.applyLayers(params);
       return editor.apply(object(params.values), text(params.expected_updated_at));
     }
-    return agentApi.agentCanvasFill(params);
+    return method === 'canvas_apply_layers' ? agentApi.agentCanvasApplyLayers(params) : agentApi.agentCanvasFill(params);
   }
   throw new Error('Función de Agent no disponible en la pantalla');
 }

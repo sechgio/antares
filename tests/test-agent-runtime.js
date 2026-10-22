@@ -492,6 +492,20 @@ async function main() {
     let rejected = false;
     try { await handle({ action: 'borrar' }); } catch { rejected = true; }
     assert(rejected && calls.length === 4, 'una acción desconocida se rechaza sin tocar el navegador');
+    const open = runtime.open;
+    runtime.open = async () => { throw new Error('Motor del agente no disponible'); };
+    try {
+      let hidden = false;
+      try {
+        const response = await require('../electron/agent-handlers').handleAgentCall('agent_browser', { action: 'bounds', bounds: null });
+        hidden = response.handled && response.result.docked === false;
+      } catch { }
+      assert(hidden, 'salir de Agent retira el navegador sin inicializar el motor de conversaciones');
+      let needsRuntime = false;
+      try { await require('../electron/agent-handlers').handleAgentCall('agent_sessions_list', {}); }
+      catch (err) { needsRuntime = err.message === 'Motor del agente no disponible'; }
+      assert(needsRuntime, 'las conversaciones siguen inicializando su motor');
+    } finally { runtime.open = open; }
     runtime._internal.shared.browser = undefined;
   }
   for (const name of INTERNAL_RPCS) {

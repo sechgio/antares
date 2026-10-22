@@ -103,7 +103,7 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
   return (
     <div
       ref={panelRef}
-      className="relative flex w-[clamp(340px,44%,760px)] shrink-0"
+      className="relative -my-2.5 -ml-3 -mr-2.5 flex w-[clamp(340px,44%,760px)] shrink-0"
       style={{ width: width === null ? undefined : clampWidth(width), maxWidth: layout.available ? maxWidth : undefined }}
     >
       <div
@@ -138,7 +138,7 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
           setWidth(clampWidth(next));
         }}
       />
-    <aside aria-label="Navegador del agente" className="agent-browser flex min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] bg-[var(--bg-base)]">
+    <aside aria-label="Navegador del agente" className="agent-browser flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
       <div className="flex shrink-0 items-center gap-1 px-2.5 pb-2 pt-3">
         <button type="button" className={iconButton} aria-label="Atrás" disabled={!state.can_go_back} onClick={() => void run('back')}>
           <ArrowLeft size={14} />
@@ -190,7 +190,7 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
           Tienes el control: el agente no usará el navegador hasta que se lo devuelvas.
         </div>
       )}
-      <div ref={viewportRef} data-testid="agent-browser-viewport" className="relative mx-2.5 mb-2.5 min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+      <div ref={viewportRef} data-testid="agent-browser-viewport" className="relative min-h-0 flex-1 overflow-hidden bg-[var(--bg-surface)]">
         {!state.open && (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <Globe size={22} className="text-[var(--text-muted)]" />

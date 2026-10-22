@@ -23,6 +23,12 @@ it('coloca la página sobre su hueco, la retira al cerrarse y refleja lo que hac
   const { unmount } = render(<AgentBrowserPanel onClose={vi.fn()} />);
   await waitFor(() => expect(call).toHaveBeenCalledWith('bounds', expect.objectContaining({ bounds: expect.objectContaining({ width: expect.any(Number) }) })));
   expect(screen.getByText('Aquí verás las páginas que abra el agente.')).toBeInTheDocument();
+  const panel = screen.getByRole('complementary', { name: 'Navegador del agente' });
+  expect(panel.parentElement).toHaveClass('-ml-3', '-mr-2.5', '-my-2.5');
+  expect(panel).not.toHaveClass('rounded-[24px]');
+  for (const inset of ['mx-2.5', 'mb-2.5', 'rounded-xl', 'border']) {
+    expect(screen.getByTestId('agent-browser-viewport')).not.toHaveClass(inset);
+  }
 
   await act(async () => { notify?.('agent.browser', { ...base, open: true, url: 'https://es.wikipedia.org/wiki/Lima', can_go_back: true, reason: 'page' }); });
   expect(screen.getByLabelText('Dirección del navegador del agente')).toHaveValue('https://es.wikipedia.org/wiki/Lima');
