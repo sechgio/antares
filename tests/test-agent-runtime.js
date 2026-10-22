@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 
 const { assert, finish } = require('./helpers/harness');
+const { getEventListeners } = require('node:events');
 
 const runtime = require('../electron/agent-runtime');
 const importer = require('../electron/agent-import');
@@ -1880,6 +1881,149 @@ async function main() {
     assert(visible.length === 50 && !visible.some((session) => session.id === created[0]), 'la retención oculta la conversación más antigua');
     assert(activity.length === visible.length && activity.every((item) => visible.some((session) => session.id === item.id)),
       'la bandeja solo incluye las conversaciones que el usuario puede abrir');
+    await runtime.shutdown();
+  }
+
+  {
+    const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+    const { fauxProvider } = await import('@earendil-works/pi-ai');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-recovery-'));
+    const dbPath = path.join(dir, 'agent.sqlite');
+    const { bridge } = makeBridge();
+    const faux = fauxProvider();
+    runtime._internal._providerOverrides.set('faux', faux.provider);
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    faux.setResponses([fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'Fallo recuperable de prueba' })]);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primer intento' });
+    assert(await waitIdle(session.id), 'el turno fallido termina');
+    assert((await runtime.activitySnapshot()).find((item) => item.id === session.id).status === 'failed',
+      'la bandeja informa del fallo actual');
+    const conv = await require('../electron/agent-shared').conversation(session.id);
+    const entries = () => require('../electron/agent-projection').allEntries(conv);
+    const failure = (await entries()).find((entry) => entry.model?.[0]?.errorMessage === 'Fallo recuperable de prueba');
+    assert(!!failure, 'el fallo queda registrado en el historial durable');
+    faux.setResponses([fauxAssistantMessage('', { stopReason: 'aborted' })]);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'intento interrumpido' });
+    assert(await waitIdle(session.id), 'el intento interrumpido termina');
+    assert((await runtime.handlers.agent_turn_status({ session_id: session.id })).last_error === 'Fallo recuperable de prueba',
+      'una respuesta interrumpida no afirma que el fallo se recuperó');
+    faux.setResponses([fauxAssistantMessage('Respuesta correcta')]);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'reintentar' });
+    assert(await waitIdle(session.id), 'la respuesta de recuperación termina');
+    assert((await runtime.handlers.agent_turn_status({ session_id: session.id })).last_error === null,
+      'una respuesta correcta limpia el error actual');
+    assert((await runtime.activitySnapshot()).find((item) => item.id === session.id).status === 'completed',
+      'la bandeja refleja la recuperación');
+    assert(JSON.stringify((await entries()).find((entry) => entry.id === failure.id)) === JSON.stringify(failure),
+      'la recuperación conserva íntegra la entrada histórica del fallo');
+    await runtime.shutdown();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const restored = await runtime.handlers.agent_turn_status({ session_id: session.id });
+    assert(restored.last_error === null && !restored.running, 'el error recuperado sigue limpio tras reabrir SQLite');
+    assert((await runtime.activitySnapshot()).find((item) => item.id === session.id).status === 'completed',
+      'la bandeja sigue recuperada tras reiniciar');
+    const restoredConv = await require('../electron/agent-shared').conversation(session.id);
+    assert(JSON.stringify((await require('../electron/agent-projection').allEntries(restoredConv))
+      .find((entry) => entry.id === failure.id)) === JSON.stringify(failure), 'el historial del fallo también sobrevive al reinicio');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
+    const decision = 'cancel';
+    const { bridge, state } = makeBridge();
+    let checks = 0;
+    const approvalBridge = async (method, params) => {
+      if (method === 'agent_internal_approval_status') checks += 1;
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Decisión recibida'),
+    ], approvalBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'espera mi decisión' });
+    assert(await waitFor(() => checks >= 2), `${decision}: la aprobación atraviesa varios sondeos`);
+    const [approval] = state.approvals.values();
+    assert(runtime._internal.shared.decisionWaiters.get(approval.id)?.size === 1,
+      `${decision}: solo queda viva la espera actual de aprobación`);
+    await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+    assert(await waitIdle(session.id), `${decision}: la decisión cierra el turno`);
+    assert(!runtime._internal.shared.decisionWaiters.has(approval.id), `${decision}: no quedan esperas de aprobación residuales`);
+    assert(state.dispatches.length === 0, `${decision}: respeta la decisión sin repetir el efecto`);
+    await runtime.shutdown();
+  }
+
+  for (const kind of ['backend', 'native']) {
+    const { bridge } = makeBridge();
+    const cancelled = [];
+    const counts = new Map();
+    const dispatches = [];
+    let boundaryRead;
+    let settleBoundary;
+    let release;
+    let entered = false;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const pollBridge = (method, params) => {
+      if (method === 'agent_internal_dispatch') {
+        dispatches.push(params.call_id);
+        return { result: null };
+      }
+      if (method === 'agent_internal_dispatch_result') {
+        const n = (counts.get(params.call_id) || 0) + 1;
+        counts.set(params.call_id, n);
+        if (n < 3) return { result: null };
+        if (params.call_id === 'error') throw new Error('Consulta interrumpida');
+        if (params.call_id === 'abort') {
+          entered = true;
+          return gate.then(() => ({ result: 'resultado tardío', output: 'salida tardía' }));
+        }
+        if (params.call_id === 'between') {
+          boundaryRead = new Promise((resolve) => { settleBoundary = resolve; });
+          return boundaryRead;
+        }
+        return { result: 'resultado final' };
+      }
+      if (method === 'agent_internal_dispatch_cancel') {
+        cancelled.push(params.call_id);
+        return Promise.resolve({ cancelled: true });
+      }
+      return bridge(method, params);
+    };
+    runtime._internal.shared.nativeTools = {
+      nativeToolContext: async () => ({}),
+      nativeToolSpecs: () => [{ name: 'native_poll', kind: 'native', gated: false, inputSchema: { type: 'object', properties: {} } }],
+      runNativeTool: async () => { throw new Error('No se debe repetir un efecto recuperado'); },
+    };
+    await openFaux([], pollBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const { dispatchApproved } = require('../electron/agent-execution');
+    for (const outcome of ['complete', 'error', 'abort', 'between']) {
+      const controller = new AbortController();
+      const waiting = dispatchApproved({ session_id: session.id, call_id: outcome,
+        method: kind === 'native' ? 'native_poll' : 'canvas_list', params: {}, id: 'ap-poll' }, { abortSignal: controller.signal });
+      if (outcome === 'abort') {
+        assert(await waitFor(() => entered), `${kind}: el sondeo entra en una consulta pendiente`);
+        controller.abort();
+        release();
+      }
+      if (outcome === 'between') {
+        assert(await waitFor(() => !!boundaryRead), `${kind}: la lectura pendiente permite detener entre sondeos`);
+        boundaryRead.then(() => controller.abort());
+        settleBoundary({ result: null });
+      }
+      const result = await waiting.catch((error) => error);
+      assert(getEventListeners(controller.signal, 'abort').length === 0, `${kind}/${outcome}: libera su listener al terminar`);
+      controller.abort();
+      assert(cancelled.length === (outcome === 'between' ? 2 : outcome === 'abort' ? 1 : 0), `${kind}/${outcome}: solo cancela el despacho que sigue activo`);
+      assert(outcome === 'complete' ? result === 'resultado final'
+        : outcome === 'error' ? result === runtime._internal.shared.INTERRUPTED_RESULT : result.name === 'AbortError',
+        `${kind}/${outcome}: conserva el resultado correcto y descarta respuestas tardías`);
+    }
+    assert(dispatches.join() === 'complete,error,abort,between', `${kind}: cada despacho se inicia una sola vez`);
+    assert(counts.get('abort') === 3 && counts.get('between') === 3 && cancelled.join() === 'abort,between', `${kind}: detener no deja sondeos ni cancelaciones residuales`);
+    runtime._internal.shared.nativeTools = null;
     await runtime.shutdown();
   }
 

@@ -80,6 +80,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- **Agent / ciclo del turno**: una respuesta correcta limpia el estado de error actual sin borrar el historial y conserva la recuperación al reiniciar. Detener una herramienta en espera solicita una sola cancelación; las aprobaciones y los sondeos liberan sus listeners y esperas al terminar.
 - **Seguridad de PDF**: `pypdf` requiere 6.21.1 o superior y el lockfile fija esa versión para corregir CVE-2026-113786, que bloqueaba la auditoría de CI.
 - **Agent / detener**: una herramienta detenida a mitad aparece como interrumpida (no como fallida) y conserva la salida que llevaba, sin los avisos internos del motor.
 - **Rendimiento y capacidad**: Canvas descarga documentos por grupos y conserva el progreso si falla alguno; Canvas y Espacios paginan los listados completos. Las capas Boolean reutilizan índices al comparar dependencias. Exportaciones y efectos del editor comparten el scheduler pesado; IPC admite solicitudes antes de serializarlas, limita los bytes pendientes y respeta la contrapresión. El catálogo JSON evita escrituras idénticas y las métricas offline distinguen las estimaciones del transporte medido.
