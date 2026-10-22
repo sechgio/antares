@@ -60,7 +60,7 @@ export default function PermissionPicker({ value, onChange, disabled, pending }:
       ref={menu.triggerRef}
       variant="none"
       size="none"
-      className={`flex h-6 min-w-0 items-center gap-1 rounded-full px-1.5 text-[11px] transition-colors hover:bg-[var(--bg-input)] disabled:opacity-50 ${value === 'full' ? 'bg-[var(--bg-input)] text-orange-500' : 'text-[var(--text-muted)]'}`}
+      className={`flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors hover:bg-[var(--bg-input)] disabled:opacity-50 ${value === 'full' ? 'bg-[var(--bg-input)] text-orange-500' : 'text-[var(--text-muted)]'}`}
       aria-label={`Permisos: ${selected.label}`}
       aria-haspopup="menu"
       aria-expanded={isOpen}
@@ -85,11 +85,10 @@ export default function PermissionPicker({ value, onChange, disabled, pending }:
         id={id}
         role="menu"
         aria-label="Permisos del agente"
-        className="custom-scrollbar fixed z-[300] overflow-y-auto rounded-xl border border-[var(--border-medium)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_92%,var(--text-primary))] p-1 shadow-[0_8px_24px_rgba(0,0,0,0.2)]"
+        className="custom-scrollbar fixed z-[300] overflow-y-auto rounded-xl border border-[var(--border-medium)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_92%,var(--text-primary))] p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.2)]"
         style={{ top: menu.position?.top ?? -9999, left: menu.position?.left ?? -9999, width: menu.position?.width ?? 340, maxHeight: menu.position?.maxHeight, visibility: menu.position ? 'visible' : 'hidden' }}
         onKeyDown={handleKey}
       >
-        <p className="px-2 pb-1 pt-0.5 text-[11px] leading-4 text-[var(--text-secondary)]">Permisos del agente</p>
         {MODES.map(({ value: mode, label, description, Icon: ModeIcon }) => (
           <Button
             key={mode}
@@ -98,7 +97,7 @@ export default function PermissionPicker({ value, onChange, disabled, pending }:
             role="menuitemradio"
             aria-checked={value === mode}
             tabIndex={value === mode ? 0 : -1}
-            className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left font-normal transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-input)_85%,var(--text-primary))] focus-visible:bg-[color:color-mix(in_srgb,var(--bg-input)_85%,var(--text-primary))] focus-visible:outline-none ${value === mode ? 'bg-[color:color-mix(in_srgb,var(--bg-input)_85%,var(--text-primary))]' : ''} ${mode === 'full' ? 'text-orange-500' : 'text-[var(--text-primary)]'}`}
+            className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-normal transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-input)_85%,var(--text-primary))] focus-visible:bg-[color:color-mix(in_srgb,var(--bg-input)_85%,var(--text-primary))] focus-visible:outline-none ${value === mode ? 'bg-[color:color-mix(in_srgb,var(--bg-input)_85%,var(--text-primary))]' : ''} ${mode === 'full' ? 'text-orange-500' : 'text-[var(--text-primary)]'}`}
             onClick={() => {
               close();
               menu.triggerRef.current?.focus();
@@ -108,14 +107,14 @@ export default function PermissionPicker({ value, onChange, disabled, pending }:
             <ModeIcon size={14} className="shrink-0" aria-hidden="true" />
             <span className="min-w-0 flex-1">
               <span className="block text-[12px] leading-4">{label}</span>
-              <span className={`block text-[10px] leading-[13px] ${mode === 'full' ? '' : 'text-[var(--text-secondary)]'}`}>{description}</span>
+              <span className={`block text-[11px] leading-4 ${mode === 'full' ? '' : 'text-[var(--text-secondary)]'}`}>{description}</span>
             </span>
             <Check size={14} className={`shrink-0 ${value === mode ? '' : 'invisible'}`} aria-hidden="true" />
           </Button>
         ))}
-        <p className="px-2 pb-1 pt-1.5 text-[11px] leading-4 text-[var(--text-secondary)]">
-          Las acciones sensibles incluyen comandos, uso del escritorio y cambios en archivos o servicios.
-          {' '}El modo se guarda solo para esta conversación y conserva las herramientas y accesos habilitados.
+        <p className="mt-1.5 border-t border-[var(--border-subtle)] px-2.5 pb-1.5 pt-2 text-[11px] leading-4 text-[var(--text-secondary)]">
+          Solo para este chat. Conserva las herramientas y accesos habilitados.
+          {' '}Acciones sensibles: comandos, escritorio y cambios en archivos o servicios.
         </p>
       </div>, document.body,
     )}

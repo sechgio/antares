@@ -336,7 +336,7 @@ it('cambia los permisos por conversación y conserva el modo si falla el guardad
   expect(within(menu).getByRole('menuitemradio', { name: /Solicitar aprobación/ })).toHaveTextContent('Confirmar acciones sensibles y consultas web');
   expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveTextContent('consultar la web sin preguntar');
   expect(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ })).toHaveTextContent('sin pedir confirmación');
-  expect(within(menu).getByText(/El modo se guarda solo para esta conversación y conserva las herramientas y accesos habilitados/)).toBeInTheDocument();
+  expect(within(menu).getByText(/Solo para este chat. Conserva las herramientas y accesos habilitados/)).toBeInTheDocument();
   fireEvent.click(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ }));
   expect(save).toHaveBeenLastCalledWith(session.id, 'full');
   expect(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeDisabled();
@@ -746,7 +746,7 @@ it('admite una indicación inmediata una sola vez y confirma recepción después
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Usa la plantilla B', expect.any(String), [], true);
   expect(screen.queryByText(/Indicación recibida/)).not.toBeInTheDocument();
   await act(async () => { admitted.resolve({ accepted: true }); });
-  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toHaveAttribute('role', 'status');
+  expect(screen.getByText('Indicación recibida.')).toHaveAttribute('role', 'status');
   expect(screen.queryByText('En cola')).not.toBeInTheDocument();
 });
 
@@ -768,7 +768,7 @@ it.each(['rechazo', 'sin aceptación'])('una indicación con %s conserva borrado
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
   const [first, retry] = vi.mocked(agentApi.agentMessageSend).mock.calls;
   expect(retry).toEqual(['s1', 'Usa esta plantilla', first[2], ['a1'], true]);
-  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toHaveAttribute('role', 'status');
+  expect(screen.getByText('Indicación recibida.')).toHaveAttribute('role', 'status');
 });
 
 it('muestra el contexto de la conversación y permite retirar un archivo concedido', async () => {
@@ -1078,7 +1078,7 @@ it('prioriza la aprobación y la pregunta, y anuncia cada pregunta una sola vez'
   const attention = screen.getByRole('region', { name: 'Atención del agente' });
   expect(within(attention).getByRole('button', { name: 'Revisar acción' })).toBeVisible();
   fireEvent.click(within(attention).getByRole('button', { name: 'Revisar acción' }));
-  expect(screen.getByText('Ver detalles de la acción')).toHaveFocus();
+  expect(screen.getByLabelText('Ver detalles de la acción')).toHaveFocus();
   expect(within(attention).queryByRole('button', { name: 'Responder' })).not.toBeInTheDocument();
   list.mockResolvedValue({ ...empty, questions: [question] });
   await act(async () => { update(); });
@@ -1217,10 +1217,10 @@ it('confirma la recepción solo tras la admisión y conserva ese recibo si falla
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   const receipts = within(screen.getByRole('region', { name: 'Estado de los envíos' }));
   expect(receipts.getByText('Enviando mensaje…')).toBeVisible();
-  expect(receipts.queryByText('Mensaje recibido en esta conversación.')).not.toBeInTheDocument();
+  expect(receipts.queryByText('Mensaje recibido.')).not.toBeInTheDocument();
   list.mockRejectedValue(new Error('No se pudo leer el historial'));
   await act(async () => { admitted.resolve({ accepted: true }); });
-  expect(receipts.getByText('Mensaje recibido en esta conversación.')).toBeVisible();
+  expect(receipts.getByText('Mensaje recibido.')).toBeVisible();
   expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
 });
 
@@ -1234,12 +1234,12 @@ it('un mensaje sin aceptación conserva su borrador y ofrece recuperar la misma 
   fireEvent.change(input, { target: { value: 'Ordena este informe' } });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(input).toHaveValue('Ordena este informe');
-  expect(screen.getByText('No se pudo confirmar la recepción.')).toBeVisible();
+  expect(screen.getByText('Recepción sin confirmar.')).toBeVisible();
   const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Reintentar envío: Ordena este informe' })); });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
   expect(input).toHaveValue('');
-  expect(screen.getByText('Mensaje recibido en esta conversación.')).toBeVisible();
+  expect(screen.getByText('Mensaje recibido.')).toBeVisible();
 });
 
 it('ignora Intro repetido y composición IME sin impedir Shift+Intro', async () => {
@@ -1359,7 +1359,7 @@ it.each(['aceptado', 'sin confirmar'])('mantiene el recibo de un envío %s en su
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   const receipts = screen.getByRole('region', { name: 'Estado de los envíos' });
   expect(receipts).toHaveTextContent('Encargo del primer chat');
-  expect(receipts).toHaveTextContent(result === 'aceptado' ? 'Mensaje recibido en esta conversación.' : 'No se pudo confirmar la recepción.');
+  expect(receipts).toHaveTextContent(result === 'aceptado' ? 'Mensaje recibido.' : 'Recepción sin confirmar.');
   expect(input).toHaveValue('Borrador del segundo chat');
 });
 
@@ -1380,7 +1380,7 @@ it('conserva varios envíos no confirmados y muestra la recepción del que se ac
   const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
   await act(async () => { fireEvent.click(receipts.getByRole('button', { name: 'Reintentar envío: Encargo A' })); });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[2]).toEqual(original);
-  expect(receipts.getByText('Mensaje recibido en esta conversación.')).toHaveTextContent('Encargo A');
+  expect(receipts.getByText('Mensaje recibido.')).toHaveTextContent('Encargo A');
   expect(receipts.getByRole('button', { name: 'Reintentar envío: Encargo B' })).toBeVisible();
   expect(input).toHaveValue('Encargo B');
 });
@@ -1406,7 +1406,7 @@ it('conserva una indicación fallida de la cola y la recupera con su misma inten
   await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
   expect(screen.queryByText('En cola')).not.toBeInTheDocument();
-  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toBeVisible();
+  expect(screen.getByText('Indicación recibida.')).toBeVisible();
 });
 
 it('no convierte un envío restaurado de intención desconocida en una indicación', async () => {
@@ -1443,10 +1443,10 @@ it('un ACK anterior no sustituye el recibo de una indicación más reciente', as
   list.mockResolvedValue({ ...empty, running: true });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Indicación B' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
-  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toBeVisible();
+  expect(screen.getByText('Indicación recibida.')).toBeVisible();
   await act(async () => { first.resolve({ accepted: true }); });
-  expect(screen.getByText('Indicación recibida para los próximos pasos.')).toHaveTextContent('Indicación B');
-  expect(screen.queryByText('Mensaje recibido en esta conversación.')).not.toBeInTheDocument();
+  expect(screen.getByText('Indicación recibida.')).toHaveTextContent('Indicación B');
+  expect(screen.queryByText('Mensaje recibido.')).not.toBeInTheDocument();
 });
 
 it('el eco de un texto en el historial no confirma una respuesta de envío perdida', async () => {
@@ -1461,6 +1461,6 @@ it('el eco de un texto en el historial no confirma una respuesta de envío perdi
   list.mockResolvedValue({ ...empty, messages: [{ role: 'user', content: 'Texto repetido', ts: 1 }] });
   await act(async () => { update(); });
   expect(screen.getByRole('button', { name: 'Reintentar envío: Texto repetido' })).toBeVisible();
-  expect(screen.getByText('No se pudo confirmar la recepción.')).toBeVisible();
-  expect(screen.queryByText('Mensaje recibido en esta conversación.')).not.toBeInTheDocument();
+  expect(screen.getByText('Recepción sin confirmar.')).toBeVisible();
+  expect(screen.queryByText('Mensaje recibido.')).not.toBeInTheDocument();
 });

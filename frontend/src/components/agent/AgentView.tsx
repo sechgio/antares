@@ -811,7 +811,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           }}
         />
       )}
-      <aside aria-label="Agentes y conversaciones" hidden={!sidebarOpen} className={`agent-sidebar hidden h-full w-[248px] shrink-0 flex-col bg-[var(--bg-base)] p-[7px] ${sidebarOpen ? 'md:flex' : ''}`}>
+      <aside aria-label="Agentes y conversaciones" hidden={!sidebarOpen} className={`agent-sidebar hidden h-full w-[248px] shrink-0 flex-col bg-[var(--bg-base)] p-2 ${sidebarOpen ? 'md:flex' : ''}`}>
         <div className="flex shrink-0 items-center gap-2 p-1">
           {!searchOpen && <Button
             variant="none"
@@ -930,12 +930,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           ))}
           </> : <>
           {sessions.length === 0 && (
-            <>
-              <span className="px-1.5 pb-1 pt-3 text-[12px] font-medium text-[var(--text-muted)]">Conversaciones</span>
-              <p className="px-2.5 py-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
-                Sin conversaciones. Pulsa + para empezar.
-              </p>
-            </>
+            <p className="px-2.5 py-3 text-[12px] text-[var(--text-muted)]">
+              Tus chats aparecerán aquí.
+            </p>
           )}
           {sessions.length > 0 && visibleSessions.length === 0 && (
             <p className="px-2.5 py-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
@@ -990,7 +987,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         </nav>
         {session && (
           <header className="flex shrink-0 items-center gap-2 px-4 pb-2 pt-3 md:pl-12">
-            <div className="flex h-[31px] min-w-0 items-center pr-3">
+            <div className="flex h-8 min-w-0 items-center">
               <span className="truncate text-[13px] font-medium leading-[18px] text-[var(--text-secondary)]">
                 {session.title || 'Conversación'}
               </span>
@@ -1055,7 +1052,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           />
         )}
 
-        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-5 pt-3 md:px-6 [&>*]:mx-auto [&>*]:max-w-[720px]">
+        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[720px]">
           {showHero ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
@@ -1067,12 +1064,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 <h2 className="text-[22px] font-medium leading-8 tracking-tight text-[var(--text-primary)]">
                   {activeProfile ? activeProfile.name : '¿En qué trabajamos hoy?'}
                 </h2>
-                <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-[19px] text-[var(--text-secondary)]">
-                  {readyProviders.length === 0
-                    ? 'Configura un proveedor en «Proveedores» para empezar.'
-                    : activeProfile?.description
-                      || 'Consulta tus documentos, prepara reportes y trabaja con tus agentes.'}
-                </p>
+                {(readyProviders.length === 0 || activeProfile?.description) && (
+                  <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-[19px] text-[var(--text-secondary)]">
+                    {readyProviders.length === 0 ? 'Configura un proveedor en «Proveedores» para empezar.' : activeProfile?.description}
+                  </p>
+                )}
               </div>
               {readyProviders.length === 0 && onConfigureProvider && (
                 <Button size="sm" onClick={onConfigureProvider}>Configurar IA</Button>
@@ -1120,9 +1116,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         <div role="status" aria-label="Avisos del agente" aria-live="polite" aria-atomic="true" className="sr-only">
           {announcement && <span key={announcement.key}>{announcement.text}</span>}
         </div>
-        <div className="mx-auto w-full max-w-[744px] shrink-0 px-3 pb-3">
+        <div className="mx-auto w-full max-w-[752px] shrink-0 px-4 pb-3">
           {attention && (
-            <div role="region" aria-label="Atención del agente" className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2">
+            <div role="region" aria-label="Atención del agente" className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
               {attention.kind === 'working'
                 ? <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} label={attention.text} />
                 : <p className="min-w-0 flex-1 text-[13px] text-[var(--text-secondary)]">{attention.text}</p>}
@@ -1168,11 +1164,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </div>
           )}
           {queuedForSession.length > 0 && (
-            <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+            <div className="mb-2 flex flex-wrap items-center gap-2 px-3">
+              <span title="Se enviará al terminar el turno" className="text-[11px] font-medium text-[var(--text-muted)]">
                 En cola
               </span>
-              <span className="text-[11px] text-[var(--text-muted)]">Se enviará al terminar el turno.</span>
               {queuedForSession.map((item, idx) => (
                 <span
                   key={`${idx}-${item.text}`}
@@ -1199,7 +1194,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   {(running || pending.length > 0) && !item.failed && (
                     <button
                       type="button"
-                      className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                      className="flex shrink-0 items-center rounded-full px-1 py-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
                       aria-label="Enviar como corrección"
                       title="Enviar ahora como corrección del encargo en curso"
                       disabled={sendingCorrection || stopping}
@@ -1238,7 +1233,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </div>
             </div>}
             {attachments.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 px-3 pt-2.5" aria-label="Adjuntos">
+              <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Adjuntos">
                 {attachments.map((item) => (
                   <span
                     key={item.id}
@@ -1258,7 +1253,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 ))}
               </div>
             )}
-            <div className="flex items-end gap-1 p-2.5">
+            <div className="flex items-end gap-1 p-3">
               <button
                 type="button"
                 className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
@@ -1335,7 +1330,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </button>}
             </div>
             {(running || pending.length > 0) && (
-              <div className="flex flex-wrap justify-end gap-2 px-3 pb-2.5">
+              <div className="flex flex-wrap justify-end gap-2 px-3 pb-3">
                 <Button variant="ghost" size="sm" onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping || sending}
                   title="Dejar para después (Intro)">Dejar para después</Button>
                 <Button size="sm" onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sending || sendingCorrection}>
@@ -1345,27 +1340,27 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             )}
           </div>
           {visibleReceipts.length > 0 && (
-            <div role="region" aria-label="Estado de los envíos" tabIndex={0} className="custom-scrollbar max-h-36 space-y-1.5 overflow-y-auto px-3 pt-1.5">
+            <div role="region" aria-label="Estado de los envíos" tabIndex={0} className="custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2">
               {visibleReceipts.map((receipt) => (
-                <div key={receipt.intent.requestId} className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[12px] text-[var(--text-secondary)]">
+                <div key={receipt.intent.requestId} className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[12px] leading-5 text-[var(--text-secondary)]">
                   <p role="status" aria-live="polite" aria-atomic="true" className="min-w-0 flex-1">
                     {receipt.phase === 'sending' ? receipt.intent.correction ? 'Enviando indicación…' : 'Enviando mensaje…'
-                      : receipt.phase === 'received' ? receipt.intent.correction ? 'Indicación recibida para los próximos pasos.' : 'Mensaje recibido en esta conversación.'
-                        : receipt.intent.correction ? 'No se pudo confirmar la recepción de la indicación.' : 'No se pudo confirmar la recepción.'}
+                      : receipt.phase === 'received' ? receipt.intent.correction ? 'Indicación recibida.' : 'Mensaje recibido.'
+                        : receipt.intent.correction ? 'Indicación sin confirmar.' : 'Recepción sin confirmar.'}
                     <span className="ml-1 break-words text-[var(--text-muted)]">«{receipt.intent.text.slice(0, 100)}{receipt.intent.text.length > 100 ? '…' : ''}»{receipt.intent.attachments.length > 0 && ` · ${receipt.intent.attachments.length} adjunto${receipt.intent.attachments.length === 1 ? '' : 's'}`}</span>
                   </p>
                   {receipt.phase === 'unconfirmed' && <>
                     <Button variant="ghost" size="sm" aria-label={`Reintentar envío: ${receipt.intent.text}`}
                       title={receipt.reason} disabled={sending || sendingCorrection || modelBusy || stopping} onClick={() => void retrySend(receipt.intent)}>
-                      Reintentar envío
+                      Reintentar
                     </Button>
-                    <p className="w-full text-[11px] text-[var(--text-muted)]">{receipt.reason} Se recuperará este mismo mensaje, sin crear otro.</p>
+                    <p className="w-full text-[11px] text-[var(--text-muted)]">{receipt.reason}</p>
                   </>}
                 </div>
               ))}
             </div>
           )}
-          <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 px-2 text-[12px] text-[var(--text-muted)]">
+          <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 text-[12px] text-[var(--text-muted)]">
             {session ? (
               <PermissionPicker
                 key={session.id}

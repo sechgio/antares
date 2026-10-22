@@ -300,8 +300,8 @@ it('explica el archivo, destino y alcance de permitir o rechazar una acción', (
   expect(screen.getByText('Guardar resumen.pdf')).toBeInTheDocument();
   expect(screen.getByText('Destino: C:\\Informes')).toBeInTheDocument();
   expect(screen.getByText('Nombre de salida: resumen.pdf')).toBeInTheDocument();
-  expect(screen.getByText(/Permitir autoriza esta llamada con los parámetros y recursos mostrados/)).toBeInTheDocument();
-  expect(screen.getByText(/Si rechazas, esta acción no se ejecuta; el agente recibe el rechazo y puede continuar/)).toBeInTheDocument();
+  expect(screen.getByText(/Permitir autoriza solo esta acción/)).toBeInTheDocument();
+  expect(screen.getByText(/Rechazar la omite e informa al agente/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Rechazar esta acción' }));
   expect(decide).toHaveBeenCalledExactlyOnceWith('a1', false);
 });
@@ -313,7 +313,7 @@ it.each(['metodo_desconocido', 'constructor'])('no inventa un efecto para %s ni 
   const { rerender } = render(<ApprovalCard busy={false} onDecide={decide} approval={approval} />);
   expect(screen.getByText('Acción sin descripción disponible')).toBeInTheDocument();
   expect(decide).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByText('Ver detalles de la acción'));
+  fireEvent.click(screen.getByLabelText('Ver detalles de la acción'));
   expect(screen.getByText(method, { selector: 'code' })).toBeVisible();
   rerender(<ApprovalCard busy onDecide={decide} approval={approval} />);
   expect(screen.getByRole('button', { name: 'Permitir esta acción' })).toBeDisabled();

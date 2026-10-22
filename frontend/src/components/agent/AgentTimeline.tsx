@@ -443,27 +443,24 @@ export function ApprovalCard({
     : Object.prototype.hasOwnProperty.call(TOOL_ICONS, approval.method) ? TOOL_ICONS[approval.method] : ShieldCheck;
   return (
     <div role="group" aria-label="Confirmación de acción" className="agent-trace-in">
-      <div className="flex w-full max-w-[min(620px,100%)] flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)] px-3 py-2.5">
+      <div className="flex w-full max-w-[min(620px,100%)] flex-wrap items-start gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
         <Icon size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--accent-yellow)]" />
-        <div className="min-w-0 max-w-[460px] flex-1">
+        <div className="min-w-0 flex-1">
           <p className="text-[13px] font-medium leading-5 text-[var(--text-primary)]">
             {action ?? 'Acción sin descripción disponible'}
           </p>
-          <p className="text-[12px] leading-[18px] text-[var(--text-muted)]">
-            {action ? 'El turno espera tu decisión.' : 'Revisa los detalles para conocer el efecto; el turno espera tu decisión.'}
-            {' '}Permitir autoriza esta llamada con los parámetros y recursos mostrados.
-          </p>
-          <p className="mt-1 text-[12px] leading-[18px] text-[var(--text-muted)]">
-            Si rechazas, esta acción no se ejecuta; el agente recibe el rechazo y puede continuar.
+          <p className="text-[12px] leading-[18px] text-[var(--text-secondary)]">
+            {action ? 'Permitir autoriza solo esta acción.' : 'Revisa los detalles antes de permitir esta acción.'}
+            {' '}Rechazar la omite e informa al agente.
           </p>
           {facts.length > 0 && (
-            <ul className="mt-1.5 space-y-0.5 font-mono text-[11.5px] leading-[17px] text-[var(--text-secondary)]">
+            <ul className="mt-2 space-y-1 font-mono text-[11.5px] leading-[17px] text-[var(--text-secondary)]">
               {facts.map((fact) => <li key={fact} className="break-all">{fact}</li>)}
             </ul>
           )}
-          <details className="group mt-1.5 text-[11.5px] text-[var(--text-muted)]">
-            <summary className="flex w-fit cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
-              Ver detalles de la acción
+          <details className="group mt-2 text-[12px] text-[var(--text-muted)]">
+            <summary aria-label="Ver detalles de la acción" className="flex w-fit cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
+              Detalles
               <ChevronRight size={12} className="transition-transform duration-200 group-open:rotate-90" />
             </summary>
             <code className="mt-1 block text-[11px]">{approval.method}</code>
@@ -474,14 +471,14 @@ export function ApprovalCard({
             )}
           </details>
         </div>
-        <div className="flex w-full flex-wrap items-center justify-end gap-1.5">
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => onDecide(approval.id, false)}>
+        <div className="flex w-full flex-wrap items-center justify-end gap-2">
+          <Button size="sm" variant="secondary" aria-label="Rechazar esta acción" disabled={busy} onClick={() => onDecide(approval.id, false)}>
             <X size={13} aria-hidden="true" />
-            Rechazar esta acción
+            Rechazar
           </Button>
-          <Button size="sm" disabled={busy} onClick={() => onDecide(approval.id, true)}>
+          <Button size="sm" aria-label="Permitir esta acción" disabled={busy} onClick={() => onDecide(approval.id, true)}>
             <Check size={13} aria-hidden="true" />
-            Permitir esta acción
+            Permitir
           </Button>
         </div>
       </div>
