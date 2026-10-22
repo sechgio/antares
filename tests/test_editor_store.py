@@ -24,13 +24,18 @@ def test_create_returns_valid_document(store: EditorStore) -> None:
     assert store.get(doc["id"]) == doc
 
 
-def test_list_orders_by_updated_at_desc(store: EditorStore) -> None:
+@pytest.mark.parametrize("newest_first", [False, True])
+def test_list_orders_by_updated_at_desc(store: EditorStore, monkeypatch: pytest.MonkeyPatch, newest_first: bool) -> None:
+    timestamps = ["2026-10-22T12:00:00.000Z", "2026-10-22T12:00:00.001Z"]
+    if newest_first:
+        timestamps.reverse()
+    clock = iter(timestamps)
+    monkeypatch.setattr("backend.core.editor.store._utc_now_iso", lambda: next(clock))
     a = store.create("A")["project"]
     b = store.create("B")["project"]
     listed = store.list_projects()
     ids = [item["id"] for item in listed]
-    assert set(ids) == {a["id"], b["id"]}
-    assert listed[0]["id"] == b["id"]
+    assert ids == ([a["id"], b["id"]] if newest_first else [b["id"], a["id"]])
 
 
 def test_get_missing_returns_none(store: EditorStore) -> None:

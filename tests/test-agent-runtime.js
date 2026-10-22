@@ -213,6 +213,35 @@ async function main() {
   }
   const { fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
 
+  {
+    const { bridge, state } = makeBridge();
+    const shellBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') result.tools.push({
+        name: 'shell_run', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} },
+      });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('shell_run', { command: 'Write-Output prueba' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('shell_run', { command: 'Write-Output prueba' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Comando aprobado'),
+    ], shellBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Ejecuta el comando' });
+    assert(await waitFor(() => state.approvals.size === 1), 'el shell pide aprobación también en Acceso completo');
+    assert(state.dispatches.length === 0, 'no ejecuta PowerShell antes de la aprobación humana');
+    const approval = [...state.approvals.values()][0];
+    await runtime.handlers.agent_approve({ approval_id: approval.id });
+    assert(await waitFor(() => state.approvals.size === 2), 'repetir el comando requiere otra aprobación humana');
+    assert(state.dispatches.length === 1, 'la primera aprobación no autoriza el siguiente comando');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][1].id });
+    assert(await waitIdle(session.id), 'el shell continúa después de la aprobación humana');
+    assert(state.dispatches.length === 2, 'cada aprobación ejecuta un único comando');
+    await runtime.shutdown();
+  }
+
   for (const legacy of [false, true]) {
     const { bridge } = makeBridge();
     const calls = [];
@@ -1787,7 +1816,9 @@ async function main() {
     }
     const { sessions: visible } = await runtime.handlers.agent_sessions_list({});
     const activity = await runtime.activitySnapshot();
-    assert(visible.length === 50 && !visible.some((session) => session.id === created[0]), 'la retención oculta la conversación más antigua');
+    assert(visible.length === 51 && visible.some((session) => session.id === created[0]), 'crear otra conversación no oculta las anteriores');
+    assert((await runtime.handlers.agent_messages_list({ session_id: created[0] })).messages.length === 0,
+      'la conversación más antigua sigue accesible');
     assert(activity.length === visible.length && activity.every((item) => visible.some((session) => session.id === item.id)),
       'la bandeja solo incluye las conversaciones que el usuario puede abrir');
     await runtime.shutdown();

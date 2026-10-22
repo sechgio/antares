@@ -41,6 +41,36 @@ async function main() {
   const confirmedRejected = assert.rejects(confirmed, (err) => !err.uncertain);
   api.acceptRendererResult({ id: sent.at(-1)[2].id, error: 'Permiso denegado' });
   await confirmedRejected;
+  const calls = [];
+  const nativeModule = { exports: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../electron/agent-native-tools.js'), 'utf8'), {
+    module: nativeModule, Buffer, require: (id) => {
+      if (id === './agent-renderer-tools') return api;
+      if (id === './ipc-router') return { _callBackend: async (method, params) => {
+        calls.push({ method, params });
+        if (params.expected_updated_at !== 'revision-vigente') throw new Error('La revisión cambió');
+        return { id: params.id, layers: [{ id: 'guardada' }] };
+      } };
+      return require(require.resolve(id, { paths: [path.join(__dirname, '../electron')] }));
+    },
+  });
+  const native = nativeModule.exports;
+  const approvedContext = await native.nativeToolContext('canvas_apply_layers');
+  wc.isCrashed = () => true;
+  const saving = native.runNativeTool('canvas_apply_layers', { id: 'doc', expected_updated_at: 'revision-vigente', layers: [] }, { approvedContext });
+  await new Promise(setImmediate);
+  assert.equal(calls.length, 1, 'Canvas usa el backend si el proceso del renderer ha caído');
+  const saved = await saving;
+  assert.equal(saved.layers[0].id, 'guardada');
+  assert.equal(calls[0].method, 'agent_canvas_apply_layers');
+  await assert.rejects(native.runNativeTool('canvas_apply_layers', { id: 'doc', expected_updated_at: 'antigua' }, { approvedContext }), /revisión/);
+  wc.isCrashed = () => false;
+  const guarded = native.runNativeTool('canvas_apply_layers', { id: 'doc', expected_updated_at: 'revision-vigente' }, { approvedContext });
+  const guardedRejected = assert.rejects(guarded, /cambios sin guardar/);
+  await new Promise(setImmediate);
+  api.acceptRendererResult({ id: sent.at(-1)[2].id, error: 'Canvas tiene cambios sin guardar' });
+  await guardedRejected;
+  assert.equal(calls.length, 2, 'un rechazo del editor no se reintenta en el backend');
   console.log('[PASS] Renderer: correlación, límite, respuestas tardías e incertidumbre tras cierre/timeout.');
 }
 main().catch((err) => { console.error(err); process.exitCode = 1; });

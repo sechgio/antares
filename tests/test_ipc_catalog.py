@@ -33,6 +33,20 @@ def test_approval_context_is_declared_only_on_private_agent_calls():
         assert methods[method]["inputSchema"]["properties"]["context"] == {"type": "object"}
 
 
+def test_private_memory_context_accepts_legacy_calls_and_checks_profile_scope():
+    import jsonschema
+
+    entry = _catalog()["methods"]["agent_internal_memory_context"]
+    assert entry["internal"] is True
+    params = {"session_id": "session", "text": "consulta"}
+    for profile_id in (None, "auditor"):
+        jsonschema.validate({**params, "profile_id": profile_id}, entry["inputSchema"])
+    jsonschema.validate(params, entry["inputSchema"])
+    for profile_id in (17, "", "x" * 121):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**params, "profile_id": profile_id}, entry["inputSchema"])
+
+
 def test_agent_model_selection_is_a_renderer_command_not_an_agent_tool():
     from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 

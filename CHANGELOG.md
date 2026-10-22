@@ -8,6 +8,14 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent conserva stdout y stderr completos del shell y permite leerlos por páginas con `shell_output`, también tras reiniciar y sin cruzar conversaciones. El shell mantiene su límite de tiempo y no admite entrada interactiva.
+- Agent expone el diagnóstico de los servidores MCP con `mcp_status`, con comprobación opcional del catálogo y secretos ocultos.
+- Las operaciones de capas y campos de Canvas pueden usar el backend si la ventana o el proceso renderer no están disponibles antes del despacho, conservando la revisión exigida. Las exportaciones visuales y Espacios siguen usando su puente de pantalla.
+- Al agotar 40 rondas, Agent conserva un punto de continuación visible y reanudable; una delegación aparcada sigue pendiente hasta completarse. Crear más de 50 conversaciones ya no oculta automáticamente las anteriores.
+- Agent programa encargos locales con zona horaria y repetición, recupera las entregas pendientes al abrir Antares y admite mensajes en la cola durable de conversaciones ocupadas. La aplicación debe permanecer abierta, incluida la bandeja, para ejecutarlos.
+- Agent puede delegar lecturas en conversaciones persistentes y visibles, recuperar el resultado al reiniciar y devolverlo al padre. Detener o eliminar la conversación cancela sus delegaciones pendientes; estas no pueden ampliar permisos ni delegar de nuevo.
+- La memoria nueva de cada perfil queda separada, conserva los recuerdos globales anteriores y prioriza los datos pertinentes sin saturarse con preferencias largas. Las lecturas idempotentes interrumpidas pueden recuperarse; los efectos inciertos no se repiten automáticamente.
+- Cada comando de PowerShell requiere aprobación humana también en Acceso completo. La aprobación explica que el proceso puede acceder al equipo completo con los permisos del usuario.
 - Agent reconoce menciones de bots guardados con `@nombre`, `@"Nombre completo"` y referencias por identificador, ofrece sugerencias con teclado y conserva las menciones de módulos. Seleccionar un bot conserva su identidad al renombrarlo o restaurar la cola. El coordinador puede delegar y compartir conclusiones, sin ampliar permisos ni resolver silenciosamente bots ambiguos o borrados.
 - Agent separa conversaciones y agentes guardados con búsquedas independientes. El selector de herramientas permite buscar y filtrar Skills y MCP sin modificar la selección oculta, conserva el foco de teclado y muestra el total habilitado. Las trazas de skills presentan catálogo, procedencia, contenido y lecturas parciales, conservando el JSON original.
 - Agent y sus subagentes pueden buscar skills locales `SKILL.md` y cargar instrucciones y referencias bajo demanda, sin ejecutar scripts ni ampliar permisos. La lectura es paginada, abre solo los archivos de la skill elegida y prioriza las carpetas adjuntas sobre la biblioteca local.
@@ -79,6 +87,11 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- Agent presenta las aprobaciones con el comando completo, contexto y acciones separados; indica cuándo registra la decisión y evita envíos duplicados. Las trazas conservan la apertura elegida, muestran los errores y respetan la posición de lectura del terminal, con menos animación durante la ejecución.
+- Agent conserva la señal de error al resumir resultados largos, distingue los reintentos con adjuntos diferentes e impide que una delegación en entrega reactive una conversación detenida o eliminada.
+- Agent detiene el motor al alcanzar 40 rondas, conserva el presupuesto del encargo en SQLite al reiniciar y permite reanudar con un presupuesto nuevo. La recuperación espera a restaurar herramientas y proveedores necesarios; una apertura fallida se puede reintentar sin consumir el trabajo pendiente. La bandeja sigue el estado de los turnos recuperados desde el arranque.
+- DOMPurify se actualiza a 3.4.17 para resolver los avisos de seguridad que bloqueaban la auditoría Node. La prueba de ordenamiento del editor usa fechas controladas y cubre ambos órdenes sin depender de la velocidad del equipo.
+- Las pruebas que simulan procesos del backend interceptan `taskkill` para que sus PID ficticios no terminen procesos reales de Windows.
 - **Seguridad de PDF**: `pypdf` requiere 6.21.1 o superior y el lockfile fija esa versión para corregir CVE-2026-113786, que bloqueaba la auditoría de CI.
 - **Agent / detener**: una herramienta detenida a mitad aparece como interrumpida (no como fallida) y conserva la salida que llevaba, sin los avisos internos del motor.
 - **Rendimiento y capacidad**: Canvas descarga documentos por grupos y conserva el progreso si falla alguno; Canvas y Espacios paginan los listados completos. Las capas Boolean reutilizan índices al comparar dependencias. Exportaciones y efectos del editor comparten el scheduler pesado; IPC admite solicitudes antes de serializarlas, limita los bytes pendientes y respeta la contrapresión. El catálogo JSON evita escrituras idénticas y las métricas offline distinguen las estimaciones del transporte medido.

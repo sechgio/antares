@@ -153,7 +153,7 @@ app.whenReady().then(async () => {
   _tray.on('double-click', _showMainWindow);
   const agentTrayTimer = setInterval(_notifyAgentActivity, 2000);
   agentTrayTimer.unref?.();
-  startPythonBackend(isDev).catch((err) => {
+  startPythonBackend(isDev).then(() => require('./agent-runtime').open()).catch((err) => {
     console.error('[main] startPythonBackend threw:', err);
   });
   const canvasAssetGcInitialTimer = setTimeout(runCanvasAssetGc, CANVAS_ASSET_GC_INITIAL_DELAY_MS);

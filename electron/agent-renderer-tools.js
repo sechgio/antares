@@ -3,10 +3,14 @@
 const { randomUUID } = require('node:crypto');
 const pending = new Map();
 
+function isRendererAvailable(win = require('./window-manager').getMainWindow()) {
+  return !!win && !win.isDestroyed() && !win.webContents.isDestroyed() && !win.webContents.isCrashed?.();
+}
+
 function runRendererTool(method, params = {}, { gated = false } = {}) {
   if (pending.size >= 2) return Promise.reject(new Error('Hay dos funciones en curso; espera a que termine una antes de continuar'));
   const win = require('./window-manager').getMainWindow();
-  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
+  if (!isRendererAvailable(win)) {
     return Promise.reject(new Error('Abre Antares para usar esta función'));
   }
   const id = randomUUID();
@@ -46,4 +50,4 @@ function acceptRendererResult(params) {
   return { accepted: true };
 }
 
-module.exports = { runRendererTool, acceptRendererResult };
+module.exports = { runRendererTool, acceptRendererResult, isRendererAvailable };

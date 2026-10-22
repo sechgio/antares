@@ -15,6 +15,7 @@ from backend.core.agent import (
     skills,
     task_plan,
 )
+from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
 
 if TYPE_CHECKING:
@@ -27,18 +28,28 @@ SPECS: dict[str, JsonObject] = {
                  *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_desktop.TOOL_SPECS,
                  *task_plan.TOOL_SPECS, *skills.TOOL_SPECS)
 }
+SPECS["mcp_status"] = {
+    "name": "mcp_status", "module": "connections", "gated": False,
+    "description": "Conexiones · mcp_status (solo lectura): consulta servidores MCP configurados, última comprobación y errores sin secretos. "
+                   "refresh=true vuelve a consultar sus catálogos; no modifica configuración ni credenciales.",
+    "inputSchema": {"type": "object", "properties": {"refresh": {"type": "boolean"}}},
+}
 READ_TOOLS = frozenset(name for name, spec in SPECS.items() if not spec["gated"])
 EFFECT_TOOLS = frozenset(name for name, spec in SPECS.items() if spec["gated"])
 
 
 def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: Any = None) -> JsonObject:
     root = store.drafts_dir(session_id)
+    if name == "mcp_status":
+        return {"servers": mcp_servers.server_statuses(refresh=args.get("refresh") is True)}
     if name in {"skills_list", "skills_read"}:
         return skills.run(name, args, store.grants_for(session_id), root, store.base_dir / "skills")
     if name.startswith("fs_"):
         return computer_files.fit(computer_files.run(name, args, store.grants_for(session_id), root))
     if name == "shell_run":
         return computer_files.fit(computer_shell.run(args, store.grants_for(session_id), root, token))
+    if name == "shell_output":
+        return computer_shell.read_output(args, root)
     if name.startswith("desktop_"):
         return computer_desktop.run(name, args, root, token)
     if name == "task_plan":
