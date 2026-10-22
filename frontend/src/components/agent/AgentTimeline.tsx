@@ -344,11 +344,13 @@ function CopyButton({ text, label = 'Copiar respuesta', className = 'group-hover
 
 function ToolSteps({ calls }: { calls: AgentToolCall[] }) {
   const attention = calls.some((c) => !['done', 'submitted'].includes(c.status));
+  const [openOverride, setOpenOverride] = useState<boolean | null>(null);
+  const open = openOverride ?? attention;
   if (calls.length <= 2) return <>{calls.map((c) => <ToolCallStep key={c.id} call={c} />)}</>;
   const done = calls.filter((c) => c.status === 'done').length;
   return (
-    <details className="group/steps" open={attention}>
-      <summary className={`${TASK_ROW} w-fit cursor-pointer list-none hover:text-[var(--text-primary)]`}>
+    <details className="group/steps" open={open}>
+      <summary onClick={(event) => { event.preventDefault(); setOpenOverride(!open); }} className={`${TASK_ROW} w-fit cursor-pointer list-none hover:text-[var(--text-primary)]`}>
         <Wrench size={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
         {calls.length} pasos · {done} completados
         <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open/steps:rotate-90" aria-hidden="true" />
@@ -514,14 +516,14 @@ export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean 
   );
 }
 
-export function ThinkingRow({ elapsedSeconds, agent }: { elapsedSeconds: number; agent?: AgentIdentity }) {
+export function ThinkingRow({ elapsedSeconds, agent, label = 'El agente está trabajando' }: { elapsedSeconds: number; agent?: AgentIdentity; label?: string }) {
   const mm = Math.floor(elapsedSeconds / 60);
   const ss = elapsedSeconds % 60;
   const elapsed = mm > 0 ? `${mm}m ${ss}s` : `${ss}s`;
   return (
-    <div role="status" className="agent-trace-in flex items-center gap-2 text-[13px] leading-5">
+    <div role="status" aria-live="off" className="agent-trace-in flex items-center gap-2 text-[13px] leading-5">
       {agent ? <AgentAvatar seed={agent.seed} name={agent.name} size={16} working /> : <Loader2 size={14} className="animate-spin text-[var(--text-muted)]" />}
-      <span className="agent-shimmer">El agente está trabajando</span>
+      <span className="agent-shimmer">{label}</span>
       <span className="tabular-nums text-[12px] text-[var(--text-muted)]">{elapsed}</span>
     </div>
   );

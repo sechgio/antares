@@ -325,3 +325,16 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
   expect(screen.getByText('Comando: Get-ChildItem')).toBeInTheDocument();
   expect(screen.getByText('Carpeta: C:\datos')).toBeInTheDocument();
 });
+
+it.each([false, true])('conserva la elección de mostrar los pasos al actualizar su estado: %s', (open) => {
+  const message = (status: 'running' | 'done') => ({ role: 'assistant' as const, content: '', ts: 1,
+    tool_calls: ['a', 'b', 'c'].map((id) => ({ id, name: 'fs_read', params: {}, gated: false, status })) });
+  const { container, rerender } = render(<MessageRow msg={message(open ? 'done' : 'running')} />);
+  const toggle = screen.getByText(/3 pasos/);
+  fireEvent.click(toggle);
+  expect(container.querySelector('details')?.open).toBe(open);
+  rerender(<MessageRow msg={message('done')} />);
+  rerender(<MessageRow msg={message('running')} />);
+  rerender(<MessageRow msg={message('done')} />);
+  expect(container.querySelector('details')?.open).toBe(open);
+});

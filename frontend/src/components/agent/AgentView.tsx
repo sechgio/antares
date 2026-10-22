@@ -31,6 +31,20 @@ const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
 const RESUME_TEXT = 'Reanuda el encargo donde lo dejaste: revisa el plan y los últimos resultados antes de repetir cualquier acción.';
 
+type ConversationAttention = { key: string; text: string } & (
+  | { kind: 'stale' | 'working' }
+  | { kind: 'item'; target: string; action: string }
+);
+
+function activityText(tool?: string): string {
+  if (tool?.startsWith('fs_')) return 'Estoy trabajando con tus archivos.';
+  if (tool?.startsWith('browser_')) return 'Estoy consultando la página.';
+  if (tool?.startsWith('desktop_')) return 'Estoy trabajando con la aplicación.';
+  if (tool === 'shell_run') return 'Estoy ejecutando la tarea.';
+  if (tool === 'subagent_run') return 'Estoy consultando a otro agente.';
+  return 'El agente está trabajando';
+}
+
 function newRequestId(): string {
   return crypto.randomUUID();
 }
@@ -187,6 +201,35 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [showJump, setShowJump] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
   const botMentionsRef = useRef<HTMLDivElement | null>(null);
+  const announcedRef = useRef(new Set<string>());
+  const [announcement, setAnnouncement] = useState<{ key: string; text: string } | null>(null);
+  const activeCall = messages.flatMap((message) => message.tool_calls ?? []).reverse().find((call) => call.status === 'running');
+  const artifact = [...artifacts].reverse().find((item) => item.files.length > 0);
+  const attention: ConversationAttention | null = sessionId !== sessionIdRef.current ? null : messagesStale
+    ? { kind: 'stale', key: 'stale', text: 'No se pudo actualizar la conversación. El estado mostrado puede estar desactualizado.' }
+    : pending[0]
+      ? { kind: 'item', key: `approval:${pending[0].id}`, text: 'Hay una acción pendiente de tu aprobación.',
+        target: `agent-approval-${pending[0].id}`, action: 'Revisar acción' }
+      : questions[0]
+        ? { kind: 'item', key: `question:${questions[0].id}`, text: 'El agente necesita tu respuesta para continuar.',
+          target: `agent-question-${questions[0].id}`, action: 'Responder' }
+        : running
+          ? { kind: 'working', key: `working:${activeCall?.id ?? 'turn'}`, text: activityText(activeCall?.name) }
+          : artifact
+            ? { kind: 'item', key: `artifact:${artifact.id}:${artifact.files.map((file) => file.sha256).join(',')}`,
+              text: `Resultado disponible: ${artifact.files[0].name}`, target: `agent-artifact-${artifact.id}`, action: 'Ver resultado' }
+            : null;
+  const attentionKey = attention ? `${sessionId}:${attention.key}` : '';
+  const attentionText = attention?.text ?? '';
+  const persistentAttention = attention?.kind === 'item';
+  useEffect(() => {
+    if (!attentionKey || (persistentAttention && announcedRef.current.has(attentionKey))) {
+      setAnnouncement(null);
+      return;
+    }
+    if (persistentAttention) announcedRef.current.add(attentionKey);
+    setAnnouncement({ key: attentionKey, text: attentionText });
+  }, [attentionKey, attentionText, persistentAttention]);
   const toolsMenu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end',
     estimatedWidth: 360,
@@ -339,7 +382,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
   useEffect(() => {
     if (atBottomRef.current) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages.length, messages[messages.length - 1]?.content, pending.length]);
+  }, [messages.length, messages[messages.length - 1]?.content, pending.length, attentionKey]);
 
   useEffect(() => {
     atBottomRef.current = true;
@@ -357,7 +400,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const jumpToEnd = () => {
     atBottomRef.current = true;
     setShowJump(false);
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
+    listRef.current?.scrollTo({
+      top: listRef.current.scrollHeight,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
   };
 
   useEffect(() => {
@@ -642,7 +688,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   const showHero = !sessionId || messages.length === 0;
-  const toolRunning = messages.some((m) => (m.tool_calls ?? []).some((call) => call.status === 'running'));
   const activeProfile = session?.profile ? profiles.find((item) => item.id === session.profile?.id) ?? null : null;
   const suggestionList = activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS;
   const suggestionsHidden = !!draft.trim() || running || pending.length > 0;
@@ -942,7 +987,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           />
         )}
 
-        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-5 pt-3 md:px-6 [&>*]:mx-auto [&>*]:max-w-[720px]">
+        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-5 pt-3 md:px-6 [&>*]:mx-auto [&>*]:max-w-[720px]">
           {showHero ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
@@ -971,28 +1016,26 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               const previous = messages.slice(0, i).reverse().find((item) => item.ts);
               const newDay = !!label && (!previous?.ts || dayLabel(previous.ts) !== label);
               return (
-                <div key={m.partial ? 'partial' : `${m.ts}-${i}`} className="space-y-4">
+                <div key={`${sessionId}-${m.role}-${i}`} className="space-y-4">
                   {newDay && <DaySeparator label={label} />}
                   <MessageRow msg={m} agent={agentIdentity} />
                 </div>
               );
             })
           )}
-          {messagesStale && (
-            <div role="status" className="flex items-center gap-2 text-[13px] text-[var(--text-secondary)]">
-              <span>No se pudo actualizar la conversación. El estado mostrado puede estar desactualizado.</span>
-              <Button variant="ghost" size="sm" onClick={() => void loadMessages(sessionId, false)}>Reintentar actualización</Button>
-            </div>
-          )}
           {!showHero && plan && <PlanCard plan={plan} running={running && !messagesStale} />}
           {pending.map((a) => (
-            <ApprovalCard key={a.id} approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
+            <div key={a.id} id={`agent-approval-${a.id}`}>
+              <ApprovalCard approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
+            </div>
           ))}
-          {artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} sessionId={sessionId}
-            onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />)}
-          {questions.map((question) => <QuestionCard key={question.id} question={question} onAnswered={() => void loadMessages(sessionId, false)} />)}
-          {/* Una herramienta en curso ya muestra su propio brillo y contador: no se repite el estado general. */}
-          {running && !messagesStale && !questions.length && !pending.length && !toolRunning && <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} />}
+          {artifacts.map((artifact) => <div key={artifact.id} id={`agent-artifact-${artifact.id}`}>
+            <ArtifactCard artifact={artifact} sessionId={sessionId}
+              onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />
+          </div>)}
+          {questions.map((question) => <div key={question.id} id={`agent-question-${question.id}`}>
+            <QuestionCard question={question} onAnswered={() => void loadMessages(sessionId, false)} />
+          </div>)}
         </div>
 
         <div className="relative h-0">
@@ -1006,7 +1049,31 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </button>
           )}
         </div>
+        <div role="status" aria-label="Avisos del agente" aria-live="polite" aria-atomic="true" className="sr-only">
+          {announcement && <span key={announcement.key}>{announcement.text}</span>}
+        </div>
         <div className="mx-auto w-full max-w-[744px] shrink-0 px-3 pb-3">
+          {attention && (
+            <div role="region" aria-label="Atención del agente" className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2">
+              {attention.kind === 'working'
+                ? <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} label={attention.text} />
+                : <p className="min-w-0 flex-1 text-[13px] text-[var(--text-secondary)]">{attention.text}</p>}
+              <Button variant="ghost" size="sm" aria-controls={attention.kind === 'item' ? attention.target : undefined} onClick={() => {
+                if (attention.kind === 'stale') {
+                  void loadMessages(sessionId, false);
+                } else if (attention.kind === 'item') {
+                  const target = document.getElementById(attention.target);
+                  target?.scrollIntoView({ block: 'nearest', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+                  target?.querySelector<HTMLElement>('input, button, summary')?.focus({ preventScroll: true });
+                } else {
+                  jumpToEnd();
+                  listRef.current?.focus({ preventScroll: true });
+                }
+              }}>
+                {attention.kind === 'stale' ? 'Reintentar actualización' : attention.kind === 'item' ? attention.action : 'Ver detalles'}
+              </Button>
+            </div>
+          )}
           {readyProviders.length > 0 && (
             <div className="agent-suggestions" data-hidden={suggestionsHidden ? 'true' : undefined} inert={suggestionsHidden}>
               <div role="group" aria-label="Sugerencias" className="agent-marquee min-h-0 pb-2" data-static={suggestionList.length < 2 ? 'true' : undefined}>

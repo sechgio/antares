@@ -80,6 +80,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- Agent destaca la aprobación, pregunta, actividad o resultado que requiere atención junto al composer, anuncia cada evento una sola vez y permite ir a sus detalles sin interrumpir la lectura del historial. Conserva los detalles abiertos durante las actualizaciones y respeta movimiento reducido al desplazarse.
 - Agent permite iniciar una conversación con el primer mensaje, conserva el borrador si falla la creación y reutiliza la identidad del envío al reintentar texto o sugerencias. Evita envíos simultáneos y avisa cuando no pudo actualizar el estado del chat.
 - **Agent / delegación**: una respuesta del subagente que llega después de Detener no se guarda como exitosa, tampoco si termina su último paso de herramientas.
 - **Agent / ciclo del turno**: una respuesta correcta limpia el estado de error actual sin borrar el historial y conserva la recuperación al reiniciar. Detener una herramienta en espera solicita una sola cancelación; las aprobaciones y los sondeos liberan sus listeners y esperas al terminar.

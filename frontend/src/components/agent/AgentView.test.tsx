@@ -15,6 +15,15 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function agentUpdates() {
+  let notify: (method: string, params: unknown) => void = () => {};
+  vi.spyOn(window.electronAPI, 'onNotify').mockImplementation((callback) => {
+    notify = callback;
+    return () => { notify = () => {}; };
+  });
+  return () => notify('agent.changed', { session_id: 's1' });
+}
+
 const session: AgentSession = {
   id: 's1', title: 'Primera', provider: 'local', model: 'prueba',
   created_at: 1, updated_at: 1, last_error: null,
@@ -448,7 +457,7 @@ it('descarta la lectura previa al envío y drena la actualización pendiente de 
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Mensaje nuevo', expect.any(String), []);
   await act(async () => { initial.resolve(empty); });
   expect(list).toHaveBeenCalledTimes(2);
-  expect(screen.getByText('El agente está trabajando')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('El agente está trabajando')).toBeInTheDocument();
   await act(async () => {
     current.resolve({ ...empty, running: true, messages: [{ role: 'user', content: 'Mensaje nuevo', ts: 1 }] });
   });
@@ -475,7 +484,7 @@ it('no repite el estado de trabajo mientras una herramienta en curso ya lo muest
   await act(async () => {});
   // La conversación abierta se recuerda al volver a montar la vista.
   expect(await screen.findByText(/Ejecutó/)).toBeInTheDocument();
-  expect(screen.getByText('El agente está trabajando')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('El agente está trabajando')).toBeInTheDocument();
 });
 
 it('no aplica running=false de una lectura antigua mientras el envío sigue pendiente', async () => {
@@ -489,7 +498,7 @@ it('no aplica running=false de una lectura antigua mientras el envío sigue pend
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
   fireEvent.click(screen.getByLabelText('Enviar'));
   await act(async () => { initial.resolve(empty); });
-  expect(screen.getByText('El agente está trabajando')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('El agente está trabajando')).toBeInTheDocument();
   await act(async () => { send.resolve({ accepted: true }); });
 });
 
@@ -508,7 +517,7 @@ it('mantiene el turno activo cuando un sondeo termina antes de que se acepte el 
   await act(async () => { vi.advanceTimersByTime(1500); });
   expect(list).toHaveBeenCalledTimes(2);
   await act(async () => { poll.resolve(empty); });
-  expect(screen.getByText('El agente está trabajando')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('El agente está trabajando')).toBeInTheDocument();
   await act(async () => { send.resolve({ accepted: true }); });
 });
 
@@ -800,7 +809,7 @@ it('mantiene activo el primer turno mientras espera la aceptación del mensaje',
   await act(async () => {});
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Primer encargo' } });
   await act(async () => { fireEvent.keyDown(screen.getByLabelText('Mensaje para el agente'), { key: 'Enter' }); });
-  expect(screen.getByText('El agente está trabajando')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('El agente está trabajando')).toBeInTheDocument();
   await act(async () => { send.resolve({ accepted: true }); });
 });
 
@@ -879,7 +888,7 @@ it('marca el estado desactualizado si falla el sondeo y lo recupera sin perder e
   expect(screen.getByText('Última respuesta recibida')).toBeVisible();
   list.mockRejectedValueOnce(new Error('Sin conexión'));
   await act(async () => { vi.advanceTimersByTime(1500); });
-  expect(screen.getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Atención del agente' })).toHaveTextContent(/El estado mostrado puede estar desactualizado/);
   expect(screen.getByText('Última respuesta recibida')).toBeVisible();
   expect(screen.queryByText('El agente está trabajando')).not.toBeInTheDocument();
   list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta confirmada', ts: 2 }] });
@@ -1019,4 +1028,143 @@ it('recarga la conversación en cuanto el motor avisa de un cambio, sin esperar 
   list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta en vivo', ts: 2 }] });
   await act(async () => { notify?.('agent.changed', { session_id: 's1' }); });
   expect(await screen.findByText('Respuesta en vivo')).toBeInTheDocument();
+});
+
+it('prioriza la aprobación y la pregunta, y anuncia cada pregunta una sola vez', async () => {
+  const update = agentUpdates();
+  const question = { id: 'q1', session_id: 's1', questions: [{ id: 'name', prompt: '¿Qué nombre uso?' }] };
+  const approval = { id: 'a1', session_id: 's1', call_id: 'c1', method: 'fs_write', params: {}, status: 'pending' as const, created_at: 1, decided_at: null };
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, questions: [question], pending_approvals: [approval] });
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await act(async () => {});
+  const attention = screen.getByRole('region', { name: 'Atención del agente' });
+  expect(within(attention).getByRole('button', { name: 'Revisar acción' })).toBeVisible();
+  fireEvent.click(within(attention).getByRole('button', { name: 'Revisar acción' }));
+  expect(screen.getByText('Ver detalles de la acción')).toHaveFocus();
+  expect(within(attention).queryByRole('button', { name: 'Responder' })).not.toBeInTheDocument();
+  list.mockResolvedValue({ ...empty, questions: [question] });
+  await act(async () => { update(); });
+  expect(within(attention).getByRole('button', { name: 'Responder' })).toBeVisible();
+  const announcement = screen.getByRole('status', { name: 'Avisos del agente' });
+  expect(announcement).toHaveTextContent('El agente necesita tu respuesta para continuar.');
+  const mutations = vi.fn();
+  const observer = new MutationObserver(mutations);
+  observer.observe(announcement, { childList: true, subtree: true, characterData: true });
+  await act(async () => { update(); });
+  expect(mutations).not.toHaveBeenCalled();
+  list.mockResolvedValue({ ...empty, questions: [{ ...question, id: 'q2' }] });
+  await act(async () => { update(); });
+  expect(mutations).toHaveBeenCalledTimes(1);
+  observer.disconnect();
+});
+
+it('conserva el foco al llegar una pregunta y lo lleva a la respuesta solo al elegir Responder', async () => {
+  const update = agentUpdates();
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await act(async () => {});
+  const composer = screen.getByLabelText('Mensaje para el agente');
+  composer.focus();
+  list.mockResolvedValue({ ...empty, questions: [{ id: 'q1', session_id: 's1', questions: [{ id: 'name', prompt: 'Nombre del informe' }] }] });
+  await act(async () => { update(); });
+  expect(composer).toHaveFocus();
+  fireEvent.click(within(screen.getByRole('region', { name: 'Atención del agente' })).getByRole('button', { name: 'Responder' }));
+  expect(screen.getByLabelText('Nombre del informe')).toHaveFocus();
+});
+
+it.each([false, true])('muestra el resultado sin arrastrar el historial cuando se lee arriba: %s', async (readingAbove) => {
+  const update = agentUpdates();
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+    messages: [{ role: 'assistant', content: 'Respuesta anterior', ts: 1 }] });
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await act(async () => {});
+  const transcript = screen.getByRole('region', { name: 'Mensajes' });
+  Object.defineProperties(transcript, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 } });
+  transcript.scrollTop = readingAbove ? 0 : 800;
+  fireEvent.scroll(transcript);
+  vi.mocked(transcript.scrollTo).mockClear();
+  list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta anterior', ts: 1 }],
+    artifacts: [{ id: 'result', family: 'canvas', template_id: 'doc', template_revision: 'r1',
+      files: [{ name: 'informe.pdf', sha256: 'hash', pages: 1, mime: 'application/pdf', size: 20 }] }] });
+  await act(async () => { update(); });
+  expect(screen.getByRole('region', { name: 'Atención del agente' })).toHaveTextContent('Resultado disponible: informe.pdf');
+  if (readingAbove) {
+    expect(transcript.scrollTo).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Ir al final/ })).toBeVisible();
+  } else expect(transcript.scrollTo).toHaveBeenCalledWith({ top: 1000 });
+  expect(screen.getByRole('region', { name: 'Documento informe.pdf' })).toBeInTheDocument();
+});
+
+it('explica la actividad sin anunciar de nuevo los segundos transcurridos', async () => {
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
+    messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [{ id: 'read', name: 'fs_read', params: {}, gated: false, status: 'running' }] }] });
+  localStorage.setItem('antares-agent-session', 's1');
+  vi.useFakeTimers();
+  render(<AgentView />);
+  await act(async () => {});
+  expect(screen.getByRole('region', { name: 'Atención del agente' })).toHaveTextContent('Estoy trabajando con tus archivos.');
+  const announcement = screen.getByRole('status', { name: 'Avisos del agente' });
+  const mutations = vi.fn();
+  const observer = new MutationObserver(mutations);
+  observer.observe(announcement, { childList: true, subtree: true, characterData: true });
+  await act(async () => { vi.advanceTimersByTime(3000); });
+  expect(list).toHaveBeenCalled();
+  expect(mutations).not.toHaveBeenCalled();
+  observer.disconnect();
+});
+
+it('respeta movimiento reducido al ir al final del historial', async () => {
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+    matches: query === '(prefers-reduced-motion: reduce)', media: query, onchange: null,
+    addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+  }));
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await act(async () => {});
+  const transcript = screen.getByRole('region', { name: 'Mensajes' });
+  Object.defineProperties(transcript, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 } });
+  fireEvent.scroll(transcript);
+  vi.mocked(transcript.scrollTo).mockClear();
+  fireEvent.click(screen.getByRole('button', { name: /Ir al final/ }));
+  expect(transcript.scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'instant' });
+});
+
+it('mantiene el razonamiento que el usuario abrió al terminar la respuesta progresiva', async () => {
+  const update = agentUpdates();
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
+    messages: [{ role: 'assistant', content: 'Respuesta parcial', reasoning: 'Comparando documentos', partial: true, ts: 1 }] });
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Pensó' }));
+  expect(screen.getByRole('button', { name: 'Pensó' })).toHaveAttribute('aria-expanded', 'true');
+  list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta final', reasoning: 'Comparando documentos', ts: 2 }] });
+  await act(async () => { update(); });
+  expect(screen.getByRole('button', { name: 'Pensó' })).toHaveAttribute('aria-expanded', 'true');
+});
+
+it('no anuncia una pregunta del chat anterior al cambiar de conversación', async () => {
+  const second = { ...session, id: 's2', title: 'Segunda' };
+  const loading = deferred<Snapshot>();
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, second] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation((id) => id === 's2' ? loading.promise : Promise.resolve({
+    ...empty, questions: [{ id: 'q1', session_id: 's1', questions: [{ id: 'name', prompt: 'Nombre' }] }],
+  }));
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await act(async () => {});
+  const announcements: string[] = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) for (const node of record.addedNodes) announcements.push(node.textContent || '');
+  });
+  observer.observe(screen.getByRole('status', { name: 'Avisos del agente' }), { childList: true, subtree: true });
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  expect(announcements).not.toContain('El agente necesita tu respuesta para continuar.');
+  expect(screen.queryByRole('region', { name: 'Atención del agente' })).not.toBeInTheDocument();
+  observer.disconnect();
+  await act(async () => { loading.resolve(empty); });
 });
