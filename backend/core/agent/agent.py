@@ -807,7 +807,9 @@ class AgentRunner:
         session = self._store.get_session(session_id) if session_id else None
         if not isinstance(profile, dict) or not str(profile.get("name") or "").strip():
             return json.dumps({"error": "No hay un agente guardado disponible para esta delegación"}, ensure_ascii=False)
-        if session is None:
+        provider = str(profile.get("provider") or (session or {}).get("provider") or "")
+        model = str(profile.get("model") or (session or {}).get("model") or "")
+        if session is None and (not provider or not model):
             return json.dumps({"error": "El subagente necesita una conversación activa"}, ensure_ascii=False)
         if not task:
             return json.dumps({"error": "Indica qué tarea debe resolver el subagente"}, ensure_ascii=False)
@@ -825,8 +827,8 @@ class AgentRunner:
 
         try:
             receipt = subagent.run(
-                provider=str(session.get("provider") or ""),
-                model=str(session.get("model") or ""),
+                provider=provider,
+                model=model,
                 agent=profile,
                 task=task,
                 tools=specs,

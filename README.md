@@ -164,6 +164,51 @@ Para aplicar migraciones de esquema, conecta el complemento Supabase de Codex, v
 
 ---
 
+## Interfaz del agente
+
+La barra lateral separa **Conversaciones** y **Agentes** guardados. Cada vista tiene su propia búsqueda; los agentes se buscan por nombre o descripción. Cambiar de vista conserva el borrador del chat. `Ctrl+K` abre la búsqueda de conversaciones.
+
+Desde **Herramientas del agente** puedes buscar por nombre, identificador o módulo y filtrar por **Todas**, **Skills** o **MCP**. El contador muestra todas las herramientas habilitadas, incluidas las ocultas por el filtro. Buscar o filtrar no cambia permisos; solo los interruptores modifican la selección.
+
+Expande un paso de skills en la conversación para ver el catálogo con sus ubicaciones o el contenido leído. Una lectura parcial indica el siguiente `offset`; llegar al final de una referencia no significa haber leído toda la skill. **Datos originales** conserva el JSON y permite copiarlo. No se cargan archivos adicionales al abrir la tarjeta.
+
+Para pedir colaboración, escribe `@` en el mensaje y selecciona un bot guardado con las flechas y `Enter`, con `Tab` o con un clic. Seleccionar no envía el mensaje; `Escape` cierra las sugerencias. Puedes escribir `@Investigador` o `@"Revisor de PDFs"`, y mencionar varios para repartir el trabajo. El agente principal recibe sus identificadores, puede delegar encargos autocontenidos con `subagent_run` y transmitir las conclusiones de uno al siguiente. Comprueba las tarjetas de delegación para saber qué bots llegaron a ejecutarse; la mención por sí sola no es un comprobante.
+
+El selector siempre inserta `@bot:identificador` para conservar al bot elegido aunque cambie su nombre, también en mensajes en cola. Los nombres siguen visibles en las sugerencias. Un nombre que coincide con un módulo conserva su significado anterior, como `@sellador`; usa la sugerencia o `@"Sellador"` para referirte al bot. Las menciones explícitas de bots borrados o ambiguos impiden enviar el mensaje. Mencionar no habilita `subagent_run` si lo desactivaste. Los subagentes siguen limitados a lectura, sin delegación recursiva ni acceso automático a otras conversaciones. Los correos y las menciones dentro de código no se interpretan como solicitudes de colaboración.
+
+## Skills locales del agente
+
+Los agentes y subagentes pueden descubrir instrucciones reutilizables con `skills_list` y leerlas bajo demanda con `skills_read`, siguiendo el formato [Agent Skills](https://agentskills.io/specification). No hace falta instalar otra plataforma de agentes.
+
+- Adjunta una carpeta desde el chat del agente. Se buscan skills en esa carpeta, en `skills/` y en `.agents/skills/`, con prioridad frente al espacio de trabajo y la biblioteca cuando se alcanza el límite del catálogo. Puedes adjuntar directamente la carpeta de una skill o su `SKILL.md`.
+- Para compartir skills entre conversaciones, copia sus carpetas en `%LOCALAPPDATA%\Antares\ai-agent\skills\`. La herramienta `skills_list` también indica la ubicación de esta biblioteca local.
+- Las skills creadas dentro de `skills/` o `.agents/skills/` del espacio de trabajo de una conversación solo están disponibles en esa conversación.
+- Pide, por ejemplo: "Busca una skill para revisar PDFs y aplícala a este documento". Si una conversación anterior conserva una selección de herramientas sin skills, habilita `skills_list` y `skills_read` desde su selector habitual. No se sustituyen selecciones existentes.
+
+Una skill mínima tiene esta estructura:
+
+```text
+pdf-review/
+  SKILL.md
+  references/
+    checklist.txt
+```
+
+```markdown
+---
+name: pdf-review
+description: Revisa documentos PDF, sus firmas y márgenes antes de exportarlos.
+---
+Lee references/checklist.txt. Revisa el documento con las herramientas disponibles
+y comunica qué comprobaste y qué no pudiste verificar.
+```
+
+El nombre debe coincidir con la carpeta, usar minúsculas, números y guiones, y tener hasta 64 caracteres. La descripción admite hasta 1024 caracteres y YAML multilínea. El catálogo entrega solo metadatos; las instrucciones y referencias se leen después, por páginas de hasta 4000 caracteres. La lectura conserva `next_offset` incluso si el contenido necesita recortarse para caber en el resultado de una herramienta.
+
+Los archivos deben ser UTF-8 y no superar 64 KiB. La exploración es acotada; si el catálogo indica recorte, filtra por nombre o descripción o adjunta la carpeta concreta de la skill. No se recorren categorías de profundidad arbitraria. Los nombres repetidos tienen identificadores distintos y muestran su ubicación.
+
+Las skills no conceden permisos. Sus campos opcionales, incluido `allowed-tools`, no habilitan herramientas ni evitan aprobaciones. Los scripts se pueden leer como texto, pero cargar una skill no los ejecuta. Los subagentes siguen restringidos a lectura. Adjuntar solo `SKILL.md` no autoriza sus archivos vecinos; adjunta la carpeta si necesitas sus referencias. Al retirar una autorización deja de poder leerse la skill externa. Las skills personales de Codex, Hermes u otros programas no se importan automáticamente, y esta versión no instala skills desde Internet.
+
 ## 📜 Licencia y Propiedad
 
 © Antares. Todos los derechos reservados. Proyecto privado y confidencial.

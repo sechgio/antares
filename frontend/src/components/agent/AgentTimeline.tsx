@@ -70,6 +70,8 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   desktop_focus: AppWindow,
   task_plan: ListChecks,
   tools_load: Package,
+  skills_list: BookOpen,
+  skills_read: BookOpen,
 };
 
 const KEY_PARAMS = ['path', 'url', 'query', 'target', 'title', 'keys', 'text', 'name', 'id'];
@@ -106,6 +108,67 @@ function ToolCode({ label, children, tone }: { label: string; children: string; 
       </pre>
     </div>
   );
+}
+
+function SkillOutput({ method, result }: { method: string; result: string }) {
+  const fallback = <ToolCode label="Salida">{prettyJson(result)}</ToolCode>;
+  let data: unknown;
+  try { data = JSON.parse(result); } catch { return fallback; }
+  if (!data || typeof data !== 'object' || 'error' in data) return fallback;
+  const original = (
+    <details>
+      <summary className="cursor-pointer text-[12px] text-[var(--text-secondary)]">Datos originales</summary>
+      <ToolCode label="JSON">{result}</ToolCode>
+    </details>
+  );
+  const notice = 'notice' in data && typeof data.notice === 'string' ? data.notice : null;
+  if (method === 'skills_list' && 'skills' in data && Array.isArray(data.skills)
+    && 'total' in data && typeof data.total === 'number' && 'truncated' in data && typeof data.truncated === 'boolean'
+    && 'library' in data && typeof data.library === 'string' && 'warnings' in data && Array.isArray(data.warnings)) {
+    const skills = data.skills.map((skill: unknown) => {
+      if (!skill || typeof skill !== 'object' || !('id' in skill) || typeof skill.id !== 'string'
+        || !('name' in skill) || typeof skill.name !== 'string' || !('description' in skill) || typeof skill.description !== 'string'
+        || !('location' in skill) || typeof skill.location !== 'string') return null;
+      return { id: skill.id, name: skill.name, description: skill.description, location: skill.location };
+    });
+    const warnings: unknown[] = data.warnings;
+    if (!skills.every((skill) => skill !== null) || !warnings.every((warning) => typeof warning === 'string')) return fallback;
+    return (
+      <div className="space-y-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+        <p className="font-medium">{skills.length} de {data.total} skills{data.truncated ? ' · catálogo parcial' : ''}</p>
+        {skills.length === 0 ? <p>No se encontraron skills en los recursos autorizados.</p> : (
+          <ul className="space-y-2">
+            {skills.map((skill) => <li key={skill.id} className="break-words">
+              <p className="font-medium text-[var(--text-primary)]">{skill.name}</p>
+              <p>{skill.description}</p>
+              <p className="break-all font-mono text-[11px]">{skill.location}</p>
+            </li>)}
+          </ul>
+        )}
+        <p className="break-all">Biblioteca local: {data.library}</p>
+        {warnings.map((warning, index) => <p key={index} className="break-words">{warning}</p>)}
+        {notice && <p className="break-words">{notice}</p>}
+        {original}
+      </div>
+    );
+  }
+  if (method === 'skills_read' && 'name' in data && typeof data.name === 'string'
+    && 'file_path' in data && typeof data.file_path === 'string' && 'content' in data && typeof data.content === 'string'
+    && 'offset' in data && typeof data.offset === 'number' && 'total_chars' in data && typeof data.total_chars === 'number'
+    && 'next_offset' in data && (data.next_offset === null || typeof data.next_offset === 'number')) {
+    return (
+      <div className="space-y-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+        <p className="break-words font-medium text-[var(--text-primary)]">{data.name}</p>
+        <p className="break-all font-mono text-[11px]">{data.file_path}</p>
+        <p>Desde el carácter {data.offset} de {data.total_chars}</p>
+        <ToolCode label="Contenido">{data.content}</ToolCode>
+        <p>{data.next_offset === null ? `Fin del archivo · ${data.total_chars} caracteres en total` : `Lectura parcial · siguiente offset: ${data.next_offset}`}</p>
+        {notice && <p className="break-words">{notice}</p>}
+        {original}
+      </div>
+    );
+  }
+  return fallback;
 }
 
 const TASK_ROW = 'flex min-h-6 max-w-full items-center gap-2 py-0.5 text-[13px] leading-5 text-[var(--text-secondary)]';
@@ -241,7 +304,9 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
       <summary className={`${TASK_ROW} w-fit cursor-pointer list-none`}>{row}</summary>
       <div className={`${TASK_BODY} mb-1.5 mt-1 space-y-2`}>
         {params && <ToolCode label="Entrada">{params}</ToolCode>}
-        {detail && <ToolCode label={failed ? 'Error' : 'Salida'} tone={failed ? 'error' : undefined}>{prettyJson(detail)}</ToolCode>}
+        {detail && (call.status === 'done' && (call.name === 'skills_list' || call.name === 'skills_read')
+          ? <SkillOutput method={call.name} result={detail} />
+          : <ToolCode label={failed ? 'Error' : 'Salida'} tone={failed ? 'error' : undefined}>{prettyJson(detail)}</ToolCode>)}
       </div>
     </details>
   );
@@ -462,16 +527,17 @@ export function ThinkingRow({ elapsedSeconds, agent }: { elapsedSeconds: number;
   );
 }
 
-export function ToolGroup({ label, names, enabledNames, onToggle, disabled }: {
+export function ToolGroup({ label, names, enabledNames, onToggle, disabled, expanded }: {
   label: string;
   names: string[];
   enabledNames?: Set<string>;
   onToggle?: (name: string, enabled: boolean) => void;
   disabled?: boolean;
+  expanded?: boolean;
 }) {
   if (names.length === 0) return null;
   return (
-    <details className="group rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5">
+    <details open={expanded || undefined} className="group rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
         <ChevronRight size={11} className="shrink-0 transition-transform group-open:rotate-90" />
         {label}
@@ -479,7 +545,7 @@ export function ToolGroup({ label, names, enabledNames, onToggle, disabled }: {
       </summary>
       <ul className="mt-1.5 max-h-44 space-y-1 overflow-auto">
         {names.map((n) => (
-          <li key={n} className="flex items-center gap-2 font-mono text-[11px] text-[var(--text-muted)]" title={n}>
+          <li key={n} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]" title={n}>
             <span className="min-w-0 flex-1 truncate">{METHOD_LABELS[n] ?? n}</span>
             {onToggle && <Toggle checked={enabledNames?.has(n) ?? true} onChange={(enabled) => onToggle(n, enabled)} disabled={disabled} aria-label={`Habilitar ${n}`} />}
           </li>

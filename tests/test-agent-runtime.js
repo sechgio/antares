@@ -213,6 +213,54 @@ async function main() {
   }
   const { fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
 
+  for (const legacy of [false, true]) {
+    const { bridge } = makeBridge();
+    const calls = [];
+    const skillId = 'abcdef0123456789abcdef01';
+    const skillsBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const catalog = await bridge(method, params);
+        catalog.tools.push(...['skills_list', 'skills_read'].map((name) => ({
+          name, module: 'agent', kind: 'backend', gated: false,
+          inputSchema: { type: 'object', properties: { skill_id: { type: 'string' } } },
+        })));
+        return catalog;
+      }
+      if (method === 'agent_internal_dispatch' && params.name.startsWith('skills_')) {
+        calls.push(params.name);
+        return { result: JSON.stringify(params.name === 'skills_list'
+          ? { skills: [{ id: skillId, name: 'pdf-review', description: 'Revisa firmas' }] }
+          : { name: 'pdf-review', content: 'Revisa cada firma', next_offset: null }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('skills_list', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('skills_read', { skill_id: skillId })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Leí las instrucciones de revisión de firmas'),
+    ], skillsBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+    const state = runtime._internal.state();
+    const map = await state.harness.snapshot(state.SessionsDoc, context);
+    const conv = await state.harness.conversation(map.sessions[session.id].conversationId, context);
+    assert((await conv.agent(context)).instructions.includes('skills_list'), 'las conversaciones nuevas conocen la carga progresiva de skills');
+    if (legacy) await conv.configure({ instructions: 'Indicaciones de una conversación anterior' }, context);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Revisa los PDFs con una skill' });
+    assert(await waitIdle(session.id), 'el agente descubre y lee una skill por el despacho normal');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(calls.join() === 'skills_list,skills_read' && listed.messages.some((message) => message.content.includes('Leí las instrucciones')),
+      'la skill se carga bajo demanda sin pedir aprobación para leer');
+    if (legacy) {
+      const entries = await conv.entries({}, 500, undefined, context);
+      assert(entries.items.some((entry) => entry.kind === 'pi.user' && JSON.stringify(entry.model).includes('skills_list')),
+        'las conversaciones anteriores reciben la guía de skills sin reemplazar sus instrucciones');
+      assert(listed.messages.find((message) => message.role === 'user').content === 'Revisa los PDFs con una skill',
+        'la guía interna de skills no se presenta como texto del usuario');
+    }
+    await runtime.shutdown();
+  }
+
   {
     const { bridge } = makeBridge();
     const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
@@ -594,6 +642,89 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { bridge } = makeBridge();
+    const delegated = [];
+    const inputs = [];
+    const mentionedPaths = [];
+    const held = { id: 'held', session_id: '', status: 'pending' };
+    let researcher;
+    let reviewer;
+    const botBridge = async (method, params) => {
+      if (method === 'agent_internal_grants_add') mentionedPaths.push(...params.paths);
+      if (method === 'agent_internal_approvals_pending' && held.session_id) return { approvals: held.status === 'pending' ? [held] : [] };
+      if (method === 'agent_internal_approvals_deny_session' && held.session_id) { held.status = 'denied'; return { denied: [held.id] }; }
+      if (method === 'agent_internal_dispatch' && params.name === 'subagent_run') {
+        delegated.push(params);
+        return { result: JSON.stringify({ agent: { id: params.context.subagent.id, name: params.context.subagent.name },
+          status: 'done', text: 'Comprobé 3 firmas', steps: [], ms: 1 }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      (context) => { inputs.push(JSON.stringify(context.messages)); return fauxAssistantMessage([
+        fauxToolCall('subagent_run', { agent: researcher.id, task: 'Busca las firmas del informe adjunto' }),
+      ], { stopReason: 'toolUse' }); },
+      (context) => { inputs.push(JSON.stringify(context.messages)); return fauxAssistantMessage([
+        fauxToolCall('subagent_run', { agent: reviewer.id, task: 'El investigador comprobó 3 firmas. Revisa sus conclusiones.' }),
+      ], { stopReason: 'toolUse' }); },
+      fauxAssistantMessage('Ambos bots completaron la revisión'),
+      (context) => { inputs.push(JSON.stringify(context.messages)); return fauxAssistantMessage('La referencia usa un id estable'); },
+      (context) => { inputs.push(JSON.stringify(context.messages.at(-1))); return fauxAssistantMessage('Son texto literal y un correo'); },
+      fauxAssistantMessage('El nombre del bot no es un archivo adjunto'),
+      fauxAssistantMessage([fauxToolCall('subagent_run', { agent: 'Investigador', task: 'No elijas un duplicado' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Necesito un identificador único'),
+    ], botBridge);
+    researcher = (await runtime.handlers.agent_profile_save({ name: 'Investigador', instructions: 'Lee documentos', tools: ['canvas_list'] })).profile;
+    reviewer = (await runtime.handlers.agent_profile_save({ name: 'Revisor de PDFs', instructions: 'Revisa conclusiones', tools: [] })).profile;
+    await runtime.handlers.agent_profile_save({ name: 'Sellador', instructions: 'Un bot con nombre de módulo', tools: [] });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const content = 'Colabora @Investigador con @"Revisor de PDFs" y consulta @sellador';
+    const response = await runtime.handlers.agent_message_send({ session_id: session.id, content });
+    assert(await waitIdle(session.id), 'la colaboración mencionada termina');
+    assert(response.mentions.modules.join() === 'sellador' && response.mentions.unknown.length === 0,
+      'los bots se resuelven aparte y se conservan las menciones de módulos');
+    assert(inputs[0].includes('solicita colaborar') && inputs[0].includes(researcher.id) && inputs[0].includes(reviewer.id),
+      'el coordinador recibe identidades exactas, sin cambiar el mensaje visible');
+    assert(delegated.length === 2 && delegated[0].context.subagent.id === researcher.id && delegated[1].context.subagent.id === reviewer.id
+      && delegated[1].params.task.includes('3 firmas') && inputs[1].includes('Comprobé 3 firmas'),
+    'el segundo bot recibe las conclusiones verificadas del primero por una delegación con comprobante');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(listed.messages[0].content === content && listed.messages.flatMap((message) => message.tool_calls || []).length === 2,
+      'la conversación conserva el texto original y las dos trazas de colaboración');
+    await runtime.handlers.agent_profile_save({ ...researcher, name: 'Archivado' });
+    const replacement = (await runtime.handlers.agent_profile_save({ name: 'Investigador', instructions: 'Otro bot', tools: [] })).profile;
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: `Consulta @bot:${researcher.id}; literal \`@Investigador\` y correo usuario@Investigador.com` });
+    assert(await waitIdle(session.id), 'se admite la referencia estable sin interpretar correos como bots');
+    assert(inputs.at(-1).includes(researcher.id) && !inputs.at(-1).includes(replacement.id),
+      'renombrar el bot y reutilizar su nombre no cambia el destinatario seleccionado por id');
+    await runtime.handlers.agent_profile_delete({ id: replacement.id });
+    await runtime.handlers.agent_profile_save(researcher);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Texto `@Investigador` y usuario@Investigador.com y ```\n@Investigador\n```' });
+    assert(await waitIdle(session.id) && !inputs.at(-1).includes('solicita colaborar'), 'el código y los correos no solicitan una colaboración');
+    await runtime.handlers.agent_profile_save({ name: String.raw`C:\privado\informe.pdf`, instructions: 'Un nombre parecido a una ruta', tools: [] });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: String.raw`Consulta @"C:\privado\informe.pdf"` });
+    assert(await waitIdle(session.id) && mentionedPaths.length === 0, 'mencionar un bot cuyo nombre parece una ruta no concede acceso a archivos');
+    await runtime.handlers.agent_profile_save({ name: 'Investigador', instructions: 'Otro perfil', tools: [] });
+    for (const text of ['Consulta @Investigador', 'Consulta @"Investigador"', 'Consulta @"Eliminado"', 'Consulta @bot:missing']) {
+      let error;
+      try { await runtime.handlers.agent_message_send({ session_id: session.id, content: text }); } catch (err) { error = err; }
+      assert(error && error.category === 'VALIDATION_ERROR', `una mención inexistente o ambigua no se envía: ${text}`);
+    }
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['canvas_list'] });
+    let disabled;
+    try { await runtime.handlers.agent_message_send({ session_id: session.id, content: `Consulta @bot:${researcher.id}` }); } catch (err) { disabled = err; }
+    assert(disabled && disabled.message.includes('subagent_run'), 'mencionar un bot no habilita delegación desactivada');
+    held.session_id = session.id;
+    try { await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Consulta @"Eliminado"', correction: true }); } catch {}
+    assert(held.status === 'pending', 'una mención inválida no rechaza aprobaciones pendientes al corregir');
+    held.session_id = '';
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: null });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Comprueba un nombre duplicado sin mención' });
+    assert(await waitIdle(session.id) && delegated.length === 2, 'la herramienta tampoco elige silenciosamente el primer nombre duplicado');
+    await runtime.shutdown();
+  }
+
   for (const mode of ['auto', 'full']) {
     const { bridge, state } = makeBridge();
     const executed = [];
@@ -832,6 +963,8 @@ async function main() {
     assert(sent.context.subagent.instructions.includes('Consulta Canvas'), 'las indicaciones del agente llegan al subagente');
     assert(sent.context.subagent.tools.join() === 'canvas_list', 'solo las herramientas del agente');
     assert(sent.context.subagent.enabled.includes('canvas_list'), 'la conversación limita las herramientas del subagente');
+    assert(sent.context.subagent.provider === session.provider && sent.context.subagent.model === session.model,
+      'la delegación lleva el proveedor y modelo actuales del runtime durable');
     await runtime.handlers.agent_profile_delete({ id: profile.id });
     assert(!(await runtime.handlers.agent_tools_list({})).tools.some((tool) => tool.name === 'subagent_run'),
       'sin agentes guardados no se ofrece delegar');
@@ -1413,6 +1546,250 @@ async function main() {
     const stopped = await callOf();
     assert(stopped.status === 'interrupted', 'una herramienta detenida a medias aparece interrumpida, no fallida');
     assert(stopped.result.trimEnd() === 'paso 1\npaso 2','tras detener se conserva la salida parcial sin los avisos internos del motor');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+    ], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'espera mi aprobación' });
+    assert(await waitFor(() => state.approvals.size === 1), 'la aprobación queda pendiente');
+    await sleep(3100);
+    const [approval] = state.approvals.values();
+    const waiters = runtime._internal.shared.decisionWaiters.get(approval.id);
+    assert(waiters && waiters.size === 1, 'una aprobación larga conserva una sola espera activa');
+    await runtime.handlers.agent_approve({ approval_id: approval.id });
+    assert(await waitIdle(session.id), 'la aprobación larga termina tras la decisión');
+    assert(!runtime._internal.shared.decisionWaiters.has(approval.id), 'la decisión libera su espera y su listener');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    let started = false;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const cancellations = [];
+    const delayedBridge = async (method, params) => {
+      if (method === 'agent_internal_dispatch' && params.name === 'canvas_list') {
+        started = true;
+        await gate;
+        return { result: null };
+      }
+      if (method === 'agent_internal_dispatch_cancel') cancellations.push(params);
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' }),
+    ], delayedBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'consulta y detén' });
+    assert(await waitFor(() => started), 'la llamada está esperando la reserva del backend');
+    const cancelled = runtime.handlers.agent_turn_cancel({ session_id: session.id });
+    await sleep(100);
+    release();
+    await cancelled;
+    assert(await waitIdle(session.id), 'cancelar durante la reserva termina el turno');
+    assert(cancellations.length === 1 && cancellations[0].session_id === session.id,
+      'cancelar durante la reserva también detiene la operación del backend');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    await openFaux([
+      fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'Proveedor temporalmente no disponible' }),
+      fauxAssistantMessage('Recuperado'),
+    ], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primer intento' });
+    assert(await waitFor(async () => (await runtime.handlers.agent_turn_status({ session_id: session.id })).last_error),
+      'el primer fallo queda visible');
+    assert(await waitIdle(session.id), 'el intento fallido termina');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'reintenta' });
+    assert(await waitIdle(session.id), 'el reintento correcto termina');
+    assert((await runtime.handlers.agent_turn_status({ session_id: session.id })).last_error === null,
+      'una respuesta correcta limpia el error anterior');
+    assert((await runtime.activitySnapshot()).find((item) => item.id === session.id).status === 'completed',
+      'la bandeja muestra completado después de recuperarse');
+    await runtime.shutdown();
+  }
+
+  {
+    const { fauxProvider } = await import('@earendil-works/pi-ai');
+    const { bridge } = makeBridge();
+    const historyBridge = async (method, params) => {
+      if (method === 'agent_internal_dispatch' && params.name === 'canvas_list') {
+        return { result: JSON.stringify({ private_tool_result: 'Boreal comprobante privado' }) };
+      }
+      return bridge(method, params);
+    };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-history-'));
+    const options = { dir, dbPath: path.join(dir, 'agent.sqlite'), bridge: historyBridge, skipImport: true };
+    const faux = fauxProvider();
+    runtime._internal._providerOverrides.set('faux', faux.provider);
+    await runtime.open(options);
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([{ type: 'thinking', thinking: 'Boreal pensamiento privado' }, { type: 'text', text: 'Boreal carta número 42' }]),
+      fauxAssistantMessage('Boreal conversación eliminada'),
+    ]);
+    const { session: source } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', title: 'Proyecto Boreal' });
+    await runtime.handlers.agent_message_send({ session_id: source.id, content: 'revisa Boreal plantilla' });
+    assert(await waitIdle(source.id), 'el historial de origen está guardado');
+    const { session: deleted } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: deleted.id, content: 'Boreal borrado' });
+    assert(await waitIdle(deleted.id), 'la conversación que se borrará termina');
+    await runtime.handlers.agent_session_delete({ id: deleted.id });
+    await runtime.shutdown();
+    await runtime.open(options);
+    faux.setResponses([
+      fauxAssistantMessage([
+        fauxToolCall('sessions_search', { query: 'BÓREAL' }),
+        fauxToolCall('sessions_search', { query: 'Boreal', limit: 1 }),
+        fauxToolCall('sessions_search', { query: 'comprobante privado' }),
+        fauxToolCall('sessions_search', { query: 'pensamiento privado' }),
+        fauxToolCall('sessions_search', { query: 'Preferencia', session_id: source.id }),
+        fauxToolCall('sessions_search', { query: 'Boreal', session_id: deleted.id }),
+        fauxToolCall('sessions_search', { query: 'Boreal', limit: 11 }),
+      ], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Recuperé la carta 42 de Proyecto Boreal'),
+    ]);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'recuerda Boreal' });
+    assert(await waitIdle(session.id), 'la búsqueda entre conversaciones termina tras reiniciar SQLite');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const calls = listed.messages.flatMap((message) => message.tool_calls || []).filter((call) => call.name === 'sessions_search');
+    const found = JSON.parse(calls[0].result);
+    assert(found.matches.length === 2 && found.matches.every((match) => match.session_id === source.id && match.message_id),
+      'la búsqueda ignora tildes y devuelve mensajes de origen sin incluir el chat actual ni el borrado');
+    assert(found.matches.some((match) => match.role === 'assistant' && match.excerpt.includes('42')),
+      'el resultado contiene texto real del historial');
+    assert(JSON.parse(calls[1].result).matches.length === 1 && JSON.parse(calls[1].result).truncated,
+      'el límite acota los resultados e indica el recorte');
+    assert(calls.slice(2, 6).every((call) => JSON.parse(call.result).matches.length === 0),
+      'no revela resultados de herramientas, razonamiento, contexto inyectado ni sesiones borradas');
+    assert(calls[6].status === 'failed', 'un límite inválido devuelve un error');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
+    const { bridge } = makeBridge();
+    let polls = 0;
+    const { getEventListeners } = require('node:events');
+    const signals = new Set();
+    const addEventListener = AbortSignal.prototype.addEventListener;
+    AbortSignal.prototype.addEventListener = function (type, ...args) {
+      if (type === 'abort') signals.add(this);
+      return addEventListener.call(this, type, ...args);
+    };
+    let baseline;
+    let growth = 0;
+    const pollingBridge = async (method, params) => {
+      if (method === 'agent_internal_dispatch' && params.name === 'canvas_list') return { result: null };
+      if (method === 'agent_internal_dispatch_result') {
+        polls += 1;
+        if (!baseline) baseline = new Map([...signals].map((signal) => [signal, getEventListeners(signal, 'abort').length]));
+        for (const [signal, count] of baseline) growth = Math.max(growth, getEventListeners(signal, 'abort').length - count);
+        return { result: polls >= 14 ? '{"ok":true}' : null };
+      }
+      return bridge(method, params);
+    };
+    try {
+      await openFaux([
+        fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('Lectura completa'),
+      ], pollingBridge);
+      const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lectura que tarda' });
+      assert(await waitIdle(session.id), 'un despacho con muchos sondeos termina');
+      assert(polls >= 14 && growth <= 1, 'los sondeos sucesivos no acumulan listeners de aborto');
+    } finally {
+      AbortSignal.prototype.addEventListener = addEventListener;
+      await runtime.shutdown();
+    }
+  }
+
+  for (const [changing, expected] of [[true, 4], [false, 3]]) {
+    const { bridge } = makeBridge();
+    let source;
+    await openFaux([
+      fauxAssistantMessage('Avance comprobado'),
+      ...Array.from({ length: 4 }, (_, index) => async () => {
+        await runtime.handlers.agent_session_rename({ id: source.id, title: changing ? `Estado ${index}` : 'Sin cambios' });
+        return fauxAssistantMessage([fauxToolCall('sessions_search', { query: 'Avance', session_id: source.id })], { stopReason: 'toolUse' });
+      }),
+      fauxAssistantMessage('Terminado'),
+    ], bridge);
+    source = (await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' })).session;
+    await runtime.handlers.agent_message_send({ session_id: source.id, content: 'Registra el avance' });
+    assert(await waitIdle(source.id), 'el historial para buscar está persistido');
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Busca cambios en el historial' });
+    assert(await waitIdle(session.id), 'termina el seguimiento de progreso de la búsqueda');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const calls = messages.flatMap((message) => message.tool_calls || []).filter((call) => call.name === 'sessions_search');
+    assert(calls.length === 4 && calls.filter((call) => call.status === 'done').length === expected,
+      `sessions_search: ${changing ? 'avanzar permite la cuarta lectura' : 'repetir sin cambios conserva el límite'}`);
+    await runtime.shutdown();
+  }
+
+  for (const [name, gated, expected, changing] of [
+    ['canvas_list', false, 4, true], ['canvas_list', false, 3, false],
+    ['desktop_observe', true, 4, true], ['desktop_observe', true, 3, false], ['fs_write', true, 3, true],
+  ]) {
+    const { bridge } = makeBridge();
+    let executed = 0;
+    const changingBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        if (name !== 'canvas_list') result.tools.push({
+          name, gated, kind: 'backend', module: 'computer', inputSchema: { type: 'object', properties: {} },
+        });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === name) {
+        executed += 1;
+        return { result: JSON.stringify({
+          active_window: changing ? `Ventana ${executed}` : 'Sin cambios',
+          ...(name === 'desktop_observe' ? { image: { path: `C:\\fuera\\captura-${executed}.jpg`, mime: 'image/jpeg' } } : {}),
+        }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      ...Array.from({ length: 4 }, () => fauxAssistantMessage([fauxToolCall(name, {})], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('Terminado'),
+    ], changingBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'comprueba el avance' });
+    assert(await waitIdle(session.id), `termina la comprobación de repeticiones con ${name}`);
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const calls = messages.flatMap((message) => message.tool_calls || []).filter((call) => call.name === name);
+    assert(executed === expected && calls.filter((call) => call.status === 'done').length === expected,
+      `${name}: los resultados nuevos permiten observar avances y los efectos conservan su límite`);
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    await openFaux([], bridge);
+    const created = [];
+    for (let index = 0; index < 51; index += 1) {
+      const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      created.push(session.id);
+    }
+    const { sessions: visible } = await runtime.handlers.agent_sessions_list({});
+    const activity = await runtime.activitySnapshot();
+    assert(visible.length === 50 && !visible.some((session) => session.id === created[0]), 'la retención oculta la conversación más antigua');
+    assert(activity.length === visible.length && activity.every((item) => visible.some((session) => session.id === item.id)),
+      'la bandeja solo incluye las conversaciones que el usuario puede abrir');
     await runtime.shutdown();
   }
 

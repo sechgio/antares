@@ -1,11 +1,15 @@
 'use strict';
 
+const crypto = require('node:crypto');
+
 const {
   shared,
   bridge,
   aborted,
   conversation,
   profiles,
+  sessions,
+  validation,
   sessionForConversation,
   commitSessions,
   requireSession,
@@ -179,7 +183,7 @@ async function allToolSpecs() {
       inputSchema: {
         type: 'object',
         properties: {
-          agent: { type: 'string', description: 'Nombre exacto del agente guardado' },
+          agent: { type: 'string', description: 'Identificador del agente mencionado o nombre exacto y único del agente guardado' },
           task: { type: 'string', description: 'Encargo concreto y autocontenido para el subagente' },
         },
         required: ['agent', 'task'],
@@ -204,7 +208,73 @@ async function allToolSpecs() {
       },
     },
   });
+  merged.set('sessions_search', {
+    name: 'sessions_search',
+    description: 'Busca texto en conversaciones locales anteriores y devuelve fragmentos con su conversación y mensaje de origen. '
+      + 'No busca razonamiento ni resultados de herramientas. Usa session_id para limitar la búsqueda a una conversación.',
+    gated: false,
+    kind: 'meta',
+    module: 'agent',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', minLength: 1, maxLength: 200 },
+        session_id: { type: 'string' },
+        limit: { type: 'integer', minimum: 1, maximum: 10 },
+      },
+      required: ['query'],
+    },
+  });
   return [...merged.values()];
+}
+
+async function searchSessions(args, currentSessionId, context) {
+  const query = typeof args.query === 'string' ? args.query.trim() : '';
+  if (!query || query.length > 200) throw validation('Indica un texto de búsqueda de hasta 200 caracteres');
+  const limit = args.limit === undefined ? 5 : args.limit;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw validation('El límite debe estar entre 1 y 10');
+  if (args.session_id !== undefined && typeof args.session_id !== 'string') throw validation('Indica una conversación válida');
+  const words = normal(query).split(/\s+/);
+  const candidates = Object.values(await sessions())
+    .filter((session) => !session.deleted && (args.session_id ? session.id === args.session_id : session.id !== currentSessionId))
+    .sort((first, second) => (second.updated_at || 0) - (first.updated_at || 0));
+  const matches = [];
+  let searched = 0;
+  let truncated = false;
+  for (const session of candidates) {
+    if (context?.abortSignal?.aborted) throw aborted();
+    const conv = await shared.state.harness.conversation(session.conversationId, context);
+    if (!conv) continue;
+    searched += 1;
+    let cursor;
+    for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
+      if (context?.abortSignal?.aborted) throw aborted();
+      const page = await conv.entries({}, 500, cursor, context);
+      for (const entry of page.items) {
+        if (!['pi.user', 'pi.assistant'].includes(entry.kind)) continue;
+        const message = entry.model && entry.model[0];
+        if (!message) continue;
+        const text = typeof message.content === 'string' ? message.content : (message.content || [])
+          .filter((block) => block.type === 'text' && !String(block.text || '').startsWith(shared.CONTEXT_MARKER))
+          .map((block) => block.text || '').join('');
+        if (text.startsWith(shared.CHECK_MARKER)) continue;
+        const safe = sanitizeProviderError(text);
+        const normalized = normal(safe);
+        if (!words.every((word) => normalized.includes(word))) continue;
+        const start = Math.max(0, normalized.indexOf(words[0]) - 80);
+        matches.push({
+          session_id: session.id, title: session.title, message_id: entry.id,
+          role: message.role, ts: message.timestamp || 0,
+          excerpt: `${start ? '…' : ''}${safe.slice(start, start + 300)}${safe.length > start + 300 ? '…' : ''}`,
+        });
+        if (matches.length >= limit) return { matches, searched_sessions: searched, truncated: true };
+      }
+      cursor = page.nextCursor;
+      if (!cursor) break;
+    }
+    if (cursor) truncated = true;
+  }
+  return { matches, searched_sessions: searched, truncated };
 }
 
 function defaultToolNames(specs) {
@@ -260,9 +330,9 @@ async function resolveProfile(name) {
   const wanted = String(name || '').trim();
   if (!wanted) return null;
   const saved = Object.values(await profiles());
-  return saved.find((profile) => profile.id === wanted)
-    || saved.find((profile) => String(profile.name || '').trim().toLowerCase() === wanted.toLowerCase())
-    || null;
+  const exact = saved.find((profile) => profile.id === wanted);
+  const matches = saved.filter((profile) => String(profile.name || '').trim().toLowerCase() === wanted.toLowerCase());
+  return exact || (matches.length === 1 ? matches[0] : null);
 }
 
 function nativeTools() {
@@ -295,11 +365,11 @@ async function refreshTools() {
         afterTools: (_output, _task, api) => countRound(api),
         onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
-          if (!message.errorMessage) return;
-          message.errorMessage = sanitizeProviderError(message.errorMessage);
+          if (message.stopReason === 'aborted') return;
+          if (message.errorMessage) message.errorMessage = sanitizeProviderError(message.errorMessage);
           const sessionId = await sessionForConversation(api.conversationId, api, context);
           await commitSessions((sessions) => {
-            if (sessions[sessionId]) sessions[sessionId].last_error = message.errorMessage.slice(0, 300);
+            if (sessions[sessionId]) sessions[sessionId].last_error = message.errorMessage ? message.errorMessage.slice(0, 300) : null;
           });
         },
       }),
@@ -362,9 +432,10 @@ async function beforeTool(call, api, context) {
   if (!await toolEnabled(sessionId, call.name, context)) return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
   const calls = turnState(api.conversationId).calls;
   const signature = `${call.name}:${stableJson(call.arguments || {})}`;
-  const seen = (calls.get(signature) || 0) + 1;
-  calls.set(signature, seen);
-  if (seen > MAX_REPEATS) {
+  const repeated = calls.get(signature) || { count: 0 };
+  repeated.count += 1;
+  calls.set(signature, repeated);
+  if (repeated.count > MAX_REPEATS) {
     return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno con los mismos argumentos. No lo repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
@@ -424,16 +495,19 @@ function waitForDecision(approvalId, context) {
       waiters = new Set();
       shared.decisionWaiters.set(approvalId, waiters);
     }
-    const timer = setTimeout(resolve, 1500);
+    const timer = setTimeout(() => done(), 1500);
     const done = () => {
       clearTimeout(timer);
       waiters.delete(done);
+      if (!waiters.size) shared.decisionWaiters.delete(approvalId);
       if (signal) signal.removeEventListener('abort', onAbort);
       resolve();
     };
     const onAbort = () => {
       clearTimeout(timer);
       waiters.delete(done);
+      if (!waiters.size) shared.decisionWaiters.delete(approvalId);
+      if (signal) signal.removeEventListener('abort', onAbort);
       reject(aborted());
     };
     waiters.add(done);
@@ -450,7 +524,13 @@ function notifyDecision(approvalId) {
 // El backend devuelve la salida en curso completa desde el principio (p. ej. la
 // de shell_run); a pi-durable solo se le pasa lo nuevo para que la UI la vea crecer.
 async function dispatchAndWait(request, context, api) {
+  const signal = context && context.abortSignal;
+  if (signal && signal.aborted) throw aborted();
   const first = await bridge('agent_internal_dispatch', request);
+  const onAbort = () => {
+    bridge('agent_internal_dispatch_cancel', { session_id: request.session_id, call_id: request.call_id }).catch(() => {});
+  };
+  if (signal) signal.addEventListener('abort', onAbort, { once: true });
   let result = first.result;
   let shown = 0;
   const onOutput = (output) => {
@@ -458,10 +538,18 @@ async function dispatchAndWait(request, context, api) {
     api.output(output.slice(shown));
     shown = output.length;
   };
-  while (result === null || result === undefined) {
-    result = await pollDispatch(request.session_id, request.call_id, context, onOutput);
+  try {
+    if (signal && signal.aborted) {
+      onAbort();
+      throw aborted();
+    }
+    while (result === null || result === undefined) {
+      result = await pollDispatch(request.session_id, request.call_id, context, onOutput);
+    }
+    return String(result);
+  } finally {
+    if (signal) signal.removeEventListener('abort', onAbort);
   }
-  return String(result);
 }
 
 async function executeTool(spec, args, api, context) {
@@ -469,9 +557,35 @@ async function executeTool(spec, args, api, context) {
   if (!await toolEnabled(sessionId, spec.name, context)) {
     return { content: [{ type: 'text', text: `Herramienta deshabilitada en esta conversación: ${spec.name}` }], isError: true };
   }
+  const { text, added } = await dispatchTool(spec, args, sessionId, api, context);
+  let parsed = null;
+  try { parsed = JSON.parse(text); } catch { }
+  const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
+  if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
+    turnState(api.conversationId).remaining = parsed.remaining.map(String);
+  }
+  const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
+  if (!isError && (!spec.gated || spec.name === 'desktop_observe')) {
+    const repeated = turnState(api.conversationId).calls.get(`${spec.name}:${stableJson(args || {})}`);
+    if (repeated) {
+      let outcome = stableJson(parsed ?? text);
+      const capture = parsed && (parsed.image || (parsed.observation && parsed.observation.image));
+      if (capture && typeof capture.path === 'string') {
+        const fingerprint = image ? crypto.createHash('sha256').update(image.data).digest('hex') : 'captura';
+        outcome = outcome.replaceAll(JSON.stringify(capture.path), JSON.stringify(fingerprint));
+      }
+      if (repeated.result !== undefined && repeated.result !== outcome) repeated.count = 1;
+      repeated.result = outcome;
+    }
+  }
+  return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError,
+    ...(added && added.length ? { control: { addTools: added } } : {}) };
+}
+
+async function dispatchTool(spec, args, sessionId, api, context) {
   if (spec.kind === 'meta') {
-    const { text, added } = await loadTools(args || {}, sessionId, context);
-    return { content: [{ type: 'text', text }], isError: false, ...(added && added.length ? { control: { addTools: added } } : {}) };
+    if (spec.name === 'sessions_search') return { text: JSON.stringify(await searchSessions(args || {}, sessionId, context)) };
+    return loadTools(args || {}, sessionId, context);
   }
   const callId = dispatchCallId(api.callId, api.taskId);
   const approvalId = shared.approvalsByCall.get(callKey(sessionId, callId));
@@ -485,14 +599,10 @@ async function executeTool(spec, args, api, context) {
   };
   if (spec.kind === 'subagent') {
     const profile = await resolveProfile(args && args.agent);
-    if (!profile) {
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ error: 'Ese agente guardado ya no existe; elige uno de los disponibles' }) }],
-        isError: true,
-      };
-    }
+    if (!profile) return { text: JSON.stringify({ error: 'No se encontró un agente único con esa referencia; usa el identificador de un bot disponible' }) };
     const conv = await conversation(sessionId);
     const enabled = (await conv.agent(context)).tools.map((tool) => tool.name);
+    const session = await requireSession(sessionId);
     request.context = {
       subagent: {
         id: profile.id,
@@ -500,26 +610,20 @@ async function executeTool(spec, args, api, context) {
         instructions: profile.instructions,
         tools: Array.isArray(profile.tools) ? profile.tools : null,
         enabled,
+        provider: session.provider,
+        model: session.model,
       },
     };
   }
-  let text;
   if (spec.name === 'ask_user') shared.waitingInput.add(sessionId);
   try {
-    text = spec.kind === 'native'
+    const text = spec.kind === 'native'
       ? await dispatchNative(spec, request, context)
       : await dispatchAndWait(request, context, api);
+    return { text };
   } finally {
     if (spec.name === 'ask_user') shared.waitingInput.delete(sessionId);
   }
-  let parsed = null;
-  try { parsed = JSON.parse(text); } catch { }
-  const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
-  if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
-    turnState(api.conversationId).remaining = parsed.remaining.map(String);
-  }
-  const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
-  return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError };
 }
 
 // Sin visión, pi-ai sustituye la imagen por un aviso pegado al texto del
@@ -638,18 +742,22 @@ function pollDispatch(sessionId, callId, context, onOutput) {
     const timer = setTimeout(async () => {
       try {
         const next = await bridge('agent_internal_dispatch_result', { session_id: sessionId, call_id: callId });
+        if (signal && signal.aborted) return;
         if (onOutput && typeof next.output === 'string') onOutput(next.output);
         resolve(next.result === undefined ? null : next.result);
       } catch (err) {
         resolve(INTERRUPTED_RESULT);
+      } finally {
+        if (signal) signal.removeEventListener('abort', onAbort);
       }
     }, 400);
+    const onAbort = () => {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      reject(aborted());
+    };
     if (signal) {
-      signal.addEventListener('abort', () => {
-        clearTimeout(timer);
-        bridge('agent_internal_dispatch_cancel', { session_id: sessionId, call_id: callId }).catch(() => {});
-        reject(aborted());
-      }, { once: true });
+      signal.addEventListener('abort', onAbort, { once: true });
     }
   });
 }

@@ -207,6 +207,7 @@ async function nativeToolContext(name) {
   const { createHash } = require('node:crypto');
   const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
   const context = { tool_version: hash({ policy: 1, spec: selected }) };
+  if (WEB[name] && selected.gated) return Object.assign(context, await require('./agent-browser').approvalContext());
   if (CLOUD[name]) return Object.assign(context, await CLOUD[name].context(name));
   if (selected.module === 'espacios') {
     Object.assign(context, await require('./agent-renderer-tools').runRendererTool('espacios_context'));
@@ -312,11 +313,12 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
   if (SPECS.find((s) => s.name === name).gated) {
     const current = await nativeToolContext(name);
     if (!approvedContext || JSON.stringify(current) !== JSON.stringify(approvedContext)) {
+      if (WEB[name]) throw new Error('La página cambió después de aprobar; vuelve a leerla con web_read y solicita una nueva aprobación');
       throw new Error('La cuenta, los permisos o la hoja cambiaron después de aprobar; solicita una nueva aprobación');
     }
   }
   if (CLOUD[name]) return CLOUD[name].run(name, params || {}, { dir: draftsDir(sessionId) });
-  if (WEB[name]) return require('./agent-browser').run(name, params || {}, { dir: `${draftsDir(sessionId)}.screens` });
+  if (WEB[name]) return require('./agent-browser').run(name, params || {}, { dir: `${draftsDir(sessionId)}.screens`, approvedContext });
   if (name === 'document_generate') return generateDocument(params, sessionId);
   if (RENDERER_TOOLS[name]) {
     const result = await require('./agent-renderer-tools').runRendererTool(name,

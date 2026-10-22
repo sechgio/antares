@@ -29,12 +29,14 @@ const availableTools = [
   { name: 'db_clear', kind: 'backend' as const, gated: true, enabled: true },
 ];
 const scrollToDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
+const scrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
 
 beforeEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
   addToast.mockClear();
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [] });
   vi.spyOn(agentApi, 'agentToolsList').mockResolvedValue({ tools: [] });
   vi.spyOn(agentApi, 'agentSessionsList').mockResolvedValue({ sessions: [session] });
@@ -45,6 +47,165 @@ afterEach(() => {
   vi.useRealTimers();
   if (scrollToDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollTo', scrollToDescriptor);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
+  if (scrollIntoViewDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollIntoViewDescriptor);
+  else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+});
+
+it('sugiere bots con @ y permite elegir con teclado sin enviar el mensaje', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: ['Revisor de PDFs', 'Redactor'].map((name, index) => ({
+    id: `bot-${index}`, name, description: 'Comprueba firmas', instructions: 'Revisa', starter: '', tools: null, created_at: 1, updated_at: 1,
+  })) });
+  render(<AgentView />);
+  await act(async () => {});
+  const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
+  fireEvent.change(composer, { target: { value: 'Consulta @' } });
+  expect(screen.getByRole('listbox', { name: 'Bots para mencionar' })).toBeVisible();
+  expect(screen.getAllByRole('option')).toHaveLength(2);
+  fireEvent.keyDown(composer, { key: 'Enter', isComposing: true });
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(composer).toHaveValue('Consulta @');
+  fireEvent.keyDown(composer, { key: 'ArrowDown' });
+  expect(screen.getByRole('option', { name: /Redactor/ })).toHaveAttribute('aria-selected', 'true');
+  fireEvent.keyDown(composer, { key: 'Enter' });
+  expect(composer).toHaveValue('Consulta @bot:bot-1 ');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  fireEvent.change(composer, { target: { value: 'Consulta @Revi' } });
+  expect(screen.getAllByRole('option')).toHaveLength(1);
+  fireEvent.keyDown(composer, { key: 'Escape' });
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  expect(composer).toHaveValue('Consulta @Revi');
+});
+
+it('distingue bots con nombres repetidos y conserva el texto después del cursor', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: ['Revisor', 'Révisor'].map((name, index) => ({
+    id: `bot-${index}`, name, description: `Especialidad ${index}`, instructions: 'Revisa', starter: '', tools: null, created_at: 1, updated_at: 1,
+  })) });
+  render(<AgentView />);
+  await act(async () => {});
+  const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
+  fireEvent.change(composer, { target: { value: 'Pide @ el informe', selectionStart: 6 } });
+  fireEvent.click(screen.getByRole('option', { name: /Especialidad 1/ }));
+  expect(composer).toHaveValue('Pide @bot:bot-1  el informe');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+});
+
+it('conserva el bot seleccionado en la cola restaurada aunque cambie su nombre', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  const original = { id: 'bot-original', name: 'Revisor', description: '', instructions: 'Revisa', starter: '', tools: null,
+    created_at: 1, updated_at: 1 };
+  const profiles = vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [original] });
+  const view = render(<AgentView />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Consulta @Rev' } });
+  fireEvent.click(screen.getByRole('option', { name: /Revisor/ }));
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  view.unmount();
+  profiles.mockResolvedValue({ profiles: [{ ...original, name: 'Archivado' }, { ...original, id: 'bot-replacement' }] });
+  list.mockResolvedValue(empty);
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByTitle('Mensaje pendiente — clic para enviar')); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Consulta @bot:bot-original', expect.any(String), []);
+});
+
+it('separa agentes y conversaciones sin perder el borrador ni enviar mensajes', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [{
+    id: 'revisor', name: 'Revisor de PDFs', description: 'Comprueba firmas', instructions: 'Revisa', starter: '', tools: null,
+    created_at: 1, updated_at: 1,
+  }] });
+  render(<AgentView />);
+  await act(async () => {});
+  const navigation = within(screen.getByRole('group', { name: 'Vistas del agente' }));
+  expect(navigation.getByRole('button', { name: 'Conversaciones' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.queryByTitle('Nueva conversación con Revisor de PDFs')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador pendiente' } });
+  fireEvent.click(navigation.getByRole('button', { name: 'Agentes' }));
+  expect(screen.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
+  expect(within(screen.getByRole('complementary', { name: 'Agentes y conversaciones' })).queryByText('Primera')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador pendiente');
+  fireEvent.click(screen.getByRole('button', { name: 'Buscar agentes' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar agentes' }), { target: { value: 'firmas' } });
+  expect(screen.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar agentes' }), { target: { value: 'sin-coincidencias' } });
+  expect(screen.getByText(/Sin agentes para/)).toBeInTheDocument();
+  fireEvent.keyDown(screen.getByLabelText('Mensaje para el agente'), { key: 'k', ctrlKey: true });
+  expect(navigation.getByRole('button', { name: 'Conversaciones' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('textbox', { name: 'Buscar conversaciones' })).toHaveFocus();
+  fireEvent.click(navigation.getByRole('button', { name: 'Agentes' }));
+  expect(screen.getByRole('textbox', { name: 'Buscar agentes' })).toHaveValue('sin-coincidencias');
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar búsqueda' }));
+  expect(screen.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+});
+
+it('busca herramientas por etiqueta o nombre y abre solo los grupos con coincidencias', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentToolsList).mockResolvedValue({ tools: [
+    ...availableTools, { name: 'shell_run', kind: 'backend', gated: true, enabled: false },
+  ] });
+  const save = vi.spyOn(agentApi, 'agentToolsSet');
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Herramientas del agente' }));
+  const panel = within(screen.getByRole('dialog', { name: 'Herramientas del agente' }));
+  const search = panel.getByRole('textbox', { name: 'Buscar herramientas' });
+  await waitFor(() => expect(search).toHaveFocus());
+  const transitions = getComputedStyle(search).transitionProperty.split(',').map((property) => property.trim());
+  expect(transitions).toContain('border-color');
+  expect(transitions).not.toContain('all');
+  expect(transitions).not.toContain('visibility');
+  expect(panel.getByText('2 de 3 habilitadas')).toBeInTheDocument();
+  fireEvent.change(search, { target: { value: 'PowerShell' } });
+  expect(panel.getByRole('switch', { name: 'Habilitar shell_run' })).toHaveAttribute('aria-checked', 'false');
+  expect(panel.queryByText('Lectura directa', { selector: 'summary' })).not.toBeInTheDocument();
+  fireEvent.change(search, { target: { value: 'db_clear' } });
+  expect(panel.getByRole('switch', { name: 'Habilitar db_clear' })).toBeInTheDocument();
+  fireEvent.change(search, { target: { value: 'sin-coincidencias' } });
+  expect(panel.getByText(/No hay coincidencias/)).toBeInTheDocument();
+  fireEvent.click(panel.getByRole('button', { name: 'Limpiar búsqueda de herramientas' }));
+  expect(search).toHaveValue('');
+  expect(save).not.toHaveBeenCalled();
+});
+
+it('filtra skills y MCP sin instalar ni habilitar capacidades automáticamente', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentToolsList).mockResolvedValue({ tools: [
+    ...availableTools,
+    { name: 'skills_list', kind: 'backend', module: 'agent', gated: false, enabled: false },
+    { name: 'skills_read', kind: 'backend', module: 'agent', gated: false, enabled: false },
+    { name: 'mcp_library', kind: 'mcp', gated: true, enabled: false },
+  ] });
+  const save = vi.spyOn(agentApi, 'agentToolsSet');
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Herramientas del agente' }));
+  const panel = within(screen.getByRole('dialog', { name: 'Herramientas del agente' }));
+  const filters = within(panel.getByRole('group', { name: 'Filtrar herramientas' }));
+  fireEvent.click(filters.getByRole('button', { name: 'Skills' }));
+  expect(panel.getByRole('switch', { name: 'Habilitar skills_list' })).toHaveAttribute('aria-checked', 'false');
+  expect(panel.getAllByRole('switch')).toHaveLength(2);
+  expect(panel.getByText(/no instalan skills/)).toBeInTheDocument();
+  fireEvent.click(filters.getByRole('button', { name: 'MCP' }));
+  expect(panel.getAllByRole('switch')).toHaveLength(1);
+  expect(panel.getByRole('switch', { name: 'Habilitar mcp_library' })).toBeInTheDocument();
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(filters.getByRole('button', { name: 'Skills' }));
+  save.mockResolvedValueOnce({ tools: [] });
+  await act(async () => { fireEvent.click(panel.getByRole('switch', { name: 'Habilitar skills_list' })); });
+  expect(save).toHaveBeenLastCalledWith('s1', ['flows_list', 'db_clear', 'skills_list']);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: 'Herramientas del agente' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Herramientas del agente' })).toHaveFocus();
 });
 
 it('muestra conversaciones de una sola línea y reserva los avatares de la barra lateral para los agentes', async () => {
@@ -61,8 +222,7 @@ it('muestra conversaciones de una sola línea y reserva los avatares de la barra
   const first = await within(sidebar).findByRole('button', { name: 'Primera' });
   expect(first).toHaveAttribute('title', 'Primera');
   expect(first).toHaveAttribute('aria-current', 'page');
-  expect(within(sidebar).getAllByRole('img')).toHaveLength(1);
-  expect(within(sidebar).getByRole('img', { name: 'Reportes' })).toBeInTheDocument();
+  expect(within(sidebar).queryAllByRole('img')).toHaveLength(0);
   expect(within(sidebar).queryByText(/prueba|local|hace|ahora/)).not.toBeInTheDocument();
   expect(within(sidebar).getByTitle('Proveedor sin conexión')).toBeInTheDocument();
   expect(screen.getByRole('main', { name: 'Conversación del agente' }).querySelector('header svg[role="img"]')).toBeNull();
@@ -71,6 +231,9 @@ it('muestra conversaciones de una sola línea y reserva los avatares de la barra
   expect(second).toHaveAttribute('aria-current', 'page');
   expect(first).not.toHaveAttribute('aria-current');
   expect(agentApi.agentMessagesList).toHaveBeenLastCalledWith('s2');
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Agentes' }));
+  expect(within(sidebar).getAllByRole('img')).toHaveLength(1);
+  expect(within(sidebar).getByRole('img', { name: 'Reportes' })).toBeInTheDocument();
 });
 
 it('conserva la búsqueda y el borrado desde las filas compactas', async () => {
@@ -557,6 +720,7 @@ it('abre una conversación desde un agente guardado con su mensaje inicial', asy
   const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } } });
   render(<AgentView />);
   await act(async () => {});
+  fireEvent.click(within(screen.getByRole('group', { name: 'Vistas del agente' })).getByRole('button', { name: 'Agentes' }));
   await act(async () => { fireEvent.click(screen.getByTitle('Nueva conversación con Informe mensual')); });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
