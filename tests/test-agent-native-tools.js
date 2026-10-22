@@ -11,6 +11,8 @@ const autoimg = nativeMethods('autoimg');
 
 assert(specs.filter((s) => s.module === 'autoimg').every((s) => autoimg.has(s.name)), 'toda herramienta AutoIMG existe en el catálogo native:autoimg');
 assert(specs.every((s) => s.kind === 'native' && s.module && s.inputSchema.type === 'object'), 'specs completas');
+assert(specs.some((s) => s.name === 'canvas_apply_layers' && s.module === 'canvas' && s.gated && s.inheritSchema),
+  'Canvas aplica capas con aprobación, puente del editor y esquema heredado del backend');
 for (const config of ['autoimg_oauth_config_save', 'autoimg_oauth_config_status', 'autoimg_sheets_auth_url',
   'autoimg_sheets_auth_revoke', 'autoimg_sheets_auth_cancel', 'autoimg_sheets_open', 'autoimg_auto_sync_toggle', 'autoimg_bootstrap']) {
   assert(!names.has(config), `${config} queda en la interfaz humana`);

@@ -112,6 +112,7 @@ const RENDERER_TOOLS = {
   }, false],
   document_generate: ['documents', 'Generar un PDF con la plantilla y su motor RGB o CMYK', null, false],
   canvas_fill_fields: ['canvas', 'Completar campos de Canvas comprobando el editor y la revisión', null, true],
+  canvas_apply_layers: ['canvas', 'Maquetar capas y campos de Canvas con revisión, geometría en mm y resultado verificable', null, true],
   espacios_list: ['espacios', 'Listar Espacios accesibles en la sesión actual', OBJECT, false],
   espacios_projects: ['espacios', 'Listar proyectos de un Espacio', ID_SCHEMA, false],
   espacios_tasks: ['espacios', 'Listar tareas de un proyecto', ID_SCHEMA, false],

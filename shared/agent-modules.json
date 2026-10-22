@@ -65,7 +65,7 @@
       "label": "Canvas",
       "aliases": ["canvas", "lienzo"],
       "handlers": ["canvas"],
-      "methods": ["canvas_fill_fields"]
+      "methods": ["canvas_fill_fields", "canvas_apply_layers"]
     },
     "design": {
       "label": "Design",
