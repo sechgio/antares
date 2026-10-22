@@ -2027,6 +2027,173 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { spawn } = require('node:child_process');
+    const { createInterface } = require('node:readline');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-delegate-'));
+    const script = String.raw`
+import json
+import sys
+import threading
+from collections.abc import Callable
+from pathlib import Path
+from backend.core.agent import agent, agent_chat
+from backend.handlers import agent_internal
+from backend.core.integrations.types import JsonObject
+
+store = agent.AgentStore(Path(sys.argv[1]))
+reads = []
+routes = []
+started = threading.Event()
+release = threading.Event()
+cancellations = 0
+
+def chat(provider: str, model: str, messages: list[JsonObject], *, system: str, tools: list[JsonObject]) -> JsonObject:
+    routes.append({"provider": provider, "model": model, "tools": [tool["name"] for tool in tools]})
+    if messages[0]["content"] == "espera":
+        started.set()
+        release.wait(20)
+        return {"text": "Respuesta tardía", "calls": []}
+    if len(messages) == 1:
+        return {"calls": [{"id": name, "name": name, "params": {}} for name in ("canvas_list", "db_clear", "subagent_run")]}
+    return {"text": provider + "/" + model, "calls": []}
+
+def handler(name: str) -> Callable[[JsonObject], JsonObject]:
+    def execute(params: JsonObject) -> JsonObject:
+        reads.append(name)
+        return {"documents": ["Plantilla verificada"]}
+    return execute
+
+agent_chat.chat = chat
+agent_internal._store = lambda: store
+agent.get_agent_store = lambda: store
+runner = agent.AgentRunner(store, handler)
+agent.get_agent_runner = lambda: runner
+for line in sys.stdin:
+    request = json.loads(line)
+    try:
+        method = request["method"]
+        params = request["params"]
+        if method == "test_state":
+            result = {"routes": routes, "reads": reads, "started": started.is_set(), "cancellations": cancellations,
+                      "legacy": store.get_session(params["session_id"]) is not None}
+        elif method == "test_release":
+            release.set()
+            result = {}
+        else:
+            if method == "agent_internal_dispatch_cancel":
+                cancellations += 1
+            result = agent_internal.HANDLERS[method](params)
+        print(json.dumps({"id": request["id"], "result": result}, ensure_ascii=False), flush=True)
+    except Exception as error:
+        print(json.dumps({"id": request["id"], "error": str(error)}), flush=True)
+`;
+    const child = spawn('uv', ['run', '--project', path.resolve(__dirname, '..'), '--locked', '--extra', 'dev',
+      'python', '-u', '-c', script, dir], {
+      cwd: path.resolve(__dirname, '..'), windowsHide: true,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+    });
+    const pending = new Map();
+    let sequence = 0;
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-2000); });
+    const closed = new Promise((resolve) => child.once('close', resolve));
+    const failPending = (error) => {
+      for (const waiter of pending.values()) { clearTimeout(waiter.timer); waiter.reject(error); }
+      pending.clear();
+    };
+    child.on('error', failPending);
+    child.on('close', () => failPending(new Error(`El bridge Python terminó: ${stderr}`)));
+    const lines = createInterface({ input: child.stdout });
+    lines.on('line', (line) => {
+      const response = JSON.parse(line);
+      const waiter = pending.get(response.id);
+      if (!waiter) return;
+      pending.delete(response.id);
+      clearTimeout(waiter.timer);
+      if (response.error) waiter.reject(new Error(response.error));
+      else waiter.resolve(response.result);
+    });
+    const rpc = (method, params = {}) => new Promise((resolve, reject) => {
+      const id = ++sequence;
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Timeout del bridge de prueba: ${method}; ${stderr}`)); }, 30_000);
+      pending.set(id, { resolve, reject, timer });
+      child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+    });
+    try {
+      const { bridge } = makeBridge();
+      const delegated = [];
+      const wired = async (method, params) => {
+        if (['agent_internal_dispatch', 'agent_internal_dispatch_result', 'agent_internal_dispatch_cancel'].includes(method)) {
+          if (method === 'agent_internal_dispatch') delegated.push(params);
+          return rpc(method, params);
+        }
+        return bridge(method, params);
+      };
+      const faux = await openFaux([], wired);
+      const { profile } = await runtime.handlers.agent_profile_save({ name: 'Investigador real',
+        instructions: 'Lee Canvas y resume.', tools: ['canvas_list', 'db_clear'] });
+      const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      const responses = (task) => [
+        fauxAssistantMessage([fauxToolCall('subagent_run', { agent: profile.id, task })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('Recibí el resultado del subagente'),
+      ];
+      const receipt = async () => {
+        const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+        return JSON.parse(listed.messages.flatMap((message) => message.tool_calls || [])
+          .filter((call) => call.name === 'subagent_run').at(-1).result);
+      };
+      faux.setResponses(responses('primera lectura'));
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega la revisión' });
+      assert(await waitIdle(session.id), 'desktop y Python completan una delegación sin sesión legacy');
+      const first = await receipt();
+      assert(first.status === 'done' && first.text === 'faux/faux-1', 'el subagente usa el proveedor y modelo del chat desktop');
+      assert(first.steps.map((step) => step.status).join() === 'done,failed,failed',
+        'la lectura cruza el adapter y los efectos y la recursión quedan bloqueados');
+      const { fauxProvider } = await import('@earendil-works/pi-ai');
+      const next = fauxProvider({ provider: 'faux-next', models: [{ id: 'modelo-actual' }] });
+      runtime._internal._providerOverrides.set('faux-next', next.provider);
+      await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'faux-next', model: 'modelo-actual' });
+      next.setResponses(responses('segunda lectura'));
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega con el modelo nuevo' });
+      assert(await waitIdle(session.id), 'la delegación termina después de cambiar de modelo');
+      assert((await receipt()).text === 'faux-next/modelo-actual', 'Python recibe el modelo vigente después del cambio público');
+      await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['subagent_run'] });
+      next.setResponses(responses('lectura deshabilitada'));
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'comprueba los permisos actuales' });
+      assert(await waitIdle(session.id), 'la delegación con lectura deshabilitada termina');
+      assert((await receipt()).steps.every((step) => step.status === 'failed'), 'el subagente respeta las herramientas deshabilitadas en el chat');
+      let state = await rpc('test_state', { session_id: session.id });
+      assert(!state.legacy && state.reads.join() === 'canvas_list,canvas_list', 'no se crea una sesión legacy ni se ejecutan efectos o delegaciones recursivas');
+      assert(state.routes[0].tools.join() === 'canvas_list' && state.routes.at(-1).tools.length === 0,
+        'el modelo del subagente solo recibe las lecturas autorizadas por perfil y conversación');
+      next.setResponses([fauxAssistantMessage([fauxToolCall('subagent_run', { agent: profile.id, task: 'espera' })], { stopReason: 'toolUse' })]);
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega y espera' });
+      assert(await waitFor(async () => (await rpc('test_state', { session_id: session.id })).started), 'el proveedor falso del subagente queda en vuelo');
+      await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+      assert(await waitIdle(session.id), 'Detener cierra el turno desktop con el subagente en vuelo');
+      await rpc('test_release');
+      const call = delegated.at(-1);
+      let stopped;
+      assert(await waitFor(async () => {
+        stopped = await rpc('agent_internal_dispatch_result', { session_id: session.id, call_id: call.call_id });
+        return stopped.dispatch.status !== 'running';
+      }), 'el despacho Python también cierra tras liberar la respuesta tardía');
+      state = await rpc('test_state', { session_id: session.id });
+      assert(stopped.dispatch.status === 'uncertain' && !JSON.parse(stopped.result).text,
+        'la respuesta posterior a Detener no se guarda como una delegación exitosa');
+      assert(state.cancellations === 1, 'Detener envía una cancelación al subagente real');
+    } finally {
+      await runtime.shutdown();
+      child.stdin.end();
+      const timer = setTimeout(() => child.kill(), 3000);
+      await closed;
+      clearTimeout(timer);
+      lines.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   finish();
 }
 
