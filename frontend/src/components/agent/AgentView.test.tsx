@@ -1409,6 +1409,39 @@ it('conserva una indicación fallida de la cola y la recupera con su misma inten
   expect(screen.getByText('Indicación recibida.')).toBeVisible();
 });
 
+it.each([
+  { correction: false, pending: false }, { correction: true, pending: false },
+  { correction: false, pending: true }, { correction: true, pending: true },
+])('recupera un envío directo tras remontar con correction=$correction y pending=$pending', async ({ correction, pending }) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: correction });
+  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'original.pdf', kind: 'files' }] });
+  const admitted = deferred<{ accepted: boolean }>();
+  vi.mocked(agentApi.agentMessageSend).mockReturnValueOnce(admitted.promise);
+  const first = render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Encargo original' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: correction ? 'Indicar ahora' : 'Enviar', exact: true })); });
+  const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
+  expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
+    { session: 's1', text: 'Encargo original', requestId: original[2], attachments: ['a1'], failed: true, correction },
+  ]);
+  expect(screen.getByLabelText('Quitar de la cola')).toBeDisabled();
+  if (!pending) await act(async () => { admitted.resolve({ accepted: false }); });
+  first.unmount();
+  if (pending) await act(async () => { admitted.resolve({ accepted: false }); });
+  render(<AgentView />);
+  await act(async () => {});
+  expect(agentApi.agentMessageSend).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador nuevo' } });
+  await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
+  expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador nuevo');
+  expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([]);
+  expect(screen.getByText(correction ? 'Indicación recibida.' : 'Mensaje recibido.')).toBeVisible();
+});
+
 it('no convierte un envío restaurado de intención desconocida en una indicación', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: 's1', text: 'Encargo anterior', requestId: 'previous' }]));

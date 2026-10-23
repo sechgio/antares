@@ -594,6 +594,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       setSendingCorrection(true);
     }
     recordReceipt({ intent, phase: 'sending' });
+    setQueued((previous) => previous.some((item) => item.session === id && item.requestId === requestId)
+      ? previous : [...previous, { ...intent, attachments: [...attachmentIds], failed: true }]);
     const state = messagesVersionRef.current.get(id) ?? { version: 0, pending: 0 };
     messagesVersionRef.current.set(id, state);
     state.version += 1;
@@ -605,6 +607,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         : agentApi.agentMessageSend(id, content, requestId, attachmentIds)).finally(() => { state.pending -= 1; });
       if (res.accepted !== true) throw new Error(correction ? 'No se pudo registrar la indicación' : 'No se pudo registrar el mensaje');
       recordReceipt({ intent, phase: 'received' });
+      setQueued((previous) => previous.filter((item) => item.session !== id || item.requestId !== requestId));
       setAttachments((previous) => previous.filter((file) => !attachmentIds.includes(file.id)));
       if (id === sessionIdRef.current) {
         const restored = restoredDraftRef.current;
@@ -1180,10 +1183,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                       type="button"
                       className="truncate text-[var(--accent-yellow)]"
                       title="Reintentar el envío pendiente"
+                      disabled={modelBusy || stopping}
                       onClick={() => {
                         const receipt = sendReceipts.find((entry) => entry.intent.session === item.session && entry.intent.requestId === item.requestId);
                         if (receipt) void retrySend(receipt.intent);
-                        else setQueued((q) => q.map((i) => (i === item ? { ...i, failed: false } : i)));
+                        else void sendToSession({ session: item.session, text: item.text, requestId: item.requestId,
+                          attachments: item.attachments ?? [], correction: item.correction === true });
                       }}
                     >
                       {item.text}
@@ -1209,6 +1214,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
                     aria-label="Quitar de la cola"
                     title="Quitar de la cola"
+                    disabled={requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId]))}
                     onClick={() => setQueued((q) => q.filter((i) => i !== item))}
                   >
                     <X size={10} />
