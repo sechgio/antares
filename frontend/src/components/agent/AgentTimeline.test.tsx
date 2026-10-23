@@ -116,15 +116,76 @@ it('resume más de dos pasos de herramientas y los abre si alguno necesita atenc
   expect(container.querySelector('details')?.open).toBe(true);
 });
 
+it('conserva la apertura elegida por el usuario cuando terminan las herramientas', () => {
+  const message = (status: 'running' | 'done' | 'failed') => ({ role: 'assistant' as const, content: '', ts: 1,
+    tool_calls: ['a', 'b', 'c'].map((id) => ({ id, name: 'canvas_list', params: {}, status: id === 'c' ? status : 'done' as const, gated: false })) });
+  const { container, rerender } = render(<MessageRow msg={message('running')} />);
+  const summary = screen.getByText('3 pasos · 2 completados');
+  fireEvent.click(summary);
+  fireEvent.click(summary);
+  rerender(<MessageRow msg={message('done')} />);
+  expect(container.querySelector('details')?.open).toBe(true);
+  fireEvent.click(screen.getByText('3 pasos · 3 completados'));
+  rerender(<MessageRow msg={message('failed')} />);
+  expect(container.querySelector('details')?.open).toBe(false);
+  expect(screen.getByText('· 1 por revisar')).toBeVisible();
+});
+
+it('abre el error de una herramienta para poder revisarlo sin buscar sus detalles', () => {
+  const { container } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 'read', name: 'fs_read', params: { path: 'informe.pdf' }, status: 'failed', gated: false,
+    result: '{"error":"El archivo ya no existe"}',
+  }] }} />);
+  expect(container.querySelector('details')?.open).toBe(true);
+  expect(screen.getByText(/El archivo ya no existe/)).toBeVisible();
+});
+
+it('espera la aprobación del comando sin abrir una terminal vacía', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 'shell', name: 'shell_run', params: { command: 'npm test' }, status: 'pending', gated: true,
+  }] }} />);
+  expect(screen.getByText('esperando aprobación')).toBeVisible();
+  expect(screen.queryByRole('log')).not.toBeInTheDocument();
+});
+
+it('conserva la posición de lectura del terminal y sigue la salida solo al volver al final', () => {
+  const message = (output: string) => ({ role: 'assistant' as const, content: '', ts: 1, tool_calls: [{
+    id: 'shell', name: 'shell_run', params: { command: 'npm test' }, status: 'running' as const, gated: true, output,
+  }] });
+  const { rerender } = render(<MessageRow msg={message('Primera línea')} />);
+  const log = screen.getByRole('log');
+  Object.defineProperty(log, 'scrollHeight', { configurable: true, value: 1000 });
+  Object.defineProperty(log, 'clientHeight', { configurable: true, value: 100 });
+  log.scrollTop = 120;
+  fireEvent.scroll(log);
+  rerender(<MessageRow msg={message('Primera línea\nSegunda línea')} />);
+  expect(log.scrollTop).toBe(120);
+  log.scrollTop = 900;
+  fireEvent.scroll(log);
+  Object.defineProperty(log, 'scrollHeight', { configurable: true, value: 1100 });
+  rerender(<MessageRow msg={message('Primera línea\nSegunda línea\nTercera línea')} />);
+  expect(log.scrollTop).toBe(1100);
+});
+
+it('muestra el comando completo antes de aprobarlo aunque supere los 400 caracteres', () => {
+  const command = `Write-Output '${'a'.repeat(500)}'`;
+  render(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    id: 'a', session_id: 's', call_id: 'c', method: 'shell_run', status: 'pending', created_at: 1, decided_at: null,
+    params: { command },
+  }} />);
+  expect(screen.getByText(command, { exact: true })).toBeVisible();
+});
+
 it('muestra los comandos como terminal: abierta y animada mientras corre, con su salida al terminar', () => {
   const shell = (status: string, result?: string) => ({ role: 'assistant', content: '', ts: 1, tool_calls: [{
     id: 't', name: 'shell_run', params: { command: 'npm test' }, status, gated: true, result,
   }] }) as never;
   const { rerender } = render(<MessageRow msg={shell('running')} />);
-  expect(screen.getByText(/Ejecutando/)).toHaveClass('agent-shimmer');
-  expect(screen.getByRole('log', { name: 'Salida de npm test' })).toBeInTheDocument();
+  expect(screen.getByText(/Ejecutando/)).toBeVisible();
+  expect(screen.getByRole('log', { name: 'Salida de npm test' })).toHaveAttribute('aria-busy', 'true');
   rerender(<MessageRow msg={shell('done', JSON.stringify({ exit_code: 1, stdout: 'ok 1\nfallo 2\n', stderr: '', duration_s: 4.2 }))} />);
-  expect(screen.getByText(/Ejecutó/)).not.toHaveClass('agent-shimmer');
+  expect(screen.getByText(/Ejecutó/)).toBeVisible();
+  expect(screen.getByRole('log', { name: 'Salida de npm test' })).toHaveAttribute('aria-busy', 'false');
   expect(screen.getByText('código 1')).toBeInTheDocument();
   expect(screen.getByText('fallo 2')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /Ejecutó npm test/ }));
@@ -293,12 +354,13 @@ it('pregunta por la acción concreta y permite rechazarla o aprobarla', () => {
   const decide = vi.fn();
   const approval = { id: 'a1', session_id: 's', call_id: 'c', method: 'canvas_list', params: { destination_folder: 'C:\\salida', filename: 'a.pdf' }, status: 'pending', created_at: 1, decided_at: null } as const;
   const { rerender } = render(<ApprovalCard busy={false} onDecide={decide} approval={approval} />);
-  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('¿Ejecutar «Listar documentos de Canvas»?');
+  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('Listar documentos de Canvas');
+  expect(screen.getByText('Aprobación necesaria')).toBeVisible();
   expect(screen.getByText('Destino: C:\\salida\\a.pdf')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Rechazar' }));
   expect(decide).toHaveBeenCalledWith('a1', false);
   rerender(<ApprovalCard busy onDecide={decide} approval={{ ...approval, method: 'metodo_desconocido' }} />);
-  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('¿Permitir una acción avanzada?');
+  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('Acción avanzada');
   expect(screen.getByRole('button', { name: 'Aprobar' })).toBeDisabled();
 });
 
@@ -321,7 +383,9 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
     id: 'a', session_id: 's', call_id: 'c', method: 'shell_run', status: 'pending', created_at: 1, decided_at: null,
     params: { command: 'Get-ChildItem', cwd: 'C:\datos' },
   }} />);
-  expect(screen.getByText('¿Ejecutar «Ejecutar un comando de PowerShell»?')).toBeInTheDocument();
-  expect(screen.getByText('Comando: Get-ChildItem')).toBeInTheDocument();
+  expect(screen.getByText('Ejecutar un comando de PowerShell')).toBeInTheDocument();
+  expect(screen.getByText('Get-ChildItem', { exact: true })).toBeVisible();
   expect(screen.getByText('Carpeta: C:\datos')).toBeInTheDocument();
+  expect(screen.getByText(/puede acceder al equipo completo/)).toBeInTheDocument();
+  expect(screen.getByText(/Requiere tu aprobación también en Acceso completo/)).toBeInTheDocument();
 });

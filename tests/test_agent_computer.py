@@ -130,6 +130,22 @@ def test_shell_runs_powershell_in_the_workspace(store):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_preserves_the_middle_of_long_output_and_scopes_paged_reads(store):
+    out = _run(store, "shell_run", command="[Console]::Write(('a'*3000)+'CENTRO'+('b'*3000)); [Console]::Error.Write('error completo')")
+    assert "CENTRO" not in out["stdout"]
+    page = _run(store, "shell_output", output_id=out["output_id"], offset=3000, limit=6)
+    assert page["content"] == "CENTRO" and page["next_offset"] == 3006
+    assert page["total_chars"] == 6006
+    assert _run(store, "shell_output", output_id=out["output_id"], stream="stderr")["content"] == "error completo"
+    reloaded = agent.AgentStore(store.base_dir)
+    assert agent_tools.run("shell_output", {"output_id": out["output_id"], "offset": 6000}, reloaded, "s1")["content"] == "b" * 6
+    with pytest.raises(ValueError):
+        agent_tools.run("shell_output", {"output_id": out["output_id"]}, store, "s2")
+    with pytest.raises(ValueError):
+        _run(store, "shell_output", output_id="../approvals")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
 def test_shell_cancellation_kills_the_command(store):
     token = _CancelEvent()
     threading.Timer(1.0, token.cancel).start()

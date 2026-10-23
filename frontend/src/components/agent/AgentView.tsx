@@ -152,7 +152,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     agentApi.agentProfilesList().then((res) => { if (!cancelled) setProfiles(res.profiles); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
-  const [deciding, setDeciding] = useState(false);
+  const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
+  const decisionRef = useRef<string | null>(null);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean }[]>(() => {
@@ -168,7 +169,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         })) : [];
     } catch { return []; }
   });
-  const failedSendRef = useRef<{ session: string; text: string; requestId: string } | null>(null);
+  const failedSendRef = useRef<{ session: string; text: string; requestId: string; attachments: string[] } | null>(null);
   const correctionInFlightRef = useRef(false);
   const [sendingCorrection, setSendingCorrection] = useState(false);
   const [receivedCorrection, setReceivedCorrection] = useState('');
@@ -550,15 +551,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setDraft('');
     atBottomRef.current = true;
     const failed = failedSendRef.current;
-    const requestId = failed && failed.session === sessionId && failed.text === content ? failed.requestId : newRequestId();
     const attachmentIds = attachments.map((a) => a.id);
+    const requestId = failed && failed.session === sessionId && failed.text === content
+      && JSON.stringify(failed.attachments) === JSON.stringify(attachmentIds) ? failed.requestId : newRequestId();
     if (!correction && (running || pending.length > 0)) {
       setQueued((q) => [...q, { session: sessionId, text: content, requestId, attachments: attachmentIds }]);
       setAttachments([]);
       return;
     }
     const ok = await sendToSession(sessionId, content, requestId, attachmentIds, correction);
-    failedSendRef.current = ok ? null : { session: sessionId, text: content, requestId };
+    failedSendRef.current = ok ? null : { session: sessionId, text: content, requestId, attachments: attachmentIds };
     if (ok) setAttachments([]);
     if (!ok) setDraft((prev) => (prev.trim() ? prev : content));
   };
@@ -617,7 +619,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   const decide = async (id: string, ok: boolean) => {
-    setDeciding(true);
+    if (decisionRef.current) return;
+    decisionRef.current = id;
+    setDeciding({ id, approved: ok });
     try {
       if (ok) await agentApi.agentApprove(id);
       else await agentApi.agentDeny(id);
@@ -625,7 +629,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo aplicar la decisión'), type: 'error' });
     } finally {
-      setDeciding(false);
+      decisionRef.current = null;
+      setDeciding(null);
     }
   };
 
@@ -968,13 +973,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           )}
           {!showHero && plan && <PlanCard plan={plan} running={running} />}
           {pending.map((a) => (
-            <ApprovalCard key={a.id} approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
+            <ApprovalCard key={a.id} approval={a} busy={!!deciding}
+              decision={deciding?.id === a.id ? deciding.approved ? 'approve' : 'deny' : undefined}
+              onDecide={(id, ok) => void decide(id, ok)} />
           ))}
           {artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} sessionId={sessionId}
             onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />)}
           {questions.map((question) => <QuestionCard key={question.id} question={question} onAnswered={() => void loadMessages(sessionId, false)} />)}
-          {/* Una herramienta en curso ya muestra su propio brillo y contador: no se repite el estado general. */}
-          {running && !questions.length && !pending.length && !toolRunning && <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} />}
+          {/* El estado general solo aparece mientras aún no hay una respuesta o herramienta en curso. */}
+          {running && !questions.length && !pending.length && !toolRunning && !messages.some((m) => m.partial) && <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} />}
         </div>
 
         <div className="relative h-0">

@@ -244,6 +244,24 @@ def test_dispatch_running_at_restart_becomes_uncertain(store, tmp_path):
     assert "incierto" in json.loads(record["result"])["error"]
 
 
+def test_interrupted_idempotent_read_restarts_once_and_keeps_effects_uncertain(store, tmp_path, monkeypatch):
+    intent = agent_internal._intent("s1", "canvas_list", {})
+    _, old = store.dispatch_claim("s1", "read", "canvas_list", intent, None)
+    store.dispatch_claim("s1", "write", "db_clear", {}, None)
+    reloaded = agent.AgentStore(tmp_path)
+    monkeypatch.setattr(agent, "get_agent_store", lambda: reloaded)
+    executed = []
+    runner = agent.AgentRunner(reloaded, lambda name: lambda params: executed.append(name) or {"documents": []})
+    monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
+    assert _dispatch(session_id="s1", call_id="read", name="canvas_list", params={})["result"] is None
+    assert json.loads(_wait_result("read")["result"]) == {"documents": []}
+    _dispatch(session_id="s1", call_id="read", name="canvas_list", params={})
+    assert executed == ["canvas_list"]
+    assert reloaded.get_dispatch("s1", "read")["op_id"] != old["op_id"]
+    outcome, effect = reloaded.dispatch_claim("s1", "write", "db_clear", {}, None)
+    assert outcome == "existing" and effect["status"] == "uncertain"
+
+
 def test_dispatch_rejects_forged_file_grants(store, monkeypatch):
     executed = []
     runner = agent.AgentRunner(store, lambda name: lambda params: executed.append(params) or {"ok": 1})
@@ -389,17 +407,19 @@ def test_approval_is_consumed_once_and_survives_a_crash_between_writes(store, tm
     assert outcome == "rejected"
 
 
-def test_large_result_keeps_full_receipt_and_summarizes_for_the_model(store, monkeypatch):
-    big = {"rows": ["x" * 100] * 500, "error": "fallo estructurado"}
+@pytest.mark.parametrize("failure", [{"error": "fallo estructurado"}, {"isError": True}, {}])
+def test_large_result_keeps_full_receipt_and_summarizes_for_the_model(store, monkeypatch, failure):
+    big = {"rows": ["x" * 100] * 500, **failure}
     runner = agent.AgentRunner(store, lambda name: lambda params: big)
     monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
     monkeypatch.setattr(agent_internal._agent_chat, "readonly_methods", lambda: ["lectura"])
     _dispatch(session_id="s1", call_id="c1", name="lectura", params={})
     summary = json.loads(_wait_result("c1")["result"])
     assert summary["truncated"] is True and summary["total_chars"] > 6_000
+    assert summary.get("isError", False) is bool(failure)
     record = store.get_dispatch("s1", "c1")
     assert json.loads(record["result"]) == big
-    assert record["status"] == "failed"
+    assert record["status"] == ("failed" if failure else "succeeded")
 
 
 def test_effects_on_the_same_resource_run_one_after_another(store, monkeypatch):

@@ -100,6 +100,8 @@ function applyEvent(convId, event) {
       shared.live.set(convId, { ...event });
       return;
     case 'run_start':
+      shared.rounds.delete(convId);
+      shared.turns.delete(convId);
       live.run = { inputs: event.inputs };
       break;
     case 'run_end':
@@ -292,7 +294,8 @@ async function projectMessages(conv, session) {
     }
     if (entry.kind === 'pi.user') {
       if (textOf(msg).startsWith(shared.CHECK_MARKER)) continue;
-      messages.push({ role: 'user', content: userTextOf(msg), ts: entryTs(entry, msg) });
+      const content = userTextOf(msg);
+      if (content) messages.push({ role: 'user', content, ts: entryTs(entry, msg) });
       continue;
     }
     if (entry.kind === NOTICE_KIND) {

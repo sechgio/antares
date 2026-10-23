@@ -20,6 +20,7 @@ from backend.utils.paths import user_data_path
 _lock = threading.RLock()
 _TOOLS_TTL_S = 300.0
 _tools_cache: dict[str, tuple[float, list[JsonObject]]] = {}
+_tools_status: dict[str, JsonObject] = {}
 
 _ID_RE = re.compile(r"[^a-z0-9_-]+")
 _TOOL_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]+")
@@ -160,6 +161,7 @@ def remove_server(server_id: str) -> JsonObject:
             raise ValueError(f"Servidor MCP desconocido: {server_id}")
         _save(kept)
         _tools_cache.pop(server_id, None)
+        _tools_status.pop(server_id, None)
     with contextlib.suppress(OSError):
         _secrets_path(server_id).unlink(missing_ok=True)
     return {"deleted": True, "id": server_id}
@@ -218,10 +220,16 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
         if cached and not force and time.time() - cached[0] < _TOOLS_TTL_S:
             return [{**tool, "enabled": tool["name"] not in server.get("disabled_tools", [])} for tool in cached[1]]
     secrets = _secrets(server_id)
-    if server["transport"] == "http":
-        tools = mcp_client.list_tools_http(server["url"], secrets.get("headers") or {})
-    else:
-        tools = mcp_client.list_tools_stdio(server["command"], server.get("args") or [], _stdio_env(secrets))
+    try:
+        if server["transport"] == "http":
+            tools = mcp_client.list_tools_http(server["url"], secrets.get("headers") or {})
+        else:
+            tools = mcp_client.list_tools_stdio(server["command"], server.get("args") or [], _stdio_env(secrets))
+    except Exception as err:
+        with _lock:
+            _tools_status[server_id] = {"status": "unavailable", "checked_at": int(time.time() * 1000),
+                                        "error": str(_redact(str(err), secrets))[:400]}
+        raise
     clean = []
     for tool in tools:
         t = _redact(tool, secrets)
@@ -234,6 +242,7 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
         })
     with _lock:
         _tools_cache[server_id] = (time.time(), clean)
+        _tools_status[server_id] = {"status": "ready", "checked_at": int(time.time() * 1000), "tools_count": len(clean)}
         servers = _load()
         for s in servers:
             if s.get("id") == server_id:
@@ -241,6 +250,19 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
         _save(servers)
     server = get_server(server_id)
     return [{**tool, "enabled": tool["name"] not in server.get("disabled_tools", [])} for tool in clean]
+
+
+def server_statuses(*, refresh: bool = False) -> list[JsonObject]:
+    result = []
+    for server in _load():
+        server_id = str(server["id"])
+        if refresh:
+            with contextlib.suppress(Exception):
+                list_tools(server_id, force=True)
+        with _lock:
+            status = dict(_tools_status.get(server_id) or {"status": "unverified"})
+        result.append({"id": server_id, "name": server["name"], **status})
+    return result
 
 
 def set_tool_enabled(server_id: str, tool: str, enabled: bool) -> JsonObject:

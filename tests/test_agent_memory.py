@@ -177,3 +177,28 @@ def test_a_different_account_suspends_the_procedure(store):
     assert learned["id"] not in other["items"]
     item = next(i for i in mem.items() if i["id"] == learned["id"])
     assert item["status"] == "suspended" and "cuenta de Google" in item["reason"]
+
+
+def test_profile_memory_survives_restart_without_crossing_profiles(store, tmp_path):
+    mem = memory.memory_for(store)
+    shared = mem.remember("general", {"kind": "preference", "title": "Idioma", "content": "Español"})
+    mem.context("a", "", VERSIONS, profile_id="role-a")
+    own = mem.remember("a", {"kind": "preference", "title": "Formato", "content": "Usa azul"})
+    reloaded = memory.MemoryStore(tmp_path)
+    for session_id, profile_id, expected in (("b", "role-b", False), ("a2", "role-a", True), ("general", None, False)):
+        context = reloaded.context(session_id, "formato", VERSIONS, profile_id=profile_id)
+        assert shared["id"] in context["items"]
+        assert (own["id"] in context["items"]) is expected
+        assert bool(reloaded.search("azul", session_id=session_id)) is expected
+    reloaded.remember("b", {"kind": "preference", "title": "Formato", "content": "Usa verde"})
+    assert "Usa azul" in reloaded.context("a2", "formato", VERSIONS, profile_id="role-a")["context"]
+
+
+def test_relevant_fact_is_not_starved_by_long_preferences(store):
+    mem = memory.memory_for(store)
+    for index in range(8):
+        mem.remember("s1", {"kind": "preference", "title": f"Regla {index}", "content": "x" * 1900})
+    fact = mem.remember("s1", {"kind": "fact", "title": "Orquídea", "content": "La carpeta del proyecto es violeta"})
+    context = mem.context("s1", "proyecto orquídea violeta", VERSIONS)
+    assert fact["id"] in context["items"]
+    assert len(context["context"]) <= memory.CONTEXT_CHARS + 200

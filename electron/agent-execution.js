@@ -14,10 +14,12 @@ const {
   commitSessions,
   requireSession,
   dispatchCallId,
+  ctx,
 } = require('./agent-shared');
 
 const MAX_TOOL_STEPS = 40;
-const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.';
+const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
+  + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
 // Repetir la misma llamada sin cambios no aporta información nueva: a partir
 // de aquí se bloquea para que el agente cambie de vía o informe del bloqueo.
 const MAX_REPEATS = 3;
@@ -81,7 +83,8 @@ async function ensureProvider(providerId, modelId) {
   const info = await providerInfo(providerId);
   const existing = shared.providers.get(providerId);
   if (existing && existing.modelIds.has(modelId) && existing.info.base_url === info.base_url
-    && JSON.stringify(existing.info.capabilities || {}) === JSON.stringify(info.capabilities || {})) return;
+    && JSON.stringify(existing.info.capabilities || {}) === JSON.stringify(info.capabilities || {})
+    && shared.state.models.getModel(providerId, modelId)) return;
   const record = existing || { info, modelIds: new Set(), secrets: new Set() };
   record.info = info;
   if (modelId) record.modelIds.add(modelId);
@@ -169,12 +172,16 @@ async function buildProvider(record) {
 async function allToolSpecs() {
   const { tools } = await bridge('agent_internal_tools', {});
   const merged = new Map(tools.map((tool) => [tool.name, tool]));
+  const scheduleTool = require('./agent-tasks').TOOL;
+  merged.set(scheduleTool.name, scheduleTool);
   for (const tool of nativeTools().nativeToolSpecs()) {
     const current = merged.get(tool.name);
     merged.set(tool.name, { ...current, ...tool, ...(tool.inheritSchema && current ? { inputSchema: current.inputSchema } : {}) });
   }
   const saved = Object.values(await profiles()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   if (saved.length > 0) {
+    const delegateTool = require('./agent-tasks').DELEGATE_TOOL;
+    merged.set(delegateTool.name, delegateTool);
     merged.set(SUBAGENT_TOOL, {
       name: SUBAGENT_TOOL,
       description: `Delega una tarea acotada en uno de los agentes guardados del usuario: solo lee datos y devuelve su resultado y sus pasos. Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
@@ -191,6 +198,7 @@ async function allToolSpecs() {
     });
   } else {
     merged.delete(SUBAGENT_TOOL);
+    merged.delete('agent_delegate');
   }
   merged.set(TOOLS_LOAD, {
     name: TOOLS_LOAD,
@@ -294,7 +302,8 @@ function normal(text) {
 async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
-  const specs = [...shared.toolSpecs.values()].filter((spec) => spec.kind !== 'meta');
+  const specs = [...shared.toolSpecs.values()].filter((spec) => spec.kind !== 'meta'
+    || spec.name === 'task_schedule' || spec.name === 'agent_delegate');
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
@@ -351,7 +360,7 @@ async function refreshTools() {
       parameters: spec.inputSchema && typeof spec.inputSchema === 'object'
         ? spec.inputSchema
         : { type: 'object', properties: {} },
-      replay: 'unsafe',
+      replay: spec.replay_safe === true ? 'safe' : 'unsafe',
       execute: (args, api, context) => executeTool(spec, args, api, context),
     });
   });
@@ -361,8 +370,11 @@ async function refreshTools() {
     hooks: [
       pi.hook(pi.ToolTask, { beforeTool }),
       pi.hook(pi.GenerationTask, {
-        beforeRequest: ({ messages }) => leadingSystem(messages),
-        afterTools: (_output, _task, api) => countRound(api),
+        beforeRequest: async ({ messages }, api, context) => {
+          if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
+          return leadingSystem(messages);
+        },
+        afterTools: (_output, _task, api, context) => countRound(api, context),
         onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
           if (message.stopReason === 'aborted') return;
@@ -370,6 +382,8 @@ async function refreshTools() {
           const sessionId = await sessionForConversation(api.conversationId, api, context);
           await commitSessions((sessions) => {
             if (sessions[sessionId]) sessions[sessionId].last_error = message.errorMessage ? message.errorMessage.slice(0, 300) : null;
+            if (sessions[sessionId] && !message.errorMessage && message.stopReason === 'stop'
+              && (shared.rounds.get(api.conversationId) || 0) < MAX_TOOL_STEPS) delete sessions[sessionId].continuation;
           });
         },
       }),
@@ -389,9 +403,49 @@ function leadingSystem(messages) {
   return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
 }
 
-function countRound(api) {
-  const n = (shared.rounds.get(api.conversationId) || 0) + 1;
-  shared.rounds.set(api.conversationId, n);
+async function countRound(api, context) {
+  if (await toolBudget(api, context, true) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
+}
+
+async function toolBudget(api, context, completed = false) {
+  const { harness, BudgetDoc } = shared.state;
+  const rounds = await harness.commit(async (tx) => {
+    const live = await tx.doc(shared.deps.pi.LiveDoc, api.conversationId);
+    const budget = await tx.doc(BudgetDoc, api.conversationId);
+    const run = live.run?.inputs[0];
+    if (budget.run !== run) {
+      budget.run = run;
+      budget.rounds = 0;
+      delete budget.lastRound;
+    }
+    if (completed && budget.lastRound !== api.taskId) {
+      budget.rounds += 1;
+      budget.lastRound = api.taskId;
+    }
+    return budget.rounds;
+  }, context);
+  shared.rounds.set(api.conversationId, rounds);
+  return rounds;
+}
+
+async function pauseForBudget(api, context) {
+  const sessionId = await sessionForConversation(api.conversationId, api, context);
+  const remaining = turnState(api.conversationId).remaining || [];
+  await commitSessions((map) => {
+    if (map[sessionId]) map[sessionId].continuation = {
+      reason: 'tool_budget', rounds: MAX_TOOL_STEPS, pending_steps: remaining, created_at: Date.now(),
+    };
+  });
+  const conv = await conversation(sessionId);
+  const stopped = shared.state.harness.abortTask(api.taskId, ctx()).then(async () => {
+    await conv.waitForIdle(ctx());
+    return conv.submit({ type: 'write', requestId: `budget:${api.taskId}`, entry: {
+      kind: shared.NOTICE_KIND, data: { text: 'Este turno alcanzó su límite de pasos. Conservé un punto de continuación. '
+        + `Usa Reanudar para seguir.${remaining.length ? '\nPendiente: ' + remaining.join('; ') : ''}` },
+    } }, ctx());
+  });
+  // El aborto debe interrumpir esta espera: abortTask espera a que termine este mismo hook.
+  await shared.deps.chord.awaitWithContext(stopped, context);
 }
 
 function turnState(conversationId) {
@@ -425,7 +479,7 @@ function planCheck(answer, api) {
 
 async function beforeTool(call, api, context) {
   const spec = shared.toolSpecs.get(call.name);
-  const rounds = shared.rounds.get(api.conversationId) || 0;
+  const rounds = await toolBudget(api, context);
   if (rounds >= MAX_TOOL_STEPS) return { block: LIMIT_NOTE };
   if (!spec) return { block: `Herramienta no disponible para el agente: ${call.name}` };
   const sessionId = await sessionForConversation(api.conversationId, api, context);
@@ -440,6 +494,9 @@ async function beforeTool(call, api, context) {
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
   const session = await requireSession(sessionId);
+  if (session.delegation && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
+    return { block: 'El agente delegado solo puede usar lecturas idempotentes autorizadas' };
+  }
   const mode = session.permission_mode || 'auto';
   if (!spec.gated && !(mode === 'ask' && call.name.startsWith('web_'))) return undefined;
 
@@ -454,7 +511,7 @@ async function beforeTool(call, api, context) {
       params: call.arguments || {},
       ...(approvedContext ? { context: approvedContext } : {}),
     }));
-    if (mode === 'full' && approval.status === 'pending') {
+    if (mode === 'full' && call.name !== 'shell_run' && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', { approval_id: approval.id, approve: true }));
     }
   } catch (err) {
@@ -584,6 +641,12 @@ async function executeTool(spec, args, api, context) {
 
 async function dispatchTool(spec, args, sessionId, api, context) {
   if (spec.kind === 'meta') {
+    if (spec.name === 'agent_delegate') {
+      const profile = await resolveProfile(args?.agent);
+      if (!profile) throw validation('No se encontró un agente único; usa su identificador');
+      return { text: JSON.stringify(await require('./agent-tasks').delegate(profile, args, sessionId, api, context)) };
+    }
+    if (spec.name === 'task_schedule') return { text: JSON.stringify(await require('./agent-tasks').schedule(args || {}, sessionId, api)) };
     if (spec.name === 'sessions_search') return { text: JSON.stringify(await searchSessions(args || {}, sessionId, context)) };
     return loadTools(args || {}, sessionId, context);
   }
