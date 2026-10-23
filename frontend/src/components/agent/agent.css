@@ -3,10 +3,19 @@
   --agent-bubble: color-mix(in srgb, var(--bg-input) 65%, var(--bg-surface));
 }
 
-.agent-workspace .agent-sidebar,
 .agent-workspace .agent-conversation { background: var(--agent-panel); }
+.agent-workspace .agent-sidebar { background: var(--bg-base); border-radius: 12px; }
 .agent-workspace .agent-message-user { background: var(--agent-bubble); }
-.agent-workspace .agent-message-answer { background: transparent; padding-inline: 0; }
+.agent-workspace .agent-composer:focus-within { border-color: var(--text-muted); }
+.agent-workspace .agent-send { background: var(--text-primary); color: var(--bg-base); }
+.agent-workspace .agent-send:hover:not(:disabled) { background: var(--text-secondary); }
+.agent-workspace .agent-send:disabled { background: var(--bg-input); color: var(--text-muted); }
+.agent-workspace .agent-queue { background: color-mix(in srgb, var(--bg-elevated) 45%, var(--agent-panel)); }
+.agent-workspace .agent-queue-item + .agent-queue-item { border-top: 1px solid var(--border-subtle); }
+.agent-workspace .agent-composer-toolbar > button { min-width: 32px; min-height: 32px; }
+@media (max-height: 640px) {
+  .agent-workspace .agent-queue ol { max-height: 96px; }
+}
 .agent-workspace .agent-search:focus-within {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
@@ -79,8 +88,8 @@
   align-items: center;
   justify-content: center;
   padding: 0 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 18px;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
   font-size: 13px;
@@ -106,26 +115,11 @@
   grid-template-rows: 0fr;
   opacity: 0;
 }
-.agent-marquee {
-  overflow: hidden;
-  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
-}
-.agent-marquee-track {
+.agent-suggestion-list {
   display: flex;
-  width: max-content;
-  animation: agentMarquee 32s linear infinite;
-}
-.agent-marquee-set {
-  display: flex;
-  flex-shrink: 0;
   gap: 6px;
-  padding-right: 6px;
-}
-.agent-marquee:is(:hover, :focus-within) .agent-marquee-track { animation-play-state: paused; }
-.agent-marquee[data-static='true'] { mask-image: none; }
-.agent-marquee[data-static='true'] .agent-marquee-track { animation: none; }
-@keyframes agentMarquee {
-  to { transform: translateX(-50%); }
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 @keyframes agentSuggestionIn {
   from { opacity: 0; transform: translateY(6px) scale(0.98); }
@@ -165,7 +159,6 @@
   .agent-thinking-dots span,
   .agent-shimmer,
   .agent-workspace .agent-suggestion,
-  .agent-marquee-track,
   .agent-terminal-cursor,
   .agent-model-menu,
   .agent-workspace .animate-spin,
@@ -175,6 +168,5 @@
   .agent-tool-row,
   .agent-tool-row .transition-transform,
   .agent-approval :is(button, summary, svg) { transition: none; }
-  .agent-marquee { overflow-x: auto; scrollbar-width: none; }
   .agent-workspace .agent-suggestion:hover:not(:disabled) { transform: none; }
 }
