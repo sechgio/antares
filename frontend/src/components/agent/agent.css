@@ -6,13 +6,18 @@
 .agent-workspace .agent-conversation { background: var(--agent-panel); }
 .agent-workspace .agent-sidebar { background: var(--bg-base); border-radius: 12px; }
 .agent-workspace .agent-message-user { background: var(--agent-bubble); }
+.agent-workspace .agent-composer { container-type: inline-size; }
 .agent-workspace .agent-composer:focus-within { border-color: var(--text-muted); }
 .agent-workspace .agent-send { background: var(--text-primary); color: var(--bg-base); }
 .agent-workspace .agent-send:hover:not(:disabled) { background: var(--text-secondary); }
 .agent-workspace .agent-send:disabled { background: var(--bg-input); color: var(--text-muted); }
+.agent-workspace .agent-stop { background: var(--bg-input); }
 .agent-workspace .agent-queue { background: color-mix(in srgb, var(--bg-elevated) 45%, var(--agent-panel)); }
 .agent-workspace .agent-queue-item + .agent-queue-item { border-top: 1px solid var(--border-subtle); }
 .agent-workspace .agent-composer-toolbar > button { min-width: 32px; min-height: 32px; }
+@container (max-width: 560px) {
+  .agent-workspace .agent-turn-actions span { display: none; }
+}
 @media (max-height: 640px) {
   .agent-workspace .agent-queue ol { max-height: 96px; }
 }

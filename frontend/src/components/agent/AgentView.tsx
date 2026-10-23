@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
@@ -1202,7 +1202,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                           {item.text}
                         </button>
                       ) : (
-                        <p className="line-clamp-2 break-words" title={item.text}>{item.text}</p>
+                        <details className="group/queued">
+                          <summary className="flex cursor-pointer list-none items-start gap-1 rounded-sm" title="Ver mensaje completo">
+                            <span className="min-w-0 flex-1 line-clamp-2 break-words [overflow-wrap:anywhere] group-open/queued:line-clamp-none group-open/queued:whitespace-pre-wrap">{item.text}</span>
+                            <ChevronDown size={12} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--text-muted)] transition-transform group-open/queued:rotate-180" />
+                          </summary>
+                        </details>
                       )}
                       <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
                         <span>{requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId])) ? 'Enviando…' : item.failed ? 'Revisar envío' : item.correction ? 'Indicación pendiente' : idx === 0 ? 'A continuación' : 'En espera'}</span>
@@ -1348,9 +1353,21 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 <ContextUsage usage={usage} model={session?.model ?? model} />
               </div>
               {(running || pending.length > 0) && (
+                <div className="agent-turn-actions flex shrink-0 items-center gap-1">
+                  <Button variant="ghost" size="none" className="h-8 gap-1.5 rounded-lg px-2 text-[12px]" aria-label="Dejar para después"
+                    onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping || sending} title="Dejar para después (Intro)">
+                    <ListOrdered size={14} aria-hidden="true" /><span>Dejar para después</span>
+                  </Button>
+                  <Button variant="ghost" size="none" className="h-8 gap-1.5 rounded-lg px-2 text-[12px]" aria-label="Indicar ahora"
+                    onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sending || sendingCorrection} title="Indicar ahora">
+                    <CornerDownRight size={14} aria-hidden="true" /><span>Indicar ahora</span>
+                  </Button>
+                </div>
+              )}
+              {(running || pending.length > 0) && (
                 <button
                   type="button"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
+                  className="agent-stop flex size-8 shrink-0 items-center justify-center rounded-full text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
                   onClick={() => void cancelTurn()}
                   aria-label="Detener"
                   disabled={stopping}
@@ -1370,15 +1387,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 <ArrowUp size={17} aria-hidden="true" />
               </button>}
             </div>
-            {(running || pending.length > 0) && (
-              <div className="flex flex-wrap justify-end gap-2 px-3 pb-3">
-                <Button variant="ghost" size="sm" onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping || sending}
-                  title="Dejar para después (Intro)">Dejar para después</Button>
-                <Button size="sm" onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sending || sendingCorrection}>
-                  Indicar ahora
-                </Button>
-              </div>
-            )}
           </div>
           {visibleReceipts.length > 0 && (
             <div role="region" aria-label="Estado de los envíos" tabIndex={0} className="custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2">
