@@ -248,7 +248,7 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
         <span title={command} className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : 'group-hover:text-[var(--text-primary)]'}`}>
           {TERMINAL_VERB[call.status] ? `${TERMINAL_VERB[call.status]} ` : ''}<span className="font-mono text-[12px]">{command}</span>
         </span>
-        {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Requiere aprobación" />}
+        {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Acción sensible" />}
         {!TERMINAL_VERB[call.status] && <span className="shrink-0 text-[12px] text-[var(--text-muted)]">{CALL_STATUS_LABEL[call.status] ?? call.status}</span>}
         {exitFailed && <span className="shrink-0 text-[12px] text-[var(--accent-red)]">código {output?.exit}</span>}
         {output?.duration != null && !live && <span className="shrink-0 text-[12px] tabular-nums text-[var(--text-muted)]">{output.duration} s</span>}
@@ -294,7 +294,7 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
         {METHOD_LABELS[call.name] ?? call.name}
         {arg && <span className={`ml-1.5 font-mono text-[12px] ${failed ? '' : 'text-[var(--text-muted)]'}`}>{arg}</span>}
       </span>
-      {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Requiere aprobación" />}
+      {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Acción sensible" />}
       <span className={call.status === 'done' ? 'sr-only' : `shrink-0 text-[12px] ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`}>
         {CALL_STATUS_LABEL[call.status] ?? call.status}
       </span>
@@ -413,15 +413,28 @@ export function ApprovalCard({
   decision?: 'approve' | 'deny';
   onDecide: (id: string, ok: boolean) => void;
 }) {
-  const action = METHOD_LABELS[approval.method];
   const { params, context } = approval;
+  const label = Object.prototype.hasOwnProperty.call(METHOD_LABELS, approval.method) ? METHOD_LABELS[approval.method] : undefined;
+  const filename = typeof params.filename === 'string' && params.filename ? params.filename : params.name;
+  const action = approval.method === 'drafts_save' && typeof filename === 'string'
+    ? `Guardar ${filename}` : label;
   const facts = [
     typeof params.id === 'string' && `Elemento: ${params.id}`,
     typeof params.name === 'string' && `Nombre: ${params.name}`,
     typeof context?.filename === 'string' && `PDF: ${context.filename}`,
     typeof params.printer_name === 'string' && `Impresora: ${params.printer_name}`,
     typeof params.copies === 'number' && `Copias: ${params.copies} · Páginas: ${String(params.pages || 'Todas')}`,
-    typeof params.destination_folder === 'string' && `Destino: ${params.destination_folder}\\${String(params.filename || params.name || '')}`,
+    typeof params.filename === 'string' && `Nombre de salida: ${params.filename}`,
+    typeof params.draft === 'string' && `Borrador: ${params.draft}`,
+    approval.method === 'gdrive_upload' && typeof params.replace_file_id === 'string' && `Archivo que se reemplaza: ${params.replace_file_id}`,
+    approval.method === 'onedrive_upload' && typeof params.replace_item_id === 'string' && `Archivo que se reemplaza: ${params.replace_item_id}`,
+    typeof params.destination_folder === 'string' && `Destino: ${params.destination_folder}`,
+    typeof params.folder_id === 'string' && `Carpeta remota: ${params.folder_id}`,
+    typeof params.spreadsheet_id === 'string' && `Hoja de cálculo: ${params.spreadsheet_id}`,
+    typeof params.item_id === 'string' && `Elemento remoto: ${params.item_id}`,
+    typeof params.worksheet === 'string' && `Pestaña: ${params.worksheet}`,
+    typeof params.range === 'string' && `Rango: ${params.range}`,
+    typeof params.url === 'string' && `Página: ${params.url}`,
     typeof params.cwd === 'string' && `Carpeta: ${params.cwd}`,
     typeof params.path === 'string' && `Ruta: ${params.path}`,
     typeof params.target === 'string' && `Abrir: ${params.target}${typeof params.args === 'string' ? ` ${params.args}` : ''}`,
@@ -434,7 +447,8 @@ export function ApprovalCard({
     context?.sheet_id && `Hoja: ${context.sheet_id}`,
     ...(approval.resources ?? []).map((resource) => `Archivo: ${resource.path}`),
   ].filter((fact): fact is string => !!fact);
-  const Icon = approval.method === 'shell_run' ? Terminal : TOOL_ICONS[approval.method] ?? ShieldCheck;
+  const Icon = approval.method === 'shell_run' ? Terminal
+    : Object.prototype.hasOwnProperty.call(TOOL_ICONS, approval.method) ? TOOL_ICONS[approval.method] : ShieldCheck;
   return (
     <div role="group" aria-label="Confirmación de acción" className="agent-approval agent-trace-in">
       <div className="w-full max-w-[min(620px,100%)] overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]">
@@ -446,9 +460,10 @@ export function ApprovalCard({
                 className="text-[12px] leading-[18px] text-[var(--text-secondary)]">
                 {decision === 'approve' ? 'Aprobando…' : decision === 'deny' ? 'Rechazando…' : 'Aprobación necesaria'}
               </p>
-              <p className="text-[13px] font-medium leading-5 text-[var(--text-primary)]">{action ?? 'Acción avanzada'}</p>
+              <p className="text-[13px] font-medium leading-5 text-[var(--text-primary)]">{action ?? 'Acción sin descripción disponible'}</p>
               <p className="text-[12px] leading-[18px] text-[var(--text-secondary)]">
-                {action ? 'El turno sigue en pausa hasta que decidas.' : 'Revisa sus detalles antes de aprobar; el turno sigue en pausa.'}
+                {action ? 'Permitir autoriza solo esta acción.' : 'Revisa los detalles antes de permitir esta acción.'}
+                {' '}Rechazar la omite e informa al agente.
               </p>
             </div>
           </div>
@@ -463,8 +478,8 @@ export function ApprovalCard({
             </ul>
           )}
           <details className="group text-[11.5px] text-[var(--text-secondary)]">
-            <summary className="flex w-fit cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
-              Ver detalles de la acción
+            <summary aria-label="Ver detalles de la acción" className="flex w-fit cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
+              Detalles
               <ChevronRight size={12} className="transition-transform duration-200 group-open:rotate-90" />
             </summary>
             <code className="mt-1 block text-[11px]">{approval.method}</code>
@@ -477,13 +492,13 @@ export function ApprovalCard({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border-subtle)] px-3 py-2.5 sm:px-4">
           <span className="mr-auto basis-full text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">Solo esta acción</span>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDecide(approval.id, false)}>
+          <Button size="sm" variant="ghost" aria-label="Rechazar esta acción" disabled={busy} onClick={() => onDecide(approval.id, false)}>
             {decision === 'deny' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
             Rechazar
           </Button>
-          <Button size="sm" disabled={busy} onClick={() => onDecide(approval.id, true)}>
+          <Button size="sm" aria-label="Permitir esta acción" disabled={busy} onClick={() => onDecide(approval.id, true)}>
             {decision === 'approve' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
-            Aprobar
+            Permitir
           </Button>
         </div>
       </div>
@@ -536,14 +551,14 @@ export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean 
   );
 }
 
-export function ThinkingRow({ elapsedSeconds, agent }: { elapsedSeconds: number; agent?: AgentIdentity }) {
+export function ThinkingRow({ elapsedSeconds, agent, label = 'El agente está trabajando' }: { elapsedSeconds: number; agent?: AgentIdentity; label?: string }) {
   const mm = Math.floor(elapsedSeconds / 60);
   const ss = elapsedSeconds % 60;
   const elapsed = mm > 0 ? `${mm}m ${ss}s` : `${ss}s`;
   return (
-    <div role="status" className="agent-trace-in flex items-center gap-2 text-[13px] leading-5">
+    <div role="status" aria-live="off" className="agent-trace-in flex items-center gap-2 text-[13px] leading-5">
       {agent ? <AgentAvatar seed={agent.seed} name={agent.name} size={16} working /> : <Loader2 size={14} className="animate-spin text-[var(--text-muted)]" />}
-      <span className="agent-shimmer">El agente está trabajando</span>
+      <span className="agent-shimmer">{label}</span>
       <span className="tabular-nums text-[12px] text-[var(--text-muted)]">{elapsed}</span>
     </div>
   );

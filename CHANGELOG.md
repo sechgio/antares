@@ -8,6 +8,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent muestra recibos de envío y permite recuperar una petición no confirmada con el mismo texto, adjuntos e intención, sin borrar un borrador nuevo, incluso al cambiar de módulo o reiniciar. La cola distingue lo guardado de lo recibido y conserva las indicaciones al restaurarse; el compositor ignora Intro repetido y la actividad reconoce las herramientas web reales.
+- Agent explica qué confirma cada modo de permisos y su alcance por conversación. Cada solicitud muestra el efecto, destino, cuenta y recursos disponibles, aclara que permitir autoriza solo esa llamada y que rechazar la omite e informa al agente. Las categorías de herramientas dejan de prometer una aprobación en todos los modos.
 - Agent conserva stdout y stderr completos del shell y permite leerlos por páginas con `shell_output`, también tras reiniciar y sin cruzar conversaciones. El shell mantiene su límite de tiempo y no admite entrada interactiva.
 - Agent expone el diagnóstico de los servidores MCP con `mcp_status`, con comprobación opcional del catálogo y secretos ocultos.
 - Las operaciones de capas y campos de Canvas pueden usar el backend si la ventana o el proceso renderer no están disponibles antes del despacho, conservando la revisión exigida. Las exportaciones visuales y Espacios siguen usando su puente de pantalla.
@@ -51,6 +53,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **Agent**: apartado propio en el riel, con un espacio de conversaciones que usa el proveedor IA configurado (la clave sale del vault y nunca llega al renderer) y tool-calling sobre los métodos del backend: los de solo lectura (`orchestratable`) se ejecutan directo y cualquier otro método pausa el turno en una tarjeta de aprobación Aprobar/Rechazar. Soporta protocolos OpenAI chat (también Ollama) y Anthropic Messages; las conversaciones y aprobaciones se persisten en datos de usuario. La interfaz rediseñada muestra una barra de conversaciones con buscador y avatares propios por sesión, el chat con encabezado de conversación, las llamadas a herramientas como pasos con su estado, el tiempo del turno en curso y sugerencias de inicio; las capacidades reales del agente (`agent_tools_list`) se consultan desde el encabezado. El composer admite encolar follow-ups mientras el turno sigue en curso (se envían solos al terminar), el borrado de conversaciones pide confirmación y la lista muestra la antigüedad y el último error de cada conversación.
 
 ### Changed
+- Agent simplifica los textos de envíos y aprobaciones, conserva sus detalles accesibles y unifica los márgenes del historial, el compositor y sus controles.
 - **Agent**: durante un encargo, «Indicar ahora» envía una corrección y confirma su recepción cuando el motor la admite; «Dejar para después» conserva la cola. Una corrección rechazada mantiene el borrador, los adjuntos y el turno anterior; las aprobaciones pendientes solo se rechazan después de registrar la nueva indicación.
 - El navegador del Agent queda al ras del chat y del área de trabajo, sin marco interior ni esquinas redondeadas.
 - La lista de conversaciones muestra títulos en una sola línea, sin avatar ni metadatos secundarios; los avatares de navegación quedan en la sección Agentes.
@@ -88,6 +91,12 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- Se actualizan DOMPurify a 3.4.17 y Brotli a 1.2.1 para corregir las vulnerabilidades que bloqueaban la auditoría de dependencias.
+- Agent explicita la prioridad del pedido actual sobre las indicaciones del agente y las preferencias de memoria. El editor y la memoria muestran el alcance por perfil y los recuerdos globales heredados; editar un perfil informa que afecta a conversaciones nuevas. La guía distingue cambios puntuales y preferencias duraderas, conserva las correcciones humanas y responde de forma natural ante saludos y ayuda vaga.
+- Agent destaca la aprobación, pregunta, actividad o resultado que requiere atención junto al composer, anuncia cada evento una sola vez y permite ir a sus detalles sin interrumpir la lectura del historial. Conserva los detalles abiertos durante las actualizaciones y respeta movimiento reducido al desplazarse.
+- Agent permite iniciar una conversación con el primer mensaje, conserva el borrador si falla la creación y reutiliza la identidad del envío al reintentar texto o sugerencias. Evita envíos simultáneos y avisa cuando no pudo actualizar el estado del chat.
+- **Agent / delegación**: una respuesta del subagente que llega después de Detener no se guarda como exitosa, tampoco si termina su último paso de herramientas.
+- **Agent / ciclo del turno**: una respuesta correcta limpia el estado de error actual sin borrar el historial y conserva la recuperación al reiniciar. Detener una herramienta en espera solicita una sola cancelación; las aprobaciones y los sondeos liberan sus listeners y esperas al terminar.
 - Agent presenta las aprobaciones con el comando completo, contexto y acciones separados; indica cuándo registra la decisión y evita envíos duplicados. Las trazas conservan la apertura elegida, muestran los errores y respetan la posición de lectura del terminal, con menos animación durante la ejecución.
 - Agent conserva la señal de error al resumir resultados largos, distingue los reintentos con adjuntos diferentes e impide que una delegación en entrega reactive una conversación detenida o eliminada.
 - Agent detiene el motor al alcanzar 40 rondas, conserva el presupuesto del encargo en SQLite al reiniciar y permite reanudar con un presupuesto nuevo. La recuperación espera a restaurar herramientas y proveedores necesarios; una apertura fallida se puede reintentar sin consumir el trabajo pendiente. La bandeja sigue el estado de los turnos recuperados desde el arranque.

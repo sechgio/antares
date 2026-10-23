@@ -63,3 +63,15 @@ it('borra sólo tras confirmar', async () => {
   expect(remove).toHaveBeenCalledWith('m1');
   expect(screen.queryByText('Informe mensual')).not.toBeInTheDocument();
 });
+
+it('hace visible el alcance de la memoria por perfil y la prioridad del pedido y las indicaciones del agente', async () => {
+  vi.mocked(agentApi.agentMemoryList).mockResolvedValue({ items: [{
+    id: 'p1', kind: 'preference', title: 'Estilo', content: 'Breve y cálido', status: 'active', reason: null,
+    version: 1, updated_at: 1, source: { kind: 'agent', session_id: 's1' },
+    versions: [{ version: 1, created_at: 1, source: { kind: 'agent', session_id: 's1' } }],
+  }] });
+  await open();
+  expect(screen.getByText(/Cada perfil conserva sus propios recuerdos; los recuerdos globales anteriores siguen disponibles/)).toBeVisible();
+  expect(screen.getByText(/Tu pedido actual tiene prioridad; después, las indicaciones del agente y, por último, las preferencias de memoria/)).toBeVisible();
+  expect(screen.getByText('Indicado en una conversación')).toBeInTheDocument();
+});

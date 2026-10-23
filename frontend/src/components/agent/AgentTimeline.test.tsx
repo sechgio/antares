@@ -99,9 +99,10 @@ it('muestra cuenta y recursos revisados antes de una decisión explícita', () =
   }} />);
   expect(screen.getByText('Cuenta: prueba@example.com')).toBeInTheDocument();
   expect(screen.getByText('Hoja: hoja-de-prueba')).toBeInTheDocument();
+  expect(screen.getByText('Rango: CONFIG!A1')).toBeInTheDocument();
   expect(screen.getByText('Archivo: C:\\trabajos\\informe.pdf')).toBeInTheDocument();
   expect(decide).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Aprobar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
   expect(decide).toHaveBeenCalledWith('approval', true);
 });
 
@@ -350,18 +351,48 @@ it('indica cuánto tardó en pensar', () => {
   expect(screen.getByRole('button', { name: 'Pensó' })).toBeInTheDocument();
 });
 
-it('pregunta por la acción concreta y permite rechazarla o aprobarla', () => {
+it('explica el archivo, destino y alcance de permitir o rechazar una acción', () => {
   const decide = vi.fn();
-  const approval = { id: 'a1', session_id: 's', call_id: 'c', method: 'canvas_list', params: { destination_folder: 'C:\\salida', filename: 'a.pdf' }, status: 'pending', created_at: 1, decided_at: null } as const;
+  render(<ApprovalCard busy={false} onDecide={decide} approval={{
+    id: 'a1', session_id: 's', call_id: 'c', method: 'drafts_save',
+    params: { name: 'borrador.pdf', destination_folder: 'C:\\Informes', filename: 'resumen.pdf' },
+    status: 'pending', created_at: 1, decided_at: null,
+  }} />);
+  expect(screen.getByText('Guardar resumen.pdf')).toBeInTheDocument();
+  expect(screen.getByText('Destino: C:\\Informes')).toBeInTheDocument();
+  expect(screen.getByText('Nombre de salida: resumen.pdf')).toBeInTheDocument();
+  expect(screen.getByText(/Permitir autoriza solo esta acción/)).toBeInTheDocument();
+  expect(screen.getByText(/Rechazar la omite e informa al agente/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Rechazar esta acción' }));
+  expect(decide).toHaveBeenCalledExactlyOnceWith('a1', false);
+});
+
+it.each(['metodo_desconocido', 'constructor'])('no inventa un efecto para %s ni decide al mostrarlo', (method) => {
+  const decide = vi.fn();
+  const approval = { id: 'a1', session_id: 's', call_id: 'c', method,
+    params: { path: 'C:\\datos' }, status: 'pending', created_at: 1, decided_at: null } as const;
   const { rerender } = render(<ApprovalCard busy={false} onDecide={decide} approval={approval} />);
-  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('Listar documentos de Canvas');
-  expect(screen.getByText('Aprobación necesaria')).toBeVisible();
-  expect(screen.getByText('Destino: C:\\salida\\a.pdf')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Rechazar' }));
-  expect(decide).toHaveBeenCalledWith('a1', false);
-  rerender(<ApprovalCard busy onDecide={decide} approval={{ ...approval, method: 'metodo_desconocido' }} />);
-  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('Acción avanzada');
-  expect(screen.getByRole('button', { name: 'Aprobar' })).toBeDisabled();
+  expect(screen.getByText('Acción sin descripción disponible')).toBeInTheDocument();
+  expect(decide).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByLabelText('Ver detalles de la acción'));
+  expect(screen.getByText(method, { selector: 'code' })).toBeVisible();
+  rerender(<ApprovalCard busy onDecide={decide} approval={approval} />);
+  expect(screen.getByRole('button', { name: 'Permitir esta acción' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Rechazar esta acción' })).toBeDisabled();
+  expect(decide).not.toHaveBeenCalled();
+});
+
+it.each([
+  { method: 'gdrive_upload', params: { replace_file_id: 'drive-informe', draft: 'nuevo.pdf' } },
+  { method: 'onedrive_upload', params: { replace_item_id: 'onedrive-informe', draft: 'nuevo.pdf' } },
+])('hace visible el reemplazo de un archivo en $method', ({ method, params }) => {
+  render(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    id: 'a', session_id: 's', call_id: 'c', method, params,
+    status: 'pending', created_at: 1, decided_at: null, context: { account: 'ana@example.com' },
+  }} />);
+  expect(screen.getByText(/Archivo que se reemplaza: .*informe/)).toBeInTheDocument();
+  expect(screen.getByText('Borrador: nuevo.pdf')).toBeInTheDocument();
+  expect(screen.getByText('Cuenta: ana@example.com')).toBeInTheDocument();
 });
 
 it('muestra el plan con su progreso y la evidencia de cada paso', () => {
@@ -388,4 +419,32 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
   expect(screen.getByText('Carpeta: C:\datos')).toBeInTheDocument();
   expect(screen.getByText(/puede acceder al equipo completo/)).toBeInTheDocument();
   expect(screen.getByText(/Requiere tu aprobación también en Acceso completo/)).toBeInTheDocument();
+});
+
+it.each([false, true])('conserva la elección de mostrar los pasos al actualizar su estado: %s', (open) => {
+  const message = (status: 'running' | 'done') => ({ role: 'assistant' as const, content: '', ts: 1,
+    tool_calls: ['a', 'b', 'c'].map((id) => ({ id, name: 'fs_read', params: {}, gated: false, status })) });
+  const { container, rerender } = render(<MessageRow msg={message(open ? 'done' : 'running')} />);
+  const toggle = screen.getByText(/3 pasos/);
+  fireEvent.click(toggle);
+  expect(container.querySelector('details')?.open).toBe(open);
+  rerender(<MessageRow msg={message('done')} />);
+  rerender(<MessageRow msg={message('running')} />);
+  rerender(<MessageRow msg={message('done')} />);
+  expect(container.querySelector('details')?.open).toBe(open);
+});
+
+it('pregunta por la acción concreta y permite rechazarla o aprobarla', () => {
+  const decide = vi.fn();
+  const approval = { id: 'a1', session_id: 's', call_id: 'c', method: 'canvas_list', params: { destination_folder: 'C:\\salida', filename: 'a.pdf' }, status: 'pending', created_at: 1, decided_at: null } as const;
+  const { rerender } = render(<ApprovalCard busy={false} onDecide={decide} approval={approval} />);
+  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('Listar documentos de Canvas');
+  expect(screen.getByText('Aprobación necesaria')).toBeVisible();
+  expect(screen.getByText('Destino: C:\\salida')).toBeInTheDocument();
+  expect(screen.getByText('Nombre de salida: a.pdf')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Rechazar esta acción' }));
+  expect(decide).toHaveBeenCalledWith('a1', false);
+  rerender(<ApprovalCard busy onDecide={decide} approval={{ ...approval, method: 'metodo_desconocido' }} />);
+  expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('Acción sin descripción disponible');
+  expect(screen.getByRole('button', { name: 'Permitir esta acción' })).toBeDisabled();
 });

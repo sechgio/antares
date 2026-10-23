@@ -584,10 +584,10 @@ async function dispatchAndWait(request, context, api) {
   const signal = context && context.abortSignal;
   if (signal && signal.aborted) throw aborted();
   const first = await bridge('agent_internal_dispatch', request);
-  const onAbort = () => {
+  if (signal && signal.aborted) {
     bridge('agent_internal_dispatch_cancel', { session_id: request.session_id, call_id: request.call_id }).catch(() => {});
-  };
-  if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    throw aborted();
+  }
   let result = first.result;
   let shown = 0;
   const onOutput = (output) => {
@@ -595,18 +595,10 @@ async function dispatchAndWait(request, context, api) {
     api.output(output.slice(shown));
     shown = output.length;
   };
-  try {
-    if (signal && signal.aborted) {
-      onAbort();
-      throw aborted();
-    }
-    while (result === null || result === undefined) {
-      result = await pollDispatch(request.session_id, request.call_id, context, onOutput);
-    }
-    return String(result);
-  } finally {
-    if (signal) signal.removeEventListener('abort', onAbort);
+  if (result === null || result === undefined) {
+    result = await pollDispatch(request.session_id, request.call_id, context, onOutput);
   }
+  return String(result);
 }
 
 async function executeTool(spec, args, api, context) {
@@ -727,7 +719,7 @@ async function dispatchNative(spec, request, context) {
   }
   if (first.execute !== 'native') {
     let result = first.result;
-    while (result === null || result === undefined) {
+    if (result === null || result === undefined) {
       result = await pollDispatch(request.session_id, request.call_id, context);
     }
     return String(result);
@@ -802,26 +794,37 @@ function pollDispatch(sessionId, callId, context, onOutput) {
   const signal = context && context.abortSignal;
   return new Promise((resolve, reject) => {
     if (signal && signal.aborted) return reject(aborted());
-    const timer = setTimeout(async () => {
-      try {
-        const next = await bridge('agent_internal_dispatch_result', { session_id: sessionId, call_id: callId });
-        if (signal && signal.aborted) return;
-        if (onOutput && typeof next.output === 'string') onOutput(next.output);
-        resolve(next.result === undefined ? null : next.result);
-      } catch (err) {
-        resolve(INTERRUPTED_RESULT);
-      } finally {
-        if (signal) signal.removeEventListener('abort', onAbort);
-      }
-    }, 400);
-    const onAbort = () => {
+    let settled = false;
+    let timer;
+    const done = (error, result) => {
+      if (settled) return false;
+      settled = true;
       clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onAbort);
-      reject(aborted());
+      if (error) reject(error);
+      else resolve(result);
+      return true;
     };
-    if (signal) {
-      signal.addEventListener('abort', onAbort, { once: true });
-    }
+    const onAbort = () => {
+      if (done(aborted())) {
+        bridge('agent_internal_dispatch_cancel', { session_id: sessionId, call_id: callId }).catch(() => {});
+      }
+    };
+    const poll = async () => {
+      if (settled) return;
+      try {
+        const next = await bridge('agent_internal_dispatch_result', { session_id: sessionId, call_id: callId });
+        if (settled) return;
+        if (onOutput && typeof next.output === 'string') onOutput(next.output);
+        if (settled) return;
+        if (next.result === null || next.result === undefined) timer = setTimeout(poll, 400);
+        else done(null, next.result);
+      } catch (err) {
+        done(null, INTERRUPTED_RESULT);
+      }
+    };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    timer = setTimeout(poll, 400);
   });
 }
 

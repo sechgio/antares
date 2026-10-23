@@ -164,6 +164,8 @@ def run(
         summary = summary or "Alcancé el límite de pasos del subagente sin cerrar la tarea."
     elif status == "empty":
         summary = "El subagente terminó sin un resumen; revisa sus pasos."
+    if cancelled is not None and cancelled():
+        raise RunCancelled()
     return _trim_receipt(
         {
             "agent": {"id": str(agent.get("id") or ""), "name": name},

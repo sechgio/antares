@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 
 const { assert, finish } = require('./helpers/harness');
+const { getEventListeners } = require('node:events');
 
 const runtime = require('../electron/agent-runtime');
 const importer = require('../electron/agent-import');
@@ -239,6 +240,52 @@ async function main() {
     await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][1].id });
     assert(await waitIdle(session.id), 'el shell continúa después de la aprobación humana');
     assert(state.dispatches.length === 2, 'cada aprobación ejecuta un único comando');
+    await runtime.shutdown();
+  }
+
+  for (const legacy of [false, true]) {
+    const { bridge } = makeBridge();
+    let seen = '';
+    let memoryProfile;
+    const scopedBridge = (method, params) => {
+      if (method === 'agent_internal_memory_context') memoryProfile = params.profile_id;
+      return bridge(method, params);
+    };
+    await openFaux([(context) => { seen = JSON.stringify(context.messages); return fauxAssistantMessage('Respuesta de prueba'); }], scopedBridge);
+    const { profile } = await runtime.handlers.agent_profile_save({
+      name: 'Revisor breve', instructions: 'Responde de forma breve y cálida.', tools: [],
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    const state = runtime._internal.state();
+    const context = state.ctx;
+    const sessionDoc = await state.harness.snapshot(state.SessionsDoc, context);
+    const conv = await state.harness.conversation(sessionDoc.sessions[session.id].conversationId, context);
+    if (legacy) await conv.configure({ instructions: 'Perfil de una conversación anterior: responde de forma breve y cálida.' }, context);
+    await runtime.handlers.agent_message_send({
+      session_id: session.id, content: 'Solo para este mensaje usa una tabla con mi plantilla', request_id: 'preference-once',
+    });
+    assert(await waitIdle(session.id), 'el encargo con preferencia puntual termina');
+    assert(seen.includes('pedido actual > indicaciones del agente > preferencias de memoria'),
+      'el modelo recibe la prioridad del pedido actual, perfil y memoria también en chats anteriores');
+    assert(memoryProfile === profile.id, 'la guía de conversación conserva el perfil al consultar la memoria');
+    assert(seen.includes('los recuerdos nuevos de un perfil se comparten solo entre sus conversaciones'),
+      'la guía respeta la memoria separada por perfil y sus recuerdos globales heredados');
+    assert(seen.includes('usa la B') && seen.includes('Solo para este mensaje usa una tabla'),
+      'la preferencia global y la petición puntual conservan su origen en la entrada del modelo');
+    const transcript = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(transcript.messages.find((message) => message.role === 'user').content === 'Solo para este mensaje usa una tabla con mi plantilla',
+      'las reglas de estilo no se atribuyen al texto escrito por el usuario');
+    const original = (await conv.agent(context)).instructions;
+    await runtime.handlers.agent_profile_save({ ...profile, instructions: 'Responde de forma formal y detallada.' });
+    assert((await conv.agent(context)).instructions === original, 'editar el perfil conserva las indicaciones del chat abierto');
+    const next = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    const nextDoc = await state.harness.snapshot(state.SessionsDoc, context);
+    const nextConv = await state.harness.conversation(nextDoc.sessions[next.session.id].conversationId, context);
+    const nextInstructions = (await nextConv.agent(context)).instructions;
+    assert(nextInstructions.includes('formal y detallada') && !nextInstructions.includes('breve y cálida'),
+      'solo la conversación nueva recibe el estilo actualizado del perfil');
+    assert((await conv.agent(context)).tools.length === 0 && (await nextConv.agent(context)).tools.length === 0,
+      'el cambio de estilo no amplía las herramientas del agente');
     await runtime.shutdown();
   }
 
@@ -1912,6 +1959,316 @@ async function main() {
     assert(activity.length === visible.length && activity.every((item) => visible.some((session) => session.id === item.id)),
       'la bandeja solo incluye las conversaciones que el usuario puede abrir');
     await runtime.shutdown();
+  }
+
+  {
+    const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+    const { fauxProvider } = await import('@earendil-works/pi-ai');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-recovery-'));
+    const dbPath = path.join(dir, 'agent.sqlite');
+    const { bridge } = makeBridge();
+    const faux = fauxProvider();
+    runtime._internal._providerOverrides.set('faux', faux.provider);
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    faux.setResponses([fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'Fallo recuperable de prueba' })]);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primer intento' });
+    assert(await waitIdle(session.id), 'el turno fallido termina');
+    assert((await runtime.activitySnapshot()).find((item) => item.id === session.id).status === 'failed',
+      'la bandeja informa del fallo actual');
+    const conv = await require('../electron/agent-shared').conversation(session.id);
+    const entries = () => require('../electron/agent-projection').allEntries(conv);
+    const failure = (await entries()).find((entry) => entry.model?.[0]?.errorMessage === 'Fallo recuperable de prueba');
+    assert(!!failure, 'el fallo queda registrado en el historial durable');
+    faux.setResponses([fauxAssistantMessage('', { stopReason: 'aborted' })]);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'intento interrumpido' });
+    assert(await waitIdle(session.id), 'el intento interrumpido termina');
+    assert((await runtime.handlers.agent_turn_status({ session_id: session.id })).last_error === 'Fallo recuperable de prueba',
+      'una respuesta interrumpida no afirma que el fallo se recuperó');
+    faux.setResponses([fauxAssistantMessage('Respuesta correcta')]);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'reintentar' });
+    assert(await waitIdle(session.id), 'la respuesta de recuperación termina');
+    assert((await runtime.handlers.agent_turn_status({ session_id: session.id })).last_error === null,
+      'una respuesta correcta limpia el error actual');
+    assert((await runtime.activitySnapshot()).find((item) => item.id === session.id).status === 'completed',
+      'la bandeja refleja la recuperación');
+    assert(JSON.stringify((await entries()).find((entry) => entry.id === failure.id)) === JSON.stringify(failure),
+      'la recuperación conserva íntegra la entrada histórica del fallo');
+    await runtime.shutdown();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const restored = await runtime.handlers.agent_turn_status({ session_id: session.id });
+    assert(restored.last_error === null && !restored.running, 'el error recuperado sigue limpio tras reabrir SQLite');
+    assert((await runtime.activitySnapshot()).find((item) => item.id === session.id).status === 'completed',
+      'la bandeja sigue recuperada tras reiniciar');
+    const restoredConv = await require('../electron/agent-shared').conversation(session.id);
+    assert(JSON.stringify((await require('../electron/agent-projection').allEntries(restoredConv))
+      .find((entry) => entry.id === failure.id)) === JSON.stringify(failure), 'el historial del fallo también sobrevive al reinicio');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
+    const decision = 'cancel';
+    const { bridge, state } = makeBridge();
+    let checks = 0;
+    const approvalBridge = async (method, params) => {
+      if (method === 'agent_internal_approval_status') checks += 1;
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Decisión recibida'),
+    ], approvalBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'espera mi decisión' });
+    assert(await waitFor(() => checks >= 2), `${decision}: la aprobación atraviesa varios sondeos`);
+    const [approval] = state.approvals.values();
+    assert(runtime._internal.shared.decisionWaiters.get(approval.id)?.size === 1,
+      `${decision}: solo queda viva la espera actual de aprobación`);
+    await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+    assert(await waitIdle(session.id), `${decision}: la decisión cierra el turno`);
+    assert(!runtime._internal.shared.decisionWaiters.has(approval.id), `${decision}: no quedan esperas de aprobación residuales`);
+    assert(state.dispatches.length === 0, `${decision}: respeta la decisión sin repetir el efecto`);
+    await runtime.shutdown();
+  }
+
+  for (const kind of ['backend', 'native']) {
+    const { bridge } = makeBridge();
+    const cancelled = [];
+    const counts = new Map();
+    const dispatches = [];
+    let boundaryRead;
+    let settleBoundary;
+    let release;
+    let entered = false;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const pollBridge = (method, params) => {
+      if (method === 'agent_internal_dispatch') {
+        dispatches.push(params.call_id);
+        return { result: null };
+      }
+      if (method === 'agent_internal_dispatch_result') {
+        const n = (counts.get(params.call_id) || 0) + 1;
+        counts.set(params.call_id, n);
+        if (n < 3) return { result: null };
+        if (params.call_id === 'error') throw new Error('Consulta interrumpida');
+        if (params.call_id === 'abort') {
+          entered = true;
+          return gate.then(() => ({ result: 'resultado tardío', output: 'salida tardía' }));
+        }
+        if (params.call_id === 'between') {
+          boundaryRead = new Promise((resolve) => { settleBoundary = resolve; });
+          return boundaryRead;
+        }
+        return { result: 'resultado final' };
+      }
+      if (method === 'agent_internal_dispatch_cancel') {
+        cancelled.push(params.call_id);
+        return Promise.resolve({ cancelled: true });
+      }
+      return bridge(method, params);
+    };
+    runtime._internal.shared.nativeTools = {
+      nativeToolContext: async () => ({}),
+      nativeToolSpecs: () => [{ name: 'native_poll', kind: 'native', gated: false, inputSchema: { type: 'object', properties: {} } }],
+      runNativeTool: async () => { throw new Error('No se debe repetir un efecto recuperado'); },
+    };
+    await openFaux([], pollBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const { dispatchApproved } = require('../electron/agent-execution');
+    for (const outcome of ['complete', 'error', 'abort', 'between']) {
+      const controller = new AbortController();
+      const waiting = dispatchApproved({ session_id: session.id, call_id: outcome,
+        method: kind === 'native' ? 'native_poll' : 'canvas_list', params: {}, id: 'ap-poll' }, { abortSignal: controller.signal });
+      if (outcome === 'abort') {
+        assert(await waitFor(() => entered), `${kind}: el sondeo entra en una consulta pendiente`);
+        controller.abort();
+        release();
+      }
+      if (outcome === 'between') {
+        assert(await waitFor(() => !!boundaryRead), `${kind}: la lectura pendiente permite detener entre sondeos`);
+        boundaryRead.then(() => controller.abort());
+        settleBoundary({ result: null });
+      }
+      const result = await waiting.catch((error) => error);
+      assert(getEventListeners(controller.signal, 'abort').length === 0, `${kind}/${outcome}: libera su listener al terminar`);
+      controller.abort();
+      assert(cancelled.length === (outcome === 'between' ? 2 : outcome === 'abort' ? 1 : 0), `${kind}/${outcome}: solo cancela el despacho que sigue activo`);
+      assert(outcome === 'complete' ? result === 'resultado final'
+        : outcome === 'error' ? result === runtime._internal.shared.INTERRUPTED_RESULT : result.name === 'AbortError',
+        `${kind}/${outcome}: conserva el resultado correcto y descarta respuestas tardías`);
+    }
+    assert(dispatches.join() === 'complete,error,abort,between', `${kind}: cada despacho se inicia una sola vez`);
+    assert(counts.get('abort') === 3 && counts.get('between') === 3 && cancelled.join() === 'abort,between', `${kind}: detener no deja sondeos ni cancelaciones residuales`);
+    runtime._internal.shared.nativeTools = null;
+    await runtime.shutdown();
+  }
+
+  {
+    const { spawn } = require('node:child_process');
+    const { createInterface } = require('node:readline');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-delegate-'));
+    const script = String.raw`
+import json
+import sys
+import threading
+from collections.abc import Callable
+from pathlib import Path
+from backend.core.agent import agent, agent_chat
+from backend.handlers import agent_internal
+from backend.core.integrations.types import JsonObject
+
+store = agent.AgentStore(Path(sys.argv[1]))
+reads = []
+routes = []
+started = threading.Event()
+release = threading.Event()
+cancellations = 0
+
+def chat(provider: str, model: str, messages: list[JsonObject], *, system: str, tools: list[JsonObject]) -> JsonObject:
+    routes.append({"provider": provider, "model": model, "tools": [tool["name"] for tool in tools]})
+    if messages[0]["content"] == "espera":
+        started.set()
+        release.wait(20)
+        return {"text": "Respuesta tardía", "calls": []}
+    if len(messages) == 1:
+        return {"calls": [{"id": name, "name": name, "params": {}} for name in ("canvas_list", "db_clear", "subagent_run")]}
+    return {"text": provider + "/" + model, "calls": []}
+
+def handler(name: str) -> Callable[[JsonObject], JsonObject]:
+    def execute(params: JsonObject) -> JsonObject:
+        reads.append(name)
+        return {"documents": ["Plantilla verificada"]}
+    return execute
+
+agent_chat.chat = chat
+agent_internal._store = lambda: store
+agent.get_agent_store = lambda: store
+runner = agent.AgentRunner(store, handler)
+agent.get_agent_runner = lambda: runner
+for line in sys.stdin:
+    request = json.loads(line)
+    try:
+        method = request["method"]
+        params = request["params"]
+        if method == "test_state":
+            result = {"routes": routes, "reads": reads, "started": started.is_set(), "cancellations": cancellations,
+                      "legacy": store.get_session(params["session_id"]) is not None}
+        elif method == "test_release":
+            release.set()
+            result = {}
+        else:
+            if method == "agent_internal_dispatch_cancel":
+                cancellations += 1
+            result = agent_internal.HANDLERS[method](params)
+        print(json.dumps({"id": request["id"], "result": result}, ensure_ascii=False), flush=True)
+    except Exception as error:
+        print(json.dumps({"id": request["id"], "error": str(error)}), flush=True)
+`;
+    const child = spawn('uv', ['run', '--project', path.resolve(__dirname, '..'), '--locked', '--extra', 'dev',
+      'python', '-u', '-c', script, dir], {
+      cwd: path.resolve(__dirname, '..'), windowsHide: true,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+    });
+    const pending = new Map();
+    let sequence = 0;
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-2000); });
+    const closed = new Promise((resolve) => child.once('close', resolve));
+    const failPending = (error) => {
+      for (const waiter of pending.values()) { clearTimeout(waiter.timer); waiter.reject(error); }
+      pending.clear();
+    };
+    child.on('error', failPending);
+    child.on('close', () => failPending(new Error(`El bridge Python terminó: ${stderr}`)));
+    const lines = createInterface({ input: child.stdout });
+    lines.on('line', (line) => {
+      const response = JSON.parse(line);
+      const waiter = pending.get(response.id);
+      if (!waiter) return;
+      pending.delete(response.id);
+      clearTimeout(waiter.timer);
+      if (response.error) waiter.reject(new Error(response.error));
+      else waiter.resolve(response.result);
+    });
+    const rpc = (method, params = {}) => new Promise((resolve, reject) => {
+      const id = ++sequence;
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Timeout del bridge de prueba: ${method}; ${stderr}`)); }, 30_000);
+      pending.set(id, { resolve, reject, timer });
+      child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+    });
+    try {
+      const { bridge } = makeBridge();
+      const delegated = [];
+      const wired = async (method, params) => {
+        if (['agent_internal_dispatch', 'agent_internal_dispatch_result', 'agent_internal_dispatch_cancel'].includes(method)) {
+          if (method === 'agent_internal_dispatch') delegated.push(params);
+          return rpc(method, params);
+        }
+        return bridge(method, params);
+      };
+      const faux = await openFaux([], wired);
+      const { profile } = await runtime.handlers.agent_profile_save({ name: 'Investigador real',
+        instructions: 'Lee Canvas y resume.', tools: ['canvas_list', 'db_clear'] });
+      const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      const responses = (task) => [
+        fauxAssistantMessage([fauxToolCall('subagent_run', { agent: profile.id, task })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('Recibí el resultado del subagente'),
+      ];
+      const receipt = async () => {
+        const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+        return JSON.parse(listed.messages.flatMap((message) => message.tool_calls || [])
+          .filter((call) => call.name === 'subagent_run').at(-1).result);
+      };
+      faux.setResponses(responses('primera lectura'));
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega la revisión' });
+      assert(await waitIdle(session.id), 'desktop y Python completan una delegación sin sesión legacy');
+      const first = await receipt();
+      assert(first.status === 'done' && first.text === 'faux/faux-1', 'el subagente usa el proveedor y modelo del chat desktop');
+      assert(first.steps.map((step) => step.status).join() === 'done,failed,failed',
+        'la lectura cruza el adapter y los efectos y la recursión quedan bloqueados');
+      const { fauxProvider } = await import('@earendil-works/pi-ai');
+      const next = fauxProvider({ provider: 'faux-next', models: [{ id: 'modelo-actual' }] });
+      runtime._internal._providerOverrides.set('faux-next', next.provider);
+      await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'faux-next', model: 'modelo-actual' });
+      next.setResponses(responses('segunda lectura'));
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega con el modelo nuevo' });
+      assert(await waitIdle(session.id), 'la delegación termina después de cambiar de modelo');
+      assert((await receipt()).text === 'faux-next/modelo-actual', 'Python recibe el modelo vigente después del cambio público');
+      await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['subagent_run'] });
+      next.setResponses(responses('lectura deshabilitada'));
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'comprueba los permisos actuales' });
+      assert(await waitIdle(session.id), 'la delegación con lectura deshabilitada termina');
+      assert((await receipt()).steps.every((step) => step.status === 'failed'), 'el subagente respeta las herramientas deshabilitadas en el chat');
+      let state = await rpc('test_state', { session_id: session.id });
+      assert(!state.legacy && state.reads.join() === 'canvas_list,canvas_list', 'no se crea una sesión legacy ni se ejecutan efectos o delegaciones recursivas');
+      assert(state.routes[0].tools.join() === 'canvas_list' && state.routes.at(-1).tools.length === 0,
+        'el modelo del subagente solo recibe las lecturas autorizadas por perfil y conversación');
+      next.setResponses([fauxAssistantMessage([fauxToolCall('subagent_run', { agent: profile.id, task: 'espera' })], { stopReason: 'toolUse' })]);
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega y espera' });
+      assert(await waitFor(async () => (await rpc('test_state', { session_id: session.id })).started), 'el proveedor falso del subagente queda en vuelo');
+      await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+      assert(await waitIdle(session.id), 'Detener cierra el turno desktop con el subagente en vuelo');
+      await rpc('test_release');
+      const call = delegated.at(-1);
+      let stopped;
+      assert(await waitFor(async () => {
+        stopped = await rpc('agent_internal_dispatch_result', { session_id: session.id, call_id: call.call_id });
+        return stopped.dispatch.status !== 'running';
+      }), 'el despacho Python también cierra tras liberar la respuesta tardía');
+      state = await rpc('test_state', { session_id: session.id });
+      assert(stopped.dispatch.status === 'uncertain' && !JSON.parse(stopped.result).text,
+        'la respuesta posterior a Detener no se guarda como una delegación exitosa');
+      assert(state.cancellations === 1, 'Detener envía una cancelación al subagente real');
+    } finally {
+      await runtime.shutdown();
+      child.stdin.end();
+      const timer = setTimeout(() => child.kill(), 3000);
+      await closed;
+      clearTimeout(timer);
+      lines.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   finish();

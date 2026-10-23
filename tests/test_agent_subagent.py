@@ -1,9 +1,11 @@
 import json
 import time
+from pathlib import Path
 
 import pytest
 
 from backend.core.agent import agent, agent_chat, subagent
+from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.handlers import agent_internal
 
 
@@ -151,3 +153,36 @@ def test_dispatch_reenvia_el_perfil_y_devuelve_el_recibo(tmp_path, monkeypatch):
 def test_recibo_siempre_es_json_serializable(status):
     receipt = subagent._trim_receipt({"status": status, "text": "x" * 10_000, "steps": [], "ms": 1})
     assert len(json.dumps(receipt, ensure_ascii=False)) <= subagent.MAX_RECEIPT_CHARS
+
+
+def test_subagent_discards_final_reply_after_cancellation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store, session = _session(tmp_path)
+    token = _CancelEvent()
+
+    def chat(*args: object, **kwargs: object) -> dict[str, object]:
+        token.cancel()
+        return {"text": "Respuesta que llegó después de detener", "calls": []}
+
+    monkeypatch.setattr(agent_chat, "chat", chat)
+    runner = agent.AgentRunner(store, lambda name: lambda params: {})
+    with pytest.raises(RunCancelled):
+        runner._execute(_call(session), token)
+
+
+def test_subagent_discards_limit_receipt_if_cancelled_in_the_last_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = _CancelEvent()
+    executed = []
+    monkeypatch.setattr(agent_chat, "chat", lambda *args, **kwargs: {
+        "text": "En curso", "calls": [{"id": "read", "name": "canvas_list", "params": {}}],
+    })
+
+    def execute(name: str, params: dict[str, object]) -> str:
+        executed.append(name)
+        if len(executed) == subagent.MAX_STEPS:
+            token.cancel()
+        return "{}"
+
+    with pytest.raises(RunCancelled):
+        subagent.run(provider="faux", model="current", agent=_profile(), task="Lee datos",
+                     tools=[{"name": "canvas_list"}], execute=execute, cancelled=lambda: token.cancelled)
+    assert len(executed) == subagent.MAX_STEPS

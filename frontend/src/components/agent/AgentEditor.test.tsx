@@ -61,3 +61,14 @@ it('muestra el error del runtime sin cerrar el editor', async () => {
   expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
   expect(onSaved).not.toHaveBeenCalled();
 });
+
+it('explica la prioridad del pedido y el alcance de los cambios del agente', async () => {
+  vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  await act(async () => { render(<AgentEditor profile={saved} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  expect(screen.getByText(/Tu pedido actual tiene prioridad sobre estas indicaciones/)).toHaveTextContent('estas prevalecen sobre las preferencias de memoria');
+  expect(screen.getByText(/Las conversaciones existentes conservan las indicaciones con las que se crearon/)).toBeVisible();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(addToast).toHaveBeenCalledWith({
+    message: 'Agente actualizado. Los cambios se aplicarán a conversaciones nuevas.', type: 'success',
+  });
+});
