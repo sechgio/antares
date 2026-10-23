@@ -8,7 +8,7 @@ import Button from '../ui/Button';
 const MODES = [
   { value: 'ask', label: 'Solicitar aprobación', description: 'Confirmar acciones sensibles y consultas web', Icon: Hand },
   { value: 'auto', label: 'Aprobar por mí', description: 'Confirmar acciones sensibles; consultar la web sin preguntar', Icon: ShieldCheck },
-  { value: 'full', label: 'Acceso completo', description: 'Ejecutar acciones habilitadas sin pedir confirmación', Icon: ShieldAlert },
+  { value: 'full', label: 'Acceso completo', description: 'Ejecutar acciones habilitadas sin confirmar salvo terminal', Icon: ShieldAlert },
 ] satisfies { value: AgentPermissionMode; label: string; description: string; Icon: typeof Hand }[];
 
 export default function PermissionPicker({ value, onChange, disabled, pending }: {

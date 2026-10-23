@@ -12,7 +12,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 from backend.core.agent import agent_tools, drafts, resource_grants, subagent
-from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, scrub_secrets, tool_specs
+from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, replay_safe, scrub_secrets, tool_specs
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
@@ -107,7 +107,8 @@ def summarize_result(full: str) -> str:
     if len(full) <= _MAX_TOOL_RESULT_CHARS:
         return full
     preview = full[: _MAX_TOOL_RESULT_CHARS - 200]
-    return json.dumps({"truncated": True, "total_chars": len(full), "preview": preview}, ensure_ascii=False)
+    return json.dumps({"truncated": True, "total_chars": len(full), "preview": preview,
+                       **({"isError": True} if result_failed(full) else {})}, ensure_ascii=False)
 
 
 def result_failed(full: str) -> bool:
@@ -558,7 +559,8 @@ class AgentStore:
             existing = self._dispatches.get(key)
             if isinstance(existing, dict):
                 same = existing.get("method") == method and existing.get("fingerprint") in (None, intent)
-                return ("existing" if same else "conflict"), dict(existing)
+                if not (same and existing.get("status") == "uncertain" and replay_safe(method)):
+                    return ("existing" if same else "conflict"), dict(existing)
             approval = None
             if approval_id is not None:
                 self._expire_stale_approvals()

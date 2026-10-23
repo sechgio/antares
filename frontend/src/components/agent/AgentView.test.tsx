@@ -11,8 +11,9 @@ vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm }) }));
 type Snapshot = Awaited<ReturnType<typeof agentApi.agentMessagesList>>;
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 
 function agentUpdates() {
@@ -335,7 +336,7 @@ it('cambia los permisos por conversación y conserva el modo si falla el guardad
   expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveAttribute('aria-checked', 'true');
   expect(within(menu).getByRole('menuitemradio', { name: /Solicitar aprobación/ })).toHaveTextContent('Confirmar acciones sensibles y consultas web');
   expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveTextContent('consultar la web sin preguntar');
-  expect(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ })).toHaveTextContent('sin pedir confirmación');
+  expect(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ })).toHaveTextContent('sin confirmar salvo terminal');
   expect(within(menu).getByText(/Solo para este chat. Conserva las herramientas y accesos habilitados/)).toBeInTheDocument();
   fireEvent.click(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ }));
   expect(save).toHaveBeenLastCalledWith(session.id, 'full');
@@ -615,6 +616,24 @@ it('avisa de las rutas escritas que no se autorizaron', async () => {
   });
 });
 
+it.each([false, true])('el reintento conserva la identidad solo con los mismos adjuntos: cambio=%s', async (changed) => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'datos.xlsx', kind: 'files' }] });
+  vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('Sin conexión')).mockResolvedValue({ accepted: true });
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa los datos' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa los datos');
+  if (changed) await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
+  expect(second[3]).toEqual(changed ? ['a1'] : []);
+  if (changed) expect(second[2]).not.toBe(first[2]);
+  else expect(second[2]).toBe(first[2]);
+});
+
 it('un envío fallido conserva el borrador y termina el indicador de ejecución', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentMessageSend).mockRejectedValue(new Error('Sin conexión'));
@@ -717,6 +736,46 @@ it('recupera una aprobación pendiente sin aprobarla al montar y permite detener
   await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
   expect(screen.queryByRole('button', { name: 'Permitir esta acción' })).not.toBeInTheDocument();
   expect(approve).not.toHaveBeenCalled();
+});
+
+it.each([true, false])('muestra la decisión en curso y permite reintentar si falla: aprobar=%s', async (approved) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const approval = { id: 'a1', session_id: session.id, call_id: 'c1', method: 'shell_run', params: { command: 'npm test' },
+    status: 'pending' as const, created_at: 1, decided_at: null };
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+    pending_approvals: [approval, { ...approval, id: 'a2', call_id: 'c2' }] });
+  const attempt = deferred<Awaited<ReturnType<typeof agentApi.agentApprove>>>();
+  const approve = vi.spyOn(agentApi, 'agentApprove').mockReturnValue(attempt.promise);
+  const deny = vi.spyOn(agentApi, 'agentDeny').mockReturnValue(attempt.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  const [card, other] = screen.getAllByRole('group', { name: 'Confirmación de acción' });
+  const action = within(card).getByRole('button', { name: approved ? 'Permitir esta acción' : 'Rechazar esta acción' });
+  await act(async () => { fireEvent.click(action); fireEvent.click(action); });
+  expect(screen.getByRole('status', { name: 'Estado de la aprobación' })).toHaveTextContent(approved ? 'Aprobando…' : 'Rechazando…');
+  expect(approved ? approve : deny).toHaveBeenCalledTimes(1);
+  expect(approved ? deny : approve).not.toHaveBeenCalled();
+  expect(within(other).queryByRole('status')).not.toBeInTheDocument();
+  expect(within(other).getByRole('button', { name: 'Permitir esta acción' })).toBeDisabled();
+  await act(async () => { attempt.reject(new Error('Sin conexión')); });
+  expect(within(card).getByRole('button', { name: 'Permitir esta acción' })).toBeEnabled();
+  expect(within(card).getByRole('button', { name: 'Rechazar esta acción' })).toBeEnabled();
+  expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Sin conexión', type: 'error' }));
+  (approved ? approve : deny).mockResolvedValue({ approval: { ...approval, status: approved ? 'approved' : 'denied' } });
+  list.mockResolvedValue(empty);
+  await act(async () => { fireEvent.click(action); });
+  expect(approved ? approve : deny).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('group', { name: 'Confirmación de acción' })).not.toBeInTheDocument();
+});
+
+it.each(['content', 'reasoning'] as const)('evita repetir el indicador general cuando ya transmite %s', async (field) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
+    messages: [{ role: 'assistant', content: '', [field]: 'Preparando el informe', partial: true, ts: 1 }] });
+  render(<AgentView />);
+  await act(async () => {});
+  expect(screen.getByText('Preparando el informe')).toBeInTheDocument();
+  expect(screen.queryByText('El agente está trabajando')).not.toBeInTheDocument();
 });
 
 it('envía un mensaje en cola como corrección del encargo en curso', async () => {

@@ -40,7 +40,7 @@
   animation: agentEyesWorking 2.8s linear infinite;
 }
 
-.agent-workspace :is(button, textarea, input):focus-visible,
+.agent-workspace :is(button, textarea, input, summary):focus-visible,
 .agent-model-menu :is(button, input):focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 3px;
@@ -132,7 +132,14 @@
 }
 
 .agent-terminal { background: color-mix(in srgb, var(--bg-base) 72%, #000); }
-.agent-terminal-line { animation: agentTerminalLine 220ms ease-out both; }
+.agent-tool-row {
+  min-height: 28px;
+  border-radius: 6px;
+  transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out);
+}
+.agent-tool-row:hover { background: var(--bg-input); }
+.agent-approval.agent-trace-in { animation-duration: 140ms; }
+.agent-tool-row .transition-transform { transition-duration: 120ms; transition-timing-function: var(--ease-out); }
 .agent-terminal-cursor {
   display: inline-block;
   width: 7px;
@@ -140,9 +147,6 @@
   margin-top: 3px;
   background: var(--text-secondary);
   animation: agentTerminalCursor 1s steps(1) infinite;
-}
-@keyframes agentTerminalLine {
-  from { opacity: 0; transform: translateY(3px); }
 }
 @keyframes agentTerminalCursor {
   50% { opacity: 0; }
@@ -161,7 +165,6 @@
   .agent-thinking-dots span,
   .agent-shimmer,
   .agent-workspace .agent-suggestion,
-  .agent-terminal-line,
   .agent-marquee-track,
   .agent-terminal-cursor,
   .agent-model-menu,
@@ -169,6 +172,9 @@
   .agent-model-menu .animate-spin { animation: none; }
   .agent-shimmer { background: none; color: var(--text-secondary); }
   .agent-suggestions { transition: none; }
+  .agent-tool-row,
+  .agent-tool-row .transition-transform,
+  .agent-approval :is(button, summary, svg) { transition: none; }
   .agent-marquee { overflow-x: auto; scrollbar-width: none; }
   .agent-workspace .agent-suggestion:hover:not(:disabled) { transform: none; }
 }

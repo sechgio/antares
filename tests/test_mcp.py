@@ -70,6 +70,30 @@ def test_add_and_list_servers(mcp_root):
     assert "secreto" not in json.dumps(listed)
 
 
+def test_agent_can_diagnose_a_failed_mcp_catalog_without_receiving_secrets(mcp_root, monkeypatch):
+    from backend.core.agent import agent, agent_chat, agent_tools
+
+    monkeypatch.setattr(mcp_servers, "_tools_cache", {})
+    server = mcp_servers.add_server("Diagnóstico", "http", url="https://example.test/mcp",
+                                    secrets={"headers": {"Authorization": "Bearer private-credential"}})
+
+    def unavailable(*args):
+        raise RuntimeError("Conexión rechazada: Bearer private-credential")
+
+    monkeypatch.setattr(mcp_client, "list_tools_http", unavailable)
+    specs = {spec["name"]: spec for spec in agent_chat.tool_specs()}
+    assert "mcp_status" in specs and specs["mcp_status"]["gated"] is False
+    assert not any(name.startswith("mcp2__") for name in specs)
+    result = agent_tools.run("mcp_status", {}, agent.AgentStore(mcp_root / "agent"), "s1")
+    status = next(item for item in result["servers"] if item["id"] == server["id"])
+    assert status["status"] == "unavailable" and "Conexión rechazada" in status["error"]
+    assert "private-credential" not in json.dumps(result)
+    monkeypatch.setattr(mcp_client, "list_tools_http", lambda *args: [{"name": "echo"}])
+    recovered = mcp_servers.server_statuses(refresh=True)
+    assert recovered[0]["status"] == "ready" and recovered[0]["tools_count"] == 1
+    assert "error" not in recovered[0]
+
+
 def test_add_server_validates(mcp_root):
     with pytest.raises(ValueError, match="transport"):
         mcp_servers.add_server("X", "ws")

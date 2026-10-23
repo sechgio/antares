@@ -121,7 +121,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
               aria-label="Indicaciones del agente" aria-describedby="agent-instructions-scope" className="w-full text-[13px]"
               placeholder="Rol, pasos y estilo. Por ejemplo: breve, cálido y con un ejemplo cuando ayude." />
             <span id="agent-instructions-scope" className="col-start-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
-              Tu pedido actual tiene prioridad sobre estas indicaciones; estas prevalecen sobre las preferencias de la memoria global.
+              Tu pedido actual tiene prioridad sobre estas indicaciones; estas prevalecen sobre las preferencias de memoria.
             </span>
           </label>
           <label className={FIELD}>

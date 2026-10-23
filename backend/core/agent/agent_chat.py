@@ -11,7 +11,7 @@ from typing import Any
 
 from backend.core.integrations import ai_providers, http_guard, mcp_servers
 from backend.core.integrations.types import JsonObject
-from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods, input_schema_for
+from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods, input_schema_for, is_idempotent
 
 MAX_MESSAGE_CHARS = 12_000
 _MAX_TOOL_RESULT_CHARS = 6_000
@@ -38,6 +38,14 @@ def readonly_methods() -> list[str]:
     from backend.core.agent import agent_tools
 
     return sorted({m for m in ORCHESTRATABLE_METHODS if not _denied(m)} | agent_tools.READ_TOOLS)
+
+
+def replay_safe(method: str) -> bool:
+    return method in readonly_methods() and (
+        is_idempotent(method) or method in {
+            "fs_list", "fs_read", "fs_search", "skills_list", "skills_read", "memory_search", "mcp_status", "shell_output",
+        }
+    )
 
 
 _SECRET_RESULT_KEYS = frozenset({

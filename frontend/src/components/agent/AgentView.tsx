@@ -181,7 +181,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     agentApi.agentProfilesList().then((res) => { if (!cancelled) setProfiles(res.profiles); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
-  const [deciding, setDeciding] = useState(false);
+  const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
+  const decisionRef = useRef<string | null>(null);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean; correction?: boolean }[]>(() => {
@@ -230,7 +231,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         ? { kind: 'item', key: `question:${questions[0].id}`, text: 'El agente necesita tu respuesta para continuar.',
           target: `agent-question-${questions[0].id}`, action: 'Responder' }
         : running
-          ? { kind: 'working', key: `working:${activeCall?.id ?? 'turn'}`, text: activityText(activeCall?.name) }
+          ? activeCall || !messages.some((message) => message.partial)
+            ? { kind: 'working', key: `working:${activeCall?.id ?? 'turn'}`, text: activityText(activeCall?.name) }
+            : null
           : artifact
             ? { kind: 'item', key: `artifact:${artifact.id}:${artifact.files.map((file) => file.sha256).join(',')}`,
               text: `Resultado disponible: ${artifact.files[0].name}`, target: `agent-artifact-${artifact.id}`, action: 'Ver resultado' }
@@ -746,7 +749,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   const decide = async (id: string, ok: boolean) => {
-    setDeciding(true);
+    if (decisionRef.current) return;
+    decisionRef.current = id;
+    setDeciding({ id, approved: ok });
     try {
       if (ok) await agentApi.agentApprove(id);
       else await agentApi.agentDeny(id);
@@ -754,7 +759,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo aplicar la decisión'), type: 'error' });
     } finally {
-      setDeciding(false);
+      decisionRef.current = null;
+      setDeciding(null);
     }
   };
 
@@ -1093,7 +1099,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           {!showHero && plan && <PlanCard plan={plan} running={running && !messagesStale} />}
           {pending.map((a) => (
             <div key={a.id} id={`agent-approval-${a.id}`}>
-              <ApprovalCard approval={a} busy={deciding} onDecide={(id, ok) => void decide(id, ok)} />
+              <ApprovalCard approval={a} busy={!!deciding}
+                decision={deciding?.id === a.id ? deciding.approved ? 'approve' : 'deny' : undefined}
+                onDecide={(id, ok) => void decide(id, ok)} />
             </div>
           ))}
           {artifacts.map((artifact) => <div key={artifact.id} id={`agent-artifact-${artifact.id}`}>

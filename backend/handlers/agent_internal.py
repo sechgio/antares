@@ -100,6 +100,7 @@ def _tools(params: JsonObject) -> JsonObject:
             {
                 **spec,
                 "kind": "mcp" if _mcp_servers.parse_agent_tool(name) is not None else "backend",
+                "replay_safe": _agent_chat.replay_safe(name),
             }
         )
     return {"tools": tools}
@@ -507,7 +508,10 @@ def _memory_context(params: JsonObject) -> JsonObject:
             templates = None
     raw_accounts = params.get("accounts")
     accounts = {str(k): str(v) for k, v in raw_accounts.items() if v} if isinstance(raw_accounts, dict) else {}
-    return memory.context(str(params["session_id"]), str(params["text"]), versions, templates, accounts)
+    profile_id = params.get("profile_id")
+    if profile_id is not None and (not isinstance(profile_id, str) or not profile_id or len(profile_id) > 120):
+        raise ValidationError("El perfil de memoria no es válido")
+    return memory.context(str(params["session_id"]), str(params["text"]), versions, templates, accounts, profile_id)
 
 
 @with_locale

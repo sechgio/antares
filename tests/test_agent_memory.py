@@ -186,7 +186,7 @@ def test_preference_scope_is_global_and_keeps_the_human_correction(store):
     })
     edited = mem.update(remembered["id"], {"action": "edit", "content": "Incluye un ejemplo cuando ayude"})
     context = mem.context("chat-formal", "hola", VERSIONS)
-    assert "compartida entre conversaciones y agentes" in context["context"]
+    assert "local disponible para esta conversación" in context["context"]
     assert "Incluye un ejemplo cuando ayude" in context["context"]
     assert edited["source"] == {"kind": "user"}
     with pytest.raises(ValueError, match="corrigió"):
@@ -194,3 +194,28 @@ def test_preference_scope_is_global_and_keeps_the_human_correction(store):
             "kind": "preference", "title": "Estilo", "content": "Responde de forma formal",
         })
     assert mem.items()[0]["content"] == "Incluye un ejemplo cuando ayude"
+
+
+def test_profile_memory_survives_restart_without_crossing_profiles(store, tmp_path):
+    mem = memory.memory_for(store)
+    shared = mem.remember("general", {"kind": "preference", "title": "Idioma", "content": "Español"})
+    mem.context("a", "", VERSIONS, profile_id="role-a")
+    own = mem.remember("a", {"kind": "preference", "title": "Formato", "content": "Usa azul"})
+    reloaded = memory.MemoryStore(tmp_path)
+    for session_id, profile_id, expected in (("b", "role-b", False), ("a2", "role-a", True), ("general", None, False)):
+        context = reloaded.context(session_id, "formato", VERSIONS, profile_id=profile_id)
+        assert shared["id"] in context["items"]
+        assert (own["id"] in context["items"]) is expected
+        assert bool(reloaded.search("azul", session_id=session_id)) is expected
+    reloaded.remember("b", {"kind": "preference", "title": "Formato", "content": "Usa verde"})
+    assert "Usa azul" in reloaded.context("a2", "formato", VERSIONS, profile_id="role-a")["context"]
+
+
+def test_relevant_fact_is_not_starved_by_long_preferences(store):
+    mem = memory.memory_for(store)
+    for index in range(8):
+        mem.remember("s1", {"kind": "preference", "title": f"Regla {index}", "content": "x" * 1900})
+    fact = mem.remember("s1", {"kind": "fact", "title": "Orquídea", "content": "La carpeta del proyecto es violeta"})
+    context = mem.context("s1", "proyecto orquídea violeta", VERSIONS)
+    assert fact["id"] in context["items"]
+    assert len(context["context"]) <= memory.CONTEXT_CHARS + 200

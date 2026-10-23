@@ -111,7 +111,7 @@ export default function MemoryMenu() {
         >
           <p className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Memoria del agente</p>
           <p className="shrink-0 text-[11px] leading-relaxed text-[var(--text-secondary)]">
-            Esta memoria es local y se comparte entre conversaciones y agentes.
+            La memoria es local. Cada perfil conserva sus propios recuerdos; los recuerdos globales anteriores siguen disponibles.
             {' '}Tu pedido actual tiene prioridad; después, las indicaciones del agente y, por último, las preferencias de memoria.
           </p>
           <ul className="custom-scrollbar min-h-0 space-y-2 overflow-y-auto">

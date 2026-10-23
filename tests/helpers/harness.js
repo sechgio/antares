@@ -119,7 +119,17 @@ function makeFakeProc({ pid = 12345, closeOnKill = true, ready = true } = {}) {
 function patchSpawn(impl) {
   const childProcess = require('child_process');
   const originalSpawn = childProcess.spawn;
-  const state = { count: 0, restore: () => { childProcess.spawn = originalSpawn; } };
+  const originalExecFile = childProcess.execFile;
+  const state = { count: 0, restore: () => {
+    childProcess.spawn = originalSpawn;
+    childProcess.execFile = originalExecFile;
+  } };
+  childProcess.execFile = (command, ...args) => {
+    if (command !== 'taskkill') return originalExecFile(command, ...args);
+    const callback = args.at(-1);
+    if (typeof callback === 'function') process.nextTick(callback, null, '', '');
+    return new EventEmitter();
+  };
   childProcess.spawn = (...args) => {
     state.count += 1;
     return impl(...args);

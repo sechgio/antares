@@ -40,7 +40,7 @@ async function instance(owner = true) {
     './renderer-trust': { isTrustedRendererFrame: () => true },
     './app-log': { installConsoleLogTee: noop, setAppContext: noop, initAppLogs: () => 'temporary', cleanStaleTempDirs: () => 0,
       appendLogLine: noop, appendLogEvent: noop, flushLogQueue: async () => {}, flushLogQueueSync: noop },
-    './agent-runtime': { activitySnapshot: async () => state.activity, shutdown: async () => {} },
+    './agent-runtime': { open: async () => { state.agentOpened = true; }, activitySnapshot: async () => state.activity, shutdown: async () => {} },
     './file-capabilities': { cleanupAllStaged: async () => {} }, './autoimg-sync-engine': { cleanupAutoSync: noop },
     './auto-updater': { setupAutoUpdater: noop, cleanupAutoUpdater: noop },
   };
@@ -56,6 +56,7 @@ async function instance(owner = true) {
 async function main() {
   const { state, app, win, handlers, intervals } = await instance();
   assert.equal(state.started, 1);
+  assert.equal(state.agentOpened, true);
   const event = { prevented: false, preventDefault() { this.prevented = true; } };
   win.emit('close', event);
   assert.equal(event.prevented, true);

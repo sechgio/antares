@@ -219,11 +219,11 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
   const command = typeof call.params.command === 'string' ? call.params.command : '';
   const output = shellOutput(call.result);
   const live = call.status === 'running';
-  const [open, setOpen] = useState(live || call.status === 'pending');
+  const [open, setOpen] = useState(live || call.status === 'failed' || call.status === 'interrupted');
   const [seen, setSeen] = useState(call.status);
   if (seen !== call.status) {
     setSeen(call.status);
-    if (call.status === 'running' || call.status === 'pending') setOpen(true);
+    if (call.status === 'running' || call.status === 'failed' || call.status === 'interrupted') setOpen(true);
   }
   const exitFailed = output?.exit != null && output.exit !== 0;
   const failed = call.status === 'failed' || call.status === 'denied' || exitFailed;
@@ -231,19 +231,21 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
   const lines = text ? text.split('\n') : [];
   // Como una terminal, se ve el final de la salida: ahí suelen estar el error o el resumen.
   const logRef = useRef<HTMLDivElement>(null);
+  const followOutputRef = useRef(true);
   useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+    if (logRef.current && followOutputRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [open, text]);
   return (
     <div>
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className={`group ${TASK_ROW} w-fit text-left`}
+        onClick={() => { if (!open) followOutputRef.current = true; setOpen(!open); }}
+        className={`agent-tool-row group ${TASK_ROW} w-full text-left`}
       >
-        <Terminal size={14} className={`shrink-0 ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
-        <span className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : 'group-hover:text-[var(--text-primary)]'} ${live ? 'agent-shimmer' : ''}`}>
+        {live ? <Loader2 size={14} className="shrink-0 animate-spin text-[var(--text-secondary)]" aria-hidden="true" />
+          : <Terminal size={14} className={`shrink-0 ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />}
+        <span title={command} className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : 'group-hover:text-[var(--text-primary)]'}`}>
           {TERMINAL_VERB[call.status] ? `${TERMINAL_VERB[call.status]} ` : ''}<span className="font-mono text-[12px]">{command}</span>
         </span>
         {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Acción sensible" />}
@@ -260,10 +262,12 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
               <CopyButton text={output.text} label="Copiar salida" className="group-hover/term:opacity-100" />
             </div>
           )}
-          <div ref={logRef} role="log" aria-label={`Salida de ${command}`} className="agent-terminal max-h-64 overflow-auto rounded-lg border border-[var(--border-subtle)] px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
+          <div ref={logRef} role="log" aria-label={`Salida de ${command}`} aria-busy={live}
+            onScroll={(event) => { const log = event.currentTarget; followOutputRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48; }}
+            className="agent-terminal max-h-64 overflow-auto rounded-lg border border-[var(--border-subtle)] px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
             <div className="whitespace-pre-wrap break-all text-[var(--text-primary)]"><span className="select-none text-[var(--text-muted)]">&gt; </span>{command}</div>
             {lines.map((line, i) => (
-              <div key={i} className={`agent-terminal-line whitespace-pre-wrap break-all ${output && i >= output.errorFrom ? 'text-[var(--accent-red)]' : ''}`} style={{ animationDelay: `${Math.min(i, 40) * 18}ms` }}>{line || ' '}</div>
+              <div key={i} className={`whitespace-pre-wrap break-all ${output && i >= output.errorFrom ? 'text-[var(--accent-red)]' : ''}`}>{line || ' '}</div>
             ))}
             {live && <span className="agent-terminal-cursor" aria-hidden="true" />}
           </div>
@@ -281,12 +285,12 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
   const failed = call.status === 'failed';
   const denied = call.status === 'denied';
   const live = call.status === 'running';
-  const Icon = denied ? Ban : TOOL_ICONS[call.name] ?? Wrench;
+  const Icon = live ? Loader2 : denied ? Ban : TOOL_ICONS[call.name] ?? Wrench;
   const arg = keyArgument(call.params);
   const row = (
     <>
-      <Icon size={14} className={`shrink-0 ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
-      <span className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : denied ? 'text-[var(--text-muted)]' : 'group-hover:text-[var(--text-primary)]'} ${live ? 'agent-shimmer' : ''}`}>
+      <Icon size={14} className={`shrink-0 ${live ? 'animate-spin text-[var(--text-secondary)]' : failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
+      <span title={arg ?? undefined} className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : denied ? 'text-[var(--text-muted)]' : 'group-hover:text-[var(--text-primary)]'}`}>
         {METHOD_LABELS[call.name] ?? call.name}
         {arg && <span className={`ml-1.5 font-mono text-[12px] ${failed ? '' : 'text-[var(--text-muted)]'}`}>{arg}</span>}
       </span>
@@ -300,8 +304,8 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
   );
   if (denied || (!params && !detail)) return <div className={`group ${TASK_ROW}`}>{row}</div>;
   return (
-    <details className="group">
-      <summary className={`${TASK_ROW} w-fit cursor-pointer list-none`}>{row}</summary>
+    <details className="group" open={failed || call.status === 'interrupted' || undefined}>
+      <summary className={`agent-tool-row ${TASK_ROW} cursor-pointer list-none`}>{row}</summary>
       <div className={`${TASK_BODY} mb-1.5 mt-1 space-y-2`}>
         {params && <ToolCode label="Entrada">{params}</ToolCode>}
         {detail && (call.status === 'done' && (call.name === 'skills_list' || call.name === 'skills_read')
@@ -343,16 +347,19 @@ function CopyButton({ text, label = 'Copiar respuesta', className = 'group-hover
 }
 
 function ToolSteps({ calls }: { calls: AgentToolCall[] }) {
+  const [expanded, setExpanded] = useState<boolean | null>(null);
   const attention = calls.some((c) => !['done', 'submitted'].includes(c.status));
-  const [openOverride, setOpenOverride] = useState<boolean | null>(null);
-  const open = openOverride ?? attention;
+  const open = expanded ?? attention;
   if (calls.length <= 2) return <>{calls.map((c) => <ToolCallStep key={c.id} call={c} />)}</>;
   const done = calls.filter((c) => c.status === 'done').length;
+  const review = calls.filter((c) => c.status === 'failed' || c.status === 'interrupted').length;
   return (
     <details className="group/steps" open={open}>
-      <summary onClick={(event) => { event.preventDefault(); setOpenOverride(!open); }} className={`${TASK_ROW} w-fit cursor-pointer list-none hover:text-[var(--text-primary)]`}>
+      <summary className={`agent-tool-row ${TASK_ROW} w-fit cursor-pointer list-none hover:text-[var(--text-primary)]`}
+        onClick={(event) => { event.preventDefault(); setExpanded(!open); }}>
         <Wrench size={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
         {calls.length} pasos · {done} completados
+        {review > 0 && <span className="text-[var(--accent-red)]">· {review} por revisar</span>}
         <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open/steps:rotate-90" aria-hidden="true" />
       </summary>
       <div className={`${TASK_BODY} mt-0.5`}>{calls.map((c) => <ToolCallStep key={c.id} call={c} />)}</div>
@@ -398,10 +405,12 @@ export function MessageRow({ msg, agent }: { msg: AgentMessage; agent?: AgentIde
 export function ApprovalCard({
   approval,
   busy,
+  decision,
   onDecide,
 }: {
   approval: AgentApproval;
   busy: boolean;
+  decision?: 'approve' | 'deny';
   onDecide: (id: string, ok: boolean) => void;
 }) {
   const { params, context } = approval;
@@ -426,7 +435,6 @@ export function ApprovalCard({
     typeof params.worksheet === 'string' && `Pestaña: ${params.worksheet}`,
     typeof params.range === 'string' && `Rango: ${params.range}`,
     typeof params.url === 'string' && `Página: ${params.url}`,
-    typeof params.command === 'string' && `Comando: ${params.command.slice(0, 400)}`,
     typeof params.cwd === 'string' && `Carpeta: ${params.cwd}`,
     typeof params.path === 'string' && `Ruta: ${params.path}`,
     typeof params.target === 'string' && `Abrir: ${params.target}${typeof params.args === 'string' ? ` ${params.args}` : ''}`,
@@ -442,23 +450,34 @@ export function ApprovalCard({
   const Icon = approval.method === 'shell_run' ? Terminal
     : Object.prototype.hasOwnProperty.call(TOOL_ICONS, approval.method) ? TOOL_ICONS[approval.method] : ShieldCheck;
   return (
-    <div role="group" aria-label="Confirmación de acción" className="agent-trace-in">
-      <div className="flex w-full max-w-[min(620px,100%)] flex-wrap items-start gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
-        <Icon size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--accent-yellow)]" />
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium leading-5 text-[var(--text-primary)]">
-            {action ?? 'Acción sin descripción disponible'}
-          </p>
-          <p className="text-[12px] leading-[18px] text-[var(--text-secondary)]">
-            {action ? 'Permitir autoriza solo esta acción.' : 'Revisa los detalles antes de permitir esta acción.'}
-            {' '}Rechazar la omite e informa al agente.
-          </p>
+    <div role="group" aria-label="Confirmación de acción" className="agent-approval agent-trace-in">
+      <div className="w-full max-w-[min(620px,100%)] overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]">
+        <div className="min-w-0 space-y-3 p-3 sm:p-4">
+          <div className="flex items-start gap-2.5">
+            <Icon size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--text-secondary)]" />
+            <div className="min-w-0">
+              <p role={decision ? 'status' : undefined} aria-label={decision ? 'Estado de la aprobación' : undefined}
+                className="text-[12px] leading-[18px] text-[var(--text-secondary)]">
+                {decision === 'approve' ? 'Aprobando…' : decision === 'deny' ? 'Rechazando…' : 'Aprobación necesaria'}
+              </p>
+              <p className="text-[13px] font-medium leading-5 text-[var(--text-primary)]">{action ?? 'Acción sin descripción disponible'}</p>
+              <p className="text-[12px] leading-[18px] text-[var(--text-secondary)]">
+                {action ? 'Permitir autoriza solo esta acción.' : 'Revisa los detalles antes de permitir esta acción.'}
+                {' '}Rechazar la omite e informa al agente.
+              </p>
+            </div>
+          </div>
+          {approval.method === 'shell_run' && <p className="border-l-2 border-[var(--accent-yellow)] pl-3 text-[12px] leading-[18px] text-[var(--text-secondary)]">
+            Este comando puede acceder al equipo completo con tus permisos, fuera de las carpetas adjuntas.
+            Requiere tu aprobación también en Acceso completo.
+          </p>}
+          {typeof params.command === 'string' && <ToolCode label="Comando">{params.command}</ToolCode>}
           {facts.length > 0 && (
-            <ul className="mt-2 space-y-1 font-mono text-[11.5px] leading-[17px] text-[var(--text-secondary)]">
+            <ul className="space-y-1 font-mono text-[11.5px] leading-[17px] text-[var(--text-secondary)]">
               {facts.map((fact) => <li key={fact} className="break-all">{fact}</li>)}
             </ul>
           )}
-          <details className="group mt-2 text-[12px] text-[var(--text-muted)]">
+          <details className="group text-[11.5px] text-[var(--text-secondary)]">
             <summary aria-label="Ver detalles de la acción" className="flex w-fit cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
               Detalles
               <ChevronRight size={12} className="transition-transform duration-200 group-open:rotate-90" />
@@ -471,13 +490,14 @@ export function ApprovalCard({
             )}
           </details>
         </div>
-        <div className="flex w-full flex-wrap items-center justify-end gap-2">
-          <Button size="sm" variant="secondary" aria-label="Rechazar esta acción" disabled={busy} onClick={() => onDecide(approval.id, false)}>
-            <X size={13} aria-hidden="true" />
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border-subtle)] px-3 py-2.5 sm:px-4">
+          <span className="mr-auto basis-full text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">Solo esta acción</span>
+          <Button size="sm" variant="ghost" aria-label="Rechazar esta acción" disabled={busy} onClick={() => onDecide(approval.id, false)}>
+            {decision === 'deny' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
             Rechazar
           </Button>
           <Button size="sm" aria-label="Permitir esta acción" disabled={busy} onClick={() => onDecide(approval.id, true)}>
-            <Check size={13} aria-hidden="true" />
+            {decision === 'approve' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
             Permitir
           </Button>
         </div>
