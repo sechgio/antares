@@ -18,7 +18,7 @@ const {
 } = require('./agent-shared');
 const execution = require('./agent-execution');
 const projection = require('./agent-projection');
-const { loadAgentProfile } = require('./agent-profiles');
+const { loadAgentProfile, resolvePortableProfile } = require('./agent-profiles');
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_REQUEST_ID_CHARS = 100;
@@ -195,7 +195,7 @@ async function _restoreExecutionContext() {
   for (const session of Object.values(await sessions())) {
     if (session.deleted) continue;
     if (session.profile?.portable) {
-      shared.state.portableProfiles.set(session.conversationId, loadAgentProfile(session.profile.id));
+      shared.state.portableProfiles.set(session.conversationId, { kind: 'unloaded', slug: session.profile.id });
     }
     const live = await harness.snapshot(pi.LiveDoc, session.conversationId, ctx());
     const inbox = await harness.snapshot(pi.InboxDoc, session.conversationId, ctx());
@@ -314,7 +314,6 @@ async function sessionCreate(params) {
     ownership: { kind: 'ownerless' },
     agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model), instructions },
   }, ctx());
-  if (portableProfile) shared.state.portableProfiles.set(conv.id, portableProfile);
   const specs = [...shared.toolSpecs.values()];
   const available = new Set(specs.map((tool) => tool.name));
   const initialTools = profile && Array.isArray(profile.tools)
@@ -337,6 +336,7 @@ async function sessionCreate(params) {
   await commitSessions((map) => {
     map[session.id] = session;
   });
+  if (portableProfile) shared.state.portableProfiles.set(conv.id, { kind: 'loaded', profile: portableProfile });
   shared.convToSession.set(conv.id, session.id);
   const { conversationId, style, ...publicSession } = session;
   return { session: publicSession };
@@ -515,6 +515,7 @@ async function messageSend(params) {
     }
     return { accepted: true, duplicate: true };
   }
+  resolvePortableProfile(shared.state.portableProfiles, session.conversationId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
   if (pending.length && !correction) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
   await execution.refreshTools();
