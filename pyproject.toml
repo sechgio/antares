@@ -28,6 +28,7 @@ dependencies = [
     "lxml>=6.1.2",
     "psutil>=5.9.0",
     "PyYAML>=6.0.3",
+    "pywinauto>=0.6.9,<0.7",
 ]
 
 [project.optional-dependencies]
@@ -77,6 +78,14 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "pymupdf"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pywinauto.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "comtypes.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -89,6 +89,22 @@ def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_s
     assert "client_secret" not in result["tokens"] and "client_id" not in result["tokens"]
 
 
+def test_computer_use_methods_are_internal_and_never_retryable():
+    from backend.core.ipc_catalog import IDEMPOTENT_METHODS, ORCHESTRATABLE_METHODS, handler_module_for
+
+    methods = _catalog()["methods"]
+    for name in ("computer_use_enumerate", "computer_use_window_state", "computer_use_action", "computer_use_launch_app"):
+        assert methods[name]["handler"] == "backend:computer_use"
+        assert methods[name]["internal"] is True
+        assert name not in ORCHESTRATABLE_METHODS
+    assert handler_module_for("computer_use_action") == "backend.handlers.computer_use"
+    assert {"computer_use_enumerate", "computer_use_window_state"} <= IDEMPOTENT_METHODS
+    assert "computer_use_action" not in IDEMPOTENT_METHODS
+    assert methods["computer_use_action"]["inputSchema"]["properties"]["action"]["enum"] == [
+        "click", "type_text", "press_key", "scroll", "drag", "set_value"
+    ]
+
+
 def test_flujos_methods_are_retired_and_kept_services_move_to_their_handlers() -> None:
     from backend.core.ipc_catalog import handler_module_for
 
