@@ -80,17 +80,59 @@ export interface AgentToolSpec {
   module?: string | null;
 }
 
+export type AgentApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';
+export type AgentApprovalFilterStatus = AgentApprovalStatus | 'all' | 'uncertain';
+
 export interface AgentApproval {
   id: string;
   session_id: string;
   call_id: string;
   method: string;
   params: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'denied' | 'expired';
+  fingerprint?: string;
+  status: AgentApprovalStatus;
   created_at: number;
   decided_at: number | null;
+  consumed_by?: string;
   context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string };
   resources?: { path: string; sha256?: string }[];
+  dispatch?: { status: string; finished_at?: number };
+}
+
+export interface AgentGrant {
+  path: string;
+  mode?: string;
+  request_id?: string;
+  size?: number;
+  mtime_ns?: number;
+}
+
+export type AgentTaskStatus = 'pending' | 'delivering' | 'delivered' | 'cancelled' | 'uncertain';
+
+export interface AgentTaskRun {
+  at: number;
+  due_at: number;
+  status: 'delivered' | 'failed' | 'uncertain';
+  silent?: boolean;
+  error?: string;
+}
+
+export interface AgentTask {
+  id: string;
+  session_id: string;
+  content: string;
+  due_at: number;
+  interval_ms: number;
+  status: AgentTaskStatus;
+  created_at: number;
+  updated_at?: number;
+  timezone?: string;
+  silent?: boolean;
+  runs?: AgentTaskRun[];
+  last_run_at?: number;
+  last_status?: AgentTaskRun['status'];
+  last_error?: string;
+  retry_at?: number;
 }
 
 export interface AgentArtifact {
@@ -221,6 +263,29 @@ export const agentApi = {
 
   agentDeny: (approval_id: string) =>
     _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id }),
+
+  agentApprovalsHistory: (params: { session_id?: string; method?: string; status?: AgentApprovalFilterStatus; limit?: number } = {}) =>
+    _invoke<{ approvals: AgentApproval[] }>('agent_approvals_history', params),
+
+  agentGrantsList: (session_id: string) =>
+    _invoke<{ grants: AgentGrant[] }>('agent_grants_list', { session_id }),
+
+  agentGrantsRevoke: (session_id: string, path?: string) =>
+    _invoke<{ revoked: number }>('agent_grants_revoke', { session_id, ...(path ? { path } : {}) }),
+
+  agentTasksList: (session_id?: string) =>
+    _invoke<{ tasks: AgentTask[] }>('agent_tasks_list', session_id ? { session_id } : {}),
+
+  agentTasksSave: (p: {
+    session_id: string; id?: string; content: string; due_at: string;
+    every_minutes?: number | null; silent?: boolean; timezone?: string;
+  }) => _invoke<{ scheduled: AgentTask }>('agent_tasks_save', p),
+
+  agentTasksCancel: (id: string) =>
+    _invoke<{ cancelled: boolean; id: string }>('agent_tasks_cancel', { id }),
+
+  agentTasksRun: (id: string) =>
+    _invoke<{ scheduled: AgentTask }>('agent_tasks_run', { id }),
 
   agentRendererResult: (id: string, result?: unknown, error?: string, uncertain = false) =>
     _invoke<{ accepted: boolean }>('agent_renderer_result', { id, result, error, ...(uncertain ? { uncertain: true } : {}) }),
