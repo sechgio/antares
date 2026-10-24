@@ -477,8 +477,8 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${PLAN_CHECK_TEXT.replace('{steps}', steps)}` };
 }
 
-// "Permitir siempre": el usuario autorizó este dominio; las herramientas web
-// con efecto no vuelven a pedir aprobación mientras la política lo mantenga.
+// El backend exige una aprobación aprobada para despachar gated: "permitir
+// siempre" se resuelve aprobándola sola, como el modo completo.
 function webAlwaysAllowed(name, context) {
   if (!String(name || '').startsWith('web_') || !context || context.policy_blocked) return false;
   const domain = String(context.domain || '');
