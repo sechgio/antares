@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent delega con roles: los subagentes son exploradores por defecto y pueden pedir una revisión o, si su ficha lo permite, trabajar con efectos bajo aprobación. La delegación se limita a un nivel, permite sustraer herramientas, valida la respuesta contra un `output_schema` con reintento correctivo y agrupa hasta cuatro encargos con su estado. Las aprobaciones de un worker llegan a la conversación padre con su origen y nunca se conceden solas.
 - Agent muestra el coste estimado del turno y de la sesión con los precios reales del catálogo, usa la ventana de contexto exacta del modelo e informa de las compactaciones aplicadas. Las conversaciones largas se compactan automáticamente: pi-durable resume el historial en ventanas grandes y, en ventanas pequeñas, se conservan los últimos turnos con un resumen estructurado de lo omitido.
 - Agent muestra el historial de aprobaciones con filtros por conversación, herramienta y estado, detalle de parámetros y recursos, exportación JSON/CSV y revocación de accesos concedidos. Los encargos programados tienen un panel para crear, editar, ejecutar ahora o cancelar, con historial de ejecuciones, token de silencio y recuperación acotada tras reiniciar: una entrega interrumpida no se repite y los recurrentes se reprograman una sola vez.
 - Agent integra las acciones del turno en una sola barra, conserva su acceso en paneles estrechos y permite desplegar el texto completo de los mensajes en cola.

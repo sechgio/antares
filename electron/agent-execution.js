@@ -29,6 +29,8 @@ const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar:
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SUBAGENT_DESCRIPTION_MAX = 80;
+const SUBAGENT_MAX_DEPTH = 1;
+const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
 // Núcleo que reciben las conversaciones nuevas: el resto del catálogo se carga
 // con tools_load o al mencionar un módulo, para no superar el límite de
@@ -206,7 +208,11 @@ async function allToolSpecs() {
     merged.set(delegateTool.name, delegateTool);
     merged.set(SUBAGENT_TOOL, {
       name: SUBAGENT_TOOL,
-      description: `Delega una tarea acotada en uno de los agentes guardados del usuario: solo lee datos y devuelve su resultado y sus pasos. Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
+      description: `Delega trabajo acotado en uno de los agentes guardados del usuario y devuelve el resultado con sus pasos y su rol. `
+        + `Por defecto solo lee; role=reviewer pide una revisión y role=worker solo funciona si la ficha del agente tiene ese rol, `
+        + `con cada efecto aprobado en esta conversación. Admiten task o hasta ${SUBAGENT_MAX_TASKS} tasks agrupadas. `
+        + `output_schema valida la respuesta como JSON Schema. No hay delegación recursiva (profundidad máxima ${SUBAGENT_MAX_DEPTH}). `
+        + `Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
       gated: false,
       kind: 'subagent',
       inputSchema: {
@@ -214,8 +220,25 @@ async function allToolSpecs() {
         properties: {
           agent: { type: 'string', description: 'Identificador del agente mencionado o nombre exacto y único del agente guardado' },
           task: { type: 'string', description: 'Encargo concreto y autocontenido para el subagente' },
+          tasks: {
+            type: 'array', minItems: 1, maxItems: SUBAGENT_MAX_TASKS,
+            description: 'Encargos que se ejecutan en orden y se devuelven agrupados; no lo combines con task',
+            items: {
+              type: 'object',
+              properties: {
+                task: { type: 'string', description: 'Encargo concreto y autocontenido' },
+                role: { type: 'string', enum: ['explorer', 'reviewer', 'worker'] },
+                exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Herramientas que este encargo no debe usar' },
+                output_schema: { type: 'object', description: 'JSON Schema que debe cumplir la respuesta' },
+              },
+              required: ['task'],
+            },
+          },
+          role: { type: 'string', enum: ['explorer', 'reviewer', 'worker'], description: 'Rol del encargo; worker requiere que la ficha lo permita' },
+          exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Sustrae herramientas de las que permite la ficha' },
+          output_schema: { type: 'object', description: 'JSON Schema que debe cumplir la respuesta final' },
         },
-        required: ['agent', 'task'],
+        required: ['agent'],
       },
     });
   } else {
@@ -698,6 +721,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       subagent: {
         id: profile.id,
         name: profile.name,
+        role: profile.role || 'explorer',
         instructions: profile.instructions,
         tools: Array.isArray(profile.tools) ? profile.tools : null,
         enabled,

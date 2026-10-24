@@ -220,6 +220,7 @@ async function sessionsList() {
 }
 
 const MAX_PROFILES = 30;
+const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 const SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|bearer\s+[A-Za-z0-9._~+/-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:password|contraseña|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
 
 async function _profiles() {
@@ -251,11 +252,14 @@ async function profileSave(params = {}) {
   }
   const existing = params.id ? (await _profiles())[String(params.id)] : null;
   if (params.id && !existing) throw notFound('El agente ya no existe');
+  const role = params.role === undefined ? (existing?.role || 'explorer') : String(params.role);
+  if (!PROFILE_ROLES.has(role)) throw validation('Rol de agente no válido: usa explorer, reviewer o worker');
   const now = Date.now();
   const profile = {
     id: existing ? existing.id : crypto.randomBytes(6).toString('hex'),
     name: _text(params.name, 'un nombre', 60, true),
     description: _text(params.description, 'la descripción', 200),
+    role,
     instructions: _text(params.instructions, 'las instrucciones', 4000, true),
     starter: _text(params.starter, 'el mensaje inicial', 500),
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,

@@ -19,10 +19,13 @@ export interface AgentSession {
   profile?: { id: string; name: string };
 }
 
+export type AgentRole = 'explorer' | 'reviewer' | 'worker';
+
 export interface AgentProfile {
   id: string;
   name: string;
   description: string;
+  role?: AgentRole;
   instructions: string;
   starter: string;
   tools: string[] | null;
@@ -117,7 +120,7 @@ export interface AgentApproval {
   created_at: number;
   decided_at: number | null;
   consumed_by?: string;
-  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string };
+  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string; subagent?: string; subagent_role?: AgentRole };
   resources?: { path: string; sha256?: string }[];
   dispatch?: { status: string; finished_at?: number };
 }
@@ -329,7 +332,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; description: string; instructions: string; starter: string; tools: string[] | null }) =>
+  agentProfileSave: (p: { id?: string; name: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),
