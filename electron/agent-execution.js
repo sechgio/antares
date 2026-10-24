@@ -16,6 +16,7 @@ const {
   dispatchCallId,
   ctx,
 } = require('./agent-shared');
+const { compactMessages, requestBudget } = require('./agent-compaction');
 
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
@@ -98,9 +99,11 @@ async function ensureProvider(providerId, modelId) {
 const OPENAI_NATIVE_HOST = /(^|\.)(openai\.com|openrouter\.ai|openai\.azure\.com)$/i;
 const LONG_CACHE_HOST = /(^|\.)(openai\.com|openrouter\.ai|anthropic\.com)$/i;
 
-function modelDefinition(info, id, api, verified) {
+function modelDefinition(info, id, api, verified, catalogModel) {
   const capabilities = info.capabilities || {};
-  const contextWindow = Number(capabilities.context_window) || DEFAULT_CONTEXT_WINDOW;
+  const catalog = catalogModel || verified || {};
+  const contextWindow = Number(capabilities.context_window) || Number(catalog.contextWindow) || DEFAULT_CONTEXT_WINDOW;
+  const rates = catalog.cost || {};
   let host = '';
   try { host = new URL(info.base_url).hostname; } catch { }
   const classic = info.custom && api === 'openai-completions' && !OPENAI_NATIVE_HOST.test(host);
@@ -126,12 +129,31 @@ function modelDefinition(info, id, api, verified) {
     provider: info.provider,
     baseUrl: info.base_url,
     input: (typeof capabilities.vision === 'boolean' ? capabilities.vision : supportsVision(id)) ? ['text', 'image'] : ['text'],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    cost: {
+      input: Number(rates.input) || 0,
+      output: Number(rates.output) || 0,
+      cacheRead: Number(rates.cacheRead) || 0,
+      cacheWrite: Number(rates.cacheWrite) || 0,
+      ...(Array.isArray(rates.tiers) ? { tiers: rates.tiers } : {}),
+    },
     contextWindow,
     maxTokens: Math.min(DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
     reasoning: supportsReasoning(info.style, id),
     ...(Object.keys(compat).length ? { compat } : {}),
   };
+}
+
+const MODEL_CATALOGS = {
+  openai: ['@earendil-works/pi-ai/providers/openai.models', 'OPENAI_MODELS'],
+  anthropic: ['@earendil-works/pi-ai/providers/anthropic.models', 'ANTHROPIC_MODELS'],
+  openrouter: ['@earendil-works/pi-ai/providers/openrouter.models', 'OPENROUTER_MODELS'],
+};
+
+async function catalogModels(provider) {
+  const entry = MODEL_CATALOGS[provider];
+  if (!entry) return {};
+  const module = await import(entry[0]);
+  return module[entry[1]] || {};
 }
 
 async function buildProvider(record) {
@@ -140,7 +162,7 @@ async function buildProvider(record) {
   const anthropic = info.style === 'anthropic_messages';
   const api = anthropic ? 'anthropic-messages' : 'openai-completions';
   const providerId = info.provider;
-  const catalog = anthropic ? (await import('@earendil-works/pi-ai/providers/anthropic.models')).ANTHROPIC_MODELS : {};
+  const catalog = await catalogModels(providerId);
   return createProvider({
     id: providerId,
     name: providerId,
@@ -164,7 +186,7 @@ async function buildProvider(record) {
         },
       },
     },
-    models: [...modelIds].map((id) => modelDefinition(info, id, api, catalog[id])),
+    models: [...modelIds].map((id) => modelDefinition(info, id, api, anthropic ? catalog[id] : undefined, catalog[id])),
     api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : shared.deps.aiOpenai.openAICompletionsApi(),
   });
 }
@@ -372,7 +394,9 @@ async function refreshTools() {
       pi.hook(pi.GenerationTask, {
         beforeRequest: async ({ messages }, api, context) => {
           if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
-          return leadingSystem(messages);
+          const compacted = await compactRequest(messages, api, context);
+          const next = compacted || messages;
+          return leadingSystem(next) || (compacted ? { messages: next } : undefined);
         },
         afterTools: (_output, _task, api, context) => countRound(api, context),
         onYield: (answer, api) => planCheck(answer, api),
@@ -389,6 +413,18 @@ async function refreshTools() {
       }),
     ],
   }));
+}
+
+let tokenEstimator;
+
+async function compactRequest(messages, api, context) {
+  const sessionId = await sessionForConversation(api.conversationId, api, context);
+  const session = sessionId ? (await sessions())[sessionId] : null;
+  const model = session && shared.state.models.getModel(session.provider, session.model);
+  const budget = requestBudget(model && model.contextWindow, model && model.maxTokens);
+  if (!budget) return undefined;
+  tokenEstimator ||= (await import('@earendil-works/pi-ai/utils/estimate')).estimateContextTokens;
+  return compactMessages(messages, { budget, estimate: (list) => tokenEstimator(list).tokens });
 }
 
 // pi-durable escribe el prompt base al preparar la primera generación, detrás
