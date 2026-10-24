@@ -6,7 +6,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
-const python = path.join(repo, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 const probe = `
 import json, os, sys
 from pathlib import Path
@@ -29,11 +28,17 @@ def track_open(file, *args, **kwargs):
     return original_open(file, *args, **kwargs)
 with patch.object(Path, 'iterdir', track_iterdir), patch.object(Path, 'open', track_open):
     catalog = skills.run('skills_list', {}, {}, workspace, library, agent_id=options.get('agent'))
+catalog_scans = list(scans)
 contents = {}
+read_scans = []
 for item in catalog['skills']:
-    contents[item['name']] = skills.run('skills_read', {'skill_id': item['id']}, {}, workspace, library,
-                                       agent_id=options.get('agent'))['content']
-print(json.dumps({'catalog': catalog, 'contents': contents, 'scans': scans, 'opened': opened}))
+    start = len(scans)
+    with patch.object(Path, 'iterdir', track_iterdir):
+        contents[item['name']] = skills.run('skills_read', {'skill_id': item['id']}, {}, workspace, library,
+                                           agent_id=options.get('agent'))['content']
+    read_scans.append(scans[start:])
+print(json.dumps({'catalog': catalog, 'contents': contents, 'scans': catalog_scans, 'read_scans': read_scans,
+                  'opened': opened, 'python': sys.executable}))
 `;
 
 let root;
@@ -51,7 +56,7 @@ function install(relative, body = 'Instrucciones', header = true) {
 }
 
 function load(agent = 'reader', env = {}) {
-  return JSON.parse(execFileSync(python, ['-c', probe], {
+  return JSON.parse(execFileSync('uv', ['run', '--project', repo, '--locked', '--extra', 'dev', 'python', '-c', probe], {
     cwd: repo,
     input: JSON.stringify({ root, agent }),
     encoding: 'utf8',
@@ -134,6 +139,10 @@ it('respeta ambas variables y recorre cada nivel una sola vez por carga', () => 
   expect(result.catalog.skills.map(skill => skill.name)).toEqual(['own', 'shared']);
   expect(result.scans.filter(folder => folder === own)).toHaveLength(1);
   expect(result.scans.filter(folder => folder === shared)).toHaveLength(1);
+  for (const scans of result.read_scans) {
+    expect(scans.filter(folder => folder === own)).toHaveLength(1);
+    expect(scans.filter(folder => folder === shared)).toHaveLength(1);
+  }
 });
 
 it('lee instrucciones sin ejecutar scripts ni interpretar allowed-tools como permisos', () => {
@@ -143,4 +152,10 @@ it('lee instrucciones sin ejecutar scripts ni interpretar allowed-tools como per
   const result = load();
   expect(result.contents.review).toContain('allowed-tools: shell_run');
   expect(result.opened).toEqual([target]);
+});
+
+it('usa el entorno Python seleccionado mediante UV_PROJECT_ENVIRONMENT', () => {
+  const environment = path.resolve(repo, process.env.UV_PROJECT_ENVIRONMENT || '.venv');
+  const result = load('reader', { UV_PROJECT_ENVIRONMENT: environment });
+  expect(path.normalize(result.python)).toBe(path.join(environment, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
 });

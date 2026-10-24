@@ -252,3 +252,42 @@ def test_attached_shared_skill_still_cannot_override_agent_skill(store, tmp_path
                         store.base_dir / "skills", agent_id="reader")
     assert [entry["location"] for entry in result["skills"]] == [str(own)]
     assert len(result["warnings"]) == 1
+
+
+@pytest.mark.parametrize("attach_file", [False, True])
+def test_full_shared_catalog_preserves_attached_skill_priority(store, tmp_path, attach_file):
+    home = tmp_path / "configured-skills"
+    for index in range(256):
+        install(home / "_shared", name=f"shared-{index:03}")
+    target = install(tmp_path / "attached/.agents/skills", name="attached-only")
+    grant = resource_grants.grant_record(str(target), "request") if attach_file \
+        else resource_grants.folder_record(str(tmp_path / "attached"), "request")
+    store.add_grants("skills-session", [grant])
+    grants = store.grants_for("skills-session")
+    workspace, library = store.drafts_dir("skills-session"), store.base_dir / "skills"
+    result = skills.run("skills_list", {"query": "attached-only"}, grants, workspace, library, agent_id="reader")
+    assert result["total"] == 1 and result["truncated"] is True
+    skill_id = result["skills"][0]["id"]
+    assert skills.run("skills_read", {"skill_id": skill_id}, grants, workspace, library, agent_id="reader")["name"] == "attached-only"
+
+
+def test_full_shared_catalog_keeps_agent_override_with_attached_shared_root(store, tmp_path, monkeypatch):
+    home = tmp_path / "configured-skills"
+    own = install(home / "reader", name="review", body="Propia")
+    install(home / "_shared", name="review", body="Compartida")
+    for index in range(255):
+        install(home / "_shared", name=f"shared-{index:03}")
+    grant = resource_grants.folder_record(str(home / "_shared"), "request")
+    scans = []
+    original_iterdir = Path.iterdir
+
+    def track_iterdir(folder):
+        scans.append(folder)
+        return original_iterdir(folder)
+
+    monkeypatch.setattr(Path, "iterdir", track_iterdir)
+    result = skills.run("skills_list", {"query": "review"}, {"attached": grant}, store.drafts_dir("skills-session"),
+                        store.base_dir / "skills", agent_id="reader")
+    assert [entry["location"] for entry in result["skills"]] == [str(own)]
+    assert len(result["warnings"]) == 1
+    assert scans.count(home / "_shared") == 1 and scans.count(home / "reader") == 1

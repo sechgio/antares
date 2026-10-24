@@ -131,6 +131,17 @@ def test_private_dispatch_scopes_skills_by_profile_across_sessions(store, monkey
     assert found_ids[0] == found_ids[1]
 
 
+@pytest.mark.parametrize("profile_id", [None, "reader"])
+def test_private_dispatch_transports_actor_profile_independently_of_tool(store, monkeypatch, profile_id):
+    runner = agent.AgentRunner(store, lambda _: None)
+    monkeypatch.setattr(runner, "_execute", lambda call, token=None: json.dumps({"profile_id": call.get("profile_id")}))
+    monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
+    _dispatch(session_id="actor-context", call_id="drafts", name="drafts_list",
+              params={"profile_id": "writer"}, context={"profile_id": profile_id})
+    result = json.loads(_wait_result("drafts", session_id="actor-context")["result"])
+    assert result["profile_id"] == profile_id
+
+
 def test_tools_list_projects_backend_and_mcp_kinds(monkeypatch):
     monkeypatch.setattr(mcp_servers, "list_servers", lambda: [{"id": "srv"}])
     monkeypatch.setattr(

@@ -110,9 +110,39 @@ def _levels(agent_id: str | None) -> tuple[Path, ...]:
     return tuple(dict.fromkeys((home / agent_id, shared)))
 
 
+def _scan(folder: Path, grants: dict[str, JsonObject], workspace: Path, library: Path,
+          levels: tuple[Path, ...]) -> tuple[list[Path], bool]:
+    try:
+        folder = _authorized(folder, grants, workspace, library, levels)
+        if not folder.is_dir():
+            return [], False
+        candidates = [folder / "SKILL.md"] if folder not in levels and (folder / "SKILL.md").is_file() else []
+        children = list(itertools.islice(folder.iterdir(), _MAX_CANDIDATES + 1))
+        candidates.extend(child / "SKILL.md"
+                          for child in sorted(children[:_MAX_CANDIDATES], key=lambda item: item.name.casefold())
+                          if child.is_dir() and (child / "SKILL.md").is_file())
+        return candidates, len(children) > _MAX_CANDIDATES
+    except (OSError, ValueError):
+        return [], False
+
+
 def _candidates(grants: dict[str, JsonObject], workspace: Path, library: Path,
                 levels: tuple[Path, ...] = ()) -> tuple[list[Path], list[str], bool]:
-    roots: list[Path] = list(levels)
+    index: dict[str, Path] = {}
+    warnings: list[str] = []
+    truncated = False
+    for folder in levels:
+        entries, cut = _scan(folder, grants, workspace, library, levels)
+        truncated |= cut
+        for candidate in entries:
+            name = candidate.parent.name
+            if name in index:
+                warning = f"{name}: la skill del agente ({index[name]}) sustituye a la compartida ({candidate})"
+                warnings.append(warning)
+                logger.warning(warning)
+            else:
+                index[name] = candidate
+    roots: list[Path] = []
     candidates = []
     for grant in grants.values():
         target = Path(str(grant.get("path") or ""))
@@ -120,42 +150,17 @@ def _candidates(grants: dict[str, JsonObject], workspace: Path, library: Path,
             roots.extend([target / ".agents/skills", target / "skills", target])
         elif target.name == "SKILL.md":
             candidates.append(target)
-    roots.extend([workspace / ".agents/skills", workspace / "skills", library])
-    index: dict[str, Path] = {}
-    warnings: list[str] = []
-    truncated = False
+    roots.extend([*levels, workspace / ".agents/skills", workspace / "skills", library])
     for folder in dict.fromkeys(roots):
-        if len(candidates) >= _MAX_CANDIDATES:
-            truncated = True
-            break
-        try:
-            folder = _authorized(folder, grants, workspace, library, levels)
-            if not folder.is_dir():
-                continue
-            if folder not in levels and (folder / "SKILL.md").is_file():
-                candidates.append(folder / "SKILL.md")
-            children = list(itertools.islice(folder.iterdir(), _MAX_CANDIDATES + 1))
-            if len(children) > _MAX_CANDIDATES:
-                truncated = True
-            for child in sorted(children[:_MAX_CANDIDATES], key=lambda item: item.name.casefold()):
-                if len(candidates) >= _MAX_CANDIDATES:
-                    truncated = True
-                    break
-                if child.is_dir() and (child / "SKILL.md").is_file():
-                    candidate = child / "SKILL.md"
-                    if folder in levels:
-                        if child.name in index:
-                            warning = f"{child.name}: la skill del agente ({index[child.name]}) sustituye a la compartida ({candidate})"
-                            warnings.append(warning)
-                            logger.warning(warning)
-                            continue
-                        index[child.name] = candidate
-                    candidates.append(candidate)
-        except (OSError, ValueError):
-            continue
-    candidates = [candidate for candidate in dict.fromkeys(candidates)
-                  if candidate.parent.parent not in levels or index.get(candidate.parent.name) == candidate]
-    return candidates, warnings, truncated
+        if folder in levels:
+            candidates.extend(path for path in index.values() if path.parent.parent == folder)
+        else:
+            entries, cut = _scan(folder, grants, workspace, library, levels)
+            candidates.extend(entries)
+            truncated |= cut
+    selected = (index.get(path.parent.name) if path.parent.parent in levels else path for path in candidates)
+    candidates = list(dict.fromkeys(path for path in selected if path is not None))
+    return candidates[:_MAX_CANDIDATES], warnings, truncated or len(candidates) > _MAX_CANDIDATES
 
 
 def _catalog(grants: dict[str, JsonObject], workspace: Path, library: Path,

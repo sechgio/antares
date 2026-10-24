@@ -97,6 +97,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- Agent conserva la prioridad de las skills adjuntas aunque el catálogo compartido esté lleno; la identidad del perfil se propaga como metadato de ejecución y las pruebas de skills usan el entorno Python seleccionado por `uv`.
 - Se actualizan DOMPurify a 3.4.17 y Brotli a 1.2.1 para corregir las vulnerabilidades que bloqueaban la auditoría de dependencias.
 - Agent explicita la prioridad del pedido actual sobre las indicaciones del agente y las preferencias de memoria. El editor y la memoria muestran el alcance por perfil y los recuerdos globales heredados; editar un perfil informa que afecta a conversaciones nuevas. La guía distingue cambios puntuales y preferencias duraderas, conserva las correcciones humanas y responde de forma natural ante saludos y ayuda vaga.
 - Agent destaca la aprobación, pregunta, actividad o resultado que requiere atención junto al composer, anuncia cada evento una sola vez y permite ir a sus detalles sin interrumpir la lectura del historial. Conserva los detalles abiertos durante las actualizaciones y respeta movimiento reducido al desplazarse.
