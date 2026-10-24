@@ -12,6 +12,7 @@ import { METHOD_LABELS } from './methodLabels';
 
 interface AgentIdentity {
   seed: string;
+  color?: string;
   name: string;
 }
 
@@ -374,7 +375,7 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
       <div className="min-w-0 flex-1 space-y-1.5">
         {(msg.content || msg.reasoning) && (
           <div className="flex items-center gap-1.5">
-            {agent && <AgentAvatar seed={agent.seed} name={agent.name} size={18} working={!!msg.partial} />}
+            {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={18} working={!!msg.partial} />}
             <span className="text-[12px] font-medium leading-5 text-[var(--text-secondary)]">
               {agent?.name ?? 'Agente'}
             </span>
@@ -557,7 +558,7 @@ export function ThinkingRow({ elapsedSeconds, agent, label = 'El agente está tr
   const elapsed = mm > 0 ? `${mm}m ${ss}s` : `${ss}s`;
   return (
     <div role="status" aria-live="off" className="agent-trace-in flex items-center gap-2 text-[13px] leading-5">
-      {agent ? <AgentAvatar seed={agent.seed} name={agent.name} size={16} working /> : <Loader2 size={14} className="animate-spin text-[var(--text-muted)]" />}
+      {agent ? <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={16} working /> : <Loader2 size={14} className="animate-spin text-[var(--text-muted)]" />}
       <span className="agent-shimmer">{label}</span>
       <span className="tabular-nums text-[12px] text-[var(--text-muted)]">{elapsed}</span>
     </div>

@@ -976,11 +976,12 @@ async function main() {
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
     const { profile } = await runtime.handlers.agent_profile_save({
       name: 'Informe mensual', description: 'Cortes del mes', instructions: 'Usa la plantilla de cortes y pide el mes.',
-      starter: 'Prepara el informe de este mes', tools: ['canvas_list'],
+      starter: 'Prepara el informe de este mes', tools: ['canvas_list'], color: '#0E7490',
     });
     assert(profile.id && profile.tools.join() === 'canvas_list', 'el agente guarda instrucciones y herramientas');
     for (const bad of [{ name: '', instructions: 'x' }, { name: 'X', instructions: '' }, { name: 'X', instructions: 'token: abcdef123456' },
-      { name: 'X', instructions: 'y', tools: ['desconocida'] }, { id: 'nope', name: 'X', instructions: 'y' }]) {
+      { name: 'X', instructions: 'y', tools: ['desconocida'] }, { id: 'nope', name: 'X', instructions: 'y' },
+      ...[null, 12, '#fff', 'red', 'url(https://example.com)', '#0E7490\n'].map((color) => ({ name: 'X', instructions: 'y', color }))]) {
       let error;
       try { await runtime.handlers.agent_profile_save(bad); } catch (err) { error = err; }
       assert(!!error, 'un agente inválido, con secretos o herramientas inexistentes se rechaza');
@@ -989,6 +990,11 @@ async function main() {
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
     const { profiles } = await runtime.handlers.agent_profiles_list();
     assert(profiles.length === 1 && profiles[0].name === 'Informe mensual', 'los agentes sobreviven al reinicio');
+    assert(profiles[0].color === '#0E7490', 'el color elegido sobrevive al reinicio');
+    const { color, ...legacyUpdate } = profiles[0];
+    assert((await runtime.handlers.agent_profile_save(legacyUpdate)).profile.color === '#0E7490', 'un cliente anterior conserva el color');
+    const automatic = (await runtime.handlers.agent_profile_save({ ...legacyUpdate, color: '' })).profile;
+    assert(!Object.hasOwn(automatic, 'color'), 'volver al color automático elimina la selección');
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
     assert(session.title === 'Informe mensual' && session.profile.id === profile.id, 'la conversación nace del agente');
     const enabled = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools.filter((t) => t.enabled).map((t) => t.name);

@@ -22,6 +22,7 @@ export interface AgentSession {
 export interface AgentProfile {
   id: string;
   name: string;
+  color?: string;
   description: string;
   instructions: string;
   starter: string;
@@ -241,7 +242,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; description: string; instructions: string; starter: string; tools: string[] | null }) =>
+  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; instructions: string; starter: string; tools: string[] | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),

@@ -769,7 +769,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const suggestionList = activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS;
   const suggestionsHidden = !!draft.trim() || running || pending.length > 0;
   const agentIdentity = session
-    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares' }
+    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares', color: activeProfile?.color }
     : undefined;
 
   const changeModel = async (next: { provider: string; model: string }) => {
@@ -809,10 +809,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         <AgentEditor
           key={editing === 'new' ? 'new' : editing.id}
           profile={editing === 'new' ? null : editing}
+          canStartChat={Boolean(provider)}
           onClose={() => setEditing(null)}
           onSaved={(saved) => {
             setProfiles((prev) => [...prev.filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'es')));
             setEditing(null);
+            if (editing === 'new') {
+              if (provider) void newSession(saved);
+              else setSidebarView('agents');
+            }
           }}
           onDeleted={(id) => {
             setProfiles((prev) => prev.filter((p) => p.id !== id));
@@ -916,7 +921,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           </p>}
           {visibleProfiles.map((profile) => (
             <div key={profile.id} className={`group flex h-[50px] shrink-0 items-center gap-2 rounded-xl p-1.5 transition-colors ${activeProfile?.id === profile.id ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'}`}>
-              <AgentAvatar seed={profile.id} name={profile.name} size={32} className="shrink-0" />
+              <AgentAvatar seed={profile.id} color={profile.color} name={profile.name} size={32} className="shrink-0" />
               <button
                 type="button"
                 className="flex min-w-0 flex-1 flex-col text-left"
@@ -1066,6 +1071,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
                 seed={agentIdentity?.seed ?? 'antares-agent'}
+                color={activeProfile?.color}
                 name={agentIdentity?.name ?? 'Agente de Antares'}
                 size={64}
               />
@@ -1239,7 +1245,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   aria-selected={selectedMention?.id === profile.id} tabIndex={-1} variant="none" size="none"
                   className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--bg-input)] ${selectedMention?.id === profile.id ? 'bg-[var(--bg-input)]' : ''}`}
                   onMouseDown={(event) => event.preventDefault()} onClick={() => insertBotMention(profile)}>
-                  <AgentAvatar seed={profile.id} name={profile.name} size={24} />
+                  <AgentAvatar seed={profile.id} color={profile.color} name={profile.name} size={24} />
                   <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{profile.name}</span>
                     <span className="block truncate text-[11px] text-[var(--text-secondary)]">{profile.description || 'Agente guardado'} · {profile.id}</span></span>
                 </Button>)}

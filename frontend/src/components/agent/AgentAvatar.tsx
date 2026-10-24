@@ -4,15 +4,16 @@ import './agent.css';
 interface AgentAvatarPalette {
   from: string;
   to: string;
+  name: string;
 }
 
-const PALETTES: AgentAvatarPalette[] = [
-  { from: '#5E6AD2', to: '#8B93FF' },
-  { from: '#0E7490', to: '#22C7A9' },
-  { from: '#B45309', to: '#F59E0B' },
-  { from: '#BE123C', to: '#FB7185' },
-  { from: '#6D28D9', to: '#A78BFA' },
-  { from: '#0369A1', to: '#38BDF8' },
+export const AGENT_AVATAR_COLORS: AgentAvatarPalette[] = [
+  { from: '#5E6AD2', to: '#8B93FF', name: 'Índigo' },
+  { from: '#0E7490', to: '#22C7A9', name: 'Verde' },
+  { from: '#B45309', to: '#F59E0B', name: 'Ámbar' },
+  { from: '#BE123C', to: '#FB7185', name: 'Rosa' },
+  { from: '#6D28D9', to: '#A78BFA', name: 'Violeta' },
+  { from: '#0369A1', to: '#38BDF8', name: 'Azul' },
 ];
 
 function hashSeed(seed: string): number {
@@ -26,7 +27,7 @@ function hashSeed(seed: string): number {
 export function agentAvatarVariant(seed: string): { palette: AgentAvatarPalette; mirrored: boolean } {
   const hash = hashSeed(seed.trim() || 'antares-agent');
   return {
-    palette: PALETTES[hash % PALETTES.length],
+    palette: AGENT_AVATAR_COLORS[hash % AGENT_AVATAR_COLORS.length],
     mirrored: ((hash >>> 3) & 1) === 1,
   };
 }
@@ -44,14 +45,18 @@ export default function AgentAvatar({
   size = 40,
   className,
   working = false,
+  color,
 }: {
   seed: string;
   name?: string;
   size?: number;
   className?: string;
   working?: boolean;
+  color?: string;
 }) {
-  const { palette, mirrored } = agentAvatarVariant(seed);
+  const variant = agentAvatarVariant(seed);
+  const { mirrored } = variant;
+  const palette = color ? AGENT_AVATAR_COLORS.find((item) => item.from === color) ?? { from: color, to: color } : variant.palette;
   const gradientId = `agent-avatar-${useId().replace(/[^a-zA-Z0-9-]/g, '')}`;
   return (
     <svg

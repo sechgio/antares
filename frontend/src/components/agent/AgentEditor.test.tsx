@@ -25,17 +25,57 @@ it('crea un agente con indicaciones y solo las herramientas elegidas', async () 
   const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
   const onSaved = vi.fn();
   await act(async () => { render(<AgentEditor profile={null} onClose={vi.fn()} onSaved={onSaved} onDeleted={vi.fn()} />); });
-  const create = screen.getByRole('button', { name: 'Crear agente' });
+  const create = screen.getByRole('button', { name: 'Crear y chatear' });
   expect(create).toBeDisabled();
   fireEvent.change(screen.getByLabelText('Nombre del agente'), { target: { value: 'Informe mensual' } });
   fireEvent.change(screen.getByLabelText('Indicaciones del agente'), { target: { value: 'Usa la plantilla de cortes' } });
+  fireEvent.click(screen.getByRole('radio', { name: 'Color Verde' }));
+  fireEvent.click(screen.getByText('Opciones avanzadas'));
   fireEvent.change(screen.getByLabelText('Mensaje inicial del agente'), { target: { value: 'Prepara el informe' } });
   fireEvent.click(screen.getByRole('switch', { name: 'Usar todas las herramientas' }));
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir templates_catalog' }));
   await act(async () => { fireEvent.click(create); });
-  expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', description: '', instructions: 'Usa la plantilla de cortes',
+  expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', color: '#0E7490', description: '', instructions: 'Usa la plantilla de cortes',
     starter: 'Prepara el informe', tools: ['templates_catalog'] });
   expect(onSaved).toHaveBeenCalledWith(saved);
+});
+
+it('permite empezar con nombre e instrucción sin abrir las opciones avanzadas', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  await act(async () => { render(<AgentEditor profile={null} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  expect(screen.getByLabelText('Descripción del agente')).not.toBeVisible();
+  expect(screen.getByRole('radio', { name: 'Color Automático' })).toBeChecked();
+  fireEvent.change(screen.getByLabelText('Nombre del agente'), { target: { value: 'Revisor' } });
+  fireEvent.change(screen.getByLabelText('Indicaciones del agente'), { target: { value: 'Revisa mis informes' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Crear y chatear' })); });
+  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', instructions: 'Revisa mis informes', description: '', starter: '', tools: null });
+});
+
+it('conserva el color al editar y permite volver al automático', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  await act(async () => { render(<AgentEditor profile={{ ...saved, color: '#0E7490' }} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  expect(screen.getByRole('radio', { name: 'Color Verde' })).toBeChecked();
+  fireEvent.click(screen.getByRole('radio', { name: 'Color Automático' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ id: saved.id, color: '' }));
+});
+
+it('admite el envío del formulario y bloquea duplicados y cierre mientras guarda', async () => {
+  let finish!: (result: { profile: AgentProfile }) => void;
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  const onClose = vi.fn();
+  const onSaved = vi.fn();
+  await act(async () => { render(<AgentEditor profile={saved} onClose={onClose} onSaved={onSaved} onDeleted={vi.fn()} />); });
+  const form = screen.getByRole('dialog', { name: 'Editar agente Informe mensual' });
+  await act(async () => { fireEvent.submit(form); fireEvent.submit(form); });
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(form).toHaveAttribute('aria-busy', 'true');
+  expect(screen.getByLabelText('Nombre del agente')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+  fireEvent.keyDown(form, { key: 'Escape' });
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => { finish({ profile: saved }); });
+  expect(onSaved).toHaveBeenCalledExactlyOnceWith(saved);
 });
 
 it('edita conservando el id y borra solo tras confirmar', async () => {
@@ -60,6 +100,8 @@ it('muestra el error del runtime sin cerrar el editor', async () => {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
   expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
   expect(onSaved).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Guardar' })).toBeEnabled();
+  expect(screen.getByLabelText('Indicaciones del agente')).toHaveValue(saved.instructions);
 });
 
 it('explica la prioridad del pedido y el alcance de los cambios del agente', async () => {

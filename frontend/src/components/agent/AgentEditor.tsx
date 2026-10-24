@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, X } from 'lucide-react';
 import { agentApi, type AgentProfile, type AgentToolSpec } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
@@ -8,14 +8,15 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import Toggle from '../ui/Toggle';
-import AgentAvatar from './AgentAvatar';
+import AgentAvatar, { AGENT_AVATAR_COLORS } from './AgentAvatar';
 import { METHOD_LABELS } from './methodLabels';
 
 const FIELD = 'grid grid-cols-[96px_1fr] items-start gap-3 px-3 py-2.5';
 const LABEL = 'pt-1.5 text-[13px] text-[var(--text-secondary)]';
 
-export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
+export default function AgentEditor({ profile, canStartChat = true, onClose, onSaved, onDeleted }: {
   profile: AgentProfile | null;
+  canStartChat?: boolean;
   onClose: () => void;
   onSaved: (profile: AgentProfile) => void;
   onDeleted: (id: string) => void;
@@ -23,6 +24,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const [name, setName] = useState(profile?.name ?? '');
+  const [color, setColor] = useState(profile?.color ?? '');
   const [description, setDescription] = useState(profile?.description ?? '');
   const [instructions, setInstructions] = useState(profile?.instructions ?? '');
   const [starter, setStarter] = useState(profile?.starter ?? '');
@@ -30,6 +32,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
   const [selected, setSelected] = useState<Set<string>>(new Set(profile?.tools ?? []));
   const [tools, setTools] = useState<AgentToolSpec[]>([]);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,11 +47,13 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
   ].filter((group) => group.items.length > 0), [tools]);
 
   const save = async () => {
+    if (savingRef.current || !name.trim() || !instructions.trim()) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       const res = await agentApi.agentProfileSave({
         ...(profile ? { id: profile.id } : {}),
-        name, description, instructions, starter,
+        name, color, description, instructions, starter,
         tools: allTools ? null : [...selected],
       });
       addToast({ message: profile ? 'Agente actualizado. Los cambios se aplicarán a conversaciones nuevas.' : 'Agente creado', type: 'success' });
@@ -56,6 +61,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo guardar el agente'), type: 'error' });
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -78,51 +84,73 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
   };
 
   return (
-    <aside
+    <form
       role="dialog"
       aria-label={profile ? `Editar agente ${profile.name}` : 'Crear agente'}
+      aria-busy={saving}
+      onSubmit={(e) => { e.preventDefault(); void save(); }}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' && !savingRef.current) {
           e.stopPropagation();
           onClose();
         }
       }}
-      className="absolute inset-y-3 right-3 z-20 flex w-[min(340px,calc(100%-24px))] flex-col rounded-[24px] bg-[var(--bg-surface)] shadow-[0_16px_40px_rgba(0,0,0,0.18),0_0_1px_rgba(0,0,0,0.32)] xl:static xl:order-last xl:w-[300px] xl:shrink-0 xl:shadow-none"
+      className="absolute inset-0 z-20 m-auto flex h-fit max-h-[calc(100%-32px)] w-[min(480px,calc(100%-32px))] flex-col rounded-[24px] bg-[var(--bg-surface)] shadow-[0_16px_40px_rgba(0,0,0,0.18),0_0_1px_rgba(0,0,0,0.32)]"
     >
-      <header className="relative flex shrink-0 items-center justify-center px-4 pt-4">
-        <h2 className="text-[14px] font-medium text-[var(--text-primary)]">{profile ? name || profile.name : 'Nuevo agente'}</h2>
+      <header className="relative shrink-0 px-6 pb-2 pt-6">
+        <h2 className="pr-6 text-[18px] font-semibold text-[var(--text-primary)]">{profile ? 'Editar agente' : 'Conoce a tu agente'}</h2>
+        <p className="mt-1.5 text-[13px] leading-5 text-[var(--text-secondary)]">
+          Dale un nombre y cuéntale cómo quieres que trabaje. Podrás cambiarlo después.
+        </p>
         <button
           type="button"
           className="absolute right-3 top-3 flex size-6 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
           aria-label="Cerrar editor de agente"
+          disabled={saving}
           onClick={onClose}
         >
           <X size={13} />
         </button>
       </header>
-      <div className="custom-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3 pt-4">
-        <div className="flex flex-col items-center gap-3 py-5">
-          <AgentAvatar seed={profile?.id ?? (name || 'nuevo-agente')} name={name || 'Agente'} size={112} />
-        </div>
-        <div className="divide-y divide-[var(--border-subtle)] rounded-2xl bg-[var(--bg-base)]">
-          <label className={FIELD}>
-            <span className={LABEL}>Nombre</span>
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} aria-label="Nombre del agente"
-              placeholder="Informe mensual de cortes" className="w-full" />
+      <fieldset disabled={saving} className="custom-scrollbar min-h-0 min-w-0 space-y-4 overflow-y-auto px-6 pb-2 pt-4">
+        <div className="flex items-center gap-4">
+          <AgentAvatar seed={profile?.id ?? (name || 'nuevo-agente')} color={color} name={name || 'Agente'} size={64} className="shrink-0" />
+          <label className="min-w-0 flex-1 space-y-2">
+            <span className="block text-xs font-medium text-[var(--text-secondary)]">Nombre del agente</span>
+            <Input autoFocus required value={name} onChange={(e) => setName(e.target.value)} maxLength={60} aria-label="Nombre del agente"
+              placeholder="Por ejemplo, Revisor de informes" className="w-full" />
           </label>
+        </div>
+        <fieldset>
+          <legend className="mb-2 text-xs font-medium text-[var(--text-secondary)]">Color</legend>
+          <div className="grid max-w-[280px] grid-cols-7 gap-1">
+            {[{ from: '', name: 'Automático' }, ...AGENT_AVATAR_COLORS].map((item) => (
+              <label key={item.from} title={item.name} className="flex min-h-9 cursor-pointer items-center justify-center">
+                <input type="radio" name="agent-color" aria-label={`Color ${item.name}`} value={item.from}
+                  checked={color === item.from} onChange={() => setColor(item.from)} className="peer sr-only" />
+                <span style={{ backgroundColor: item.from || 'var(--bg-input)' }}
+                  className="flex size-7 items-center justify-center rounded-full ring-offset-2 ring-offset-[var(--bg-surface)] peer-checked:ring-2 peer-checked:ring-[var(--text-primary)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-[var(--accent-primary)]">
+                  {color === item.from && <Check size={14} aria-hidden="true" className={item.from ? 'text-white' : 'text-[var(--text-primary)]'} />}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <label className="block space-y-2">
+          <span className="block text-xs font-medium text-[var(--text-secondary)]">Una instrucción permanente</span>
+          <Textarea required value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={4000} rows={2}
+            aria-label="Indicaciones del agente" className="w-full text-[13px]"
+            placeholder="Responde de forma breve y muestra tu trabajo." />
+        </label>
+        <details open={Boolean(profile)} className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg py-1 text-[13px] text-[var(--text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-primary)]">
+            Opciones avanzadas <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-3 divide-y divide-[var(--border-subtle)] rounded-2xl bg-[var(--bg-base)]">
           <label className={FIELD}>
             <span className={LABEL}>Descripción</span>
             <Input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={200}
               aria-label="Descripción del agente" placeholder="Para qué sirve" className="w-full" />
-          </label>
-          <label className={FIELD}>
-            <span className={LABEL}>Indicaciones</span>
-            <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={4000} rows={6}
-              aria-label="Indicaciones del agente" aria-describedby="agent-instructions-scope" className="w-full text-[13px]"
-              placeholder="Rol, pasos y estilo. Por ejemplo: breve, cálido y con un ejemplo cuando ayude." />
-            <span id="agent-instructions-scope" className="col-start-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
-              Tu pedido actual tiene prioridad sobre estas indicaciones; estas prevalecen sobre las preferencias de memoria.
-            </span>
           </label>
           <label className={FIELD}>
             <span className={LABEL}>Mensaje inicial</span>
@@ -130,7 +158,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
               aria-label="Mensaje inicial del agente" placeholder="Opcional: se escribe al abrir el agente" className="w-full" />
           </label>
         </div>
-        <div className="rounded-2xl bg-[var(--bg-base)] px-3 py-2.5">
+        <div className="mt-3 rounded-2xl bg-[var(--bg-base)] px-3 py-2.5">
           <div className="flex items-center justify-between gap-3">
             <span className="text-[13px] text-[var(--text-primary)]">Todas las herramientas</span>
             <Toggle checked={allTools} onChange={setAllTools} aria-label="Usar todas las herramientas" />
@@ -161,21 +189,25 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
             </div>
           )}
         </div>
-        <p className="px-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+        <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+          Tu pedido actual tiene prioridad sobre estas indicaciones; estas prevalecen sobre las preferencias de memoria.
+        </p>
+        <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
           Estas indicaciones se copian al crear una conversación. Las conversaciones existentes conservan las indicaciones con las que se crearon.
         </p>
-        <p className="px-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+        <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
           El agente no se ejecuta solo: lo abres cuando lo necesitas y sus acciones siguen el modo de permisos de la conversación.
         </p>
-      </div>
-      <footer className="flex shrink-0 items-center gap-2 border-t border-[var(--border-subtle)] p-3">
-        {profile && <Button variant="ghost" size="sm" onClick={() => void remove()}>Borrar</Button>}
-        <span className="flex-1" />
-        <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-        <Button size="sm" disabled={saving || !name.trim() || !instructions.trim()} onClick={() => void save()}>
-          {profile ? 'Guardar' : 'Crear agente'}
+        </details>
+      </fieldset>
+      <footer className="flex shrink-0 flex-wrap items-center gap-2 px-6 pb-6 pt-4">
+        <Button type="submit" className="h-11 w-full rounded-xl" disabled={saving || !name.trim() || !instructions.trim()}>
+          {saving ? 'Guardando…' : profile ? 'Guardar' : canStartChat ? 'Crear y chatear' : 'Crear agente'}
         </Button>
+        {profile && <Button variant="ghost" size="sm" disabled={saving} onClick={() => void remove()}>Borrar</Button>}
+        <span className="flex-1" />
+        <Button variant="ghost" size="sm" disabled={saving} onClick={onClose}>Cancelar</Button>
       </footer>
-    </aside>
+    </form>
   );
 }

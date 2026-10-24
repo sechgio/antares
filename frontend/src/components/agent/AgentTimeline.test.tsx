@@ -310,14 +310,16 @@ it('dibuja la delegación en otro agente como una traza con sus pasos', () => {
 });
 
 it('anima al agente solo durante la respuesta y mantiene un estado textual de trabajo', () => {
-  const agent = { seed: 'antares', name: 'Antares' };
+  const agent = { seed: 'antares', name: 'Antares', color: '#0E7490' };
   const { rerender } = render(<MessageRow agent={agent} msg={{ role: 'assistant', content: 'Preparando', partial: true, ts: 1 }} />);
   expect(screen.getByRole('img', { name: 'Antares' })).toHaveAttribute('data-working', 'true');
   rerender(<MessageRow agent={agent} msg={{ role: 'assistant', content: 'Listo', ts: 1 }} />);
   expect(screen.getByRole('img', { name: 'Antares' })).toHaveAttribute('data-working', 'false');
+  expect(screen.getByRole('img', { name: 'Antares' }).querySelector('path')).toHaveAttribute('stroke', agent.color);
   rerender(<ThinkingRow agent={agent} elapsedSeconds={61} />);
   expect(screen.getByRole('status')).toHaveTextContent('El agente está trabajando');
   expect(screen.getByRole('status')).toHaveTextContent('1m 1s');
+  expect(screen.getByRole('img', { name: 'Antares' }).querySelector('path')).toHaveAttribute('stroke', agent.color);
 });
 
 it('muestra el razonamiento abierto mientras piensa y lo pliega al responder sin pisar la elección del usuario', () => {

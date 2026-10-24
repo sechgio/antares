@@ -56,6 +56,19 @@ def test_agent_model_selection_is_a_renderer_command_not_an_agent_tool():
     assert "agent_session_model_set" not in ORCHESTRATABLE_METHODS
 
 
+def test_agent_profile_color_accepts_legacy_calls_and_rejects_non_hex_colors():
+    import jsonschema
+
+    schema = _catalog()["methods"]["agent_profile_save"]["inputSchema"]
+    params = {"name": "Revisor", "instructions": "Revisa documentos"}
+    jsonschema.validate(params, schema)
+    for color in ("", "#0E7490", "#aabbCC"):
+        jsonschema.validate({**params, "color": color}, schema)
+    for color in (None, 12, "#fff", "red", "url(https://example.com)", "#0E7490\n"):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**params, "color": color}, schema)
+
+
 def test_agent_permission_selection_is_a_renderer_command_not_an_agent_tool():
     from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 
