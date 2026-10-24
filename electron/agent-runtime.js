@@ -18,6 +18,7 @@ const {
 } = require('./agent-shared');
 const execution = require('./agent-execution');
 const projection = require('./agent-projection');
+const compactionPolicy = require('./agent-compaction');
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_REQUEST_ID_CHARS = 100;
@@ -148,7 +149,13 @@ async function _open(options = {}) {
     const registry = pi.createRegistry();
     // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
     // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
-    const settings = { stream: { cacheRetention: 'long' } };
+    // Compactación: umbrales de ai-agent/compaction.json (o los por defecto) con
+    // la política sagrada de resumen en agent-compaction.beforeCompact.
+    const settings = {
+      stream: { cacheRetention: 'long' },
+      compaction: options.compaction || compactionPolicy.loadPolicy(dir),
+      ...(options.retry ? { retry: options.retry } : {}),
+    };
     const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
     shared.state = {
       harness,
@@ -158,6 +165,7 @@ async function _open(options = {}) {
       ProfilesDoc,
       TasksDoc,
       BudgetDoc,
+      compaction: settings.compaction,
       dir,
       ctx: ctx(),
       convIndex: shared.convToSession,
@@ -429,6 +437,7 @@ async function messagesList(params) {
   const running = projection.isRunning(session.conversationId);
   const plan = _latestPlan(messages);
   const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
+  const contextWindow = execution.contextWindowFor(session);
   return {
     messages,
     running,
@@ -439,6 +448,9 @@ async function messagesList(params) {
     questions,
     context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [] },
     usage: usage || null,
+    context_window: contextWindow,
+    compaction_thresholds: compactionPolicy.thresholdsFor(shared.state.compaction, contextWindow),
+    compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
   };
 }
 
@@ -710,6 +722,7 @@ async function turnStatus(params) {
     running: projection.isRunning(session.conversationId),
     pending_approvals: pending,
     last_error: session.last_error || null,
+    compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
   };
 }
 

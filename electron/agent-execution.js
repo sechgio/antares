@@ -17,6 +17,8 @@ const {
   ctx,
 } = require('./agent-shared');
 
+const compaction = require('./agent-compaction');
+
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
@@ -348,6 +350,15 @@ function nativeTools() {
   return shared.nativeTools || require('./agent-native-tools');
 }
 
+function contextWindowFor(session) {
+  const model = shared.state && shared.state.models
+    && shared.state.models.getModel(session && session.provider, session && session.model);
+  if (model && Number(model.contextWindow) > 0) return Number(model.contextWindow);
+  const record = shared.providers.get(session && session.provider);
+  const window = Number(record && record.info && record.info.capabilities && record.info.capabilities.context_window);
+  return window > 0 ? window : DEFAULT_CONTEXT_WINDOW;
+}
+
 async function refreshTools() {
   const { pi } = shared.deps;
   const tools = await allToolSpecs();
@@ -369,6 +380,7 @@ async function refreshTools() {
     tools: registrations,
     hooks: [
       pi.hook(pi.ToolTask, { beforeTool }),
+      pi.hook(pi.CompactionTask, { beforeCompact: (c, r, context) => compaction.beforeCompact(c, r, context) }),
       pi.hook(pi.GenerationTask, {
         beforeRequest: async ({ messages }, api, context) => {
           if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
@@ -844,4 +856,5 @@ module.exports = {
   notifyDecision,
   dispatchApproved,
   sanitizeProviderError,
+  contextWindowFor,
 };

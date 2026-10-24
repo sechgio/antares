@@ -149,6 +149,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [context, setContext] = useState<AgentContext | null>(null);
   const [usage, setUsage] = useState<{ input: number; output: number; context?: number; cached?: number; prompt?: number } | null>(null);
+  const [contextWindow, setContextWindow] = useState<number | null>(null);
+  const [compactionThresholds, setCompactionThresholds] = useState<{ warn: number; compact: number } | null>(null);
+  const [compacting, setCompacting] = useState(false);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
   const [plan, setPlan] = useState<AgentPlan | null>(null);
@@ -287,6 +290,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setQuestions(res.questions ?? []);
           setContext(res.context ?? null);
           setUsage(res.usage ?? null);
+          setContextWindow(res.context_window ?? null);
+          setCompactionThresholds(res.compaction_thresholds ?? null);
+          setCompacting(!!res.compacting);
           setPending(res.pending_approvals);
           setRunning(res.running);
           setPlan(res.plan ?? null);
@@ -361,6 +367,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setQuestions([]);
     setContext(null);
     setUsage(null);
+    setContextWindow(null);
+    setCompactionThresholds(null);
+    setCompacting(false);
     setPending([]);
     setPlan(null);
     setResumable(false);
@@ -1411,7 +1420,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   {session?.model || model || providerLabel || 'Proveedor IA'}
                 </span>
               )}
-              <ContextUsage usage={usage} model={session?.model ?? model} />
+              <ContextUsage usage={usage} model={session?.model ?? model} contextWindow={contextWindow} thresholds={compactionThresholds} compacting={compacting} />
             </div>
           </div>
         </div>
