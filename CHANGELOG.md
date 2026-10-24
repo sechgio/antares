@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent muestra el historial de aprobaciones con filtros por conversación, herramienta y estado, detalle de parámetros y recursos, exportación JSON/CSV y revocación de accesos concedidos. Los encargos programados tienen un panel para crear, editar, ejecutar ahora o cancelar, con historial de ejecuciones, token de silencio y recuperación acotada tras reiniciar: una entrega interrumpida no se repite y los recurrentes se reprograman una sola vez.
 - Agent integra las acciones del turno en una sola barra, conserva su acceso en paneles estrechos y permite desplegar el texto completo de los mensajes en cola.
 - Agent presenta un compositor con espacio de escritura completo, adjuntos y modelo en la barra inferior, y una cola numerada con estados, adjuntos y acciones visibles. Las conversaciones tienen más separación y las respuestas aprovechan el ancho de lectura.
 - Agent muestra recibos de envío y permite recuperar una petición no confirmada con el mismo texto, adjuntos e intención, sin borrar un borrador nuevo, incluso al cambiar de módulo o reiniciar. La cola distingue lo guardado de lo recibido y conserva las indicaciones al restaurarse; el compositor ignora Intro repetido y la actividad reconoce las herramientas web reales.

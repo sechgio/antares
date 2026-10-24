@@ -796,6 +796,46 @@ async function _settleRecoveredApproval(approval) {
   }, ctx());
 }
 
+async function approvalHistory(params) {
+  const sessionId = typeof params.session_id === 'string' ? params.session_id : '';
+  if (sessionId) await requireSession(sessionId);
+  const payload = {};
+  if (sessionId) payload.session_id = sessionId;
+  if (typeof params.method === 'string' && params.method) payload.method = params.method.slice(0, 200);
+  if (typeof params.status === 'string' && params.status) payload.status = params.status;
+  if (Number.isInteger(params.limit)) payload.limit = params.limit;
+  return bridge('agent_internal_approvals_history', payload);
+}
+
+async function grantsList(params) {
+  const sessionId = String(params.session_id || '');
+  await requireSession(sessionId);
+  return bridge('agent_internal_grants_list', { session_id: sessionId });
+}
+
+async function grantsRevoke(params) {
+  const sessionId = String(params.session_id || '');
+  await requireSession(sessionId);
+  const path = typeof params.path === 'string' && params.path ? params.path : undefined;
+  return bridge('agent_internal_grants_revoke', { session_id: sessionId, ...(path ? { path } : {}) });
+}
+
+function tasksList(params) {
+  return require('./agent-tasks').listTasks(params || {});
+}
+
+function tasksSave(params) {
+  return require('./agent-tasks').saveTask(params || {});
+}
+
+function tasksCancel(params) {
+  return require('./agent-tasks').cancelTask(params || {});
+}
+
+function tasksRun(params) {
+  return require('./agent-tasks').runTaskNow(params || {});
+}
+
 async function _resultEntryFor(conv, callId) {
   const entries = await projection.allEntries(conv);
   const owner = entries.findLastIndex((entry) => entry.kind === 'pi.assistant' && entry.model && entry.model[0]
@@ -855,6 +895,13 @@ module.exports = {
     agent_profile_delete: profileDelete,
     agent_approve: (p) => approve(p, true),
     agent_deny: (p) => approve(p, false),
+    agent_approvals_history: approvalHistory,
+    agent_grants_list: grantsList,
+    agent_grants_revoke: grantsRevoke,
+    agent_tasks_list: tasksList,
+    agent_tasks_save: tasksSave,
+    agent_tasks_cancel: tasksCancel,
+    agent_tasks_run: tasksRun,
   },
   _internal: {
     state: () => shared.state,

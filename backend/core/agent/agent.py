@@ -504,6 +504,40 @@ class AgentStore:
             approval = self._approvals.get(approval_id)
             return dict(approval) if isinstance(approval, dict) else None
 
+    def approval_history(
+        self,
+        *,
+        session_id: str | None = None,
+        method: str | None = None,
+        status: str | None = None,
+        limit: int = 500,
+    ) -> list[JsonObject]:
+        self._expire_stale_approvals()
+        wanted = status if status in {"pending", "approved", "denied", "expired", "uncertain"} else None
+        with self._lock:
+            records: list[JsonObject] = []
+            for approval in self._approvals.values():
+                if session_id and approval.get("session_id") != session_id:
+                    continue
+                if method and approval.get("method") != method:
+                    continue
+                dispatch = self._dispatches.get(
+                    dispatch_key(str(approval.get("session_id")), str(approval.get("call_id") or ""))
+                )
+                if wanted == "uncertain":
+                    if not isinstance(dispatch, dict) or dispatch.get("status") != "uncertain":
+                        continue
+                elif wanted and approval.get("status") != wanted:
+                    continue
+                record = dict(approval)
+                if isinstance(dispatch, dict):
+                    record["dispatch"] = {
+                        key: dispatch.get(key) for key in ("status", "finished_at") if dispatch.get(key) is not None
+                    }
+                records.append(record)
+        records.sort(key=lambda item: float(item.get("created_at") or 0), reverse=True)
+        return records[: max(1, min(int(limit), 1000))]
+
     def decide_approval(self, approval_id: str, approved: bool) -> JsonObject | None:
         self._expire_stale_approvals()
         with self._lock:
