@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent registra cada turno del daemon como una línea JSONL en `.orbs/turns.jsonl`: estado explícito `ok`/`error`/`failed` sin éxito inferido, cada llamada de herramienta con si aplicó y su resultado verificado como evidencia, resúmenes de entrada y salida, y secretos redactados antes de escribir. El fichero rota por tamaño sin borrar el historial y `npm run orbs -- turns list` lo consulta por sesión, fecha, estado y límite leyendo en streaming.
 - Agent muestra recibos de envío y permite recuperar una petición no confirmada con el mismo texto, adjuntos e intención, sin borrar un borrador nuevo, incluso al cambiar de módulo o reiniciar. La cola distingue lo guardado de lo recibido y conserva las indicaciones al restaurarse; el compositor ignora Intro repetido y la actividad reconoce las herramientas web reales.
 - Agent explica qué confirma cada modo de permisos y su alcance por conversación. Cada solicitud muestra el efecto, destino, cuenta y recursos disponibles, aclara que permitir autoriza solo esa llamada y que rechazar la omite e informa al agente. Las categorías de herramientas dejan de prometer una aprobación en todos los modos.
 - Agent conserva stdout y stderr completos del shell y permite leerlos por páginas con `shell_output`, también tras reiniciar y sin cruzar conversaciones. El shell mantiene su límite de tiempo y no admite entrada interactiva.
