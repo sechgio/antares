@@ -11,8 +11,6 @@ const EMPTY: AgentBrowserState = {
 
 const OVERLAY = '[role="menu"], [role="dialog"], [role="listbox"], [role="alertdialog"]';
 
-// La página es una vista nativa que el proceso principal coloca encima del hueco
-// «agent-browser-viewport»: el panel solo le informa de su posición y tamaño.
 export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) {
   const { addToast } = useToast();
   const [state, setState] = useState<AgentBrowserState>(EMPTY);

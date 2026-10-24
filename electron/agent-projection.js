@@ -13,8 +13,6 @@ const crypto = require('crypto');
 const NOTICE_KIND = shared.NOTICE_KIND;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 
-// La UI recarga al recibir agent.changed en vez de esperar al sondeo; se agrupan
-// los eventos de cada conversación para no saturar el IPC con cada delta.
 const NOTIFY_MS = 90;
 const notifyTimers = new Map();
 
@@ -178,8 +176,6 @@ function applyEvent(convId, event) {
   shared.live.set(convId, live);
 }
 
-// Las llamadas de una ronda nueva no vienen en la instantánea: su primer evento
-// crea el slot para que la UI las vea en curso en vez de interrumpidas.
 function upsertSlot(tools, event, change) {
   const slots = tools || [];
   if (!slots.some((slot) => slot.callId === event.toolCallId)) {
@@ -280,8 +276,6 @@ async function projectMessages(conv, session) {
   const liveRound = live.run && lastAssistant ? lastAssistant.id : null;
 
   const messages = [];
-  // cached/prompt: tokens de prompt servidos desde la caché del proveedor frente
-  // al total enviado, para ver si el prefijo se está reutilizando.
   const usage = { input: 0, output: 0, context: 0, cached: 0, prompt: 0 };
   for (const entry of entries) {
     const msg = entry.model && entry.model[0];
