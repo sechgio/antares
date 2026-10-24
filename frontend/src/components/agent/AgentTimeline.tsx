@@ -84,8 +84,6 @@ function keyArgument(params: Record<string, unknown>): string | null {
   return null;
 }
 
-// Los textos largos (páginas, archivos) se leen con sus saltos de línea reales
-// en vez de «\n» escapados; una barra invertida escapada se respeta.
 function prettyJson(text: string): string {
   try {
     const value: unknown = JSON.parse(text);
@@ -192,7 +190,6 @@ function shellOutput(result: string | null | undefined) {
     return {
       exit: typeof data.exit_code === 'number' ? data.exit_code : null,
       text: [stdout, errors].filter(Boolean).join('\n'),
-      // Las líneas desde aquí son stderr o el error de la herramienta y se pintan en rojo.
       errorFrom: errors ? (stdout ? stdout.split('\n').length : 0) : Infinity,
       duration: typeof data.duration_s === 'number' ? data.duration_s : null,
     };
@@ -201,7 +198,6 @@ function shellOutput(result: string | null | undefined) {
   }
 }
 
-// Segundos que lleva en curso una herramienta, desde el inicio que marca el motor.
 function Elapsed({ since }: { since?: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -229,7 +225,6 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
   const failed = call.status === 'failed' || call.status === 'denied' || exitFailed;
   const text = output ? output.text : (call.output ?? '').replace(/\n+$/, '');
   const lines = text ? text.split('\n') : [];
-  // Como una terminal, se ve el final de la salida: ahí suelen estar el error o el resumen.
   const logRef = useRef<HTMLDivElement>(null);
   const followOutputRef = useRef(true);
   useEffect(() => {
