@@ -180,5 +180,3 @@ export function RemoveLogoPanel({
     </div>
   );
 }
-
-export default RemoveLogoPanel;

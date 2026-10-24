@@ -11,18 +11,6 @@ def _num(value: Any) -> str:
     return repr(round(f, 6))
 
 
-def _esc(text: str) -> str:
-    return (
-        text.replace("\\", "\\\\")
-        .replace(":", "\\:")
-        .replace("'", "\\'")
-        .replace(",", "\\,")
-        .replace("[", "\\[")
-        .replace("]", "\\]")
-        .replace(";", "\\;")
-    )
-
-
 def trim_video(source_in_us: int, source_out_us: int, fps_num: int, fps_den: int) -> str:
     start = _us_to_seconds(source_in_us)
     end = _us_to_seconds(source_out_us)
@@ -141,12 +129,6 @@ def opacity(alpha: float) -> str:
     return f"format=yuva420p,colorchannelmixer=aa={_num(alpha)}"
 
 
-def boxblur(strength: int) -> str:
-    if strength <= 0:
-        return ""
-    return f"boxblur=luma_radius={_num(strength)}:luma_power=1:chroma_radius={_num(strength)}:chroma_power=1"
-
-
 def delogo_rects(rects: list[dict[str, Any]], width_px: int, height_px: int) -> list[str]:  # allowlist: dict[str, Any]
     """FFmpeg exige que el rectángulo quede dentro del fotograma."""
     filters: list[str] = []
@@ -222,11 +204,3 @@ def audio_fades(fade_in_us: int, fade_out_us: int, duration_us: int) -> str:
 
 def overlay(x_expr: str, y_expr: str) -> str:
     return f"overlay={x_expr}:{y_expr}"
-
-
-def overlay_position(canvas_x: float, canvas_y: float, canvas_w: int, canvas_h: int) -> tuple[str, str]:
-    x = _num(canvas_x * canvas_w)
-    y = _num(canvas_y * canvas_h)
-    return x, y
-
-

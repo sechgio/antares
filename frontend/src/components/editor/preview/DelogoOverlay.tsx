@@ -29,5 +29,3 @@ export function DelogoOverlay({
     </div>
   );
 }
-
-export default DelogoOverlay;
