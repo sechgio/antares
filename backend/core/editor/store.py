@@ -242,25 +242,6 @@ class EditorStore:
             os.replace(path, target)
         return {"deleted_id": project_id, "trash": True}
 
-    def list_trash(self) -> list[dict[str, str]]:
-        out: list[dict[str, str]] = []
-        for path in self.trash_dir.glob("*.json"):
-            try:
-                doc = json.loads(path.read_text(encoding="utf-8"))
-                out.append({"id": str(doc.get("id", path.stem)), "name": str(doc.get("name", path.stem))})
-            except (OSError, json.JSONDecodeError):
-                continue
-        return out
-
-    def restore(self, project_id: str) -> dict[str, Any]:  # allowlist: dict[str, Any]
-        self._check_id(project_id)
-        source = self.trash_dir / f"{project_id}.json"
-        if not source.is_file():
-            raise EditorContractError("el proyecto no está en la papelera")
-        with self._locked(project_id):
-            os.replace(source, self._path_for(project_id))
-        return {"restored_id": project_id}
-
 
 def cast_doc(doc: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
     return cast(dict[str, Any], json.loads(json.dumps(doc)))  # allowlist: dict[str, Any]
