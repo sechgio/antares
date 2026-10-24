@@ -55,6 +55,29 @@ export interface AgentMessage {
   partial?: boolean;
 }
 
+export interface AgentUsageTurn {
+  input: number;
+  output: number;
+  cached?: number;
+  cost?: number;
+}
+
+export interface AgentUsage {
+  input: number;
+  output: number;
+  context?: number;
+  cached?: number;
+  prompt?: number;
+  /** Gasto acumulado de la conversación en dólares, según pi.usage. */
+  cost?: number;
+  /** Última respuesta del proveedor. */
+  turn?: AgentUsageTurn;
+  /** Ventana real del modelo que respondió, si se conoce. */
+  window?: number;
+  /** Resúmenes de contexto aplicados hasta ahora. */
+  compactions?: number;
+}
+
 interface AgentMessageFiles {
   granted: string[];
   rejected: { path: string; reason: string }[];
@@ -225,7 +248,7 @@ export const agentApi = {
       artifacts?: AgentArtifact[];
       questions?: AgentQuestion[];
       context?: AgentContext;
-      usage?: { input: number; output: number; context?: number; cached?: number; prompt?: number } | null;
+      usage?: AgentUsage | null;
     }>('agent_messages_list', { session_id }),
 
   agentContextRemoveFile: (session_id: string, path: string) =>

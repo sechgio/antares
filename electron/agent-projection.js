@@ -259,12 +259,31 @@ async function allEntries(conv) {
   return entries.reverse();
 }
 
+function contextTokens(usage) {
+  return ['input', 'output', 'cacheRead', 'cacheWrite']
+    .reduce((sum, key) => sum + (Number(usage[key]) || 0), 0);
+}
+
+async function conversationSpend(convId) {
+  const totals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+  const doc = await shared.state.harness.snapshot(shared.deps.pi.UsageDoc, convId, ctx());
+  for (const usage of Object.values((doc && doc.models) || {})) {
+    totals.input += Number(usage.input) || 0;
+    totals.output += Number(usage.output) || 0;
+    totals.cacheRead += Number(usage.cacheRead) || 0;
+    totals.cacheWrite += Number(usage.cacheWrite) || 0;
+    totals.cost += Number(usage.cost && usage.cost.total) || 0;
+  }
+  return totals;
+}
+
 async function projectMessages(conv, session) {
   const convId = session.conversationId;
   const live = liveFor(convId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: session.id })).approvals;
   const pendingByCall = new Map(pending.map((a) => [providerCallId(a.call_id), a]));
   const entries = await allEntries(conv);
+  const spend = await conversationSpend(convId);
 
   const resultByCall = new Map();
   let assistantId = '';
@@ -280,17 +299,24 @@ async function projectMessages(conv, session) {
   const liveRound = live.run && lastAssistant ? lastAssistant.id : null;
 
   const messages = [];
-  // cached/prompt: tokens de prompt servidos desde la caché del proveedor frente
-  // al total enviado, para ver si el prefijo se está reutilizando.
-  const usage = { input: 0, output: 0, context: 0, cached: 0, prompt: 0 };
+  // pi.usage es el libro de gasto de la conversación: incluye también las
+  // llamadas de resumen de pi-durable, que no dejan entrada de asistente.
+  const usage = {
+    input: spend.input,
+    output: spend.output,
+    cached: spend.cacheRead,
+    prompt: spend.input + spend.cacheRead + spend.cacheWrite,
+    context: 0,
+    cost: spend.cost,
+    compactions: 0,
+  };
+  let lastUsageMessage;
   for (const entry of entries) {
     const msg = entry.model && entry.model[0];
+    if (entry.kind === 'pi.compaction') usage.compactions += 1;
     if (entry.kind === 'pi.assistant' && msg && msg.usage) {
-      usage.input += Number(msg.usage.input) || 0;
-      usage.output += Number(msg.usage.output) || 0;
-      usage.cached += Number(msg.usage.cacheRead) || 0;
-      usage.prompt += ['input', 'cacheRead', 'cacheWrite'].reduce((sum, key) => sum + (Number(msg.usage[key]) || 0), 0);
-      usage.context = ['input', 'output', 'cacheRead', 'cacheWrite'].reduce((sum, key) => sum + (Number(msg.usage[key]) || 0), 0);
+      lastUsageMessage = msg;
+      usage.context = contextTokens(msg.usage);
     }
     if (entry.kind === 'pi.user') {
       if (textOf(msg).startsWith(shared.CHECK_MARKER)) continue;
@@ -330,6 +356,18 @@ async function projectMessages(conv, session) {
       continue;
     }
   }
+  if (lastUsageMessage) {
+    const turn = lastUsageMessage.usage;
+    usage.turn = {
+      input: Number(turn.input) || 0,
+      output: Number(turn.output) || 0,
+      cached: Number(turn.cacheRead) || 0,
+      cost: Number(turn.cost && turn.cost.total) || 0,
+    };
+  }
+  const ref = lastUsageMessage || session;
+  const model = ref.provider && ref.model ? shared.state.models.getModel(ref.provider, ref.model) : null;
+  if (model && Number(model.contextWindow) > 0) usage.window = Number(model.contextWindow);
   return { messages, pending, usage: usage.input + usage.output > 0 ? usage : null };
 }
 

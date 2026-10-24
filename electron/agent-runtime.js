@@ -148,7 +148,12 @@ async function _open(options = {}) {
     const registry = pi.createRegistry();
     // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
     // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
-    const settings = { stream: { cacheRetention: 'long' } };
+    // La compactación automática conserva los valores por defecto de pi-durable;
+    // agent-compaction cubre las ventanas donde su corte no llega a activarse.
+    const settings = {
+      ...(options.settings || {}),
+      stream: { cacheRetention: 'long', ...(options.settings && options.settings.stream) },
+    };
     const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
     shared.state = {
       harness,
