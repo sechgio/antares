@@ -711,6 +711,9 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     approval_id: approvalId,
     ...(spec.kind === 'native' ? { context: await nativeTools().nativeToolContext(spec.name) } : {}),
   };
+  if (spec.name === 'skills_list' || spec.name === 'skills_read') {
+    request.context = { profile_id: (await requireSession(sessionId)).profile?.id || null };
+  }
   if (spec.kind === 'subagent') {
     const profile = await resolveProfile(args && args.agent);
     if (!profile) return { text: JSON.stringify({ error: 'No se encontró un agente único con esa referencia; usa el identificador de un bot disponible' }) };
