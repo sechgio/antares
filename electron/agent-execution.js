@@ -17,6 +17,7 @@ const {
   ctx,
 } = require('./agent-shared');
 const { compactMessages, requestBudget } = require('./agent-compaction');
+const { listProfileSkills, readProfileSkill } = require('./agent-profiles');
 
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
@@ -691,6 +692,13 @@ async function executeTool(spec, args, api, context) {
 }
 
 async function dispatchTool(spec, args, sessionId, api, context) {
+  const portableProfile = shared.state.portableProfiles.get(api.conversationId);
+  if (portableProfile && (spec.name === 'skills_list' || spec.name === 'skills_read')) {
+    const result = spec.name === 'skills_list'
+      ? listProfileSkills(portableProfile, args)
+      : readProfileSkill(portableProfile, args);
+    return { text: JSON.stringify(result) };
+  }
   if (spec.kind === 'meta') {
     if (spec.name === 'agent_delegate') {
       const profile = await resolveProfile(args?.agent);

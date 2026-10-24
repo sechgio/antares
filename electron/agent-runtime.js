@@ -18,6 +18,7 @@ const {
 } = require('./agent-shared');
 const execution = require('./agent-execution');
 const projection = require('./agent-projection');
+const { loadAgentProfile } = require('./agent-profiles');
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_REQUEST_ID_CHARS = 100;
@@ -166,6 +167,7 @@ async function _open(options = {}) {
       dir,
       ctx: ctx(),
       convIndex: shared.convToSession,
+      portableProfiles: new Map(),
     };
     await _indexConversations();
     await _restoreExecutionContext();
@@ -192,6 +194,9 @@ async function _restoreExecutionContext() {
   const { pi } = shared.deps;
   for (const session of Object.values(await sessions())) {
     if (session.deleted) continue;
+    if (session.profile?.portable) {
+      shared.state.portableProfiles.set(session.conversationId, loadAgentProfile(session.profile.id));
+    }
     const live = await harness.snapshot(pi.LiveDoc, session.conversationId, ctx());
     const inbox = await harness.snapshot(pi.InboxDoc, session.conversationId, ctx());
     const pending = !!live?.run || !!inbox?.items.length;
@@ -293,9 +298,10 @@ async function sessionCreate(params) {
   if (typeof provider !== 'string' || !provider) throw validation('Falta el parámetro provider');
   const info = await execution.providerInfo(provider);
   const requested = typeof params.model === 'string' ? params.model : '';
-  const model = (requested || String(info.default_model || '')).slice(0, 120);
-  const profile = params.profile_id ? (await _profiles())[String(params.profile_id)] : null;
-  if (params.profile_id && !profile) throw notFound('El agente ya no existe');
+  const savedProfile = params.profile_id ? (await _profiles())[String(params.profile_id)] : null;
+  const portableProfile = params.profile_id && !savedProfile ? loadAgentProfile(String(params.profile_id)) : null;
+  const profile = savedProfile || (portableProfile && { ...portableProfile, id: portableProfile.slug });
+  const model = (requested || portableProfile?.model || String(info.default_model || '')).slice(0, 120);
   const title = String(params.title || (profile && profile.name) || '').slice(0, 120);
   await execution.refreshTools();
   await execution.ensureProvider(provider, model);
@@ -308,6 +314,7 @@ async function sessionCreate(params) {
     ownership: { kind: 'ownerless' },
     agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model), instructions },
   }, ctx());
+  if (portableProfile) shared.state.portableProfiles.set(conv.id, portableProfile);
   const specs = [...shared.toolSpecs.values()];
   const available = new Set(specs.map((tool) => tool.name));
   const initialTools = profile && Array.isArray(profile.tools)
@@ -325,7 +332,7 @@ async function sessionCreate(params) {
     created_at: now,
     updated_at: now,
     last_error: null,
-    ...(profile ? { profile: { id: profile.id, name: profile.name } } : {}),
+    ...(profile ? { profile: { id: profile.id, name: profile.name, ...(portableProfile ? { portable: true } : {}) } } : {}),
   };
   await commitSessions((map) => {
     map[session.id] = session;
@@ -412,6 +419,7 @@ async function sessionDelete(params) {
   }
   shared.live.delete(session.conversationId);
   shared.convToSession.delete(session.conversationId);
+  shared.state.portableProfiles.delete(session.conversationId);
   return { deleted: true, id: sessionId };
 }
 
