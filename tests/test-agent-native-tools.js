@@ -29,9 +29,12 @@ assert(JSON.stringify(exportsSpecs.slice(0, 3).map((s) => s.module)) === JSON.st
   'cada exportación pertenece a su módulo');
 
 const web = specs.filter((s) => s.name.startsWith('web_'));
-assert(web.length === 7 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
+assert(web.length === 10 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
 assert(web.filter((s) => s.gated).map((s) => s.name).sort().join() === 'web_click,web_key,web_type',
   'leer páginas es automático; hacer clic, escribir o pulsar teclas requiere aprobación');
+assert(web.filter((s) => !s.gated).map((s) => s.name).sort().join()
+  === 'web_back,web_console,web_network,web_open,web_read,web_screenshot,web_text',
+  'texto, consola y red se leen sin aprobación');
 const browser = require('../electron/agent-browser');
 assert(browser.normalizeUrl('example.com/a') === 'https://example.com/a', 'un dominio sin esquema se abre por https');
 assert(browser.normalizeUrl('http://localhost:5173') === 'http://localhost:5173', 'una URL http se conserva');
@@ -86,10 +89,13 @@ async function exportTest() {
           return { x: 240, y: 120 };
         }
         if (navigationPhase === 'clear' && script.includes("'select' in el")) pageTimeOrigin += 1;
+        if (script.includes('innerText') && !script.includes('querySelectorAll')) {
+          return { url: 'https://example.com', title: 'Página', text: 'Uno. Dos. Tres. Cuatro. Cinco.' };
+        }
         return { url: 'https://example.com', title: '', text: '', elements: [] };
       },
       sendInputEvent: () => { throw new Error('La ventana no tiene foco'); },
-      debugger: {
+      debugger: Object.assign(new EventEmitter(), {
         isAttached: () => attached,
         attach: () => { attached = true; attachments += 1; },
         sendCommand: async (method, params) => {
@@ -116,7 +122,7 @@ async function exportTest() {
             || (navigationPhase === 'packet' && params.type === 'mouseMoved')
             || (navigationPhase === 'key' && params.type === 'keyDown')) pageTimeOrigin += 1;
         },
-      },
+      }),
     });
     const moves = [];
     const makeParent = (name) => ({
@@ -245,6 +251,39 @@ async function exportTest() {
       finally { timers.restore(); }
       assert(resumed?.clicked === '1', 'el clic propio no prolonga la pausa humana y el agente puede retomar tras la inactividad');
     } finally { Date.now = realNow; }
+    contents.emit('console-message', { level: 'warning', message: 'casi sin saldo' });
+    contents.emit('console-message', { level: 'error', message: 'falló la carga' });
+    const consoleView = await browser.run('web_console', {});
+    assert(JSON.stringify(consoleView.messages) === JSON.stringify(['[warning] casi sin saldo', '[error] falló la carga']),
+      'web_console devuelve los mensajes recientes de la consola');
+    contents.debugger.emit('message', {}, 'Network.requestWillBeSent',
+      { requestId: '1', type: 'XHR', request: { method: 'GET', url: 'https://api.example.com/v1/datos' } });
+    contents.debugger.emit('message', {}, 'Network.responseReceived',
+      { requestId: '1', type: 'XHR', response: { url: 'https://api.example.com/v1/datos', status: 200 } });
+    contents.debugger.emit('message', {}, 'Network.requestWillBeSent',
+      { requestId: '2', type: 'Fetch', request: { method: 'POST', url: 'https://api.example.com/v1/enviar' } });
+    contents.debugger.emit('message', {}, 'Network.loadingFailed', { requestId: '2', errorText: 'net::ERR_TIMED_OUT' });
+    const networkView = await browser.run('web_network', {});
+    assert(JSON.stringify(networkView.requests) === JSON.stringify([
+      '200 GET XHR https://api.example.com/v1/datos',
+      '· POST Fetch https://api.example.com/v1/enviar (falló: net::ERR_TIMED_OUT)',
+    ]), 'web_network enumera las peticiones con estado, método y fallos');
+    const textView = await browser.run('web_text', {});
+    assert(textView.text === 'Uno. Dos. Tres. Cuatro. Cinco.' && textView.text_total === 30 && !textView.next_offset,
+      'web_text devuelve el texto completo de la página');
+    const paged = await browser.run('web_text', { offset: 5 });
+    assert(paged.text === 'Dos. Tres. Cuatro. Cinco.' && paged.text_offset === 5 && paged.text_total === 30,
+      'web_text pagina el texto por offset');
+    for (let i = 0; i < 205; i += 1) contents.emit('console-message', { level: 'info', message: `m${i}` });
+    const consoleCapped = await browser.run('web_console', {});
+    assert(consoleCapped.messages.length === 200 && consoleCapped.messages[199] === '[info] m204',
+      'la consola del navegador conserva solo los mensajes recientes');
+    for (let i = 0; i < 305; i += 1) {
+      contents.debugger.emit('message', {}, 'Network.requestWillBeSent', { requestId: String(i), request: { method: 'GET', url: `u${i}` } });
+    }
+    const networkCapped = await browser.run('web_network', {});
+    assert(networkCapped.requests.length === 300 && networkCapped.requests[299] === '· GET u304',
+      'el registro de red conserva solo las peticiones recientes');
     browser.close();
   }
   browser.setUserControl(true);
@@ -260,6 +299,7 @@ async function exportTest() {
       isDestroyed: () => false, getURL: () => 'https://example.com', getTitle: () => '', isLoading: () => false,
       getZoomFactor: () => 1, setZoomFactor: () => {}, setWindowOpenHandler: () => {}, loadURL: async () => {},
       navigationHistory: { canGoBack: () => false, canGoForward: () => false }, close: () => contents.emit('destroyed'),
+      debugger: Object.assign(new Emitter(), { isAttached: () => false, attach: () => {}, sendCommand: async () => {} }),
     });
     stubModule('electron/window-manager.js', { getMainWindow: () => null });
     stubModule('electron', {
