@@ -284,6 +284,24 @@ async function exportTest() {
     const networkCapped = await browser.run('web_network', {});
     assert(networkCapped.requests.length === 300 && networkCapped.requests[299] === '· GET u304',
       'el registro de red conserva solo las peticiones recientes');
+    const { mkdtempSync, rmSync } = require('node:fs');
+    const { tmpdir } = require('node:os');
+    const { join } = require('node:path');
+    const policyRoot = mkdtempSync(join(tmpdir(), 'antares-agent-policy-'));
+    const realLocalAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = policyRoot;
+    let openBlocked = null;
+    try { await browser.run('web_open', { url: 'bcp.pe/panel' }); } catch (error) { openBlocked = error.message; }
+    assert(openBlocked && openBlocked.includes('Dominio bloqueado'),
+      'web_open rechaza los dominios de la política del navegador, con o sin esquema');
+    const userTimers = installInertTimers();
+    let userOpenError = null;
+    try { await browser.navigate('open', 'https://www.bcp.pe/panel'); } catch (error) { userOpenError = error; } finally { userTimers.restore(); }
+    assert(!userOpenError, 'la navegación manual del usuario no pasa por la política del agente');
+    const openTimers = installInertTimers();
+    try { await browser.run('web_open', { url: 'https://example.com' }); } finally { openTimers.restore(); }
+    process.env.LOCALAPPDATA = realLocalAppData;
+    rmSync(policyRoot, { recursive: true, force: true });
     browser.close();
   }
   browser.setUserControl(true);

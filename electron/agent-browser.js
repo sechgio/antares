@@ -520,6 +520,10 @@ async function run(name, params = {}, { dir, approvedContext } = {}) {
   if (!['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network'].includes(name)
     && Date.now() - lastUserInputAt < USER_INPUT_GRACE_MS) throw new Error(USER_BUSY_ERROR);
   if (name === 'web_open') {
+    const policy = require('./agent-browser-policy');
+    if (policy.isBlocked(policy.hostOf(normalizeUrl(params.url)))) {
+      throw new Error('Dominio bloqueado por la política del navegador del agente');
+    }
     const contents = browser().webContents;
     notify('agent-open');
     await load(contents, normalizeUrl(params.url));

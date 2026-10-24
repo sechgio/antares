@@ -89,7 +89,8 @@ export interface AgentApproval {
   status: 'pending' | 'approved' | 'denied' | 'expired';
   created_at: number;
   decided_at: number | null;
-  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string };
+  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string;
+    page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean };
   resources?: { path: string; sha256?: string }[];
 }
 
@@ -216,8 +217,8 @@ export const agentApi = {
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 
-  agentApprove: (approval_id: string) =>
-    _invoke<{ approval: AgentApproval }>('agent_approve', { approval_id }),
+  agentApprove: (approval_id: string, remember = false) =>
+    _invoke<{ approval: AgentApproval }>('agent_approve', { approval_id, ...(remember ? { remember: true } : {}) }),
 
   agentDeny: (approval_id: string) =>
     _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id }),

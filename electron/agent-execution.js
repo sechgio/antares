@@ -477,6 +477,14 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${PLAN_CHECK_TEXT.replace('{steps}', steps)}` };
 }
 
+// "Permitir siempre": el usuario autorizó este dominio; las herramientas web
+// con efecto no vuelven a pedir aprobación mientras la política lo mantenga.
+function webAlwaysAllowed(name, context) {
+  if (!String(name || '').startsWith('web_') || !context || context.policy_blocked) return false;
+  const domain = String(context.domain || '');
+  return !!domain && require('./agent-browser-policy').isAlwaysAllowed(domain);
+}
+
 async function beforeTool(call, api, context) {
   const spec = shared.toolSpecs.get(call.name);
   const rounds = await toolBudget(api, context);
@@ -511,7 +519,8 @@ async function beforeTool(call, api, context) {
       params: call.arguments || {},
       ...(approvedContext ? { context: approvedContext } : {}),
     }));
-    if (mode === 'full' && call.name !== 'shell_run' && approval.status === 'pending') {
+    if (approval.status === 'pending'
+      && ((mode === 'full' && call.name !== 'shell_run') || webAlwaysAllowed(call.name, approvedContext))) {
       ({ approval } = await bridge('agent_internal_approval_decide', { approval_id: approval.id, approve: true }));
     }
   } catch (err) {
