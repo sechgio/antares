@@ -10,6 +10,13 @@ let reconciled = false;
 let reconciling = null;
 
 const MAX_RUNS = 10;
+const MAX_DELEGATION_DEPTH = 1;
+const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
+
+const ROLE_PROMPT = {
+  explorer: 'Investiga y devuelve hallazgos verificables. Solo puedes leer datos: no modifiques nada ni pidas aprobaciones.',
+  reviewer: 'Revisa el material, contrasta la evidencia y emite un veredicto claro. Solo puedes leer datos: no modifiques nada.',
+};
 
 function resolveTimezone(value) {
   if (value === undefined || value === null || value === '') return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -54,39 +61,60 @@ const TOOL = {
 const DELEGATE_TOOL = {
   name: 'agent_delegate', kind: 'meta', module: 'agent', gated: false, replay_safe: true,
   description: 'Entrega un encargo de solo lectura a un agente guardado en una conversación persistente. '
+    + `Aplica el rol explorador o revisor de su ficha y la profundidad máxima ${MAX_DELEGATION_DEPTH}. `
     + 'Devuelve session_id de la conversación hija; el resultado llegará después a esta conversación. '
     + 'El agente conserva su historial al reiniciar, no puede delegar ni ampliar herramientas o permisos. '
+    + 'exclude_tools sustrae herramientas de las permitidas por la ficha. '
+    + 'Los agentes worker no se delegan aquí: usa subagent_run para que cada efecto se apruebe en esta conversación. '
     + 'El encargo debe contener el contexto necesario, sin secretos ni instrucciones para ampliar acceso.',
   inputSchema: { type: 'object', properties: {
     agent: { type: 'string' }, task: { type: 'string', minLength: 1, maxLength: 4000 },
+    exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Herramientas que el hijo no debe usar' },
   }, required: ['agent', 'task'] },
 };
 
 async function delegate(profile, args, sessionId, api, context) {
   const parent = await requireSession(sessionId);
-  if (parent.delegation) throw validation('Un agente delegado no puede delegar de nuevo');
+  const role = PROFILE_ROLES.has(profile.role) ? profile.role : 'explorer';
+  if (role === 'worker') {
+    throw validation('El rol worker solo se delega con subagent_run, donde cada efecto se aprueba en esta conversación');
+  }
+  const parentDepth = parent.delegation ? Number(parent.delegation.depth ?? MAX_DELEGATION_DEPTH) : 0;
+  const depth = parentDepth + 1;
+  if (depth > MAX_DELEGATION_DEPTH) {
+    throw validation(`La delegación alcanzó la profundidad máxima (${MAX_DELEGATION_DEPTH})`);
+  }
   const task = typeof args.task === 'string' ? args.task.trim() : '';
   if (!task || task.length > 4000) throw validation('El encargo debe tener entre 1 y 4000 caracteres');
+  const rawExclude = args.exclude_tools;
+  if (rawExclude !== undefined
+    && (!Array.isArray(rawExclude) || rawExclude.some((name) => typeof name !== 'string'))) {
+    throw validation('exclude_tools debe ser una lista de nombres de herramienta');
+  }
+  const excluded = new Set(rawExclude || []);
   const id = `delegate-${crypto.createHash('sha256').update(`${sessionId}:${api.taskId}`).digest('hex').slice(0, 24)}`;
   const state = shared.state;
   let child = (await sessions())[id];
   if (!child) {
     const enabled = new Set((await api.agent(context)).tools.map((tool) => tool.name));
     const tools = [...shared.toolSpecs.values()].filter((tool) => tool.kind === 'backend' && tool.replay_safe === true
-      && enabled.has(tool.name) && (!Array.isArray(profile.tools) || profile.tools.includes(tool.name)));
+      && enabled.has(tool.name) && (!Array.isArray(profile.tools) || profile.tools.includes(tool.name))
+      && !excluded.has(tool.name));
     const now = Date.now();
     await state.harness.createConversation({
       ownership: { kind: 'ownerless' },
       agent: { model: { provider: parent.provider, modelId: parent.model }, tools: tools.map((tool) => ({ name: tool.name })),
-        instructions: `Eres el agente «${profile.name}» de Antares. Responde en español. Solo puedes leer datos, `
-          + 'sin efectos, sin delegar, sin acceder a otros chats ni concederte acceso a archivos. '
+        instructions: `Eres el agente «${profile.name}» de Antares, con rol ${role === 'reviewer' ? 'revisor' : 'explorador'}. `
+          + `Responde en español. ${ROLE_PROMPT[role]} `
+          + 'No puedes delegar, acceder a otros chats ni concederte acceso a archivos. '
           + 'Devuelve conclusiones verificables y explica lo que no pudiste comprobar.\n' + profile.instructions },
       init: async (tx, conversationId) => {
         const doc = await tx.doc(state.SessionsDoc);
         if (doc.sessions[id]) throw validation('El encargo ya está registrado');
         doc.sessions[id] = { id, conversationId, title: `Delegación: ${profile.name}`, provider: parent.provider,
           model: parent.model, style: parent.style, created_at: now, updated_at: now, last_error: null,
-          profile: { id: profile.id, name: profile.name }, delegation: { parent_session_id: sessionId, content: task, status: 'pending' } };
+          profile: { id: profile.id, name: profile.name },
+          delegation: { parent_session_id: sessionId, content: task, status: 'pending', depth } };
       },
     }, ctx());
     child = (await sessions())[id];
@@ -98,7 +126,8 @@ async function delegate(profile, args, sessionId, api, context) {
     }, ctx());
     throw validation('El encargo fue cancelado');
   }
-  return { delegated: true, session_id: id, agent: { id: profile.id, name: profile.name }, status: child.delegation.status };
+  return { delegated: true, session_id: id, agent: { id: profile.id, name: profile.name }, role, depth,
+    status: child.delegation.status };
 }
 
 async function startChild(child) {
