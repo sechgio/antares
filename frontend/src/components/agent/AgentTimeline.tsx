@@ -319,8 +319,8 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
 function UserBubble({ msg }: { msg: AgentMessage }) {
   return (
     <div className="agent-trace-in flex justify-end">
-      <div className="agent-message-user max-w-[min(600px,85%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-2.5 text-[14px] leading-[21px] text-[var(--text-primary)]">
-        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+      <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
+        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
       </div>
     </div>
   );
@@ -383,7 +383,7 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
         )}
         {msg.reasoning && <Reasoning text={msg.reasoning} streaming={!!msg.partial && !msg.content} ms={msg.reasoning_ms} />}
         {msg.content && (
-          <div className="agent-message-answer w-fit max-w-[min(620px,100%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
+          <div className="agent-message-answer min-w-0 max-w-full py-1 text-[14px] leading-[23px] text-[var(--text-primary)]">
             <MessageMarkdown text={msg.content} streaming={!!msg.partial} />
           </div>
         )}
