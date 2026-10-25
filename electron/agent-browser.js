@@ -32,8 +32,14 @@ const TOOLS = {
   web_read: ['Leer el texto y los elementos interactivos de la página actual', {
     type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
   }, false],
-  web_screenshot: ['Capturar la página actual del navegador del agente', { type: 'object', properties: {} }, false],
+  web_screenshot: ['Capturar la página actual del navegador del agente', {
+    type: 'object',
+    properties: { full_page: { type: 'boolean', description: 'Capturar toda la página, incluido lo que no se ve' } },
+  }, false],
   web_back: ['Volver a la página anterior', { type: 'object', properties: {} }, false],
+  web_forward: ['Avanzar a la página siguiente', { type: 'object', properties: {} }, false],
+  web_reload: ['Recargar la página actual', { type: 'object', properties: {} }, false],
+  web_handover: ['Ceder el control manual del navegador al usuario hasta que lo devuelva', { type: 'object', properties: {} }, false],
   web_text: ['Leer el texto completo de la página actual, sin la lista de elementos', {
     type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
   }, false],
@@ -52,6 +58,17 @@ const TOOLS = {
   web_key: ['Pulsar teclas en la página (p. ej. «enter», «ctrl+a»)', {
     type: 'object', properties: { keys: { type: 'string' } }, required: ['keys'],
   }, true],
+  web_download: ['Descargar un archivo de la web a los borradores de la conversación', {
+    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) del archivo' } }, required: ['url'],
+  }, true],
+  web_upload: ['Subir un archivo autorizado de esta conversación a un campo de la página', {
+    type: 'object',
+    properties: {
+      ref: REF,
+      path: { type: 'string', description: 'Ruta del archivo autorizado en esta conversación' },
+    },
+    required: ['ref', 'path'],
+  }, true],
 };
 
 // La página vive en un WebContentsView. Sin el panel abierto se aloja en una
@@ -62,6 +79,7 @@ const HOST_SIZE = { width: 1280, height: 860 };
 const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
 const USER_BUSY_ERROR = 'El usuario está usando el navegador en este momento; espera unos segundos antes de volver a actuar en la página';
 const USER_INPUT_GRACE_MS = 5_000;
+const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 
 let host = null;
 let view = null;
@@ -72,6 +90,7 @@ const pendingMouseInputs = new Set();
 let consoleLog = [];
 const netLog = new Map();
 let sessionReady = false;
+let downloadSlot = null;
 
 function isWeb(url) {
   try {
@@ -102,12 +121,58 @@ function prepareSession(electron) {
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
+  // Toda descarga se cancela salvo que web_download la haya pedido: el
+  // navegador del agente nunca escribe en el disco por decisión de una página.
   ses.on('will-download', (event, item) => {
+    const slot = downloadSlot;
+    downloadSlot = null;
     event.preventDefault();
-    item.cancel();
+    if (!slot) { item.cancel(); return; }
+    const name = downloadName(item.getFilename());
+    const target = path.join(slot.dir, `${require('node:crypto').randomUUID().slice(0, 8)}-${name}`);
+    item.setSavePath(target);
+    item.on('updated', () => { if (item.getTotalBytes() > MAX_DOWNLOAD_BYTES) item.cancel(); });
+    item.once('done', (_event, state) => {
+      slot.settle(state === 'completed' ? null : new Error(item.getTotalBytes() > MAX_DOWNLOAD_BYTES
+        ? `El archivo excede el límite de ${Math.round(MAX_DOWNLOAD_BYTES / (1024 * 1024))} MB`
+        : 'La descarga no se completó'),
+      state === 'completed' ? { saved_path: target, filename: name, bytes: item.getTotalBytes() } : null);
+    });
   });
   sessionReady = true;
   return ses;
+}
+
+function downloadName(value) {
+  const name = String(value || '').trim().slice(0, 120).replace(/[<>:"/\\|?*\x00]/g, '_');
+  return name && name !== '.' && name !== '..' ? name : 'archivo';
+}
+
+function startDownload(url, drafts) {
+  if (!drafts) throw new Error('Los borradores requieren una conversación');
+  if (!isWeb(url)) throw new Error('Indica la dirección http(s) del archivo');
+  const policy = require('./agent-browser-policy');
+  if (policy.isBlocked(policy.hostOf(url))) {
+    throw new Error('Dominio bloqueado por la política del navegador del agente');
+  }
+  const slot = { dir: drafts };
+  slot.wait = new Promise((resolve, reject) => {
+    slot.settle = (error, saved) => {
+      clearTimeout(slot.timeout);
+      if (downloadSlot === slot) downloadSlot = null;
+      error ? reject(error) : resolve(saved);
+    };
+  });
+  downloadSlot = slot;
+  slot.timeout = setTimeout(() => {
+    if (downloadSlot === slot) slot.settle(new Error('La descarga no comenzó; comprueba la dirección'), null);
+  }, LOAD_TIMEOUT_MS);
+  try {
+    require('electron').session.fromPartition(PARTITION).downloadURL(url);
+  } catch (error) {
+    slot.settle(error, null);
+  }
+  return slot.wait;
 }
 
 function alive(item) {
@@ -446,6 +511,7 @@ async function ensureDebugger(contents) {
   contents.debugger.attach('1.3');
   await contents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
   await contents.debugger.sendCommand('Network.enable', {});
+  await contents.debugger.sendCommand('Page.enable', {});
   return true;
 }
 
@@ -495,9 +561,17 @@ async function pressCombo(input, combo) {
   await send(input, 'Input.dispatchKeyEvent', { type: 'keyUp', ...event });
 }
 
-async function screenshot(contents, dir) {
+async function screenshot(contents, dir, fullPage = false) {
   if (!dir) throw new Error('Las capturas requieren una conversación');
-  let image = await contents.capturePage();
+  let image;
+  if (fullPage) {
+    await ensureDebugger(contents);
+    const shot = await contents.debugger.sendCommand('Page.captureScreenshot',
+      { format: 'jpeg', quality: 70, captureBeyondViewport: true });
+    image = require('electron').nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64'));
+  } else {
+    image = await contents.capturePage();
+  }
   const { width } = image.getSize();
   if (width > SHOT_WIDTH) image = image.resize({ width: SHOT_WIDTH, quality: 'good' });
   await fs.promises.mkdir(dir, { recursive: true });
@@ -515,7 +589,7 @@ async function observeAfter(contents) {
   return snapshot(contents, 0, RESULT_BUDGET - 400);
 }
 
-async function run(name, params = {}, { dir, approvedContext } = {}) {
+async function run(name, params = {}, { dir, drafts, approvedContext } = {}) {
   if (userControl) throw new Error(USER_CONTROL_ERROR);
   if (!['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network'].includes(name)
     && Date.now() - lastUserInputAt < USER_INPUT_GRACE_MS) throw new Error(USER_BUSY_ERROR);
@@ -530,12 +604,26 @@ async function run(name, params = {}, { dir, approvedContext } = {}) {
     await load(contents, target);
     return snapshot(contents);
   }
+  if (name === 'web_handover') {
+    setUserControl(true);
+    return { handed_over: true, ...state() };
+  }
+  if (name === 'web_download') return startDownload(String(params.url || '').trim(), drafts);
   const contents = current();
   if (name === 'web_read') return snapshot(contents, params.offset);
-  if (name === 'web_screenshot') return screenshot(contents, dir);
+  if (name === 'web_screenshot') return screenshot(contents, dir, params.full_page === true);
   if (name === 'web_back') {
     if (!contents.navigationHistory.canGoBack()) throw new Error('No hay una página anterior');
     contents.navigationHistory.goBack();
+    return observeAfter(contents);
+  }
+  if (name === 'web_forward') {
+    if (!contents.navigationHistory.canGoForward()) throw new Error('No hay una página siguiente');
+    contents.navigationHistory.goForward();
+    return observeAfter(contents);
+  }
+  if (name === 'web_reload') {
+    contents.reload();
     return observeAfter(contents);
   }
   if (name === 'web_text') return pageText(contents, params.offset);
@@ -578,7 +666,34 @@ async function run(name, params = {}, { dir, approvedContext } = {}) {
     }
     return { pressed: keys, page: await observeAfter(contents) };
   }
+  if (name === 'web_upload') return uploadFile(input, params.ref, String(params.path || '').trim());
   throw new Error(`Herramienta nativa no disponible: ${name}`);
+}
+
+// El archivo ya pasó la verificación de grants del backend; aquí solo se
+// comprueba que el elemento siga siendo un campo de archivo de la página
+// aprobada y se le asigna el archivo por CDP, como hace Playwright.
+async function uploadFile(input, ref, filePath) {
+  const id = String(ref || '').replace(/[^0-9]/g, '');
+  if (!id) throw new Error('Indica la referencia del campo (web_read)');
+  if (!filePath) throw new Error('Indica la ruta del archivo');
+  const field = await input.contents.executeJavaScript(`(() => {
+    const el = document.querySelector('[data-antares-ref="${id}"]');
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    return { tag: el.tagName.toLowerCase(), type: el.type || '' };
+  })()`, true);
+  if (!field) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
+  if (field.tag !== 'input' || field.type !== 'file') throw new Error('El elemento no es un campo de archivo');
+  await delay(120);
+  await assertInteraction(input);
+  await ensureDebugger(input.contents);
+  const doc = await input.contents.debugger.sendCommand('DOM.getDocument', {});
+  const node = await input.contents.debugger.sendCommand('DOM.querySelector',
+    { nodeId: doc.root.nodeId, selector: `[data-antares-ref="${id}"]` });
+  if (!node.nodeId) throw new Error('El campo de archivo ya no está en la página; vuelve a leerla con web_read');
+  await input.contents.debugger.sendCommand('DOM.setFileInputFiles', { files: [filePath], nodeId: node.nodeId });
+  return { uploaded: filePath, ref: id, page: await observeAfter(input.contents) };
 }
 
 function close() {

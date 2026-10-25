@@ -243,6 +243,16 @@ def _grants_revoke(params: JsonObject) -> JsonObject:
     return {"revoked": _store().revoke_grants(str(params["session_id"]))}
 
 
+@with_locale
+@validate_params("session_id", "path")
+def _grants_check(params: JsonObject) -> JsonObject:
+    try:
+        info = resource_grants.check(str(params["path"]), _store().grants_for(str(params["session_id"])))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+    return {"granted": True, **info}
+
+
 def _approval_error(approval: JsonObject | None) -> ValidationError:
     if approval is not None and approval.get("status") == "expired":
         return ValidationError("La aprobación expiró; vuelve a pedírselo al agente")
@@ -597,6 +607,7 @@ HANDLERS = {
     "agent_internal_dispatch_cancel": _dispatch_cancel,
     "agent_internal_dispatch_finish": _dispatch_finish,
     "agent_internal_grants_add": _grants_add,
+    "agent_internal_grants_check": _grants_check,
     "agent_internal_grants_revoke": _grants_revoke,
     "agent_internal_mentions": _mentions,
     "agent_internal_document_plan": _document_plan,

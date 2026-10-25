@@ -37,6 +37,7 @@
     "agent_internal_dispatch_cancel": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_dispatch_finish": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_grants_add": { "handler": "backend:agent_internal", "internal": true },
+    "agent_internal_grants_check": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_grants_revoke": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_mentions": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_document_plan": { "handler": "backend:agent_internal", "internal": true, "timeout": "heavy" },
