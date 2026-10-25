@@ -18,7 +18,7 @@ const PUBLIC_METHODS = [
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
   'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
   'agent_browser',
-  'agent_session_permissions_set',
+  'agent_session_permissions_set', 'agent_session_reasoning_set',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -400,6 +400,45 @@ async function main() {
   }
 
   {
+    const { bridge } = makeBridge();
+    const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+    const { fauxProvider } = await import('@earendil-works/pi-ai');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-reasoning-'));
+    const dbPath = path.join(dir, 'agent.sqlite');
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    runtime._internal._providerOverrides.set('faux', fauxProvider().provider);
+    const thinking = fauxProvider({ provider: 'razona', models: [{ id: 'razonador', reasoning: true }] });
+    runtime._internal._providerOverrides.set('razona', thinking.provider);
+    const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+    const thinkingLevel = async (id) => {
+      const map = await runtime._internal.state().harness.snapshot(runtime._internal.state().SessionsDoc, context);
+      const conv = await runtime._internal.state().harness.conversation(map.sessions[id].conversationId, context);
+      return (await conv.agent(context)).thinkingLevel;
+    };
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    assert(Array.isArray(session.reasoning_levels) && session.reasoning_levels.length === 0, 'un modelo sin razonamiento no ofrece el control');
+    const changed = await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'high' });
+    assert(changed.session.reasoning_effort === 'high' && !changed.session.conversationId, 'devuelve el nivel guardado sin datos privados');
+    assert(await thinkingLevel(session.id) === 'off', 'un modelo sin razonamiento sigue sin razonar');
+    const switched = await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'razona', model: 'razonador' });
+    assert(switched.session.reasoning_levels.includes('high'), 'un modelo con razonamiento ofrece sus niveles');
+    assert(await thinkingLevel(session.id) === 'high', 'el nivel elegido se aplica al cambiar a un modelo que razona');
+    await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'minimal' });
+    assert(await thinkingLevel(session.id) === 'minimal', 'el nivel se aplica al modelo actual');
+    for (const effort of ['off', 'max', '', null, undefined]) {
+      let rejected;
+      try { await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: effort }); } catch (err) { rejected = err; }
+      assert(rejected, `rechaza un nivel inválido: ${effort}`);
+    }
+    await runtime.shutdown();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const restored = (await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id);
+    assert(restored.reasoning_effort === 'minimal' && restored.reasoning_levels.includes('minimal'), 'el nivel sobrevive al reinicio de SQLite');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
     const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-permissions-'));
     const dbPath = path.join(dir, 'agent.sqlite');
@@ -726,11 +765,28 @@ async function main() {
   }
 
   {
-    const { thinkingLevelFor } = require('../electron/agent-execution');
-    assert(thinkingLevelFor('anthropic_messages', 'claude-sonnet-4-5') === 'low' && thinkingLevelFor('anthropic_messages', 'claude-3-5-haiku') === 'off',
+    const { supportsReasoning, thinkingLevelFor, modelDefinition } = require('../electron/agent-execution');
+    assert(supportsReasoning('anthropic_messages', 'claude-sonnet-4-5') && !supportsReasoning('anthropic_messages', 'claude-3-5-haiku'),
       'Anthropic pide razonamiento solo a modelos que lo admiten');
-    assert(thinkingLevelFor('openai_chat', 'deepseek-r1:8b') === 'low' && thinkingLevelFor('openai_chat', 'gpt-4o') === 'off' && thinkingLevelFor('openai_chat', 'llama3.1') === 'off',
+    assert(supportsReasoning('openai_chat', 'deepseek-r1:8b') && !supportsReasoning('openai_chat', 'gpt-4o') && !supportsReasoning('openai_chat', 'llama3.1'),
       'los modelos compatibles genéricos no reciben parámetros de razonamiento');
+    assert(thinkingLevelFor([], 'high') === 'off' && thinkingLevelFor(['minimal', 'low', 'medium', 'high']) === 'low'
+      && thinkingLevelFor(['minimal', 'low', 'medium', 'high'], 'xhigh') === 'high' && thinkingLevelFor(['low', 'medium'], 'minimal') === 'low',
+      'el nivel elegido se ajusta al más cercano que admite el modelo');
+    const { OPENAI_MODELS } = await import('@earendil-works/pi-ai/providers/openai.models');
+    const { ANTHROPIC_MODELS } = await import('@earendil-works/pi-ai/providers/anthropic.models');
+    const openaiInfo = { provider: 'openai', style: 'openai_chat', base_url: 'https://api.openai.com/v1' };
+    const gpt5 = modelDefinition(openaiInfo, 'gpt-5', 'openai-completions', undefined, OPENAI_MODELS['gpt-5']);
+    assert(gpt5.reasoning === true && gpt5.thinkingLevelMap && gpt5.thinkingLevelMap.xhigh === null,
+      'el catálogo de pi-ai marca el razonamiento y los niveles de los modelos conocidos');
+    const fable = ANTHROPIC_MODELS['claude-fable-5'];
+    const anthropicInfo = { provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' };
+    assert(modelDefinition(anthropicInfo, fable.id, 'anthropic-messages', fable, fable).compat.forceAdaptiveThinking === true,
+      'los Claude con pensamiento adaptativo lo reciben del catálogo');
+    const custom = (reasoning) => ({ provider: 'custom-glm', style: 'openai_chat', base_url: 'http://127.0.0.1:8000/v1', custom: true, capabilities: { reasoning } });
+    assert(modelDefinition(custom(true), 'zai-org/GLM-5.3-Flash', 'openai-completions').reasoning === true
+      && modelDefinition(custom(false), 'deepseek-r1', 'openai-completions').reasoning === false,
+      'la capacidad declarada en el proveedor personalizado prevalece sobre el nombre');
   }
 
   {
@@ -1568,6 +1624,10 @@ async function main() {
     assert(answer.content === 'Listo' && answer.reasoning === 'Pienso la respuesta' && !answer.partial, 'la respuesta final conserva el razonamiento');
     assert(typeof answer.reasoning_ms === 'number' && answer.reasoning_ms >= 150, 'el razonamiento lleva el tiempo que tardó el modelo');
     assert(hits[0].reasoning_effort === 'low', 'los modelos de razonamiento conocidos piden esfuerzo bajo');
+    await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'high' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'piensa más' });
+    assert(await waitIdle(session.id), 'el turno con más razonamiento termina');
+    assert(hits[1].reasoning_effort === 'high', 'el nivel elegido viaja en la petición al proveedor');
     server.close();
     await runtime.shutdown();
   }
