@@ -10,6 +10,7 @@ import { SegmentedControl } from '../ui/SegmentedControl';
 import Textarea from '../ui/Textarea';
 import Toggle from '../ui/Toggle';
 import AgentAvatar, { AGENT_AVATAR_COLORS } from './AgentAvatar';
+import AgentRoutines from './AgentRoutines';
 import { METHOD_LABELS } from './methodLabels';
 
 const FIELD = 'grid grid-cols-[96px_1fr] items-start gap-3 px-3 py-2.5';
@@ -256,6 +257,7 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
             ))}
           </div>
         </div>
+        {profile && <AgentRoutines profileId={profile.id} />}
         <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
           Tu pedido actual tiene prioridad sobre estas indicaciones; estas prevalecen sobre las preferencias de memoria.
         </p>

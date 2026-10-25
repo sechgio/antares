@@ -209,6 +209,41 @@ async function main() {
     assert.equal(waiting.retry_at, midnight.getTime(), 'un encargo sin presupuesto espera a la medianoche local');
     assert.equal(waiting.runs.length, 0, 'aplazar por presupuesto no cuenta como ejecución ni fallo');
     await runtime.handlers.agent_tasks_cancel({ id: deferred.id });
+    const tasks = require('../electron/agent-tasks');
+    const { profile: routinesBot } = await runtime.handlers.agent_profile_save({ name: 'Rutinario', instructions: 'Repite', tools: null });
+    const { session: routineA } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: routinesBot.id });
+    const { session: routineB } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: routinesBot.id });
+    const later = () => new Date(Date.now() + 3_600_000).toISOString();
+    await assert.rejects(
+      tasks.schedule({ action: 'create', content: 'Revisa cada cinco minutos', due_at: later(), every_minutes: 5 }, routineA.id, { taskId: 'bot-fast' }),
+      /cada menos de 30 minutos/,
+    );
+    await tasks.schedule({ action: 'create', content: 'Una sola vez', due_at: later() }, routineA.id, { taskId: 'bot-once' });
+    await tasks.schedule({ action: 'create', content: 'Revisa cada hora', due_at: later(), every_minutes: 60 }, routineA.id, { taskId: 'bot-hourly' });
+    const { scheduled: userFast } = await runtime.handlers.agent_tasks_save({
+      session_id: routineB.id, content: 'El usuario elige cinco minutos', due_at: later(), every_minutes: 5,
+    });
+    assert.equal(userFast.interval_ms, 5 * 60000, 'el usuario puede programar rutinas más frecuentes que el agente');
+    await runtime.handlers.agent_tasks_save({ session_id: routineB.id, content: 'Tercera rutina', due_at: later(), every_minutes: 1440 });
+    await assert.rejects(
+      runtime.handlers.agent_tasks_save({ session_id: routineA.id, content: 'Cuarta rutina', due_at: later(), every_minutes: 1440 }),
+      /ya tiene 3 rutinas/,
+    );
+    const { scheduled: once } = await runtime.handlers.agent_tasks_save({ session_id: routineA.id, content: 'Otra única', due_at: later() });
+    await assert.rejects(
+      runtime.handlers.agent_tasks_save({ session_id: routineA.id, id: once.id, content: 'Otra única', due_at: later(), every_minutes: 120 }),
+      /ya tiene 3 rutinas/,
+      'convertir un encargo único en rutina respeta el máximo',
+    );
+    await runtime.handlers.agent_tasks_cancel({ id: userFast.id });
+    await runtime.handlers.agent_tasks_save({ session_id: routineA.id, content: 'Hueco liberado', due_at: later(), every_minutes: 1440 });
+    const { session: plainSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await tasks.schedule({ action: 'create', content: 'Sin agente', due_at: later(), every_minutes: 5 }, plainSession.id, { taskId: 'plain-fast' });
+    for (const item of (await runtime.handlers.agent_tasks_list({})).tasks) {
+      if (item.status === 'pending' && [routineA.id, routineB.id, plainSession.id].includes(item.session_id)) {
+        await runtime.handlers.agent_tasks_cancel({ id: item.id });
+      }
+    }
     const { profile } = await runtime.handlers.agent_profile_save({
       name: 'Auditor', instructions: 'SOLO_AUDITOR_PERSISTENTE: consulta Canvas y cita el comprobante', tools: null,
     });
