@@ -207,7 +207,12 @@ async function nativeToolContext(name) {
   const { createHash } = require('node:crypto');
   const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
   const context = { tool_version: hash({ policy: 1, spec: selected }) };
-  if (WEB[name] && selected.gated) return Object.assign(context, await require('./agent-browser').approvalContext());
+  if (WEB[name] && selected.gated) {
+    const policy = require('./agent-browser-policy');
+    const browserContext = await require('./agent-browser').approvalContext();
+    const domain = policy.hostOf(browserContext.page_url);
+    return Object.assign(context, browserContext, { domain, policy_blocked: policy.isBlocked(domain) });
+  }
   if (CLOUD[name]) return Object.assign(context, await CLOUD[name].context(name));
   if (selected.module === 'espacios') {
     Object.assign(context, await require('./agent-renderer-tools').runRendererTool('espacios_context'));

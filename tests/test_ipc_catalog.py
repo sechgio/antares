@@ -56,6 +56,25 @@ def test_agent_model_selection_is_a_renderer_command_not_an_agent_tool():
     assert "agent_session_model_set" not in ORCHESTRATABLE_METHODS
 
 
+def test_agent_approve_accepts_optional_remember_for_always_allow():
+    import jsonschema
+
+    entry = _catalog()["methods"]["agent_approve"]
+    assert entry["handler"] == "native:agent"
+    schema = entry["inputSchema"]
+    assert schema["required"] == ["approval_id"]
+    assert schema["properties"]["remember"] == {"type": "boolean"}
+    assert schema["properties"]["grant_app"] == {"type": "boolean"}
+    jsonschema.validate({"approval_id": "ap-1"}, schema)
+    jsonschema.validate({"approval_id": "ap-1", "remember": True}, schema)
+    jsonschema.validate({"approval_id": "ap-1", "grant_app": True}, schema)
+    for field in ("remember", "grant_app"):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({"approval_id": "ap-1", field: "true"}, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({}, schema)
+
+
 def test_agent_permission_selection_is_a_renderer_command_not_an_agent_tool():
     from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 

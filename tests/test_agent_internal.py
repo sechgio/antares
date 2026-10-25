@@ -63,10 +63,19 @@ def test_subagent_uses_the_durable_runtime_route(store, monkeypatch, legacy):
     assert routes == [("selected-provider", "selected-model")]
 
 
-def test_subagent_reads_local_skills_without_gaining_effect_tools(store, monkeypatch):
-    skill = store.base_dir / "skills/pdf-review/SKILL.md"
+@pytest.mark.parametrize("profile_scoped", [False, True])
+def test_subagent_reads_local_skills_without_gaining_effect_tools(store, monkeypatch, profile_scoped):
+    home = store.base_dir / "configured-skills"
+    monkeypatch.setenv("SKILLS_HOME", str(home))
+    monkeypatch.delenv("ORBS_SHARED_HOME", raising=False)
+    skill = (home / "reviewer" if profile_scoped else store.base_dir / "skills") / "pdf-review/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("---\nname: pdf-review\ndescription: Revisa PDFs\nallowed-tools: shell_run\n---\nRevisa cada firma.", encoding="utf-8")
+    if profile_scoped:
+        for scope in ("_shared", "coordinator"):
+            other = home / scope / "pdf-review/SKILL.md"
+            other.parent.mkdir(parents=True)
+            other.write_text("---\nname: pdf-review\ndescription: Revisa PDFs\n---\nInstrucciones de otro origen", encoding="utf-8")
     calls = []
 
     def chat(provider, model, messages, **kwargs):
@@ -78,6 +87,7 @@ def test_subagent_reads_local_skills_without_gaining_effect_tools(store, monkeyp
             return {"calls": [{"id": "list", "name": "skills_list", "params": {"query": "PDF"}}]}
         result = json.loads(messages[-1]["content"])
         if len(calls) == 2:
+            assert [entry["location"] for entry in result["skills"]] == [str(skill)]
             return {"calls": [{"id": "read", "name": "skills_read", "params": {"skill_id": result["skills"][0]["id"]}}]}
         if len(calls) == 3:
             assert "Revisa cada firma" in result["content"]
@@ -88,12 +98,49 @@ def test_subagent_reads_local_skills_without_gaining_effect_tools(store, monkeyp
     monkeypatch.setattr(agent_internal._agent_chat, "chat", chat)
     monkeypatch.setattr(agent, "get_agent_runner", lambda: agent.AgentRunner(store, lambda _: None))
     _dispatch(session_id="durable-skills", call_id="skills-delegation", name="subagent_run", params={"task": "Revisa PDFs con skills"},
-              context={"subagent": {"name": "Revisor", "provider": "selected", "model": "model", "tools": None,
+              context={"profile_id": "coordinator", "subagent": {"id": "reviewer", "name": "Revisor", "provider": "selected", "model": "model", "tools": None,
                                     "enabled": ["skills_list", "skills_read"]}})
     receipt = json.loads(_wait_result("skills-delegation", session_id="durable-skills")["result"])
     assert receipt["status"] == "done" and len(calls) == 4
     assert [(step["name"], step["status"]) for step in receipt["steps"]] == [
         ("skills_list", "done"), ("skills_read", "done"), ("shell_run", "failed")]
+
+
+@pytest.mark.parametrize("profile_id", [None, "reader", "writer"])
+def test_private_dispatch_scopes_skills_by_profile_across_sessions(store, monkeypatch, profile_id):
+    home = store.base_dir / "configured-skills"
+    monkeypatch.setenv("SKILLS_HOME", str(home))
+    monkeypatch.delenv("ORBS_SHARED_HOME", raising=False)
+    for scope in ("_shared", "reader", "writer"):
+        skill = home / scope / "pdf-review/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(f"---\nname: pdf-review\ndescription: Revisa PDFs\n---\nOrigen: {scope}", encoding="utf-8")
+    monkeypatch.setattr(agent, "get_agent_runner", lambda: agent.AgentRunner(store, lambda _: None))
+    found_ids = []
+    for session_id in ("first-chat", "second-chat"):
+        context = {"profile_id": profile_id}
+        _dispatch(session_id=session_id, call_id="list", name="skills_list",
+                  params={"profile_id": "writer", "agent_id": "writer"}, context=context)
+        catalog = json.loads(_wait_result("list", session_id=session_id)["result"])
+        assert [entry["location"] for entry in catalog["skills"]] == [str(home / (profile_id or "_shared") / "pdf-review/SKILL.md")]
+        skill_id = catalog["skills"][0]["id"]
+        found_ids.append(skill_id)
+        _dispatch(session_id=session_id, call_id="read", name="skills_read", params={"skill_id": skill_id}, context=context)
+        page = json.loads(_wait_result("read", session_id=session_id)["result"])
+        assert f"Origen: {profile_id or '_shared'}" in page["content"]
+        assert store.grants_for(session_id) == {}
+    assert found_ids[0] == found_ids[1]
+
+
+@pytest.mark.parametrize("profile_id", [None, "reader"])
+def test_private_dispatch_transports_actor_profile_independently_of_tool(store, monkeypatch, profile_id):
+    runner = agent.AgentRunner(store, lambda _: None)
+    monkeypatch.setattr(runner, "_execute", lambda call, token=None: json.dumps({"profile_id": call.get("profile_id")}))
+    monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)
+    _dispatch(session_id="actor-context", call_id="drafts", name="drafts_list",
+              params={"profile_id": "writer"}, context={"profile_id": profile_id})
+    result = json.loads(_wait_result("drafts", session_id="actor-context")["result"])
+    assert result["profile_id"] == profile_id
 
 
 def test_tools_list_projects_backend_and_mcp_kinds(monkeypatch):

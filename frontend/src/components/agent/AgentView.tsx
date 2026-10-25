@@ -752,12 +752,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
-  const decide = async (id: string, ok: boolean, opts?: { grantApp?: boolean }) => {
+  const decide = async (id: string, ok: boolean, opts?: Parameters<typeof agentApi.agentApprove>[1]) => {
     if (decisionRef.current) return;
     decisionRef.current = id;
     setDeciding({ id, approved: ok });
     try {
-      if (ok) await agentApi.agentApprove(id, opts?.grantApp === true);
+      if (ok) await agentApi.agentApprove(id, opts);
       else await agentApi.agentDeny(id);
       await loadMessages(sessionId);
     } catch (err) {
