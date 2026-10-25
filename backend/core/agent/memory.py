@@ -15,7 +15,6 @@ from backend.utils.atomic_write import atomic_write_json
 if TYPE_CHECKING:
     from backend.core.agent.agent import AgentStore
 
-KINDS = ("preference", "fact", "procedure")
 LABELS = {"preference": "Preferencia", "fact": "Hecho", "procedure": "Procedimiento"}
 MAX_ITEMS = 300
 MAX_TITLE = 120

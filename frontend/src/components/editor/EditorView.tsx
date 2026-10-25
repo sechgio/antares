@@ -487,5 +487,3 @@ export function EditorView() {
     </main>
   );
 }
-
-export default EditorView;
