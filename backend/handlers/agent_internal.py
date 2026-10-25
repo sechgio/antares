@@ -7,7 +7,16 @@ from pathlib import Path
 
 from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
-from backend.core.agent import agent_tools, artifacts, canvas_edit, computer_files, documents, drafts, resource_grants
+from backend.core.agent import (
+    agent_tools,
+    artifacts,
+    canvas_edit,
+    computer_files,
+    computer_jobs,
+    documents,
+    drafts,
+    resource_grants,
+)
 from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
 from backend.core.agent import subagent as _subagent
@@ -222,6 +231,34 @@ def _grants_add(params: JsonObject) -> JsonObject:
     if records:
         _store().add_grants(session_id, records)
     return {"granted": granted, "rejected": rejected}
+
+
+@with_locale
+@validate_params("session_id", "path")
+def _path_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_files.stat_path(params["path"], store.grants_for(session_id), store.drafts_dir(session_id))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id", "job_id")
+def _shell_job_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_jobs.status({"job_id": params["job_id"]}, store.drafts_dir(session_id), session_id)
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id")
+def _shell_jobs_cancel_session(params: JsonObject) -> JsonObject:
+    return {"cancelled": computer_jobs.cancel_session(str(params["session_id"]))}
 
 
 @with_locale
@@ -598,6 +635,9 @@ HANDLERS = {
     "agent_internal_dispatch_finish": _dispatch_finish,
     "agent_internal_grants_add": _grants_add,
     "agent_internal_grants_revoke": _grants_revoke,
+    "agent_internal_path_status": _path_status,
+    "agent_internal_shell_job_status": _shell_job_status,
+    "agent_internal_shell_jobs_cancel_session": _shell_jobs_cancel_session,
     "agent_internal_mentions": _mentions,
     "agent_internal_document_plan": _document_plan,
     "agent_canvas_fill": canvas_edit.fill_fields,

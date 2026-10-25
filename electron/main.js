@@ -78,7 +78,8 @@ async function _notifyAgentActivity() {
       _trayStates.set(item.id, item.status);
       if (previous === item.status || win?.isVisible() || !Notification.isSupported()) continue;
       const needsInput = item.status === 'waiting_input' || item.status === 'waiting_approval';
-      const ended = ['running', 'waiting_input', 'waiting_approval'].includes(previous) && ['completed', 'failed', 'uncertain'].includes(item.status);
+      const ended = ['running', 'waiting_input', 'waiting_approval', 'waiting_event'].includes(previous)
+        && ['completed', 'failed', 'uncertain'].includes(item.status);
       const needsReview = item.status === 'uncertain';
       if (!needsInput && !ended && !needsReview) continue;
       const body = item.status === 'waiting_approval' ? 'Necesita tu aprobación' : item.status === 'waiting_input' ? 'Necesita datos para continuar'

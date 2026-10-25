@@ -133,6 +133,7 @@ async function main() {
     const enabled = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools.filter((tool) => tool.enabled);
     assert.ok(enabled.some((tool) => tool.name === 'task_schedule'), 'las conversaciones existentes pueden cargar programación');
     assert.ok(enabled.some((tool) => tool.name === 'agent_delegate'), 'las conversaciones existentes pueden cargar delegación');
+    assert.ok(enabled.some((tool) => tool.name === 'wait_event'), 'las conversaciones existentes pueden cargar esperas');
     await require('../electron/agent-tasks').stop();
     const respond = (context) => {
       const source = JSON.stringify(context.messages);

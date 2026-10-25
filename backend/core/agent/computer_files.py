@@ -175,6 +175,16 @@ def resolve(value: object, grants: dict[str, JsonObject], root: Path, *, write: 
     raise ValueError("La ruta no está autorizada; adjunta el archivo o la carpeta en el mensaje")
 
 
+def stat_path(value: object, grants: dict[str, JsonObject], root: Path) -> JsonObject:
+    root.mkdir(parents=True, exist_ok=True)
+    path = resolve(value, grants, root)
+    if not path.exists():
+        return {"path": str(path), "exists": False}
+    stat = path.stat()
+    return {"path": str(path), "exists": True, "type": "folder" if path.is_dir() else "file",
+            "size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "dev": stat.st_dev, "ino": stat.st_ino}
+
+
 def _entry(path: Path) -> JsonObject:
     stat = path.stat()
     return {"name": path.name, "type": "folder" if path.is_dir() else "file", "size": stat.st_size,

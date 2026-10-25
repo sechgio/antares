@@ -44,6 +44,7 @@ def replay_safe(method: str) -> bool:
     return method in readonly_methods() and (
         is_idempotent(method) or method in {
             "fs_list", "fs_read", "fs_search", "skills_list", "skills_read", "memory_search", "mcp_status", "shell_output",
+            "shell_job_status",
         }
     )
 
