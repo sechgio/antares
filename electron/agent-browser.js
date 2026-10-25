@@ -29,11 +29,26 @@ const TOOLS = {
   web_open: ['Abrir una página web en el navegador del agente', {
     type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) o búsqueda' } }, required: ['url'],
   }, false],
+  web_tab: ['Gestionar las pestañas del navegador del agente', {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['list', 'open', 'select', 'close'], description: 'Listar, abrir, seleccionar o cerrar una pestaña' },
+      url: { type: 'string', description: 'Dirección http(s) o búsqueda, para «open»' },
+      id: { type: 'string', description: 'Identificador de la pestaña, para «select» y «close»' },
+    },
+    required: ['action'],
+  }, false],
   web_read: ['Leer el texto y los elementos interactivos de la página actual', {
     type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
   }, false],
-  web_screenshot: ['Capturar la página actual del navegador del agente', { type: 'object', properties: {} }, false],
+  web_screenshot: ['Capturar la página actual del navegador del agente', {
+    type: 'object',
+    properties: { full_page: { type: 'boolean', description: 'Capturar toda la página, incluido lo que no se ve' } },
+  }, false],
   web_back: ['Volver a la página anterior', { type: 'object', properties: {} }, false],
+  web_forward: ['Avanzar a la página siguiente', { type: 'object', properties: {} }, false],
+  web_reload: ['Recargar la página actual', { type: 'object', properties: {} }, false],
+  web_handover: ['Ceder el control manual del navegador al usuario hasta que lo devuelva', { type: 'object', properties: {} }, false],
   web_text: ['Leer el texto completo de la página actual, sin la lista de elementos', {
     type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
   }, false],
@@ -52,22 +67,35 @@ const TOOLS = {
   web_key: ['Pulsar teclas en la página (p. ej. «enter», «ctrl+a»)', {
     type: 'object', properties: { keys: { type: 'string' } }, required: ['keys'],
   }, true],
+  web_download: ['Descargar un archivo de la web a los borradores de la conversación', {
+    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) del archivo' } }, required: ['url'],
+  }, true],
+  web_upload: ['Subir un archivo autorizado de esta conversación a un campo de la página', {
+    type: 'object',
+    properties: {
+      ref: REF,
+      path: { type: 'string', description: 'Ruta del archivo autorizado en esta conversación' },
+    },
+    required: ['ref', 'path'],
+  }, true],
 };
 
 const HOST_SIZE = { width: 1280, height: 860 };
 const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
 const USER_BUSY_ERROR = 'El usuario está usando el navegador en este momento; espera unos segundos antes de volver a actuar en la página';
 const USER_INPUT_GRACE_MS = 5_000;
+const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 
 let host = null;
-let view = null;
 let docked = null;
 let userControl = false;
 let lastUserInputAt = 0;
 const pendingMouseInputs = new Set();
-let consoleLog = [];
-const netLog = new Map();
 let sessionReady = false;
+let downloadSlot = null;
+const tabs = new Map();
+let activeTabId = null;
+let tabSeq = 0;
 
 function isWeb(url) {
   try {
@@ -98,12 +126,61 @@ function prepareSession(electron) {
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
+  // Toda descarga se cancela salvo que web_download la haya pedido: el
+  // navegador del agente nunca escribe en el disco por decisión de una página.
   ses.on('will-download', (event, item) => {
-    event.preventDefault();
-    item.cancel();
+    const slot = downloadSlot;
+    if (!slot || item.getURLChain()[0] !== slot.url) { event.preventDefault(); item.cancel(); return; }
+    downloadSlot = null;
+    const name = downloadName(item.getFilename());
+    const target = path.join(slot.dir, `${require('node:crypto').randomUUID().slice(0, 8)}-${name}`);
+    item.setSavePath(target);
+    const tooLarge = () => Math.max(item.getTotalBytes(), item.getReceivedBytes()) > MAX_DOWNLOAD_BYTES;
+    item.on('updated', () => { if (tooLarge()) item.cancel(); });
+    item.once('done', (_event, state) => {
+      const completed = state === 'completed' && !tooLarge();
+      slot.settle(completed ? null : new Error(tooLarge()
+        ? `El archivo excede el límite de ${Math.round(MAX_DOWNLOAD_BYTES / (1024 * 1024))} MB`
+        : 'La descarga no se completó'),
+      completed ? { saved_path: target, filename: name, bytes: item.getReceivedBytes() } : null);
+    });
   });
   sessionReady = true;
   return ses;
+}
+
+function downloadName(value) {
+  const name = String(value || '').trim().slice(0, 120).replace(/[<>:"/\\|?*\x00]/g, '_');
+  return name && name !== '.' && name !== '..' ? name : 'archivo';
+}
+
+function startDownload(url, drafts) {
+  if (!drafts) throw new Error('Los borradores requieren una conversación');
+  if (!isWeb(url)) throw new Error('Indica la dirección http(s) del archivo');
+  const policy = require('./agent-browser-policy');
+  if (policy.isBlocked(policy.hostOf(url))) {
+    throw new Error('Dominio bloqueado por la política del navegador del agente');
+  }
+  const requested = new URL(url);
+  requested.hash = '';
+  const slot = { dir: drafts, url: requested.href };
+  slot.wait = new Promise((resolve, reject) => {
+    slot.settle = (error, saved) => {
+      clearTimeout(slot.timeout);
+      if (downloadSlot === slot) downloadSlot = null;
+      error ? reject(error) : resolve(saved);
+    };
+  });
+  downloadSlot = slot;
+  slot.timeout = setTimeout(() => {
+    if (downloadSlot === slot) slot.settle(new Error('La descarga no comenzó; comprueba la dirección'), null);
+  }, LOAD_TIMEOUT_MS);
+  try {
+    require('electron').session.fromPartition(PARTITION).downloadURL(slot.url);
+  } catch (error) {
+    slot.settle(error, null);
+  }
+  return slot.wait;
 }
 
 function alive(item) {
@@ -130,8 +207,18 @@ function hostWindow(electron) {
   return host;
 }
 
+function tabState(tab) {
+  const contents = tab.view.webContents;
+  return { id: tab.id, url: contents.getURL(), title: contents.getTitle(), active: tab.id === activeTabId };
+}
+
+function tabsState() {
+  return [...tabs.values()].filter((tab) => alive(tab.view && tab.view.webContents)).map(tabState);
+}
+
 function state() {
-  const contents = alive(view && view.webContents) ? view.webContents : null;
+  const tab = activeTab();
+  const contents = tab ? tab.view.webContents : null;
   return {
     open: !!contents,
     url: contents ? contents.getURL() : '',
@@ -141,6 +228,7 @@ function state() {
     can_go_forward: contents ? contents.navigationHistory.canGoForward() : false,
     docked: !!docked,
     user_control: userControl,
+    tabs: tabsState(),
   };
 }
 
@@ -151,11 +239,20 @@ function notify(reason) {
   } catch { }
 }
 
+function activeTab() {
+  const tab = tabs.get(activeTabId);
+  return tab && alive(tab.view && tab.view.webContents) ? tab : null;
+}
+
 function browser() {
-  if (view && alive(view.webContents)) return view;
-  const electron = require('electron');
+  const existing = activeTab();
+  if (existing) return existing.view;
+  return createTab(require('electron')).view;
+}
+
+function createTab(electron) {
   const ses = prepareSession(electron);
-  view = new electron.WebContentsView({
+  const view = new electron.WebContentsView({
     webPreferences: {
       session: ses,
       sandbox: true,
@@ -166,9 +263,10 @@ function browser() {
       backgroundThrottling: false,
     },
   });
+  const tab = { id: String(tabSeq += 1), view, consoleLog: [], netLog: new Map() };
+  tabs.set(tab.id, tab);
+  activeTabId = tab.id;
   const contents = view.webContents;
-  consoleLog = [];
-  netLog.clear();
   contents.setWindowOpenHandler(({ url }) => {
     if (isWeb(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
@@ -192,44 +290,40 @@ function browser() {
   contents.on('before-mouse-event', userInput);
   contents.on('input-event', (event, input) => { if (input.type === 'mouseWheel') userInput(event, input); });
   contents.on('console-message', ({ level, message }) => {
-    consoleLog.push({ level: String(level || 'info'), text: String(message || '') });
-    if (consoleLog.length > CONSOLE_KEEP) consoleLog.shift();
+    tab.consoleLog.push({ level: String(level || 'info'), text: String(message || '') });
+    if (tab.consoleLog.length > CONSOLE_KEEP) tab.consoleLog.shift();
   });
   // El debugger se adjunta al crear la página para que Network capture las
   // peticiones desde la primera carga, no solo desde la primera interacción.
-  contents.debugger.on('message', (_event, method, params) => noteNetwork(method, params));
+  contents.debugger.on('message', (_event, method, params) => noteNetwork(tab, method, params));
   ensureDebugger(contents).catch(() => { });
-  contents.on('did-navigate', () => fitPage());
+  contents.on('did-navigate', () => fitPage(tab));
   for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
     contents.on(event, () => notify('page'));
   }
-  contents.once('destroyed', () => {
-    view = null;
-    docked = null;
-    notify('closed');
-  });
+  contents.once('destroyed', () => releaseTab(tab));
   mount(electron);
-  return view;
+  return tab;
 }
 
 // Sin cabeceras, cookies ni cuerpos: el registro solo describe el tráfico.
-function recordNet(id, entry) {
-  netLog.set(id, entry);
-  if (netLog.size > NET_KEEP) netLog.delete(netLog.keys().next().value);
+function recordNet(tab, id, entry) {
+  tab.netLog.set(id, entry);
+  if (tab.netLog.size > NET_KEEP) tab.netLog.delete(tab.netLog.keys().next().value);
 }
 
-function noteNetwork(method, params = {}) {
+function noteNetwork(tab, method, params = {}) {
   if (method === 'Network.requestWillBeSent') {
     const request = params.request || {};
-    recordNet(params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null });
+    recordNet(tab, params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null });
   } else if (method === 'Network.responseReceived') {
-    const existing = netLog.get(params.requestId);
+    const existing = tab.netLog.get(params.requestId);
     const response = params.response || {};
     const entry = existing || { method: '', url: String(response.url || ''), type: params.type || '', status: null };
     entry.status = response.status ?? entry.status;
-    if (!existing) recordNet(params.requestId, entry);
+    if (!existing) recordNet(tab, params.requestId, entry);
   } else if (method === 'Network.loadingFailed') {
-    const entry = netLog.get(params.requestId);
+    const entry = tab.netLog.get(params.requestId);
     if (entry) entry.error = params.errorText || 'cancelada';
   }
 }
@@ -243,34 +337,64 @@ function clampBounds(bounds, zoom, size) {
   return { x, y, width, height };
 }
 
+// Coloca cada página en su sitio: la activa se monta en el panel de la ventana
+// principal cuando está acoplado y las de fondo permanecen en la ventana
+// anfitriona, donde siguen cargando fuera de pantalla; mover un view conserva
+// su página, su historial y su sesión. La activa se añade la última para que
+// quede encima.
 function mount(electron) {
-  if (!view) return;
+  const active = activeTab();
+  if (!active) return;
   const main = require('./window-manager').getMainWindow();
-  const target = docked && alive(main) ? main : hostWindow(electron);
-  const parent = target === main ? host : main;
-  if (alive(parent)) parent.contentView.removeChildView(view);
-  target.contentView.addChildView(view);
-  if (target === main) {
-    const [width, height] = main.getContentSize();
-    view.setBounds(clampBounds(docked, main.webContents.getZoomFactor(), { width, height }));
-  } else {
-    view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
+  const dockedMain = !!docked && alive(main);
+  const ordered = [...tabs.values()].filter((tab) => alive(tab.view && tab.view.webContents))
+    .sort((a, b) => (a === active ? 1 : b === active ? -1 : 0));
+  for (const tab of ordered) {
+    const view = tab.view;
+    if (tab === active && dockedMain) {
+      if (alive(host)) host.contentView.removeChildView(view);
+      main.contentView.addChildView(view);
+      const [width, height] = main.getContentSize();
+      view.setBounds(clampBounds(docked, main.webContents.getZoomFactor(), { width, height }));
+    } else {
+      if (alive(main)) main.contentView.removeChildView(view);
+      hostWindow(electron).contentView.addChildView(view);
+      view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
+    }
   }
   fitPage();
 }
 
-function fitPage() {
-  if (!view || !alive(view.webContents)) return;
-  const { width } = view.getBounds();
+// Retira una pestaña del registro; si era la activa, activa otra; al
+// desaparecer la última el navegador queda cerrado y sin acoplar.
+function releaseTab(tab) {
+  if (!tabs.has(tab.id)) return;
+  tabs.delete(tab.id);
+  if (activeTabId === tab.id) {
+    const next = [...tabs.values()].find((candidate) => alive(candidate.view && candidate.view.webContents));
+    activeTabId = next ? next.id : null;
+    if (next) mount(require('electron'));
+  }
+  if (!tabs.size) docked = null;
+  notify(tabs.size ? 'page' : 'closed');
+}
+
+// La página siempre se maqueta con el ancho de escritorio de la ventana
+// anfitriona y en un panel más estrecho se muestra reducida: el agente ve la
+// misma página, con los mismos elementos, sea cual sea el tamaño del panel.
+function fitPage(tab = null) {
+  const target = tab || activeTab();
+  if (!target || !alive(target.view && target.view.webContents)) return;
+  const { width } = target.view.getBounds();
   const zoom = width > 0 && width < HOST_SIZE.width ? width / HOST_SIZE.width : 1;
-  if (Math.abs(view.webContents.getZoomFactor() - zoom) > 0.001) view.webContents.setZoomFactor(zoom);
+  if (Math.abs(target.view.webContents.getZoomFactor() - zoom) > 0.001) target.view.webContents.setZoomFactor(zoom);
 }
 
 function dock(bounds) {
   const valid = bounds && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(Number(bounds[key])))
     && Number(bounds.width) > 0 && Number(bounds.height) > 0;
   docked = valid ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null;
-  if (view) mount(require('electron'));
+  if (tabs.size) mount(require('electron'));
   return state();
 }
 
@@ -278,6 +402,43 @@ function setUserControl(value) {
   userControl = !!value;
   notify('control');
   return state();
+}
+
+async function tabAction(params) {
+  const action = String(params.action || '');
+  if (action === 'list') return fit({ tabs: tabsState(), active: activeTabId });
+  if (action === 'open') {
+    const policy = require('./agent-browser-policy');
+    const target = normalizeUrl(params.url);
+    if (policy.isBlocked(policy.hostOf(target))) {
+      throw new Error('Dominio bloqueado por la política del navegador del agente');
+    }
+    const tab = createTab(require('electron'));
+    notify('agent-open');
+    await load(tab.view.webContents, target);
+    return { ...(await snapshot(tab.view.webContents)), tab: tab.id };
+  }
+  if (action !== 'select' && action !== 'close') throw new Error(`Acción de pestaña no válida: ${action}`);
+  const id = String(params.id || '').replace(/[^0-9]/g, '');
+  const tab = tabs.get(id);
+  if (!tab || !alive(tab.view && tab.view.webContents)) throw new Error('No existe esa pestaña; usa web_tab con «list» para verlas');
+  if (action === 'select') {
+    if (id !== activeTabId) {
+      activeTabId = id;
+      mount(require('electron'));
+      notify('page');
+    }
+    return { selected: id, ...state() };
+  }
+  if (action === 'close') {
+    if (tabs.size === 1) {
+      close();
+      return { closed: id, ...state() };
+    }
+    if (alive(tab.view && tab.view.webContents)) tab.view.webContents.close();
+    releaseTab(tab);
+    return { closed: id, ...state() };
+  }
 }
 
 async function navigate(action, url) {
@@ -376,8 +537,9 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
 }
 
 function current() {
-  if (!view || !alive(view.webContents)) throw new Error('El navegador del agente no tiene ninguna página abierta; usa web_open');
-  return view.webContents;
+  const tab = activeTab();
+  if (!tab) throw new Error('El navegador del agente no tiene ninguna página abierta; usa web_open');
+  return tab.view.webContents;
 }
 
 const PAGE_TEXT = `(() => ({
@@ -437,6 +599,7 @@ async function ensureDebugger(contents) {
   contents.debugger.attach('1.3');
   await contents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
   await contents.debugger.sendCommand('Network.enable', {});
+  await contents.debugger.sendCommand('Page.enable', {});
   return true;
 }
 
@@ -486,9 +649,17 @@ async function pressCombo(input, combo) {
   await send(input, 'Input.dispatchKeyEvent', { type: 'keyUp', ...event });
 }
 
-async function screenshot(contents, dir) {
+async function screenshot(contents, dir, fullPage = false) {
   if (!dir) throw new Error('Las capturas requieren una conversación');
-  let image = await contents.capturePage();
+  let image;
+  if (fullPage) {
+    await ensureDebugger(contents);
+    const shot = await contents.debugger.sendCommand('Page.captureScreenshot',
+      { format: 'jpeg', quality: 70, captureBeyondViewport: true });
+    image = require('electron').nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64'));
+  } else {
+    image = await contents.capturePage();
+  }
   const { width } = image.getSize();
   if (width > SHOT_WIDTH) image = image.resize({ width: SHOT_WIDTH, quality: 'good' });
   await fs.promises.mkdir(dir, { recursive: true });
@@ -506,7 +677,7 @@ async function observeAfter(contents) {
   return snapshot(contents, 0, RESULT_BUDGET - 400);
 }
 
-async function run(name, params = {}, { dir, approvedContext } = {}) {
+async function run(name, params = {}, { dir, drafts, approvedContext } = {}) {
   if (userControl) throw new Error(USER_CONTROL_ERROR);
   if (!['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network'].includes(name)
     && Date.now() - lastUserInputAt < USER_INPUT_GRACE_MS) throw new Error(USER_BUSY_ERROR);
@@ -521,23 +692,39 @@ async function run(name, params = {}, { dir, approvedContext } = {}) {
     await load(contents, target);
     return snapshot(contents);
   }
+  if (name === 'web_handover') {
+    setUserControl(true);
+    return { handed_over: true, ...state() };
+  }
+  if (name === 'web_download') return startDownload(String(params.url || '').trim(), drafts);
+  if (name === 'web_tab') return tabAction(params);
   const contents = current();
+  const tab = activeTab();
   if (name === 'web_read') return snapshot(contents, params.offset);
-  if (name === 'web_screenshot') return screenshot(contents, dir);
+  if (name === 'web_screenshot') return screenshot(contents, dir, params.full_page === true);
   if (name === 'web_back') {
     if (!contents.navigationHistory.canGoBack()) throw new Error('No hay una página anterior');
     contents.navigationHistory.goBack();
     return observeAfter(contents);
   }
+  if (name === 'web_forward') {
+    if (!contents.navigationHistory.canGoForward()) throw new Error('No hay una página siguiente');
+    contents.navigationHistory.goForward();
+    return observeAfter(contents);
+  }
+  if (name === 'web_reload') {
+    contents.reload();
+    return observeAfter(contents);
+  }
   if (name === 'web_text') return pageText(contents, params.offset);
   if (name === 'web_console') {
-    return fit({ url: contents.getURL(), messages: consoleLog.map((item) => `[${item.level}] ${item.text}`) });
+    return fit({ url: contents.getURL(), messages: tab.consoleLog.map((item) => `[${item.level}] ${item.text}`) });
   }
   if (name === 'web_network') {
     await ensureDebugger(contents);
     return fit({
       url: contents.getURL(),
-      requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
+      requests: [...tab.netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
     });
   }
   const input = { contents, expected: approvedContext || await approvalContext(contents), sent: false };
@@ -569,15 +756,45 @@ async function run(name, params = {}, { dir, approvedContext } = {}) {
     }
     return { pressed: keys, page: await observeAfter(contents) };
   }
+  if (name === 'web_upload') return uploadFile(input, params.ref, String(params.path || '').trim());
   throw new Error(`Herramienta nativa no disponible: ${name}`);
 }
 
+// El archivo ya pasó la verificación de grants del backend; aquí solo se
+// comprueba que el elemento siga siendo un campo de archivo de la página
+// aprobada y se le asigna el archivo por CDP, como hace Playwright.
+async function uploadFile(input, ref, filePath) {
+  const id = String(ref || '').replace(/[^0-9]/g, '');
+  if (!id) throw new Error('Indica la referencia del campo (web_read)');
+  if (!filePath) throw new Error('Indica la ruta del archivo');
+  const field = await input.contents.executeJavaScript(`(() => {
+    const el = document.querySelector('[data-antares-ref="${id}"]');
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    return { tag: el.tagName.toLowerCase(), type: el.type || '' };
+  })()`, true);
+  if (!field) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
+  if (field.tag !== 'input' || field.type !== 'file') throw new Error('El elemento no es un campo de archivo');
+  await delay(120);
+  await assertInteraction(input);
+  await ensureDebugger(input.contents);
+  const doc = await input.contents.debugger.sendCommand('DOM.getDocument', {});
+  const node = await input.contents.debugger.sendCommand('DOM.querySelector',
+    { nodeId: doc.root.nodeId, selector: `[data-antares-ref="${id}"]` });
+  if (!node.nodeId) throw new Error('El campo de archivo ya no está en la página; vuelve a leerla con web_read');
+  await input.contents.debugger.sendCommand('DOM.setFileInputFiles', { files: [filePath], nodeId: node.nodeId });
+  return { uploaded: filePath, ref: id, page: await observeAfter(input.contents) };
+}
+
 function close() {
-  if (view && alive(view.webContents)) view.webContents.close();
+  for (const tab of [...tabs.values()]) {
+    if (alive(tab.view && tab.view.webContents)) tab.view.webContents.close();
+  }
   if (alive(host)) host.destroy();
-  view = null;
   host = null;
   docked = null;
+  tabs.clear();
+  activeTabId = null;
 }
 
 module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds, siteUserAgent, approvalContext };

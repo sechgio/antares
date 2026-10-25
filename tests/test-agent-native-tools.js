@@ -29,12 +29,12 @@ assert(JSON.stringify(exportsSpecs.slice(0, 3).map((s) => s.module)) === JSON.st
   'cada exportación pertenece a su módulo');
 
 const web = specs.filter((s) => s.name.startsWith('web_'));
-assert(web.length === 10 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
-assert(web.filter((s) => s.gated).map((s) => s.name).sort().join() === 'web_click,web_key,web_type',
-  'leer páginas es automático; hacer clic, escribir o pulsar teclas requiere aprobación');
+assert(web.length === 16 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
+assert(web.filter((s) => s.gated).map((s) => s.name).sort().join() === 'web_click,web_download,web_key,web_type,web_upload',
+  'leer y navegar es automático; clic, escribir, teclas, descargar y subir requieren aprobación');
 assert(web.filter((s) => !s.gated).map((s) => s.name).sort().join()
-  === 'web_back,web_console,web_network,web_open,web_read,web_screenshot,web_text',
-  'texto, consola y red se leen sin aprobación');
+  === 'web_back,web_console,web_forward,web_handover,web_network,web_open,web_read,web_reload,web_screenshot,web_tab,web_text',
+  'texto, consola, red, captura, pestañas y navegación se usan sin aprobación');
 const browser = require('../electron/agent-browser');
 assert(browser.normalizeUrl('example.com/a') === 'https://example.com/a', 'un dominio sin esquema se abre por https');
 assert(browser.normalizeUrl('http://localhost:5173') === 'http://localhost:5173', 'una URL http se conserva');
@@ -67,6 +67,183 @@ for (const bad of ['', '..', 'sub/a.pdf', String.raw`C:\x\a.pdf`, 'a?.pdf']) {
 }
 
 async function exportTest() {
+  {
+    const { mkdtempSync, rmSync, readFileSync } = require('node:fs');
+    const { tmpdir } = require('node:os');
+    const { join } = require('node:path');
+    const { EventEmitter: Emitter } = require('node:events');
+    const commands = [];
+    let uploadField = { tag: 'input', type: 'file' };
+    let canGoForward = false;
+    let forwards = 0;
+    let reloads = 0;
+    const parent = { isDestroyed: () => false, on: () => {}, showInactive: () => {}, setIgnoreMouseEvents: () => {}, destroy: () => {},
+      contentView: { addChildView: () => {}, removeChildView: () => {} } };
+    const contents = Object.assign(new Emitter(), {
+      isDestroyed: () => false, getURL: () => 'https://files.example.com', getTitle: () => 'Archivos', isLoading: () => false,
+      getZoomFactor: () => 1, setZoomFactor: () => {}, setWindowOpenHandler: () => {}, loadURL: async () => {},
+      reload: () => { reloads += 1; },
+      navigationHistory: { canGoBack: () => false, canGoForward: () => canGoForward,
+        goForward: () => { forwards += 1; } },
+      close: () => contents.emit('destroyed'),
+      executeJavaScript: async (script) => {
+        if (script.includes('tagName') && script.includes('scrollIntoView')) return uploadField;
+        return { url: 'https://files.example.com', title: 'Archivos', text: 'Contenido', elements: [] };
+      },
+      executeJavaScriptInIsolatedWorld: async () => ({ url: 'https://files.example.com', time_origin: 3 }),
+      capturePage: async () => ({ getSize: () => ({ width: 1280, height: 800 }), toJPEG: () => Buffer.from('jpeg-viewport') }),
+      debugger: Object.assign(new Emitter(), {
+        isAttached: () => false, attach: () => {},
+        sendCommand: async (method, params) => {
+          commands.push([method, params]);
+          if (method === 'Page.captureScreenshot') return { data: Buffer.from('jpeg-completa').toString('base64') };
+          if (method === 'DOM.getDocument') return { root: { nodeId: 7 } };
+          if (method === 'DOM.querySelector') return { nodeId: params.selector.includes('"9"') ? 21 : 0 };
+          return {};
+        },
+      }),
+    });
+    let downloadHandler = null;
+    const downloads = [];
+    stubModule('electron/window-manager.js', { getMainWindow: () => null });
+    stubModule('electron', {
+      BrowserWindow: function () { return parent; },
+      WebContentsView: function () { return { webContents: contents, setBounds: () => {}, getBounds: () => ({ width: 1280 }) }; },
+      nativeImage: { createFromBuffer: () => ({ getSize: () => ({ width: 2000, height: 4000 }),
+        resize: () => ({ getSize: () => ({ width: 1280, height: 2560 }), toJPEG: () => Buffer.from('jpeg-1280') }),
+        toJPEG: () => Buffer.from('jpeg-full') }) },
+      session: { fromPartition: () => ({
+        setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {},
+        getUserAgent: () => 'Mozilla/5.0 Chrome/1 Electron/1', setUserAgent: () => {},
+        on: (event, handler) => { if (event === 'will-download') downloadHandler = handler; },
+        downloadURL: (url) => { downloads.push(url); },
+      }) },
+    });
+    const timers = installInertTimers();
+    try {
+      await browser.navigate('open', 'https://files.example.com');
+      assert(downloadHandler, 'la sesión del navegador registra el interceptor de descargas');
+      let forwardError = null;
+      try { await browser.run('web_forward', {}); } catch (error) { forwardError = error.message; }
+      assert(forwardError === 'No hay una página siguiente', 'web_forward avisa cuando no hay página siguiente');
+      canGoForward = true;
+      const forward = await browser.run('web_forward', {});
+      assert(forwards === 1 && forward.url === 'https://files.example.com' && forward.text === 'Contenido',
+        'web_forward avanza y devuelve la página nueva');
+      const reload = await browser.run('web_reload', {});
+      assert(reloads === 1 && reload.url === 'https://files.example.com', 'web_reload recarga la página actual');
+      const handover = await browser.run('web_handover', {});
+      assert(handover.handed_over === true && handover.user_control === true, 'web_handover cede el control con un resultado estructurado');
+      let blocked = null;
+      try { await browser.run('web_read', {}); } catch (error) { blocked = error.message; }
+      assert(blocked === browser.USER_CONTROL_ERROR, 'tras ceder el control el agente no puede actuar');
+      browser.setUserControl(false);
+      const shotDir = mkdtempSync(join(tmpdir(), 'antares-agent-shot-'));
+      try {
+        const viewport = await browser.run('web_screenshot', {}, { dir: shotDir });
+        assert(readFileSync(viewport.image.path, 'utf8') === 'jpeg-viewport', 'la captura del viewport sigue usando capturePage');
+        const full = await browser.run('web_screenshot', { full_page: true }, { dir: shotDir });
+        assert(full.width === 1280 && full.height === 2560 && readFileSync(full.image.path, 'utf8') === 'jpeg-1280',
+          'web_screenshot full_page captura la página completa vía CDP');
+        assert(commands.some(([method, params]) => method === 'Page.captureScreenshot' && params.captureBeyondViewport === true),
+          'la captura completa usa captureBeyondViewport');
+      } finally { rmSync(shotDir, { recursive: true, force: true }); }
+      const downloadRoot = mkdtempSync(join(tmpdir(), 'antares-agent-download-'));
+      try {
+        let policyError = null;
+        try { await browser.run('web_download', { url: 'https://bcp.pe/tarifas.pdf' }, { drafts: downloadRoot }); }
+        catch (error) { policyError = error.message; }
+        assert(policyError && policyError.includes('Dominio bloqueado'), 'web_download respeta la política de dominios');
+        let schemeError = null;
+        try { await browser.run('web_download', { url: 'ftp://files.example.com/a.zip' }, { drafts: downloadRoot }); }
+        catch (error) { schemeError = error.message; }
+        assert(schemeError === 'Indica la dirección http(s) del archivo', 'web_download solo acepta direcciones http(s)');
+        const pending = browser.run('web_download', { url: 'https://files.example.com/informe.pdf' }, { drafts: downloadRoot });
+        assert(JSON.stringify(downloads) === JSON.stringify(['https://files.example.com/informe.pdf']),
+          'web_download pide el archivo en la sesión aislada del navegador');
+        let doneHandler = null;
+        const item = {
+          cancelled: 0, saved: null,
+          getFilename: () => 'informe final?.pdf', setSavePath: (value) => { item.saved = value; },
+          getURLChain: () => ['https://files.example.com/informe.pdf'],
+          on: () => {}, once: (event, handler) => { doneHandler = handler; },
+          getTotalBytes: () => 4096, getReceivedBytes: () => 4096, cancel: () => { item.cancelled += 1; },
+        };
+        let unrequestedCancelled = false;
+        downloadHandler({ preventDefault: () => {} }, { ...item,
+          getURLChain: () => ['https://files.example.com/no-solicitado.pdf'],
+          cancel: () => { unrequestedCancelled = true; },
+        });
+        assert(unrequestedCancelled && item.saved === null,
+          'una descarga ajena no escribe ni consume la descarga autorizada pendiente');
+        let requestedCancelled = false;
+        downloadHandler({ preventDefault: () => { requestedCancelled = true; } }, item);
+        assert(!requestedCancelled, 'la descarga autorizada conserva el comportamiento nativo de Electron');
+        assert(item.saved && item.saved.startsWith(downloadRoot) && item.saved.endsWith('-informe final_.pdf'),
+          'la descarga pedida se guarda en los borradores con nombre saneado');
+        doneHandler({}, 'completed');
+        const saved = await pending;
+        assert(saved.filename === 'informe final_.pdf' && saved.bytes === 4096 && saved.saved_path === item.saved,
+          'web_download devuelve el archivo guardado en borradores');
+        const bigPending = browser.run('web_download', { url: 'https://files.example.com/grande.zip' }, { drafts: downloadRoot });
+        const bigItem = {
+          cancelled: false, updated: null,
+          getFilename: () => 'grande.zip', setSavePath: () => {},
+          getURLChain: () => [downloads.at(-1)],
+          on: (event, handler) => { bigItem.updated = handler; }, once: () => {},
+          getTotalBytes: () => 150 * 1024 * 1024, getReceivedBytes: () => 150 * 1024 * 1024,
+          cancel: () => { bigItem.cancelled = true; },
+        };
+        let bigDone = null;
+        bigItem.once = (event, handler) => { bigDone = handler; };
+        downloadHandler({ preventDefault: () => {} }, bigItem);
+        bigItem.updated({}, 'progressing');
+        assert(bigItem.cancelled, 'una descarga que excede el límite se cancela en cuanto se conoce su tamaño');
+        bigDone({}, 'interrupted');
+        let bigError = null;
+        try { await bigPending; } catch (error) { bigError = error.message; }
+        assert(bigError && bigError.includes('excede el límite'), 'web_download falla cuando el archivo excede el límite de tamaño');
+        bigItem.getTotalBytes = () => 0;
+        for (const state of ['interrupted', 'completed']) {
+          const unknownPending = browser.run('web_download', { url: 'https://files.example.com/stream' }, { drafts: downloadRoot });
+          bigItem.cancelled = false;
+          downloadHandler({ preventDefault: () => {} }, bigItem);
+          if (state === 'interrupted') {
+            bigItem.updated({}, 'progressing');
+            assert(bigItem.cancelled, 'los bytes recibidos limitan también las descargas sin Content-Length');
+          }
+          bigDone({}, state);
+          let unknownError = null;
+          try { await unknownPending; } catch (error) { unknownError = error.message; }
+          assert(unknownError && unknownError.includes('excede el límite'), `el tamaño desconocido no evita el límite al terminar ${state}`);
+        }
+        const stray = { cancelled: 0, cancel: () => { stray.cancelled += 1; } };
+        downloadHandler({ preventDefault: () => {} }, stray);
+        assert(stray.cancelled === 1, 'las descargas que no pidió el agente se cancelan como antes');
+      } finally { rmSync(downloadRoot, { recursive: true, force: true }); }
+      const approvedContext = await browser.approvalContext();
+      const uploaded = await browser.run('web_upload', { ref: '9', path: 'C:\\datos\\informe.pdf' }, { approvedContext });
+      assert(uploaded.uploaded === 'C:\\datos\\informe.pdf' && uploaded.ref === '9', 'web_upload asigna el archivo al campo de la página');
+      const setFiles = commands.find(([method]) => method === 'DOM.setFileInputFiles');
+      assert(setFiles && JSON.stringify(setFiles[1]) === JSON.stringify({ files: ['C:\\datos\\informe.pdf'], nodeId: 21 }),
+        'web_upload usa DOM.setFileInputFiles sobre el nodo del campo');
+      uploadField = null;
+      let missing = null;
+      try { await browser.run('web_upload', { ref: '9', path: 'C:\\datos\\informe.pdf' }, { approvedContext }); }
+      catch (error) { missing = error.message; }
+      assert(missing === 'El elemento ya no está en la página; vuelve a leerla con web_read', 'web_upload exige volver a leer la página si el campo desapareció');
+      uploadField = { tag: 'div', type: '' };
+      let notField = null;
+      try { await browser.run('web_upload', { ref: '9', path: 'C:\\datos\\informe.pdf' }, { approvedContext }); }
+      catch (error) { notField = error.message; }
+      assert(notField === 'El elemento no es un campo de archivo', 'web_upload rechaza elementos que no son campos de archivo');
+      uploadField = { tag: 'input', type: 'file' };
+      let noNode = null;
+      try { await browser.run('web_upload', { ref: '8', path: 'C:\\datos\\informe.pdf' }, { approvedContext }); }
+      catch (error) { noNode = error.message; }
+      assert(noNode === 'El campo de archivo ya no está en la página; vuelve a leerla con web_read', 'web_upload exige el nodo vivo en el DOM');
+    } finally { timers.restore(); browser.close(); }
+  }
   {
     const isolatedCalls = [];
     const inputCommands = [];
@@ -338,6 +515,102 @@ async function exportTest() {
     } finally { Date.now = now; }
     browser.close();
   }
+  {
+    const { EventEmitter: Emitter } = require('node:events');
+    const { mkdtempSync, rmSync } = require('node:fs');
+    const { tmpdir } = require('node:os');
+    const { join } = require('node:path');
+    const moves = [];
+    const pages = [];
+    let hostDestroyed = 0;
+    let pageSeq = 0;
+    const makeParent = (name) => ({
+      isDestroyed: () => false,
+      contentView: {
+        addChildView: (child) => moves.push([name, 'add', child]),
+        removeChildView: (child) => moves.push([name, 'remove', child]),
+      },
+    });
+    const main = { ...makeParent('main'), getContentSize: () => [1000, 700], webContents: { getZoomFactor: () => 1, send: () => {} } };
+    const host = { ...makeParent('host'), on: () => {}, showInactive: () => {}, setIgnoreMouseEvents: () => {},
+      destroy: () => { hostDestroyed += 1; } };
+    stubModule('electron/window-manager.js', { getMainWindow: () => main });
+    stubModule('electron', {
+      BrowserWindow: function () { return host; },
+      WebContentsView: function () {
+        const url = `https://tab-${pageSeq += 1}.example.com`;
+        const contents = Object.assign(new Emitter(), {
+          isDestroyed: () => false, getURL: () => url, getTitle: () => `Título ${url}`, isLoading: () => false,
+          getZoomFactor: () => 1, setZoomFactor: () => {}, setWindowOpenHandler: () => {}, loadURL: async () => {},
+          navigationHistory: { canGoBack: () => false, canGoForward: () => false }, close: () => contents.emit('destroyed'),
+          executeJavaScript: async () => ({ url, title: `Título ${url}`, text: `Texto de ${url}`, elements: [] }),
+          executeJavaScriptInIsolatedWorld: async () => ({ url, time_origin: 1 }),
+          debugger: Object.assign(new Emitter(), { isAttached: () => false, attach: () => {}, sendCommand: async () => ({}) }),
+        });
+        const page = { webContents: contents, setBounds: () => {}, getBounds: () => ({ width: 1280 }) };
+        pages.push(page);
+        return page;
+      },
+      session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, on: () => {},
+        getUserAgent: () => 'Mozilla/5.0 Chrome/1 Electron/1', setUserAgent: () => {} }) },
+    });
+    const realNow = Date.now;
+    Date.now = () => realNow() + 60_000;
+    const timers = installInertTimers();
+    try {
+      browser.dock({ x: 0, y: 0, width: 400, height: 500 });
+      await browser.navigate('open', 'https://tab-1.example.com');
+      const first = (await browser.run('web_tab', { action: 'list' })).tabs[0].id;
+      moves.length = 0;
+      const opened = await browser.run('web_tab', { action: 'open', url: 'https://tab-2.example.com' });
+      const second = opened.tab;
+      assert(second && second !== first && opened.text === 'Texto de https://tab-2.example.com',
+        'web_tab abre una pestaña nueva y devuelve su página');
+      let st = browser.state();
+      assert(st.tabs.length === 2 && st.tabs[0].id === first && st.tabs[0].active === false
+        && st.tabs[1].id === second && st.tabs[1].active === true, 'la pestaña nueva queda activa y listada con la original');
+      assert(moves[0]?.[0] === 'main' && moves[0]?.[2] === pages[0] && moves[1]?.[0] === 'host' && moves[1]?.[2] === pages[0]
+        && moves[3]?.[0] === 'main' && moves[3]?.[2] === pages[1],
+      'la pestaña de fondo queda en la anfitriona y la activa se añade la última, encima en el panel');
+      moves.length = 0;
+      const selected = await browser.run('web_tab', { action: 'select', id: first });
+      assert(selected.selected === first && selected.tabs[0].active === true && selected.tabs[1].active === false,
+        'web_tab selecciona otra pestaña');
+      assert(moves[1]?.[0] === 'host' && moves[1]?.[2] === pages[1] && moves[3]?.[0] === 'main' && moves[3]?.[2] === pages[0],
+        'al seleccionar, la pestaña activa vuelve al panel y la anterior pasa al anfitrión');
+      moves.length = 0;
+      const again = await browser.run('web_tab', { action: 'select', id: first });
+      assert(again.selected === first && moves.length === 0, 'seleccionar la pestaña ya activa no remonta nada');
+      await browser.run('web_open', { url: 'https://tab-1b.example.com' });
+      assert(browser.state().tabs.length === 2, 'web_open navega en la pestaña activa sin crear otra');
+      const closed = await browser.run('web_tab', { action: 'close', id: second });
+      assert(closed.closed === second && closed.open === true && closed.tabs.length === 1 && closed.tabs[0].id === first,
+        'cerrar una pestaña de fondo conserva el navegador y la activa');
+      const last = await browser.run('web_tab', { action: 'close', id: first });
+      assert(last.closed === first && last.open === false && last.tabs.length === 0 && last.docked === false,
+        'cerrar la última pestaña cierra el navegador y desacopla el panel');
+      assert(hostDestroyed === 1, 'cerrar la última pestaña destruye también la ventana anfitriona');
+      let missingTab = null;
+      try { await browser.run('web_tab', { action: 'close', id: '9' }); } catch (error) { missingTab = error.message; }
+      assert(missingTab === 'No existe esa pestaña; usa web_tab con «list» para verlas',
+        'seleccionar o cerrar una pestaña inexistente avisa con la salida');
+      let badAction = null;
+      try { await browser.run('web_tab', { action: 'zoom' }); } catch (error) { badAction = error.message; }
+      assert(badAction === 'Acción de pestaña no válida: zoom', 'web_tab rechaza acciones desconocidas');
+      const empty = await browser.run('web_tab', { action: 'list' });
+      assert(JSON.stringify(empty.tabs) === '[]' && empty.active === null, 'listar sin navegador devuelve una lista vacía');
+      const reopened = await browser.run('web_tab', { action: 'open', url: 'https://tab-3.example.com' });
+      assert(reopened.tab && browser.state().open === true, 'abrir una pestaña recrea el navegador sin página previa');
+      const policyRoot = mkdtempSync(join(tmpdir(), 'antares-agent-tabs-'));
+      const realLocalAppData = process.env.LOCALAPPDATA;
+      process.env.LOCALAPPDATA = policyRoot;
+      let blockedTab = null;
+      try { await browser.run('web_tab', { action: 'open', url: 'bcp.pe/panel' }); } catch (error) { blockedTab = error.message; }
+      assert(blockedTab && blockedTab.includes('Dominio bloqueado'), 'web_tab open respeta la política de dominios');
+      process.env.LOCALAPPDATA = realLocalAppData;
+      rmSync(policyRoot, { recursive: true, force: true });
+    } finally { Date.now = realNow; timers.restore(); browser.close(); }
+  }
   const { validateToolArguments } = await import('@earendil-works/pi-ai');
   const taskSpec = specs.find((s) => s.name === 'espacios_tarea_update');
   const taskTool = { name: taskSpec.name, description: taskSpec.description, parameters: taskSpec.inputSchema };
@@ -422,6 +695,23 @@ async function exportTest() {
     assert(currentPage.page_url === pageUrl, 'la siguiente aprobación identifica la página nueva');
     await runNativeTool('web_click', { ref: '1' }, { sessionId: 'abc123', approvedContext: currentPage });
     assert(interactions === 1, 'una aprobación de la página actual ejecuta la interacción una sola vez');
+    const router = require('../electron/ipc-router');
+    const grantCalls = [];
+    stubModule('electron/ipc-router.js', { _callBackend: async (method, params) => {
+      grantCalls.push([method, params]);
+      return { granted: true };
+    } });
+    const uploadApproved = await nativeToolContext('web_upload', 's1', { ref: '9', path: 'C:\\datos\\x.pdf' });
+    assert(uploadApproved.page_url === pageUrl && grantCalls[0][0] === 'agent_internal_grants_check'
+      && grantCalls[0][1].session_id === 's1' && grantCalls[0][1].path === 'C:\\datos\\x.pdf',
+    'web_upload verifica los grants del backend antes de pedir aprobación');
+    stubModule('electron/ipc-router.js', { _callBackend: async () => {
+      throw new Error('El archivo no está autorizado; escribe su ruta en tu mensaje o selecciónalo');
+    } });
+    let denied = null;
+    try { await nativeToolContext('web_upload', 's1', { path: 'C:\\otros\\y.pdf' }); } catch (error) { denied = error.message; }
+    assert(denied && denied.includes('no está autorizado'), 'una ruta sin grant impide pedir la aprobación de web_upload');
+    stubModule('electron/ipc-router.js', router);
     stubModule('electron/agent-browser.js', browser);
   }
   const context = await nativeToolContext('autoimg_sheets_write_range');

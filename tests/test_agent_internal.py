@@ -693,3 +693,17 @@ def test_context_lists_granted_files_and_accounts_and_removes_one_file(store, tm
     left = agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s1"})["context"]["files"]
     assert [f["path"] for f in left] == [listed["files"][1]["path"]]
     assert agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s2"})["context"] == {"files": [], "accounts": []}
+
+
+def test_grants_check_accepts_granted_files_and_rejects_the_rest(store, tmp_path):
+    granted = tmp_path / "informe.pdf"
+    granted.write_bytes(b"%PDF-1.4")
+    secret = tmp_path / "secreto.txt"
+    secret.write_text("clave", encoding="utf-8")
+    agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [str(granted)]})
+    checked = agent_internal.HANDLERS["agent_internal_grants_check"]({"session_id": "s1", "path": str(granted)})
+    assert checked["granted"] is True and checked["path"] == str(granted.resolve())
+    with pytest.raises(ValidationError, match="no está autorizado"):
+        agent_internal.HANDLERS["agent_internal_grants_check"]({"session_id": "s1", "path": str(secret)})
+    with pytest.raises(ValidationError, match="no está autorizado"):
+        agent_internal.HANDLERS["agent_internal_grants_check"]({"session_id": "s2", "path": str(granted)})

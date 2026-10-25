@@ -663,7 +663,8 @@ async function beforeTool(call, api, context) {
   const callId = dispatchCallId(call.id, api.taskId);
   let approval;
   try {
-    const approvedContext = spec.kind === 'native' ? await nativeTools().nativeToolContext(spec.name) : undefined;
+    const approvedContext = spec.kind === 'native'
+      ? await nativeTools().nativeToolContext(spec.name, sessionId, call.arguments || {}) : undefined;
     ({ approval } = await bridge('agent_internal_approval_ensure', {
       session_id: sessionId,
       call_id: callId,
@@ -819,7 +820,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     name: spec.name,
     params: args || {},
     approval_id: approvalId,
-    ...(spec.kind === 'native' ? { context: await nativeTools().nativeToolContext(spec.name) } : {}),
+    ...(spec.kind === 'native' ? { context: await nativeTools().nativeToolContext(spec.name, sessionId, args || {}) } : {}),
   };
   if (spec.name === 'skills_list' || spec.name === 'skills_read') {
     request.context = { profile_id: (await requireSession(sessionId)).profile?.id || null };
@@ -887,7 +888,7 @@ async function dispatchNative(spec, request, context) {
     if (!await toolEnabled(request.session_id, spec.name, context)) {
       return JSON.stringify({ error: `Herramienta deshabilitada en esta conversación: ${spec.name}` });
     }
-    request.context = await nativeTools().nativeToolContext(spec.name);
+    request.context = await nativeTools().nativeToolContext(spec.name, request.session_id, request.params);
     first = await bridge('agent_internal_dispatch', { ...request, native: true, gated: !!spec.gated });
   }
   if (first.execute !== 'native') {
@@ -933,7 +934,7 @@ async function dispatchApproved(approval, context) {
       params: approval.params || {}, approval_id: approval.id,
     };
     if (spec.kind === 'native') {
-      request.context = await nativeTools().nativeToolContext(spec.name);
+      request.context = await nativeTools().nativeToolContext(spec.name, request.session_id, request.params);
       return dispatchNative(spec, request, context);
     }
     return dispatchAndWait(request, context);
