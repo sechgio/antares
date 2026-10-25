@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent resuelve skills compartidas en `skills/_shared/` y propias en `skills/<profile_id>/`, con prioridad de las propias y aviso de colisión. `SKILLS_HOME` y `ORBS_SHARED_HOME` permiten configurar sus rutas sin ejecutar scripts ni ampliar permisos de herramientas.
 - Agent registra cada turno del daemon como una línea JSONL en `.orbs/turns.jsonl`: estado explícito `ok`/`error`/`failed` sin éxito inferido, cada llamada de herramienta con si aplicó y su resultado verificado como evidencia, resúmenes de entrada y salida, y secretos redactados antes de escribir. El fichero rota por tamaño sin borrar el historial y `npm run orbs -- turns list` lo consulta por sesión, fecha, estado y límite leyendo en streaming.
 - Agent delega con roles: los subagentes son exploradores por defecto y pueden pedir una revisión o, si su ficha lo permite, trabajar con efectos bajo aprobación. La delegación se limita a un nivel, permite sustraer herramientas, valida la respuesta contra un `output_schema` con reintento correctivo y agrupa hasta cuatro encargos con su estado. Las aprobaciones de un worker llegan a la conversación padre con su origen y nunca se conceden solas.
 - Agent muestra el coste estimado del turno y de la sesión con los precios reales del catálogo, usa la ventana de contexto exacta del modelo e informa de las compactaciones aplicadas. Las conversaciones largas se compactan automáticamente: pi-durable resume el historial en ventanas grandes y, en ventanas pequeñas, se conservan los últimos turnos con un resumen estructurado de lo omitido.
@@ -99,6 +100,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- Agent conserva la prioridad de las skills adjuntas aunque el catálogo compartido esté lleno; la identidad del perfil se propaga como metadato de ejecución y las pruebas de skills usan el entorno Python seleccionado por `uv`.
 - Se actualizan DOMPurify a 3.4.17 y Brotli a 1.2.1 para corregir las vulnerabilidades que bloqueaban la auditoría de dependencias.
 - Agent explicita la prioridad del pedido actual sobre las indicaciones del agente y las preferencias de memoria. El editor y la memoria muestran el alcance por perfil y los recuerdos globales heredados; editar un perfil informa que afecta a conversaciones nuevas. La guía distingue cambios puntuales y preferencias duraderas, conserva las correcciones humanas y responde de forma natural ante saludos y ayuda vaga.
 - Agent destaca la aprobación, pregunta, actividad o resultado que requiere atención junto al composer, anuncia cada evento una sola vez y permite ir a sus detalles sin interrumpir la lectura del historial. Conserva los detalles abiertos durante las actualizaciones y respeta movimiento reducido al desplazarse.

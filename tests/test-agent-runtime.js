@@ -306,6 +306,7 @@ async function main() {
   for (const legacy of [false, true]) {
     const { bridge } = makeBridge();
     const calls = [];
+    const scopes = [];
     const skillId = 'abcdef0123456789abcdef01';
     const skillsBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
@@ -318,6 +319,7 @@ async function main() {
       }
       if (method === 'agent_internal_dispatch' && params.name.startsWith('skills_')) {
         calls.push(params.name);
+        scopes.push(params.context?.profile_id);
         return { result: JSON.stringify(params.name === 'skills_list'
           ? { skills: [{ id: skillId, name: 'pdf-review', description: 'Revisa firmas' }] }
           : { name: 'pdf-review', content: 'Revisa cada firma', next_offset: null }) };
@@ -329,7 +331,12 @@ async function main() {
       fauxAssistantMessage([fauxToolCall('skills_read', { skill_id: skillId })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Leí las instrucciones de revisión de firmas'),
     ], skillsBridge);
-    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const profile = legacy ? (await runtime.handlers.agent_profile_save({
+      name: 'Revisor de skills', instructions: 'Revisa firmas', tools: ['skills_list', 'skills_read'],
+    })).profile : null;
+    const { session } = await runtime.handlers.agent_session_create({
+      provider: 'faux', model: 'faux-1', ...(profile ? { profile_id: profile.id } : {}),
+    });
     const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
     const state = runtime._internal.state();
     const map = await state.harness.snapshot(state.SessionsDoc, context);
@@ -341,6 +348,8 @@ async function main() {
     const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(calls.join() === 'skills_list,skills_read' && listed.messages.some((message) => message.content.includes('Leí las instrucciones')),
       'la skill se carga bajo demanda sin pedir aprobación para leer');
+    assert(scopes.length === 2 && scopes.every((id) => id === (profile?.id || null)),
+      'el runtime identifica las skills por perfil guardado y usa compartidas sin perfil');
     if (legacy) {
       const entries = await conv.entries({}, 500, undefined, context);
       assert(entries.items.some((entry) => entry.kind === 'pi.user' && JSON.stringify(entry.model).includes('skills_list')),
