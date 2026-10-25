@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarClock, Pause, Pencil, Play, Plus, RefreshCw, X } from 'lucide-react';
 import {
-  agentApi, type AgentSession, type AgentTask, type AgentTaskRun, type AgentTaskStatus,
+  agentApi, type AgentQueueState, type AgentSession, type AgentTask,
+  type AgentTaskKind, type AgentTaskRun, type AgentTaskStatus,
 } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
@@ -11,6 +12,7 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import ThemedSelect from '../ui/ThemedSelect';
+import AgentQueuePanel, { type AgentQueueGroup } from './AgentQueuePanel';
 
 const STATUS_LABELS: Record<AgentTaskStatus, string> = {
   pending: 'Programado',
@@ -36,6 +38,7 @@ const RUN_LABELS: Record<AgentTaskRun['status'], string> = {
 
 type TaskForm = {
   id?: string;
+  kind: AgentTaskKind;
   sessionId: string;
   content: string;
   due: string;
@@ -82,6 +85,7 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
   const { confirm } = useDialog();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [tasks, setTasks] = useState<AgentTask[]>([]);
+  const [queues, setQueues] = useState<AgentQueueState[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [sessionFilter, setSessionFilter] = useState(sessionId || '');
@@ -101,9 +105,11 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setTasks((await agentApi.agentTasksList()).tasks);
+      const result = await agentApi.agentTasksList();
+      setTasks(result.tasks);
+      setQueues(result.queues || []);
     } catch (err) {
-      addToast({ message: errorMessage(err, 'No se pudieron leer los encargos programados'), type: 'error' });
+      addToast({ message: errorMessage(err, 'No se pudieron leer los encargos'), type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -118,18 +124,47 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
     ...sessions.map((session) => ({ value: session.id, label: session.title || 'Conversación' })),
   ], [sessions]);
 
-  const visible = useMemo(() => tasks
+  const scheduled = useMemo(() => tasks
+    .filter((task) => task.kind !== 'queue')
     .filter((task) => !sessionFilter || task.session_id === sessionFilter)
     .sort((a, b) => Number(a.due_at) - Number(b.due_at)), [tasks, sessionFilter]);
 
-  const createTask = () => {
+  const queueGroups = useMemo(() => {
+    const groups = new Map<string, AgentQueueGroup>();
+    const knownSessions = new Set(sessions.map((session) => session.id));
+    for (const state of queues) {
+      if (!knownSessions.has(state.session_id) || (sessionFilter && state.session_id !== sessionFilter)) continue;
+      groups.set(state.session_id, { sessionId: state.session_id, state, tasks: [] });
+    }
+    for (const task of tasks) {
+      if (task.kind !== 'queue' || !knownSessions.has(task.session_id)
+        || (sessionFilter && task.session_id !== sessionFilter)) continue;
+      const group = groups.get(task.session_id) || { sessionId: task.session_id, tasks: [] };
+      group.tasks.push(task);
+      groups.set(task.session_id, group);
+    }
+    for (const group of groups.values()) {
+      group.tasks.sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0) || a.created_at - b.created_at);
+    }
+    return [...groups.values()].filter((group) => group.tasks.length > 0 || group.state?.paused);
+  }, [queues, tasks, sessionFilter, sessions]);
+
+  const queueCount = queueGroups.reduce((total, group) => total + group.tasks.length, 0);
+  const totalVisible = scheduled.length + queueCount;
+
+  const createTask = (kind: AgentTaskKind) => {
     const target = sessionFilter || sessionId || sessions[0]?.id || '';
-    setForm({ sessionId: target, content: '', due: toLocalInput(Date.now() + 10 * 60000), every: '', silent: false });
+    setForm({
+      kind, sessionId: target, content: '',
+      due: kind === 'schedule' ? toLocalInput(Date.now() + 10 * 60000) : '',
+      every: '', silent: false,
+    });
   };
 
   const editTask = (task: AgentTask) => {
     setForm({
       id: task.id,
+      kind: 'schedule',
       sessionId: task.session_id,
       content: task.content,
       due: toLocalInput(task.due_at),
@@ -141,32 +176,70 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
   const save = async () => {
     if (!form) return;
     const content = form.content.trim();
+    const queued = form.kind === 'queue';
     const due = new Date(form.due);
     const every = form.every.trim() ? Number(form.every.trim()) : null;
-    if (!form.sessionId || !content || Number.isNaN(due.getTime())) {
-      addToast({ message: 'Indica la conversación, el encargo y una fecha válida', type: 'error' });
+    if (!form.sessionId || !content || (!queued && Number.isNaN(due.getTime()))) {
+      addToast({ message: queued ? 'Indica la conversación y el encargo' : 'Indica la conversación, el encargo y una fecha válida', type: 'error' });
       return;
     }
-    if (every !== null && (!Number.isInteger(every) || every < 1 || every > 525600)) {
+    if (!queued && every !== null && (!Number.isInteger(every) || every < 1 || every > 525600)) {
       addToast({ message: 'La repetición debe estar entre 1 y 525600 minutos', type: 'error' });
       return;
     }
     setBusy('save');
     try {
-      await agentApi.agentTasksSave({
-        session_id: form.sessionId,
-        ...(form.id ? { id: form.id } : {}),
-        content,
-        due_at: due.toISOString(),
-        every_minutes: every,
-        silent: form.silent,
-        timezone: localTimezone(),
-      });
+      await agentApi.agentTasksSave(queued
+        ? { session_id: form.sessionId, kind: 'queue', content }
+        : {
+          session_id: form.sessionId,
+          ...(form.id ? { id: form.id } : {}),
+          kind: 'schedule',
+          content,
+          due_at: due.toISOString(),
+          every_minutes: every,
+          silent: form.silent,
+          timezone: localTimezone(),
+        });
       setForm(null);
       await load();
-      addToast({ message: form.id ? 'Encargo actualizado' : 'Encargo programado', type: 'success' });
+      addToast({ message: queued ? 'Encargo añadido a la cola' : form.id ? 'Encargo actualizado' : 'Encargo programado', type: 'success' });
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo guardar el encargo'), type: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const toggleQueue = async (queue: AgentQueueState) => {
+    setBusy(`queue:${queue.session_id}`);
+    try {
+      await agentApi.agentTasksQueue(queue.session_id, queue.paused ? 'resume' : 'pause');
+      await load();
+      addToast({ message: queue.paused ? 'Cola reanudada' : 'Cola pausada', type: 'success' });
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo cambiar la cola'), type: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const stopQueueTurn = async (sessionId: string) => {
+    const ok = await confirm({
+      title: 'Detener encargo en curso',
+      description: 'Se detendrá el turno que ejecuta la cola. Una herramienta ya iniciada puede seguir ejecutándose; comprueba su resultado.',
+      confirmLabel: 'Detener turno',
+      cancelLabel: 'Conservar',
+      type: 'destructive',
+    });
+    if (!ok) return;
+    setBusy(`queue:${sessionId}`);
+    try {
+      await agentApi.agentTurnCancel(sessionId);
+      await load();
+      addToast({ message: 'Turno detenido', type: 'success' });
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo detener el turno'), type: 'error' });
     } finally {
       setBusy(null);
     }
@@ -225,8 +298,8 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
           <div className="min-w-0 flex-1">
             <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Encargos programados</h2>
             <p className="text-[12px] text-[var(--text-secondary)]">
-              Se ejecutan mientras Antares siga abierto, incluso en la bandeja. Al volver a abrir, los atrasados se entregan una sola vez;
-              si el cierre interrumpió una entrega, no se repite y queda como incierta.
+              Los programados se ejecutan a su hora y los atrasados se entregan una sola vez; si el cierre interrumpió una entrega,
+              no se repite y queda como incierta. La cola ejecuta un encargo a la vez por conversación, en orden, mientras Antares siga abierto.
             </p>
           </div>
           <Button variant="ghost" size="none" className="flex size-7 items-center justify-center" aria-label="Cerrar encargos programados" onClick={onClose}>
@@ -237,11 +310,14 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
         <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border-subtle)] px-5 py-3">
           <div className="w-56"><ThemedSelect aria-label="Filtrar encargos por conversación" value={sessionFilter}
             onChange={setSessionFilter} options={sessionOptions} /></div>
-          <span className="min-w-0 flex-1 text-[12px] text-[var(--text-secondary)]">{visible.length} encargo{visible.length === 1 ? '' : 's'}</span>
+          <span className="min-w-0 flex-1 text-[12px] text-[var(--text-secondary)]">{totalVisible} encargo{totalVisible === 1 ? '' : 's'}</span>
           <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading} aria-label="Actualizar encargos">
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Actualizar
           </Button>
-          <Button size="sm" onClick={createTask} disabled={!sessions.length}>
+          <Button variant="ghost" size="sm" onClick={() => createTask('queue')} disabled={!sessions.length}>
+            <Plus size={13} /> Añadir a la cola
+          </Button>
+          <Button size="sm" onClick={() => createTask('schedule')} disabled={!sessions.length}>
             <Plus size={13} /> Nuevo encargo
           </Button>
         </div>
@@ -254,7 +330,7 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
             >
               <div className="flex items-center gap-2">
                 <h3 className="min-w-0 flex-1 text-[13px] font-semibold text-[var(--text-primary)]">
-                  {form.id ? 'Editar encargo' : 'Nuevo encargo'}
+                  {form.kind === 'queue' ? 'Nuevo encargo en cola' : form.id ? 'Editar encargo' : 'Nuevo encargo'}
                 </h3>
                 <Button variant="ghost" size="none" className="flex size-6 items-center justify-center"
                   aria-label="Descartar borrador" onClick={() => setForm(null)}><X size={13} /></Button>
@@ -267,109 +343,138 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
                       value: session.id, label: session.title || 'Conversación',
                     }))} />
                 </label>
-                <label className="space-y-1 text-[12px] text-[var(--text-secondary)]">
-                  Fecha y hora
-                  <Input type="datetime-local" aria-label="Fecha y hora" required value={form.due}
-                    onChange={(event) => setForm({ ...form, due: event.target.value })} className="w-full" />
-                </label>
+                {form.kind === 'schedule' ? (
+                  <label className="space-y-1 text-[12px] text-[var(--text-secondary)]">
+                    Fecha y hora
+                    <Input type="datetime-local" aria-label="Fecha y hora" required value={form.due}
+                      onChange={(event) => setForm({ ...form, due: event.target.value })} className="w-full" />
+                  </label>
+                ) : (
+                  <div className="space-y-1 text-[12px] text-[var(--text-secondary)]">
+                    Ejecución
+                    <p className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-[12px]">
+                      En orden, cuando la conversación quede libre.
+                    </p>
+                  </div>
+                )}
               </div>
               <label className="block space-y-1 text-[12px] text-[var(--text-secondary)]">
                 Contenido
                 <Textarea aria-label="Contenido del encargo" required rows={3} maxLength={12000} value={form.content}
                   onChange={(event) => setForm({ ...form, content: event.target.value })} className="w-full" />
               </label>
-              <div className="grid items-end gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-[12px] text-[var(--text-secondary)]">
-                  Repetir cada (minutos)
-                  <Input type="number" min={1} max={525600} aria-label="Repetición en minutos" value={form.every}
-                    onChange={(event) => setForm({ ...form, every: event.target.value })} placeholder="Una sola vez" className="w-full" />
-                </label>
-                <label className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
-                  <input type="checkbox" aria-label="Sin aviso al iniciar" checked={form.silent}
-                    onChange={(event) => setForm({ ...form, silent: event.target.checked })} />
-                  Sin aviso al iniciar (token de silencio)
-                </label>
-              </div>
-              <p className="text-[11px] text-[var(--text-muted)]">Zona horaria: {localTimezone()}</p>
+              {form.kind === 'schedule' && (
+                <>
+                  <div className="grid items-end gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-[12px] text-[var(--text-secondary)]">
+                      Repetir cada (minutos)
+                      <Input type="number" min={1} max={525600} aria-label="Repetición en minutos" value={form.every}
+                        onChange={(event) => setForm({ ...form, every: event.target.value })} placeholder="Una sola vez" className="w-full" />
+                    </label>
+                    <label className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
+                      <input type="checkbox" aria-label="Sin aviso al iniciar" checked={form.silent}
+                        onChange={(event) => setForm({ ...form, silent: event.target.checked })} />
+                      Sin aviso al iniciar (token de silencio)
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-muted)]">Zona horaria: {localTimezone()}</p>
+                </>
+              )}
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" size="sm" type="button" onClick={() => setForm(null)}>Cancelar</Button>
-                <Button size="sm" type="submit" disabled={busy !== null}>{form.id ? 'Guardar cambios' : 'Programar encargo'}</Button>
+                <Button size="sm" type="submit" disabled={busy !== null}>
+                  {form.kind === 'queue' ? 'Encolar encargo' : form.id ? 'Guardar cambios' : 'Programar encargo'}
+                </Button>
               </div>
             </form>
           )}
 
           {loading ? (
             <p className="py-8 text-center text-[13px] text-[var(--text-secondary)]">Cargando encargos…</p>
-          ) : visible.length === 0 ? (
-            <p className="py-8 text-center text-[13px] text-[var(--text-secondary)]">No hay encargos programados.</p>
           ) : (
-            <ul className="space-y-2" aria-label="Lista de encargos programados">
-              {visible.map((task) => {
-                const runs = [...(task.runs || [])].reverse();
-                return (
-                  <li key={task.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-                    <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUS_CLASSES[task.status]}`}>
-                        {STATUS_LABELS[task.status]}
-                      </span>
-                      <span className="min-w-0 flex-1 break-words text-[13px] font-medium text-[var(--text-primary)]">{task.content}</span>
-                      <span className="max-w-48 truncate text-[11px] text-[var(--text-muted)]">
-                        {sessions.find((session) => session.id === task.session_id)?.title || task.session_id}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-2 text-[11px] text-[var(--text-secondary)]">
-                      <span>{formatMoment(task.due_at, task.timezone)} · {task.timezone || localTimezone()}</span>
-                      <span>{repeatText(task.interval_ms)}</span>
-                      {task.silent && <span className="text-[var(--accent-yellow)]">Silencioso</span>}
-                      {task.last_error && <span className="break-all text-[var(--accent-red)]">{task.last_error}</span>}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1 border-t border-[var(--border-subtle)] px-2 py-1.5">
-                      {task.status !== 'delivering' && task.status !== 'cancelled' && task.status !== 'delivered' && (
-                        <Button variant="ghost" size="sm" aria-label={`Ejecutar ahora: ${task.content.slice(0, 60)}`}
-                          disabled={busy !== null} onClick={() => void run(task)}>
-                          <Play size={12} /> Ejecutar ahora
-                        </Button>
-                      )}
-                      {task.status === 'pending' && (
-                        <Button variant="ghost" size="sm" aria-label={`Editar encargo: ${task.content.slice(0, 60)}`}
-                          disabled={busy !== null} onClick={() => editTask(task)}>
-                          <Pencil size={12} /> Editar
-                        </Button>
-                      )}
-                      {task.status !== 'cancelled' && task.status !== 'delivered' && (
-                        <Button variant="ghost" size="sm" aria-label={`Cancelar encargo: ${task.content.slice(0, 60)}`}
-                          disabled={busy !== null} onClick={() => void cancel(task)}>
-                          <Pause size={12} /> Cancelar
-                        </Button>
-                      )}
-                      <span className="flex-1" />
-                      <Button variant="ghost" size="sm" aria-label={`Historial de ejecuciones: ${task.content.slice(0, 60)}`}
-                        onClick={() => setExpanded((current) => current === task.id ? null : task.id)}>
-                        {expanded === task.id ? 'Ocultar historial' : `Historial (${runs.length})`}
-                      </Button>
-                    </div>
-                    {expanded === task.id && (
-                      <div className="border-t border-[var(--border-subtle)] px-3 py-2">
-                        {runs.length === 0 ? <p className="text-[12px] text-[var(--text-secondary)]">Todavía no se ejecutó.</p> : (
-                          <ul className="space-y-1">
-                            {runs.map((run, index) => (
-                              <li key={`${run.at}-${index}`} className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                                <span className={run.status === 'delivered' ? 'text-[var(--accent-green)]'
-                                  : run.status === 'uncertain' ? 'text-[var(--accent-red)]' : 'text-[var(--accent-yellow)]'}>
-                                  {RUN_LABELS[run.status]}
-                                </span>
-                                <span>{formatMoment(run.at, task.timezone)}</span>
-                                {run.error && <span className="min-w-0 flex-1 break-all">{run.error}</span>}
-                              </li>
-                            ))}
-                          </ul>
+            <>
+              {queueGroups.length > 0 && (
+                <AgentQueuePanel
+                  groups={queueGroups}
+                  sessions={sessions}
+                  busy={busy}
+                  onToggle={(next) => void toggleQueue(next)}
+                  onCancel={(task) => void cancel(task)}
+                  onStop={(target) => void stopQueueTurn(target)}
+                />
+              )}
+              {scheduled.length === 0 && queueGroups.length === 0 ? (
+                <p className="py-8 text-center text-[13px] text-[var(--text-secondary)]">No hay encargos programados ni en cola.</p>
+              ) : scheduled.length > 0 ? (
+                <ul className="space-y-2" aria-label="Lista de encargos programados">
+                  {scheduled.map((task) => {
+                    const runs = [...(task.runs || [])].reverse();
+                    return (
+                      <li key={task.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+                        <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUS_CLASSES[task.status]}`}>
+                            {STATUS_LABELS[task.status]}
+                          </span>
+                          <span className="min-w-0 flex-1 break-words text-[13px] font-medium text-[var(--text-primary)]">{task.content}</span>
+                          <span className="max-w-48 truncate text-[11px] text-[var(--text-muted)]">
+                            {sessions.find((session) => session.id === task.session_id)?.title || task.session_id}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-2 text-[11px] text-[var(--text-secondary)]">
+                          <span>{formatMoment(task.due_at, task.timezone)} · {task.timezone || localTimezone()}</span>
+                          <span>{repeatText(task.interval_ms)}</span>
+                          {task.silent && <span className="text-[var(--accent-yellow)]">Silencioso</span>}
+                          {task.last_error && <span className="break-all text-[var(--accent-red)]">{task.last_error}</span>}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1 border-t border-[var(--border-subtle)] px-2 py-1.5">
+                          {task.status !== 'delivering' && task.status !== 'cancelled' && task.status !== 'delivered' && (
+                            <Button variant="ghost" size="sm" aria-label={`Ejecutar ahora: ${task.content.slice(0, 60)}`}
+                              disabled={busy !== null} onClick={() => void run(task)}>
+                              <Play size={12} /> Ejecutar ahora
+                            </Button>
+                          )}
+                          {task.status === 'pending' && (
+                            <Button variant="ghost" size="sm" aria-label={`Editar encargo: ${task.content.slice(0, 60)}`}
+                              disabled={busy !== null} onClick={() => editTask(task)}>
+                              <Pencil size={12} /> Editar
+                            </Button>
+                          )}
+                          {task.status !== 'cancelled' && task.status !== 'delivered' && (
+                            <Button variant="ghost" size="sm" aria-label={`Cancelar encargo: ${task.content.slice(0, 60)}`}
+                              disabled={busy !== null} onClick={() => void cancel(task)}>
+                              <Pause size={12} /> Cancelar
+                            </Button>
+                          )}
+                          <span className="flex-1" />
+                          <Button variant="ghost" size="sm" aria-label={`Historial de ejecuciones: ${task.content.slice(0, 60)}`}
+                            onClick={() => setExpanded((current) => current === task.id ? null : task.id)}>
+                            {expanded === task.id ? 'Ocultar historial' : `Historial (${runs.length})`}
+                          </Button>
+                        </div>
+                        {expanded === task.id && (
+                          <div className="border-t border-[var(--border-subtle)] px-3 py-2">
+                            {runs.length === 0 ? <p className="text-[12px] text-[var(--text-secondary)]">Todavía no se ejecutó.</p> : (
+                              <ul className="space-y-1">
+                                {runs.map((run, index) => (
+                                  <li key={`${run.at}-${index}`} className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                                    <span className={run.status === 'delivered' ? 'text-[var(--accent-green)]'
+                                      : run.status === 'uncertain' ? 'text-[var(--accent-red)]' : 'text-[var(--accent-yellow)]'}>
+                                      {RUN_LABELS[run.status]}
+                                    </span>
+                                    <span>{formatMoment(run.at, task.timezone)}</span>
+                                    {run.error && <span className="min-w-0 flex-1 break-all">{run.error}</span>}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
                         )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </>
           )}
         </div>
       </div>
