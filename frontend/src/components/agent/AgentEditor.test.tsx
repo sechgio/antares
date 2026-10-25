@@ -36,7 +36,7 @@ it('crea un agente con indicaciones y solo las herramientas elegidas', async () 
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir templates_catalog' }));
   await act(async () => { fireEvent.click(create); });
   expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', color: '#0E7490', description: '', role: 'explorer', instructions: 'Usa la plantilla de cortes',
-    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [] });
+    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [], memory_scope: 'shared-read' });
   expect(onSaved).toHaveBeenCalledWith(saved);
 });
 
@@ -50,6 +50,17 @@ it('bloquea herramientas concretas sin renunciar a todas las demás', async () =
   expect(save.mock.calls[0][0]).toMatchObject({ tools: null, tools_deny: ['artifact_print', 'templates_catalog'] });
 });
 
+it('elige el alcance de memoria del agente y conserva el guardado', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  await act(async () => { render(<AgentEditor profile={{ ...saved, memory_scope: 'own' }}
+    onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  expect(screen.getByText('Solo lee y guarda su propia memoria; no ve la memoria general.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Ninguna' }));
+  expect(screen.getByText('No recibe recuerdos ni puede guardarlos.')).toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[0][0]).toMatchObject({ id: saved.id, memory_scope: 'none' });
+});
+
 it('permite empezar con nombre e instrucción sin abrir las opciones avanzadas', async () => {
   const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
   await act(async () => { render(<AgentEditor profile={null} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
@@ -58,7 +69,7 @@ it('permite empezar con nombre e instrucción sin abrir las opciones avanzadas',
   fireEvent.change(screen.getByLabelText('Nombre del agente'), { target: { value: 'Revisor' } });
   fireEvent.change(screen.getByLabelText('Indicaciones del agente'), { target: { value: 'Revisa mis informes' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Crear y chatear' })); });
-  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: 'Revisa mis informes', description: '', starter: '', tools: null, tools_deny: [] });
+  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: 'Revisa mis informes', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read' });
 });
 
 it('conserva el color al editar y permite volver al automático', async () => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, X } from 'lucide-react';
-import { agentApi, type AgentProfile, type AgentRole, type AgentToolSpec } from '../../api/agentApi';
+import { agentApi, type AgentMemoryScope, type AgentProfile, type AgentRole, type AgentToolSpec } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -21,6 +21,12 @@ const ROLE_HINT: Record<AgentRole, string> = {
   worker: 'Puede ejecutar efectos; cada acción pedirá tu aprobación en la conversación que delega.',
 };
 
+const MEMORY_HINT: Record<AgentMemoryScope, string> = {
+  'shared-read': 'Lee la memoria general y la suya; lo que aprende queda solo para este agente.',
+  own: 'Solo lee y guarda su propia memoria; no ve la memoria general.',
+  none: 'No recibe recuerdos ni puede guardarlos.',
+};
+
 export default function AgentEditor({ profile, canStartChat = true, onClose, onSaved, onDeleted }: {
   profile: AgentProfile | null;
   canStartChat?: boolean;
@@ -34,6 +40,7 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
   const [color, setColor] = useState(profile?.color ?? '');
   const [description, setDescription] = useState(profile?.description ?? '');
   const [role, setRole] = useState<AgentRole>(profile?.role ?? 'explorer');
+  const [memoryScope, setMemoryScope] = useState<AgentMemoryScope>(profile?.memory_scope ?? 'shared-read');
   const [instructions, setInstructions] = useState(profile?.instructions ?? '');
   const [starter, setStarter] = useState(profile?.starter ?? '');
   const [allTools, setAllTools] = useState(profile ? profile.tools === null : true);
@@ -62,7 +69,7 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
     try {
       const res = await agentApi.agentProfileSave({
         ...(profile ? { id: profile.id } : {}),
-        name, color, description, role, instructions, starter,
+        name, color, description, role, memory_scope: memoryScope, instructions, starter,
         tools: allTools ? null : [...selected],
         tools_deny: allTools ? [...denied] : [],
       });
@@ -178,6 +185,22 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
               <span className={`block text-[11px] leading-relaxed ${role === 'worker' ? 'text-[var(--accent-yellow)]' : 'text-[var(--text-muted)]'}`}>
                 {ROLE_HINT[role]}
               </span>
+            </div>
+          </div>
+          <div className={FIELD}>
+            <span className={LABEL}>Memoria</span>
+            <div className="space-y-1.5">
+              <SegmentedControl<AgentMemoryScope>
+                aria-label="Memoria del agente"
+                value={memoryScope}
+                onChange={setMemoryScope}
+                options={[
+                  { value: 'shared-read', label: 'Compartida' },
+                  { value: 'own', label: 'Propia' },
+                  { value: 'none', label: 'Ninguna' },
+                ]}
+              />
+              <span className="block text-[11px] leading-relaxed text-[var(--text-muted)]">{MEMORY_HINT[memoryScope]}</span>
             </div>
           </div>
           <label className={FIELD}>

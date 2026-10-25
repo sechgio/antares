@@ -270,6 +270,7 @@ async function sessionsList() {
 
 const MAX_PROFILES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
+const MEMORY_SCOPES = new Set(['shared-read', 'own', 'none']);
 const SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|bearer\s+[A-Za-z0-9._~+/-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:password|contraseña|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
 
 async function _profiles() {
@@ -310,6 +311,8 @@ async function profileSave(params = {}) {
   }
   const role = params.role === undefined ? (existing?.role || 'explorer') : String(params.role);
   if (!PROFILE_ROLES.has(role)) throw validation('Rol de agente no válido: usa explorer, reviewer o worker');
+  const memoryScope = params.memory_scope === undefined ? (existing?.memory_scope || 'shared-read') : String(params.memory_scope);
+  if (!MEMORY_SCOPES.has(memoryScope)) throw validation('Alcance de memoria no válido: usa shared-read, own o none');
   const now = Date.now();
   const profile = {
     id: existing ? existing.id : crypto.randomBytes(6).toString('hex'),
@@ -321,6 +324,7 @@ async function profileSave(params = {}) {
     starter: _text(params.starter, 'el mensaje inicial', 500),
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
     ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
+    ...(memoryScope !== 'shared-read' ? { memory_scope: memoryScope } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
   };
@@ -931,9 +935,10 @@ function _toolVersion(spec) {
 }
 
 async function memoryContext(session, text) {
+  const profile = await execution.sessionProfile(session);
   return bridge('agent_internal_memory_context', {
     session_id: session.id, text, tools: [...shared.toolSpecs.values()].map(_toolVersion), accounts: _accounts(),
-    profile_id: session.profile?.id || null,
+    profile_id: session.profile?.id || null, memory_scope: profile?.memory_scope || null,
   }).catch(() => ({ context: '' }));
 }
 

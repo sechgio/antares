@@ -47,6 +47,7 @@ export interface AgentSession {
 }
 
 export type AgentRole = 'explorer' | 'reviewer' | 'worker';
+export type AgentMemoryScope = 'shared-read' | 'own' | 'none';
 
 export interface AgentProfile {
   id: string;
@@ -58,6 +59,7 @@ export interface AgentProfile {
   starter: string;
   tools: string[] | null;
   tools_deny?: string[];
+  memory_scope?: AgentMemoryScope;
   created_at: number;
   updated_at: number;
 }
@@ -445,7 +447,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null; tools_deny?: string[] }) =>
+  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),

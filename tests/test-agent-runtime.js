@@ -1924,6 +1924,55 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const scopes = [];
+    const memoryBridge = async (method, params) => {
+      if (method === 'agent_internal_memory_context') scopes.push(params.memory_scope);
+      if (method !== 'agent_internal_tools') return bridge(method, params);
+      const result = await bridge(method, params);
+      for (const name of ['memory_search', 'memory_remember', 'procedure_learn']) {
+        result.tools.push({ name, module: 'agent', description: `Memoria ${name}`, gated: name !== 'memory_search', kind: 'backend', inputSchema: schema });
+      }
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage('con memoria propia'),
+      fauxAssistantMessage([fauxToolCall('memory_search', { query: 'formato' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('sin memoria'),
+    ], memoryBridge);
+    let error;
+    try { await runtime.handlers.agent_profile_save({ name: 'Inválido', instructions: 'x', tools: null, memory_scope: 'all' }); } catch (err) { error = err; }
+    assert(!!error, 'un alcance de memoria desconocido se rechaza');
+    const shared = (await runtime.handlers.agent_profile_save({ name: 'Compartido', instructions: 'x', tools: null })).profile;
+    assert(!('memory_scope' in shared), 'el alcance por defecto no cambia la ficha guardada');
+    const own = (await runtime.handlers.agent_profile_save({ name: 'Propio', instructions: 'x', tools: null, memory_scope: 'own' })).profile;
+    assert(own.memory_scope === 'own', 'el bot guarda su alcance de memoria');
+    const kept = (await runtime.handlers.agent_profile_save({ id: own.id, name: 'Propio', instructions: 'y', tools: null })).profile;
+    assert(kept.memory_scope === 'own', 'editar sin indicar el alcance lo conserva');
+    const { session: ownSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: own.id });
+    await runtime.handlers.agent_message_send({ session_id: ownSession.id, content: 'hola' });
+    assert(await waitIdle(ownSession.id), 'el turno con memoria propia termina');
+    assert(scopes.at(-1) === 'own', 'la consulta de memoria recibe el alcance del bot');
+    const none = (await runtime.handlers.agent_profile_save({ name: 'Sin memoria', instructions: 'x', tools: null, memory_scope: 'none' })).profile;
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: none.id });
+    const enabled = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools.filter((t) => t.enabled).map((t) => t.name);
+    const { session: plain } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const plainEnabled = (await runtime.handlers.agent_tools_list({ session_id: plain.id })).tools.filter((t) => t.enabled).map((t) => t.name);
+    const memoryTools = ['memory_search', 'memory_remember', 'procedure_learn'];
+    assert(plainEnabled.includes('memory_search')
+      && JSON.stringify(enabled) === JSON.stringify(plainEnabled.filter((name) => !memoryTools.includes(name))),
+      'un bot sin memoria arranca como una conversación normal sin sus herramientas');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'busca en memoria' });
+    assert(await waitIdle(session.id), 'el turno sin memoria termina');
+    assert(scopes.at(-1) === 'none' && state.dispatchLog.length === 0, 'un bot sin memoria no consulta recuerdos');
+    let blocked;
+    try { await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['memory_search'] }); } catch (err) { blocked = err; }
+    assert(!!blocked, 'la selección manual no devuelve la memoria a un bot sin memoria');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
     await openFaux([
       fauxAssistantMessage([fauxToolCall('db_clear', { turno: 1 }, { id: 'call_0' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('primero'),

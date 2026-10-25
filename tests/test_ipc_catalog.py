@@ -81,6 +81,23 @@ def test_agent_profile_tools_deny_is_an_optional_list_of_names():
             jsonschema.validate({**params, "tools_deny": tools_deny}, schema)
 
 
+def test_agent_profile_memory_scope_accepts_only_known_scopes():
+    import jsonschema
+
+    methods = _catalog()["methods"]
+    schema = methods["agent_profile_save"]["inputSchema"]
+    params = {"name": "Revisor", "instructions": "Revisa documentos"}
+    for scope in ("shared-read", "own", "none"):
+        jsonschema.validate({**params, "memory_scope": scope}, schema)
+    for scope in (None, "all", 1):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**params, "memory_scope": scope}, schema)
+    context = methods["agent_internal_memory_context"]["inputSchema"]
+    jsonschema.validate({"session_id": "s1", "text": "x", "memory_scope": None}, context)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"session_id": "s1", "text": "x", "memory_scope": "all"}, context)
+
+
 def test_agent_approve_accepts_optional_remember_for_always_allow():
     import jsonschema
 

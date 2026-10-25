@@ -40,6 +40,7 @@ const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
+const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
 // Acciones ui_ que inyectan entrada: el marco ámbar del lease humano cubre la
 // ventana objetivo durante su despacho (ui_windows/ui_observe/ui_launch no inyectan).
 const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', 'ui_drag', 'ui_set_value']);
@@ -965,14 +966,15 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     const conv = await conversation(sessionId);
     const enabled = (await conv.agent(context)).tools.map((tool) => tool.name);
     const session = await requireSession(sessionId);
+    const denied = profileDenied(profile);
     request.context = {
       subagent: {
         id: profile.id,
         name: profile.name,
         role: profile.role || 'explorer',
         instructions: profile.instructions,
-        tools: profile.tools_deny?.length
-          ? (Array.isArray(profile.tools) ? profile.tools : enabled).filter((name) => !profile.tools_deny.includes(name))
+        tools: denied.size
+          ? (Array.isArray(profile.tools) ? profile.tools : enabled).filter((name) => !denied.has(name))
           : Array.isArray(profile.tools) ? profile.tools : null,
         enabled,
         provider: session.provider,
@@ -1136,12 +1138,19 @@ async function sessionProfile(session) {
   return id ? (await profiles())[id] || null : null;
 }
 
+// Bloqueadas de un agente guardado; sin memoria tampoco usa sus herramientas.
+function profileDenied(profile) {
+  const denied = new Set((profile && profile.tools_deny) || []);
+  if (profile && profile.memory_scope === 'none') for (const name of MEMORY_TOOLS) denied.add(name);
+  return denied;
+}
+
 // La lista de herramientas de un agente guardado (null = todas) y sus
 // bloqueadas limitan la conversación durante toda su vida, no solo al crearla.
 // Una herramienta bloqueada nunca se permite, aunque figure en la lista.
 async function profileToolFilter(session) {
   const profile = await sessionProfile(session);
-  const denied = new Set((profile && profile.tools_deny) || []);
+  const denied = profileDenied(profile);
   if (!profile || (!Array.isArray(profile.tools) && !denied.size)) return null;
   const allowed = Array.isArray(profile.tools) ? new Set(profile.tools) : null;
   return (name) => (!allowed || allowed.has(name)) && !denied.has(name);
@@ -1150,7 +1159,7 @@ async function profileToolFilter(session) {
 // Herramientas con las que arranca, o a las que se restablece, una conversación.
 function profileInitialTools(profile, specs) {
   const available = new Set(specs.map((spec) => spec.name));
-  const denied = new Set((profile && profile.tools_deny) || []);
+  const denied = profileDenied(profile);
   const base = profile && Array.isArray(profile.tools)
     ? profile.tools.filter((name) => available.has(name)) : defaultToolNames(specs);
   return denied.size ? (base || [...available]).filter((name) => !denied.has(name)) : base;
@@ -1221,6 +1230,7 @@ module.exports = {
   allToolSpecs,
   defaultToolNames,
   moduleToolNames,
+  profileDenied,
   profileInitialTools,
   profileToolFilter,
   sessionProfile,

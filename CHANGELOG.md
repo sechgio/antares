@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Cada agente guardado elige su memoria: Compartida (por defecto, como hasta ahora: lee la memoria general y la suya), Propia (solo lee y guarda la suya) o Ninguna (no recibe recuerdos y pierde `memory_search`, `memory_remember` y `procedure_learn`, también al delegar o como subagente). El alcance se aplica en el chat, la cola, los encargos y las delegaciones y sobrevive al reinicio.
 - Los agentes guardados pueden bloquear herramientas concretas: con «Todas las herramientas» activado, el editor permite marcar las que el agente nunca debe usar, también las que se añadan después. Una herramienta bloqueada gana sobre la lista permitida y queda fuera de la conversación del agente, de `tools_load`, de la selección manual, de sus delegaciones y de `subagent_run`.
 - Agent integra descargas autorizadas a borradores, subidas de archivos con permisos por conversación, captura de página completa y cesión del control del navegador. Las descargas ajenas se cancelan y las autorizadas verifican URL y límite de bytes recibidos.
 - Crear un agente muestra nombre, color e instrucción permanente en una tarjeta compacta y abre su conversación al guardar si hay un proveedor configurado. También permite guardarlo para después, usar Intro y evita envíos duplicados. La descripción, el mensaje inicial y las herramientas quedan en opciones avanzadas; el color elegido se conserva al reiniciar.
